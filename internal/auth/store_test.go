@@ -149,3 +149,39 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Error("expected nil after delete")
 	}
 }
+
+func TestEmailFallback(t *testing.T) {
+	database, cleanup := openTestDB(t, "/tmp/dar_test_auth_emailfallback.sqlite")
+	defer cleanup()
+
+	ctx := context.Background()
+	conn, release, err := database.Conn(ctx)
+	if err != nil {
+		t.Fatalf("Conn: %v", err)
+	}
+	defer release()
+
+	// First login with provider "ProviderA".
+	u1, created, err := FindOrCreateUser(ctx, conn, "same@email.com", "Same User", "", "ProviderA", "sub-123")
+	if err != nil {
+		t.Fatalf("first FindOrCreateUser: %v", err)
+	}
+	if !created {
+		t.Error("expected first user to be created")
+	}
+
+	// Second login with different provider name, same email.
+	u2, created2, err := FindOrCreateUser(ctx, conn, "same@email.com", "Same User Updated", "", "ProviderB", "sub-123")
+	if err != nil {
+		t.Fatalf("second FindOrCreateUser: %v", err)
+	}
+	if created2 {
+		t.Error("expected email fallback — user should NOT be re-created")
+	}
+	if u2.ID != u1.ID {
+		t.Errorf("IDs differ: %q vs %q — fallback should return same user", u2.ID, u1.ID)
+	}
+	if u2.Provider != "ProviderB" {
+		t.Errorf("provider should be updated to ProviderB, got %q", u2.Provider)
+	}
+}

@@ -38,7 +38,7 @@ func Migrations() []string {
 }
 
 // FindOrCreateUser finds an existing user by provider+provider_id, or creates a new one.
-// Returns the user and a bool indicating whether the user was newly created.
+// Falls back to email lookup if the provider match fails (handles OIDC config changes).
 func FindOrCreateUser(ctx context.Context, conn *sqlite.Conn, email, displayName, avatarURL, provider, providerID string) (*User, bool, error) {
 	// Look up by provider + provider_id.
 	existing, err := findUserByProvider(conn, provider, providerID)
@@ -46,7 +46,6 @@ func FindOrCreateUser(ctx context.Context, conn *sqlite.Conn, email, displayName
 		return nil, false, err
 	}
 	if existing != nil {
-		// Update last login and possibly email/name/avatar.
 		now := time.Now().Unix()
 		err := sqlitex.Execute(conn,
 			`UPDATE users SET email = ?, display_name = ?, avatar_url = ?, last_login_at = ? WHERE id = ?`,
@@ -60,6 +59,29 @@ func FindOrCreateUser(ctx context.Context, conn *sqlite.Conn, email, displayName
 		existing.AvatarURL = avatarURL
 		existing.LastLoginAt = time.Unix(now, 0)
 		return existing, false, nil
+	}
+
+	// Fallback: look up by email (handles same email logging in via different provider/config).
+	byEmail, err := findUserByEmail(conn, email)
+	if err != nil {
+		return nil, false, err
+	}
+	if byEmail != nil {
+		// Update provider info to match current config.
+		now := time.Now().Unix()
+		err := sqlitex.Execute(conn,
+			`UPDATE users SET display_name = ?, avatar_url = ?, provider = ?, provider_id = ?, last_login_at = ? WHERE id = ?`,
+			&sqlitex.ExecOptions{Args: []any{displayName, avatarURL, provider, providerID, now, byEmail.ID}},
+		)
+		if err != nil {
+			return nil, false, fmt.Errorf("update user provider: %w", err)
+		}
+		byEmail.DisplayName = displayName
+		byEmail.AvatarURL = avatarURL
+		byEmail.Provider = provider
+		byEmail.ProviderID = providerID
+		byEmail.LastLoginAt = time.Unix(now, 0)
+		return byEmail, false, nil
 	}
 
 	// Create new user.
@@ -137,6 +159,33 @@ func findUserByProvider(conn *sqlite.Conn, provider, providerID string) (*User, 
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find user: %w", err)
+	}
+	return u, nil
+}
+
+func findUserByEmail(conn *sqlite.Conn, email string) (*User, error) {
+	var u *User
+	err := sqlitex.Execute(conn,
+		"SELECT id, email, display_name, avatar_url, provider, provider_id, created_at, last_login_at FROM users WHERE email = ?",
+		&sqlitex.ExecOptions{
+			Args: []any{email},
+			ResultFunc: func(stmt *sqlite.Stmt) error {
+				u = &User{
+					ID:          stmt.ColumnText(0),
+					Email:       stmt.ColumnText(1),
+					DisplayName: stmt.ColumnText(2),
+					AvatarURL:   stmt.ColumnText(3),
+					Provider:    stmt.ColumnText(4),
+					ProviderID:  stmt.ColumnText(5),
+					CreatedAt:   time.Unix(stmt.ColumnInt64(6), 0),
+					LastLoginAt: time.Unix(stmt.ColumnInt64(7), 0),
+				}
+				return nil
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find user by email: %w", err)
 	}
 	return u, nil
 }
