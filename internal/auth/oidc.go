@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -106,11 +107,12 @@ func (p *OIDCProvider) AuthURL() string {
 
 // ExchangeCode exchanges an authorization code for an OIDC user profile.
 func (p *OIDCProvider) ExchangeCode(ctx context.Context, code string) (*OIDCProfile, error) {
-	// Exchange code for token.
+	log.Printf("[oidc-exchange] exchanging code, token_url=%s", p.endpoints.TokenEndpoint)
 	token, err := p.oauth2Config.Exchange(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("oidc exchange (token_url=%s): %w", p.endpoints.TokenEndpoint, err)
 	}
+	log.Printf("[oidc-exchange] got token, fetching userinfo from %s", p.endpoints.UserinfoEndpoint)
 
 	// Fetch userinfo.
 	userinfoURL := p.endpoints.UserinfoEndpoint

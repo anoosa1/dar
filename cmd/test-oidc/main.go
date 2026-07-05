@@ -51,6 +51,7 @@ func handleDiscovery(base string) http.HandlerFunc {
 
 func handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	log.Printf("[oidc] GET /authorize redirect_uri=%s state=%s", q.Get("redirect_uri"), q.Get("state"))
 	redirectURI := q.Get("redirect_uri")
 	state := q.Get("state")
 
@@ -76,16 +77,18 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleToken(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[oidc] POST /token")
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
+		log.Printf("[oidc] /token parse error: %v", err)
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	log.Printf("[oidc] /token grant_type=%s code=%s", r.FormValue("grant_type"), r.FormValue("code"))
 
-	// Accept any code — this is a dummy server.
 	writeJSON(w, map[string]any{
 		"access_token": "test-access-token-abc",
 		"token_type":   "Bearer",
