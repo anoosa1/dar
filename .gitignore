@@ -38,3 +38,4 @@ log
 # Environment
 .env
 .env.local
+/test-oidc
