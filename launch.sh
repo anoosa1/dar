@@ -6,6 +6,7 @@ DB=${DB:-dar.db}
 OIDC_PORT=9001
 SOOSA_PORT=8081
 FILES_PORT=8082
+CONTACTS_PORT=8083
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -13,6 +14,7 @@ while [[ $# -gt 0 ]]; do
     --oidc-port)  OIDC_PORT="$2";   shift 2;;
     --soosa-port) SOOSA_PORT="$2";  shift 2;;
     --files-port) FILES_PORT="$2";  shift 2;;
+    --contacts-port) CONTACTS_PORT="$2"; shift 2;;
     --host)       HOST="$2";        shift 2;;
     --db)         DB="$2";          shift 2;;
     --no-build)   NO_BUILD=1;       shift;;
@@ -24,9 +26,10 @@ BIN_SERVER=./dar-server
 BIN_OIDC=./dar-test-oidc
 BIN_SOOSA=./dar-daemon-soosa
 BIN_FILES=./dar-daemon-files
+BIN_CONTACTS=./dar-daemon-contacts
 OIDC_BASE="http://$HOST:$OIDC_PORT"
 
-trap 'kill $OIDC_PID 2>/dev/null; kill $SOOSA_PID 2>/dev/null; kill $FILES_PID 2>/dev/null; kill $DAR_PID 2>/dev/null; wait' EXIT INT TERM
+trap 'kill $OIDC_PID 2>/dev/null; kill $SOOSA_PID 2>/dev/null; kill $FILES_PID 2>/dev/null; kill $CONTACTS_PID 2>/dev/null; kill $DAR_PID 2>/dev/null; wait' EXIT INT TERM
 
 if [[ -z "${NO_BUILD:-}" ]]; then
   echo "Building..."
@@ -34,6 +37,7 @@ if [[ -z "${NO_BUILD:-}" ]]; then
   nix-shell -p go --command "go build -o $BIN_OIDC ./cmd/test-oidc/"
   nix-shell -p go --command "go build -o $BIN_SOOSA ./cmd/soosa/"
   nix-shell -p go --command "go build -o $BIN_FILES ./cmd/files/"
+  nix-shell -p go --command "go build -o $BIN_CONTACTS ./cmd/contacts/"
   echo "  ok"
 fi
 
@@ -68,6 +72,16 @@ done
 echo "  Files ready"
 
 echo ""
+echo "Starting Contacts daemon on :$CONTACTS_PORT..."
+$BIN_CONTACTS --port "$CONTACTS_PORT" &
+CONTACTS_PID=$!
+for i in $(seq 1 20); do
+  curl -s "http://$HOST:$CONTACTS_PORT/health" >/dev/null 2>&1 && break
+  sleep 0.2
+done
+echo "  Contacts ready"
+
+echo ""
 echo "Starting Dar on :$PORT..."
 echo "  Home:   http://$HOST:$PORT"
 echo "  OIDC:   $OIDC_BASE"
@@ -86,6 +100,7 @@ env \
   DAR_BASE_URL="http://$HOST:$PORT" \
   DAR_SOOSA_PORT="$SOOSA_PORT" \
   DAR_FILES_PORT="$FILES_PORT" \
+  DAR_CONTACTS_PORT="$CONTACTS_PORT" \
   $BIN_SERVER --port "$PORT" --db "$DB" &
 DAR_PID=$!
 

@@ -19,6 +19,7 @@ dar-oauth-test
 dar-test-oidc
 /dar-daemon-soosa
 /dar-daemon-files
+/dar-daemon-contacts
 /server
 /soosa
 *.exe

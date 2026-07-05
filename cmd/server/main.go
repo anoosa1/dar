@@ -20,6 +20,7 @@ import (
 	"github.com/anoosa/dar/internal/server"
 	"github.com/anoosa/dar/internal/webui"
 
+	contactsApp "github.com/anoosa/dar/internal/apps/contacts"
 	filesApp "github.com/anoosa/dar/internal/apps/files"
 	soosaApp "github.com/anoosa/dar/internal/apps/soosa"
 )
@@ -76,6 +77,7 @@ func main() {
 	registry := apps.NewRegistry()
 	registry.Register(soosaApp.App{})
 	registry.Register(filesApp.App{})
+	registry.Register(contactsApp.App{})
 
 	// ── Daemon Manager ──
 	dm := daemon.NewManager()
@@ -92,6 +94,7 @@ func main() {
 	// Proxy /api/soosa/* to soosa daemon on port 8081.
 	srv.Router.HandleFunc("/api/soosa/*", proxySoosa)
 	srv.Router.HandleFunc("/api/files/*", proxyFiles)
+	srv.Router.HandleFunc("/api/contacts/*", proxyContacts)
 
 	// Register app routes.
 	for _, app := range registry.Apps() {
@@ -275,6 +278,25 @@ func proxyFiles(w http.ResponseWriter, r *http.Request) {
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/files")
+			if pr.Out.URL.Path == "" {
+				pr.Out.URL.Path = "/"
+			}
+		},
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+// proxyContacts forwards /api/contacts/* requests to the contacts daemon.
+func proxyContacts(w http.ResponseWriter, r *http.Request) {
+	port := os.Getenv("DAR_CONTACTS_PORT")
+	if port == "" {
+		port = "8083"
+	}
+	target, _ := url.Parse("http://localhost:" + port)
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/contacts")
 			if pr.Out.URL.Path == "" {
 				pr.Out.URL.Path = "/"
 			}
