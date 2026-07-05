@@ -1,0 +1,37 @@
+# Zig build artifacts
+zig-out/
+.zig-cache/
+zig-pkg/
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Binary outputs
+dar
+dar-server
+dar-daemon-*
+dar-files
+dar-files-dav
+dar-oauth-test
+*.exe
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test data
+data/
+log
+
+# Environment
+.env
+.env.local
