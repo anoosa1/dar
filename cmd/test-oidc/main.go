@@ -1,5 +1,5 @@
-// Dummy OIDC test server for testing Dar's auth flow locally.
-//   dar-test-oidc --port 9001
+// Dummy OIDC test server for testing Dar's auth flow.
+//   dar-test-oidc --port 9001 --host astra
 package main
 
 import (
@@ -13,7 +13,7 @@ import (
 
 var (
 	port = flag.Int("port", 9001, "HTTP port")
-	host = flag.String("host", "localhost", "Hostname for OIDC URLs")
+	host = flag.String("host", "astra", "Hostname for OIDC URLs")
 )
 
 func main() {

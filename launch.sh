@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-HOST=${HOST:-localhost}
+HOST=${HOST:-astra}
 PORT=8080
 DB=${DB:-dar.db}
 OIDC_PORT=9001
