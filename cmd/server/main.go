@@ -136,13 +136,14 @@ func handleOIDCCallback(s *server.Server) http.HandlerFunc {
 		profile, err := s.OIDC.ExchangeCode(r.Context(), code)
 		if err != nil {
 			log.Printf("OIDC exchange failed: %v", err)
-			http.Error(w, "Authentication failed — check server logs for details", http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("OIDC exchange failed: %v", err), http.StatusInternalServerError)
 			return
 		}
 
 		conn, release, err := s.DB.Conn(r.Context())
 		if err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			log.Printf("DB conn failed: %v", err)
+			http.Error(w, fmt.Sprintf("Database connection failed: %v", err), http.StatusInternalServerError)
 			return
 		}
 		defer release()
@@ -153,14 +154,14 @@ func handleOIDCCallback(s *server.Server) http.HandlerFunc {
 		)
 		if err != nil {
 			log.Printf("FindOrCreateUser failed: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("User lookup failed: %v", err), http.StatusInternalServerError)
 			return
 		}
 
 		session, err := auth.CreateSession(conn, user.ID)
 		if err != nil {
 			log.Printf("CreateSession failed: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Session creation failed: %v", err), http.StatusInternalServerError)
 			return
 		}
 
