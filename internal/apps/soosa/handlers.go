@@ -34,33 +34,16 @@ func RenderChat(w io.Writer, r *http.Request, displayName string) error {
 	return webui.Render(w, webui.PageData{
 		Title:    "Soosa — Dar",
 		AppBar:   server.AppBarHTML(r),
-		UserMenu: template.HTML(userMenuHTML(displayName)),
+		UserMenu: webui.UserMenuHTML(displayName),
+		Sidebar: webui.BuildSidebar([]webui.SidebarItem{
+			{Label: "Chat", Icon: "fa-solid fa-comment", Href: "/soosa", Active: true},
+			{Label: "Sessions", Icon: "fa-solid fa-clock-rotate-left", Href: "/soosa?view=sessions"},
+		}, "/settings"),
 		Content:  template.HTML(chatHTML()),
 	})
 }
 
-func userMenuHTML(displayName string) string {
-	initial := "U"
-	if len(displayName) > 0 {
-		initial = displayName[:1]
-	}
-	return `<div class="relative">
-		<button id="user-menu-button" type="button" onclick="toggleUserMenu()"
-			class="w-10 h-10 rounded-full bg-primary-container text-primary inline-flex items-center justify-center font-medium border-0 cursor-pointer"
-			aria-label="User menu">
-			<span aria-hidden="true">` + initial + `</span>
-		</button>
-		<div id="user-menu" class="hidden absolute right-0 mt-2 w-48 bg-surface-container rounded-md shadow-2 border border-outline-variant py-2 z-30">
-			<div class="px-4 py-2 text-sm font-medium text-on-surface">` + displayName + `</div>
-			<a href="/home" class="block px-4 py-2 text-sm text-on-surface no-underline hover:bg-surface-container-highest">Home</a>
-			<a href="/logout" class="block px-4 py-2 text-sm text-error no-underline hover:bg-error-container">Logout</a>
-		</div>
-	</div>
-	<script>
-	function toggleUserMenu(){let m=document.getElementById("user-menu");if(m)m.classList.toggle("hidden")}
-	document.addEventListener("click",function(e){let b=document.getElementById("user-menu-button");let m=document.getElementById("user-menu");if(b&&m&&!b.contains(e.target)&&!m.contains(e.target))m.classList.add("hidden")});
-	</script>`
-}
+
 
 func chatHTML() string {
 	return `

@@ -52,6 +52,42 @@ type LoginProvider struct {
 	URL  string
 }
 
+// SidebarItem is a navigation item in the app sidebar.
+type SidebarItem struct {
+	Label  string
+	Icon   string
+	Href   string
+	Active bool
+}
+
+// BuildSidebar renders a Nextcloud-style app sidebar with nav items and a settings footer.
+func BuildSidebar(items []SidebarItem, settingsHref string) template.HTML {
+	var rows string
+	for _, item := range items {
+		activeCls := ""
+		if item.Active {
+			activeCls = " bg-primary-container text-primary font-medium"
+		}
+		rows += `<a href="` + item.Href + `" class="flex items-center gap-3 rounded-full px-4 h-10 text-sm no-underline transition-colors hover:bg-surface-container-highest` + activeCls + `">
+			<i class="` + item.Icon + ` w-5 text-center"></i>
+			<span>` + item.Label + `</span>
+		</a>`
+	}
+	return template.HTML(`<aside class="w-56 shrink-0 bg-surface border-r border-outline-variant min-h-[calc(100vh-56px)] flex flex-col">
+		<nav class="p-3 flex flex-col gap-1 flex-1">` + rows + `</nav>
+		<div class="p-3 border-t border-outline-variant">
+			<a href="` + settingsHref + `" class="flex items-center gap-3 rounded-full px-4 h-10 text-sm text-on-surface-variant no-underline hover:bg-surface-container-highest">
+				<i class="fa-solid fa-gear w-5 text-center"></i><span>Settings</span>
+			</a>
+		</div>
+	</aside>`)
+}
+
+// UserMenuHTML builds the user avatar + dropdown menu.
+func UserMenuHTML(displayName string) template.HTML {
+	return buildUserMenu(displayName)
+}
+
 func buildUserMenu(displayName string) template.HTML {
 	initial := "U"
 	if len(displayName) > 0 {
