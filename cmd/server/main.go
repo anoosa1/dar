@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"strings"
 
@@ -16,6 +18,8 @@ import (
 	"github.com/anoosa/dar/internal/db"
 	"github.com/anoosa/dar/internal/server"
 	"github.com/anoosa/dar/internal/webui"
+
+	soosaApp "github.com/anoosa/dar/internal/apps/soosa"
 )
 
 func main() {
@@ -68,7 +72,7 @@ func main() {
 
 	// ── App Registry ──
 	registry := apps.NewRegistry()
-	// Apps will be registered in later phases.
+	registry.Register(soosaApp.App{})
 
 	// ── Daemon Manager ──
 	dm := daemon.NewManager()
@@ -81,6 +85,21 @@ func main() {
 	srv.Router.Get("/home", srv.RequireAuth(handleHome(srv, registry)))
 	srv.Router.Get("/api/me", srv.RequireAuth(handleAPIMe))
 	srv.Router.Get("/logout", handleLogout())
+
+	// Proxy /api/soosa/* to soosa daemon on port 8081.
+	srv.Router.HandleFunc("/api/soosa/*", proxySoosa)
+
+	// Register app routes.
+	for _, app := range registry.Apps() {
+		for _, route := range app.Routes() {
+			switch route.Method {
+			case "GET":
+				srv.Router.Get(route.Pattern, srv.RequireAuth(route.Handler))
+			case "POST":
+				srv.Router.Post(route.Pattern, srv.RequireAuth(route.Handler))
+			}
+		}
+	}
 
 	// ── Start ──
 	addr := fmt.Sprintf(":%d", *port)
@@ -219,4 +238,23 @@ func handleLogout() http.HandlerFunc {
 		})
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	}
+}
+
+// proxySoosa forwards /api/soosa/* requests to the soosa daemon.
+func proxySoosa(w http.ResponseWriter, r *http.Request) {
+	soosaPort := os.Getenv("DAR_SOOSA_PORT")
+	if soosaPort == "" {
+		soosaPort = "8081"
+	}
+	target, _ := url.Parse("http://localhost:" + soosaPort)
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/soosa")
+			if pr.Out.URL.Path == "" {
+				pr.Out.URL.Path = "/"
+			}
+		},
+	}
+	proxy.ServeHTTP(w, r)
 }
