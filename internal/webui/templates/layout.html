@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'surface': '#fef7ff',
+                        'surface-container': '#f0eaf1',
+                        'surface-container-high': '#eae4eb',
+                        'surface-container-highest': '#e4dee5',
+                        'primary': '#6750a4',
+                        'primary-container': '#e8def8',
+                        'on-surface': '#1b1b1f',
+                        'on-surface-variant': '#49454f',
+                        'outline-variant': '#cac4d0',
+                        'error': '#ba1a1a',
+                        'error-container': '#ffdad6',
+                    }
+                }
+            }
+        }
+    </script>
+    {{.HeadExtra}}
+</head>
+<body class="bg-surface text-on-surface min-h-screen">
+    <header class="h-14 bg-surface border-b border-outline-variant flex items-center px-4 gap-4 sticky top-0 z-20">
+        <a href="/home" class="text-xl font-bold text-primary no-underline tracking-tight">Dar</a>
+        <nav id="dar-app-bar" class="flex-1 flex items-center gap-1">
+            {{.AppBar}}
+        </nav>
+        {{.UserMenu}}
+    </header>
+    <div class="flex">
+        {{if .Sidebar}}{{.Sidebar}}{{end}}
+        <main class="flex-1 p-4 md:p-6 min-h-[calc(100vh-56px)]">
+            {{.Content}}
+        </main>
+    </div>
+</body>
+</html>

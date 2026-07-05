@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'surface': '#fef7ff',
+                        'surface-container': '#f0eaf1',
+                        'surface-container-high': '#eae4eb',
+                        'surface-container-highest': '#e4dee5',
+                        'primary': '#6750a4',
+                        'primary-container': '#e8def8',
+                        'on-surface': '#1b1b1f',
+                        'on-surface-variant': '#49454f',
+                        'outline-variant': '#cac4d0',
+                        'error': '#ba1a1a',
+                        'error-container': '#ffdad6',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-surface text-on-surface min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-sm">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-primary mb-2">Dar</h1>
+            <p class="text-on-surface-variant">Your self-hosted cloud</p>
+        </div>
+        <div class="bg-surface-container rounded-2xl p-6 shadow-1">
+            <h2 class="text-lg font-semibold mb-4 text-center">Sign in</h2>
+            {{range .Providers}}
+            <a href="{{.URL}}"
+                class="flex items-center gap-3 w-full px-4 py-3 rounded-full border border-outline-variant text-on-surface no-underline hover:bg-surface-container-highest transition-colors mb-3">
+                <span class="text-xl">{{.Icon}}</span>
+                <span class="font-medium">Continue with {{.Name}}</span>
+            </a>
+            {{else}}
+            <p class="text-on-surface-variant text-center py-4">No authentication providers configured.</p>
+            {{end}}
+        </div>
+    </div>
+</body>
+</html>

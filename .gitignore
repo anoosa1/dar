@@ -16,6 +16,8 @@ dar-daemon-*
 dar-files
 dar-files-dav
 dar-oauth-test
+server
+soosa
 *.exe
 
 # OS
