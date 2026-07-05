@@ -10,7 +10,7 @@ type App struct{}
 
 func (a App) Name() string             { return "soosa" }
 func (a App) DisplayName() string      { return "Soosa" }
-func (a App) Icon() string             { return "🧠" }
+func (a App) Icon() string             { return `<i class="fa-solid fa-comment"></i>` }
 func (a App) Description() string      { return "AI assistant — chat with your data" }
 func (a App) AppBarOrder() int         { return 1 }
 func (a App) DaemonConfig() *apps.DaemonConfig { return nil } // daemon started separately
