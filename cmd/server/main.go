@@ -20,6 +20,7 @@ import (
 	"github.com/anoosa/dar/internal/server"
 	"github.com/anoosa/dar/internal/webui"
 
+	filesApp "github.com/anoosa/dar/internal/apps/files"
 	soosaApp "github.com/anoosa/dar/internal/apps/soosa"
 )
 
@@ -74,6 +75,7 @@ func main() {
 	// ── App Registry ──
 	registry := apps.NewRegistry()
 	registry.Register(soosaApp.App{})
+	registry.Register(filesApp.App{})
 
 	// ── Daemon Manager ──
 	dm := daemon.NewManager()
@@ -89,6 +91,7 @@ func main() {
 
 	// Proxy /api/soosa/* to soosa daemon on port 8081.
 	srv.Router.HandleFunc("/api/soosa/*", proxySoosa)
+	srv.Router.HandleFunc("/api/files/*", proxyFiles)
 
 	// Register app routes.
 	for _, app := range registry.Apps() {
@@ -253,6 +256,25 @@ func proxySoosa(w http.ResponseWriter, r *http.Request) {
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/soosa")
+			if pr.Out.URL.Path == "" {
+				pr.Out.URL.Path = "/"
+			}
+		},
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+// proxyFiles forwards /api/files/* requests to the files daemon.
+func proxyFiles(w http.ResponseWriter, r *http.Request) {
+	port := os.Getenv("DAR_FILES_PORT")
+	if port == "" {
+		port = "8082"
+	}
+	target, _ := url.Parse("http://localhost:" + port)
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/files")
 			if pr.Out.URL.Path == "" {
 				pr.Out.URL.Path = "/"
 			}

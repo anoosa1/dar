@@ -5,31 +5,35 @@ PORT=8080
 DB=${DB:-dar.db}
 OIDC_PORT=9001
 SOOSA_PORT=8081
+FILES_PORT=8082
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --port)      PORT="$2";       shift 2;;
-    --oidc-port) OIDC_PORT="$2";  shift 2;;
-    --soosa-port) SOOSA_PORT="$2"; shift 2;;
-    --host)      HOST="$2";       shift 2;;
-    --db)        DB="$2";         shift 2;;
-    --no-build)  NO_BUILD=1;      shift;;
-    *) echo "Usage: ./launch.sh [--host HOST] [--port PORT] [--oidc-port PORT] [--soosa-port PORT] [--db DB_PATH] [--no-build]"; exit 1;;
+    --port)       PORT="$2";        shift 2;;
+    --oidc-port)  OIDC_PORT="$2";   shift 2;;
+    --soosa-port) SOOSA_PORT="$2";  shift 2;;
+    --files-port) FILES_PORT="$2";  shift 2;;
+    --host)       HOST="$2";        shift 2;;
+    --db)         DB="$2";          shift 2;;
+    --no-build)   NO_BUILD=1;       shift;;
+    *) echo "Usage: ./launch.sh [--host HOST] [--port PORT] [--oidc-port PORT] [--soosa-port PORT] [--files-port PORT] [--db DB_PATH] [--no-build]"; exit 1;;
   esac
 done
 
 BIN_SERVER=./dar-server
 BIN_OIDC=./dar-test-oidc
 BIN_SOOSA=./dar-daemon-soosa
+BIN_FILES=./dar-daemon-files
 OIDC_BASE="http://$HOST:$OIDC_PORT"
 
-trap 'kill $OIDC_PID 2>/dev/null; kill $SOOSA_PID 2>/dev/null; kill $DAR_PID 2>/dev/null; wait' EXIT INT TERM
+trap 'kill $OIDC_PID 2>/dev/null; kill $SOOSA_PID 2>/dev/null; kill $FILES_PID 2>/dev/null; kill $DAR_PID 2>/dev/null; wait' EXIT INT TERM
 
 if [[ -z "${NO_BUILD:-}" ]]; then
   echo "Building..."
   nix-shell -p go --command "go build -o $BIN_SERVER ./cmd/server/"
   nix-shell -p go --command "go build -o $BIN_OIDC ./cmd/test-oidc/"
   nix-shell -p go --command "go build -o $BIN_SOOSA ./cmd/soosa/"
+  nix-shell -p go --command "go build -o $BIN_FILES ./cmd/files/"
   echo "  ok"
 fi
 
@@ -51,16 +55,25 @@ for i in $(seq 1 20); do
   curl -s "http://$HOST:$SOOSA_PORT/health" >/dev/null 2>&1 && break
   sleep 0.2
 done
-echo "  Soosa ready (http://$HOST:$SOOSA_PORT)"
+echo "  Soosa ready"
+
+echo ""
+echo "Starting Files daemon on :$FILES_PORT..."
+$BIN_FILES --port "$FILES_PORT" &
+FILES_PID=$!
+for i in $(seq 1 20); do
+  curl -s "http://$HOST:$FILES_PORT/health" >/dev/null 2>&1 && break
+  sleep 0.2
+done
+echo "  Files ready"
 
 echo ""
 echo "Starting Dar on :$PORT..."
 echo "  Home:   http://$HOST:$PORT"
 echo "  OIDC:   $OIDC_BASE"
-echo "  Soosa:  http://$HOST:$SOOSA_PORT"
+echo "  Soosa:  :$SOOSA_PORT"
+echo "  Files:  :$FILES_PORT"
 echo "  DB:     $DB"
-echo ""
-echo "Credentials: any email + password work (dummy OIDC auto-approves)"
 echo ""
 echo "Press Ctrl+C to stop."
 echo ""
@@ -72,6 +85,7 @@ env \
   DAR_OIDC_DISPLAY_NAME="TestOIDC" \
   DAR_BASE_URL="http://$HOST:$PORT" \
   DAR_SOOSA_PORT="$SOOSA_PORT" \
+  DAR_FILES_PORT="$FILES_PORT" \
   $BIN_SERVER --port "$PORT" --db "$DB" &
 DAR_PID=$!
 

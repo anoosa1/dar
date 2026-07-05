@@ -18,6 +18,7 @@ dar-files-dav
 dar-oauth-test
 dar-test-oidc
 /dar-daemon-soosa
+/dar-daemon-files
 /server
 /soosa
 *.exe
