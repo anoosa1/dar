@@ -16,6 +16,7 @@ dar-daemon-*
 dar-files
 dar-files-dav
 dar-oauth-test
+dar-test-oidc
 server
 soosa
 *.exe
