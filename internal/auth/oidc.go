@@ -3,6 +3,7 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -108,7 +109,7 @@ func (p *OIDCProvider) ExchangeCode(ctx context.Context, code string) (*OIDCProf
 	// Exchange code for token.
 	token, err := p.oauth2Config.Exchange(ctx, code)
 	if err != nil {
-		return nil, fmt.Errorf("oidc exchange: %w", err)
+		return nil, fmt.Errorf("oidc exchange (token_url=%s): %w", p.endpoints.TokenEndpoint, err)
 	}
 
 	// Fetch userinfo.
@@ -185,11 +186,11 @@ func (p *OIDCProvider) profileFromIDToken(token *oauth2.Token) (*OIDCProfile, er
 }
 
 func randomString(n int) string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, n)
+	rand.Read(b)
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	for i := range b {
-		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
-		time.Sleep(1) // not crypto-secure but fine for state
+		b[i] = letters[int(b[i])%len(letters)]
 	}
 	return string(b)
 }

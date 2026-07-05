@@ -136,7 +136,7 @@ func handleOIDCCallback(s *server.Server) http.HandlerFunc {
 		profile, err := s.OIDC.ExchangeCode(r.Context(), code)
 		if err != nil {
 			log.Printf("OIDC exchange failed: %v", err)
-			http.Error(w, "Authentication failed", http.StatusInternalServerError)
+			http.Error(w, "Authentication failed — check server logs for details", http.StatusInternalServerError)
 			return
 		}
 
