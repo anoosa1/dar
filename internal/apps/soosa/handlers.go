@@ -19,7 +19,7 @@ func handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := RenderChat(w, user.DisplayName); err != nil {
+	if err := RenderChat(w, r, user.DisplayName); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }
@@ -29,11 +29,11 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 
-// RenderChat renders the chat UI as a standalone page.
-func RenderChat(w io.Writer, displayName string) error {
+// RenderChat renders the chat UI page using the app bar from the request context.
+func RenderChat(w io.Writer, r *http.Request, displayName string) error {
 	return webui.Render(w, webui.PageData{
 		Title:    "Soosa — Dar",
-		AppBar:   `<span class="text-sm font-medium text-on-surface-variant">AI Assistant</span>`,
+		AppBar:   server.AppBarHTML(r),
 		UserMenu: template.HTML(userMenuHTML(displayName)),
 		Content:  template.HTML(chatHTML()),
 	})

@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -92,11 +93,12 @@ func main() {
 	// Register app routes.
 	for _, app := range registry.Apps() {
 		for _, route := range app.Routes() {
+			appBar := registry.AppBarHTML()
 			switch route.Method {
 			case "GET":
-				srv.Router.Get(route.Pattern, srv.RequireAuth(route.Handler))
+				srv.Router.Get(route.Pattern, srv.RequireAuth(injectAppBar(appBar, route.Handler)))
 			case "POST":
-				srv.Router.Post(route.Pattern, srv.RequireAuth(route.Handler))
+				srv.Router.Post(route.Pattern, srv.RequireAuth(injectAppBar(appBar, route.Handler)))
 			}
 		}
 	}
@@ -257,4 +259,12 @@ func proxySoosa(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// injectAppBar wraps a handler to inject app bar HTML into the request context.
+func injectAppBar(appBar template.HTML, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), server.AppBarContextKey, appBar)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
 }

@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"html/template"
 	"net/http"
 
 	"github.com/anoosa/dar/internal/auth"
@@ -18,6 +19,8 @@ const (
 	UserContextKey contextKey = "user"
 	// SessionContextKey is the request context key for the session.
 	SessionContextKey contextKey = "session"
+	// AppBarContextKey carries pre-rendered app bar HTML.
+	AppBarContextKey contextKey = "appbar"
 )
 
 // Server wraps the HTTP server and shared dependencies.
@@ -107,4 +110,10 @@ func (s *Server) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 func GetUser(r *http.Request) *auth.User {
 	user, _ := r.Context().Value(UserContextKey).(*auth.User)
 	return user
+}
+
+// AppBarHTML extracts the app bar HTML from the request context.
+func AppBarHTML(r *http.Request) template.HTML {
+	html, _ := r.Context().Value(AppBarContextKey).(template.HTML)
+	return html
 }
