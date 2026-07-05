@@ -7,6 +7,7 @@ OIDC_PORT=9001
 SOOSA_PORT=8081
 FILES_PORT=8082
 CONTACTS_PORT=8083
+CALENDAR_PORT=8084
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -15,6 +16,7 @@ while [[ $# -gt 0 ]]; do
     --soosa-port) SOOSA_PORT="$2";  shift 2;;
     --files-port) FILES_PORT="$2";  shift 2;;
     --contacts-port) CONTACTS_PORT="$2"; shift 2;;
+    --calendar-port) CALENDAR_PORT="$2"; shift 2;;
     --host)       HOST="$2";        shift 2;;
     --db)         DB="$2";          shift 2;;
     --no-build)   NO_BUILD=1;       shift;;
@@ -27,9 +29,10 @@ BIN_OIDC=./dar-test-oidc
 BIN_SOOSA=./dar-daemon-soosa
 BIN_FILES=./dar-daemon-files
 BIN_CONTACTS=./dar-daemon-contacts
+BIN_CALENDAR=./dar-daemon-calendar
 OIDC_BASE="http://$HOST:$OIDC_PORT"
 
-trap 'kill $OIDC_PID 2>/dev/null; kill $SOOSA_PID 2>/dev/null; kill $FILES_PID 2>/dev/null; kill $CONTACTS_PID 2>/dev/null; kill $DAR_PID 2>/dev/null; wait' EXIT INT TERM
+trap 'kill $OIDC_PID 2>/dev/null; kill $SOOSA_PID 2>/dev/null; kill $FILES_PID 2>/dev/null; kill $CONTACTS_PID 2>/dev/null; kill $CALENDAR_PID 2>/dev/null; kill $DAR_PID 2>/dev/null; wait' EXIT INT TERM
 
 if [[ -z "${NO_BUILD:-}" ]]; then
   echo "Building..."
@@ -38,6 +41,7 @@ if [[ -z "${NO_BUILD:-}" ]]; then
   nix-shell -p go --command "go build -o $BIN_SOOSA ./cmd/soosa/"
   nix-shell -p go --command "go build -o $BIN_FILES ./cmd/files/"
   nix-shell -p go --command "go build -o $BIN_CONTACTS ./cmd/contacts/"
+  nix-shell -p go --command "go build -o $BIN_CALENDAR ./cmd/calendar/"
   echo "  ok"
 fi
 
@@ -82,6 +86,16 @@ done
 echo "  Contacts ready"
 
 echo ""
+echo "Starting Calendar daemon on :$CALENDAR_PORT..."
+$BIN_CALENDAR --port "$CALENDAR_PORT" &
+CALENDAR_PID=$!
+for i in $(seq 1 20); do
+  curl -s "http://$HOST:$CALENDAR_PORT/health" >/dev/null 2>&1 && break
+  sleep 0.2
+done
+echo "  Calendar ready"
+
+echo ""
 echo "Starting Dar on :$PORT..."
 echo "  Home:   http://$HOST:$PORT"
 echo "  OIDC:   $OIDC_BASE"
@@ -101,6 +115,7 @@ env \
   DAR_SOOSA_PORT="$SOOSA_PORT" \
   DAR_FILES_PORT="$FILES_PORT" \
   DAR_CONTACTS_PORT="$CONTACTS_PORT" \
+  DAR_CALENDAR_PORT="$CALENDAR_PORT" \
   $BIN_SERVER --port "$PORT" --db "$DB" &
 DAR_PID=$!
 

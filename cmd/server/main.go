@@ -20,6 +20,7 @@ import (
 	"github.com/anoosa/dar/internal/server"
 	"github.com/anoosa/dar/internal/webui"
 
+	calendarApp "github.com/anoosa/dar/internal/apps/calendar"
 	contactsApp "github.com/anoosa/dar/internal/apps/contacts"
 	filesApp "github.com/anoosa/dar/internal/apps/files"
 	soosaApp "github.com/anoosa/dar/internal/apps/soosa"
@@ -78,6 +79,7 @@ func main() {
 	registry.Register(soosaApp.App{})
 	registry.Register(filesApp.App{})
 	registry.Register(contactsApp.App{})
+	registry.Register(calendarApp.App{})
 
 	// ── Daemon Manager ──
 	dm := daemon.NewManager()
@@ -95,6 +97,7 @@ func main() {
 	srv.Router.HandleFunc("/api/soosa/*", proxySoosa)
 	srv.Router.HandleFunc("/api/files/*", proxyFiles)
 	srv.Router.HandleFunc("/api/contacts/*", proxyContacts)
+	srv.Router.HandleFunc("/api/calendar/*", proxyCalendar)
 
 	// Register app routes.
 	for _, app := range registry.Apps() {
@@ -278,6 +281,25 @@ func proxyFiles(w http.ResponseWriter, r *http.Request) {
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/files")
+			if pr.Out.URL.Path == "" {
+				pr.Out.URL.Path = "/"
+			}
+		},
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+// proxyCalendar forwards /api/calendar/* requests to the calendar daemon.
+func proxyCalendar(w http.ResponseWriter, r *http.Request) {
+	port := os.Getenv("DAR_CALENDAR_PORT")
+	if port == "" {
+		port = "8084"
+	}
+	target, _ := url.Parse("http://localhost:" + port)
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/calendar")
 			if pr.Out.URL.Path == "" {
 				pr.Out.URL.Path = "/"
 			}

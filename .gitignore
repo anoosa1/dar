@@ -20,6 +20,7 @@ dar-test-oidc
 /dar-daemon-soosa
 /dar-daemon-files
 /dar-daemon-contacts
+/dar-daemon-calendar
 /server
 /soosa
 *.exe
