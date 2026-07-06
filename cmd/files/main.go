@@ -50,6 +50,8 @@ func main() {
 	mux.HandleFunc("/versions", handleVersions)
 	mux.HandleFunc("/version", handleVersion)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/share", handleShare)
+	mux.HandleFunc("/shared", handleShared)
 	mux.HandleFunc("/lock", handleLock)
 	mux.HandleFunc("/activity", handleActivity)
 	mux.HandleFunc("/health", handleHealth)
@@ -596,6 +598,88 @@ func logActivity(uid, path, name, action string) {
 	os.WriteFile(d, b, 0644)
 }
 
+
+
+type Share struct {
+	Token    string `json:"token"`
+	Path     string `json:"path"`
+	Password string `json:"password,omitempty"`
+	Expires  int64  `json:"expires,omitempty"`
+	Created  int64  `json:"created"`
+}
+
+func loadShares(uid string) map[string]Share {
+	data, _ := os.ReadFile(filepath.Join(*dataRoot, uid, "shares.json"))
+	var m map[string]Share
+	json.Unmarshal(data, &m)
+	if m == nil { m = map[string]Share{} }
+	return m
+}
+func saveShares(uid string, m map[string]Share) {
+	data, _ := json.Marshal(m)
+	os.MkdirAll(filepath.Join(*dataRoot, uid), 0755)
+	os.WriteFile(filepath.Join(*dataRoot, uid, "shares.json"), data, 0644)
+}
+
+func handleShare(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "POST":
+		uid := userID(r)
+		var req struct {
+			Path     string `json:"path"`
+			Password string `json:"password"`
+			Expires  int64  `json:"expires"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		shares := loadShares(uid)
+		token := fmt.Sprintf("%x", time.Now().UnixNano())
+		shares[token] = Share{
+			Token: token, Path: req.Path, Password: req.Password,
+			Expires: req.Expires, Created: time.Now().Unix(),
+		}
+		saveShares(uid, shares)
+		writeJSON(w, shares[token])
+	case "GET":
+		// Access shared file via token (no auth needed)
+		token := r.URL.Query().Get("token")
+		pw := r.URL.Query().Get("pw")
+		// Search all users for this share
+		entries, _ := os.ReadDir(*dataRoot)
+		for _, e := range entries {
+			if !e.IsDir() { continue }
+			shares := loadShares(e.Name())
+			if s, ok := shares[token]; ok {
+				if s.Password != "" && s.Password != pw {
+					w.Header().Set("Content-Type", "text/html")
+					w.Write([]byte(`<html><body><form method="GET"><input name="token" type="hidden" value="` + token + `"><input name="pw" placeholder="Password" type="password"><button>Unlock</button></form></body></html>`))
+					return
+				}
+				if s.Expires > 0 && s.Expires < time.Now().Unix() {
+					http.Error(w, "share expired", 410)
+					return
+				}
+				http.ServeFile(w, r, realPath(e.Name(), s.Path))
+				return
+			}
+		}
+		http.Error(w, "not found", 404)
+	case "DELETE":
+		uid := userID(r)
+		token := r.URL.Query().Get("token")
+		shares := loadShares(uid)
+		delete(shares, token)
+		saveShares(uid, shares)
+		writeJSON(w, map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func handleShared(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	shares := loadShares(uid)
+	writeJSON(w, map[string]any{"shares": shares})
+}
 
 func handleLock(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
