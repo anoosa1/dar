@@ -35,17 +35,18 @@ func handlePage(w http.ResponseWriter, r *http.Request) {
 func renderPage(w io.Writer, r *http.Request, displayName string) error {
 	urlPath := strings.TrimPrefix(r.URL.Path, "/files")
 	filter := r.URL.Query().Get("filter")
-	activeAll := urlPath == "" && filter == ""
-	activeFiles := urlPath == "/files"
-	activeTrash := urlPath == "/trash"
+	pathParam := r.URL.Query().Get("path")
+	activeAll := urlPath == "" && filter == "" && pathParam == ""
+	activeFiles := urlPath == "/files" || urlPath != "" && pathParam == "/files"
+	activeTrash := urlPath == "/trash" || pathParam == "/trash"
 	activeFav := filter == "favorites"
 	return webui.Render(w, webui.PageData{
 		Title: "Files — Dar", AppBar: server.AppBarHTML(r), UserMenu: webui.UserMenuHTML(displayName),
 		Sidebar: webui.BuildSidebar([]webui.SidebarItem{
 			{Label: "All files", Icon: "fa-solid fa-folder", Href: "/files", Active: activeAll},
-			{Label: "Files", Icon: "fa-solid fa-file", Href: "/files/files", Active: activeFiles},
+			{Label: "Files", Icon: "fa-solid fa-file", Href: "/files?path=/files", Active: activeFiles},
 			{Label: "Favorites", Icon: "fa-solid fa-star", Href: "/files?filter=favorites", Active: activeFav},
-			{Label: "Trash", Icon: "fa-solid fa-trash", Href: "/files/trash", Active: activeTrash},
+			{Label: "Trash", Icon: "fa-solid fa-trash", Href: "/files?path=/trash", Active: activeTrash},
 		}, "#"),
 		Content: template.HTML(filesHTML()),
 	})
@@ -199,16 +200,15 @@ function showDetails(path,name,size,date,isDir){document.getElementById("details
 function showVersionDiff(path){api("versions",{path:path}).then(v=>{let vers=v.versions||[];if(vers.length<2){alert("Need at least 2 versions");return};let b=document.getElementById("details-body");b.innerHTML='<p class="font-medium mb-2">Version Diff</p><select id="diff-v1" class="w-full h-9 px-3 rounded-full bg-surface-container text-xs border-0 mb-1">'+vers.map((v,i)=>'<option value="'+v.id+'"'+(i===1?' selected':'')+'>'+new Date(v.time/1e6).toLocaleString()+'</option>').join("")+'</select><select id="diff-v2" class="w-full h-9 px-3 rounded-full bg-surface-container text-xs border-0 mb-2">'+vers.map((v,i)=>'<option value="'+v.id+'"'+(i===0?' selected':'')+'>'+new Date(v.time/1e6).toLocaleString()+'</option>').join("")+'</select><button onclick="loadDiff(\''+path+'\')" class="h-9 rounded-full bg-primary text-white text-xs font-medium border-0 cursor-pointer w-full">Compare</button><pre id="diff-output" class="text-xs mt-2 bg-surface-container p-3 rounded-xl overflow-x-auto max-h-64"></pre>'})}
 function loadDiff(path){let v1=document.getElementById("diff-v1").value;let v2=document.getElementById("diff-v2").value;api("diff",{path:path,v1:v1,v2:v2}).then(d=>{document.getElementById("diff-output").textContent=d.diff||"No differences"})}
 
-function init(){let fp=window.location.pathname.replace(/\/files\/?/,"");let q=new URLSearchParams(window.location.search);let filter=q.get("filter");loadSettings();if(filter==="favorites"){currentPath="/";window._filter="favorites"}else if(fp==="trash")currentPath="/trash";else if(fp)currentPath="/files/"+fp;else if(window.location.pathname==="/files")currentPath="/";else currentPath="/files";loadTagMap();loadFiles();setupDragDrop()}
+function init(){loadSettings();let q=new URLSearchParams(window.location.search);let filter=q.get("filter");let path=q.get("path");if(filter==="favorites"){currentPath="/";window._filter="favorites"}else if(path==="/trash")currentPath="/trash";else if(path)currentPath=path;else currentPath="/";loadTagMap();loadFiles();setupDragDrop()}
 function loadTagMap(){api("tags",{}).then(d=>{window._tagMap=d.tags||{}})}
 
 async function api(method,params){let url=apiBase+"/"+method+"?"+new URLSearchParams(params);let r=await fetch(url,{method:method==="upload"?"POST":(params.src?"POST":"GET")});return r.json()}
 async function apiPost(path,params){let r=await fetch(apiBase+path+"?"+new URLSearchParams(params),{method:"POST"});return r.json()}
 function loadFiles(){let params={path:currentPath};if(window._filter)params.filter=window._filter;if(window._tagFilter)params.tag=window._tagFilter;api("list",params).then(d=>renderFiles(d.files||[],d.path))}
 function renderBreadcrumbs(){let p=currentPath;if(p==="/"){document.getElementById("breadcrumbs").innerHTML='<span class="text-on-surface-variant text-sm"><i class="fa-solid fa-folder mr-1"></i></span>';return}
-	if(p==="/trash"){document.getElementById("breadcrumbs").innerHTML='<a href="#" onclick="navTo(\'/\')" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a><span class="text-on-surface-variant">/</span><span class="text-on-surface font-medium">Trash</span>';return}
-	let seg=p.split("/").filter(x=>x),inFiles=p.startsWith("/files"),display=inFiles?seg.slice(1):seg,html=inFiles?'<a href="#" onclick="navTo(\'/files\')" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>':'<a href="#" onclick="navTo(\'/\')" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>';
-	for(let i=0;i<display.length;i++){let link="";for(let j=0;j<=(inFiles?i+1:i);j++)link+="/"+seg[j];html+='<span class="text-on-surface-variant">/</span>';if(i===display.length-1)html+='<span class="text-on-surface font-medium">'+esc(display[i])+'</span>';else html+='<a href="#" onclick="navTo(\''+link+'\')" class="text-primary no-underline hover:underline">'+esc(display[i])+'</a>'}
+	let seg=p.split("/").filter(x=>x),html='<a href="#" onclick="navTo(\'/\')" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>';
+	let acc="";for(let i=0;i<seg.length;i++){acc+="/"+seg[i];html+='<span class="text-on-surface-variant">/</span>';if(i===seg.length-1)html+='<span class="text-on-surface font-medium">'+esc(seg[i])+'</span>';else html+='<a href="#" onclick="navTo(\''+acc+'\')" class="text-primary no-underline hover:underline">'+esc(seg[i])+'</a>'}
 	document.getElementById("breadcrumbs").innerHTML=html}
 
 function renderFiles(_files,path){let files=applySort([..._files]);currentPath=path;renderBreadcrumbs();let div=document.getElementById("file-list");let ch=document.getElementById("column-headers");if(viewMode==="list"&&!currentPath.includes("/trash"))ch.classList.remove("hidden");else ch.classList.add("hidden");
