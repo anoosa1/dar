@@ -65,6 +65,10 @@ func filesHTML() string {
 			<i class="fa-solid fa-upload"></i> Upload
 			<input type="file" id="upload-input" onchange="uploadFiles()" class="hidden" multiple>
 		</label>
+		<select id="sort-select" onchange="changeSort()" class="h-10 px-3 rounded-full bg-surface-container text-sm border-0 outline-none cursor-pointer">
+			<option value="name-asc">Name A-Z</option><option value="name-desc">Name Z-A</option>
+			<option value="date-desc" selected>Newest</option><option value="date-asc">Oldest</option>
+		</select>
 		<button onclick="toggleView()" id="view-toggle" class="h-10 px-4 rounded-full bg-surface-container-high text-on-surface text-sm font-medium border-0 cursor-pointer hover:bg-surface-container-highest inline-flex items-center gap-2">
 			<i id="view-icon" class="fa-solid fa-list"></i> <span id="view-label">List</span></button>
 		<div class="flex-1"></div>
@@ -89,6 +93,13 @@ func filesHTML() string {
 	<!-- File list (fills remaining height) -->
 	<div id="file-list" class="flex-1 overflow-y-auto">
 		<div class="text-center text-on-surface-variant py-12">Loading...</div>
+	</div>
+
+	<!-- Context menu -->
+	<div id="ctx-menu" class="hidden fixed z-[60] bg-surface-container rounded-xl shadow-2 border border-outline-variant py-1 min-w-[160px]" onclick="event.stopPropagation()">
+		<button onclick="ctxAction('rename')" class="w-full text-left px-4 py-2 text-sm hover:bg-surface-container-high border-0 bg-transparent cursor-pointer"><i class="fa-solid fa-pen w-4 mr-2"></i>Rename</button>
+		<button onclick="ctxAction('download')" class="w-full text-left px-4 py-2 text-sm hover:bg-surface-container-high border-0 bg-transparent cursor-pointer"><i class="fa-solid fa-download w-4 mr-2"></i>Download</button>
+		<button onclick="ctxAction('delete')" class="w-full text-left px-4 py-2 text-sm hover:bg-surface-container-high border-0 bg-transparent cursor-pointer text-error"><i class="fa-solid fa-trash w-4 mr-2"></i>Delete</button>
 	</div>
 
 	<!-- Drag-drop overlay -->
@@ -159,6 +170,11 @@ const apiBase="/api/files";
 let currentPath="/",selectedPaths=new Set(),renameTarget=null,moveTargets=[],viewMode="list",lightboxFiles=[],lightboxIdx=0,sortBy="date-desc",ctxTarget=null;
 
 // Parse URL to determine initial path
+document.addEventListener("keydown",e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;if(e.key==="Delete"&&selectedPaths.size>0){bulkDelete();e.preventDefault()}if(e.key==="F2"&&selectedPaths.size===1){let p=[...selectedPaths][0];startRename(p,p.substring(p.lastIndexOf("/")+1));e.preventDefault()}});document.addEventListener("click",()=>{let m=document.getElementById("ctx-menu");if(m)m.classList.add("hidden")});
+function changeSort(){sortBy=document.getElementById("sort-select").value;loadFiles()}
+function applySort(files){let[s,d]=sortBy.split("-");return files.sort((a,b)=>{let v=0;if(s==="name")v=a.name.localeCompare(b.name);else if(s==="date")v=a.updated_at-b.updated_at;else v=a.size-b.size;return d==="desc"?-v:v})}
+function showCtx(e,path){e.preventDefault();ctxTarget=path;let m=document.getElementById("ctx-menu");m.style.left=e.clientX+"px";m.style.top=e.clientY+"px";m.classList.remove("hidden")}
+function ctxAction(action){let p=ctxTarget;ctxTarget=null;document.getElementById("ctx-menu").classList.add("hidden");if(action==="rename"){let n=p.substring(p.lastIndexOf("/")+1);startRename(p,n)}else if(action==="download")window.open(apiBase+"/download?path="+encodeURIComponent(p));else if(action==="delete")deleteItem(p)}
 function init(){
 	let fp=window.location.pathname.replace(/\/files\/?/,"");
 	let q=new URLSearchParams(window.location.search);
@@ -203,7 +219,7 @@ function renderBreadcrumbs(){
 	document.getElementById("breadcrumbs").innerHTML=html;
 }
 
-function renderFiles(files,path){
+function renderFiles(_files,path){let files=applySort([..._files]);
 	currentPath=path;renderBreadcrumbs();
 	let div=document.getElementById("file-list");
 	if(files.length===0){
@@ -218,7 +234,7 @@ function renderFiles(files,path){
 		let size=f.is_dir?'—':formatSize(f.size);
 		let checked=selectedPaths.has(f.path)?'checked':'';
 		let favIcon=f.favorited?'<i class="fa-solid fa-star text-yellow-500 text-xs cursor-pointer" onclick="event.stopPropagation();toggleFav(\''+f.path+'\')"></i>':'<i class="fa-regular fa-star text-on-surface-variant text-xs cursor-pointer opacity-0 group-hover:opacity-100" onclick="event.stopPropagation();toggleFav(\''+f.path+'\')"></i>';
-		html+='<div class="flex items-center gap-3 px-4 py-3 hover:bg-surface-container-high transition-colors group" draggable="false">';
+		html+='<div class="flex items-center gap-3 px-4 py-3 hover:bg-surface-container-high transition-colors group" draggable="false" oncontextmenu="showCtx(event,\''+f.path+'\')">';
 		if(!isTrash)html+='<input type="checkbox" '+checked+' onchange="toggleSelect(\''+f.path+'\')" class="w-4 h-4 accent-primary cursor-pointer">';
 		html+='<i class="'+icon+' text-lg w-6 text-center"></i>';
 		if(isGrid){let isImg=f.mime_type&&f.mime_type.startsWith("image/");html+='<div class="aspect-square bg-surface-container rounded-xl overflow-hidden cursor-pointer hover:opacity-90 relative group" onclick="'+(!f.is_dir?'previewFile(\''+f.path+'\',\''+escJS(f.name)+'\',\''+(f.mime_type||"")+'\')':'navTo(\''+f.path+'\')')+'">';
