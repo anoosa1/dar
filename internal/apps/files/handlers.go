@@ -46,7 +46,7 @@ func renderPage(w io.Writer, r *http.Request, displayName string) error {
 			{Label: "Files", Icon: "fa-solid fa-file", Href: "/files/files", Active: activeFiles},
 			{Label: "Favorites", Icon: "fa-solid fa-star", Href: "/files?filter=favorites", Active: activeFav},
 			{Label: "Trash", Icon: "fa-solid fa-trash", Href: "/files/trash", Active: activeTrash},
-		}, ""),
+		}, "javascript:openSettings()"),
 		Content: template.HTML(filesHTML()),
 	})
 }
@@ -54,6 +54,9 @@ func renderPage(w io.Writer, r *http.Request, displayName string) error {
 func filesHTML() string {
 	return `
 <div id="files-app" class="h-[calc(100vh-120px)] flex flex-col -m-4 md:-m-6">
+	<!-- Hidden file inputs (must be in DOM for onchange to fire) -->
+	<input type="file" id="upload-input" onchange="uploadFiles()" class="hidden" multiple>
+	<input type="file" id="folder-input" onchange="uploadFiles()" class="hidden" webkitdirectory multiple>
 	<div class="flex items-center gap-2 px-4 md:px-6 py-3 border-b border-outline-variant shrink-0">
 		<!-- + New button -->
 		<div class="relative" id="new-menu-wrapper">
@@ -105,6 +108,8 @@ func filesHTML() string {
 				<label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="set-folders-first" onchange="saveSettings()" checked> Sort folders before files</label>
 				<label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="set-tree-view" onchange="saveSettings()"> Folder tree view in sidebar</label>
 				<div class="flex items-center gap-3"><span class="w-44 text-on-surface-variant">Default view:</span><select id="set-default-view" onchange="saveSettings()" class="h-9 px-3 rounded-full bg-surface-container text-sm border-0 outline-none"><option value="all">All files</option><option value="files">Personal files</option></select></div>
+				<div class="flex items-center gap-3"><span class="w-44 text-on-surface-variant">Files folder:</span><input id="set-files-path" onchange="saveSettings()" class="flex-1 h-9 px-3 rounded-full bg-surface-container text-sm border-0 outline-none" value="/files"></div>
+				<div class="flex items-center gap-3"><span class="w-44 text-on-surface-variant">Trash folder:</span><input id="set-trash-path" onchange="saveSettings()" class="flex-1 h-9 px-3 rounded-full bg-surface-container text-sm border-0 outline-none" value="/trash"></div>
 				<label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="set-show-hidden" onchange="saveSettings()"> Show hidden files</label>
 				<div class="text-on-surface-variant font-medium">File columns</div>
 				<label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" checked disabled> Name</label>
@@ -175,12 +180,14 @@ function loadSettings(){try{settings=JSON.parse(localStorage.getItem("dar-files-
 	document.getElementById("set-col-size").checked=settings.colSize!==false;document.getElementById("set-col-modified").checked=settings.colModified!==false;
 	document.getElementById("set-col-type").checked=!!settings.colType;document.getElementById("set-warn-ext").checked=!!settings.warnExt;
 	document.getElementById("set-warn-create").checked=!!settings.warnCreate;document.getElementById("set-default-view").value=settings.defaultView||"all";
+	document.getElementById("set-files-path").value=settings.filesPath||"/files";document.getElementById("set-trash-path").value=settings.trashPath||"/trash";
 	document.getElementById("webdav-url").value=window.location.origin+"/api/files/webdav/"}
 function saveSettings(){settings={favsFirst:document.getElementById("set-favs-first").checked,foldersFirst:document.getElementById("set-folders-first").checked,
 	showHidden:document.getElementById("set-show-hidden").checked,showExt:document.getElementById("set-show-ext").checked,
 	colSize:document.getElementById("set-col-size").checked,colModified:document.getElementById("set-col-modified").checked,
 	colType:document.getElementById("set-col-type").checked,warnExt:document.getElementById("set-warn-ext").checked,
-	warnCreate:document.getElementById("set-warn-create").checked,defaultView:document.getElementById("set-default-view").value};
+	warnCreate:document.getElementById("set-warn-create").checked,defaultView:document.getElementById("set-default-view").value,
+	filesPath:document.getElementById("set-files-path").value,trashPath:document.getElementById("set-trash-path").value};
 	localStorage.setItem("dar-files-settings",JSON.stringify(settings));loadFiles()}
 function openSettings(){loadSettings();document.getElementById("settings-modal").classList.remove("hidden")}
 function closeSettings(){document.getElementById("settings-modal").classList.add("hidden")}
