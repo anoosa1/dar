@@ -57,6 +57,7 @@ func main() {
 	mux.HandleFunc("/lock", handleLock)
 	mux.HandleFunc("/activity", handleActivity)
 	mux.HandleFunc("/share-user", handleUserShare)
+	mux.HandleFunc("/external-storage", handleExternal)
 	mux.HandleFunc("/shared-with-me", handleSharedWithMe)
 	mux.HandleFunc("/health", handleHealth)
 	addr := fmt.Sprintf(":%d", *port)
@@ -713,6 +714,53 @@ func saveComments(uid, vpath string, c []Comment) {
 	os.WriteFile(p, data, 0644)
 }
 
+
+
+type ExternalStorage struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Config   map[string]string `json:"config"`
+	MountPath string `json:"mount_path"`
+}
+
+func handleExternal(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	cfgPath := filepath.Join(*dataRoot, uid, "external_storage.json")
+	switch r.Method {
+	case "GET":
+		data, _ := os.ReadFile(cfgPath)
+		var stores []ExternalStorage
+		json.Unmarshal(data, &stores)
+		if stores == nil { stores = []ExternalStorage{} }
+		writeJSON(w, map[string]any{"stores": stores})
+	case "POST":
+		var s ExternalStorage
+		json.NewDecoder(r.Body).Decode(&s)
+		s.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+		var stores []ExternalStorage
+		data, _ := os.ReadFile(cfgPath)
+		json.Unmarshal(data, &stores)
+		stores = append(stores, s)
+		b, _ := json.Marshal(stores)
+		os.MkdirAll(filepath.Dir(cfgPath), 0755)
+		os.WriteFile(cfgPath, b, 0644)
+		writeJSON(w, s)
+	case "DELETE":
+		id := r.URL.Query().Get("id")
+		var stores []ExternalStorage
+		data, _ := os.ReadFile(cfgPath)
+		json.Unmarshal(data, &stores)
+		for i, s := range stores {
+			if s.ID == id { stores = append(stores[:i], stores[i+1:]...); break }
+		}
+		b, _ := json.Marshal(stores)
+		os.WriteFile(cfgPath, b, 0644)
+		writeJSON(w, map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
 
 func handleWebDAV(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
