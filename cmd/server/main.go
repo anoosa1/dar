@@ -21,6 +21,7 @@ import (
 	"github.com/anoosa/dar/internal/webui"
 
 	calendarApp "github.com/anoosa/dar/internal/apps/calendar"
+	emailApp "github.com/anoosa/dar/internal/apps/email"
 	newsApp "github.com/anoosa/dar/internal/apps/news"
 	notesApp "github.com/anoosa/dar/internal/apps/notes"
 	todoApp "github.com/anoosa/dar/internal/apps/todo"
@@ -86,6 +87,7 @@ func main() {
 	registry.Register(todoApp.App{})
 	registry.Register(notesApp.App{})
 	registry.Register(newsApp.App{})
+	registry.Register(emailApp.App{})
 
 	// ── Daemon Manager ──
 	dm := daemon.NewManager()
@@ -107,6 +109,7 @@ func main() {
 	srv.Router.HandleFunc("/api/todo/*", proxyTodo)
 	srv.Router.HandleFunc("/api/notes/*", proxyNotes)
 	srv.Router.HandleFunc("/api/news/*", proxyNews)
+	srv.Router.HandleFunc("/api/email/*", proxyEmail)
 
 	// Register app routes.
 	for _, app := range registry.Apps() {
@@ -333,6 +336,19 @@ func proxyContacts(w http.ResponseWriter, r *http.Request) {
 			}
 		},
 	}
+	proxy.ServeHTTP(w, r)
+}
+
+// proxyEmail forwards /api/email/* requests to the email daemon.
+func proxyEmail(w http.ResponseWriter, r *http.Request) {
+	port := os.Getenv("DAR_EMAIL_PORT")
+	if port == "" { port = "8088" }
+	target, _ := url.Parse("http://localhost:" + port)
+	proxy := &httputil.ReverseProxy{Rewrite: func(pr *httputil.ProxyRequest) {
+		pr.SetURL(target)
+		pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/email")
+		if pr.Out.URL.Path == "" { pr.Out.URL.Path = "/" }
+	}}
 	proxy.ServeHTTP(w, r)
 }
 
