@@ -52,6 +52,7 @@ func main() {
 	mux.HandleFunc("/stats", handleStats)
 	mux.HandleFunc("/share", handleShare)
 	mux.HandleFunc("/shared", handleShared)
+	mux.HandleFunc("/webdav/", handleWebDAV)
 	mux.HandleFunc("/comments", handleComments)
 	mux.HandleFunc("/lock", handleLock)
 	mux.HandleFunc("/activity", handleActivity)
@@ -671,6 +672,7 @@ type Share struct {
 	Path     string `json:"path"`
 	Password string `json:"password,omitempty"`
 	Expires  int64  `json:"expires,omitempty"`
+	Drop     bool   `json:"drop"`
 	Created  int64  `json:"created"`
 }
 
@@ -709,6 +711,60 @@ func saveComments(uid, vpath string, c []Comment) {
 	os.MkdirAll(filepath.Dir(p), 0755)
 	data, _ := json.Marshal(c)
 	os.WriteFile(p, data, 0644)
+}
+
+
+func handleWebDAV(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	vpath := "/" + strings.TrimPrefix(r.URL.Path, "/webdav/")
+	rp := realPath(uid, vpath)
+	switch r.Method {
+	case "PROPFIND":
+		// Basic PROPFIND response
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.Header().Set("DAV", "1,2")
+		w.WriteHeader(207)
+		entries, _ := os.ReadDir(rp)
+		xml := `<?xml version="1.0" encoding="utf-8"?><d:multistatus xmlns:d="DAV:">`
+		for _, e := range entries {
+			info, _ := e.Info()
+			href := "/webdav/" + strings.TrimPrefix(vpath, "/") + "/" + e.Name()
+			if vpath == "/" { href = "/webdav/" + e.Name() }
+			xml += `<d:response><d:href>` + href + `</d:href><d:propstat><d:prop>`
+			if e.IsDir() { xml += `<d:resourcetype><d:collection/></d:resourcetype>` }
+			xml += `<d:getcontentlength>` + fmt.Sprintf("%d", info.Size()) + `</d:getcontentlength>`
+			xml += `<d:getlastmodified>` + info.ModTime().Format(time.RFC3339) + `</d:getlastmodified>`
+			xml += `</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`
+		}
+		xml += `</d:multistatus>`
+		w.Write([]byte(xml))
+	case "MKCOL":
+		os.MkdirAll(rp, 0755)
+		w.WriteHeader(201)
+	case "PUT":
+		os.MkdirAll(filepath.Dir(rp), 0755)
+		f, _ := os.Create(rp)
+		if f != nil { defer f.Close(); io.Copy(f, r.Body) }
+		w.WriteHeader(201)
+	case "DELETE":
+		os.RemoveAll(rp)
+		w.WriteHeader(204)
+	case "GET":
+		info, err := os.Stat(rp)
+		if err != nil { http.Error(w, "not found", 404); return }
+		if info.IsDir() {
+			entries, _ := os.ReadDir(rp)
+			html := `<html><body><h1>` + vpath + `</h1><ul>`
+			for _, e := range entries { html += `<li><a href="` + r.URL.Path + "/" + e.Name() + `">` + e.Name() + `</a></li>` }
+			html += `</ul></body></html>`
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(html))
+			return
+		}
+		http.ServeFile(w, r, rp)
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
 }
 
 func handleComments(w http.ResponseWriter, r *http.Request) {
@@ -751,13 +807,14 @@ func handleShare(w http.ResponseWriter, r *http.Request) {
 			Path     string `json:"path"`
 			Password string `json:"password"`
 			Expires  int64  `json:"expires"`
+			Drop     bool   `json:"drop"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
 		shares := loadShares(uid)
 		token := fmt.Sprintf("%x", time.Now().UnixNano())
 		shares[token] = Share{
 			Token: token, Path: req.Path, Password: req.Password,
-			Expires: req.Expires, Created: time.Now().Unix(),
+			Drop: req.Drop, Expires: req.Expires, Created: time.Now().Unix(),
 		}
 		saveShares(uid, shares)
 		writeJSON(w, shares[token])
@@ -771,7 +828,25 @@ func handleShare(w http.ResponseWriter, r *http.Request) {
 			if !e.IsDir() { continue }
 			shares := loadShares(e.Name())
 			if s, ok := shares[token]; ok {
-				if s.Password != "" && s.Password != pw {
+				if s.Drop {
+				w.Header().Set("Content-Type", "text/html")
+				w.Write([]byte(`<html><body style="font-family:sans-serif;max-width:400px;margin:50px auto;text-align:center"><h2>File Drop</h2><p>Upload files to ` + filepath.Base(s.Path) + `</p><form method="POST" enctype="multipart/form-data"><input type="file" name="file" multiple style="margin:10px 0"><br><button style="padding:8px 20px;border-radius:20px;background:#6366f1;color:white;border:none;cursor:pointer">Upload</button></form></body></html>`))
+				return
+			}
+			// Handle file upload for drop mode
+			if s.Drop && r.Method == "POST" {
+				r.ParseMultipartForm(128 << 20)
+				if mr := r.MultipartForm; mr != nil {
+					for _, fhs := range mr.File {
+						for _, fh := range fhs {
+							saveUploadedFile(e.Name(), s.Path, fh)
+						}
+					}
+				}
+				w.Write([]byte(`<html><body style="font-family:sans-serif;text-align:center;margin-top:50px"><h2>Files uploaded!</h2><a href="?token=` + token + `">Upload more</a></body></html>`))
+				return
+			}
+			if s.Password != "" && s.Password != pw {
 					w.Header().Set("Content-Type", "text/html")
 					w.Write([]byte(`<html><body><form method="GET"><input name="token" type="hidden" value="` + token + `"><input name="pw" placeholder="Password" type="password"><button>Unlock</button></form></body></html>`))
 					return
