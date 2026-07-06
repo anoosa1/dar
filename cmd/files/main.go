@@ -50,6 +50,7 @@ func main() {
 	mux.HandleFunc("/versions", handleVersions)
 	mux.HandleFunc("/version", handleVersion)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/activity", handleActivity)
 	mux.HandleFunc("/health", handleHealth)
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("[files] listening on :%d", *port)
@@ -242,6 +243,7 @@ func saveUploadedFile(uid, vpath string, fh *multipart.FileHeader) {
 	if err != nil { return }
 	defer dst.Close()
 	io.Copy(dst, file)
+	logActivity(uid, fullPath, name, "uploaded")
 }
 
 func handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -258,6 +260,7 @@ func handleMkdir(w http.ResponseWriter, r *http.Request) {
 	if name == "" { http.Error(w, "missing name", 400); return }
 	fullPath := vpath + "/" + name
 	os.MkdirAll(realPath(uid, fullPath), 0755)
+	logActivity(uid, fullPath, name, "created")
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
@@ -272,6 +275,7 @@ func handleTouch(w http.ResponseWriter, r *http.Request) {
 	os.MkdirAll(filepath.Dir(rp), 0755)
 	if _, err := os.Stat(rp); err == nil { saveVersion(uid, fullPath) }
 	os.WriteFile(rp, []byte(""), 0644)
+	logActivity(uid, fullPath, name, "created")
 	writeJSON(w, map[string]any{"status": "ok", "path": fullPath, "name": name})
 }
 
@@ -282,6 +286,7 @@ func handleRename(w http.ResponseWriter, r *http.Request) {
 	dst := r.URL.Query().Get("dst")
 	if src == "" || dst == "" { http.Error(w, "missing src or dst", 400); return }
 	os.Rename(realPath(uid, src), realPath(uid, dst))
+	logActivity(uid, dst, filepath.Base(dst), "renamed")
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
@@ -332,6 +337,7 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 	os.Rename(src, dst)
 	// Store original path for restore
 	os.WriteFile(dst+".orig", []byte(vpath), 0644)
+	logActivity(uid, vpath, filepath.Base(vpath), "deleted")
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
@@ -347,6 +353,7 @@ func handleRestore(w http.ResponseWriter, r *http.Request) {
 	os.MkdirAll(filepath.Dir(dst), 0755)
 	os.Rename(src, dst)
 	os.Remove(src + ".orig")
+	logActivity(uid, origPath, filepath.Base(origPath), "restored")
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
@@ -544,6 +551,42 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, map[string]any{"used": total, "total": int64(10 * 1024 * 1024 * 1024)})
+}
+
+
+type Activity struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
+	Name string `json:"name"`
+	Action string `json:"action"`
+	Time int64  `json:"time"`
+}
+
+func logActivity(uid, path, name, action string) {
+	d := filepath.Join(*dataRoot, uid, "activity.json")
+	var acts []Activity
+	data, _ := os.ReadFile(d)
+	json.Unmarshal(data, &acts)
+	acts = append(acts, Activity{
+		ID: fmt.Sprintf("%d", time.Now().UnixNano()),
+		Path: path, Name: name, Action: action, Time: time.Now().Unix(),
+	})
+	if len(acts) > 500 { acts = acts[len(acts)-500:] }
+	b, _ := json.Marshal(acts)
+	os.WriteFile(d, b, 0644)
+}
+
+func handleActivity(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	d := filepath.Join(*dataRoot, uid, "activity.json")
+	var acts []Activity
+	data, _ := os.ReadFile(d)
+	json.Unmarshal(data, &acts)
+	if acts == nil { acts = []Activity{} }
+	sort.Slice(acts, func(i, j int) bool { return acts[i].Time > acts[j].Time })
+	limit := 50
+	if len(acts) > limit { acts = acts[:limit] }
+	writeJSON(w, map[string]any{"activity": acts})
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
