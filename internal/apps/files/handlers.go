@@ -156,7 +156,7 @@ func filesHTML() string {
 
 <script>
 const apiBase="/api/files";
-let currentPath="/",selectedPaths=new Set(),renameTarget=null,moveTargets=[],viewMode="list",lightboxFiles=[],lightboxIdx=0;
+let currentPath="/",selectedPaths=new Set(),renameTarget=null,moveTargets=[],viewMode="list",lightboxFiles=[],lightboxIdx=0,sortBy="date-desc",ctxTarget=null;
 
 // Parse URL to determine initial path
 function init(){

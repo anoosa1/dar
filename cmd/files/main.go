@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -46,6 +47,8 @@ func main() {
 	mux.HandleFunc("/tag", handleTag)
 	mux.HandleFunc("/thumb", handleThumbnail)
 	mux.HandleFunc("/preview", handlePreview)
+	mux.HandleFunc("/versions", handleVersions)
+	mux.HandleFunc("/version", handleVersion)
 	mux.HandleFunc("/stats", handleStats)
 	mux.HandleFunc("/health", handleHealth)
 	addr := fmt.Sprintf(":%d", *port)
@@ -233,6 +236,8 @@ func saveUploadedFile(uid, vpath string, fh *multipart.FileHeader) {
 	fullPath := vpath + "/" + name
 	rp := realPath(uid, fullPath)
 	os.MkdirAll(filepath.Dir(rp), 0755)
+	// Save version if file exists
+	if _, err := os.Stat(rp); err == nil { saveVersion(uid, fullPath) }
 	dst, err := os.Create(rp)
 	if err != nil { return }
 	defer dst.Close()
@@ -265,6 +270,7 @@ func handleTouch(w http.ResponseWriter, r *http.Request) {
 	fullPath := vpath + "/" + name
 	rp := realPath(uid, fullPath)
 	os.MkdirAll(filepath.Dir(rp), 0755)
+	if _, err := os.Stat(rp); err == nil { saveVersion(uid, fullPath) }
 	os.WriteFile(rp, []byte(""), 0644)
 	writeJSON(w, map[string]any{"status": "ok", "path": fullPath, "name": name})
 }
@@ -466,6 +472,66 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, FileResponse{Files: results, Path: "/"})
 }
 
+
+
+func versionsDir(uid, vpath string) string {
+	return filepath.Join(*dataRoot, uid, "versions", filepath.Clean(vpath))
+}
+
+func saveVersion(uid, vpath string) {
+	src := realPath(uid, vpath)
+	data, err := os.ReadFile(src)
+	if err != nil { return }
+	vd := versionsDir(uid, vpath)
+	os.MkdirAll(vd, 0755)
+	ts := fmt.Sprintf("%d", time.Now().UnixNano())
+	os.WriteFile(filepath.Join(vd, ts), data, 0644)
+}
+
+func handleVersions(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	vpath := r.URL.Query().Get("path")
+	vd := versionsDir(uid, vpath)
+	entries, _ := os.ReadDir(vd)
+	type Version struct {
+		ID   string `json:"id"`
+		Size int64  `json:"size"`
+		Time int64  `json:"time"`
+	}
+	var vers []Version
+	for _, e := range entries {
+		if e.IsDir() { continue }
+		info, _ := e.Info()
+		ts, _ := strconv.ParseInt(e.Name(), 10, 64)
+		vers = append(vers, Version{ID: e.Name(), Size: info.Size(), Time: ts})
+	}
+	sort.Slice(vers, func(i, j int) bool { return vers[i].Time > vers[j].Time })
+	if vers == nil { vers = []Version{} }
+	writeJSON(w, map[string]any{"versions": vers})
+}
+
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	vpath := r.URL.Query().Get("path")
+	vid := r.URL.Query().Get("id")
+	switch r.Method {
+	case "GET":
+		http.ServeFile(w, r, filepath.Join(versionsDir(uid, vpath), vid))
+	case "POST":
+		// Restore
+		vd := versionsDir(uid, vpath)
+		src := filepath.Join(vd, vid)
+		dst := realPath(uid, vpath)
+		// Save current as version before restoring
+		saveVersion(uid, vpath)
+		data, _ := os.ReadFile(src)
+		os.MkdirAll(filepath.Dir(dst), 0755)
+		os.WriteFile(dst, data, 0644)
+		writeJSON(w, map[string]string{"status": "restored"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
