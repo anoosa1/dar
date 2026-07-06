@@ -12,6 +12,7 @@ TODO_PORT=8085
 NOTES_PORT=8086
 NEWS_PORT=8087
 EMAIL_PORT=8088
+PHOTOS_PORT=8089
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,6 +26,7 @@ while [[ $# -gt 0 ]]; do
     --notes-port) NOTES_PORT="$2"; shift 2;;
     --news-port) NEWS_PORT="$2"; shift 2;;
     --email-port) EMAIL_PORT="$2"; shift 2;;
+    --photos-port) PHOTOS_PORT="$2"; shift 2;;
     --host)       HOST="$2";        shift 2;;
     --db)         DB="$2";          shift 2;;
     --no-build)   NO_BUILD=1;       shift;;
@@ -42,9 +44,10 @@ BIN_TODO=./dar-daemon-todo
 BIN_NOTES=./dar-daemon-notes
 BIN_NEWS=./dar-daemon-news
 BIN_EMAIL=./dar-daemon-email
+BIN_PHOTOS=./dar-daemon-photos
 OIDC_BASE="http://$HOST:$OIDC_PORT"
 
-trap 'kill $OIDC_PID 2>/dev/null; kill $SOOSA_PID 2>/dev/null; kill $FILES_PID 2>/dev/null; kill $CONTACTS_PID 2>/dev/null; kill $CALENDAR_PID 2>/dev/null; kill $TODO_PID 2>/dev/null; kill $NOTES_PID 2>/dev/null; kill $NEWS_PID 2>/dev/null; kill $EMAIL_PID 2>/dev/null; kill $DAR_PID 2>/dev/null; wait' EXIT INT TERM
+trap 'kill $OIDC_PID 2>/dev/null; kill $SOOSA_PID 2>/dev/null; kill $FILES_PID 2>/dev/null; kill $CONTACTS_PID 2>/dev/null; kill $CALENDAR_PID 2>/dev/null; kill $TODO_PID 2>/dev/null; kill $NOTES_PID 2>/dev/null; kill $NEWS_PID 2>/dev/null; kill $EMAIL_PID 2>/dev/null; kill $PHOTOS_PID 2>/dev/null; kill $DAR_PID 2>/dev/null; wait' EXIT INT TERM
 
 if [[ -z "${NO_BUILD:-}" ]]; then
   echo "Building..."
@@ -58,6 +61,7 @@ if [[ -z "${NO_BUILD:-}" ]]; then
   nix-shell -p go --command "go build -o $BIN_NOTES ./cmd/notes/"
   nix-shell -p go --command "go build -o $BIN_NEWS ./cmd/news/"
   nix-shell -p go --command "go build -o $BIN_EMAIL ./cmd/email/"
+  nix-shell -p go --command "go build -o $BIN_PHOTOS ./cmd/photos/"
   echo "  ok"
 fi
 
@@ -152,6 +156,16 @@ done
 echo "  Email ready"
 
 echo ""
+echo "Starting Photos daemon on :$PHOTOS_PORT..."
+$BIN_PHOTOS --port "$PHOTOS_PORT" &
+PHOTOS_PID=$!
+for i in $(seq 1 20); do
+  curl -s "http://$HOST:$PHOTOS_PORT/health" >/dev/null 2>&1 && break
+  sleep 0.2
+done
+echo "  Photos ready"
+
+echo ""
 echo "Starting Dar on :$PORT..."
 echo "  Home:   http://$HOST:$PORT"
 echo "  OIDC:   $OIDC_BASE"
@@ -176,6 +190,7 @@ env \
   DAR_NOTES_PORT="$NOTES_PORT" \
   DAR_NEWS_PORT="$NEWS_PORT" \
   DAR_EMAIL_PORT="$EMAIL_PORT" \
+  DAR_PHOTOS_PORT="$PHOTOS_PORT" \
   $BIN_SERVER --port "$PORT" --db "$DB" &
 DAR_PID=$!
 

@@ -25,6 +25,7 @@ dar-test-oidc
 /dar-daemon-notes
 /dar-daemon-news
 /dar-daemon-email
+/dar-daemon-photos
 /server
 /soosa
 *.exe
