@@ -46,6 +46,7 @@ func main() {
 	mux.HandleFunc("/tag", handleTag)
 	mux.HandleFunc("/thumb", handleThumbnail)
 	mux.HandleFunc("/preview", handlePreview)
+	mux.HandleFunc("/stats", handleStats)
 	mux.HandleFunc("/health", handleHealth)
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("[files] listening on :%d", *port)
@@ -463,6 +464,20 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	if results == nil { results = []FileEntry{} }
 	writeJSON(w, FileResponse{Files: results, Path: "/"})
+}
+
+
+func handleStats(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	var total int64
+	for _, root := range []string{userHome(uid), filesDir(uid)} {
+		filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+			if err != nil { return nil }
+			if !info.IsDir() { total += info.Size() }
+			return nil
+		})
+	}
+	writeJSON(w, map[string]any{"used": total, "total": int64(10 * 1024 * 1024 * 1024)})
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
