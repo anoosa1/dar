@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"log"
 	"mime"
@@ -39,6 +41,8 @@ func main() {
 	mux.HandleFunc("/delete-permanent", handleDeletePermanent)
 	mux.HandleFunc("/favorite", handleFavorite)
 	mux.HandleFunc("/search", handleSearch)
+	mux.HandleFunc("/thumb", handleThumbnail)
+	mux.HandleFunc("/preview", handlePreview)
 	mux.HandleFunc("/health", handleHealth)
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("[files] listening on :%d", *port)
@@ -364,4 +368,45 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
+}
+
+
+func handleThumbnail(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	vpath := r.URL.Query().Get("path")
+	rp := realPath(uid, vpath)
+	src, err := os.Open(rp)
+	if err != nil { http.Error(w, "not found", 404); return }
+	defer src.Close()
+	img, _, err := image.Decode(src)
+	if err != nil { http.Error(w, "not an image", 415); return }
+	b := img.Bounds()
+	maxW := 200
+	ratio := float64(maxW) / float64(b.Dx())
+	newH := int(float64(b.Dy()) * ratio)
+	if b.Dx() <= maxW { newH = b.Dy(); maxW = b.Dx() }
+	scaled := image.NewRGBA(image.Rect(0, 0, maxW, newH))
+	for y := 0; y < newH; y++ {
+		for x := 0; x < maxW; x++ {
+			sx := int(float64(x) / ratio)
+			if b.Dx() <= maxW { sx = x }
+			sy := int(float64(y) / ratio)
+			if b.Dx() <= maxW { sy = y }
+			scaled.Set(x, y, img.At(sx, sy))
+		}
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	jpeg.Encode(w, scaled, &jpeg.Options{Quality: 70})
+}
+
+func handlePreview(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	vpath := r.URL.Query().Get("path")
+	rp := realPath(uid, vpath)
+	data, err := os.ReadFile(rp)
+	if err != nil { http.Error(w, "not found", 404); return }
+	mtype := mime.TypeByExtension(filepath.Ext(vpath))
+	content := string(data)
+	if len(content) > 512*1024 { content = content[:512*1024] }
+	writeJSON(w, map[string]string{"type": mtype, "content": content, "name": filepath.Base(vpath)})
 }

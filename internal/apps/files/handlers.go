@@ -65,6 +65,8 @@ func filesHTML() string {
 			<i class="fa-solid fa-upload"></i> Upload
 			<input type="file" id="upload-input" onchange="uploadFiles()" class="hidden" multiple>
 		</label>
+		<button onclick="toggleView()" id="view-toggle" class="h-10 px-4 rounded-full bg-surface-container-high text-on-surface text-sm font-medium border-0 cursor-pointer hover:bg-surface-container-highest inline-flex items-center gap-2">
+			<i id="view-icon" class="fa-solid fa-list"></i> <span id="view-label">List</span></button>
 		<div class="flex-1"></div>
 		<span id="selected-count" class="text-sm text-primary font-medium hidden"></span>
 		<button id="bulk-delete-btn" onclick="bulkDelete()" class="hidden h-9 px-4 rounded-full bg-error-container text-error text-sm font-medium border-0 cursor-pointer hover:opacity-90 items-center gap-1"><i class="fa-solid fa-trash"></i> Delete</button>
@@ -87,6 +89,23 @@ func filesHTML() string {
 	<!-- Drag-drop overlay -->
 	<div id="drop-zone" class="hidden fixed inset-0 bg-primary/10 z-50 flex items-center justify-center border-4 border-dashed border-primary rounded-2xl m-4">
 		<div class="text-center"><i class="fa-solid fa-cloud-arrow-up text-5xl text-primary mb-3 block"></i><p class="text-lg font-semibold text-primary">Drop files to upload</p></div>
+	</div>
+
+	<!-- Preview panel -->
+	<div id="preview-panel" class="hidden fixed inset-y-0 right-0 w-full sm:w-96 bg-surface border-l border-outline-variant z-40 shadow-2 flex flex-col" onclick="event.stopPropagation()">
+		<div class="flex items-center gap-2 p-4 border-b border-outline-variant">
+			<h3 id="preview-title" class="text-sm font-semibold flex-1 truncate"></h3>
+			<button onclick="closePreview()" class="w-8 h-8 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant hover:bg-surface-container-highest">&times;</button>
+		</div>
+		<div id="preview-content" class="flex-1 overflow-y-auto p-4"></div>
+	</div>
+
+	<!-- Image lightbox -->
+	<div id="img-lightbox" class="hidden fixed inset-0 bg-black/90 z-50 flex items-center justify-center" onclick="closeLightbox()">
+		<button class="absolute top-4 left-4 text-white text-sm bg-white/20 rounded-full px-4 py-2 border-0 cursor-pointer hover:bg-white/30" onclick="event.stopPropagation();closeLightbox()">Close</button>
+		<button id="lightbox-prev" class="absolute left-4 top-1/2 -translate-y-1/2 text-white text-3xl bg-transparent border-0 cursor-pointer hover:opacity-70" onclick="event.stopPropagation();navLightbox(-1)"><i class="fa-solid fa-chevron-left"></i></button>
+		<img id="lightbox-img" class="max-w-[90vw] max-h-[85vh] object-contain rounded-lg" src="" onclick="event.stopPropagation()">
+		<button id="lightbox-next" class="absolute right-4 top-1/2 -translate-y-1/2 text-white text-3xl bg-transparent border-0 cursor-pointer hover:opacity-70" onclick="event.stopPropagation();navLightbox(1)"><i class="fa-solid fa-chevron-right"></i></button>
 	</div>
 
 	<!-- Rename modal -->
@@ -119,7 +138,7 @@ func filesHTML() string {
 
 <script>
 const apiBase="/api/files";
-let currentPath="/",selectedPaths=new Set(),renameTarget=null,moveTargets=[];
+let currentPath="/",selectedPaths=new Set(),renameTarget=null,moveTargets=[],viewMode="list",lightboxFiles=[],lightboxIdx=0;
 
 // Parse URL to determine initial path
 function init(){
@@ -173,7 +192,8 @@ function renderFiles(files,path){
 		return;
 	}
 	let isTrash=currentPath==="/trash";
-	let html='<div class="divide-y divide-outline-variant">';
+	let isGrid=viewMode==="grid"&&!isTrash;
+	let html=isGrid?'<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 p-2">':'<div class="divide-y divide-outline-variant">';
 	for(const f of files){
 		let icon=f.is_dir?'fa-solid fa-folder text-primary':'fa-solid fa-file text-on-surface-variant';
 		let size=f.is_dir?'—':formatSize(f.size);
@@ -182,7 +202,13 @@ function renderFiles(files,path){
 		html+='<div class="flex items-center gap-3 px-4 py-3 hover:bg-surface-container-high transition-colors group" draggable="false">';
 		if(!isTrash)html+='<input type="checkbox" '+checked+' onchange="toggleSelect(\''+f.path+'\')" class="w-4 h-4 accent-primary cursor-pointer">';
 		html+='<i class="'+icon+' text-lg w-6 text-center"></i>';
-		if(f.is_dir&&!isTrash)html+='<a href="#" onclick="navTo(\''+f.path+'\')" class="flex-1 text-sm text-on-surface no-underline hover:text-primary truncate">'+esc(f.name)+'</a>';
+		if(isGrid){let isImg=f.mime_type&&f.mime_type.startsWith("image/");html+='<div class="aspect-square bg-surface-container rounded-xl overflow-hidden cursor-pointer hover:opacity-90 relative group" onclick="'+(!f.is_dir?'previewFile(\''+f.path+'\',\''+escJS(f.name)+'\',\''+(f.mime_type||"")+'\')':'navTo(\''+f.path+'\')')+'">';
+			if(isImg)html+='<img src="'+apiBase+'/thumb?path='+encodeURIComponent(f.path)+'" alt="" class="w-full h-full object-cover" loading="lazy">';
+			else{let ico=f.is_dir?'fa-folder text-primary text-3xl':'fa-file text-on-surface-variant text-3xl';html+='<div class="w-full h-full flex items-center justify-center"><i class="fa-solid '+ico+'"></i></div>'}
+			html+='<div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 pt-6"><p class="text-white text-[11px] truncate leading-tight">'+esc(f.name)+'</p></div>';
+			if(f.favorited)html+='<i class="fa-solid fa-star text-yellow-400 text-xs absolute top-1.5 right-1.5"></i>';
+			html+='</div>';}
+		else if(f.is_dir&&!isTrash)html+='<a href="#" onclick="navTo(\''+f.path+'\')" class="flex-1 text-sm text-on-surface no-underline hover:text-primary truncate">'+esc(f.name)+'</a>';
 		else if(isTrash)html+='<span class="flex-1 text-sm text-on-surface truncate">'+esc(f.name)+'</span>';
 		else html+='<a href="'+apiBase+'/download?path='+encodeURIComponent(f.path)+'" class="flex-1 text-sm text-on-surface no-underline hover:text-primary truncate" download>'+esc(f.name)+'</a>';
 		html+='<span class="text-xs text-on-surface-variant w-20 text-right hidden sm:inline">'+size+'</span>';
@@ -230,6 +256,18 @@ function doMove(){let dest=document.getElementById("move-target").value;let prom
 
 function toggleFav(path){apiPost("/favorite",{path:path}).then(loadFiles)}
 function searchFiles(){let q=document.getElementById("search-input").value.trim();if(!q){loadFiles();return}api("search",{q:q}).then(d=>renderFiles(d.files||[],"/"))}
+function toggleView(){viewMode=viewMode==="list"?"grid":"list";document.getElementById("view-icon").className=viewMode==="grid"?"fa-solid fa-grip":"fa-solid fa-list";document.getElementById("view-label").textContent=viewMode==="grid"?"Grid":"List";loadFiles()}
+function previewFile(path,name,mime){document.getElementById("preview-title").textContent=name;let pc=document.getElementById("preview-content");document.getElementById("preview-panel").classList.remove("hidden");
+	if(mime&&mime.startsWith("image/")){pc.innerHTML='<img src="'+apiBase+'/download?path='+encodeURIComponent(path)+'" class="max-w-full rounded-lg cursor-pointer" onclick="openLightbox(''+path+'')">'}
+	else if(mime&&mime.startsWith("audio/")){pc.innerHTML='<audio controls class="w-full mt-4"><source src="'+apiBase+'/download?path='+encodeURIComponent(path)+'" type="'+mime+'"></audio>'}
+	else if(mime&&mime.startsWith("video/")){pc.innerHTML='<video controls class="max-w-full rounded-lg mt-4"><source src="'+apiBase+'/download?path='+encodeURIComponent(path)+'" type="'+mime+'"></video>'}
+	else{api("preview",{path:path}).then(d=>{let t=d.type||"";let c=esc(d.content||"");if(t.includes("markdown")||name.endsWith(".md"))pc.innerHTML='<div class="prose prose-sm text-sm">'+mdToHtml(c)+'</div>';else pc.innerHTML='<pre class="text-xs whitespace-pre-wrap font-mono bg-surface-container p-3 rounded-xl overflow-x-auto">'+c+'</pre>'})}}
+function closePreview(){document.getElementById("preview-panel").classList.add("hidden")}
+function openLightbox(path){let imgs=[];document.querySelectorAll("#file-list a[download]").forEach(a=>{let p=new URL(a.href).searchParams.get("path");if(p&&p.match(/\.(png|jpg|jpeg|gif|webp|svg)/i))imgs.push(p)});lightboxFiles=imgs;lightboxIdx=lightboxFiles.indexOf(path);if(lightboxIdx<0)lightboxIdx=0;showLightbox()}
+function showLightbox(){document.getElementById("lightbox-img").src=apiBase+"/download?path="+encodeURIComponent(lightboxFiles[lightboxIdx]||"");document.getElementById("img-lightbox").classList.remove("hidden")}
+function closeLightbox(){document.getElementById("img-lightbox").classList.add("hidden")}
+function navLightbox(d){lightboxIdx+=d;if(lightboxIdx<0)lightboxIdx=lightboxFiles.length-1;if(lightboxIdx>=lightboxFiles.length)lightboxIdx=0;showLightbox()}
+function mdToHtml(md){return md.replace(/^### (.+)/gm,'<h3 class="text-base font-semibold mt-3 mb-1">$1</h3>').replace(/^## (.+)/gm,'<h2 class="text-lg font-semibold mt-3 mb-1">$1</h2>').replace(/^# (.+)/gm,'<h1 class="text-xl font-bold mt-3 mb-2">$1</h1>').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>').replace(/\\x60(.+?)\\x60/g,'<code class="bg-surface-container-high px-1 rounded text-xs">$1</code>').replace(/^- (.+)/gm,'<li class="ml-4 list-disc">$1</li>').replace(/\n/g,'<br>')}
 
 function setupDragDrop(){
 	let dz=document.getElementById("drop-zone");
