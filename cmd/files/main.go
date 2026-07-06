@@ -42,6 +42,8 @@ func main() {
 	mux.HandleFunc("/delete-permanent", handleDeletePermanent)
 	mux.HandleFunc("/favorite", handleFavorite)
 	mux.HandleFunc("/search", handleSearch)
+	mux.HandleFunc("/tags", handleTags)
+	mux.HandleFunc("/tag", handleTag)
 	mux.HandleFunc("/thumb", handleThumbnail)
 	mux.HandleFunc("/preview", handlePreview)
 	mux.HandleFunc("/health", handleHealth)
@@ -57,10 +59,17 @@ type FileEntry struct {
 	MimeType  string `json:"mime_type"`
 	IsDir     bool   `json:"is_dir"`
 	UpdatedAt int64  `json:"updated_at"`
-	Favorited bool   `json:"favorited"`
-	TrashPath string `json:"trash_path,omitempty"`
+	Favorited bool     `json:"favorited"`
+	Tags      []string `json:"tags"`
+	TrashPath string   `json:"trash_path,omitempty"`
 }
 
+
+type Tag struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
 type FileResponse struct {
 	Files []FileEntry `json:"files"`
 	Path  string      `json:"path"`
@@ -145,15 +154,27 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 				rel, _ := filepath.Rel(rt.root, p)
 				vp := rt.prefix + "/" + filepath.ToSlash(rel)
 				if info.IsDir() && favs[vp] {
-					files = append(files, makeEntry(info, vp, favs))
+					files = append(files, makeEntry(info, vp, favs, loadFileTags(uid)))
 					return filepath.SkipDir
 				}
 				if favs[vp] {
-					files = append(files, makeEntry(info, vp, favs))
+					files = append(files, makeEntry(info, vp, favs, loadFileTags(uid)))
 				}
 				return nil
 			})
 		}
+		sort.Slice(files, func(i, j int) bool { return files[i].UpdatedAt > files[j].UpdatedAt })
+		writeJSON(w, FileResponse{Files: files, Path: "/"})
+		return
+	}
+
+		// Tag filter
+	if filter == "tag" {
+		tagID := r.URL.Query().Get("tag")
+		ft := loadFileTags(uid)
+		var files []FileEntry
+		addTaggedFiles(uid, userHome(uid), "", ft, tagID, favs, &files)
+		addTaggedFiles(uid, filesDir(uid), "/files", ft, tagID, favs, &files)
 		sort.Slice(files, func(i, j int) bool { return files[i].UpdatedAt > files[j].UpdatedAt })
 		writeJSON(w, FileResponse{Files: files, Path: "/"})
 		return
@@ -166,7 +187,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		info, _ := e.Info()
 		childPath := vpath + "/" + e.Name()
 		if vpath == "/" || vpath == "" { childPath = "/" + e.Name() }
-		files = append(files, makeEntry(info, childPath, favs))
+		files = append(files, makeEntry(info, childPath, favs, loadFileTags(uid)))
 	}
 	sort.Slice(files, func(i, j int) bool {
 		if files[i].IsDir != files[j].IsDir { return files[i].IsDir }
@@ -176,12 +197,13 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, FileResponse{Files: files, Path: vpath})
 }
 
-func makeEntry(info os.FileInfo, path string, favs map[string]bool) FileEntry {
+func makeEntry(info os.FileInfo, path string, favs map[string]bool, ftags map[string][]string) FileEntry {
 	mtype := ""
 	if !info.IsDir() { mtype = mime.TypeByExtension(filepath.Ext(info.Name())) }
 	return FileEntry{
 		Name: info.Name(), Path: path, Size: info.Size(), MimeType: mtype,
 		IsDir: info.IsDir(), UpdatedAt: info.ModTime().Unix(), Favorited: favs[path],
+		Tags: ftags[path],
 	}
 }
 
@@ -340,6 +362,87 @@ func handleFavorite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"status": "ok", "favorited": favs[vpath]})
 }
 
+
+func loadTags(uid string) map[string]Tag {
+	data, _ := os.ReadFile(filepath.Join(*dataRoot, uid, "tags.json"))
+	var m map[string]Tag
+	json.Unmarshal(data, &m)
+	if m == nil { m = map[string]Tag{} }
+	return m
+}
+func saveTags(uid string, m map[string]Tag) {
+	data, _ := json.Marshal(m)
+	os.MkdirAll(filepath.Join(*dataRoot, uid), 0755)
+	os.WriteFile(filepath.Join(*dataRoot, uid, "tags.json"), data, 0644)
+}
+func loadFileTags(uid string) map[string][]string {
+	data, _ := os.ReadFile(filepath.Join(*dataRoot, uid, "file_tags.json"))
+	var m map[string][]string
+	json.Unmarshal(data, &m)
+	if m == nil { m = map[string][]string{} }
+	return m
+}
+func saveFileTags(uid string, m map[string][]string) {
+	data, _ := json.Marshal(m)
+	os.MkdirAll(filepath.Join(*dataRoot, uid), 0755)
+	os.WriteFile(filepath.Join(*dataRoot, uid, "file_tags.json"), data, 0644)
+}
+
+func handleTags(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	switch r.Method {
+	case "GET":
+		writeJSON(w, map[string]any{"tags": loadTags(uid)})
+	case "POST":
+		var t Tag
+		json.NewDecoder(r.Body).Decode(&t)
+		if t.Color == "" { t.Color = "#6366f1" }
+		tags := loadTags(uid)
+		t.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+		tags[t.ID] = t
+		saveTags(uid, tags)
+		writeJSON(w, t)
+	case "DELETE":
+		id := r.URL.Query().Get("id")
+		tags := loadTags(uid)
+		delete(tags, id)
+		saveTags(uid, tags)
+		writeJSON(w, map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func handleTag(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	if r.Method != http.MethodPost { http.Error(w, "method not allowed", 405); return }
+	var req struct {
+		Path string `json:"path"`
+		Tag  string `json:"tag"`
+		Add  *bool  `json:"add"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	ft := loadFileTags(uid)
+	list := ft[req.Path]
+	if req.Add == nil || *req.Add {
+		// Add tag
+		for _, t := range list {
+			if t == req.Tag { writeJSON(w, map[string]any{"status": "ok", "tags": list}); return }
+		}
+		ft[req.Path] = append(list, req.Tag)
+	} else {
+		// Remove tag
+		var newList []string
+		for _, t := range list {
+			if t != req.Tag { newList = append(newList, t) }
+		}
+		ft[req.Path] = newList
+	}
+	saveFileTags(uid, ft)
+	writeJSON(w, map[string]any{"status": "ok", "tags": ft[req.Path]})
+}
+
+// Update handleList to include tags and support tag filter
 func handleSearch(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
 	q := strings.ToLower(r.URL.Query().Get("q"))
@@ -352,7 +455,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(strings.ToLower(info.Name()), q) {
 				rel, _ := filepath.Rel(root, p)
 				vp := "/" + filepath.ToSlash(rel)
-				results = append(results, makeEntry(info, vp, favs))
+				results = append(results, makeEntry(info, vp, favs, loadFileTags(uid)))
 			}
 			if len(results) >= 100 { return filepath.SkipAll }
 			return nil
@@ -410,4 +513,20 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 	content := string(data)
 	if len(content) > 512*1024 { content = content[:512*1024] }
 	writeJSON(w, map[string]string{"type": mtype, "content": content, "name": filepath.Base(vpath)})
+}
+
+func addTaggedFiles(uid, root, prefix string, ft map[string][]string, tagID string, favs map[string]bool, files *[]FileEntry) {
+	filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err != nil || p == root { return nil }
+		rel, _ := filepath.Rel(root, p)
+		vp := prefix + "/" + filepath.ToSlash(rel)
+		for _, t := range ft[vp] {
+			if t == tagID {
+				*files = append(*files, makeEntry(info, vp, favs, ft))
+				if info.IsDir() { return filepath.SkipDir }
+				return nil
+			}
+		}
+		return nil
+	})
 }

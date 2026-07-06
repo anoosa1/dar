@@ -78,6 +78,11 @@ func filesHTML() string {
 		</div>
 	</div>
 
+	</div>
+		<button onclick="showTagManager()" class="h-10 px-3 rounded-full bg-surface-container-high text-on-surface text-sm font-medium border-0 cursor-pointer hover:bg-surface-container-highest inline-flex items-center gap-1">
+			<i class="fa-solid fa-tags"></i></button>
+	</div>
+
 	<!-- Breadcrumbs -->
 	<nav id="breadcrumbs" class="flex items-center gap-1 text-sm px-4 md:px-6 py-2 border-b border-outline-variant flex-wrap shrink-0"></nav>
 
@@ -106,6 +111,19 @@ func filesHTML() string {
 		<button id="lightbox-prev" class="absolute left-4 top-1/2 -translate-y-1/2 text-white text-3xl bg-transparent border-0 cursor-pointer hover:opacity-70" onclick="event.stopPropagation();navLightbox(-1)"><i class="fa-solid fa-chevron-left"></i></button>
 		<img id="lightbox-img" class="max-w-[90vw] max-h-[85vh] object-contain rounded-lg" src="" onclick="event.stopPropagation()">
 		<button id="lightbox-next" class="absolute right-4 top-1/2 -translate-y-1/2 text-white text-3xl bg-transparent border-0 cursor-pointer hover:opacity-70" onclick="event.stopPropagation();navLightbox(1)"><i class="fa-solid fa-chevron-right"></i></button>
+	</div>
+
+	<!-- Tag manager modal -->
+	<div id="tag-modal" class="hidden fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)document.getElementById('tag-modal').classList.add('hidden')">
+		<div class="bg-surface rounded-2xl p-6 w-full max-w-sm shadow-2">
+			<h2 class="text-lg font-semibold mb-4">Tags</h2>
+			<div id="tag-list" class="space-y-2 mb-4 max-h-64 overflow-y-auto"></div>
+			<div class="flex gap-2">
+				<input id="new-tag-name" placeholder="Tag name" class="flex-1 h-10 px-4 rounded-full bg-surface-container text-sm border-0 outline-none focus:ring-2 focus:ring-primary/30">
+				<input id="new-tag-color" type="color" value="#6366f1" class="w-10 h-10 rounded-full border-0 cursor-pointer p-0">
+				<button onclick="createTag()" class="h-10 px-4 rounded-full bg-primary text-white text-sm font-medium border-0 cursor-pointer hover:opacity-90"><i class="fa-solid fa-plus"></i></button>
+			</div>
+		</div>
 	</div>
 
 	<!-- Rename modal -->
@@ -150,9 +168,10 @@ function init(){
 	else if(fp)currentPath="/files/"+fp;
 	else if(window.location.pathname==="/files")currentPath="/";
 	else currentPath="/files";
-	loadFiles();
+	loadTagMap();loadFiles();
 	setupDragDrop();
 }
+function loadTagMap(){api("tags",{}).then(d=>{window._tagMap=d.tags||{}})
 
 async function api(method,params){
 	let url=apiBase+"/"+method+"?"+new URLSearchParams(params);
@@ -166,7 +185,7 @@ async function apiPost(path,params){
 
 function loadFiles(){
 	let params={path:currentPath};
-	if(window._filter)params.filter=window._filter;
+	if(window._filter)params.filter=window._filter;if(window._tagFilter)params.tag=window._tagFilter;
 	api("list",params).then(d=>renderFiles(d.files||[],d.path));
 }
 
@@ -213,11 +232,14 @@ function renderFiles(files,path){
 		else html+='<a href="'+apiBase+'/download?path='+encodeURIComponent(f.path)+'" class="flex-1 text-sm text-on-surface no-underline hover:text-primary truncate" download>'+esc(f.name)+'</a>';
 		html+='<span class="text-xs text-on-surface-variant w-20 text-right hidden sm:inline">'+size+'</span>';
 		html+=favIcon;
+		if(!isGrid&&f.tags&&f.tags.length>0){html+='<div class="flex gap-1 ml-2">';f.tags.forEach(tid=>{
+			let tg=window._tagMap?.[tid];if(tg)html+='<span class="text-[10px] px-2 py-0.5 rounded-full text-white cursor-pointer" style="background:'+tg.color+'" onclick="event.stopPropagation();filterByTag(''+tid+'')">'+esc(tg.name)+'</span>'});html+='</div>'}
 		if(isTrash){
 			html+='<button onclick="restoreItem(\''+f.trash_path+'\')" class="text-xs text-primary cursor-pointer border-0 bg-transparent hover:underline">Restore</button>';
 			html+='<button onclick="deletePermanent(\''+f.trash_path+'\')" class="w-8 h-8 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant hover:text-error opacity-0 group-hover:opacity-100"><i class="fa-solid fa-trash text-xs"></i></button>';
 		}else{
 			html+='<button onclick="startRename(\''+f.path+'\',\''+escJS(f.name)+'\')" class="w-8 h-8 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant hover:text-primary opacity-0 group-hover:opacity-100"><i class="fa-solid fa-pen text-xs"></i></button>';
+			html+='<button onclick="assignTag(\''+f.path+'\')" class="w-8 h-8 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant hover:text-primary opacity-0 group-hover:opacity-100"><i class="fa-solid fa-tag text-xs"></i></button>';
 			html+='<button onclick="deleteItem(\''+f.path+'\')" class="w-8 h-8 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant hover:text-error opacity-0 group-hover:opacity-100"><i class="fa-solid fa-trash text-xs"></i></button>';
 		}
 		html+='</div>';
@@ -254,7 +276,15 @@ function bulkMove(){moveTargets=[...selectedPaths];document.getElementById("move
 function closeMove(){document.getElementById("move-modal").classList.add("hidden")}
 function doMove(){let dest=document.getElementById("move-target").value;let promises=[];moveTargets.forEach(p=>{let name=p.substring(p.lastIndexOf("/")+1);promises.push(apiPost("/move",{src:p,dst:dest+"/"+name}))});Promise.all(promises).then(()=>{selectedPaths.clear();closeMove();loadFiles()})}
 
+function assignTag(path){let tags=Object.values(window._tagMap||{}).map(t=>'<button onclick="toggleFileTag(\''+path+'\',\''+t.id+'\')" class="w-full text-left px-3 py-2 text-sm hover:bg-surface-container-high rounded-lg cursor-pointer border-0 bg-transparent flex items-center gap-2"><span class="w-3 h-3 rounded-full shrink-0" style="background:'+t.color+'"></span>'+esc(t.name)+'</button>').join("");let d=document.createElement("div");d.className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4";d.onclick=function(e){if(e.target===this)d.remove()};d.innerHTML='<div class="bg-surface rounded-2xl p-4 w-48 shadow-2"><h3 class="text-sm font-semibold mb-2">Assign tag</h3><div class="space-y-1">'+tags+'</div><button onclick="this.parentElement.parentElement.parentElement.remove()" class="mt-2 w-full h-9 rounded-full text-sm text-on-surface-variant border-0 bg-transparent cursor-pointer">Cancel</button></div>';document.body.appendChild(d)}
+function toggleFileTag(path,tid){tagApi("/tag",{path:path,tag:tid,add:true}).then(loadFiles)}
 function toggleFav(path){apiPost("/favorite",{path:path}).then(loadFiles)}
+function filterByTag(tid){window._filter="tag";window._tagFilter=tid;window.history.pushState({},"","/files?filter=tag&tag="+tid);currentPath="/";loadFiles()}
+function showTagManager(){document.getElementById("tag-modal").classList.remove("hidden");loadTagList()}
+function loadTagList(){api("tags",{}).then(d=>{window._tagMap=d.tags||{};let div=document.getElementById("tag-list");let tags=Object.values(d.tags||{});div.innerHTML=tags.map(t=>'<div class="flex items-center gap-2"><span class="w-4 h-4 rounded-full shrink-0" style="background:'+t.color+'"></span><span class="text-sm flex-1">'+esc(t.name)+'</span><button onclick="deleteTag(''+t.id+'')" class="w-6 h-6 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant hover:text-error text-xs"><i class="fa-solid fa-trash"></i></button></div>').join("")||'<p class="text-sm text-on-surface-variant">No tags</p>';loadFiles()})}
+function createTag(){let n=document.getElementById("new-tag-name").value.trim();let c=document.getElementById("new-tag-color").value;if(!n)return;tagApi("/tags",{name:n,color:c}).then(r=>{document.getElementById("new-tag-name").value="";loadTagList()})}
+function deleteTag(id){tagApi("/tags?id="+id,{}).then(loadTagList)}
+async function tagApi(path,body){let r=await fetch(apiBase+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});return r.json()}
 function searchFiles(){let q=document.getElementById("search-input").value.trim();if(!q){loadFiles();return}api("search",{q:q}).then(d=>renderFiles(d.files||[],"/"))}
 function toggleView(){viewMode=viewMode==="list"?"grid":"list";document.getElementById("view-icon").className=viewMode==="grid"?"fa-solid fa-grip":"fa-solid fa-list";document.getElementById("view-label").textContent=viewMode==="grid"?"Grid":"List";loadFiles()}
 function previewFile(path,name,mime){document.getElementById("preview-title").textContent=name;let pc=document.getElementById("preview-content");document.getElementById("preview-panel").classList.remove("hidden");
