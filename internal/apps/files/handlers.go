@@ -207,20 +207,8 @@ async function apiPost(path,params){let r=await fetch(apiBase+path+"?"+new URLSe
 function loadFiles(){let params={path:currentPath};if(window._filter)params.filter=window._filter;if(window._tagFilter)params.tag=window._tagFilter;api("list",params).then(d=>renderFiles(d.files||[],d.path))}
 function renderBreadcrumbs(){let p=currentPath;if(p==="/"){document.getElementById("breadcrumbs").innerHTML='<span class="text-on-surface-variant text-sm"><i class="fa-solid fa-folder mr-1"></i></span>';return}
 	if(p==="/trash"){document.getElementById("breadcrumbs").innerHTML='<a href="#" onclick="navTo(\'/\')" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a><span class="text-on-surface-variant">/</span><span class="text-on-surface font-medium">Trash</span>';return}
-	// Build segments: display names vs daemon link paths
-	let segments=p.split("/").filter(x=>x),inFiles=p.startsWith("/files");
-	let display=inFiles?segments.slice(1):segments;
-	let linkAcc="",displayAcc="";
-	let html=inFiles?
-		'<a href="#" onclick="navTo(\'/files\')\" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>':
-		'<a href="#" onclick="navTo(\'/\')\" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>';
-	for(let i=0;i<display.length;i++){
-		displayAcc+="/"+display[i];
-		let linkIdx=inFiles?i+1:i;
-		linkAcc="";for(let j=0;j<=linkIdx;j++)linkAcc+="/"+segments[j];
-		html+='<span class="text-on-surface-variant">/</span>';
-		if(i===display.length-1)html+='<span class="text-on-surface font-medium">'+esc(display[i])+'</span>';
-		else html+='<a href="#" onclick="navTo(\''+linkAcc+'\')" class="text-primary no-underline hover:underline">'+esc(display[i])+'</a>'}
+	let seg=p.split("/").filter(x=>x),inFiles=p.startsWith("/files"),display=inFiles?seg.slice(1):seg,html=inFiles?'<a href="#" onclick="navTo(\'/files\')" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>':'<a href="#" onclick="navTo(\'/\')" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>';
+	for(let i=0;i<display.length;i++){let link="";for(let j=0;j<=(inFiles?i+1:i);j++)link+="/"+seg[j];html+='<span class="text-on-surface-variant">/</span>';if(i===display.length-1)html+='<span class="text-on-surface font-medium">'+esc(display[i])+'</span>';else html+='<a href="#" onclick="navTo(\''+link+'\')" class="text-primary no-underline hover:underline">'+esc(display[i])+'</a>'}
 	document.getElementById("breadcrumbs").innerHTML=html}
 
 function renderFiles(_files,path){let files=applySort([..._files]);currentPath=path;renderBreadcrumbs();let div=document.getElementById("file-list");let ch=document.getElementById("column-headers");if(viewMode==="list"&&!currentPath.includes("/trash"))ch.classList.remove("hidden");else ch.classList.add("hidden");
