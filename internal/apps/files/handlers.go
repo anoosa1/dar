@@ -205,7 +205,23 @@ function loadTagMap(){api("tags",{}).then(d=>{window._tagMap=d.tags||{}})}
 async function api(method,params){let url=apiBase+"/"+method+"?"+new URLSearchParams(params);let r=await fetch(url,{method:method==="upload"?"POST":(params.src?"POST":"GET")});return r.json()}
 async function apiPost(path,params){let r=await fetch(apiBase+path+"?"+new URLSearchParams(params),{method:"POST"});return r.json()}
 function loadFiles(){let params={path:currentPath};if(window._filter)params.filter=window._filter;if(window._tagFilter)params.tag=window._tagFilter;api("list",params).then(d=>renderFiles(d.files||[],d.path))}
-function renderBreadcrumbs(){let display=currentPath;if(display.startsWith("/files/"))display="/Files/"+display.slice(7);else if(display==="/files")display="/Files";let parts=display.split("/").filter(p=>p);let html='<a href="#" onclick="navTo(\'/\')" class="text-primary no-underline hover:underline">Home</a>';let acc="";for(let i=0;i<parts.length;i++){let isFiles=parts[i]==="Files";acc+=isFiles?"/files":"/"+parts[i];html+=' <span class="text-on-surface-variant">/</span> ';if(i===parts.length-1)html+='<span class="text-on-surface font-medium">'+esc(parts[i])+'</span>';else html+='<a href="#" onclick="navTo(\''+acc+'\')" class="text-primary no-underline hover:underline">'+esc(parts[i])+'</a>'}document.getElementById("breadcrumbs").innerHTML=html}
+function renderBreadcrumbs(){let p=currentPath;if(p==="/"){document.getElementById("breadcrumbs").innerHTML='<span class="text-on-surface-variant text-sm"><i class="fa-solid fa-folder mr-1"></i></span>';return}
+	if(p==="/trash"){document.getElementById("breadcrumbs").innerHTML='<a href="#" onclick="navTo(\'/\')" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a><span class="text-on-surface-variant">/</span><span class="text-on-surface font-medium">Trash</span>';return}
+	// Build segments: display names vs daemon link paths
+	let segments=p.split("/").filter(x=>x),inFiles=p.startsWith("/files");
+	let display=inFiles?segments.slice(1):segments;
+	let linkAcc="",displayAcc="";
+	let html=inFiles?
+		'<a href="#" onclick="navTo(\'/files\')\" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>':
+		'<a href="#" onclick="navTo(\'/\')\" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>';
+	for(let i=0;i<display.length;i++){
+		displayAcc+="/"+display[i];
+		let linkIdx=inFiles?i+1:i;
+		linkAcc="";for(let j=0;j<=linkIdx;j++)linkAcc+="/"+segments[j];
+		html+='<span class="text-on-surface-variant">/</span>';
+		if(i===display.length-1)html+='<span class="text-on-surface font-medium">'+esc(display[i])+'</span>';
+		else html+='<a href="#" onclick="navTo(\''+linkAcc+'\')" class="text-primary no-underline hover:underline">'+esc(display[i])+'</a>'}
+	document.getElementById("breadcrumbs").innerHTML=html}
 
 function renderFiles(_files,path){let files=applySort([..._files]);currentPath=path;renderBreadcrumbs();let div=document.getElementById("file-list");let ch=document.getElementById("column-headers");if(viewMode==="list"&&!currentPath.includes("/trash"))ch.classList.remove("hidden");else ch.classList.add("hidden");
 	if(files.length===0){div.innerHTML='<div class="text-center text-on-surface-variant py-12"><i class="fa-solid fa-folder-open text-4xl mb-2 block"></i>'+(currentPath==="/trash"?"Trash is empty":"This folder is empty")+'</div>';return}
