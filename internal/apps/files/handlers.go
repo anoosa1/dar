@@ -208,12 +208,16 @@ function loadTagMap(){api("tags",{}).then(d=>{window._tagMap=d.tags||{}})}
 async function api(method,params){let url=apiBase+"/"+method+"?"+new URLSearchParams(params);let r=await fetch(url,{method:method==="upload"?"POST":(params.src?"POST":"GET")});return r.json()}
 async function apiPost(path,params){let r=await fetch(apiBase+path+"?"+new URLSearchParams(params),{method:"POST"});return r.json()}
 function loadFiles(){let params={path:currentPath};if(window._filter)params.filter=window._filter;if(window._tagFilter)params.tag=window._tagFilter;api("list",params).then(d=>renderFiles(d.files||[],d.path))}
-function renderBreadcrumbs(){let p=currentPath;if(p==="/"){document.getElementById("breadcrumbs").innerHTML='<span class="text-on-surface-variant text-sm"><i class="fa-solid fa-folder mr-1"></i></span>';return}
-	let seg=p.split("/").filter(x=>x),html='<a href="#" onclick="navTo(\'/\')" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>';
-	let acc="";for(let i=0;i<seg.length;i++){acc+="/"+seg[i];html+='<span class="text-on-surface-variant">/</span>';if(i===seg.length-1)html+='<span class="text-on-surface font-medium">'+esc(seg[i])+'</span>';else html+='<a href="#" onclick="navTo(\''+acc+'\')" class="text-primary no-underline hover:underline">'+esc(seg[i])+'</a>'}
+function renderBreadcrumbs(){let p=currentPath,display=p,fp=settings.filesPath||"/files";if(p===fp)display=fp;else if(p.startsWith("/files/"))display=fp+p.slice(6);if(display==="/"){document.getElementById("breadcrumbs").innerHTML='<span class="text-on-surface-variant text-sm"><i class="fa-solid fa-folder mr-1"></i></span>';return}
+	let seg=display.split("/").filter(x=>x),html='<a href="#" onclick="navTo(\'/\')" class="text-primary no-underline hover:underline"><i class="fa-solid fa-folder mr-1"></i></a>';
+	let acc="";for(let i=0;i<seg.length;i++){let link=seg.slice(0,i+1).join("/");if(!link.startsWith("/"))link="/"+link;html+='<span class="text-on-surface-variant">/</span>';if(i===seg.length-1)html+='<span class="text-on-surface font-medium">'+esc(seg[i])+'</span>';else html+='<a href="#" onclick="navTo(\''+(p.startsWith("/files/")&&link.startsWith(fp)?"/files"+link.slice(fp.length):link)+'\')" class="text-primary no-underline hover:underline">'+esc(seg[i])+'</a>'}
 	document.getElementById("breadcrumbs").innerHTML=html}
 
-function renderFiles(_files,path){let files=applySort([..._files]);currentPath=path;renderBreadcrumbs();let div=document.getElementById("file-list");let ch=document.getElementById("column-headers");if(viewMode==="list"&&!currentPath.includes("/trash"))ch.classList.remove("hidden");else ch.classList.add("hidden");
+function renderFiles(_files,path){let files=applySort([..._files]);let fp=settings.filesPath||"/files";let tp=settings.trashPath||"/trash";
+	// Remap virtual folder names to match settings paths
+	for(let f of files){if(f.path==="/files"&&fp!=="/files"){f.name=fp.substring(fp.lastIndexOf("/")+1)||fp;f.path=fp}
+	else if(f.path==="/trash"&&tp!=="/trash"){f.name=tp.substring(tp.lastIndexOf("/")+1)||tp;f.path=tp}}
+	currentPath=path;renderBreadcrumbs();let div=document.getElementById("file-list");let ch=document.getElementById("column-headers");if(viewMode==="list"&&!currentPath.includes("/trash"))ch.classList.remove("hidden");else ch.classList.add("hidden");
 	if(files.length===0){div.innerHTML='<div class="text-center text-on-surface-variant py-12"><i class="fa-solid fa-folder-open text-4xl mb-2 block"></i>'+(currentPath==="/trash"?"Trash is empty":"This folder is empty")+'</div>';return}
 	let isTrash=currentPath==="/trash",isGrid=viewMode==="grid"&&!isTrash;
 	let html=isGrid?'<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 p-2">':'<div class="divide-y divide-outline-variant">';
