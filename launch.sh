@@ -9,6 +9,7 @@ FILES_PORT=8082
 CONTACTS_PORT=8083
 CALENDAR_PORT=8084
 TODO_PORT=8085
+NOTES_PORT=8086
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -19,6 +20,7 @@ while [[ $# -gt 0 ]]; do
     --contacts-port) CONTACTS_PORT="$2"; shift 2;;
     --calendar-port) CALENDAR_PORT="$2"; shift 2;;
     --todo-port) TODO_PORT="$2"; shift 2;;
+    --notes-port) NOTES_PORT="$2"; shift 2;;
     --host)       HOST="$2";        shift 2;;
     --db)         DB="$2";          shift 2;;
     --no-build)   NO_BUILD=1;       shift;;
@@ -33,9 +35,10 @@ BIN_FILES=./dar-daemon-files
 BIN_CONTACTS=./dar-daemon-contacts
 BIN_CALENDAR=./dar-daemon-calendar
 BIN_TODO=./dar-daemon-todo
+BIN_NOTES=./dar-daemon-notes
 OIDC_BASE="http://$HOST:$OIDC_PORT"
 
-trap 'kill $OIDC_PID 2>/dev/null; kill $SOOSA_PID 2>/dev/null; kill $FILES_PID 2>/dev/null; kill $CONTACTS_PID 2>/dev/null; kill $CALENDAR_PID 2>/dev/null; kill $TODO_PID 2>/dev/null; kill $DAR_PID 2>/dev/null; wait' EXIT INT TERM
+trap 'kill $OIDC_PID 2>/dev/null; kill $SOOSA_PID 2>/dev/null; kill $FILES_PID 2>/dev/null; kill $CONTACTS_PID 2>/dev/null; kill $CALENDAR_PID 2>/dev/null; kill $TODO_PID 2>/dev/null; kill $NOTES_PID 2>/dev/null; kill $DAR_PID 2>/dev/null; wait' EXIT INT TERM
 
 if [[ -z "${NO_BUILD:-}" ]]; then
   echo "Building..."
@@ -46,6 +49,7 @@ if [[ -z "${NO_BUILD:-}" ]]; then
   nix-shell -p go --command "go build -o $BIN_CONTACTS ./cmd/contacts/"
   nix-shell -p go --command "go build -o $BIN_CALENDAR ./cmd/calendar/"
   nix-shell -p go --command "go build -o $BIN_TODO ./cmd/todo/"
+  nix-shell -p go --command "go build -o $BIN_NOTES ./cmd/notes/"
   echo "  ok"
 fi
 
@@ -110,6 +114,16 @@ done
 echo "  Todo ready"
 
 echo ""
+echo "Starting Notes daemon on :$NOTES_PORT..."
+$BIN_NOTES --port "$NOTES_PORT" &
+NOTES_PID=$!
+for i in $(seq 1 20); do
+  curl -s "http://$HOST:$NOTES_PORT/health" >/dev/null 2>&1 && break
+  sleep 0.2
+done
+echo "  Notes ready"
+
+echo ""
 echo "Starting Dar on :$PORT..."
 echo "  Home:   http://$HOST:$PORT"
 echo "  OIDC:   $OIDC_BASE"
@@ -131,6 +145,7 @@ env \
   DAR_CONTACTS_PORT="$CONTACTS_PORT" \
   DAR_CALENDAR_PORT="$CALENDAR_PORT" \
   DAR_TODO_PORT="$TODO_PORT" \
+  DAR_NOTES_PORT="$NOTES_PORT" \
   $BIN_SERVER --port "$PORT" --db "$DB" &
 DAR_PID=$!
 

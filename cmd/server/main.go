@@ -21,6 +21,7 @@ import (
 	"github.com/anoosa/dar/internal/webui"
 
 	calendarApp "github.com/anoosa/dar/internal/apps/calendar"
+	notesApp "github.com/anoosa/dar/internal/apps/notes"
 	todoApp "github.com/anoosa/dar/internal/apps/todo"
 	contactsApp "github.com/anoosa/dar/internal/apps/contacts"
 	filesApp "github.com/anoosa/dar/internal/apps/files"
@@ -82,6 +83,7 @@ func main() {
 	registry.Register(contactsApp.App{})
 	registry.Register(calendarApp.App{})
 	registry.Register(todoApp.App{})
+	registry.Register(notesApp.App{})
 
 	// ── Daemon Manager ──
 	dm := daemon.NewManager()
@@ -101,6 +103,7 @@ func main() {
 	srv.Router.HandleFunc("/api/contacts/*", proxyContacts)
 	srv.Router.HandleFunc("/api/calendar/*", proxyCalendar)
 	srv.Router.HandleFunc("/api/todo/*", proxyTodo)
+	srv.Router.HandleFunc("/api/notes/*", proxyNotes)
 
 	// Register app routes.
 	for _, app := range registry.Apps() {
@@ -322,6 +325,25 @@ func proxyContacts(w http.ResponseWriter, r *http.Request) {
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/contacts")
+			if pr.Out.URL.Path == "" {
+				pr.Out.URL.Path = "/"
+			}
+		},
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+// proxyNotes forwards /api/notes/* requests to the notes daemon.
+func proxyNotes(w http.ResponseWriter, r *http.Request) {
+	port := os.Getenv("DAR_NOTES_PORT")
+	if port == "" {
+		port = "8086"
+	}
+	target, _ := url.Parse("http://localhost:" + port)
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/notes")
 			if pr.Out.URL.Path == "" {
 				pr.Out.URL.Path = "/"
 			}
