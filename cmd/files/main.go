@@ -49,6 +49,7 @@ func main() {
 	mux.HandleFunc("/preview", handlePreview)
 	mux.HandleFunc("/versions", handleVersions)
 	mux.HandleFunc("/version", handleVersion)
+	mux.HandleFunc("/diff", handleDiff)
 	mux.HandleFunc("/stats", handleStats)
 	mux.HandleFunc("/share", handleShare)
 	mux.HandleFunc("/shared", handleShared)
@@ -628,6 +629,31 @@ func handleUserShare(w http.ResponseWriter, r *http.Request) {
 func handleSharedWithMe(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
 	writeJSON(w, map[string]any{"shares": loadUserShares(uid)})
+}
+
+
+func handleDiff(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	vpath := r.URL.Query().Get("path")
+	v1 := r.URL.Query().Get("v1")
+	v2 := r.URL.Query().Get("v2")
+	vd := versionsDir(uid, vpath)
+	d1, _ := os.ReadFile(filepath.Join(vd, v1))
+	d2, _ := os.ReadFile(filepath.Join(vd, v2))
+	lines1 := strings.Split(string(d1), "\n")
+	lines2 := strings.Split(string(d2), "\n")
+	var diff []string
+	i, j := 0, 0
+	for i < len(lines1) || j < len(lines2) {
+		if i < len(lines1) && j < len(lines2) && lines1[i] == lines2[j] {
+			diff = append(diff, "  "+lines1[i]); i++; j++
+		} else if i < len(lines1) && (j >= len(lines2) || lines1[i] != lines2[j]) {
+			diff = append(diff, "- "+lines1[i]); i++
+		} else {
+			diff = append(diff, "+ "+lines2[j]); j++
+		}
+	}
+	writeJSON(w, map[string]any{"diff": strings.Join(diff, "\n")})
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {

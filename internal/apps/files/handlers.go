@@ -95,6 +95,15 @@ func filesHTML() string {
 		<div class="text-center text-on-surface-variant py-12">Loading...</div>
 	</div>
 
+	<!-- Details sidebar -->
+	<div id="details-bar" class="hidden fixed inset-y-0 right-0 w-80 bg-surface border-l border-outline-variant z-40 shadow-2 flex flex-col" onclick="event.stopPropagation()">
+		<div class="flex items-center gap-2 p-4 border-b border-outline-variant">
+			<h3 id="details-title" class="text-sm font-semibold flex-1 truncate"></h3>
+			<button onclick="document.getElementById('details-bar').classList.add('hidden')" class="w-8 h-8 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant">&times;</button>
+		</div>
+		<div id="details-body" class="flex-1 overflow-y-auto p-4 text-sm space-y-3"></div>
+	</div>
+
 	<!-- Context menu -->
 	<div id="ctx-menu" class="hidden fixed z-[60] bg-surface-container rounded-xl shadow-2 border border-outline-variant py-1 min-w-[160px]" onclick="event.stopPropagation()">
 		<button onclick="ctxAction('rename')" class="w-full text-left px-4 py-2 text-sm hover:bg-surface-container-high border-0 bg-transparent cursor-pointer"><i class="fa-solid fa-pen w-4 mr-2"></i>Rename</button>
@@ -175,6 +184,18 @@ function changeSort(){sortBy=document.getElementById("sort-select").value;loadFi
 function applySort(files){let[s,d]=sortBy.split("-");return files.sort((a,b)=>{let v=0;if(s==="name")v=a.name.localeCompare(b.name);else if(s==="date")v=a.updated_at-b.updated_at;else v=a.size-b.size;return d==="desc"?-v:v})}
 function showCtx(e,path){e.preventDefault();ctxTarget=path;let m=document.getElementById("ctx-menu");m.style.left=e.clientX+"px";m.style.top=e.clientY+"px";m.classList.remove("hidden")}
 function ctxAction(action){let p=ctxTarget;ctxTarget=null;document.getElementById("ctx-menu").classList.add("hidden");if(action==="rename"){let n=p.substring(p.lastIndexOf("/")+1);startRename(p,n)}else if(action==="download")window.open(apiBase+"/download?path="+encodeURIComponent(p));else if(action==="delete")deleteItem(p)}
+function showDetails(path,name,size,date,isDir){document.getElementById("details-title").textContent=name;document.getElementById("details-bar").classList.remove("hidden");let b=document.getElementById("details-body");Promise.all([api("versions",{path:path}),api("comments",{path:path}),api("shared",{}),api("lock",{path:path})]).then(([v,c,s,l])=>{let vc=(v.versions||[]).length;let cc=(c.comments||[]).length;let shares=Object.values(s.shares||{}).filter(x=>x.path===path);let locked=l.locked;b.innerHTML='<div class="flex items-center gap-2"><i class="fa-solid '+ (isDir?'fa-folder text-primary':'fa-file text-on-surface-variant') +' text-2xl"></i><div><p class="font-medium">'+esc(name)+'</p><p class="text-xs text-on-surface-variant">'+formatSize(size)+'</p></div></div>'+
+		'<div class="space-y-2"><div class="flex justify-between text-xs"><span class="text-on-surface-variant">Modified</span><span>'+new Date(date*1000).toLocaleString()+'</span></div>'+
+		'<div class="flex justify-between text-xs"><span class="text-on-surface-variant">Versions</span><span>'+vc+'</span></div>'+
+		'<div class="flex justify-between text-xs"><span class="text-on-surface-variant">Comments</span><span>'+cc+'</span></div>'+
+		'<div class="flex justify-between text-xs"><span class="text-on-surface-variant">Shares</span><span>'+shares.length+'</span></div>'+
+		(locked?'<div class="text-xs text-error flex items-center gap-1"><i class="fa-solid fa-lock"></i> Locked</div>':'')+
+		'</div>'+
+		'<div class="flex flex-col gap-1"><button onclick="window.open(\\''+apiBase+'/download?path='+encodeURIComponent(path)+'\\')" class="h-9 rounded-full bg-primary text-white text-xs font-medium border-0 cursor-pointer w-full">Download</button>'+
+		(vc>0?'<button onclick="showVersionDiff(\\''+path+'\\')" class="h-9 rounded-full bg-surface-container-high text-on-surface text-xs font-medium border-0 cursor-pointer w-full">Version Diff</button>':'')+
+		'<button onclick="deleteItem(\\''+path+'\\');document.getElementById(\\'details-bar\\').classList.add(\\'hidden\\')" class="h-9 rounded-full bg-error-container text-error text-xs font-medium border-0 cursor-pointer w-full mt-2">Delete</button></div>')})}
+function showVersionDiff(path){api("versions",{path:path}).then(v=>{let vers=v.versions||[];if(vers.length<2){alert("Need at least 2 versions");return};let b=document.getElementById("details-body");b.innerHTML='<p class="font-medium mb-2">Version Diff</p><select id="diff-v1" class="w-full h-9 px-3 rounded-full bg-surface-container text-xs border-0 mb-1">'+vers.map((v,i)=>'<option value="'+v.id+'"'+(i===1?' selected':'')+'>'+new Date(v.time/1e6).toLocaleString()+'</option>').join("")+'</select><select id="diff-v2" class="w-full h-9 px-3 rounded-full bg-surface-container text-xs border-0 mb-2">'+vers.map((v,i)=>'<option value="'+v.id+'"'+(i===0?' selected':'')+'>'+new Date(v.time/1e6).toLocaleString()+'</option>').join("")+'</select><button onclick="loadDiff(\\''+path+'\\')" class="h-9 rounded-full bg-primary text-white text-xs font-medium border-0 cursor-pointer w-full">Compare</button><pre id="diff-output" class="text-xs mt-2 bg-surface-container p-3 rounded-xl overflow-x-auto max-h-64"></pre>'})}
+function loadDiff(path){let v1=document.getElementById("diff-v1").value;let v2=document.getElementById("diff-v2").value;api("diff",{path:path,v1:v1,v2:v2}).then(d=>{document.getElementById("diff-output").textContent=d.diff||"No differences"})}
 function init(){
 	let fp=window.location.pathname.replace(/\/files\/?/,"");
 	let q=new URLSearchParams(window.location.search);
@@ -245,7 +266,7 @@ function renderFiles(_files,path){let files=applySort([..._files]);
 			html+='</div>';}
 		else if(f.is_dir&&!isTrash)html+='<a href="#" onclick="navTo(\''+f.path+'\')" class="flex-1 text-sm text-on-surface no-underline hover:text-primary truncate">'+esc(f.name)+'</a>';
 		else if(isTrash)html+='<span class="flex-1 text-sm text-on-surface truncate">'+esc(f.name)+'</span>';
-		else html+='<a href="'+apiBase+'/download?path='+encodeURIComponent(f.path)+'" class="flex-1 text-sm text-on-surface no-underline hover:text-primary truncate" download>'+esc(f.name)+'</a>';
+		else html+='<a href="#" onclick="showDetails(\''+f.path+'\',\''+escJS(f.name)+'\','+f.size+','+f.updated_at+','+(f.is_dir?'true':'false')+');return false" class="flex-1 text-sm text-on-surface no-underline hover:text-primary truncate">'+esc(f.name)+'</a>';
 		html+='<span class="text-xs text-on-surface-variant w-20 text-right hidden sm:inline">'+size+'</span>';
 		html+=favIcon;
 		if(!isGrid&&f.tags&&f.tags.length>0){html+='<div class="flex gap-1 ml-2">';f.tags.forEach(tid=>{
