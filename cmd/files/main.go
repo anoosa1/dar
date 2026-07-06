@@ -50,6 +50,7 @@ func main() {
 	mux.HandleFunc("/versions", handleVersions)
 	mux.HandleFunc("/version", handleVersion)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/lock", handleLock)
 	mux.HandleFunc("/activity", handleActivity)
 	mux.HandleFunc("/health", handleHealth)
 	addr := fmt.Sprintf(":%d", *port)
@@ -460,15 +461,34 @@ func handleTag(w http.ResponseWriter, r *http.Request) {
 func handleSearch(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
 	q := strings.ToLower(r.URL.Query().Get("q"))
-	if q == "" { writeJSON(w, FileResponse{Files: []FileEntry{}, Path: "/"}); return }
+	typeFilter := strings.ToLower(r.URL.Query().Get("type"))
+	folderScope := r.URL.Query().Get("folder")
+	if q == "" && typeFilter == "" { writeJSON(w, FileResponse{Files: []FileEntry{}, Path: "/"}); return }
 	favs := loadFavorites(uid)
 	var results []FileEntry
-	for _, root := range []string{userHome(uid), filesDir(uid)} {
+	roots := []string{userHome(uid), filesDir(uid)}
+	if folderScope != "" { roots = []string{realPath(uid, folderScope)} }
+	for _, root := range roots {
 		filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
 			if err != nil || p == root { return nil }
-			if strings.Contains(strings.ToLower(info.Name()), q) {
-				rel, _ := filepath.Rel(root, p)
+			matchesName := q == "" || strings.Contains(strings.ToLower(info.Name()), q)
+			matchesType := true
+			if typeFilter != "" {
+				switch typeFilter {
+				case "folder": matchesType = info.IsDir()
+				case "image": matchesType = !info.IsDir() && strings.HasPrefix(mime.TypeByExtension(filepath.Ext(info.Name())), "image/")
+				case "document": matchesType = !info.IsDir() && (strings.HasSuffix(info.Name(), ".txt") || strings.HasSuffix(info.Name(), ".md") || strings.HasSuffix(info.Name(), ".pdf"))
+				case "video": matchesType = !info.IsDir() && strings.HasPrefix(mime.TypeByExtension(filepath.Ext(info.Name())), "video/")
+				case "audio": matchesType = !info.IsDir() && strings.HasPrefix(mime.TypeByExtension(filepath.Ext(info.Name())), "audio/")
+				}
+			}
+			if matchesName && matchesType {
+				rel, _ := filepath.Rel(userHome(uid), p)
 				vp := "/" + filepath.ToSlash(rel)
+				if root == filesDir(uid) {
+					rel2, _ := filepath.Rel(filesDir(uid), p)
+					vp = "/files/" + filepath.ToSlash(rel2)
+				}
 				results = append(results, makeEntry(info, vp, favs, loadFileTags(uid)))
 			}
 			if len(results) >= 100 { return filepath.SkipAll }
@@ -574,6 +594,34 @@ func logActivity(uid, path, name, action string) {
 	if len(acts) > 500 { acts = acts[len(acts)-500:] }
 	b, _ := json.Marshal(acts)
 	os.WriteFile(d, b, 0644)
+}
+
+
+func handleLock(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	vpath := r.URL.Query().Get("path")
+	lockFile := filepath.Join(*dataRoot, uid, "locks.json")
+	var locks map[string]string
+	data, _ := os.ReadFile(lockFile)
+	json.Unmarshal(data, &locks)
+	if locks == nil { locks = map[string]string{} }
+	switch r.Method {
+	case "GET":
+		owner, locked := locks[vpath]
+		writeJSON(w, map[string]any{"locked": locked, "owner": owner})
+	case "POST":
+		locks[vpath] = uid
+		b, _ := json.Marshal(locks)
+		os.WriteFile(lockFile, b, 0644)
+		writeJSON(w, map[string]any{"status": "locked"})
+	case "DELETE":
+		delete(locks, vpath)
+		b, _ := json.Marshal(locks)
+		os.WriteFile(lockFile, b, 0644)
+		writeJSON(w, map[string]any{"status": "unlocked"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
 }
 
 func handleActivity(w http.ResponseWriter, r *http.Request) {
