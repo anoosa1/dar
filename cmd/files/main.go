@@ -234,6 +234,13 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 			files = append([]FileEntry{{Name: "Shared", Path: "/Shared", IsDir: true, UpdatedAt: time.Now().Unix()}}, files...)
 		}
 	}
+	if vpath == "/" || vpath == "" {
+		hasFiles := false
+		for _, f := range files { if f.Name == "files" || f.Name == "Files" { hasFiles = true; break } }
+		if !hasFiles {
+			files = append([]FileEntry{{Name: "files", Path: "/files", IsDir: true, UpdatedAt: time.Now().Unix(), MimeType: "inode/directory"}}, files...)
+		}
+	}
 	if files == nil { files = []FileEntry{} }
 	writeJSON(w, FileResponse{Files: files, Path: vpath})
 }

@@ -182,7 +182,9 @@ function loadSettings(){try{settings=JSON.parse(localStorage.getItem("dar-files-
 	document.getElementById("set-col-type").checked=!!settings.colType;document.getElementById("set-warn-ext").checked=!!settings.warnExt;
 	document.getElementById("set-warn-create").checked=!!settings.warnCreate;document.getElementById("set-default-view").value=settings.defaultView||"all";
 	document.getElementById("set-files-path").value=settings.filesPath||"/files";document.getElementById("set-trash-path").value=settings.trashPath||"/trash";
-	document.getElementById("webdav-url").value=window.location.origin+"/api/files/webdav/"}
+	document.getElementById("webdav-url").value=window.location.origin+"/api/files/webdav/";
+	// Update sidebar Files link to use configured path
+	let fp=settings.filesPath||"/files";let links=document.querySelectorAll("#sidebar a");links.forEach(a=>{if(a.textContent.trim()==="Files"&&a.querySelector(".fa-file")){a.href="/files?path="+encodeURIComponent(fp);a.querySelector("span").textContent=fp.substring(fp.lastIndexOf("/")+1)||fp}})}
 function saveSettings(){settings={favsFirst:document.getElementById("set-favs-first").checked,foldersFirst:document.getElementById("set-folders-first").checked,
 	showHidden:document.getElementById("set-show-hidden").checked,showExt:document.getElementById("set-show-ext").checked,
 	colSize:document.getElementById("set-col-size").checked,colModified:document.getElementById("set-col-modified").checked,
