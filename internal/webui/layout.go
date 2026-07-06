@@ -76,7 +76,7 @@ func BuildSidebar(items []SidebarItem, settingsHref string) template.HTML {
 	return template.HTML(`<aside class="w-56 shrink-0 bg-surface border-r border-outline-variant min-h-[calc(100vh-56px)] flex flex-col">
 		<nav class="p-3 flex flex-col gap-1 flex-1">` + rows + `</nav>
 		<div class="p-3 border-t border-outline-variant">
-			<a href="` + settingsHref + `" class="flex items-center gap-3 rounded-full px-4 h-10 text-sm text-on-surface-variant no-underline hover:bg-surface-container-highest">
+			<a href="` + settingsHref + `" onclick="event.preventDefault();openSettings()" class="flex items-center gap-3 rounded-full px-4 h-10 text-sm text-on-surface-variant no-underline hover:bg-surface-container-highest">
 				<i class="fa-solid fa-gear w-5 text-center"></i><span>Settings</span>
 			</a>
 		</div>

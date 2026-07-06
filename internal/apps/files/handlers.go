@@ -46,7 +46,7 @@ func renderPage(w io.Writer, r *http.Request, displayName string) error {
 			{Label: "Files", Icon: "fa-solid fa-file", Href: "/files/files", Active: activeFiles},
 			{Label: "Favorites", Icon: "fa-solid fa-star", Href: "/files?filter=favorites", Active: activeFav},
 			{Label: "Trash", Icon: "fa-solid fa-trash", Href: "/files/trash", Active: activeTrash},
-		}, "javascript:openSettings()"),
+		}, "#"),
 		Content: template.HTML(filesHTML()),
 	})
 }
@@ -65,8 +65,8 @@ func filesHTML() string {
 				<button onclick="newFolder()" class="w-full text-left px-4 py-2 text-sm hover:bg-surface-container-high border-0 bg-transparent cursor-pointer flex items-center gap-2"><i class="fa-solid fa-folder-plus w-4"></i>New folder</button>
 				<button onclick="newTextFile()" class="w-full text-left px-4 py-2 text-sm hover:bg-surface-container-high border-0 bg-transparent cursor-pointer flex items-center gap-2"><i class="fa-solid fa-file-lines w-4"></i>New file</button>
 				<hr class="my-1 border-outline-variant">
-				<label class="w-full text-left px-4 py-2 text-sm hover:bg-surface-container-high cursor-pointer flex items-center gap-2"><i class="fa-solid fa-upload w-4"></i>Upload file<input type="file" id="upload-input" onchange="uploadFiles()" class="hidden" multiple></label>
-				<label class="w-full text-left px-4 py-2 text-sm hover:bg-surface-container-high cursor-pointer flex items-center gap-2"><i class="fa-solid fa-folder-open w-4"></i>Upload folder<input type="file" id="folder-input" onchange="uploadFiles()" class="hidden" webkitdirectory multiple></label>
+				<label for="upload-input" class="w-full text-left px-4 py-2 text-sm hover:bg-surface-container-high cursor-pointer flex items-center gap-2"><i class="fa-solid fa-upload w-4"></i>Upload file</label>
+				<label for="folder-input" class="w-full text-left px-4 py-2 text-sm hover:bg-surface-container-high cursor-pointer flex items-center gap-2"><i class="fa-solid fa-folder-open w-4"></i>Upload folder</label>
 			</div>
 		</div>
 		<!-- Bulk actions -->
