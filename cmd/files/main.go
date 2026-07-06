@@ -52,6 +52,7 @@ func main() {
 	mux.HandleFunc("/stats", handleStats)
 	mux.HandleFunc("/share", handleShare)
 	mux.HandleFunc("/shared", handleShared)
+	mux.HandleFunc("/comments", handleComments)
 	mux.HandleFunc("/lock", handleLock)
 	mux.HandleFunc("/activity", handleActivity)
 	mux.HandleFunc("/health", handleHealth)
@@ -621,6 +622,62 @@ func saveShares(uid string, m map[string]Share) {
 	os.WriteFile(filepath.Join(*dataRoot, uid, "shares.json"), data, 0644)
 }
 
+
+type Comment struct {
+	ID        string `json:"id"`
+	Path      string `json:"path"`
+	Author    string `json:"author"`
+	Body      string `json:"body"`
+	ParentID  string `json:"parent_id,omitempty"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+func loadComments(uid, vpath string) []Comment {
+	data, _ := os.ReadFile(filepath.Join(*dataRoot, uid, "comments", filepath.Clean(vpath)+".json"))
+	var c []Comment
+	json.Unmarshal(data, &c)
+	return c
+}
+func saveComments(uid, vpath string, c []Comment) {
+	dir := filepath.Join(*dataRoot, uid, "comments")
+	p := filepath.Join(dir, filepath.Clean(vpath)+".json")
+	os.MkdirAll(filepath.Dir(p), 0755)
+	data, _ := json.Marshal(c)
+	os.WriteFile(p, data, 0644)
+}
+
+func handleComments(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	vpath := r.URL.Query().Get("path")
+	switch r.Method {
+	case "GET":
+		comments := loadComments(uid, vpath)
+		if comments == nil { comments = []Comment{} }
+		writeJSON(w, map[string]any{"comments": comments})
+	case "POST":
+		var c Comment
+		json.NewDecoder(r.Body).Decode(&c)
+		c.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+		c.Path = vpath
+		c.Author = uid
+		c.CreatedAt = time.Now().Unix()
+		comments := loadComments(uid, vpath)
+		comments = append(comments, c)
+		saveComments(uid, vpath, comments)
+		writeJSON(w, c)
+	case "DELETE":
+		id := r.URL.Query().Get("id")
+		comments := loadComments(uid, vpath)
+		for i, c := range comments {
+			if c.ID == id { comments = append(comments[:i], comments[i+1:]...); break }
+		}
+		saveComments(uid, vpath, comments)
+		writeJSON(w, map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
 func handleShare(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "POST":
@@ -674,6 +731,7 @@ func handleShare(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 	}
 }
+
 
 func handleShared(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
