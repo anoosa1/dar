@@ -55,8 +55,8 @@ func filesHTML() string {
 	return `
 <div id="files-app" class="h-[calc(100vh-120px)] flex flex-col -m-4 md:-m-6">
 	<!-- Hidden file inputs (must be in DOM for onchange to fire) -->
-	<input type="file" id="upload-input" onchange="uploadFiles()" class="hidden" multiple>
-	<input type="file" id="folder-input" onchange="uploadFiles()" class="hidden" webkitdirectory multiple>
+	<input type="file" id="upload-input" onchange="uploadFiles(event)" class="hidden" multiple>
+	<input type="file" id="folder-input" onchange="uploadFiles(event)" class="hidden" webkitdirectory multiple>
 	<div class="flex items-center gap-2 px-4 md:px-6 py-3 border-b border-outline-variant shrink-0">
 		<!-- + New button -->
 		<div class="relative" id="new-menu-wrapper">
