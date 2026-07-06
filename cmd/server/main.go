@@ -21,6 +21,7 @@ import (
 	"github.com/anoosa/dar/internal/webui"
 
 	calendarApp "github.com/anoosa/dar/internal/apps/calendar"
+	todoApp "github.com/anoosa/dar/internal/apps/todo"
 	contactsApp "github.com/anoosa/dar/internal/apps/contacts"
 	filesApp "github.com/anoosa/dar/internal/apps/files"
 	soosaApp "github.com/anoosa/dar/internal/apps/soosa"
@@ -80,6 +81,7 @@ func main() {
 	registry.Register(filesApp.App{})
 	registry.Register(contactsApp.App{})
 	registry.Register(calendarApp.App{})
+	registry.Register(todoApp.App{})
 
 	// ── Daemon Manager ──
 	dm := daemon.NewManager()
@@ -98,6 +100,7 @@ func main() {
 	srv.Router.HandleFunc("/api/files/*", proxyFiles)
 	srv.Router.HandleFunc("/api/contacts/*", proxyContacts)
 	srv.Router.HandleFunc("/api/calendar/*", proxyCalendar)
+	srv.Router.HandleFunc("/api/todo/*", proxyTodo)
 
 	// Register app routes.
 	for _, app := range registry.Apps() {
@@ -319,6 +322,25 @@ func proxyContacts(w http.ResponseWriter, r *http.Request) {
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/contacts")
+			if pr.Out.URL.Path == "" {
+				pr.Out.URL.Path = "/"
+			}
+		},
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+// proxyTodo forwards /api/todo/* requests to the todo daemon.
+func proxyTodo(w http.ResponseWriter, r *http.Request) {
+	port := os.Getenv("DAR_TODO_PORT")
+	if port == "" {
+		port = "8085"
+	}
+	target, _ := url.Parse("http://localhost:" + port)
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			pr.Out.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/todo")
 			if pr.Out.URL.Path == "" {
 				pr.Out.URL.Path = "/"
 			}
