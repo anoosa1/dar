@@ -55,6 +55,8 @@ func main() {
 	mux.HandleFunc("/comments", handleComments)
 	mux.HandleFunc("/lock", handleLock)
 	mux.HandleFunc("/activity", handleActivity)
+	mux.HandleFunc("/share-user", handleUserShare)
+	mux.HandleFunc("/shared-with-me", handleSharedWithMe)
 	mux.HandleFunc("/health", handleHealth)
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("[files] listening on :%d", *port)
@@ -79,6 +81,15 @@ type Tag struct {
 	Name  string `json:"name"`
 	Color string `json:"color"`
 }
+type UserShare struct {
+	ID         string `json:"id"`
+	Path       string `json:"path"`
+	FromUser   string `json:"from_user"`
+	ToUser     string `json:"to_user"`
+	Permission string `json:"permission"`
+	Created    int64  `json:"created"`
+}
+
 type FileResponse struct {
 	Files []FileEntry `json:"files"`
 	Path  string      `json:"path"`
@@ -189,6 +200,17 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if vpath == "/Shared" {
+		shares := loadUserShares(uid)
+		var files []FileEntry
+		for _, s := range shares {
+			files = append(files, FileEntry{Name: filepath.Base(s.Path) + " (from " + s.FromUser + ")", Path: s.Path, IsDir: false, UpdatedAt: s.Created})
+		}
+		if files == nil { files = []FileEntry{} }
+		writeJSON(w, FileResponse{Files: files, Path: "/Shared"})
+		return
+	}
+
 	rp := realPath(uid, vpath)
 	entries, _ := os.ReadDir(rp)
 	var files []FileEntry
@@ -202,6 +224,13 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		if files[i].IsDir != files[j].IsDir { return files[i].IsDir }
 		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
 	})
+	if (vpath == "/" || vpath == "") && len(loadUserShares(uid)) > 0 {
+		hasShared := false
+		for _, f := range files { if f.Name == "Shared" { hasShared = true; break } }
+		if !hasShared {
+			files = append([]FileEntry{{Name: "Shared", Path: "/Shared", IsDir: true, UpdatedAt: time.Now().Unix()}}, files...)
+		}
+	}
 	if files == nil { files = []FileEntry{} }
 	writeJSON(w, FileResponse{Files: files, Path: vpath})
 }
@@ -563,6 +592,42 @@ func handleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+
+func handleUserShare(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "POST":
+		var req struct {
+			Path       string `json:"path"`
+			ToUser     string `json:"to_user"`
+			Permission string `json:"permission"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.Permission == "" { req.Permission = "read" }
+		uid := userID(r)
+		share := UserShare{ID: fmt.Sprintf("%d", time.Now().UnixNano()),
+			Path: req.Path, FromUser: uid, ToUser: req.ToUser,
+			Permission: req.Permission, Created: time.Now().Unix()}
+		from := loadUserShares(uid); from = append(from, share); saveUserShares(uid, from)
+		to := loadUserShares(req.ToUser); to = append(to, share); saveUserShares(req.ToUser, to)
+		writeJSON(w, share)
+	case "DELETE":
+		uid := userID(r)
+		id := r.URL.Query().Get("id")
+		shares := loadUserShares(uid)
+		for i, s := range shares {
+			if s.ID == id { shares = append(shares[:i], shares[i+1:]...); saveUserShares(uid, shares); writeJSON(w, map[string]string{"status": "ok"}); return }
+		}
+		http.Error(w, "not found", 404)
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func handleSharedWithMe(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	writeJSON(w, map[string]any{"shares": loadUserShares(uid)})
+}
+
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
 	var total int64
@@ -739,6 +804,20 @@ func handleShared(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"shares": shares})
 }
 
+
+func loadUserShares(uid string) []UserShare {
+	data, _ := os.ReadFile(filepath.Join(*dataRoot, uid, "user_shares.json"))
+	var s []UserShare
+	json.Unmarshal(data, &s)
+	if s == nil { s = []UserShare{} }
+	return s
+}
+func saveUserShares(uid string, s []UserShare) {
+	data, _ := json.Marshal(s)
+	os.MkdirAll(filepath.Join(*dataRoot, uid), 0755)
+	os.WriteFile(filepath.Join(*dataRoot, uid, "user_shares.json"), data, 0644)
+}
+
 func handleLock(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
 	vpath := r.URL.Query().Get("path")
@@ -792,6 +871,17 @@ func writeJSON(w http.ResponseWriter, v any) {
 func handleThumbnail(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
 	vpath := r.URL.Query().Get("path")
+	if vpath == "/Shared" {
+		shares := loadUserShares(uid)
+		var files []FileEntry
+		for _, s := range shares {
+			files = append(files, FileEntry{Name: filepath.Base(s.Path) + " (from " + s.FromUser + ")", Path: s.Path, IsDir: false, UpdatedAt: s.Created})
+		}
+		if files == nil { files = []FileEntry{} }
+		writeJSON(w, FileResponse{Files: files, Path: "/Shared"})
+		return
+	}
+
 	rp := realPath(uid, vpath)
 	src, err := os.Open(rp)
 	if err != nil { http.Error(w, "not found", 404); return }
@@ -820,6 +910,17 @@ func handleThumbnail(w http.ResponseWriter, r *http.Request) {
 func handlePreview(w http.ResponseWriter, r *http.Request) {
 	uid := userID(r)
 	vpath := r.URL.Query().Get("path")
+	if vpath == "/Shared" {
+		shares := loadUserShares(uid)
+		var files []FileEntry
+		for _, s := range shares {
+			files = append(files, FileEntry{Name: filepath.Base(s.Path) + " (from " + s.FromUser + ")", Path: s.Path, IsDir: false, UpdatedAt: s.Created})
+		}
+		if files == nil { files = []FileEntry{} }
+		writeJSON(w, FileResponse{Files: files, Path: "/Shared"})
+		return
+	}
+
 	rp := realPath(uid, vpath)
 	data, err := os.ReadFile(rp)
 	if err != nil { http.Error(w, "not found", 404); return }
