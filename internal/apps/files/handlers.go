@@ -37,16 +37,16 @@ func renderPage(w io.Writer, r *http.Request, displayName string) error {
 	filter := r.URL.Query().Get("filter")
 	pathParam := r.URL.Query().Get("path")
 	activeAll := urlPath == "" && filter == "" && pathParam == ""
-	activeFiles := urlPath == "/files" || urlPath != "" && pathParam == "/files"
-	activeTrash := urlPath == "/trash" || pathParam == "/trash"
+	activeFiles := urlPath == "/files" || (pathParam == "/files")
+	activeTrash := urlPath == "/trash"
 	activeFav := filter == "favorites"
 	return webui.Render(w, webui.PageData{
 		Title: "Files — Dar", AppBar: server.AppBarHTML(r), UserMenu: webui.UserMenuHTML(displayName),
 		Sidebar: webui.BuildSidebar([]webui.SidebarItem{
 			{Label: "All files", Icon: "fa-solid fa-folder", Href: "/files", Active: activeAll},
-			{Label: "Files", Icon: "fa-solid fa-file", Href: "/files?path=/files", Active: activeFiles},
+			{Label: "Files", Icon: "fa-solid fa-file", Href: "/files/files", Active: activeFiles},
 			{Label: "Favorites", Icon: "fa-solid fa-star", Href: "/files?filter=favorites", Active: activeFav},
-			{Label: "Trash", Icon: "fa-solid fa-trash", Href: "/files?path=/trash", Active: activeTrash},
+			{Label: "Trash", Icon: "fa-solid fa-trash", Href: "/files/trash", Active: activeTrash},
 		}, "#"),
 		Content: template.HTML(filesHTML()),
 	})
@@ -183,8 +183,8 @@ function loadSettings(){try{settings=JSON.parse(localStorage.getItem("dar-files-
 	document.getElementById("set-warn-create").checked=!!settings.warnCreate;document.getElementById("set-default-view").value=settings.defaultView||"all";
 	document.getElementById("set-files-path").value=settings.filesPath||"/files";document.getElementById("set-trash-path").value=settings.trashPath||"/trash";
 	document.getElementById("webdav-url").value=window.location.origin+"/api/files/webdav/";
-	// Update sidebar Files link to use configured path
-	let fp=settings.filesPath||"/files";let links=document.querySelectorAll("#sidebar a");links.forEach(a=>{if(a.textContent.trim()==="Files"&&a.querySelector(".fa-file")){a.href="/files?path="+encodeURIComponent(fp)}})}
+	// Update sidebar Files link href to use configured path
+	let fp=settings.filesPath||"/files";let links=document.querySelectorAll("#sidebar a");links.forEach(a=>{if(a.textContent.trim()==="Files"&&a.querySelector(".fa-file")){let seg=fp.split("/").filter(x=>x);a.href="/files/"+seg.join("/")}})}
 function saveSettings(){settings={favsFirst:document.getElementById("set-favs-first").checked,foldersFirst:document.getElementById("set-folders-first").checked,
 	showHidden:document.getElementById("set-show-hidden").checked,showExt:document.getElementById("set-show-ext").checked,
 	colSize:document.getElementById("set-col-size").checked,colModified:document.getElementById("set-col-modified").checked,
@@ -202,7 +202,7 @@ function showDetails(path,name,size,date,isDir){document.getElementById("details
 function showVersionDiff(path){api("versions",{path:path}).then(v=>{let vers=v.versions||[];if(vers.length<2){alert("Need at least 2 versions");return};let b=document.getElementById("details-body");b.innerHTML='<p class="font-medium mb-2">Version Diff</p><select id="diff-v1" class="w-full h-9 px-3 rounded-full bg-surface-container text-xs border-0 mb-1">'+vers.map((v,i)=>'<option value="'+v.id+'"'+(i===1?' selected':'')+'>'+new Date(v.time/1e6).toLocaleString()+'</option>').join("")+'</select><select id="diff-v2" class="w-full h-9 px-3 rounded-full bg-surface-container text-xs border-0 mb-2">'+vers.map((v,i)=>'<option value="'+v.id+'"'+(i===0?' selected':'')+'>'+new Date(v.time/1e6).toLocaleString()+'</option>').join("")+'</select><button onclick="loadDiff(\''+path+'\')" class="h-9 rounded-full bg-primary text-white text-xs font-medium border-0 cursor-pointer w-full">Compare</button><pre id="diff-output" class="text-xs mt-2 bg-surface-container p-3 rounded-xl overflow-x-auto max-h-64"></pre>'})}
 function loadDiff(path){let v1=document.getElementById("diff-v1").value;let v2=document.getElementById("diff-v2").value;api("diff",{path:path,v1:v1,v2:v2}).then(d=>{document.getElementById("diff-output").textContent=d.diff||"No differences"})}
 
-function init(){loadSettings();let q=new URLSearchParams(window.location.search);let filter=q.get("filter");let path=q.get("path");if(filter==="favorites"){currentPath="/";window._filter="favorites"}else if(path==="/trash")currentPath="/trash";else if(path)currentPath=path;else currentPath="/";loadTagMap();loadFiles();setupDragDrop()}
+function init(){loadSettings();let fp=window.location.pathname.replace(/\/files\/?/,"");let q=new URLSearchParams(window.location.search);let filter=q.get("filter");if(filter==="favorites"){currentPath="/";window._filter="favorites"}else if(fp==="trash")currentPath="/trash";else if(fp)currentPath="/files/"+fp;else if(window.location.pathname==="/files")currentPath="/";else currentPath="/files";loadTagMap();loadFiles();setupDragDrop()}
 function loadTagMap(){api("tags",{}).then(d=>{window._tagMap=d.tags||{}})}
 
 async function api(method,params){let url=apiBase+"/"+method+"?"+new URLSearchParams(params);let r=await fetch(url,{method:method==="upload"?"POST":(params.src?"POST":"GET")});return r.json()}
@@ -237,7 +237,7 @@ function renderFiles(_files,path){let files=applySort([..._files]);let fp=settin
 		else{html+='<button onclick="startRename(\''+f.path+'\',\''+escJS(f.name)+'\')" class="w-8 h-8 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant hover:text-primary opacity-0 group-hover:opacity-100"><i class="fa-solid fa-pen text-xs"></i></button>';html+='<button onclick="assignTag(\''+f.path+'\')" class="w-8 h-8 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant hover:text-primary opacity-0 group-hover:opacity-100"><i class="fa-solid fa-tag text-xs"></i></button>';html+='<button onclick="deleteItem(\''+f.path+'\')" class="w-8 h-8 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant hover:text-error opacity-0 group-hover:opacity-100"><i class="fa-solid fa-trash text-xs"></i></button>'}html+='</div>'}
 	html+='</div>';div.innerHTML=html;updateBulkUI()}
 
-function navTo(path){window._filter=null;currentPath=path;if(path==="/")window.history.pushState({},"","/files");else window.history.pushState({},"","/files?path="+encodeURIComponent(path));loadFiles()}
+function navTo(path){window._filter=null;currentPath=path;if(path==="/")window.history.pushState({},"","/files");else if(path==="/trash")window.history.pushState({},"","/files/trash");else if(path==="/files")window.history.pushState({},"","/files/files");else if(path.startsWith("/files/"))window.history.pushState({},"","/files/"+path.slice(7));else window.history.pushState({},"","/files?path="+encodeURIComponent(path));loadFiles()}
 function toggleSelect(path){selectedPaths.has(path)?selectedPaths.delete(path):selectedPaths.add(path);updateBulkUI()}
 function updateBulkUI(){let n=selectedPaths.size,ce=document.getElementById("selected-count"),de=document.getElementById("bulk-delete-btn"),me=document.getElementById("bulk-move-btn");if(n>0){ce.textContent=n+" selected";ce.classList.remove("hidden");de.classList.remove("hidden");de.classList.add("inline-flex");me.classList.remove("hidden");me.classList.add("inline-flex")}else{ce.classList.add("hidden");de.classList.add("hidden");de.classList.remove("inline-flex");me.classList.add("hidden");me.classList.remove("inline-flex")}}
 
