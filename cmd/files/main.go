@@ -154,6 +154,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		entries, _ := os.ReadDir(trashDir(uid))
 		var files []FileEntry
 		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".orig") { continue }
 			info, _ := e.Info()
 			origPath, _ := os.ReadFile(filepath.Join(trashDir(uid), e.Name()+".orig"))
 			files = append(files, FileEntry{
