@@ -1,0 +1,194 @@
+{{define "theme"}}
+    <meta name="theme-color" content="{{.Theme.Surface}}">
+    <meta name="color-scheme" content="dark">
+    <style id="dar-theme-state">{{.ThemeCSS}}</style>
+    <style>
+        html, body { height: 100%; }
+        body {
+            overflow: hidden;
+            background-color: rgb(var(--dar-background));
+            isolation: isolate;
+        }
+        body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background-image: var(--dar-wallpaper-image); background-position: center; background-size: cover; background-repeat: no-repeat; opacity: var(--dar-wallpaper-visibility); }
+        .focus-body { background-color: rgb(var(--dar-background)); }
+        .focus-topbar { box-shadow: none; }
+        .focus-frame {
+            background: rgb(var(--dar-surface)) !important;
+            border: 1px solid rgb(var(--dar-outline-variant));
+        }
+        body[data-current-app="home"] .focus-frame {
+            background: rgb(var(--dar-surface) / .32) !important;
+            -webkit-backdrop-filter: blur(18px);
+            backdrop-filter: blur(18px);
+        }
+        body[data-current-app="home"] #dashboard-scroll,
+        body[data-current-app="home"] .dashboard-composition {
+            background: transparent;
+        }
+        .dar-glass {
+            background-color: rgb(var(--dar-surface)) !important;
+            -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+            box-shadow: none !important;
+        }
+        .dar-app-frame {
+            overflow: hidden;
+            min-height: 0;
+        }
+        [data-dar-shell] {
+            position: relative;
+            min-width: 0;
+            min-height: 0;
+            overflow: hidden;
+        }
+        [data-dar-sidebar] {
+            position: relative;
+            width: 280px !important;
+            min-width: 280px !important;
+            height: 100%;
+            flex: 0 0 280px;
+            background-color: rgb(var(--dar-surface-container-low)) !important;
+            transition: margin-inline-start 180ms ease, transform 180ms ease, visibility 180ms ease;
+        }
+        [data-dar-sidebar][data-dar-sidebar-collapsed="true"] {
+            margin-inline-start: -280px;
+            visibility: hidden;
+        }
+        [data-dar-sidebar-toggle] {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 9999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        [data-dar-sidebar-header] {
+            min-height: 3.5rem;
+            padding: .5rem .75rem;
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            flex: 0 0 auto;
+        }
+        [data-dar-sidebar-title] {
+            min-width: 0;
+            flex: 1 1 auto;
+            overflow: hidden;
+            font-size: 1rem;
+            font-weight: 600;
+            line-height: 1.5rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        [data-dar-sidebar-toggle] {
+            position: absolute;
+            inset-block-start: .5rem;
+            inset-inline-start: .5rem;
+            z-index: 35;
+            flex: 0 0 auto;
+        }
+        [data-dar-sidebar-toggle-host] > [data-dar-sidebar-toggle] {
+            position: static;
+            inset: auto;
+            z-index: auto;
+        }
+        [data-dar-sidebar-backdrop] {
+            display: none;
+        }
+        [data-dar-pane],
+        [data-dar-master-pane],
+        [data-dar-detail-pane],
+        [data-dar-pane-header] {
+            background-color: rgb(var(--dar-surface)) !important;
+        }
+        [data-dar-detail-back] {
+            display: none;
+        }
+        main [class~="overflow-y-auto"],
+        main [class~="overflow-auto"] {
+            overscroll-behavior: contain;
+            scrollbar-gutter: stable;
+        }
+        body.dar-codex-open::before { content: ""; position: fixed; inset: 0; z-index: 85; background: rgb(var(--dar-scrim) / .38); }
+        [data-wallpaper-contrast][data-wallpaper-tone="light"],
+        [data-wallpaper-contrast][data-wallpaper-tone="light"] > i {
+            color: rgb(0 0 0) !important;
+            text-shadow: 0 1px 2px rgb(255 255 255 / .35);
+        }
+        [data-wallpaper-contrast][data-wallpaper-tone="dark"],
+        [data-wallpaper-contrast][data-wallpaper-tone="dark"] > i {
+            color: rgb(255 255 255) !important;
+            text-shadow: 0 1px 3px rgb(0 0 0 / .55);
+        }
+        @media (min-width: 768px) {
+            .dar-app-frame {
+                margin: .75rem;
+                border-radius: 1.125rem;
+            }
+        }
+        @media (max-width: 1023px) {
+            [data-dar-sidebar] {
+                position: absolute !important;
+                inset-block: 0;
+                inset-inline-start: 0;
+                grid-area: auto !important;
+                z-index: 45;
+                margin-inline-start: 0 !important;
+                height: auto !important;
+                min-height: 0;
+                transform: translateX(-100%);
+                visibility: hidden;
+                background-color: rgb(var(--dar-surface-container-low)) !important;
+                -webkit-backdrop-filter: none;
+                backdrop-filter: none;
+                box-shadow: 0 8px 30px rgb(var(--dar-shadow) / .24);
+            }
+            [dir="rtl"] [data-dar-sidebar] {
+                transform: translateX(100%);
+            }
+            [data-dar-sidebar][data-dar-sidebar-open="true"] {
+                transform: translateX(0);
+                visibility: visible;
+            }
+            [data-dar-sidebar-toggle-host] > [data-dar-sidebar-toggle][aria-expanded="true"] {
+                position: fixed;
+                inset-block-start: auto;
+                inset-inline-start: min(calc(280px + 1rem), calc(100vw - 3rem));
+                z-index: 46;
+            }
+            [data-dar-sidebar-backdrop][data-dar-sidebar-open="true"] {
+                display: block;
+                position: absolute;
+                inset: 0;
+                z-index: 40;
+                background: rgb(var(--dar-scrim) / .16);
+            }
+            [data-dar-detail-pane][data-dar-detail-open="true"] {
+                position: absolute !important;
+                inset: 0 !important;
+                z-index: 50 !important;
+                display: flex !important;
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: none !important;
+                height: 100% !important;
+                background-color: rgb(var(--dar-surface)) !important;
+                -webkit-backdrop-filter: none;
+                backdrop-filter: none;
+                box-shadow: none !important;
+            }
+            [data-dar-detail-back] {
+                display: inline-flex;
+            }
+        }
+        @media (max-width: 767px) {
+            .focus-topbar { height: 3.5rem; min-height: 3.5rem; }
+            .dar-app-frame { margin-bottom: 4.75rem; border-block: 1px solid rgb(var(--dar-outline-variant)); }
+            #dar-app-menu { position: fixed; inset-inline: .75rem; inset-block: auto 4.75rem; width: auto; max-height: min(70dvh, 38rem); z-index: 80; }
+            #global-search-panel { display: none !important; }
+        }
+        @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+            :root { --dar-glass-alpha: .95 !important; }
+        }
+    </style>
+{{end}}

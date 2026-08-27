@@ -1,0 +1,81 @@
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "codex-cli 0.144.1"
+  exit 0
+fi
+
+thread_id="${DAR_TEST_CODEX_THREAD_ID:-fake-thread-1}"
+turn_number=0
+while IFS= read -r line; do
+  if [ -n "$DAR_TEST_CODEX_LOG" ]; then
+    printf '%s\n' "$line" >> "$DAR_TEST_CODEX_LOG"
+  fi
+  request_id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  if [ -n "$DAR_TEST_CODEX_FAIL_METHOD" ]; then
+    case "$line" in
+      *'"method":"'"$DAR_TEST_CODEX_FAIL_METHOD"'"'*)
+        printf '{"id":%s,"error":{"code":-32603,"message":"injected method failure"}}\n' "$request_id"
+        continue
+        ;;
+    esac
+  fi
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"id":%s,"result":{"codexHome":"%s"}}\n' "$request_id" "$CODEX_HOME"
+      ;;
+    *'"method":"account/read"'*)
+      printf '{"id":%s,"result":{"account":{"type":"apiKey"},"requiresOpenaiAuth":true}}\n' "$request_id"
+      ;;
+    *'"method":"model/list"'*)
+      printf '{"id":%s,"result":{"data":[{"id":"fake-model","displayName":"Fake model"}]}}\n' "$request_id"
+      ;;
+    *'"method":"account/login/start"'*)
+      printf '{"id":%s,"result":{"type":"deviceCode","verificationUrl":"https://example.test/device","userCode":"TEST-CODE"}}\n' "$request_id"
+      ;;
+    *'"method":"thread/start"'*)
+      printf '{"id":%s,"result":{"thread":{"id":"%s","turns":[]},"model":"fake-model"}}\n' "$request_id" "$thread_id"
+      ;;
+    *'"method":"thread/read"'*)
+      printf '{"id":%s,"result":{"thread":{"id":"%s","turns":[]}}}\n' "$request_id" "$thread_id"
+      ;;
+    *'"method":"thread/resume"'*)
+      if [ "$DAR_TEST_CODEX_RESUME_ERROR" = "empty" ]; then
+        printf '{"id":%s,"error":{"code":-32600,"message":"no rollout found for thread"}}\n' "$request_id"
+      elif [ "$DAR_TEST_CODEX_RESUME_ERROR" = "generic" ]; then
+        printf '{"id":%s,"error":{"code":-32603,"message":"temporary backend failure"}}\n' "$request_id"
+      else
+        printf '{"id":%s,"result":{"thread":{"id":"%s","turns":[]}}}\n' "$request_id" "$thread_id"
+      fi
+      ;;
+    *'"method":"turn/start"'*)
+      if [ "$DAR_TEST_CODEX_FAIL_TURN" = "1" ] || { [ -n "$DAR_TEST_CODEX_FAIL_TURN_AFTER" ] && [ "$turn_number" -ge "$DAR_TEST_CODEX_FAIL_TURN_AFTER" ]; }; then
+        printf '{"id":%s,"error":{"code":-32603,"message":"injected turn failure"}}\n' "$request_id"
+        continue
+      fi
+      turn_number=$((turn_number + 1))
+      turn_id="fake-turn-$turn_number"
+      call_id="fake-call-$turn_number"
+      printf '{"id":%s,"result":{"turn":{"id":"%s"}}}\n' "$request_id" "$turn_id"
+      printf '{"method":"turn/started","params":{"threadId":"%s","turn":{"id":"%s","status":"inProgress"}}}\n' "$thread_id" "$turn_id"
+      printf '{"id":9001,"method":"item/tool/call","params":{"arguments":{"id":"missing-trash-entry"},"callId":"%s","threadId":"%s","turnId":"%s","namespace":"files","tool":"delete_permanently"}}\n' "$call_id" "$thread_id" "$turn_id"
+      ;;
+    *'"method":"turn/interrupt"'*)
+      printf '{"id":%s,"result":{}}\n' "$request_id"
+      printf '{"method":"turn/completed","params":{"threadId":"%s","turn":{"id":"fake-turn-%s","status":"interrupted"}}}\n' "$thread_id" "$turn_number"
+      ;;
+    *'"id":9001,"result"'*)
+      printf '{"method":"item/agentMessage/delta","params":{"threadId":"%s","turnId":"fake-turn-%s","itemId":"message-1","delta":"The requested Dar action was handled safely."}}\n' "$thread_id" "$turn_number"
+      printf '{"method":"turn/completed","params":{"threadId":"%s","turn":{"id":"fake-turn-%s","status":"completed"}}}\n' "$thread_id" "$turn_number"
+      ;;
+    *'"method":"thread/name/set"'*|*'"method":"thread/unarchive"'*|*'"method":"account/logout"'*)
+      printf '{"id":%s,"result":{}}\n' "$request_id"
+      ;;
+    *'"method":"thread/archive"'*|*'"method":"thread/delete"'*)
+      if [ "$DAR_TEST_CODEX_ARCHIVE_ERROR" = "empty" ]; then
+        printf '{"id":%s,"error":{"code":-32600,"message":"no rollout found for thread"}}\n' "$request_id"
+      else
+        printf '{"id":%s,"result":{}}\n' "$request_id"
+      fi
+      ;;
+  esac
+done

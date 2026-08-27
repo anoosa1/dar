@@ -1,0 +1,42 @@
+name: regression
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  pr:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Comprehensive PR regression suite
+        run: nix develop --command ./test/run.sh pr
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dar-regression-evidence
+          path: test-artifacts
+          if-no-files-found: ignore
+
+  nightly:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Nightly fuzz and lifecycle stress
+        run: nix develop --command ./test/run.sh nightly
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dar-nightly-evidence
+          path: test-artifacts
+          if-no-files-found: ignore

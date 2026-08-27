@@ -1,0 +1,48 @@
+{{define "activity.html"}}
+<section id="activity-app" data-dar-shell class="flex h-full min-h-0" aria-labelledby="activity-title">
+  <aside data-dar-sidebar data-dar-sidebar-key="activity" aria-label="Activity navigation" class="flex min-h-0 w-[280px] shrink-0 flex-col border-r border-outline-variant bg-surface-container-low">
+    <nav id="activity-tabs" class="flex flex-col gap-1 px-3" aria-label="Activity sources"></nav>
+    <button id="activity-settings-open" type="button" class="mt-auto flex h-11 items-center gap-3 rounded-full px-4 text-sm text-on-surface-variant hover:bg-surface-container-high">
+      <i class="fa-solid fa-rss w-5 text-center"></i><span>Activity settings</span>
+    </button>
+  </aside>
+  <div id="activity-scroll" data-dar-master-pane class="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain bg-surface p-4 [scrollbar-gutter:stable] md:p-6">
+    <div data-dar-sidebar-toggle-host class="mb-4 flex min-h-10 items-center gap-3">
+      <h1 id="activity-title" class="flex-1 text-2xl font-semibold">All activities</h1>
+      <button id="activity-settings-mobile" type="button" class="h-10 w-10 rounded-full hover:bg-surface-container-high md:hidden" aria-label="Activity settings"><i class="fa-solid fa-rss"></i></button>
+    </div>
+    <nav id="activity-tabs-mobile" class="mb-4 flex gap-2 overflow-x-auto pb-2 md:hidden" aria-label="Activity sources"></nav>
+    <p id="activity-status" class="sr-only" aria-live="polite"></p>
+    <div id="activity-list" class="space-y-6"></div>
+    <button id="activity-more" type="button" class="mx-auto mt-6 hidden h-11 rounded-full bg-secondary-container px-6 font-medium text-on-secondary-container">Load more</button>
+  </div>
+</section>
+
+<dialog id="activity-settings-dialog" aria-labelledby="activity-rss-title" class="w-[min(34rem,calc(100vw-2rem))] rounded-3xl bg-surface p-0 text-on-surface shadow-2xl backdrop:bg-scrim/50">
+  <form id="activity-settings-form" method="dialog" class="p-5">
+    <header class="mb-5 flex items-center gap-3">
+      <div class="min-w-0 flex-1"><h2 id="activity-rss-title" class="text-xl font-semibold">Activity RSS feed</h2><p class="mt-1 text-sm text-on-surface-variant">Choose which activity an external feed reader can see.</p></div>
+      <button id="activity-settings-close" type="button" class="h-10 w-10 rounded-full hover:bg-surface-container-high" aria-label="Close settings"><i class="fa-solid fa-xmark"></i></button>
+    </header>
+    <label class="flex items-center justify-between gap-4 rounded-2xl bg-surface-container-low p-4">
+      <span><span class="block font-medium">Enable RSS feed</span><span class="block text-xs text-on-surface-variant">The secret URL is shown once.</span></span>
+      <input id="activity-rss-enabled" type="checkbox" class="h-5 w-5 accent-primary">
+    </label>
+    <fieldset class="mt-5"><legend class="text-sm font-semibold">Included sources</legend><div id="activity-rss-sources" class="mt-2 grid grid-cols-2 gap-2"></div></fieldset>
+    <section id="activity-feed-url-box" class="mt-5 hidden rounded-2xl bg-primary-container p-4">
+      <label for="activity-feed-url" class="text-sm font-semibold text-on-primary-container">Copy this URL now</label>
+      <div class="mt-2 flex gap-2"><input id="activity-feed-url" readonly class="h-10 min-w-0 flex-1 rounded-full bg-surface px-4 text-sm"><button id="activity-feed-copy" type="button" class="h-10 rounded-full bg-primary px-4 text-sm font-medium text-on-primary">Copy</button></div>
+    </section>
+    <p id="activity-settings-message" class="mt-3 hidden text-sm" aria-live="polite"></p>
+    <footer class="mt-5 flex flex-wrap justify-end gap-2">
+      <button id="activity-feed-regenerate" type="button" class="hidden h-10 rounded-full px-4 text-error hover:bg-error-container">Regenerate URL</button>
+      <button id="activity-settings-cancel" type="button" class="h-10 rounded-full px-4 hover:bg-surface-container-high">Cancel</button>
+      <button id="activity-settings-save" type="submit" value="default" class="h-10 rounded-full bg-primary px-5 font-medium text-on-primary">Save</button>
+    </footer>
+  </form>
+</dialog>
+<dialog id="activity-feed-result-dialog" aria-labelledby="activity-feed-result-title" class="w-[min(34rem,calc(100vw-2rem))] rounded-3xl bg-surface p-0 text-on-surface shadow-2xl backdrop:bg-scrim/50">
+  <div class="p-5"><h2 id="activity-feed-result-title" class="text-xl font-semibold">Copy your RSS URL</h2><p class="mt-1 text-sm text-on-surface-variant">This secret URL is shown only once.</p><div class="mt-4 flex gap-2"><input id="activity-feed-result-url" readonly class="h-10 min-w-0 flex-1 rounded-full bg-surface-container px-4 text-sm"><button id="activity-feed-result-copy" type="button" class="h-10 rounded-full bg-primary px-4 text-on-primary">Copy</button></div><div class="mt-5 flex justify-end"><button id="activity-feed-result-close" type="button" class="h-10 rounded-full px-5 hover:bg-surface-container-high">Close</button></div></div>
+</dialog>
+<script src="/activity/assets/app.js" defer></script>
+{{end}}

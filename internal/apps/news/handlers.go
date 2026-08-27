@@ -1,86 +1,267 @@
 package news
 
 import (
-	"html/template"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/anoosa/dar/internal/apps"
+	"github.com/anoosa/dar/internal/credentials"
+	"github.com/anoosa/dar/internal/db"
+	"github.com/anoosa/dar/internal/outbound"
 	"github.com/anoosa/dar/internal/server"
 	"github.com/anoosa/dar/internal/webui"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
-type App struct{}
-
-func (a App) Name() string                     { return "news" }
-func (a App) DisplayName() string              { return "News" }
-func (a App) Icon() string                     { return `<i class="fa-solid fa-newspaper"></i>` }
-func (a App) Description() string              { return "RSS feed reader" }
-func (a App) AppBarOrder() int                 { return 7 }
-func (a App) DaemonConfig() *apps.DaemonConfig { return nil }
-func (a App) Routes() []apps.Route {
-	return []apps.Route{{Method: "GET", Pattern: "/news", Handler: handlePage}}
+type Config struct {
+	DataRoot       string
+	DB             *db.DB
+	RefreshMinutes int
+	ExploreURL     string
+	CredentialKeys []credentials.Key
+	OutboundPolicy outbound.Policy
+	Search         apps.SearchIndexWriter
+	Registry       *apps.Registry
 }
 
-func handlePage(w http.ResponseWriter, r *http.Request) {
-	user := server.GetUser(r)
-	if user == nil { http.Redirect(w, r, "/login", http.StatusSeeOther); return }
-	renderPage(w, r, user.DisplayName)
+type App struct {
+	dataRoot       string
+	db             *db.DB
+	refreshMinutes int
+	exploreURL     string
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	mu             sync.Mutex
+	active         map[string]bool
+	refresh        map[string]refreshState
+	workers        chan struct{}
+	keys           credentials.Ring
+	keyErr         error
+	outbound       outbound.Policy
+	search         apps.SearchIndexWriter
+	registry       *apps.Registry
 }
 
-func renderPage(w io.Writer, r *http.Request, displayName string) {
-	webui.Render(w, webui.PageData{
-		Title: "News — Dar", AppBar: server.AppBarHTML(r), UserMenu: webui.UserMenuHTML(displayName),
-		Sidebar: webui.BuildSidebar([]webui.SidebarItem{
-			{Label: "All articles", Icon: "fa-solid fa-newspaper", Href: "/news", Active: true},
-			{Label: "Unread", Icon: "fa-solid fa-envelope", Href: "/news?unread=true"},
-			{Label: "Starred", Icon: "fa-solid fa-star", Href: "/news?starred=true"},
-		}, "/settings"),
-		Content: template.HTML(newsHTML()),
+func New(config Config) *App {
+	if config.DataRoot == "" {
+		config.DataRoot = "data"
+	}
+	if config.RefreshMinutes <= 0 {
+		config.RefreshMinutes = 30
+	}
+	ring, keyErr := credentials.New(config.CredentialKeys)
+	return &App{dataRoot: config.DataRoot, db: config.DB, refreshMinutes: config.RefreshMinutes, exploreURL: config.ExploreURL, active: map[string]bool{}, refresh: map[string]refreshState{}, workers: make(chan struct{}, 4), keys: ring, keyErr: keyErr, outbound: config.OutboundPolicy, search: config.Search, registry: config.Registry}
+}
+
+func (a *App) recordActivity(ctx context.Context, userID, action, summary, objectType, objectID, objectName, origin string) {
+	if a.registry == nil || userID == "" {
+		return
+	}
+	actorID, actorName, actorKind := userID, "User", "user"
+	if origin == "worker" || origin == "background" {
+		actorID, actorName, actorKind = "", "Dar", "system"
+	} else {
+		_ = a.withConn(ctx, func(conn *sqlite.Conn) error {
+			return sqlitex.Execute(conn, `SELECT display_name FROM users WHERE id=?`, &sqlitex.ExecOptions{Args: []any{userID}, ResultFunc: func(stmt *sqlite.Stmt) error {
+				if strings.TrimSpace(stmt.ColumnText(0)) != "" {
+					actorName = stmt.ColumnText(0)
+				}
+				return nil
+			}})
+		})
+	}
+	if err := a.registry.EnqueueActivity(ctx, apps.ActivityEvent{
+		ActorID: actorID, ActorName: actorName, ActorKind: actorKind, Source: "news",
+		Action: action, Summary: summary, ObjectType: objectType, ObjectID: objectID,
+		ObjectName: objectName, ObjectURL: "/news", Origin: origin, RecipientIDs: []string{userID},
+	}); err != nil {
+		log.Printf("record news activity: %v", err)
+	}
+}
+func (a *App) Name() string        { return "news" }
+func (a *App) DisplayName() string { return "News" }
+func (a *App) Icon() string        { return `<i class="fa-solid fa-newspaper"></i>` }
+func (a *App) Description() string { return "RSS and Atom reader" }
+func (a *App) AppBarOrder() int    { return 9 }
+
+func (a *App) Routes() []apps.Route {
+	return []apps.Route{
+		{Method: http.MethodGet, Pattern: "/news/assets/app.js", Auth: apps.AuthBrowser, Handler: http.HandlerFunc(a.handleAsset)},
+		{Method: apps.MethodAny, Pattern: "/news", Auth: apps.AuthBrowser, Handler: http.HandlerFunc(a.handlePage)},
+		{Method: apps.MethodAny, Pattern: "/news/api/*", Auth: apps.AuthAPI, Handler: http.HandlerFunc(a.handleAux)},
+		{Method: apps.MethodAny, Pattern: "/news/*", Auth: apps.AuthBrowser, Handler: http.HandlerFunc(a.handlePage)},
+		{Method: apps.MethodAny, Pattern: "/index.php/apps/news/api/v1-3", Auth: apps.AuthAPI, Handler: http.HandlerFunc(a.handleV13)},
+		{Method: apps.MethodAny, Pattern: "/index.php/apps/news/api/v1-3/*", Auth: apps.AuthAPI, Handler: http.HandlerFunc(a.handleV13)},
+	}
+}
+
+func (a *App) Start(ctx context.Context) error {
+	if a.db == nil {
+		return errors.New("news database is required")
+	}
+	if err := os.MkdirAll(filepath.Join(a.dataRoot, "news"), 0700); err != nil {
+		return err
+	}
+	a.ctx, a.cancel = context.WithCancel(ctx)
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		ticker := time.NewTicker(time.Duration(a.refreshMinutes) * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-ticker.C:
+				a.refreshAll(a.ctx)
+			}
+		}
+	}()
+	return nil
+}
+func (a *App) Shutdown(ctx context.Context) error {
+	if a.cancel != nil {
+		a.cancel()
+	}
+	done := make(chan struct{})
+	go func() { a.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (a *App) refreshAll(ctx context.Context) {
+	var users []string
+	_ = a.withConn(ctx, func(c *sqlite.Conn) error {
+		return sqlitex.Execute(c, `SELECT DISTINCT user_id FROM news_feeds WHERE update_enabled=1`, &sqlitex.ExecOptions{ResultFunc: func(s *sqlite.Stmt) error { users = append(users, s.ColumnText(0)); return nil }})
 	})
+	for _, uid := range users {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			a.refreshUserAsync(uid)
+		}
+	}
 }
 
-func newsHTML() string {
-	return `
-<div id="news-app" class="max-w-3xl mx-auto">
-	<div class="flex items-center gap-3 mb-4">
-		<button onclick="showAddFeed()" class="h-10 px-4 rounded-full bg-primary text-white text-sm font-medium border-0 cursor-pointer hover:opacity-90 inline-flex items-center gap-2">
-			<i class="fa-solid fa-plus"></i> Add feed</button>
-		<button onclick="refreshFeeds()" class="h-10 px-4 rounded-full bg-surface-container-high text-on-surface text-sm font-medium border-0 cursor-pointer hover:bg-surface-container-highest inline-flex items-center gap-2">
-			<i class="fa-solid fa-rotate"></i> Refresh</button>
-		<div class="flex-1"></div>
-		<select id="feed-filter" onchange="loadArticles()" class="h-10 px-4 rounded-full bg-surface-container text-sm border-0 outline-none">
-			<option value="">All feeds</option></select>
-	</div>
-	<div id="article-list" class="space-y-1"></div>
-	<div id="feed-modal" class="hidden fixed inset-0 bg-black/30 z-40 flex items-center justify-center p-4" onclick="if(event.target===this)document.getElementById('feed-modal').classList.add('hidden')">
-		<div class="bg-surface rounded-2xl p-6 w-full max-w-sm shadow-2">
-			<h2 class="text-lg font-semibold mb-4">Add RSS Feed</h2>
-			<input id="feed-url" placeholder="https://example.com/rss" class="w-full h-10 px-4 mb-3 rounded-full bg-surface-container text-sm border-0 outline-none focus:ring-2 focus:ring-primary/30">
-			<div class="flex gap-2 justify-end">
-				<button onclick="document.getElementById('feed-modal').classList.add('hidden')" class="h-10 px-4 rounded-full text-sm font-medium text-on-surface-variant border-0 bg-transparent cursor-pointer hover:bg-surface-container-highest">Cancel</button>
-				<button onclick="addFeed()" class="h-10 px-4 rounded-full bg-primary text-white text-sm font-medium border-0 cursor-pointer hover:opacity-90">Add</button>
-			</div>
-		</div>
-	</div>
-</div>
-<script>
-const apiBase="/api/news";
-async function api(m,p,b){let o={method:m};if(b){o.headers={"Content-Type":"application/json"};o.body=JSON.stringify(b)};let r=await fetch(apiBase+p,o);return r.json()}
-function init(){loadFeeds();loadArticles()}
-function loadFeeds(){api("GET","/feeds").then(d=>{let s=document.getElementById("feed-filter");s.innerHTML='<option value="">All feeds</option>'+(d.feeds||[]).map(f=>'<option value="'+f.id+'">'+esc(f.title)+'</option>').join("")})}
-function loadArticles(){let feed=document.getElementById("feed-filter").value;let q=new URLSearchParams(window.location.search);let unread=q.get("unread")||"";let params=feed?"?feed_id="+feed:(unread?"?unread="+unread:"");api("GET","/articles"+params).then(d=>renderArticles(d.articles||[]))}
-function renderArticles(articles){let d=document.getElementById("article-list");if(articles.length===0){d.innerHTML='<div class="text-center text-on-surface-variant py-12"><i class="fa-solid fa-newspaper text-4xl mb-2 block"></i>No articles</div>';return}
-	d.innerHTML=articles.map(a=>'<div class="flex items-start gap-3 px-4 py-3 hover:bg-surface-container-high rounded-xl cursor-pointer transition-colors'+(a.read?' opacity-60':'')+'" onclick="window.open(\''+a.link+'\',\'_blank\');markRead(\''+a.id+'\')">'+
-		'<div class="flex-1"><div class="text-sm font-medium text-on-surface">'+esc(a.title)+'</div><div class="text-xs text-on-surface-variant mt-1 line-clamp-2">'+esc(a.summary||"")+'</div><div class="text-xs text-on-surface-variant mt-1">'+esc(a.date||"")+'</div></div>'+
-		'<button class="w-6 h-6 rounded-full bg-transparent border-0 cursor-pointer shrink-0 mt-1 '+ (a.starred?'text-yellow-500':'text-on-surface-variant')+'" onclick="event.stopPropagation();toggleStar(\''+a.id+'\')"><i class="fa-solid fa-star text-xs"></i></button>'+
-		'</div>').join("")}
-function showAddFeed(){document.getElementById("feed-url").value="";document.getElementById("feed-modal").classList.remove("hidden")}
-function addFeed(){let u=document.getElementById("feed-url").value.trim();if(!u)return;api("POST","/feed",{url:u}).then(()=>{document.getElementById("feed-modal").classList.add("hidden");loadFeeds();loadArticles()})}
-function refreshFeeds(){api("POST","/refresh").then(()=>setTimeout(loadArticles,1000))}
-function markRead(id){api("GET","/articles?star="+id)}
-function toggleStar(id){api("GET","/articles?star="+id).then(loadArticles)}
-function esc(s){let d=document.createElement("div");d.textContent=s;return d.innerHTML}
-init();
-</script>`
+// updateFeed de-duplicates concurrent scheduler, UI, and updater requests.
+func (a *App) updateFeed(ctx context.Context, uid string, id int64) error {
+	select {
+	case a.workers <- struct{}{}:
+		defer func() { <-a.workers }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	key := uid + ":" + strconv.FormatInt(id, 10)
+	a.mu.Lock()
+	if a.active[key] {
+		a.mu.Unlock()
+		return nil
+	}
+	a.active[key] = true
+	a.mu.Unlock()
+	defer func() { a.mu.Lock(); delete(a.active, key); a.mu.Unlock() }()
+	return a.updateFeedNow(ctx, uid, id)
 }
+
+func (a *App) refreshUserAsync(uid string) {
+	a.mu.Lock()
+	if a.refresh[uid].Running {
+		a.mu.Unlock()
+		return
+	}
+	a.refresh[uid] = refreshState{Running: true, StartedAt: time.Now()}
+	a.mu.Unlock()
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		feeds, err := a.feeds(ctx, uid)
+		if err == nil {
+			ids := make([]int64, 0, len(feeds))
+			for _, f := range feeds {
+				if f.UpdateEnabled {
+					ids = append(ids, f.ID)
+				}
+			}
+			for _, id := range ids {
+				// One in-flight feed per user preserves fairness while the shared
+				// worker semaphore bounds aggregate outbound work.
+				_ = a.updateFeed(ctx, uid, id)
+			}
+		}
+		summary := fmt.Sprintf("refreshed %d news feeds", len(feeds))
+		if err != nil {
+			summary = "news refresh failed"
+		}
+		a.recordActivity(ctx, uid, "feeds_refreshed", summary, "sync", uid, "News refresh", "background")
+		a.mu.Lock()
+		a.refresh[uid] = refreshState{}
+		a.mu.Unlock()
+	}()
+}
+
+func (a *App) handlePage(w http.ResponseWriter, r *http.Request) {
+	user := server.GetUser(r)
+	if user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	view := "unread"
+	if r.URL.Path != "/news" {
+		view = strings.Trim(strings.TrimPrefix(r.URL.Path, "/news/"), "/")
+	}
+	content, _, err := webui.RenderContentWithScript("news.html", map[string]any{"View": view}, "/news/assets/app.js")
+	if err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	webui.RenderRequest(w, r, webui.PageData{Title: "News — Dar", CurrentApp: "news", AppBar: server.AppBarHTML(r), UserMenu: webui.UserMenuHTML(user.DisplayName), Content: content})
+}
+
+func (a *App) handleAsset(w http.ResponseWriter, r *http.Request) {
+	_, script, err := webui.RenderContentWithScript("news.html", map[string]any{"View": "unread"}, "/news/assets/app.js")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	webui.ServeAppJavaScript(w, r, "app.js", script)
+}
+
+func userID(r *http.Request) string {
+	if u := server.GetUser(r); u != nil {
+		return u.ID
+	}
+	return ""
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+func readJSON(r *http.Request, dst any) error {
+	dec := json.NewDecoder(io.LimitReader(r.Body, 2<<20))
+	return dec.Decode(dst)
+}
+func idPart(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) }

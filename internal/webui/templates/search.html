@@ -1,0 +1,26 @@
+{{define "search.html"}}
+<div id="search-page-scroll" class="h-full min-h-0 overflow-y-auto overscroll-contain bg-surface p-4 [scrollbar-gutter:stable] md:p-8">
+  <section class="mx-auto max-w-5xl" aria-labelledby="search-page-title">
+    <header class="mx-auto max-w-3xl pt-6 md:pt-12">
+      <p class="mb-2 text-center text-xs font-semibold uppercase tracking-widest text-primary">Across Dar</p>
+      <h1 id="search-page-title" class="mb-6 text-center text-3xl font-normal tracking-tight">Find anything</h1>
+      <div class="relative">
+        <i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-on-surface-variant" aria-hidden="true"></i>
+        <label for="search-page-input" class="sr-only">Search across every app</label>
+        <input id="search-page-input" type="search" autocomplete="off" autofocus placeholder="Files, messages, events, notes…" class="focus-field h-14 w-full pl-12 pr-5 text-lg">
+      </div>
+      <p class="mt-2 text-center text-xs text-on-surface-variant">Search stays in this tab and never appears in the address.</p>
+    </header>
+    <div class="mt-8 flex items-center gap-3 border-b border-outline-variant pb-3">
+      <p id="search-page-status" class="min-w-0 flex-1 text-sm text-on-surface-variant" role="status" aria-live="polite">Enter a search above.</p>
+      <button id="search-customize-button" type="button" aria-expanded="false" class="h-10 rounded-xl px-4 text-sm text-primary hover:bg-primary-container"><i class="fa-solid fa-sliders mr-2"></i>Sources</button>
+    </div>
+    <section id="search-customize" class="focus-panel mt-4 hidden p-4" aria-label="Customize search providers">
+      <p class="mb-3 text-sm text-on-surface-variant">Choose which apps appear and arrange their result order.</p>
+      <div id="search-provider-list" class="grid gap-2"></div>
+    </section>
+    <div id="search-page-results" class="py-5"></div>
+  </section>
+</div>
+<script src="/assets/search.js" defer></script>
+{{end}}

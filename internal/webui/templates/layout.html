@@ -1,47 +1,129 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme-mode="{{.ThemeMode}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/app.v1.css?v=4">
+    <link rel="stylesheet" href="/assets/fontawesome/6.5.1/css/all.min.css">
+    <script src="/assets/dar-ui.js" defer></script>
+    <script src="/assets/notifications.js" defer></script>
+    <script src="/assets/codex-panel.js" defer></script>
+    {{template "theme" .}}
     <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'surface': '#fef7ff',
-                        'surface-container': '#f0eaf1',
-                        'surface-container-high': '#eae4eb',
-                        'surface-container-highest': '#e4dee5',
-                        'primary': '#6750a4',
-                        'primary-container': '#e8def8',
-                        'on-surface': '#1b1b1f',
-                        'on-surface-variant': '#49454f',
-                        'outline-variant': '#cac4d0',
-                        'error': '#ba1a1a',
-                        'error-container': '#ffdad6',
-                    }
-                }
-            }
-        }
+    (()=>{const nativeFetch=window.fetch.bind(window);window.fetch=(input,init={})=>{const method=String(init.method||(input instanceof Request?input.method:"GET")).toUpperCase();const url=new URL(input instanceof Request?input.url:String(input),location.href);if(url.origin===location.origin&&!['GET','HEAD','OPTIONS'].includes(method)){const match=document.cookie.split('; ').find(v=>v.startsWith('dar_csrf='));if(match){const headers=new Headers(input instanceof Request?input.headers:undefined);new Headers(init.headers||{}).forEach((v,k)=>headers.set(k,v));headers.set('X-Dar-CSRF-Token',decodeURIComponent(match.slice('dar_csrf='.length)));init={...init,headers}}}return nativeFetch(input,init)}})();
     </script>
     {{.HeadExtra}}
 </head>
-<body class="bg-surface text-on-surface min-h-screen">
-    <header class="h-14 bg-surface border-b border-outline-variant flex items-center px-4 gap-4 sticky top-0 z-20">
-        <a href="/home" class="text-xl font-bold text-primary no-underline tracking-tight">Dar</a>
-        <nav id="dar-app-bar" class="flex-1 flex items-center gap-1">
-            {{.AppBar}}
-        </nav>
-        {{.UserMenu}}
+<body class="focus-body text-on-surface h-dvh overflow-hidden flex flex-col selection:bg-primary/30 selection:text-on-surface" data-current-app="{{.CurrentApp}}">
+    <header class="focus-topbar h-16 shrink-0 grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_minmax(18rem,42rem)_minmax(0,1fr)] items-center px-3 md:px-5 gap-2 md:gap-5 relative z-20 border-b border-outline-variant bg-surface">
+        <div class="min-w-0 flex items-center gap-2">
+            <a href="/home" class="focus-wordmark text-xl font-bold text-on-surface no-underline tracking-tight shrink-0"><span class="inline-block h-4 w-4 rounded-full border-[3px] border-primary mr-2 align-[-1px]"></span>Dar</a>
+            <div>{{.AppBar}}</div>
+        </div>
+        <div class="relative hidden md:block w-full">
+            <label for="global-search-input" class="sr-only">Search across Dar</label>
+            <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"></i>
+            <input id="global-search-input" type="search" placeholder="Search Dar" autocomplete="off"
+                class="w-full h-10 pl-11 pr-4 rounded-xl border border-outline-variant bg-surface-container-low outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
+            <section id="global-search-panel" class="hidden absolute left-1/2 -translate-x-1/2 top-12 w-[min(42rem,calc(100vw-2rem))] bg-surface border border-outline-variant rounded-md shadow-2 overflow-hidden" aria-label="Search suggestions">
+                <div id="global-search-results" class="max-h-[65vh] overflow-y-auto p-2"></div>
+                <div class="border-t border-outline-variant p-2 text-center"><a href="/search" data-search-page class="inline-flex h-9 items-center px-4 rounded-full text-sm text-primary no-underline hover:bg-primary-container">See all results</a></div>
+            </section>
+        </div>
+        <div class="flex items-center justify-end gap-1">
+            <div id="dar-notifications" class="relative">
+                <button id="dar-notifications-button" data-wallpaper-contrast type="button"
+                    class="relative h-10 w-10 rounded-full hover:bg-surface-container-highest"
+                    aria-label="Notifications" aria-controls="dar-notifications-panel" aria-expanded="false">
+                    <i class="fa-solid fa-bell" aria-hidden="true"></i>
+                    <span id="dar-notifications-badge" class="hidden absolute right-0 top-0 min-w-4 h-4 rounded-full bg-error px-1 text-[10px] leading-4 text-on-error" aria-hidden="true"></span>
+                </button>
+                <section id="dar-notifications-panel"
+                    class="hidden absolute -right-12 top-12 z-[70] flex max-h-[min(36rem,calc(100dvh-5rem))] w-[min(24rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-2xl border border-outline-variant bg-surface shadow-2xl sm:right-0"
+                    aria-label="Notifications">
+                    <header class="flex h-14 shrink-0 items-center border-b border-outline-variant px-4">
+                        <h2 class="flex-1 text-base font-semibold">Notifications</h2>
+                        <button id="dar-notifications-close" type="button" class="h-9 w-9 rounded-full hover:bg-surface-container-high" aria-label="Close notifications">
+                            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                        </button>
+                    </header>
+                    <div id="dar-notifications-list" class="min-h-24 flex-1 overflow-y-auto p-2"></div>
+                    <footer class="flex shrink-0 flex-col gap-1 border-t border-outline-variant p-2">
+                        <button id="dar-notifications-desktop" type="button" class="flex min-h-10 items-center gap-3 rounded-xl px-3 text-left text-sm hover:bg-surface-container-high">
+                            <i class="fa-solid fa-desktop w-5 text-center" aria-hidden="true"></i>
+                            <span>Enable desktop alerts</span>
+                        </button>
+                        <button id="dar-notifications-dismiss-all" type="button" class="flex min-h-10 items-center gap-3 rounded-xl px-3 text-left text-sm hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50">
+                            <i class="fa-solid fa-xmark w-5 text-center" aria-hidden="true"></i>
+                            <span>Dismiss all notifications</span>
+                        </button>
+                    </footer>
+                </section>
+                <span id="dar-notifications-status" class="sr-only" aria-live="polite"></span>
+            </div>
+            <button data-dar-codex-open type="button" class="hidden md:inline-grid h-10 w-10 place-items-center rounded-full text-primary hover:bg-primary-container" aria-label="Open Codex assistant"><i class="fa-solid fa-terminal" aria-hidden="true"></i></button>
+            {{.UserMenu}}
+        </div>
     </header>
-    <div class="flex">
+    <div id="global-search-mobile-row" class="hidden md:hidden fixed inset-x-3 bottom-20 z-[65] rounded-2xl border border-outline-variant bg-surface-container-low p-3 shadow-2xl">
+        <label for="global-search-mobile-input" class="sr-only">Search across Dar</label>
+        <input id="global-search-mobile-input" type="search" placeholder="Search Dar" autocomplete="off" class="w-full h-11 px-4 rounded-xl bg-surface-container border border-transparent outline-none focus:border-primary">
+        <div id="global-search-mobile-results" class="max-h-[55vh] overflow-y-auto mt-2"></div>
+    </div>
+    <div class="dar-app-frame focus-frame flex flex-1 min-h-0 bg-surface" data-dar-shell>
         {{if .Sidebar}}{{.Sidebar}}{{end}}
-        <main class="flex-1 p-4 md:p-6 min-h-[calc(100vh-56px)]">
+        <main class="flex-1 min-w-0 min-h-0 overflow-hidden">
             {{.Content}}
         </main>
     </div>
+    <nav class="focus-mobile-dock md:hidden fixed inset-x-3 bottom-3 z-[60] grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-2xl border border-outline-variant bg-surface-container-low p-2 shadow-2xl" aria-label="Global controls">
+        <button id="global-apps-mobile" type="button" class="h-11 w-11 rounded-xl hover:bg-surface-container" aria-label="Switch app"><i class="fa-solid fa-table-cells-large text-primary"></i></button>
+        <button id="global-search-mobile" type="button" class="h-11 min-w-0 rounded-xl bg-surface-container px-4 text-left text-sm text-on-surface-variant" aria-label="Search Dar"><i class="fa-solid fa-magnifying-glass mr-2"></i>Search Dar</button>
+        <button data-dar-codex-open type="button" class="h-11 w-11 rounded-xl text-primary hover:bg-primary-container" aria-label="Open Codex assistant"><i class="fa-solid fa-terminal"></i></button>
+    </nav>
+    <aside id="dar-codex-panel" class="hidden fixed inset-y-0 right-0 z-[90] w-full max-w-md border-l border-outline-variant bg-surface shadow-2xl" aria-label="Codex assistant" aria-hidden="true">
+        <div class="flex h-full min-h-0 flex-col">
+            <header class="flex h-16 shrink-0 items-center gap-3 border-b border-outline-variant px-4">
+                <span class="grid h-9 w-9 place-items-center rounded-xl bg-primary-container text-primary"><i class="fa-solid fa-terminal"></i></span>
+                <h2 id="dar-codex-title" class="min-w-0 flex-1 truncate text-base font-semibold">Codex</h2>
+                <button id="dar-codex-settings-open" type="button" class="h-9 w-9 rounded-full text-on-surface-variant hover:bg-surface-container" aria-label="Codex settings"><i class="fa-solid fa-gear"></i></button>
+                <a href="/codex" class="grid h-9 w-9 place-items-center rounded-full text-on-surface-variant hover:bg-surface-container" aria-label="Open full Codex app"><i class="fa-solid fa-up-right-from-square"></i></a>
+                <button id="dar-codex-close" type="button" class="h-9 w-9 rounded-full hover:bg-surface-container" aria-label="Close Codex"><i class="fa-solid fa-xmark"></i></button>
+            </header>
+            <div id="dar-codex-unavailable" class="hidden m-4 rounded-2xl bg-warning-container p-4 text-sm text-on-warning-container">Connect Codex in the full app before using the global assistant.</div>
+            <div id="dar-codex-ready" class="hidden flex min-h-0 flex-1 flex-col">
+                <section class="shrink-0 border-b border-outline-variant p-3" aria-label="Recent chats">
+                    <div class="mb-2 flex items-center"><h3 class="flex-1 px-2 text-xs font-semibold uppercase tracking-widest text-on-surface-variant">Recent chats</h3><button id="dar-codex-new" class="h-9 rounded-full px-3 text-xs text-primary hover:bg-primary-container"><i class="fa-solid fa-plus mr-1"></i>New</button></div>
+                    <div id="dar-codex-sessions" class="grid max-h-32 gap-1 overflow-y-auto"></div>
+                    <p id="dar-codex-session-empty" class="hidden px-2 py-3 text-sm text-on-surface-variant">No chats yet. Start one below.</p>
+                </section>
+                <div id="dar-codex-status" class="px-4 py-2 text-xs text-on-surface-variant" role="status" aria-live="polite"></div>
+                <section id="dar-codex-messages" class="flex-1 space-y-4 overflow-y-auto px-4 py-3" aria-label="Conversation"></section>
+                <footer class="shrink-0 border-t border-outline-variant p-3">
+                    <div id="dar-codex-attachments" class="mb-2 hidden flex-wrap gap-2"></div>
+                    <div class="flex items-end gap-2 rounded-2xl border border-outline-variant bg-surface-container-low p-2 focus-within:border-primary">
+                        <button id="dar-codex-upload" type="button" class="grid h-10 w-10 shrink-0 place-items-center rounded-full text-on-surface-variant hover:bg-surface-container" aria-label="Upload attachment"><i class="fa-solid fa-paperclip"></i></button>
+                        <input id="dar-codex-file" type="file" class="hidden">
+                        <textarea id="dar-codex-input" rows="1" class="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 outline-none" placeholder="Ask Codex…"></textarea>
+                        <button id="dar-codex-send" class="grid h-10 w-10 place-items-center rounded-full bg-primary text-on-primary" aria-label="Send"><i class="fa-solid fa-arrow-up"></i></button>
+                    </div>
+                    <button id="dar-codex-picker" type="button" class="mt-2 h-8 rounded-lg px-2 text-xs text-primary hover:bg-primary-container"><i class="fa-solid fa-folder-open mr-1"></i>Add from Files</button>
+                    <p class="mt-2 text-center text-[11px] text-on-surface-variant">Confirm important changes.</p>
+                </footer>
+            </div>
+            <section id="dar-codex-settings" class="hidden absolute inset-0 z-10 flex-col bg-surface" aria-label="Codex settings">
+                <header class="flex h-16 shrink-0 items-center gap-3 border-b border-outline-variant px-4"><button id="dar-codex-settings-close" type="button" class="h-9 w-9 rounded-full hover:bg-surface-container" aria-label="Back to chat"><i class="fa-solid fa-arrow-left"></i></button><h3 class="text-base font-semibold">Codex settings</h3></header>
+                <div class="flex-1 space-y-5 overflow-y-auto p-5">
+                    <label class="block text-sm font-medium">Action approval<select id="dar-codex-approval-mode" class="focus-field mt-2 h-11 w-full"><option value="confirm">Confirm every write</option><option value="automatic">Automatic safe writes</option></select><span class="mt-1 block text-xs font-normal text-on-surface-variant">External and destructive actions always require confirmation.</span></label>
+                    <label class="block text-sm font-medium">Web search<select id="dar-codex-web-search" class="focus-field mt-2 h-11 w-full"><option value="disabled">Disabled</option><option value="cached">Cached/indexed</option><option value="live">Live</option></select></label>
+                    <p id="dar-codex-settings-status" class="text-sm text-on-surface-variant" role="status" aria-live="polite"></p>
+                </div>
+                <footer class="flex justify-end border-t border-outline-variant p-4"><button id="dar-codex-settings-save" type="button" class="h-10 rounded-xl bg-primary px-5 font-medium text-on-primary">Save</button></footer>
+            </section>
+        </div>
+    </aside>
+    <script src="/assets/shell.js" defer></script>
 </body>
 </html>

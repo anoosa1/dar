@@ -1,51 +1,35 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme-mode="{{.ThemeMode}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'surface': '#fef7ff',
-                        'surface-container': '#f0eaf1',
-                        'surface-container-high': '#eae4eb',
-                        'surface-container-highest': '#e4dee5',
-                        'primary': '#6750a4',
-                        'primary-container': '#e8def8',
-                        'on-surface': '#1b1b1f',
-                        'on-surface-variant': '#49454f',
-                        'outline-variant': '#cac4d0',
-                        'error': '#ba1a1a',
-                        'error-container': '#ffdad6',
-                    }
-                }
-            }
-        }
-    </script>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/app.v1.css?v=4">
+    <link rel="stylesheet" href="/assets/fontawesome/6.5.1/css/all.min.css">
+    {{template "theme" .}}
 </head>
-<body class="bg-surface text-on-surface min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-sm">
-        <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-primary mb-2">Dar</h1>
-            <p class="text-on-surface-variant">Your self-hosted cloud</p>
-        </div>
-        <div class="bg-surface-container rounded-2xl p-6 shadow-1">
-            <h2 class="text-lg font-semibold mb-4 text-center">Sign in</h2>
+<body class="focus-body bg-surface text-on-surface h-dvh overflow-hidden flex items-center justify-center p-4 selection:bg-primary/30 selection:text-on-surface">
+    <main class="grid w-full max-w-4xl max-h-full overflow-y-auto overscroll-contain rounded-3xl border border-outline-variant bg-surface shadow-2xl [scrollbar-gutter:stable] md:grid-cols-2">
+        <section class="hidden min-h-[34rem] flex-col justify-between bg-surface-container-low p-10 md:flex" aria-label="About Dar">
+            <div><div class="mb-8 flex items-center text-2xl font-bold tracking-tight"><span class="mr-3 inline-block h-5 w-5 rounded-full border-4 border-primary"></span>Dar</div><p class="max-w-sm text-4xl font-normal leading-tight">Your day,<br><span class="text-primary">quietly organized.</span></p></div>
+            <p class="max-w-sm text-sm leading-6 text-on-surface-variant">Files, schedules, mail, notes, and your assistant—private, self-hosted, and in one place.</p>
+        </section>
+        <section class="flex min-h-[34rem] flex-col justify-center p-6 sm:p-10">
+            <div class="mb-8 md:hidden"><div class="mb-3 flex items-center text-2xl font-bold tracking-tight"><span class="mr-3 inline-block h-5 w-5 rounded-full border-4 border-primary"></span>Dar</div></div>
+            <p class="mb-2 text-xs font-semibold uppercase tracking-widest text-primary">Welcome back</p>
+            <h1 class="mb-2 text-3xl font-normal tracking-tight">Sign in to Dar</h1>
+            <p class="mb-8 text-sm text-on-surface-variant">Continue with your configured identity provider.</p>
             {{range .Providers}}
             <a href="{{.URL}}"
-                class="flex items-center gap-3 w-full px-4 py-3 rounded-full border border-outline-variant text-on-surface no-underline hover:bg-surface-container-highest transition-colors mb-3">
+                class="mb-3 flex min-h-12 w-full items-center gap-3 rounded-xl bg-primary px-4 py-3 font-medium text-on-primary no-underline transition-colors hover:opacity-90">
                 <span class="text-xl">{{.Icon}}</span>
-                <span class="font-medium">Continue with {{.Name}}</span>
+                <span>Continue with {{.Name}}</span><i class="fa-solid fa-arrow-right ml-auto" aria-hidden="true"></i>
             </a>
             {{else}}
-            <p class="text-on-surface-variant text-center py-4">No authentication providers configured.</p>
+            <div class="rounded-2xl bg-warning-container p-4 text-sm text-on-warning-container">No authentication providers configured.</div>
             {{end}}
-        </div>
-    </div>
+        </section>
+    </main>
 </body>
 </html>

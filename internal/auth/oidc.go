@@ -4,10 +4,13 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,10 +30,10 @@ type OIDCConfig struct {
 
 // OIDCProvider handles OIDC authentication flow.
 type OIDCProvider struct {
-	config        OIDCConfig
-	oauth2Config  *oauth2.Config
-	endpoints     providerEndpoints
-	httpClient    *http.Client
+	config       OIDCConfig
+	oauth2Config *oauth2.Config
+	endpoints    providerEndpoints
+	httpClient   *http.Client
 }
 
 type providerEndpoints struct {
@@ -41,15 +44,36 @@ type providerEndpoints struct {
 
 // OIDCProfile is the normalized user profile returned by the OIDC provider.
 type OIDCProfile struct {
-	Sub           string `json:"sub"`
-	Email         string `json:"email"`
-	Name          string `json:"name"`
-	Picture       string `json:"picture"`
-	EmailVerified bool   `json:"email_verified"`
+	Sub               string   `json:"sub"`
+	Email             string   `json:"email"`
+	PreferredUsername string   `json:"preferred_username"`
+	Name              string   `json:"name"`
+	Picture           string   `json:"picture"`
+	EmailVerified     bool     `json:"email_verified"`
+	Groups            []string `json:"groups"`
+}
+
+// InGroup reports whether the identity provider included group in the standard
+// groups claim. Group matching is exact because providers commonly use
+// case-sensitive identifiers.
+func (p *OIDCProfile) InGroup(group string) bool {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return false
+	}
+	for _, candidate := range p.Groups {
+		if candidate == group {
+			return true
+		}
+	}
+	return false
 }
 
 // NewOIDCProvider discovers OIDC endpoints and creates a provider.
 func NewOIDCProvider(ctx context.Context, cfg OIDCConfig) (*OIDCProvider, error) {
+	if err := requireSecureOIDCURL(cfg.Issuer); err != nil {
+		return nil, fmt.Errorf("oidc issuer: %w", err)
+	}
 	// Discover OIDC endpoints from .well-known/openid-configuration.
 	discoveryURL := strings.TrimRight(cfg.Issuer, "/") + "/.well-known/openid-configuration"
 
@@ -63,15 +87,22 @@ func NewOIDCProvider(ctx context.Context, cfg OIDCConfig) (*OIDCProvider, error)
 		return nil, fmt.Errorf("oidc discovery: %w", err)
 	}
 	defer resp.Body.Close()
-
-	var eps providerEndpoints
-	if err := json.NewDecoder(resp.Body).Decode(&eps); err != nil {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("oidc discovery decode: %w (body: %s)", err, string(body))
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("oidc discovery response: %s", resp.Status)
 	}
 
-	if eps.AuthorizationEndpoint == "" || eps.TokenEndpoint == "" {
+	var eps providerEndpoints
+	if err := decodeLimitedJSON(resp.Body, &eps, 1<<20); err != nil {
+		return nil, fmt.Errorf("oidc discovery decode: %w", err)
+	}
+
+	if eps.AuthorizationEndpoint == "" || eps.TokenEndpoint == "" || eps.UserinfoEndpoint == "" {
 		return nil, fmt.Errorf("oidc discovery: missing required endpoints")
+	}
+	for label, endpoint := range map[string]string{"authorization": eps.AuthorizationEndpoint, "token": eps.TokenEndpoint, "userinfo": eps.UserinfoEndpoint} {
+		if err := requireSecureOIDCURL(endpoint); err != nil {
+			return nil, fmt.Errorf("oidc %s endpoint: %w", label, err)
+		}
 	}
 
 	redirectURI := cfg.RedirectURI
@@ -98,28 +129,24 @@ func NewOIDCProvider(ctx context.Context, cfg OIDCConfig) (*OIDCProvider, error)
 	}, nil
 }
 
-// AuthURL returns the authorization URL for the OIDC provider.
-func (p *OIDCProvider) AuthURL() string {
-	// Use a random state for CSRF protection.
-	state := randomString(32)
-	return p.oauth2Config.AuthCodeURL(state)
+// AuthURL returns an authorization URL bound to a caller-persisted state and
+// PKCE verifier.
+func (p *OIDCProvider) AuthURL(state, verifier string) string {
+	challenge := sha256.Sum256([]byte(verifier))
+	return p.oauth2Config.AuthCodeURL(state,
+		oauth2.SetAuthURLParam("code_challenge", base64.RawURLEncoding.EncodeToString(challenge[:])),
+		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
+	)
 }
 
 // ExchangeCode exchanges an authorization code for an OIDC user profile.
-func (p *OIDCProvider) ExchangeCode(ctx context.Context, code string) (*OIDCProfile, error) {
-	log.Printf("[oidc-exchange] exchanging code, token_url=%s", p.endpoints.TokenEndpoint)
-	token, err := p.oauth2Config.Exchange(ctx, code)
+func (p *OIDCProvider) ExchangeCode(ctx context.Context, code, verifier string) (*OIDCProfile, error) {
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, p.httpClient)
+	token, err := p.oauth2Config.Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		return nil, fmt.Errorf("oidc exchange (token_url=%s): %w", p.endpoints.TokenEndpoint, err)
 	}
-	log.Printf("[oidc-exchange] got token, fetching userinfo from %s", p.endpoints.UserinfoEndpoint)
-
-	// Fetch userinfo.
 	userinfoURL := p.endpoints.UserinfoEndpoint
-	if userinfoURL == "" {
-		// Fallback: decode ID token claims.
-		return p.profileFromIDToken(token)
-	}
 
 	client := p.oauth2Config.Client(ctx, token)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, userinfoURL, nil)
@@ -137,12 +164,15 @@ func (p *OIDCProvider) ExchangeCode(ctx context.Context, code string) (*OIDCProf
 	}
 
 	var profile OIDCProfile
-	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
+	if err := decodeLimitedJSON(resp.Body, &profile, 1<<20); err != nil {
 		return nil, fmt.Errorf("userinfo decode: %w", err)
 	}
 
 	if profile.Sub == "" {
 		return nil, fmt.Errorf("userinfo response missing sub claim")
+	}
+	if strings.TrimSpace(profile.Email) == "" || !profile.EmailVerified {
+		return nil, fmt.Errorf("userinfo response requires a verified email")
 	}
 
 	return &profile, nil
@@ -166,97 +196,49 @@ func (p *OIDCProvider) DisplayName() string {
 	return "OIDC"
 }
 
-func (p *OIDCProvider) profileFromIDToken(token *oauth2.Token) (*OIDCProfile, error) {
-	idToken, ok := token.Extra("id_token").(string)
-	if !ok {
-		return nil, fmt.Errorf("no id_token in token response and no userinfo endpoint")
+// NewOIDCState returns a cryptographically random one-time state value.
+func NewOIDCState() (string, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate OIDC state: %w", err)
 	}
-	// Decode the ID token payload (middle segment of JWT).
-	parts := strings.Split(idToken, ".")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid id_token format")
+	return hex.EncodeToString(b[:]), nil
+}
+
+// NewPKCEVerifier returns an RFC 7636 verifier with 256 bits of entropy.
+func NewPKCEVerifier() (string, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate PKCE verifier: %w", err)
 	}
-	payload, err := base64Decode(parts[1])
+	return base64.RawURLEncoding.EncodeToString(b[:]), nil
+}
+
+func decodeLimitedJSON(r io.Reader, dst any, max int64) error {
+	data, err := io.ReadAll(io.LimitReader(r, max+1))
 	if err != nil {
-		return nil, fmt.Errorf("decode id_token: %w", err)
+		return err
 	}
-	var profile OIDCProfile
-	if err := json.Unmarshal(payload, &profile); err != nil {
-		return nil, fmt.Errorf("parse id_token: %w", err)
+	if int64(len(data)) > max {
+		return fmt.Errorf("response exceeds %d bytes", max)
 	}
-	return &profile, nil
+	if err := json.Unmarshal(data, dst); err != nil {
+		return err
+	}
+	return nil
 }
 
-func randomString(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	for i := range b {
-		b[i] = letters[int(b[i])%len(letters)]
+func requireSecureOIDCURL(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Hostname() == "" {
+		return fmt.Errorf("invalid URL")
 	}
-	return string(b)
-}
-
-func base64Decode(s string) ([]byte, error) {
-	// Add padding if needed.
-	switch len(s) % 4 {
-	case 2:
-		s += "=="
-	case 3:
-		s += "="
+	if strings.EqualFold(u.Scheme, "https") {
+		return nil
 	}
-	// Use standard base64 with URL-safe alphabet.
-	s = strings.NewReplacer("-", "+", "_", "/").Replace(s)
-	result := make([]byte, len(s))
-	n, err := base64DecodeRaw(s, result)
-	if err != nil {
-		return nil, err
+	host := strings.ToLower(u.Hostname())
+	if strings.EqualFold(u.Scheme, "http") && (host == "localhost" || net.ParseIP(host).IsLoopback()) {
+		return nil
 	}
-	return result[:n], nil
-}
-
-// Simple base64 decode.
-func base64DecodeRaw(s string, dst []byte) (int, error) {
-	var val uint32
-	var n, pos int
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '=' {
-			break
-		}
-		var idx byte
-		switch {
-		case 'A' <= c && c <= 'Z':
-			idx = c - 'A'
-		case 'a' <= c && c <= 'z':
-			idx = c - 'a' + 26
-		case '0' <= c && c <= '9':
-			idx = c - '0' + 52
-		case c == '+':
-			idx = 62
-		case c == '/':
-			idx = 63
-		default:
-			continue
-		}
-		val = val<<6 | uint32(idx)
-		n++
-		if n == 4 {
-			dst[pos] = byte(val >> 16)
-			dst[pos+1] = byte(val >> 8)
-			dst[pos+2] = byte(val)
-			pos += 3
-			n = 0
-			val = 0
-		}
-	}
-	if n > 0 {
-		val <<= (4 - n) * 6
-		dst[pos] = byte(val >> 16)
-		if n >= 3 {
-			dst[pos+1] = byte(val >> 8)
-		}
-		pos += n - 1
-	}
-	return pos, nil
+	return fmt.Errorf("HTTPS is required outside loopback development")
 }

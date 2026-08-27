@@ -1,0 +1,238 @@
+{{define "files.html"}}
+<div id="files-app" data-active-view="{{.ActiveView}}" data-user-id="{{.UserID}}" data-dar-shell class="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
+	<input id="files-upload-input" type="file" class="hidden" multiple>
+	<input id="files-folder-input" type="file" class="hidden" webkitdirectory multiple>
+
+	<header class="focus-toolbar shrink-0 bg-surface flex items-center gap-2">
+		<div data-dar-sidebar-toggle-host class="flex min-w-0 shrink-0 items-center gap-2">
+			<h1 class="truncate text-lg font-semibold">Files</h1>
+		</div>
+		<div class="relative" id="files-new-wrap">
+			<button id="files-new-button" type="button" class="h-10 px-4 rounded-full bg-primary text-on-primary text-sm font-medium border-0 cursor-pointer hover:opacity-90 inline-flex items-center gap-2">
+				<i class="fa-solid fa-plus"></i><span>New</span>
+			</button>
+			<div id="files-new-menu" class="hidden absolute left-0 top-full mt-2 w-72 rounded-md border border-outline-variant bg-surface shadow-2 py-2 z-40">
+				<div class="px-3 py-1 text-xs font-medium text-on-surface-variant">Upload from device</div>
+				<button type="button" data-action="upload-files" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-file-arrow-up w-5 text-center"></i><span>Upload files</span></button>
+				<button type="button" data-action="upload-folder" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-folder-open w-5 text-center"></i><span>Upload folders</span></button>
+				<div class="my-1 border-t border-outline-variant"></div>
+				<div class="px-3 py-1 text-xs font-medium text-on-surface-variant">Create new</div>
+				<button type="button" data-action="new-folder" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-folder-plus w-5 text-center"></i><span>New folder</span></button>
+				<button type="button" data-action="file-request" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-inbox w-5 text-center"></i><span>Create file request</span></button>
+				<button type="button" data-action="new-text" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-file-lines w-5 text-center"></i><span>New text file</span></button>
+				<button type="button" data-action="new-symlink" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-link w-5 text-center"></i><span>New symbolic link</span></button>
+				<button type="button" data-action="templates-folder" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-layer-group w-5 text-center"></i><span>Create templates folder</span></button>
+				<button type="button" data-action="folder-description" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-align-left w-5 text-center"></i><span>Add folder description</span></button>
+			</div>
+		</div>
+
+		<nav id="files-breadcrumbs" class="min-w-0 flex-1 flex items-center gap-1 text-sm"></nav>
+
+		<div id="files-selection" class="hidden items-center gap-2 text-sm">
+			<span id="files-selection-count" class="font-medium text-primary"></span>
+			<button type="button" data-action="bulk-delete" class="h-9 px-3 rounded-full bg-error-container text-error text-xs font-medium border-0 cursor-pointer">Delete</button>
+			<button type="button" data-action="bulk-move" class="h-9 px-3 rounded-full bg-surface-container-high text-on-surface text-xs font-medium border-0 cursor-pointer">Move</button>
+		</div>
+
+		<div class="hidden md:flex items-center gap-2">
+			<div class="relative">
+			<input id="files-search" type="search" aria-label="Search files" placeholder="Search files" class="h-10 w-56 rounded-full bg-surface-container px-4 pr-10 text-sm border-0 outline-none focus:ring-2 focus:ring-primary/30">
+				<button type="button" data-action="search" aria-label="Submit file search" class="absolute right-1 top-1 w-8 h-8 rounded-full bg-transparent border-0 cursor-pointer text-on-surface-variant"><i class="fa-solid fa-magnifying-glass"></i></button>
+			</div>
+			<button type="button" data-action="toggle-view" title="Toggle grid or list" class="w-10 h-10 rounded-full bg-surface-container text-on-surface-variant border-0 cursor-pointer hover:bg-surface-container-high flex items-center justify-center">
+				<i id="files-view-icon" class="fa-solid fa-list"></i>
+			</button>
+		</div>
+	</header>
+
+	<section class="h-12 shrink-0 border-b border-outline-variant bg-surface flex items-center gap-2 px-3 md:px-4 overflow-x-auto">
+		<button type="button" data-filter-type="" class="files-chip h-8 px-3 rounded-full border-0 bg-primary-container text-primary text-xs font-medium cursor-pointer whitespace-nowrap">All types</button>
+		<button type="button" data-filter-type="folder" class="files-chip h-8 px-3 rounded-full border-0 bg-surface-container text-on-surface-variant text-xs font-medium cursor-pointer whitespace-nowrap">Folders</button>
+		<button type="button" data-filter-type="document" class="files-chip h-8 px-3 rounded-full border-0 bg-surface-container text-on-surface-variant text-xs font-medium cursor-pointer whitespace-nowrap">Documents</button>
+		<button type="button" data-filter-type="image" class="files-chip h-8 px-3 rounded-full border-0 bg-surface-container text-on-surface-variant text-xs font-medium cursor-pointer whitespace-nowrap">Images</button>
+		<button type="button" data-filter-type="video" class="files-chip h-8 px-3 rounded-full border-0 bg-surface-container text-on-surface-variant text-xs font-medium cursor-pointer whitespace-nowrap">Videos</button>
+		<button type="button" data-filter-type="audio" class="files-chip h-8 px-3 rounded-full border-0 bg-surface-container text-on-surface-variant text-xs font-medium cursor-pointer whitespace-nowrap">Audio</button>
+		<div class="hidden md:flex items-center gap-1 ml-auto text-xs text-on-surface-variant">
+			<button type="button" data-sort="type" class="files-filter-button h-8 px-3 rounded-full border-0 bg-surface-container text-on-surface-variant text-xs font-medium cursor-pointer">Type</button>
+			<button type="button" data-sort="modified" class="files-filter-button h-8 px-3 rounded-full border-0 bg-surface-container text-on-surface-variant text-xs font-medium cursor-pointer">Modified</button>
+			<button type="button" data-action="people-filter" class="files-filter-button h-8 px-3 rounded-full border-0 bg-surface-container text-on-surface-variant text-xs font-medium cursor-pointer">People</button>
+		</div>
+	</section>
+
+	<div class="flex-1 min-h-0 flex">
+		<div data-dar-master-pane class="flex-1 min-w-0 flex flex-col bg-transparent">
+			<div id="files-list-head" class="hidden h-10 shrink-0 border-b border-outline-variant px-4 text-xs font-medium text-on-surface-variant items-center gap-3">
+				<input id="files-check-all" type="checkbox" aria-label="Select all files" class="w-4 h-4 accent-primary">
+				<div class="w-7"></div>
+				<button type="button" data-sort="name" class="flex-1 text-left border-0 bg-transparent cursor-pointer text-on-surface-variant font-medium">Name <i class="fa-solid fa-sort text-[10px]"></i></button>
+				<div class="w-24 text-right hidden md:block">Size</div>
+				<button type="button" data-sort="modified" class="w-32 text-right hidden lg:block border-0 bg-transparent cursor-pointer text-on-surface-variant font-medium">Modified</button>
+				<div class="w-12"></div>
+			</div>
+			<div id="files-list" class="flex-1 overflow-y-auto"></div>
+		</div>
+
+		<aside id="files-details" data-dar-detail-pane class="hidden w-full lg:w-96 shrink-0 border-l border-outline-variant bg-transparent flex-col">
+			<div data-dar-pane-header class="h-14 border-b border-outline-variant flex items-center gap-2 px-4">
+				<button type="button" data-action="close-details" data-dar-detail-back class="w-9 h-9 rounded-full border-0 bg-transparent cursor-pointer text-on-surface-variant hover:bg-surface-container-high lg:hidden" aria-label="Back to files"><i class="fa-solid fa-arrow-left"></i></button>
+				<div id="files-details-icon" class="w-9 h-9 rounded-full bg-primary-container text-primary flex items-center justify-center"></div>
+				<div class="min-w-0 flex-1">
+					<div id="files-details-title" class="text-sm font-semibold truncate"></div>
+					<div id="files-details-subtitle" class="text-xs text-on-surface-variant truncate"></div>
+				</div>
+				<button type="button" data-action="details-menu" aria-label="File details menu" class="w-9 h-9 rounded-full border-0 bg-transparent cursor-pointer text-on-surface-variant hover:bg-surface-container-high"><i class="fa-solid fa-ellipsis"></i></button>
+				<button type="button" data-action="close-details" class="hidden lg:inline-flex w-9 h-9 items-center justify-center rounded-full border-0 bg-transparent cursor-pointer text-on-surface-variant hover:bg-surface-container-high" aria-label="Close file details"><i class="fa-solid fa-xmark"></i></button>
+			</div>
+			<div class="border-b border-outline-variant px-3 pt-3">
+				<div id="files-preview" class="h-32 rounded-md bg-surface-container flex items-center justify-center overflow-hidden mb-3"></div>
+				<div class="flex gap-1">
+					<button type="button" data-tab="sharing" class="files-tab h-9 px-3 rounded-t-md border-0 bg-surface text-primary text-sm font-medium cursor-pointer">Sharing</button>
+					<button type="button" data-tab="activity" class="files-tab h-9 px-3 rounded-t-md border-0 bg-transparent text-on-surface-variant text-sm font-medium cursor-pointer">Activity</button>
+					<button type="button" data-tab="versions" class="files-tab h-9 px-3 rounded-t-md border-0 bg-transparent text-on-surface-variant text-sm font-medium cursor-pointer">Versions</button>
+				</div>
+			</div>
+			<div id="files-details-body" class="flex-1 overflow-y-auto p-4 text-sm"></div>
+		</aside>
+	</div>
+
+	<div id="files-row-menu" class="hidden fixed z-50 w-56 rounded-md border border-outline-variant bg-surface shadow-2 py-2">
+		<button type="button" data-row-action="favorite" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-star w-5 text-center"></i><span>Add to favorites</span></button>
+		<button type="button" data-row-action="details" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-circle-info w-5 text-center"></i><span>Details</span></button>
+		<button type="button" data-row-action="tags" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-tags w-5 text-center"></i><span>Manage tags</span></button>
+		<button type="button" data-row-action="view" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-eye w-5 text-center"></i><span>View</span></button>
+		<button type="button" data-row-action="rename" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-pen w-5 text-center"></i><span>Rename</span></button>
+		<button type="button" data-row-action="move-copy" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-arrows-up-down-left-right w-5 text-center"></i><span>Move or copy</span></button>
+		<button type="button" data-row-action="reminder" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-bell w-5 text-center"></i><span>Set reminder</span></button>
+		<button type="button" data-row-action="open-local" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-arrow-up-right-from-square w-5 text-center"></i><span>Open locally</span></button>
+		<button type="button" data-row-action="download" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-surface-container-high flex items-center gap-3"><i class="fa-solid fa-download w-5 text-center"></i><span>Download</span></button>
+		<div class="my-1 border-t border-outline-variant"></div>
+		<button type="button" data-row-action="delete" class="files-menu-item w-full h-9 px-3 text-left text-sm border-0 bg-transparent cursor-pointer hover:bg-error-container flex items-center gap-3 text-error"><i class="fa-solid fa-trash-can w-5 text-center"></i><span>Delete file</span></button>
+	</div>
+
+		<div id="files-drop" class="hidden fixed inset-0 z-50 bg-primary/10 border-4 border-dashed border-primary m-4 rounded-md items-center justify-center">
+			<div class="text-center text-primary">
+				<i class="fa-solid fa-cloud-arrow-up text-5xl mb-3 block"></i>
+				<div class="text-lg font-semibold">Drop files to upload</div>
+			</div>
+		</div>
+
+		<div id="files-settings-modal" class="hidden fixed inset-0 z-50 bg-scrim/30 items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="files-settings-title">
+			<div class="w-full max-w-3xl max-h-[90vh] rounded-md bg-surface shadow-2 border border-outline-variant flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+				<div class="h-14 shrink-0 border-b border-outline-variant px-5 flex items-center gap-3">
+					<h2 id="files-settings-title" class="text-lg font-semibold flex-1">Files settings</h2>
+					<button type="button" data-settings-close class="w-9 h-9 rounded-full border-0 bg-transparent cursor-pointer text-on-surface-variant hover:bg-surface-container-high"><i class="fa-solid fa-xmark"></i></button>
+				</div>
+				<div class="flex-1 min-h-0 overflow-y-auto p-5 space-y-6">
+					<section class="space-y-3">
+						<h3 class="text-sm font-semibold text-on-surface">General</h3>
+						<label class="flex items-center justify-between gap-4 text-sm"><span>Sort favorites first</span><input id="files-setting-sort-favorites" type="checkbox" class="w-4 h-4 accent-primary"></label>
+						<label class="flex items-center justify-between gap-4 text-sm"><span>Sort folders before files</span><input id="files-setting-sort-folders" type="checkbox" class="w-4 h-4 accent-primary"></label>
+						<label class="block text-sm space-y-1"><span class="font-medium">Default view</span><select id="files-setting-default-view" class="w-full h-10 px-3 rounded-full bg-surface-container border-0 outline-none"><option value="list">List</option><option value="grid">Grid</option></select></label>
+						<label class="block text-sm space-y-1"><span class="font-medium">Personal folder</span><input id="files-setting-personal-folder" type="text" class="w-full h-10 px-3 rounded-full bg-surface-container border-0 outline-none font-mono text-sm" placeholder="/docs"></label>
+						<label class="block text-sm space-y-1"><span class="font-medium">Deleted files folder</span><input id="files-setting-trash-folder" type="text" class="w-full h-10 px-3 rounded-full bg-surface-container border-0 outline-none font-mono text-sm" placeholder="/.local/share/Trash"></label>
+					</section>
+					<section class="space-y-3">
+						<h3 class="text-sm font-semibold text-on-surface">Appearance</h3>
+						<label class="flex items-center justify-between gap-4 text-sm"><span>Show hidden files</span><input id="files-setting-show-hidden" type="checkbox" class="w-4 h-4 accent-primary"></label>
+						<label class="flex items-center justify-between gap-4 text-sm"><span>Show file type column</span><input id="files-setting-file-type" type="checkbox" class="w-4 h-4 accent-primary"></label>
+						<label class="flex items-center justify-between gap-4 text-sm"><span>Show file extensions</span><input id="files-setting-file-extensions" type="checkbox" class="w-4 h-4 accent-primary"></label>
+						<label class="flex items-center justify-between gap-4 text-sm"><span>Crop image previews</span><input id="files-setting-crop-previews" type="checkbox" class="w-4 h-4 accent-primary"></label>
+					</section>
+					<section class="space-y-3">
+						<h3 class="text-sm font-semibold text-on-surface">Additional settings</h3>
+						<label class="flex items-center justify-between gap-4 text-sm"><span>Show recommendations</span><input id="files-setting-recommendations" type="checkbox" class="w-4 h-4 accent-primary"></label>
+					</section>
+					<section class="space-y-3">
+						<h3 class="text-sm font-semibold text-on-surface">Warnings</h3>
+						<label class="flex items-center justify-between gap-4 text-sm"><span>Warn before changing a file extension</span><input id="files-setting-warn-extension" type="checkbox" class="w-4 h-4 accent-primary"></label>
+						<label class="flex items-center justify-between gap-4 text-sm"><span>Warn before moving files to deleted files</span><input id="files-setting-warn-delete" type="checkbox" class="w-4 h-4 accent-primary"></label>
+					</section>
+					<section class="space-y-2">
+						<h3 class="text-sm font-semibold text-on-surface">WebDAV</h3>
+						<div class="flex gap-2"><input id="files-setting-webdav" readonly class="min-w-0 flex-1 h-10 px-3 rounded-full bg-surface-container border-0 outline-none font-mono text-xs"><button type="button" data-settings-copy-webdav class="h-10 px-4 rounded-full bg-surface-container-high border-0 cursor-pointer text-sm font-medium">Copy</button></div>
+					</section>
+					<section class="space-y-2">
+						<h3 class="text-sm font-semibold text-on-surface">Keyboard shortcuts</h3>
+						<div class="grid sm:grid-cols-2 gap-2 text-sm text-on-surface-variant">
+							<div class="flex justify-between gap-3"><span>Delete selected</span><kbd class="font-mono text-xs">Delete</kbd></div>
+							<div class="flex justify-between gap-3"><span>Search</span><kbd class="font-mono text-xs">Enter</kbd></div>
+						</div>
+					</section>
+					<div id="files-settings-message" class="hidden text-sm"></div>
+				</div>
+				<div class="h-14 shrink-0 border-t border-outline-variant px-5 flex items-center justify-end gap-2">
+					<button type="button" data-settings-close class="h-10 px-4 rounded-full border-0 bg-transparent text-primary text-sm font-medium cursor-pointer hover:bg-surface-container-high">Cancel</button>
+					<button type="button" data-settings-save class="h-10 px-5 rounded-full border-0 bg-primary text-on-primary text-sm font-medium cursor-pointer hover:opacity-90">Save</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<section id="files-editor-overlay" class="hidden fixed inset-0 z-[70] bg-surface flex-col" role="dialog" aria-modal="true" aria-labelledby="files-editor-name">
+		<header class="h-14 shrink-0 border-b border-outline-variant px-2 sm:px-4 flex items-center gap-2 bg-surface">
+			<button id="files-editor-close" type="button" class="w-10 h-10 rounded-full hover:bg-surface-container-highest" title="Close editor" aria-label="Close editor"><i class="fa-solid fa-arrow-left"></i></button>
+			<i class="fa-solid fa-file-lines text-primary hidden sm:inline"></i>
+			<input id="files-editor-name" aria-label="Filename" class="min-w-0 flex-1 h-10 px-2 bg-transparent border-0 outline-none font-semibold text-base" spellcheck="false">
+			<span id="files-editor-status" class="hidden sm:inline text-xs text-on-surface-variant whitespace-nowrap">Saved</span>
+			<button id="files-editor-image" type="button" class="hidden w-10 h-10 rounded-full hover:bg-surface-container-highest" title="Insert image"><i class="fa-regular fa-image"></i></button>
+			<button id="files-editor-save" type="button" class="w-10 h-10 rounded-full hover:bg-primary-container text-primary" title="Save now"><i class="fa-solid fa-check"></i></button>
+			<button id="files-editor-close-secondary" type="button" class="w-10 h-10 rounded-full hover:bg-surface-container-highest" title="Close editor" aria-label="Close editor"><i class="fa-solid fa-xmark"></i></button>
+		</header>
+		<div class="h-12 shrink-0 border-b border-outline-variant px-3 flex items-center gap-2">
+			<span id="files-editor-path" class="min-w-0 flex-1 truncate text-xs text-on-surface-variant font-mono"></span>
+			<div id="files-editor-modes" class="hidden rounded-full bg-surface-container p-1 shrink-0">
+				<button type="button" data-editor-mode="rich" class="h-8 px-3 rounded-full text-xs">Rich</button>
+				<button type="button" data-editor-mode="source" class="h-8 px-3 rounded-full text-xs">Source</button>
+			</div>
+		</div>
+		<div id="files-editor-toolbar" class="hidden h-11 px-3 flex items-center gap-1 border-b border-outline-variant shrink-0 overflow-x-auto">
+			<button type="button" data-editor-format="bold" class="w-9 h-9 rounded-full hover:bg-surface-container-highest font-bold" title="Bold">B</button>
+			<button type="button" data-editor-format="italic" class="w-9 h-9 rounded-full hover:bg-surface-container-highest italic" title="Italic">I</button>
+			<button type="button" data-editor-format="h2" class="w-9 h-9 rounded-full hover:bg-surface-container-highest" title="Heading">H</button>
+			<button type="button" data-editor-format="link" class="w-9 h-9 rounded-full hover:bg-surface-container-highest" title="Link"><i class="fa-solid fa-link"></i></button>
+			<button type="button" data-editor-format="ul" class="w-9 h-9 rounded-full hover:bg-surface-container-highest" title="Bulleted list"><i class="fa-solid fa-list-ul"></i></button>
+			<button type="button" data-editor-format="task" class="w-9 h-9 rounded-full hover:bg-surface-container-highest" title="Task list"><i class="fa-solid fa-list-check"></i></button>
+			<button type="button" data-editor-format="quote" class="w-9 h-9 rounded-full hover:bg-surface-container-highest" title="Quote"><i class="fa-solid fa-quote-left"></i></button>
+			<button type="button" data-editor-format="code" class="w-9 h-9 rounded-full hover:bg-surface-container-highest" title="Code"><i class="fa-solid fa-code"></i></button>
+		</div>
+		<div class="flex-1 min-h-0 overflow-y-auto bg-surface">
+			<div id="files-editor-rich" contenteditable="true" class="hidden min-h-full max-w-4xl mx-auto px-5 md:px-10 py-8 outline-none text-[15px] leading-7"></div>
+			<textarea id="files-editor-source" aria-label="File content" spellcheck="false" class="w-full min-h-full resize-none border-0 outline-none bg-surface px-5 md:px-10 py-8 font-mono text-sm leading-6"></textarea>
+		</div>
+	</section>
+
+	<div id="files-editor-conflict" class="hidden fixed inset-0 z-[90] bg-scrim/40 p-4 items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="files-conflict-title">
+		<div class="w-full max-w-4xl max-h-[90vh] rounded-md border border-outline-variant bg-surface shadow-2 flex flex-col">
+			<header class="h-14 shrink-0 px-4 border-b border-outline-variant flex items-center"><h2 id="files-conflict-title" class="font-semibold">Resolve conflict</h2></header>
+			<div class="grid md:grid-cols-2 gap-4 p-4 overflow-y-auto">
+				<section><h3 class="text-sm font-semibold mb-2">Your version</h3><pre id="files-conflict-local" class="bg-surface-container-low p-3 rounded-md text-xs whitespace-pre-wrap max-h-80 overflow-auto"></pre><button id="files-conflict-use-local" type="button" class="mt-3 h-10 px-4 rounded-full bg-primary text-on-primary text-sm">Use local</button></section>
+				<section><h3 class="text-sm font-semibold mb-2">Server version</h3><pre id="files-conflict-server" class="bg-surface-container-low p-3 rounded-md text-xs whitespace-pre-wrap max-h-80 overflow-auto"></pre><button id="files-conflict-use-server" type="button" class="mt-3 h-10 px-4 rounded-full bg-surface-container-high text-sm">Use server</button></section>
+			</div>
+		</div>
+	</div>
+
+	<div id="files-create-text-dialog" class="hidden fixed inset-0 z-[80] bg-scrim/40 p-4 items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="files-create-text-title">
+		<form id="files-create-text-form" class="w-full max-w-md rounded-md border border-outline-variant bg-surface shadow-2 p-5">
+			<h2 id="files-create-text-title" class="text-lg font-semibold">Text document</h2>
+			<label class="block mt-4 text-sm font-medium">Filename<input id="files-create-text-name" class="mt-2 w-full h-11 px-3 rounded-md bg-surface-container border-0 outline-none focus:ring-2 focus:ring-primary/30" value="Text document.md" spellcheck="false"></label>
+			<p id="files-create-text-error" class="hidden mt-2 text-sm text-error"></p>
+			<div class="mt-5 flex justify-end gap-2"><button id="files-create-text-cancel" type="button" class="h-10 px-4 rounded-full hover:bg-surface-container-high text-primary">Cancel</button><button type="submit" class="h-10 px-5 rounded-full bg-primary text-on-primary">Create</button></div>
+		</form>
+	</div>
+
+	<div id="files-editor-toast" class="hidden fixed left-1/2 bottom-5 -translate-x-1/2 z-[100] bg-on-surface text-surface rounded-md px-4 py-3 text-sm shadow-2"></div>
+
+<template id="files-empty-template">
+	<div class="h-full min-h-80 flex items-center justify-center text-center text-on-surface-variant">
+		<div>
+			<i class="fa-regular fa-folder-open text-6xl block mb-4"></i>
+			<div class="text-lg font-medium text-on-surface">No files in here</div>
+			<div class="text-sm mt-1">Upload files or sync a folder to get started.</div>
+		</div>
+	</div>
+</template>
+
+<script src="/assets/text-editor.js"></script>
+<script src="/files/assets/picker.js"></script>
+<script src="/files/assets/app.js"></script>
+{{end}}

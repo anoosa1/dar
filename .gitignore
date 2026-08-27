@@ -8,6 +8,7 @@ zig-pkg/
 *.db-journal
 *.db-wal
 *.db-shm
+*.email-encryption-key
 
 # Binary outputs
 dar
@@ -43,6 +44,11 @@ Thumbs.db
 # Test data
 data/
 log
+/test-artifacts/
+
+# Local browser and assistant tooling
+/.playwright-mcp/
+/.grok/
 
 # Environment
 .env

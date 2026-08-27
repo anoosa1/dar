@@ -1,5 +1,6 @@
 // Dummy OIDC test server for testing Dar's auth flow.
-//   dar-test-oidc --port 9001 --host astra
+//
+//	dar-test-oidc --port 9001 --host astra
 package main
 
 import (
@@ -18,32 +19,37 @@ var (
 
 func main() {
 	flag.Parse()
+	log.Fatal(run(*host, *port, http.ListenAndServe))
+}
 
-	base := fmt.Sprintf("http://%s:%d", *host, *port)
+func run(host string, port int, serve func(string, http.Handler) error) error {
+	base := fmt.Sprintf("http://%s:%d", host, port)
 	log.Printf("Dummy OIDC server on %s", base)
+	return serve(fmt.Sprintf(":%d", port), newHandler(base))
+}
 
-	http.HandleFunc("/.well-known/openid-configuration", handleDiscovery(base))
-	http.HandleFunc("/authorize", handleAuthorize)
-	http.HandleFunc("/token", handleToken)
-	http.HandleFunc("/userinfo", handleUserinfo)
-	http.HandleFunc("/health", handleHealth)
-
-	addr := fmt.Sprintf(":%d", *port)
-	log.Fatal(http.ListenAndServe(addr, nil))
+func newHandler(base string) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/openid-configuration", handleDiscovery(base))
+	mux.HandleFunc("/authorize", handleAuthorize)
+	mux.HandleFunc("/token", handleToken)
+	mux.HandleFunc("/userinfo", handleUserinfo)
+	mux.HandleFunc("/health", handleHealth)
+	return mux
 }
 
 func handleDiscovery(base string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{
-			"issuer":                 base,
-			"authorization_endpoint": base + "/authorize",
-			"token_endpoint":         base + "/token",
-			"userinfo_endpoint":      base + "/userinfo",
-			"jwks_uri":               base + "/jwks",
-			"scopes_supported":       []string{"openid", "email", "profile"},
-			"response_types_supported": []string{"code"},
-			"grant_types_supported":    []string{"authorization_code"},
-			"subject_types_supported":  []string{"public"},
+			"issuer":                                base,
+			"authorization_endpoint":                base + "/authorize",
+			"token_endpoint":                        base + "/token",
+			"userinfo_endpoint":                     base + "/userinfo",
+			"jwks_uri":                              base + "/jwks",
+			"scopes_supported":                      []string{"openid", "email", "profile"},
+			"response_types_supported":              []string{"code"},
+			"grant_types_supported":                 []string{"authorization_code"},
+			"subject_types_supported":               []string{"public"},
 			"id_token_signing_alg_values_supported": []string{"none"},
 		})
 	}
