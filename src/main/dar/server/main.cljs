@@ -3,6 +3,7 @@
             [dar.platform.activity :as activity]
             [dar.platform.app-passwords :as app-passwords]
             [dar.platform.assistant :as assistant]
+            [dar.platform.dashboard :as dashboard]
             [dar.platform.atomic-files :as atomic-files]
             [dar.platform.rate-limiter :as rate-limiter]
             [dar.platform.auth :as auth]
@@ -74,7 +75,7 @@
                   (cordis/mount! ctx security/security-plugin runtime-config)))
          (.then (fn []
                   (cordis/mount! ctx auth/auth-plugin runtime-config)))
-          (.then (fn []
+         (.then (fn []
                    (cordis/mount! ctx app-passwords/app-passwords-plugin)))
          (.then (fn []
                   (cordis/mount! ctx atomic-files/atomic-files-plugin)))
@@ -86,6 +87,8 @@
                   (cordis/mount! ctx oidc/oidc-plugin runtime-config)))
          (.then (fn []
                   (cordis/mount! ctx preferences/preferences-plugin)))
+         (.then (fn []
+                  (cordis/mount! ctx dashboard/dashboard-plugin)))
          (.then (fn []
                   (cordis/mount! ctx notifications/notifications-plugin)))
          (.then (fn []
