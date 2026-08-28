@@ -129,7 +129,8 @@
               (fn []
                 (let [listener #(frame/dispatch [:route/navigated (route-name)])]
                   (.addEventListener js/window "popstate" listener)
-                  (fn [] (.removeEventListener js/window "popstate" listener))))))}))
+                  (fn [] (.removeEventListener js/window "popstate" listener)))))
+             nil)}))
 
 (defn init []
   (frame/dispatch-sync [:initialize])
@@ -140,4 +141,3 @@
     (reset! react-root root)
     (rdom/render root [shell])
     (cordis/mount! ctx client-plugin)))
-

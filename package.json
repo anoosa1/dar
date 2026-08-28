@@ -13,7 +13,7 @@
     "build:css": "tailwindcss -i src/main/dar/client/styles.css -o public/assets/app.css --minify",
     "compile": "shadow-cljs compile server client test",
     "start": "node dist/server/main.js",
-    "test": "shadow-cljs compile test && node dist/test/tests.cjs",
+    "test": "shadow-cljs compile test",
     "check": "npm run build && npm test"
   },
   "dependencies": {

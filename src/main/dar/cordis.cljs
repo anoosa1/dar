@@ -28,6 +28,11 @@
   [^js ctx label acquire]
   (.effect ctx acquire label))
 
+(defn provide!
+  "Publishes a service whose lifetime is owned by ctx."
+  [^js ctx service-name value]
+  (.provide ctx service-name value))
+
 (defn dispose!
   "Disposes a context and every nested Cordis effect in reverse order."
   [^js ctx]

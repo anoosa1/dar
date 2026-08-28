@@ -1,5 +1,7 @@
 (ns dar.server.main
   (:require [dar.cordis :as cordis]
+            [dar.platform.database :as database]
+            [dar.platform.instance :as instance]
             [dar.server.config :as config]
             [dar.server.core :as core]
             ["@cordisjs/plugin-logger-console" :default ConsoleExporter]
@@ -38,11 +40,19 @@
   ([]
    (start! (config/from-env (.-env js/process))))
   ([runtime-config]
-   (let [ctx (cordis/context)]
+   (let [ctx (cordis/context)
+         previous-umask (.umask js/process 63)]
+     (cordis/effect! ctx "dar.process-umask"
+                     (fn []
+                       (fn [] (.umask js/process previous-umask))))
      (set! (.-baseUrl ctx) (.-href (pathToFileURL (str (.cwd js/process) "/"))))
      (-> (cordis/mount! ctx ConsoleExporter {:showTime "yyyy-MM-dd hh:mm:ss.SSS"})
          (.then (fn []
                   (cordis/mount! ctx Server (server-config runtime-config))))
+         (.then (fn []
+                  (cordis/mount! ctx instance/instance-plugin runtime-config)))
+         (.then (fn []
+                  (cordis/mount! ctx database/database-plugin)))
          (.then (fn []
                   (cordis/mount! ctx core/core-plugin runtime-config)))
          (.then (fn []
