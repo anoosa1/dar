@@ -77,7 +77,19 @@
                                  error))))))
          :needsRotation
          (fn [encoded]
-           (not= (:id active) (second (str/split encoded #":" 3))))}))
+           (not= (:id active) (second (str/split encoded #":" 3))))
+         :mac
+         ;; HMAC-SHA256 under the active credential key. The domain prefix
+         ;; separates protocols sharing the key (share passwords, share
+         ;; access cookies). Returns a Buffer for timing-safe comparisons.
+         (fn [domain input]
+           (when-not active
+             (throw (ex-info "Credential keys are not configured."
+                             {:type :credential-keyring-unavailable})))
+           (let [hmac (crypto/createHmac "sha256" (:material active))]
+             (.update hmac (str domain "\u0000"))
+             (.update hmac input)
+             (.digest hmac)))}))
 
 (def keyring-plugin
   (cordis/plugin

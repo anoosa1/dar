@@ -364,13 +364,15 @@
 (def files-plugin
   (cordis/plugin
    {:name "dar-files"
-    :inject ["database" "atomicFiles" "server"]
+    :inject ["database" "atomicFiles" "server" "rateLimiter" "keyring"]
     :apply
     (fn [^js ctx {:keys [dataRoot quotaBytes uploadBodyLimit]}]
       (let [^js store (files/service dataRoot
                                      {:quota-bytes quotaBytes}
                                      (.-database ctx)
-                                     (.-atomicFiles ctx))]
+                                     (.-atomicFiles ctx)
+                                     (.-rateLimiter ctx)
+                                     (.-keyring ctx))]
         (cordis/provide! ctx "files" store)
         (register-routes! (.-server ctx) store
                           {:upload-body-limit (or uploadBodyLimit

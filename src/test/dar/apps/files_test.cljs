@@ -3,7 +3,10 @@
             [dar.apps.files :as files]
             [dar.platform.atomic-files :as atomic-files]
             [dar.platform.database :as database]
+            [dar.platform.keyring :as keyring]
+            [dar.platform.rate-limiter :as rate-limiter]
             ["node:buffer" :refer [Buffer]]
+            ["node:crypto" :as crypto]
             ["node:fs" :as fs]
             ["node:fs/promises" :as fsp]
             ["node:os" :as os]
@@ -22,13 +25,20 @@
       :connection connection
       :data-root data-root
       :store (files/service data-root {:quota-bytes quota-bytes}
-                            database-service atomic-store)})))
+                            database-service atomic-store
+                            (rate-limiter/service (fn [] (.now js/Date)))
+                            (keyring/keyring
+                             [{:id "test-key"
+                               :material (.randomBytes crypto 32)}]))})))
 
-(defn- seed-user! [fixture]
-  (.run (.prepare ^js (:connection fixture)
-                  "INSERT INTO users(id, subject, display_name, email, administrator, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)")
-        "user-1" "files-subject" "Files" "files@example.test"
-        (.toISOString (js/Date.)) (.toISOString (js/Date.))))
+(defn- seed-user!
+  ([fixture] (seed-user! fixture "user-1"))
+  ([fixture user-id]
+   (.run (.prepare ^js (:connection fixture)
+                   "INSERT INTO users(id, subject, display_name, email, administrator, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)")
+         user-id (str user-id "-subject") "Files"
+         (str user-id "@example.test")
+         (.toISOString (js/Date.)) (.toISOString (js/Date.)))))
 
 (defn- close-service! [fixture]
   (.close (:connection fixture))
@@ -446,4 +456,155 @@
            (.listComments store "user-1" "/doc.md"))
          (fn [comments]
            (is (= 0 (count comments))))])
+       fixture done))))
+
+(deftest sharing-covers-unlocks-drop-uploads-and-user-shares
+  (async done
+    ;; Share rows are re-read between steps because run-steps only threads
+    ;; the previous step's result; state carries the values forward.
+    (let [fixture (open-service!)
+          ^js store (:store fixture)
+          state (atom {})]
+      (seed-user! fixture)
+      (seed-user! fixture "user-2")
+      (finish
+       (run-steps
+        [(fn [_]
+           (.save store "user-1" "/shared.md" (Buffer.from "shared bytes" "utf8")))
+         (fn [_]
+           (.mkdir store "user-1" "/Drops"))
+         (fn [_]
+           (settle (.createShare store "user-1" "/" {}) :root-share))
+         (fn [step]
+           (is (= :root-share (:outcome step)))
+           (is (= :invalid (:type (ex-data (:error step))))))
+         (fn [_]
+           (settle (.createShare store "user-1" "/shared.md"
+                                 {:expires-at "2020-01-01T00:00:00.000Z"})
+                   :past-expiry))
+         (fn [step]
+           (is (= :past-expiry (:outcome step)))
+           (is (= :invalid (:type (ex-data (:error step))))))
+         (fn [_]
+           (.createShare store "user-1" "/Drops"
+                         {:password "s3cret" :drop true}))
+         (fn [share]
+           (reset! state {:share share})
+           (is (re-matches #"[0-9a-f]{64}" (:token share)))
+           (is (= "/Drops" (:path share)))
+           (is (true? (:hasPassword share)))
+           (is (true? (:drop share)))
+           (.readShare store (:token share)))
+         (fn [entity]
+           (swap! state assoc :entity entity)
+           (is (= "user-1" (:userId entity)))
+           (is (> (.-length (:passwordHash entity)) 0))
+           (settle (.unlockShare store entity "wrong" "203.0.113.9") :bad))
+         (fn [step]
+           (is (= :bad (:outcome step)))
+           (is (= :invalid-credentials (:type (ex-data (:error step))))))
+         (fn [_]
+           (.unlockShare store (:entity @state) "s3cret" "203.0.113.9"))
+         (fn [unlocked]
+           (swap! state assoc :cookie-value (:cookieValue unlocked))
+           (is (true? (:unlocked unlocked)))
+           (is (string? (:cookieValue unlocked)))
+           ;; Three more wrong attempts exhaust the five-per-minute window.
+           (settle (.unlockShare store (:entity @state) "nope" "203.0.113.9")
+                   :bad2))
+         (fn [step]
+           (is (= :bad2 (:outcome step)))
+           (settle (.unlockShare store (:entity @state) "nope" "203.0.113.9")
+                   :bad3))
+         (fn [step]
+           (is (= :bad3 (:outcome step)))
+           (settle (.unlockShare store (:entity @state) "nope" "203.0.113.9")
+                   :bad4))
+         (fn [step]
+           (is (= :bad4 (:outcome step)))
+           (settle (.unlockShare store (:entity @state) "s3cret" "203.0.113.9")
+                   :limited))
+         (fn [step]
+           (is (= :limited (:outcome step)))
+           (is (= :rate-limited (:type (ex-data (:error step))))))
+         ;; Drop uploads use their own window and the access cookie value.
+         (fn [_]
+           (.uploadToShare store (:entity @state) (:cookie-value @state)
+                           "dropped.txt" (Buffer.from "dropped" "utf8")
+                           "203.0.113.9"))
+         (fn [uploaded]
+           (is (= "/Drops/dropped.txt" (:saved uploaded)))
+           (js/Promise.resolve (read-file fixture "Drops/dropped.txt")))
+         (fn [contents]
+           (is (= "dropped" contents))
+           (.uploadToShare store (:entity @state) (:cookie-value @state)
+                           "dropped.txt" (Buffer.from "dropped 2" "utf8")
+                           "203.0.113.9"))
+         (fn [_]
+           ;; Overwriting drop uploads versions the replaced content.
+           (.listVersions store "user-1" "/Drops/dropped.txt"))
+         (fn [versions]
+           (is (= 1 (count versions)))
+           (settle (.uploadToShare store (:entity @state) "forged-cookie"
+                                   "x.txt" (Buffer.from "x" "utf8")
+                                   "198.51.100.7") :forged))
+         (fn [step]
+           (is (= :forged (:outcome step)))
+           (is (= :forbidden (:type (ex-data (:error step))))))
+         (fn [_]
+           (.createShare store "user-1" "/shared.md" {}))
+         (fn [open-share]
+           (is (false? (:hasPassword open-share)))
+           (settle (.uploadToShare store open-share nil
+                                   "y.txt" (Buffer.from "y" "utf8")
+                                   "203.0.113.9") :not-drop))
+         (fn [step]
+           (is (= :not-drop (:outcome step)))
+           (is (= :forbidden (:type (ex-data (:error step))))))
+         (fn [_]
+           (.createUserShare store "user-1"
+                             {:path "/shared.md" :to-user "user-2"
+                              :permission "write"}))
+         (fn [user-share]
+           (is (= "user-2" (:toUser user-share)))
+           (is (= "write" (:permission user-share)))
+           (settle (.createUserShare store "user-1"
+                                     {:path "/shared.md" :to-user "user-2"
+                                      :permission "admin"}) :bad-perm))
+         (fn [step]
+           (is (= :bad-perm (:outcome step)))
+           (is (= :invalid (:type (ex-data (:error step))))))
+         (fn [_]
+           (settle (.createUserShare store "user-1"
+                                     {:path "/shared.md" :to-user "user-1"})
+                   :self-share))
+         (fn [step]
+           (is (= :self-share (:outcome step)))
+           (is (= :invalid (:type (ex-data (:error step))))))
+         (fn [_]
+           (settle (.createUserShare store "user-1"
+                                     {:path "/shared.md" :to-user "ghost"})
+                   :no-recipient))
+         (fn [step]
+           (is (= :no-recipient (:outcome step)))
+           (is (= :not-found (:type (ex-data (:error step))))))
+         (fn [_]
+           (.sharedWithMe store "user-2"))
+         (fn [incoming]
+           (is (= 1 (count incoming)))
+           (.deleteUserShare store "user-2" (:id (first incoming))))
+         (fn [deleted]
+           (is (string? (:deleted deleted)))
+           (settle (.deleteUserShare store "user-2" (:deleted deleted))
+                   :already-deleted))
+         (fn [step]
+           (is (= :already-deleted (:outcome step)))
+           (is (= :not-found (:type (ex-data (:error step))))))
+         (fn [_]
+           (.deleteShare store "user-1" (:token (:share @state))))
+         (fn [removed]
+           (is (string? (:deleted removed)))
+           (.readShare store (:token (:share @state))))
+         (fn [gone]
+           (is (nil? gone)))])
        fixture done))))

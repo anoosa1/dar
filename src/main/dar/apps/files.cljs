@@ -283,10 +283,12 @@
       :else trimmed)))
 
 (defn service
-  "Builds the Files engine over the data root, database, and atomic files.
-
-  quota-bytes comes from server settings; 0 or nil means unlimited."
-  [data-root {:keys [quota-bytes]} ^js database-service ^js atomic-store]
+  "Builds the Files engine over the data root, database, atomic files, shared
+  rate limiter, and credential keyring. quota-bytes comes from server settings;
+  0 or nil means unlimited. The limiter guards share unlock and drop uploads;
+  the keyring derives share password digests and access cookies."
+  [data-root {:keys [quota-bytes]} ^js database-service ^js atomic-store
+   ^js rate-limiter ^js keyring]
   (let [^js connection (.-connection database-service)
         ^js writer (.-writer database-service)
         mutate (per-user-queue)
@@ -331,6 +333,24 @@
         (.prepare connection "INSERT INTO files_locks(user_id, path, owner) VALUES (?, ?, ?) ON CONFLICT(user_id, path) DO UPDATE SET owner = excluded.owner")
         delete-lock
         (.prepare connection "DELETE FROM files_locks WHERE user_id = ? AND path = ?")
+        insert-share
+        (.prepare connection "INSERT INTO files_public_shares(token, user_id, path, password_salt, password_hash, expires_at, drop_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        select-shares
+        (.prepare connection "SELECT token, path, password_salt, password_hash, expires_at, drop_only, created_at FROM files_public_shares WHERE user_id = ? ORDER BY created_at DESC")
+        select-share
+        (.prepare connection "SELECT token, user_id, path, password_salt, password_hash, expires_at, drop_only, created_at FROM files_public_shares WHERE token = ?")
+        delete-share
+        (.prepare connection "DELETE FROM files_public_shares WHERE user_id = ? AND token = ?")
+        insert-user-share
+        (.prepare connection "INSERT INTO files_user_shares(id, from_user, to_user, path, permission, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+        select-user-share
+        (.prepare connection "SELECT id, from_user, to_user, path, permission, created_at FROM files_user_shares WHERE id = ? AND (from_user = ? OR to_user = ?)")
+        delete-user-share
+        (.prepare connection "DELETE FROM files_user_shares WHERE id = ? AND (from_user = ? OR to_user = ?)")
+        select-incoming-shares
+        (.prepare connection "SELECT id, from_user, to_user, path, permission, created_at FROM files_user_shares WHERE to_user = ? ORDER BY created_at DESC, id")
+        select-recipient
+        (.prepare connection "SELECT id FROM users WHERE id = ? OR lower(email) = lower(?) LIMIT 1")
 
         ;; Returns the owner of an explicit lock on a path, or nil. Mutating
         ;; operations check both source and destination before touching bytes.
@@ -808,6 +828,285 @@
                              (.run delete-lock user-id relative)))
                    (fn [_]
                      {:locked false}))))
+
+        ;; Shares. Password-protected shares derive digests from the
+        ;; credential keyring (never stored plaintext); crypto runs outside
+        ;; the writer queue so the queue only holds short SQL statements.
+        share-password-digest
+        (fn [^js salt password]
+          (try
+            (.mac keyring "dar-share-password-v1"
+                         (.concat Buffer #js [salt (.from Buffer password "utf8")]))
+            (catch :default _
+              (throw (ex-info "Password-protected shares are unavailable."
+                              {:type :share-password-unavailable})))))
+
+        share-access-value
+        (fn [token]
+          (try
+            (.toString (.mac keyring "dar-share-access-v1" token) "hex")
+            (catch :default _
+              (throw (ex-info "Password-protected shares are unavailable."
+                              {:type :share-password-unavailable})))))
+
+        share-expired?
+        (fn [expires-at now-seconds]
+          (and (some? expires-at) (not= "" expires-at)
+               (<= (/ (js/Date.parse expires-at) 1000) now-seconds)))
+
+        share-row->map
+        (fn [^js row]
+          {:token (.-token row)
+           :path (.-path row)
+           :hasPassword (> (.-length (.-password_hash row)) 0)
+           :expiresAt (let [value (.-expires_at row)] (when-not (= value "") value))
+           :drop (= 1 (.-drop_only row))
+           :createdAt (.-created_at row)})
+
+        ;; Internal row with owner identity for the public share routes.
+        share-entity->map
+        (fn [^js row]
+          {:token (.-token row)
+           :userId (.-user_id row)
+           :path (.-path row)
+           :passwordSalt (.-password_salt row)
+           :passwordHash (.-password_hash row)
+           :expiresAt (let [value (.-expires_at row)] (when-not (= value "") value))
+           :drop (= 1 (.-drop_only row))
+           :createdAt (.-created_at row)})
+
+        user-share-row->map
+        (fn [^js row]
+          {:id (.-id row)
+           :path (.-path row)
+           :fromUser (.-from_user row)
+           :toUser (.-to_user row)
+           :permission (.-permission row)
+           :createdAt (.-created_at row)})
+
+        ensure-shareable!
+        (fn [user-id vpath]
+          (let [relative (vpath->relative vpath)]
+            (if (str/blank? relative)
+              (js/Promise.reject
+               (ex-info "The files root cannot be shared." {:type :invalid}))
+              (-> (entry-stat (files-root data-root user-id) relative)
+                  (.then (fn [stat]
+                           (when (nil? stat)
+                             (throw (ex-info "Shared path not found."
+                                             {:type :not-found})))
+                           (str "/" relative)))))))
+
+        create-share!
+        (fn [user-id vpath {:keys [password expires-at drop]}]
+          (let [now-seconds (quot (.now js/Date) 1000)]
+            (if (share-expired? expires-at now-seconds)
+              (js/Promise.reject
+               (ex-info "Share expiry must be in the future." {:type :invalid}))
+              (-> (ensure-shareable! user-id vpath)
+                  (.then (fn [virtual]
+                           (let [salt (if password (crypto/randomBytes 16) (.alloc Buffer 0))
+                                 digest (if password
+                                          (share-password-digest salt password)
+                                          (.alloc Buffer 0))
+                                 token (.toString (crypto/randomBytes 32) "hex")
+                                 created-at (.toISOString (js/Date.))]
+                             (.then (.write writer
+                                            (fn [_]
+                                              (.run insert-share token user-id
+                                                    virtual salt digest
+                                                    (or expires-at "") (if drop 1 0)
+                                                    created-at)))
+                                    (fn [_]
+                                      {:token token
+                                       :path virtual
+                                       :hasPassword (boolean password)
+                                       :expiresAt expires-at
+                                       :drop (boolean drop)
+                                       :createdAt created-at})))))))))
+
+        list-shares-fn
+        (fn [user-id]
+          (js/Promise.resolve
+           (mapv share-row->map (.all select-shares user-id))))
+
+        delete-share!
+        (fn [user-id token]
+          (.then (.write writer
+                         (fn [_]
+                           (let [^js result (.run delete-share user-id token)]
+                             (when (= 0 (.-changes result))
+                               (throw (ex-info "Share not found."
+                                               {:type :not-found})))
+                             nil)))
+                 (fn [_]
+                   {:deleted token})))
+
+        read-share-fn
+        (fn [token]
+          (let [row (.get select-share token)]
+            (js/Promise.resolve (when (some? row) (share-entity->map row)))))
+
+        ;; Unlock checks are public-facing: rate limited per token and peer,
+        ;; constant-time compared, and answered with a cookie value scoped to
+        ;; the share namespace that the HTTP layer stores. The limiter key is
+        ;; namespaced per operation because the shared service windows key on
+        ;; the key string alone.
+        unlock-share!
+        (fn [{:keys [token passwordSalt passwordHash]} password peer]
+          (let [^js verdict (.allow rate-limiter
+                                    (str "unlock\u0000" token "\u0000" peer)
+                                    5 60000)
+                cookie-value (share-access-value token)]
+            (cond
+              (not (.-allowed verdict))
+              (js/Promise.reject
+               (ex-info "Too many unlock attempts."
+                        {:type :rate-limited
+                         :retry-after-ms (.-retryAfterMs verdict)}))
+
+              (= 0 (.-length passwordHash))
+              (js/Promise.resolve {:unlocked true :cookieValue cookie-value})
+
+              :else
+              (let [supplied (try
+                               (share-password-digest passwordSalt password)
+                               (catch :default _ nil))]
+                (js/Promise.resolve
+                 (if (and (some? supplied)
+                          (try (crypto/timingSafeEqual supplied passwordHash)
+                               (catch :default _ false)))
+                   {:unlocked true :cookieValue cookie-value}
+                   (js/Promise.reject
+                    (ex-info "Invalid share password."
+                             {:type :invalid-credentials}))))))))
+
+        ;; A share is unlocked when it has no password or when the presented
+        ;; cookie value matches the token's access value (timing-safe).
+        share-unlocked?
+        (fn [{:keys [token passwordHash]} cookie-value]
+          (if (= 0 (.-length passwordHash))
+            true
+            (let [expected (try (share-access-value token) (catch :default _ nil))]
+              (and (string? cookie-value) (some? expected)
+                   (try (crypto/timingSafeEqual
+                         (.from Buffer cookie-value "utf8")
+                         (.from Buffer expected "utf8"))
+                        (catch :default _ false))))))
+
+        ;; Drop uploads overwrite existing files but version the replaced
+        ;; content first (baseline saveUploadedStream); quota and atomic
+        ;; Drop uploads overwrite existing files but version the replaced
+        ;; content first (baseline saveUploadedStream); quota and atomic
+        ;; journaling are owned by the existing write path.
+        share-upload!
+        (fn [{:keys [token userId path drop] :as share}
+             cookie-value filename bytes peer]
+          (let [name (str/trim (str filename))
+                relative (vpath->relative path)
+                target (str "/" relative "/" name)]
+            (cond
+              (not drop)
+              (js/Promise.reject
+               (ex-info "This share does not accept uploads." {:type :forbidden}))
+
+              (not (share-unlocked? share cookie-value))
+              (js/Promise.reject
+               (ex-info "Share upload denied." {:type :forbidden}))
+
+              (or (= name "") (not= name (node-path/basename name))
+                  (str/includes? name "/") (str/includes? name "\\")
+                  (str/includes? name "\u0000"))
+              (js/Promise.reject
+               (ex-info "Invalid filename." {:type :invalid}))
+
+              :else
+              (let [^js verdict (.allow rate-limiter
+                                        (str "upload\u0000" token "\u0000" peer)
+                                        20 60000)]
+                (if (not (.-allowed verdict))
+                  (js/Promise.reject
+                   (ex-info "Too many uploads."
+                            {:type :rate-limited
+                             :retry-after-ms (.-retryAfterMs verdict)}))
+                  (let [target-relative (str relative "/" name)]
+                    (-> (entry-stat (files-root data-root userId)
+                                    target-relative)
+                        (.then (fn [stat]
+                                 ;; The upload target may not exist yet; only
+                                 ;; an existing file has a prior version to
+                                 ;; snapshot before the overwrite.
+                                 (if (some? stat)
+                                   (create-version! userId target)
+                                   (js/Promise.resolve nil))))
+                      (.then (fn [_]
+                               (write-user-file! userId target bytes)))
+                      (.then (fn [_]
+                               {:saved target}))))))))) 
+
+        create-user-share!
+        ;; User shares grant read or write access to a single recipient.
+        ;; The recipient resolves by id or email (baseline handleUserShare).
+        (fn [user-id {:keys [path to-user permission]}]
+          (let [perm (or permission "read")]
+            (cond
+              (not (#{"read" "write"} perm))
+              (js/Promise.reject
+               (ex-info "Permission must be read or write." {:type :invalid}))
+
+              (str/blank? (str to-user))
+              (js/Promise.reject
+               (ex-info "A recipient is required." {:type :invalid}))
+
+              :else
+              (-> (ensure-shareable! user-id path)
+                  (.then (fn [virtual]
+                           (let [^js row (.get select-recipient to-user to-user)]
+                             (cond
+                               (nil? row)
+                               (js/Promise.reject
+                                (ex-info "Recipient not found." {:type :not-found}))
+
+                               (= (.-id row) user-id)
+                               (js/Promise.reject
+                                (ex-info "Cannot share with yourself."
+                                         {:type :invalid}))
+
+                               :else
+                               (let [id (.randomUUID crypto)
+                                     created-at (.toISOString (js/Date.))]
+                                 (.then
+                                  (.write writer
+                                          (fn [_]
+                                            (.run insert-user-share id user-id
+                                                  (.-id row) virtual perm
+                                                  created-at)))
+                                  (fn [_]
+                                    {:id id
+                                     :path virtual
+                                     :fromUser user-id
+                                     :toUser (.-id row)
+                                     :permission perm
+                                     :createdAt created-at})))))))))))
+
+        delete-user-share!
+        ;; Either party may remove a user share; the id alone never deletes.
+        (fn [user-id id]
+          (.then (.write writer
+                         (fn [_]
+                           (let [^js row (.get select-user-share id user-id user-id)]
+                             (when (nil? row)
+                               (throw (ex-info "Share not found."
+                                               {:type :not-found})))
+                             (.run delete-user-share id user-id user-id)
+                             nil)))
+                 (fn [_]
+                   {:deleted id})))
+
+        shared-with-me-fn
+        (fn [user-id]
+          (js/Promise.resolve
+           (mapv user-share-row->map (.all select-incoming-shares user-id))))
         ]
 
     #js {:filesRoot (fn [user-id] (files-root data-root user-id))
@@ -937,4 +1236,36 @@
            (mutate user-id (fn [] (lock! user-id vpath))))
          :unlock
          (fn [user-id vpath]
-           (mutate user-id (fn [] (unlock! user-id vpath))))}))
+           (mutate user-id (fn [] (unlock! user-id vpath))))
+         ;; Shares: creation and deletes manage their own queue use; the
+         ;; unlock/upload checks are public-surface and never enqueue.
+         :createShare
+         (fn [user-id vpath spec]
+           (create-share! user-id vpath spec))
+         :listShares
+         (fn [user-id]
+           (list-shares-fn user-id))
+         :deleteShare
+         (fn [user-id token]
+           (delete-share! user-id token))
+         :readShare
+         (fn [token]
+           (read-share-fn token))
+         :unlockShare
+         (fn [share password peer]
+           (unlock-share! share password peer))
+         :isShareUnlocked
+         (fn [share cookie-value]
+           (share-unlocked? share cookie-value))
+         :uploadToShare
+         (fn [share cookie-value filename bytes peer]
+           (share-upload! share cookie-value filename bytes peer))
+         :createUserShare
+         (fn [user-id spec]
+           (create-user-share! user-id spec))
+         :deleteUserShare
+         (fn [user-id id]
+           (delete-user-share! user-id id))
+         :sharedWithMe
+         (fn [user-id]
+           (shared-with-me-fn user-id))}))
