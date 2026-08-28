@@ -743,3 +743,72 @@
            (is (str/includes? (:diff diff) "- line2"))
            (is (str/includes? (:diff diff) "+ changed")))])
        fixture done))))
+
+(deftest picker-lists-and-validates-selections
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_] (.mkdir store "user-1" "/Docs"))
+         (fn [_] (.mkdir store "user-1" "/Docs/Sub"))
+         (fn [_] (.save store "user-1" "/Docs/notes.md"
+                        (Buffer.from "hello" "utf8")))
+         (fn [_] (.save store "user-1" "/Docs/pic.png"
+                        (Buffer.from "0123456789" "utf8")))
+         (fn [_] (.save store "user-1" "/Docs/.hidden.txt"
+                        (Buffer.from "secret" "utf8")))
+         ;; Default browse lists everything except dotfiles, folders first.
+         (fn [_] (.picker store "user-1" "/Docs" {}))
+         (fn [items]
+           (is (= 3 (count items)))
+           (is (= "Sub" (:name (first items))))
+           (is (true? (:isDir (first items)))))
+         ;; Folders-only mode drops files.
+         (fn [_] (.picker store "user-1" "/Docs" {:selection "folders"}))
+         (fn [items]
+           (is (= 1 (count items))))
+         ;; Query narrows by name substring.
+         (fn [_] (.picker store "user-1" "/Docs" {:q "PIC"}))
+         (fn [items]
+           (is (= 1 (count items)))
+           (is (= "pic.png" (:name (first items)))))
+         ;; MIME prefixes filter files by their entry type; folders stay so
+         ;; a picker UI can keep navigating.
+         (fn [_] (.picker store "user-1" "/Docs" {:mime-prefixes ["image/"]}))
+         (fn [items]
+           (is (= 2 (count items))))
+         (fn [_] (.picker store "user-1" "/Docs"
+                          {:selection "files" :mime-prefixes ["video/"]}))
+         (fn [items]
+           ;; Folders stay for navigation; no video files match.
+           (is (= 1 (count items)))
+           (is (= "Sub" (:name (first items)))))
+         ;; Validation re-checks each selection against the mode.
+         (fn [_] (.pickerValidate store "user-1"
+                                  {:paths ["/Docs/notes.md"] :selection "files"}))
+         (fn [items]
+           (is (= 1 (count items)))
+           (is (= "/Docs/notes.md" (:path (first items)))))
+         ;; A folder when files are requested is rejected.
+         (fn [_] (settle (.pickerValidate store "user-1"
+                                          {:paths ["/Docs"] :selection "files"})
+                         :type-mismatch))
+         (fn [step]
+           (is (= :type-mismatch (:outcome step)))
+           (is (= :invalid (:type (ex-data (:error step))))))
+         ;; Missing paths are not found; duplicates and empty lists are invalid.
+         (fn [_] (settle (.pickerValidate store "user-1" {:paths ["/nope"]})
+                         :missing))
+         (fn [step]
+           (is (= :missing (:outcome step)))
+           (is (= :not-found (:type (ex-data (:error step))))))
+         (fn [_] (settle (.pickerValidate store "user-1"
+                                          {:paths ["/Docs/notes.md" "/Docs/notes.md"]
+                                           :multiple true})
+                         :duplicate))
+         (fn [step]
+           (is (= :duplicate (:outcome step)))
+           (is (= :invalid (:type (ex-data (:error step))))))])
+       fixture done))))

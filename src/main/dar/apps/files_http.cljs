@@ -32,6 +32,13 @@
    [:from path-schema]
    [:to path-schema]])
 
+(def picker-body-schema
+  [:map {:closed true}
+   [:paths [:vector string?]]
+   [:selection {:optional true} [:enum "files" "folders" "both"]]
+   [:multiple {:optional true} :boolean]
+   [:mimePrefixes {:optional true} [:vector string?]]])
+
 (def favorite-body-schema
   [:map {:closed true}
    [:path path-schema]
@@ -499,6 +506,39 @@
                                                       (node-path/basename vpath) "\""))
                                            (.bytes response bytes)
                                            nil))))))))))))
+  ;; Shared cross-app picker: browse one folder and validate selections.
+  ;; Read-only by design; no trash, dotfiles, or mutations here. Repeated
+  ;; MIME prefixes arrive comma-separated in mime_prefix.
+  (.get server "/api/v1/files/picker"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (when (require-session! request response)
+             (let [query (.-query request)
+                   prefixes (->> (str/split (or (.get query "mime_prefix") "") #",")
+                                 (remove str/blank?)
+                                 vec)]
+               (-> (.picker store (.-id (.-user request))
+                            (query-path request)
+                            {:q (.get query "q")
+                             :selection (.get query "selection")
+                             :mime-prefixes prefixes})
+                   (.then (fn [items]
+                            (http/json! response
+                                        {:path (query-path request)
+                                         :items (vec items)})))))))))
+  (.post server "/api/v1/files/picker/validate"
+         (wrap-errors
+          (fn [^js request ^js response]
+            (when (require-session! request response)
+              (-> (json-body request picker-body-schema)
+                  (.then (fn [value]
+                           (.pickerValidate store (.-id (.-user request))
+                                            {:paths (vec (:paths value))
+                                             :selection (:selection value)
+                                             :multiple (:multiple value)
+                                             :mime-prefixes (vec (:mimePrefixes value))})))
+                  (.then (fn [items]
+                           (http/json! response {:items (vec items)}))))))))
   ;; Previews are text-only (binary content answers 415); thumbnails
   ;; re-encode any decodable image to a small JPEG.
   (.get server "/api/v1/files/preview"

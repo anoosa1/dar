@@ -137,7 +137,12 @@ through the dashboard catalog with the baseline per-size item limits
 (1/3/6/10). External storage is deliberately not ported: the baseline only
 shipped an unused `files_external_storage` table, and the rewrite contract
 is one data root of fresh managed storage that never mounts or follows
-external paths. Remaining: picker, activity events, WebDAV standard-suite
+external paths. The shared cross-app picker (Stage 7) is implemented under
+`/api/v1/files/picker` (one-folder browse without trash, dotfiles, or
+mutations; query narrowing; folders-first ordering) and
+`/api/v1/files/picker/validate` (selection/multiple/MIME-prefix checking);
+MIME filtering uses the entry's name-based type rather than the baseline's
+content sniffing. Remaining: activity events, WebDAV standard-suite
 hardening, public share visitor UI.
 
 ### Contacts

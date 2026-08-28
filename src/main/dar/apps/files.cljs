@@ -1353,6 +1353,95 @@
                                       (recur i (inc j) (conj acc (str "+ " (aget lines2 j))))
                                       :else acc))]
                          {:diff (str/join "\n" diff)})))))
+        ;; Stat one path as an entry (used by the picker and the raw stat
+        ;; route); resolves :not-found for missing paths.
+        stat-entry
+        (fn [user-id vpath]
+          (let [root (files-root data-root user-id)
+                relative (vpath->relative vpath)]
+            (-> (ensure-dir! root)
+                (.then (fn [_]
+                         (if (str/blank? relative)
+                           (entry-stat root "")
+                           (-> (path/verify-no-symlinks! root relative)
+                               (.then (fn [_] (entry-stat root relative)))))))
+                (.then (fn [^js stat]
+                         (when (nil? stat)
+                           (throw (ex-info "File not found."
+                                           {:type :not-found})))
+                         (make-entry stat vpath false []))))))
+        ;; The shared cross-app picker lists one folder without trash,
+        ;; dotfiles, or mutations.
+        picker-entries
+        (fn [user-id vpath {:keys [q selection mime-prefixes]}]
+          (let [mode (if (str/blank? (or selection "")) "both" selection)
+                needle (str/lower-case (str q))
+                prefixes (vec mime-prefixes)]
+            (when-not (#{"files" "folders" "both"} mode)
+              (throw (ex-info "Invalid selection mode." {:type :invalid})))
+            (.then (mutate user-id
+                           (fn []
+                             (list-entries connection data-root user-id vpath)))
+                   (fn [entries]
+                     (let [visible
+                           (fn [entry]
+                             (and (not (str/starts-with? (:name entry) "."))
+                                  (or (str/blank? needle)
+                                      (str/includes? (str/lower-case (:name entry))
+                                                     needle))
+                                  (case mode
+                                    "folders" (:isDir entry)
+                                    true)
+                                  (or (:isDir entry)
+                                      (empty? prefixes)
+                                      (some (fn [prefix]
+                                              (str/starts-with? (or (:mimeType entry) "")
+                                                                prefix))
+                                            prefixes))))]
+                       (into [] (filter visible (vec entries))))))))
+        picker-validate
+        (fn [user-id {:keys [paths selection multiple mime-prefixes]}]
+          ;; All validation rejects the promise so callers never see a
+          ;; synchronous throw.
+          (-> (js/Promise.resolve nil)
+              (.then (fn [_]
+                       (let [mode (if (str/blank? (or selection "")) "both" selection)
+                             prefixes (vec mime-prefixes)]
+                         (when-not (#{"files" "folders" "both"} mode)
+                           (throw (ex-info "Invalid selection mode."
+                                           {:type :invalid})))
+                         (when (or (not (sequential? paths))
+                                   (empty? paths)
+                                   (and (not multiple) (not= 1 (count paths))))
+                           (throw (ex-info "Invalid number of selections."
+                                           {:type :invalid})))
+                         (when-not (= (count paths) (count (distinct paths)))
+                           (throw (ex-info "Duplicate selections are not allowed."
+                                           {:type :invalid})))
+                         (-> (js/Promise.all
+                              (into-array
+                               (mapv (fn [vpath]
+                                       (-> (stat-entry user-id vpath)
+                                           (.then (fn [entry]
+                                                    (cond
+                                                      (and (= "files" mode) (:isDir entry))
+                                                      (throw (ex-info "Selection type not allowed."
+                                                                      {:type :invalid}))
+                                                      (and (= "folders" mode) (not (:isDir entry)))
+                                                      (throw (ex-info "Selection type not allowed."
+                                                                      {:type :invalid}))
+                                                      (and (not (:isDir entry)) (seq prefixes)
+                                                           (not (some (fn [prefix]
+                                                                        (str/starts-with? (or (:mimeType entry) "")
+                                                                                          prefix))
+                                                                      prefixes)))
+                                                      (throw (ex-info "Selection MIME type not allowed."
+                                                                      {:type :invalid}))
+                                                      :else entry)))))
+                                     (vec paths))))
+                              (.then (fn [entries]
+                                       (vec entries)))))))))
+
         ]
     #js {:filesRoot (fn [user-id] (files-root data-root user-id))
          :quotaUsage (fn [user-id] (quota-usage data-root user-id))
@@ -1489,6 +1578,12 @@
          :stats
          (fn [user-id]
            (stats-fn user-id))
+         :picker
+         (fn [user-id vpath opts]
+           (picker-entries user-id vpath opts))
+         :pickerValidate
+         (fn [user-id body]
+           (picker-validate user-id body))
          :diffVersions
          (fn [user-id vpath v1 v2]
            (diff-versions user-id vpath v1 v2))
@@ -1497,19 +1592,7 @@
          ;; forcing them through the text-only document pipeline.
          :stat
          (fn [user-id vpath]
-           (let [root (files-root data-root user-id)
-                 relative (vpath->relative vpath)]
-             (-> (ensure-dir! root)
-                 (.then (fn [_]
-                          (if (str/blank? relative)
-                            (entry-stat root "")
-                            (-> (path/verify-no-symlinks! root relative)
-                                (.then (fn [_] (entry-stat root relative)))))))
-                 (.then (fn [^js stat]
-                          (when (nil? stat)
-                            (throw (ex-info "File not found."
-                                            {:type :not-found})))
-                          (make-entry stat vpath false []))))))
+           (stat-entry user-id vpath))
          :readFile
          (fn [user-id vpath]
            (let [root (files-root data-root user-id)

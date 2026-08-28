@@ -197,6 +197,48 @@ test("files search, stats, diff, download, assistant tools, and widget work over
     const invalid = await invoke("files.favorite", { path: "/Docs/copied.md" });
     assert.equal(invalid.status, 400, context.running.output());
 
+    // The shared picker browses and validates selections over http.
+    const pickerPage = await getJson(
+      "/api/v1/files/picker?path=%2FDocs&selection=files&mime_prefix=image%2F",
+    );
+    assert.equal(pickerPage.path, "/Docs");
+    // Folders stay for navigation; only the image file matches the prefix.
+    const names = pickerPage.items.map((entry) => entry.name);
+    assert.ok(names.includes("pic.png"), context.running.output());
+    assert.ok(names.includes("assistant.md") === false, context.running.output());
+
+    const validated = await fetch(`${base}/api/v1/files/picker/validate`, {
+      method: "POST",
+      headers: {
+        ...cookies,
+        origin: base,
+        "x-csrf-token": session.csrfToken,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        paths: ["/Docs/notes.md"],
+        selection: "files",
+        multiple: false,
+      }),
+    });
+    assert.equal(validated.status, 200, context.running.output());
+    const validatedItems = (await validated.json()).items;
+    assert.equal(validatedItems.length, 1);
+    assert.equal(validatedItems[0].path, "/Docs/notes.md");
+
+    const typeMismatch = await fetch(`${base}/api/v1/files/picker/validate`, {
+      method: "POST",
+      headers: {
+        ...cookies,
+        origin: base,
+        "x-csrf-token": session.csrfToken,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ paths: ["/Docs"], selection: "files" }),
+    });
+    assert.equal(typeMismatch.status, 400, context.running.output());
+    assert.equal((await typeMismatch.json()).error.code, "invalid");
+
     // The dashboard catalog carries the Files favorites widget and its data.
     const catalog = await getJson("/api/v1/dashboard/catalog");
     assert.ok(
