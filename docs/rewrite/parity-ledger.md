@@ -112,9 +112,33 @@ If-Match/If-None-Match (412) and 201/204 create/overwrite distinction,
 MKCOL/DELETE/COPY/MOVE with Destination checking, and LOCK/UNLOCK backed by
 the engine's advisory locks with derived opaque tokens (423, 409). The
 baseline's `/webdav/` and `/remote.php/dav/files/**` aliases are removed.
-Remaining: download, picker, move, search, stats, diffs, activity, WebDAV
-standard-suite hardening, assistant tools, widget, external storage, public
-share visitor UI.
+Search, stats, and version diffs (Stage 6) are implemented under
+`/api/v1/files/search` (name substring, baseline type filters
+folder/image/document/video/audio, folder scope, limit/offset paging with
+totals), `/api/v1/files/stats` (`{used, total}`), and
+`/api/v1/files/versions/diff` (baseline's greedy line diff), plus
+`/api/v1/files/download` (raw bytes, `content-disposition: attachment`,
+folders answer 400). Search never follows or indexes symlinks. Assistant
+tools (Stage 6) register `files.*` tool descriptors through the platform
+contributions registry with Malli object schemas, explicit user scope, and
+one effect classification each: `files.list`/`files.search`/`files.read`
+(read; text reads reject non-UTF-8 and truncate at 64k characters),
+`files.write-text`/`files.create-folder`/`files.rename`/`files.move`/
+`files.copy`/`files.favorite`/`files.tag`/`files.restore` (safeWrite;
+assistant writes cap at 1 MiB and reject NUL bytes),
+`files.share` (external; create/remove, confirmation-gated),
+`files.trash`/`files.delete-permanently` (destructive, confirmation-gated;
+both return the trash id for the follow-up call). The baseline
+`create_symlink` tool is not ported (managed storage never creates or follows
+symlinks) and the baseline's `to_user`/`permission` share options are
+superseded by the share APIs (public `/share/{token}` links and the
+user-shares surface). The `files.favorites` dashboard widget registers
+through the dashboard catalog with the baseline per-size item limits
+(1/3/6/10). External storage is deliberately not ported: the baseline only
+shipped an unused `files_external_storage` table, and the rewrite contract
+is one data root of fresh managed storage that never mounts or follows
+external paths. Remaining: picker, activity events, WebDAV standard-suite
+hardening, public share visitor UI.
 
 ### Contacts
 

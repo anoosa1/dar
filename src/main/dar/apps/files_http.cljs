@@ -1,12 +1,14 @@
 (ns dar.apps.files-http
   (:require [clojure.string :as str]
             [dar.apps.files :as files]
+            [dar.apps.files-assistant :as files-assistant]
             [dar.apps.files-dav :as files-dav]
             [dar.cordis :as cordis]
             [dar.server.http :as http]
             [malli.core :as m]
             [dar.platform.auth :as auth]
-            ["node:buffer" :refer [Buffer]]))
+            ["node:buffer" :refer [Buffer]]
+            ["node:path" :as node-path]))
 
 ;; HTTP surface for the Files app. Routes are browser-session authenticated
 ;; and live under /api/v1 with camelCase JSON. Paths are user-rooted virtual
@@ -439,6 +441,64 @@
               (-> (.unlock store (.-id (.-user request)) (query-path request))
                   (.then (fn [unlocked]
                            (http/json! response 200 unlocked)))))))
+  ;; Search walks the user root; stats reports storage usage against quota;
+  ;; diff compares two versions line by line (baseline parity).
+  (.get server "/api/v1/files/search"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (when (require-session! request response)
+             (let [query (.-query request)
+                   num (fn [value default]
+                         (let [parsed (js/Number value)]
+                           (if (and value (not (.isNaN js/Number parsed)) (pos? parsed))
+                             parsed
+                             default)))]
+               (-> (.search store (.-id (.-user request))
+                            {:q (.get query "q")
+                             :type (.get query "type")
+                             :folder (.get query "folder")
+                             :limit (num (.get query "limit") 50)
+                             :offset (max 0 (or (js/Number (.get query "offset")) 0))})
+                   (.then (fn [result]
+                            (http/json! response result)))))))))
+  (.get server "/api/v1/files/stats"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (when (require-session! request response)
+             (-> (.stats store (.-id (.-user request)))
+                 (.then (fn [stats]
+                          (http/json! response stats))))))))
+  (.get server "/api/v1/files/versions/diff"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (when (require-session! request response)
+             (let [query (.-query request)]
+               (-> (.diffVersions store (.-id (.-user request))
+                                  (query-path request)
+                                  (.get query "v1") (.get query "v2"))
+                   (.then (fn [diff]
+                            (http/json! response diff)))))))))
+  (.get server "/api/v1/files/download"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (when (require-session! request response)
+             (let [vpath (query-path request)]
+               (-> (.stat store (.-id (.-user request)) vpath)
+                   (.then (fn [entry]
+                            (if (:isDir entry)
+                              (throw (ex-info "Folders cannot be downloaded."
+                                              {:type :invalid}))
+                              (-> (.readFile store (.-id (.-user request)) vpath)
+                                  (.then (fn [^js bytes]
+                                           (set! (.-status response) 200)
+                                           (.set (.-headers response) "content-type" (:mimeType entry))
+                                           (.set (.-headers response) "content-length"
+                                                 (str (.-length bytes)))
+                                           (.set (.-headers response) "content-disposition"
+                                                 (str "attachment; filename=\""
+                                                      (node-path/basename vpath) "\""))
+                                           (.bytes response bytes)
+                                           nil))))))))))))
   ;; Previews are text-only (binary content answers 415); thumbnails
   ;; re-encode any decodable image to a small JPEG.
   (.get server "/api/v1/files/preview"
@@ -627,7 +687,7 @@
   (cordis/plugin
    {:name "dar-files"
     :inject ["database" "atomicFiles" "server" "rateLimiter" "keyring"
-             "appPasswords"]
+             "appPasswords" "contributions"]
     :apply
     (fn [^js ctx {:keys [dataRoot quotaBytes uploadBodyLimit baseUrl]}]
       (let [^js store (files/service dataRoot
@@ -645,5 +705,7 @@
                                                                  "https://")})
             (files-dav/register-dav-routes! (.-server ctx) store
                                             (.-appPasswords ctx))
+            (files-assistant/register-tools! (.-contributions ctx) store)
+            (files-assistant/register-widget! (.-contributions ctx) store)
             ;; Route registration returns router objects, never effects.
             nil)))}))

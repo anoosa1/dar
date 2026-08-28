@@ -293,6 +293,70 @@
       (subs trimmed 1 (dec (count trimmed)))
       :else trimmed)))
 
+(defn- search-matches?
+  "Name/type filter for file search (baseline parity)."
+  [needle type-filter stat child-virtual]
+  (let [name (node-path/basename child-virtual)]
+    (and (or (str/blank? needle)
+             (str/includes? (str/lower-case name) needle))
+         (case type-filter
+           "" true
+           "folder" (.isDirectory stat)
+           "image" (and (not (.isDirectory stat))
+                        (str/starts-with? (mime-for-name name) "image/"))
+           "document" (and (not (.isDirectory stat))
+                           (contains? #{".txt" ".md" ".pdf"}
+                                      (str/lower-case (node-path/extname name))))
+           "video" (and (not (.isDirectory stat))
+                        (str/starts-with? (mime-for-name name) "video/"))
+           "audio" (and (not (.isDirectory stat))
+                        (str/starts-with? (mime-for-name name) "audio/"))
+           false))))
+
+(declare search-visit search-walk)
+
+(defn- search-visit
+  "Collects matches for one directory entry, recursing into folders.
+  Symbolic links are never followed or matched."
+  [root directory relative matches? ^js entry]
+  (let [name (.-name entry)
+        child-relative (if (str/blank? relative)
+                         name
+                         (str relative "/" name))
+        child-virtual (str "/" child-relative)]
+    (if (.isSymbolicLink entry)
+      (js/Promise.resolve [])
+      (-> (entry-stat root child-relative)
+          (.then (fn [^js stat]
+                   (if (nil? stat)
+                     []
+                     (let [mine (if (matches? stat child-virtual)
+                                  [{:stat stat :vpath child-virtual}]
+                                  [])]
+                       (if (.isDirectory stat)
+                         (-> (search-walk root
+                                          (.resolve node-path directory name)
+                                          child-relative matches?)
+                             (.then (fn [nested]
+                                      (into mine nested))))
+                         mine)))))))))
+
+(defn- search-walk
+  "Depth-first collect of {:stat :vpath} matches beneath one directory."
+  [root directory relative matches?]
+  (-> (.readdir fs directory #js {:withFileTypes true})
+      (.catch (fn [_] (js/Array.)))
+      (.then (fn [^js entries]
+               (let [entry-list (js/Array.from entries)
+                     promises (mapv (fn [^js entry]
+                                      (search-visit root directory relative matches? entry))
+                                    entry-list)]
+                 (js/Promise.all (clj->js promises)))))
+      (.then (fn [^js nested]
+               ;; Each element is one directory level; flatten one level
+               ;; while keeping engine maps untouched.
+               (reduce (fn [acc item] (into acc item)) [] (seq nested))))))
+
 (defn service
   "Builds the Files engine over the data root, database, atomic files, shared
   rate limiter, and credential keyring. quota-bytes comes from server settings;
@@ -1235,8 +1299,61 @@
                                           (ex-info (str "File is not an image ("
                                                         (ex-message error) ").")
                                                    {:type :unsupported-media-type})))))))))))
-        ]
+        ;; Name search walks the user root breadth-free depth-first, never
+        ;; following symlinks, and pages after collecting matches.
+        search-entries
+        (fn [user-id {:keys [q type folder limit offset]}]
+          (let [root (files-root data-root user-id)
+                scope (if (str/blank? (or folder "")) "" (vpath->relative folder))
+                needle (str/lower-case (str q))
+                type-filter (str type)
+                limit (min (max (or limit 50) 1) 200)
+                offset (max (or offset 0) 0)
+                favorites (favorites-set connection user-id)
+                tags (tags-for-paths connection user-id)]
+            (-> (ensure-dir! root)
+                (.then (fn [_]
+                         (if (str/blank? scope)
+                           nil
+                           (path/verify-no-symlinks! root scope))))
+                (.then (fn [_]
+                         (search-walk root (.resolve node-path root scope) scope
+                                      (partial search-matches? needle type-filter))))
+                (.then (fn [matches]
+                         (let [total (count matches)
+                               page (mapv (fn [{:keys [stat vpath]}]
+                                            (make-entry stat vpath
+                                                        (contains? favorites vpath)
+                                                        (get tags vpath)))
+                                          (take limit (drop offset matches)))]
+                           {:items page :total total}))))))
 
+        stats-fn
+        (fn [user-id]
+          (-> (quota-usage data-root user-id)
+              (.then (fn [used]
+                       {:used used :total (or quota-bytes 0)}))))
+
+        diff-versions
+        (fn [user-id vpath v1 v2]
+          (-> (js/Promise.all
+               (into-array [(read-version-fn user-id vpath v1)
+                            (read-version-fn user-id vpath v2)]))
+              (.then (fn [^js pair]
+                       (let [lines1 (.split (.toString (aget pair 0) "utf8") "\n")
+                             lines2 (.split (.toString (aget pair 1) "utf8") "\n")
+                             diff (loop [i 0 j 0 acc []]
+                                    (cond
+                                      (and (< i (.-length lines1)) (< j (.-length lines2))
+                                           (= (aget lines1 i) (aget lines2 j)))
+                                      (recur (inc i) (inc j) (conj acc (str "  " (aget lines1 i))))
+                                      (< i (.-length lines1))
+                                      (recur (inc i) j (conj acc (str "- " (aget lines1 i))))
+                                      (< j (.-length lines2))
+                                      (recur i (inc j) (conj acc (str "+ " (aget lines2 j))))
+                                      :else acc))]
+                         {:diff (str/join "\n" diff)})))))
+        ]
     #js {:filesRoot (fn [user-id] (files-root data-root user-id))
          :quotaUsage (fn [user-id] (quota-usage data-root user-id))
          :list
@@ -1365,6 +1482,17 @@
          :unlock
          (fn [user-id vpath]
            (mutate user-id (fn [] (unlock! user-id vpath))))
+         ;; Search, storage stats, and version diffs are read-only.
+         :search
+         (fn [user-id query]
+           (search-entries user-id query))
+         :stats
+         (fn [user-id]
+           (stats-fn user-id))
+         :diffVersions
+         (fn [user-id vpath v1 v2]
+           (diff-versions user-id vpath v1 v2))
+         ;; DAV reads the raw file bytes and stats entries without
          ;; DAV reads the raw file bytes and stats entries without
          ;; forcing them through the text-only document pipeline.
          :stat

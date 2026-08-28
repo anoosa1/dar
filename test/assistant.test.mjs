@@ -9,7 +9,7 @@ import {
   waitForHealth,
 } from "./helpers/dar-server.mjs";
 
-test("assistant tool API requires a session and starts with an empty catalog", async () => {
+test("assistant tool API requires a session and lists registered tools", async () => {
   const dataRoot = await mkdtemp("/tmp/dar-assistant-test-");
   const context = await startDarWithOidc(dataRoot);
   try {
@@ -25,7 +25,12 @@ test("assistant tool API requires a session and starts with an empty catalog", a
       headers: { cookie: session.cookies },
     });
     assert.equal(catalog.status, 200);
-    assert.deepEqual(await catalog.json(), { items: [] });
+    // Built-in apps register tools on boot; the catalog carries them.
+    const catalogBody = await catalog.json();
+    assert.ok(Array.isArray(catalogBody.items));
+    assert.ok(catalogBody.items.every((tool) =>
+      typeof tool.name === "string" && typeof tool.title === "string" &&
+      typeof tool.effect === "string" && tool.parameters));
 
     const unknownTool = await fetch(`${base}/api/v1/assistant/tools/no.such/invoke`, {
       method: "POST",

@@ -1,5 +1,6 @@
 (ns dar.apps.files-test
   (:require [cljs.test :refer [async deftest is]]
+            [clojure.string :as str]
             [dar.apps.files :as files]
             [dar.platform.atomic-files :as atomic-files]
             [dar.platform.database :as database]
@@ -657,4 +658,88 @@
          (fn [step]
            (is (= :binary-thumb (:outcome step)))
            (is (= :unsupported-media-type (:type (ex-data (:error step))))))])
+       fixture done))))
+
+(deftest search-finds-names-filters-types-and-pages
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_] (.mkdir store "user-1" "/Docs"))
+         (fn [_] (.save store "user-1" "/Docs/notes.md"
+                        (Buffer.from "hello" "utf8")))
+         (fn [_] (.save store "user-1" "/Docs/pic.png"
+                        (Buffer.from "0123456789" "utf8")))
+         (fn [_] (.save store "user-1" "/Docs/todo.txt"
+                        (Buffer.from "tasks" "utf8")))
+         ;; Substring name search is case-insensitive.
+         (fn [_] (.search store "user-1" {:q "NOTE"}))
+         (fn [result]
+           (is (= 1 (:total result)))
+           (is (= "/Docs/notes.md" (-> result :items first :path))))
+         ;; Type filters map to the baseline categories.
+         (fn [_] (.search store "user-1" {:q "" :type "image"}))
+         (fn [result]
+           (is (= 1 (:total result)))
+           (is (= "pic.png" (-> result :items first :name))))
+         (fn [_] (.search store "user-1" {:q "" :type "document"}))
+         (fn [result]
+           (is (= 2 (:total result))))
+         ;; Folder scope plus paging keeps totals while slicing items.
+         (fn [_] (.search store "user-1" {:q "" :folder "/Docs" :limit 1 :offset 1}))
+         (fn [result]
+           (is (= 3 (:total result)))
+           (is (= 1 (count (:items result)))))
+         ;; Misses return empty pages, not errors.
+         (fn [_] (.search store "user-1" {:q "zzz-nothing"}))
+         (fn [result]
+           (is (= 0 (:total result)))
+           (is (= [] (:items result))))])
+       fixture done))))
+
+(deftest stats-report-usage-against-quota
+  (async done
+    (let [fixture (open-service! {:quota-bytes 1000})
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_] (.save store "user-1" "/a.txt" (Buffer.from "12345" "utf8")))
+         (fn [_] (.stats store "user-1"))
+         (fn [stats]
+           (is (= 1000 (:total stats)))
+           (is (= 5 (:used stats))))])
+       fixture done))))
+
+(deftest diff-versions-compares-two-snapshots
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)
+          first-version (atom nil)
+          second-version (atom nil)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_] (.save store "user-1" "/doc.txt"
+                        (Buffer.from "line1\nline2\n" "utf8")))
+         (fn [_] (.createVersion store "user-1" "/doc.txt"))
+         (fn [_] (.listVersions store "user-1" "/doc.txt"))
+         (fn [versions]
+           (is (= 1 (count versions)))
+           (reset! first-version (:id (first versions))))
+         (fn [_] (.save store "user-1" "/doc.txt"
+                        (Buffer.from "line1\nchanged\n" "utf8")))
+         (fn [_] (.createVersion store "user-1" "/doc.txt"))
+         (fn [_] (.listVersions store "user-1" "/doc.txt"))
+         (fn [versions]
+           (is (= 2 (count versions)))
+           (reset! second-version (:id (first versions))))
+         (fn [_] (.diffVersions store "user-1" "/doc.txt"
+                                @first-version @second-version))
+         (fn [diff]
+           (is (str/includes? (:diff diff) "  line1"))
+           (is (str/includes? (:diff diff) "- line2"))
+           (is (str/includes? (:diff diff) "+ changed")))])
        fixture done))))
