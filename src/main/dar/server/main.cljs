@@ -10,6 +10,7 @@
             [dar.platform.notifications :as notifications]
             [dar.platform.preferences :as preferences]
             [dar.platform.security :as security]
+            [dar.platform.search :as search]
             [dar.server.config :as config]
             [dar.server.core :as core]
             ["@cordisjs/plugin-logger-console" :default ConsoleExporter]
@@ -77,6 +78,8 @@
                   (cordis/mount! ctx notifications/notifications-plugin)))
          (.then (fn []
                   (cordis/mount! ctx activity/activity-plugin)))
+         (.then (fn []
+                  (cordis/mount! ctx search/search-plugin)))
          (.then (fn []
                   (cordis/mount! ctx core/core-plugin runtime-config)))
          (.then (fn []
