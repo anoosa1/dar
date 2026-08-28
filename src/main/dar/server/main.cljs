@@ -48,11 +48,11 @@
      (set! (.-baseUrl ctx) (.-href (pathToFileURL (str (.cwd js/process) "/"))))
      (-> (cordis/mount! ctx ConsoleExporter {:showTime "yyyy-MM-dd hh:mm:ss.SSS"})
          (.then (fn []
-                  (cordis/mount! ctx Server (server-config runtime-config))))
-         (.then (fn []
                   (cordis/mount! ctx instance/instance-plugin runtime-config)))
          (.then (fn []
                   (cordis/mount! ctx database/database-plugin)))
+         (.then (fn []
+                  (cordis/mount! ctx Server (server-config runtime-config))))
          (.then (fn []
                   (cordis/mount! ctx core/core-plugin runtime-config)))
          (.then (fn []

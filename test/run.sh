@@ -5,54 +5,31 @@ MODE="${1:-fast}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if ! command -v go >/dev/null 2>&1; then
-  exec nix-shell -p go chromium isync --run "$0 $MODE"
+if [[ "$(node --version 2>/dev/null || true)" != v24.* ]]; then
+  exec nix develop "path:$ROOT" --command "$0" "$MODE"
 fi
 
-ARTIFACTS="${DAR_TEST_ARTIFACTS:-$ROOT/test-artifacts}"
-mkdir -p "$ARTIFACTS"
-WORK="$(mktemp -d /tmp/dar-regression.XXXXXX)"
-trap 'rm -rf "$WORK"' EXIT
+if [[ ! -d node_modules ]]; then
+  npm ci
+fi
 
 fast() {
-  go build ./cmd/...
-  go vet ./...
-  go test ./cmd/... ./internal/... -count=1
-}
-
-coverage() {
-  local process_dir="$WORK/process-coverage"
-  mkdir -p "$process_dir"
-  go test ./cmd/... ./internal/... -count=1 -covermode=atomic -coverpkg=./cmd/...,./internal/... -coverprofile="$WORK/unit.cover"
-  DAR_PROCESS_COVERDIR="$process_dir" DAR_TEST_ARTIFACTS="$ARTIFACTS" go test ./test/fullstack -count=1 -timeout=3m
-  go tool covdata textfmt -i="$process_dir" -o="$WORK/process.cover"
-  go run ./test/coverage_gate.go -global=90 -package=80 -out="$ARTIFACTS/coverage.out" "$WORK/unit.cover" "$WORK/process.cover"
-  go tool cover -html="$ARTIFACTS/coverage.out" -o="$ARTIFACTS/coverage.html"
+  npm run compile
 }
 
 pr() {
-  fast
-  go test -race ./internal/... -count=1
-  DAR_TEST_ARTIFACTS="$ARTIFACTS" go test ./test/fullstack -count=1 -timeout=3m
-  ./test/e2e_test.sh
-  ./test/dav_e2e_test.sh
-  coverage
+  npm run check
+  node --test test/platform.test.mjs
 }
 
 nightly() {
   pr
-  while IFS= read -r pkg; do
-    while IFS= read -r fuzz; do
-      [[ -z "$fuzz" ]] && continue
-      go test "$pkg" -run '^$' -fuzz="^${fuzz}$" -fuzztime=30s
-    done < <(go test "$pkg" -list '^Fuzz' | awk '/^Fuzz/{print $1}')
-  done < <(go list ./cmd/... ./internal/...)
-  go test -race ./internal/... -run 'Lifecycle|Shutdown|Concurrent|Concurrency|Cancellation|Worker' -count=20
+  # Protocol fuzzing and lifecycle stress are added here as their services land.
 }
 
 case "$MODE" in
   fast) fast ;;
   pr) pr ;;
   nightly) nightly ;;
-  *) echo "usage: $0 {fast|pr|nightly}" >&2; exit 2 ;;
+  *) echo "usage: ./test/run.sh {fast|pr|nightly}" >&2; exit 2 ;;
 esac
