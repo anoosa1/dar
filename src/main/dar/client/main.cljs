@@ -92,6 +92,7 @@
 (defn- shell []
   (let [active @(frame/subscribe [:route])
         session @(frame/subscribe [:session])
+        notifications @(frame/subscribe [:notifications])
         profile (:user session)
         route (or (some #(when (= active (get-in % [1 :name])) (second %)) routes)
                   {:name :home :label "Home"})]
@@ -121,11 +122,12 @@
                (str "Welcome, " (or (:displayName profile) "home"))
                (:label route))]]
        [:div.sanctuary-actions
-       [:button {:type "button"} "Search"]
-       [:button.sanctuary-mobile-signout
-        {:type "button" :on-click #(frame/dispatch [:auth/logout-requested])}
-        "Sign out"]
-       [:button {:type "button" :aria-label "Notifications"} "2"]
+        [:button {:type "button"} "Search"]
+        [:button.sanctuary-mobile-signout
+         {:type "button" :on-click #(frame/dispatch [:auth/logout-requested])}
+         "Sign out"]
+        [:button {:type "button" :aria-label "Notifications"}
+         (:count notifications)]
         [:button.sanctuary-primary {:type "button"} "New"]]]
       [:main.sanctuary-content
        (if (= active :home)

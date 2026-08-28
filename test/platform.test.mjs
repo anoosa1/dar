@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer, request as httpRequest } from "node:http";
 import { createServer } from "node:net";
@@ -403,6 +403,46 @@ test("OIDC PKCE login creates an administrator session and CSRF logout revokes i
       headers: { ...authHeaders, "if-match": updatedPreference.headers.get("etag") },
     });
     assert.equal(deletedPreference.status, 200);
+
+    const notificationDatabase = new DatabaseSync(path.join(dataRoot, "dar.sqlite"));
+    notificationDatabase.prepare(
+      "INSERT INTO notifications(id, user_id, dedupe_key, app_id, kind, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run(
+      randomUUID(),
+      sessionBody.user.id,
+      "test/dedupe",
+      "calendar",
+      "eventStarting",
+      JSON.stringify({ title: "Design review" }),
+      new Date().toISOString(),
+    );
+    notificationDatabase.close();
+
+    const unreadBefore = await fetch(`${baseUrl}/api/v1/notifications/unread-count`, {
+      headers: { cookie: cookies },
+    });
+    assert.equal(unreadBefore.status, 200);
+    assert.deepEqual(await unreadBefore.json(), { count: 1 });
+
+    const notificationList = await fetch(`${baseUrl}/api/v1/notifications`, {
+      headers: { cookie: cookies },
+    });
+    assert.equal(notificationList.status, 200);
+    const notificationItems = (await notificationList.json()).items;
+    assert.equal(notificationItems.length, 1);
+    assert.deepEqual(notificationItems[0].payload, { title: "Design review" });
+
+    const markedNotification = await fetch(
+      `${baseUrl}/api/v1/notifications/${notificationItems[0].id}/read`,
+      { method: "POST", headers: authHeaders },
+    );
+    assert.equal(markedNotification.status, 200);
+
+    const deletedNotification = await fetch(
+      `${baseUrl}/api/v1/notifications/${notificationItems[0].id}`,
+      { method: "DELETE", headers: authHeaders },
+    );
+    assert.equal(deletedNotification.status, 200);
 
     const logout = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: "POST",

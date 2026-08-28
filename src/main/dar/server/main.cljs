@@ -6,6 +6,7 @@
             [dar.platform.instance :as instance]
             [dar.platform.keyring :as keyring]
             [dar.platform.oidc :as oidc]
+            [dar.platform.notifications :as notifications]
             [dar.platform.preferences :as preferences]
             [dar.platform.security :as security]
             [dar.server.config :as config]
@@ -71,6 +72,8 @@
                   (cordis/mount! ctx oidc/oidc-plugin runtime-config)))
          (.then (fn []
                   (cordis/mount! ctx preferences/preferences-plugin)))
+         (.then (fn []
+                  (cordis/mount! ctx notifications/notifications-plugin)))
          (.then (fn []
                   (cordis/mount! ctx core/core-plugin runtime-config)))
          (.then (fn []

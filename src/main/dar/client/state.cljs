@@ -4,7 +4,7 @@
 
 (def default-db
   {:route :home
-   :notifications 2
+   :notifications {:status :loading :count 0 :items [] :error nil}
    :session {:status :loading
              :user nil
              :error nil}})
@@ -27,7 +27,21 @@
                                [:auth/loaded
                                 (js->clj % :keywordize-keys true)])))
                   (frame/dispatch [:auth/unauthenticated]))))
-       (.catch #(frame/dispatch [:auth/failed (.-message %)])))))
+   (.catch #(frame/dispatch [:auth/failed (.-message %)])))))
+
+(frame/reg-fx
+ :notifications/load
+ (fn [_]
+   (-> (js/fetch "/api/v1/notifications/unread-count"
+                 #js {:credentials "same-origin"})
+       (.then (fn [response]
+                (if (.-ok response)
+                  (-> (.json response)
+                      (.then #(frame/dispatch
+                               [:notifications/loaded
+                                (js->clj % :keywordize-keys true)])))
+                  (frame/dispatch [:notifications/failed "Notifications unavailable."]))))
+       (.catch #(frame/dispatch [:notifications/failed (.-message %)])))))
 
 (frame/reg-fx
  :auth/logout
@@ -56,15 +70,17 @@
 (frame/reg-event-db
  :auth/loaded
  (fn [db [_ session]]
-   (assoc db :session {:status :authenticated
-                       :user (:user session)
-                       :expiresAt (:expiresAt session)
-                       :error nil})))
+   {:db (assoc db :session {:status :authenticated
+                            :user (:user session)
+                            :expiresAt (:expiresAt session)
+                            :error nil})
+    :dispatch [:notifications/load]}))
 
 (frame/reg-event-db
  :auth/unauthenticated
  (fn [db _]
-   (assoc db :session {:status :unauthenticated :user nil :error nil})))
+   (assoc db :session {:status :unauthenticated :user nil :error nil}
+          :notifications {:status :idle :count 0 :items [] :error nil})))
 
 (frame/reg-event-db
  :auth/failed
@@ -76,6 +92,19 @@
  (fn [_ _]
    {:auth/logout nil}))
 
+(frame/reg-event-db
+ :notifications/loaded
+ (fn [db [_ result]]
+   (assoc db :notifications {:status :ready
+                             :count (:count result)
+                             :items (:items result)
+                             :error nil})))
+
+(frame/reg-event-db
+ :notifications/failed
+ (fn [db [_ message]]
+   (assoc db :notifications {:status :error :count 0 :items [] :error message})))
+
 (frame/reg-sub
  :route
  (fn [db _]
@@ -85,3 +114,8 @@
  :session
  (fn [db _]
    (:session db)))
+
+(frame/reg-sub
+ :notifications
+ (fn [db _]
+   (:notifications db)))
