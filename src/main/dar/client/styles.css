@@ -96,6 +96,15 @@ a:focus-visible {
   margin-top: auto;
 }
 
+.sanctuary-signout {
+  margin-left: auto;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: light-dark(#5a685f, #c7d2cb);
+  cursor: pointer;
+}
+
 .sanctuary-user > span:last-child {
   display: grid;
 }
@@ -250,6 +259,85 @@ a:focus-visible {
   display: none;
 }
 
+.sanctuary-mobile-signout {
+  display: none;
+}
+
+.sanctuary-auth {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, light-dark(#dce9dc, #263a31), transparent 44%),
+    light-dark(#f7f3e8, #17201d);
+}
+
+.sanctuary-auth-card {
+  display: grid;
+  width: min(100%, 460px);
+  gap: 16px;
+  justify-items: start;
+  padding: 42px;
+  border: 1px solid light-dark(#ded4c2, #3b4942);
+  border-radius: 28px;
+  background: light-dark(#fffdf7, #222d28);
+}
+
+.sanctuary-auth-card h1,
+.sanctuary-auth-card p {
+  margin: 0;
+}
+
+.sanctuary-auth-card h1 {
+  font-family: ui-serif, Georgia, serif;
+  font-weight: 500;
+}
+
+.sanctuary-auth-card p {
+  line-height: 1.6;
+  color: light-dark(#5a685f, #c7d2cb);
+}
+
+.sanctuary-login-action {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border-radius: 24px;
+  background: light-dark(#315c4b, #a9d5bd);
+  color: light-dark(#f7fff9, #193127);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sanctuary-auth-error {
+  color: light-dark(#984b31, #f1ad91) !important;
+}
+
+.sanctuary-auth-skeleton {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: light-dark(#e7decd, #36453e);
+}
+
+.sanctuary-auth-skeleton::after {
+  display: block;
+  width: 40%;
+  height: 100%;
+  content: "";
+  background: light-dark(#b8cab9, #789a88);
+  animation: sanctuary-loading 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes sanctuary-loading {
+  from { transform: translateX(-20%); }
+  to { transform: translateX(170%); }
+}
+
 @media (max-width: 760px) {
   .sanctuary-app {
     display: block;
@@ -266,6 +354,10 @@ a:focus-visible {
 
   .sanctuary-actions button:first-child {
     display: none;
+  }
+
+  .sanctuary-mobile-signout {
+    display: inline-flex;
   }
 
   .sanctuary-content {
@@ -296,5 +388,8 @@ a:focus-visible {
     padding: 6px 2px;
     border-radius: 16px;
   }
-}
 
+  .sanctuary-auth-card {
+    padding: 30px 24px;
+  }
+}

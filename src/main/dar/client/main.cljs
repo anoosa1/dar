@@ -1,5 +1,6 @@
 (ns dar.client.main
-  (:require [dar.client.state]
+  (:require [clojure.string]
+            [dar.client.state]
             [dar.cordis :as cordis]
             [re-frame.core :as frame]
             [reagent.dom.client :as rdom]
@@ -18,7 +19,8 @@
    ["/prayer" {:name :prayer :label "Prayer"}]
    ["/weather" {:name :weather :label "Weather"}]
    ["/codex" {:name :codex :label "Codex"}]
-   ["/settings" {:name :settings :label "Settings"}]])
+   ["/settings" {:name :settings :label "Settings"}]
+   ["/login" {:name :login :label "Sign in"}]])
 
 (def app-router (router/router routes))
 
@@ -89,7 +91,8 @@
 
 (defn- shell []
   (let [active @(frame/subscribe [:route])
-        profile @(frame/subscribe [:profile])
+        session @(frame/subscribe [:session])
+        profile (:user session)
         route (or (some #(when (= active (get-in % [1 :name])) (second %)) routes)
                   {:name :home :label "Home"})]
     [:div.sanctuary-app
@@ -100,16 +103,29 @@
        (for [app primary-apps]
          ^{:key (:name app)} [app-link app active])]
       [:div.sanctuary-user
-       [:span.sanctuary-avatar "AS"]
+       [:span.sanctuary-avatar
+        (->> (clojure.string/split (or (:displayName profile) "Dar User") #"\s+")
+             (take 2)
+             (map #(subs % 0 1))
+             (apply str)
+             clojure.string/upper-case)]
        [:span [:strong (:displayName profile)]
-        [:small (when (:administrator profile) "Administrator")]]]]
+        [:small (when (:administrator profile) "Administrator")]]
+       [:button.sanctuary-signout
+        {:type "button" :on-click #(frame/dispatch [:auth/logout-requested])}
+        "Sign out"]]]
      [:div.sanctuary-workspace
       [:header.sanctuary-topbar
        [:div [:span.sanctuary-eyebrow "Sanctuary workspace"]
-        [:h1 (if (= active :home) "Good morning, Anoosa" (:label route))]]
+        [:h1 (if (= active :home)
+               (str "Welcome, " (or (:displayName profile) "home"))
+               (:label route))]]
        [:div.sanctuary-actions
-        [:button {:type "button"} "Search"]
-        [:button {:type "button" :aria-label "Notifications"} "2"]
+       [:button {:type "button"} "Search"]
+       [:button.sanctuary-mobile-signout
+        {:type "button" :on-click #(frame/dispatch [:auth/logout-requested])}
+        "Sign out"]
+       [:button {:type "button" :aria-label "Notifications"} "2"]
         [:button.sanctuary-primary {:type "button"} "New"]]]
       [:main.sanctuary-content
        (if (= active :home)
@@ -118,6 +134,33 @@
      [:nav.sanctuary-mobile-nav {:aria-label "Mobile applications"}
       (for [app (take 5 primary-apps)]
         ^{:key (:name app)} [app-link app active])]]))
+
+(defn- loading-screen []
+  [:main.sanctuary-auth
+   [:section.sanctuary-auth-card {:aria-live "polite"}
+    [:span.sanctuary-empty-symbol "D"]
+    [:h1 "Opening your workspace"]
+    [:div.sanctuary-auth-skeleton]
+    [:p "Checking your Dar session…"]]])
+
+(defn- login-screen [error]
+  [:main.sanctuary-auth
+   [:section.sanctuary-auth-card
+    [:span.sanctuary-empty-symbol "D"]
+    [:span.sanctuary-eyebrow "Your private workspace"]
+    [:h1 "Welcome to Dar"]
+    [:p "Files, calendars, mail, tasks, notes, and your assistant—kept together on your own instance."]
+    (when error
+      [:p.sanctuary-auth-error {:role "alert"} error])
+    [:a.sanctuary-login-action {:href "/api/v1/auth/login"} "Continue with OpenID Connect"]]])
+
+(defn- app-root []
+  (let [{:keys [status error]} @(frame/subscribe [:session])]
+    (case status
+      :authenticated [shell]
+      :loading [loading-screen]
+      :error [login-screen error]
+      [login-screen nil])))
 
 (def client-plugin
   (cordis/plugin
@@ -139,5 +182,5 @@
         root (rdom/create-root (.getElementById js/document "app"))]
     (reset! client-context ctx)
     (reset! react-root root)
-    (rdom/render root [shell])
+    (rdom/render root [app-root])
     (cordis/mount! ctx client-plugin)))

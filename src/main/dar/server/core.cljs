@@ -8,6 +8,7 @@
 
 (def spa-paths
   ["/"
+   "/login"
    "/files"
    "/contacts"
    "/calendar"
@@ -45,7 +46,7 @@
                (str/starts-with? target (str asset-root (.-sep path))))
       target)))
 
-(defn- register-routes! [^js ctx {:keys [publicRoot]}]
+(defn- register-routes! [^js ctx {:keys [publicRoot oidc]}]
   (let [^js server (.-server ctx)
         index-file (.resolve path publicRoot "index.html")]
     (.get server "/health"
@@ -60,6 +61,9 @@
             (http/json! response
                         {:apiVersion "1"
                          :name "Dar"
+                         :authentication {:oidcConfigured (boolean oidc)
+                                          :displayName (or (:displayName oidc)
+                                                           "OpenID Connect")}
                          :apps (contracts/collection
                                 (mapv (fn [app-path]
                                         {:id (if (= app-path "/") "home" (subs app-path 1))
