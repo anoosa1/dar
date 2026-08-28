@@ -1,5 +1,6 @@
 (ns dar.server.main
   (:require [dar.cordis :as cordis]
+            [dar.platform.activity :as activity]
             [dar.platform.auth :as auth]
             [dar.platform.contributions :as contributions]
             [dar.platform.database :as database]
@@ -74,6 +75,8 @@
                   (cordis/mount! ctx preferences/preferences-plugin)))
          (.then (fn []
                   (cordis/mount! ctx notifications/notifications-plugin)))
+         (.then (fn []
+                  (cordis/mount! ctx activity/activity-plugin)))
          (.then (fn []
                   (cordis/mount! ctx core/core-plugin runtime-config)))
          (.then (fn []
