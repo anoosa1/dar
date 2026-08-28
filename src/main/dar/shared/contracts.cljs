@@ -10,6 +10,10 @@
     "rateLimited"
     "tooLarge"
     "quotaExceeded"
+    "unsupportedMediaType"
+    "preconditionRequired"
+    "preconditionFailed"
+    "locked"
     "unavailable"
     "internal"})
 
@@ -26,6 +30,10 @@
              "rateLimited"
              "tooLarge"
              "quotaExceeded"
+             "unsupportedMediaType"
+             "preconditionRequired"
+             "preconditionFailed"
+             "locked"
              "unavailable"
              "internal"]]
      [:message string?]

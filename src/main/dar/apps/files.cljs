@@ -3,6 +3,7 @@
             [dar.cordis :as cordis]
             [dar.platform.atomic-files :as atomic-files]
             [dar.platform.path :as path]
+            ["node:buffer" :refer [Buffer]]
             ["node:crypto" :as crypto]
             ["node:fs/promises" :as fs]
             ["node:path" :as node-path]))
@@ -222,6 +223,65 @@
                                         (.resolve node-path destination (.-name entry)))))))))
                  (.copyFile fs source destination))))))
 
+(def editor-limit
+  "Maximum editable file size; larger files have no text editor."
+  (* 1024 1024))
+
+(defn- sha256-hex [^js bytes]
+  (.digest (.update (crypto/createHash "sha256") bytes) "hex"))
+
+(defn- hex-encode [text]
+  (.toString (Buffer.from text "utf8") "hex"))
+
+(defn- valid-name?
+  "The editor may rename a file to a bare name only."
+  [name]
+  (and (string? name)
+       (not (str/blank? name))
+       (= name (node-path/basename name))
+       (not (contains? #{".", ".."} name))
+       (not (or (str/includes? name "/")
+                (str/includes? name "\\")
+                (str/includes? name "\u0000")))))
+
+(defn- read-bytes!
+  "Reads one validated file's bytes, rejecting directories and missing paths."
+  [root relative]
+  (let [full (.resolve node-path root relative)]
+    (-> (path/verify-no-symlinks! root relative)
+        (.then (fn [_] (.stat fs full)))
+        (.then (fn [^js stat]
+                 (when (.isDirectory stat)
+                   (throw (ex-info "The entry is a folder."
+                                   {:type :invalid})))
+                 (.readFile fs full)))
+        (.catch (fn [error]
+                  (if (= "ENOENT" (.-code error))
+                    (throw (ex-info "The file does not exist."
+                                    {:type :not-found}))
+                    (throw error)))))))
+
+(defn- document-for [relative ^js bytes]
+  (let [name (node-path/basename relative)]
+    {:path (str "/" relative)
+     :name name
+     :content (.toString bytes "utf8")
+     :etag (sha256-hex bytes)
+     :markdown (contains? #{".md" ".markdown"} (str/lower-case (node-path/extname name)))
+     :mimeType (mime-for-name name)
+     :size (.-length bytes)}))
+
+(defn- normalize-if-match [value]
+  (let [trimmed (str/trim (or value ""))]
+    (cond
+      (or (str/blank? trimmed) (str/includes? trimmed ",")
+          (str/starts-with? trimmed "W/"))
+      nil
+      (and (str/starts-with? trimmed "\"") (str/ends-with? trimmed "\"")
+           (>= (count trimmed) 2))
+      (subs trimmed 1 (dec (count trimmed)))
+      :else trimmed)))
+
 (defn service
   "Builds the Files engine over the data root, database, and atomic files.
 
@@ -241,6 +301,52 @@
         (.prepare connection "SELECT id, original_path, trash_path, deleted_at FROM files_trash WHERE user_id = ? AND id = ?")
         delete-trash
         (.prepare connection "DELETE FROM files_trash WHERE user_id = ? AND id = ?")
+        insert-version
+        (.prepare connection "INSERT INTO files_versions(user_id, path, id, blob_path, size, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+        select-versions
+        (.prepare connection "SELECT id, size, created_at FROM files_versions WHERE user_id = ? AND path = ? ORDER BY created_at DESC, id DESC")
+        select-version-blob
+        (.prepare connection "SELECT blob_path FROM files_versions WHERE user_id = ? AND path = ? AND id = ?")
+        select-tags
+        (.prepare connection "SELECT id, name, color FROM files_tags WHERE user_id = ? ORDER BY name")
+        insert-tag
+        (.prepare connection "INSERT INTO files_tags(user_id, id, name, color) VALUES (?, ?, ?, ?)")
+        delete-tag
+        (.prepare connection "DELETE FROM files_tags WHERE user_id = ? AND id = ?")
+        delete-tag-assignments
+        (.prepare connection "DELETE FROM files_file_tags WHERE user_id = ? AND tag_id = ?")
+        insert-file-tag
+        (.prepare connection "INSERT OR IGNORE INTO files_file_tags(user_id, path, tag_id) VALUES (?, ?, ?)")
+        delete-file-tag
+        (.prepare connection "DELETE FROM files_file_tags WHERE user_id = ? AND path = ? AND tag_id = ?")
+        select-comments
+        (.prepare connection "SELECT id, author, body, parent_id, created_at FROM files_comments WHERE user_id = ? AND path = ? ORDER BY created_at, id")
+        insert-comment
+        (.prepare connection "INSERT INTO files_comments(user_id, path, id, author, body, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        delete-comment
+        (.prepare connection "DELETE FROM files_comments WHERE user_id = ? AND path = ? AND id = ?")
+        select-lock-owner
+        (.prepare connection "SELECT owner FROM files_locks WHERE user_id = ? AND path = ?")
+        upsert-lock
+        (.prepare connection "INSERT INTO files_locks(user_id, path, owner) VALUES (?, ?, ?) ON CONFLICT(user_id, path) DO UPDATE SET owner = excluded.owner")
+        delete-lock
+        (.prepare connection "DELETE FROM files_locks WHERE user_id = ? AND path = ?")
+
+        ;; Returns the owner of an explicit lock on a path, or nil. Mutating
+        ;; operations check both source and destination before touching bytes.
+        locked-owner
+        (fn [user-id relative]
+          (let [row (.get select-lock-owner user-id relative)]
+            (when (some? row) (.-owner row))))
+
+        ensure-unlocked!
+        (fn [user-id relatives]
+          (doseq [relative (distinct relatives)]
+            (when-some [owner (locked-owner user-id relative)]
+              (throw (ex-info "The file is busy."
+                              {:type :locked
+                               :path (str "/" relative)
+                               :owner owner})))))
 
         set-favorite
         (fn [user-id vpath favorited]
@@ -367,6 +473,8 @@
             (require-nested-vpath! destination-relative)
             (-> (path/verify-no-symlinks! root source-relative)
                 (.then (fn [_] (path/verify-no-symlinks! root destination-relative)))
+                (.then (fn [_] (ensure-unlocked! user-id [source-relative
+                                                           destination-relative])))
                 (.then (fn [_]
                          (.rename fs
                                   (.resolve node-path root source-relative)
@@ -396,6 +504,8 @@
             (require-nested-vpath! destination-relative)
             (-> (path/verify-no-symlinks! root source-relative)
                 (.then (fn [_] (path/verify-no-symlinks! root destination-relative)))
+                (.then (fn [_] (ensure-unlocked! user-id [source-relative
+                                                           destination-relative])))
                 (.then (fn [_]
                          (copy-entry!
                           (.resolve node-path root source-relative)
@@ -412,7 +522,290 @@
 
                             :else (throw error))))
                 (.then (fn [_]
-                         {:copied (str "/" destination-relative)})))))]
+                         {:copied (str "/" destination-relative)})))))
+
+
+        ;; Returns the owner of an explicit lock on a path, or nil. Mutating
+        ;; operations check both source and destination before touching bytes.
+        locked-owner
+        (fn [user-id relative]
+          (let [row (.get select-lock-owner user-id relative)]
+            (when (some? row) (.-owner row))))
+
+        ensure-unlocked!
+        (fn [user-id relatives]
+          (doseq [relative (distinct relatives)]
+            (when-some [owner (locked-owner user-id relative)]
+              (throw (ex-info "The file is busy."
+                              {:type :locked
+                               :path (str "/" relative)
+                               :owner owner})))))
+
+        ;; Snapshots the current bytes of a file into the versions root as an
+        ;; immutable blob (versions/<path-hex>/<id>) plus a metadata row.
+        create-version!
+        (fn [user-id vpath]
+          (let [root (files-root data-root user-id)
+                relative (vpath->relative vpath)]
+            (-> (read-bytes! root relative)
+                (.then (fn [^js bytes]
+                         (let [id (new-id)
+                               versions-dir (.resolve node-path
+                                                      (versions-root data-root user-id)
+                                                      (hex-encode (str "/" relative)))
+                               blob (.resolve node-path versions-dir id)
+                               write-blob!
+                               (fn []
+                                 (atomic-files/write-file!
+                                  atomic-store versions-dir id bytes))
+                               record!
+                               (fn []
+                                 (.write writer
+                                         (fn [_]
+                                           (.run insert-version
+                                                 user-id (str "/" relative)
+                                                 id blob (.-length bytes)
+                                                 (now-iso)))))]
+                           (-> (ensure-dir! versions-dir)
+                               (.then (fn [_] (write-blob!)))
+                               (.then (fn [_] (record!)))
+                               (.then (fn [_]
+                                        {:id id :size (.-length bytes)})))))))))
+
+
+        list-versions-fn
+        (fn [user-id vpath]
+          (map (fn [^js row]
+                 {:id (.-id row)
+                  :size (.-size row)
+                  :createdAt (.-created_at row)})
+               ;; Version rows store the user-rooted path with its leading
+               ;; slash (see create-version!); match that form here.
+               (.all select-versions user-id (str "/" (vpath->relative vpath)))))
+
+        read-version-fn
+        (fn [user-id vpath version-id]
+          (let [stored-path (str "/" (vpath->relative vpath))
+                row (.get select-version-blob user-id stored-path version-id)]
+            (if (nil? row)
+              (js/Promise.reject
+               (ex-info "Version not found." {:type :not-found}))
+              (.readFile fs (.-blob_path row)))))
+
+        ;; Restores a version by snapshotting the current content first and
+        ;; then writing the old bytes back through the atomic path. The
+        ;; restore write is awaited so callers only see the restored content
+        ;; after it has landed.
+        restore-version!
+        (fn [user-id vpath version-id]
+          (let [root (files-root data-root user-id)
+                relative (vpath->relative vpath)]
+            (-> (read-version-fn user-id vpath version-id)
+                (.then (fn [^js bytes]
+                         (ensure-unlocked! user-id [relative])
+                         (-> (create-version! user-id vpath)
+                             (.then (fn [_]
+                                      (-> (atomic-files/write-file!
+                                           atomic-store root relative bytes)
+                                          (.then (fn [_]
+                                                   {:restored (str "/" relative)})))))))))))
+
+        ;; Editor save. Validates If-Match, size, and encoding; checks locks;
+        ;; versions the previous content; supports rename with rollback on a
+        ;; failed write; and returns the fresh document.
+        save-document!
+        ;; Everything (validation included) runs inside the per-user queue so
+        ;; validation errors surface as promise rejections, never as
+        ;; synchronous throws into the HTTP layer. The previous content is
+        ;; versioned before any change; a rename whose write fails is rolled
+        ;; back so the original file stays intact.
+        (fn [user-id vpath {:keys [content name if-match]}]
+          (mutate user-id
+                  (fn []
+                    (let [root (files-root data-root user-id)
+                          source-relative (vpath->relative vpath)
+                          match (normalize-if-match if-match)]
+                      (when (str/blank? (or match ""))
+                        (throw (ex-info "An If-Match header is required."
+                                        {:type :precondition-required})))
+                      (let [bytes (Buffer.from (or content "") "utf8")]
+                        (when (> (.-length bytes) editor-limit)
+                          (throw (ex-info "The file is too large to edit."
+                                          {:type :too-large :limit editor-limit})))
+                        (when (str/includes? (or content "") "\u0000")
+                          (throw (ex-info "The file is not UTF-8 text."
+                                          {:type :unsupported-media-type})))
+                        (when-not (valid-name? (or name (node-path/basename source-relative)))
+                          (throw (ex-info "The filename is invalid."
+                                          {:type :invalid})))
+                        (let [destination-relative
+                              (if (and name (not= name (node-path/basename source-relative)))
+                                (let [parent (node-path/dirname source-relative)]
+                                  (if (= parent ".") name (str parent "/" name)))
+                                source-relative)]
+                          (-> (read-bytes! root source-relative)
+                              (.then
+                               (fn [current-bytes]
+                                 (let [current (document-for source-relative
+                                                             current-bytes)]
+                                   (ensure-unlocked!
+                                    user-id [source-relative destination-relative])
+                                   (when-not (= (:etag current) match)
+                                     (throw (ex-info "The file changed."
+                                                     {:type :precondition-failed
+                                                      :etag (:etag current)})))
+                                   ;; The destination must not exist for a
+                                   ;; renaming save; the stat is awaited here
+                                   ;; (entry-stat resolves a promise).)))
+                                   (-> (if (= destination-relative source-relative)
+                                         (js/Promise.resolve nil)
+                                         (entry-stat root destination-relative))
+                                       (.then
+                                        (fn [existing]
+                                          (when (some? existing)
+                                            (throw (ex-info
+                                                    "A file with that name already exists."
+                                                    {:type :already-exists})))
+                                          {:current current
+                                           :renamed? (not= destination-relative
+                                                          source-relative)
+                                           :changed? (not= (:content current)
+                                                           (.toString bytes "utf8"))}))))))
+                              (.then
+                               (fn [ctx]
+                                 ;; Version the previous content before any
+                                 ;; change, then hand the context onward.
+                                 (-> (if (:changed? ctx)
+                                       (create-version! user-id vpath)
+                                       (js/Promise.resolve nil))
+                                     (.then (fn [_] ctx)))))
+                              (.then
+                               (fn [{:keys [renamed? changed?]}]
+                                 (if (or renamed? changed?)
+                                   (if-not renamed?
+                                     (write-user-file! user-id vpath bytes)
+                                     (-> (.rename fs
+                                                  (.resolve node-path root source-relative)
+                                                  (.resolve node-path root destination-relative))
+                                         (.then
+                                          (fn [_]
+                                            (write-user-file!
+                                             user-id
+                                             (str "/" destination-relative)
+                                             bytes)))
+                                         (.catch
+                                          (fn [error]
+                                            ;; Roll the rename back so the
+                                            ;; original file stays intact.
+                                            (-> (.rename fs
+                                                         (.resolve node-path root destination-relative)
+                                                         (.resolve node-path root source-relative))
+                                                (.catch (fn [_] nil))
+                                                (.then (fn [_]
+                                                         (throw error))))))))
+                                   (js/Promise.resolve nil))))
+                              (.then
+                               (fn [_]
+                                 (document-for destination-relative
+                                               bytes))))))))))
+        ;; Lists the user tags. Entries carry tag names joined per path.
+        list-tags-fn
+        (fn [user-id]
+          (map (fn [^js row]
+                 {:id (.-id row) :name (.-name row) :color (.-color row)})
+               (.all select-tags user-id)))
+        create-tag!
+        (fn [user-id {:keys [name color]}]
+          (when (or (str/blank? (or name "")) (not (string? color)))
+            (throw (ex-info "The tag name or color is invalid."
+                            {:type :invalid})))
+          (let [id (new-id)]
+            ;; Await the writer so callers only see the tag after commit.
+            (.then (.write writer
+                           (fn [_]
+                             (.run insert-tag user-id id name color)))
+                   (fn [_]
+                     {:id id :name name :color color}))))
+
+        delete-tag!
+        (fn [user-id tag-id]
+          (.then (.write writer
+                         (fn [_]
+                           (.run delete-tag-assignments user-id tag-id)
+                           (.run delete-tag user-id tag-id)))
+                 (fn [_]
+                   {:deleted tag-id})))
+
+        set-file-tag!
+        (fn [user-id vpath tag-id add?]
+          (let [relative (vpath->relative vpath)]
+            (.then (.write writer
+                           (fn [_]
+                             (if add?
+                               (.run insert-file-tag user-id relative tag-id)
+                               (.run delete-file-tag user-id relative tag-id))))
+                   (fn [_]
+                     {:path (str "/" relative) :tag tag-id :added add?}))))
+
+        list-comments-fn
+        (fn [user-id vpath]
+          (map (fn [^js row]
+                 {:id (.-id row)
+                  :author (.-author row)
+                  :body (.-body row)
+                  :parentId (.-parent_id row)
+                  :createdAt (.-created_at row)})
+               (.all select-comments user-id (vpath->relative vpath))))
+
+        add-comment!
+        (fn [user-id vpath {:keys [body parent-id]}]
+          (when (str/blank? (or body ""))
+            (throw (ex-info "The comment body is required."
+                            {:type :invalid})))
+          (let [id (new-id)
+                comment {:id id
+                         :author user-id
+                         :body body
+                         :parentId (or parent-id "")
+                         :createdAt (now-iso)}]
+            (.then (.write writer
+                           (fn [_]
+                             (.run insert-comment user-id (vpath->relative vpath) id
+                                   user-id body (or parent-id "") (:createdAt comment))))
+                   (fn [_]
+                     comment))))
+
+        delete-comment!
+        (fn [user-id vpath comment-id]
+          (.then (.write writer
+                         (fn [_]
+                           (.run delete-comment user-id (vpath->relative vpath) comment-id)))
+                 (fn [_]
+                   {:deleted comment-id})))
+
+        lock-info
+        (fn [user-id vpath]
+          (let [owner (locked-owner user-id (vpath->relative vpath))]
+            (js/Promise.resolve {:locked (some? owner) :owner owner})))
+
+        lock!
+        (fn [user-id vpath]
+          (let [relative (vpath->relative vpath)]
+            (.then (.write writer
+                           (fn [_]
+                             (.run upsert-lock user-id relative user-id)))
+                   (fn [_]
+                     {:locked true :owner user-id}))))
+
+        unlock!
+        (fn [user-id vpath]
+          (let [relative (vpath->relative vpath)]
+            (.then (.write writer
+                           (fn [_]
+                             (.run delete-lock user-id relative)))
+                   (fn [_]
+                     {:locked false}))))
+        ]
 
     #js {:filesRoot (fn [user-id] (files-root data-root user-id))
          :quotaUsage (fn [user-id] (quota-usage data-root user-id))
@@ -469,8 +862,10 @@
          (fn [user-id vpath]
            (mutate user-id
                    (fn []
-                     (require-nested-vpath! (vpath->relative vpath))
-                     (move-to-trash! user-id vpath))))
+                     (let [relative (vpath->relative vpath)]
+                       (require-nested-vpath! relative)
+                       (ensure-unlocked! user-id [relative])
+                       (move-to-trash! user-id vpath)))))
          :restore
          (fn [user-id trash-id]
            (mutate user-id (fn [] (restore! user-id trash-id))))
@@ -482,4 +877,61 @@
            (mutate user-id (fn [] (rename! user-id from to))))
          :copy
          (fn [user-id from to]
-           (mutate user-id (fn [] (copy! user-id from to))))}))
+           (mutate user-id (fn [] (copy! user-id from to))))
+
+         ;; Stage 2 surface: editor, versions, tags, comments, and locks.
+         :readDocument
+         (fn [user-id vpath]
+           (mutate user-id
+                   (fn []
+                     (-> (read-bytes! (files-root data-root user-id)
+                                      (vpath->relative vpath))
+                         (.then (fn [^js bytes]
+                                  (document-for (vpath->relative vpath) bytes)))))))
+         :saveDocument
+         ;; save-document! enqueues its own mutate; wrapping it again here
+         ;; would deadlock the per-user queue.
+         (fn [user-id vpath doc]
+           (save-document! user-id vpath doc))
+         :createVersion
+         (fn [user-id vpath]
+           (mutate user-id (fn [] (create-version! user-id vpath))))
+         :listVersions
+         (fn [user-id vpath]
+           (mutate user-id (fn [] (js/Promise.resolve (vec (list-versions-fn user-id vpath))))))
+         :readVersion
+         (fn [user-id vpath version-id]
+           (mutate user-id (fn [] (read-version-fn user-id vpath version-id))))
+         :restoreVersion
+         (fn [user-id vpath version-id]
+           (mutate user-id (fn [] (restore-version! user-id vpath version-id))))
+         :listTags
+         (fn [user-id]
+           (mutate user-id (fn [] (js/Promise.resolve (vec (list-tags-fn user-id))))))
+         :createTag
+         (fn [user-id tag]
+           (mutate user-id (fn [] (create-tag! user-id tag))))
+         :deleteTag
+         (fn [user-id tag-id]
+           (mutate user-id (fn [] (delete-tag! user-id tag-id))))
+         :setFileTag
+         (fn [user-id vpath tag-id add?]
+           (mutate user-id (fn [] (set-file-tag! user-id vpath tag-id add?))))
+         :listComments
+         (fn [user-id vpath]
+           (mutate user-id (fn [] (js/Promise.resolve (vec (list-comments-fn user-id vpath))))))
+         :addComment
+         (fn [user-id vpath body parent-id]
+           (mutate user-id (fn [] (add-comment! user-id vpath {:body body :parent-id parent-id}))))
+         :deleteComment
+         (fn [user-id vpath comment-id]
+           (mutate user-id (fn [] (delete-comment! user-id vpath comment-id))))
+         :lockInfo
+         (fn [user-id vpath]
+           (mutate user-id (fn [] (lock-info user-id vpath))))
+         :lock
+         (fn [user-id vpath]
+           (mutate user-id (fn [] (lock! user-id vpath))))
+         :unlock
+         (fn [user-id vpath]
+           (mutate user-id (fn [] (unlock! user-id vpath))))}))

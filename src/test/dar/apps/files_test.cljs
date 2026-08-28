@@ -243,3 +243,207 @@
          (fn [_]
            (is (= "87654321" (read-file fixture "small.txt"))))])
        fixture done))))
+
+
+(deftest editor-save-validates-and-versions-documents
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_]
+           (.save store "user-1" "/notes.md" (Buffer.from "first draft" "utf8")))
+         (fn [_]
+           (settle (.saveDocument store "user-1" "/notes.md"
+                                  {:content "second draft"})
+                   :missing-match))
+         (fn [step]
+           (is (= :missing-match (:outcome step)))
+           (is (= :precondition-required (:type (ex-data (:error step))))))
+         (fn [_]
+           (.readDocument store "user-1" "/notes.md"))
+         (fn [doc]
+           (is (= "notes.md" (:name doc)))
+           (is (= true (:markdown doc)))
+           (is (= "text/markdown" (:mimeType doc)))
+           (is (= 11 (:size doc)))
+           (is (string? (:etag doc))))
+         (fn [_]
+           (.readDocument store "user-1" "/notes.md"))
+         (fn [doc]
+           (.saveDocument store "user-1" "/notes.md"
+                          {:content "second draft" :if-match (:etag doc)}))
+         (fn [saved]
+           (is (= "second draft" (:content saved)))
+           (is (= 12 (:size saved)))
+           (.listVersions store "user-1" "/notes.md"))
+         (fn [versions]
+           (is (= 1 (count versions)))
+           (.readVersion store "user-1" "/notes.md" (:id (first versions))))
+         (fn [bytes]
+           (is (= "first draft" (.toString bytes "utf8"))))])
+       fixture done))))
+
+(deftest editor-save-rename-creates-snapshot-and-restore-rolls-back
+  (async done
+    (let [fixture (open-service! {:quota-bytes 40})
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_]
+           (.save store "user-1" "/memo.md" (Buffer.from "memo v1" "utf8")))
+         (fn [_]
+           (.readDocument store "user-1" "/memo.md"))
+         (fn [doc]
+           (.saveDocument store "user-1" "/memo.md"
+                          {:content "memo v2 with longer content"
+                           :if-match (:etag doc)}))
+         (fn [_]
+           (.readDocument store "user-1" "/memo.md"))
+         (fn [doc]
+           ;; The rename lands first; the oversized write then fails and the
+           ;; catch must restore the original name and content.
+           (settle (.saveDocument store "user-1" "/memo.md"
+                                  {:content "memo v3 that is much longer and exceeds the quota"
+                                   :if-match (:etag doc)
+                                   :name "renamed.md"})
+                   :quota-rejected))
+         (fn [step]
+           (is (= :quota-rejected (:outcome step)))
+           (is (= :quota-exceeded (:type (ex-data (:error step))))))
+         (fn [_]
+           (is (= "memo v2 with longer content" (read-file fixture "memo.md")))
+           (settle (.readDocument store "user-1" "/renamed.md") :gone))
+         (fn [step]
+           (is (= :gone (:outcome step)))
+           (is (= :not-found (:type (ex-data (:error step))))))
+         (fn [_]
+           (.listVersions store "user-1" "/memo.md"))
+         (fn [versions]
+           ;; Both changed saves snapshotted the content they replaced.
+           (is (= 2 (count versions)))
+           (.readVersion store "user-1" "/memo.md" (:id (last versions))))
+         (fn [bytes]
+           (is (= "memo v1" (.toString bytes "utf8")))
+           (.listVersions store "user-1" "/memo.md"))
+         (fn [versions]
+           (.restoreVersion store "user-1" "/memo.md" (:id (last versions))))
+         (fn [_]
+           (is (= "memo v1" (read-file fixture "memo.md")))
+           (.listVersions store "user-1" "/memo.md"))
+         (fn [versions]
+           ;; Restore snapshots the pre-restore content first.
+           (is (= 3 (count versions))))])
+       fixture done))))
+
+(deftest explicit-locks-block-mutations-until-unlocked
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_]
+           (.save store "user-1" "/locked.md" (Buffer.from "shared doc" "utf8")))
+         (fn [_]
+           (.lock store "user-1" "/locked.md"))
+         (fn [result]
+           (is (= true (:locked result)))
+           (is (= "user-1" (:owner result))))
+         (fn [_]
+           (.lockInfo store "user-1" "/locked.md"))
+         (fn [info]
+           (is (= true (:locked info)))
+           (is (= "user-1" (:owner info))))
+         (fn [_]
+           (.readDocument store "user-1" "/locked.md"))
+         (fn [doc]
+           (settle (.saveDocument store "user-1" "/locked.md"
+                                  {:content "blocked" :if-match (:etag doc)})
+                   :save-blocked))
+         (fn [step]
+           (is (= :save-blocked (:outcome step)))
+           (is (= :locked (:type (ex-data (:error step))))))
+         (fn [_]
+           (settle (.rename store "user-1" "/locked.md" "/moved.md") :rename-blocked))
+         (fn [step]
+           (is (= :rename-blocked (:outcome step)))
+           (is (= :locked (:type (ex-data (:error step))))))
+         (fn [_]
+           (settle (.copy store "user-1" "/locked.md" "/copy.md") :copy-blocked))
+         (fn [step]
+           (is (= :copy-blocked (:outcome step)))
+           (is (= :locked (:type (ex-data (:error step))))))
+         (fn [_]
+           (settle (.delete store "user-1" "/locked.md") :delete-blocked))
+         (fn [step]
+           (is (= :delete-blocked (:outcome step)))
+           (is (= :locked (:type (ex-data (:error step))))))
+         (fn [_]
+           (.unlock store "user-1" "/locked.md"))
+         (fn [_]
+           (.lockInfo store "user-1" "/locked.md"))
+         (fn [info]
+           (is (= false (:locked info)))
+           (.readDocument store "user-1" "/locked.md"))
+         (fn [doc]
+           (.saveDocument store "user-1" "/locked.md"
+                          {:content "writable again" :if-match (:etag doc)}))
+         (fn [saved]
+           (is (= "writable again" (:content saved))))])
+       fixture done))))
+
+(deftest tags-and-comments-attach-to-paths
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_]
+           (.save store "user-1" "/doc.md" (Buffer.from "tagged doc" "utf8")))
+         (fn [_]
+           (settle (.createTag store "user-1" {:name "" :color "#ff0000"}) :blank))
+         (fn [step]
+           (is (= :blank (:outcome step)))
+           (is (= :invalid (:type (ex-data (:error step))))))
+         (fn [_]
+           (.createTag store "user-1" {:name "important" :color "#ff0000"}))
+         (fn [tag]
+           (is (string? (:id tag)))
+           (is (= "important" (:name tag)))
+           (.setFileTag store "user-1" "/doc.md" (:id tag) true))
+         (fn [applied]
+           (is (= "/doc.md" (:path applied)))
+           (is (= true (:added applied)))
+           (.listTags store "user-1"))
+         (fn [tags]
+           (is (= 1 (count tags)))
+           (is (= "important" (:name (first tags))))
+           (.deleteTag store "user-1" (:id (first tags))))
+         (fn [deleted]
+           (is (string? (:deleted deleted)))
+           (.listTags store "user-1"))
+         (fn [tags]
+           ;; Deleting a tag cascades its file assignments.
+           (is (= 0 (count tags)))
+           (.addComment store "user-1" "/doc.md" "first!" nil))
+         (fn [comment]
+           (is (= "first!" (:body comment)))
+           (is (= "user-1" (:author comment)))
+           (settle (.addComment store "user-1" "/doc.md" "" nil) :blank-comment))
+         (fn [step]
+           (is (= :blank-comment (:outcome step)))
+           (is (= :invalid (:type (ex-data (:error step))))))
+         (fn [_]
+           (.listComments store "user-1" "/doc.md"))
+         (fn [comments]
+           (is (= 1 (count comments)))
+           (.deleteComment store "user-1" "/doc.md" (:id (first comments))))
+         (fn [_]
+           (.listComments store "user-1" "/doc.md"))
+         (fn [comments]
+           (is (= 0 (count comments))))])
+       fixture done))))
