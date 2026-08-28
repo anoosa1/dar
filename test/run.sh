@@ -19,7 +19,7 @@ fast() {
 
 pr() {
   npm run check
-  node --test test/platform.test.mjs
+  node --test test/*.test.mjs
 }
 
 nightly() {

@@ -133,7 +133,10 @@ CREATE TABLE plugin_migrations (
   version INTEGER NOT NULL,
   applied_at TEXT NOT NULL,
   PRIMARY KEY (plugin_id, version)
-) STRICT;"}])
+) STRICT;"}
+   {:version 2
+    :sql "ALTER TABLE app_passwords ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE app_passwords ADD COLUMN prefix TEXT;"}])
 
 (defn- applied-versions [^js database]
   (let [statement (.prepare database "SELECT version FROM dar_migrations ORDER BY version")]

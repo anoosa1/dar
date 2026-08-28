@@ -1,6 +1,7 @@
 (ns dar.server.main
   (:require [dar.cordis :as cordis]
             [dar.platform.activity :as activity]
+            [dar.platform.app-passwords :as app-passwords]
             [dar.platform.auth :as auth]
             [dar.platform.contributions :as contributions]
             [dar.platform.database :as database]
@@ -70,6 +71,8 @@
                   (cordis/mount! ctx security/security-plugin runtime-config)))
          (.then (fn []
                   (cordis/mount! ctx auth/auth-plugin runtime-config)))
+          (.then (fn []
+                   (cordis/mount! ctx app-passwords/app-passwords-plugin)))
          (.then (fn []
                   (cordis/mount! ctx oidc/oidc-plugin runtime-config)))
          (.then (fn []
