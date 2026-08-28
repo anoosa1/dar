@@ -333,6 +333,157 @@ a:focus-visible {
   animation: sanctuary-loading 1.2s ease-in-out infinite alternate;
 }
 
+.sanctuary-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: light-dark(#5a685f, #c7d2cb);
+}
+
+.sanctuary-crumbs a,
+.sanctuary-crumbs [aria-current] {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sanctuary-crumbs a {
+  color: light-dark(#315c4b, #a9d5bd);
+}
+
+.sanctuary-crumbs [aria-current] {
+  color: inherit;
+  font-weight: 600;
+}
+
+.sanctuary-files {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.sanctuary-files-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sanctuary-files-toolbar button,
+.sanctuary-files-commands button,
+.sanctuary-files-create button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid light-dark(#d7cbb7, #43534b);
+  border-radius: 20px;
+  background: light-dark(#fffdf7, #28342f);
+  color: inherit;
+  cursor: pointer;
+}
+
+.sanctuary-files-toolbar button:hover,
+.sanctuary-files-commands button:hover,
+.sanctuary-files-create button:hover {
+  background: light-dark(#efe7d5, #31403a);
+}
+
+.sanctuary-files-upload {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px dashed light-dark(#b8a888, #55655c);
+  border-radius: 20px;
+  color: light-dark(#5a685f, #c7d2cb);
+  cursor: pointer;
+}
+
+.sanctuary-files-upload input[type="file"] {
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+}
+
+.sanctuary-files-upload:focus-within {
+  outline: 3px solid light-dark(#bb7047, #e2a179);
+  outline-offset: 2px;
+}
+
+.sanctuary-files-create {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sanctuary-files-create input {
+  min-height: 40px;
+  flex: 1 1 240px;
+  max-width: 360px;
+  padding: 8px 14px;
+  border: 1px solid light-dark(#d7cbb7, #43534b);
+  border-radius: 20px;
+  background: light-dark(#fffdf7, #28342f);
+  color: inherit;
+}
+
+.sanctuary-files-row {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+}
+
+.sanctuary-files-row .sanctuary-files-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sanctuary-files-row .sanctuary-files-name,
+.sanctuary-files-row .sanctuary-files-open {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sanctuary-files-open {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: light-dark(#315c4b, #a9d5bd);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sanctuary-files-open:hover {
+  text-decoration: underline;
+}
+
+.sanctuary-files-commands {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sanctuary-files-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sanctuary-files-star[aria-pressed="true"] {
+  color: light-dark(#bb7047, #e2a179);
+}
+
+.sanctuary-files-empty {
+  margin: 8px 0 0;
+  color: light-dark(#5a685f, #c7d2cb);
+}
+
 @keyframes sanctuary-loading {
   from { transform: translateX(-20%); }
   to { transform: translateX(170%); }

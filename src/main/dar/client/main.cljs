@@ -1,5 +1,6 @@
 (ns dar.client.main
   (:require [clojure.string]
+            [dar.client.files :as files]
             [dar.client.state]
             [dar.cordis :as cordis]
             [re-frame.core :as frame]
@@ -130,9 +131,10 @@
          (:count notifications)]
         [:button.sanctuary-primary {:type "button"} "New"]]]
       [:main.sanctuary-content
-       (if (= active :home)
-         [dashboard]
-         [placeholder route])]]
+       (cond
+         (= active :home) [dashboard]
+         (= active :files) [files/page]
+         :else [placeholder route])]]
      [:nav.sanctuary-mobile-nav {:aria-label "Mobile applications"}
       (for [app (take 5 primary-apps)]
         ^{:key (:name app)} [app-link app active])]]))

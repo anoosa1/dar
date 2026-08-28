@@ -5,11 +5,15 @@
 (def default-db
   {:route :home
    :notifications {:status :loading :count 0 :items [] :error nil}
+   :files nil
    :session {:status :loading
              :user nil
              :error nil}})
 
-(defn- cookie-value [name]
+(defn cookie-value
+  "Reads one cookie's value; shared by auth flows and app pages that need
+  the CSRF token."
+  [name]
   (some (fn [part]
           (let [[key value] (clojure.string/split
                              (clojure.string/trim part) #"=" 2)]
@@ -67,9 +71,9 @@
  (fn [db [_ route-name]]
    (assoc db :route route-name)))
 
-(frame/reg-event-db
+(frame/reg-event-fx
  :auth/loaded
- (fn [db [_ session]]
+ (fn [{:keys [db]} [_ session]]
    {:db (assoc db :session {:status :authenticated
                             :user (:user session)
                             :expiresAt (:expiresAt session)
@@ -91,6 +95,11 @@
  :auth/logout-requested
  (fn [_ _]
    {:auth/logout nil}))
+
+(frame/reg-event-fx
+ :notifications/load
+ (fn [_ _]
+   {:notifications/load nil}))
 
 (frame/reg-event-db
  :notifications/loaded
