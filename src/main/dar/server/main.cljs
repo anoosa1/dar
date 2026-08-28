@@ -1,10 +1,12 @@
 (ns dar.server.main
   (:require [dar.cordis :as cordis]
             [dar.platform.auth :as auth]
+            [dar.platform.contributions :as contributions]
             [dar.platform.database :as database]
             [dar.platform.instance :as instance]
             [dar.platform.keyring :as keyring]
             [dar.platform.oidc :as oidc]
+            [dar.platform.preferences :as preferences]
             [dar.platform.security :as security]
             [dar.server.config :as config]
             [dar.server.core :as core]
@@ -52,6 +54,8 @@
      (set! (.-baseUrl ctx) (.-href (pathToFileURL (str (.cwd js/process) "/"))))
      (-> (cordis/mount! ctx ConsoleExporter {:showTime "yyyy-MM-dd hh:mm:ss.SSS"})
          (.then (fn []
+                  (cordis/mount! ctx contributions/contributions-plugin)))
+         (.then (fn []
                   (cordis/mount! ctx instance/instance-plugin runtime-config)))
          (.then (fn []
                   (cordis/mount! ctx database/database-plugin)))
@@ -65,6 +69,8 @@
                   (cordis/mount! ctx auth/auth-plugin runtime-config)))
          (.then (fn []
                   (cordis/mount! ctx oidc/oidc-plugin runtime-config)))
+         (.then (fn []
+                  (cordis/mount! ctx preferences/preferences-plugin)))
          (.then (fn []
                   (cordis/mount! ctx core/core-plugin runtime-config)))
          (.then (fn []

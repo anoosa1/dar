@@ -348,6 +348,62 @@ test("OIDC PKCE login creates an administrator session and CSRF logout revokes i
     assert.equal(sessionBody.user.displayName, "Test User");
     assert.equal(sessionBody.user.administrator, true);
 
+    const authHeaders = {
+      cookie: cookies,
+      origin: baseUrl,
+      "content-type": "application/json",
+      "x-csrf-token": csrfToken,
+    };
+    const createdPreference = await fetch(`${baseUrl}/api/v1/preferences/calendar/view`, {
+      method: "PUT",
+      headers: authHeaders,
+      body: JSON.stringify({ layout: "week" }),
+    });
+    assert.equal(createdPreference.status, 200);
+    const createdBody = await createdPreference.json();
+    assert.equal(createdBody.key, "view");
+    assert.deepEqual(createdBody.value, { layout: "week" });
+    assert.equal(createdBody.revision, 1);
+    const firstEtag = createdPreference.headers.get("etag");
+    assert.equal(firstEtag, '"1"');
+
+    const missingIfMatch = await fetch(`${baseUrl}/api/v1/preferences/calendar/view`, {
+      method: "PUT",
+      headers: authHeaders,
+      body: JSON.stringify({ layout: "month" }),
+    });
+    assert.equal(missingIfMatch.status, 409);
+    assert.equal((await missingIfMatch.json()).error.code, "conflict");
+
+    const updatedPreference = await fetch(`${baseUrl}/api/v1/preferences/calendar/view`, {
+      method: "PUT",
+      headers: { ...authHeaders, "if-match": firstEtag },
+      body: JSON.stringify({ layout: "month" }),
+    });
+    assert.equal(updatedPreference.status, 200);
+    const updatedBody = await updatedPreference.json();
+    assert.equal(updatedBody.revision, 2);
+    assert.equal(updatedBody.value.layout, "month");
+
+    const preferenceList = await fetch(`${baseUrl}/api/v1/preferences/calendar`, {
+      headers: { cookie: cookies },
+    });
+    assert.equal(preferenceList.status, 200);
+    assert.deepEqual(await preferenceList.json(), {
+      items: [{
+        key: "view",
+        value: { layout: "month" },
+        revision: 2,
+        updatedAt: updatedBody.updatedAt,
+      }],
+    });
+
+    const deletedPreference = await fetch(`${baseUrl}/api/v1/preferences/calendar/view`, {
+      method: "DELETE",
+      headers: { ...authHeaders, "if-match": updatedPreference.headers.get("etag") },
+    });
+    assert.equal(deletedPreference.status, 200);
+
     const logout = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: "POST",
       headers: {
