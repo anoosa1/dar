@@ -1365,6 +1365,29 @@
          :unlock
          (fn [user-id vpath]
            (mutate user-id (fn [] (unlock! user-id vpath))))
+         ;; DAV reads the raw file bytes and stats entries without
+         ;; forcing them through the text-only document pipeline.
+         :stat
+         (fn [user-id vpath]
+           (let [root (files-root data-root user-id)
+                 relative (vpath->relative vpath)]
+             (-> (ensure-dir! root)
+                 (.then (fn [_]
+                          (if (str/blank? relative)
+                            (entry-stat root "")
+                            (-> (path/verify-no-symlinks! root relative)
+                                (.then (fn [_] (entry-stat root relative)))))))
+                 (.then (fn [^js stat]
+                          (when (nil? stat)
+                            (throw (ex-info "File not found."
+                                            {:type :not-found})))
+                          (make-entry stat vpath false []))))))
+         :readFile
+         (fn [user-id vpath]
+           (let [root (files-root data-root user-id)
+                 relative (vpath->relative vpath)]
+             (-> (path/verify-no-symlinks! root relative)
+                 (.then (fn [_] (read-bytes! root relative))))))
          ;; Previews and thumbnails are read-only transforms.
          :preview
          (fn [user-id vpath]

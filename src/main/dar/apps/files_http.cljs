@@ -1,6 +1,7 @@
 (ns dar.apps.files-http
   (:require [clojure.string :as str]
             [dar.apps.files :as files]
+            [dar.apps.files-dav :as files-dav]
             [dar.cordis :as cordis]
             [dar.server.http :as http]
             [malli.core :as m]
@@ -625,7 +626,8 @@
 (def files-plugin
   (cordis/plugin
    {:name "dar-files"
-    :inject ["database" "atomicFiles" "server" "rateLimiter" "keyring"]
+    :inject ["database" "atomicFiles" "server" "rateLimiter" "keyring"
+             "appPasswords"]
     :apply
     (fn [^js ctx {:keys [dataRoot quotaBytes uploadBodyLimit baseUrl]}]
       (let [^js store (files/service dataRoot
@@ -635,9 +637,13 @@
                                      (.-rateLimiter ctx)
                                      (.-keyring ctx))]
         (cordis/provide! ctx "files" store)
-        (register-routes! (.-server ctx) store
-                          {:upload-body-limit (or uploadBodyLimit
-                                                  default-upload-body-limit)
-                           :quota-bytes (or quotaBytes 0)
-                           :secure-cookies (str/starts-with? (or baseUrl "")
-                                                             "https://")})))}))
+        (do (register-routes! (.-server ctx) store
+                              {:upload-body-limit (or uploadBodyLimit
+                                                      default-upload-body-limit)
+                               :quota-bytes (or quotaBytes 0)
+                               :secure-cookies (str/starts-with? (or baseUrl "")
+                                                                 "https://")})
+            (files-dav/register-dav-routes! (.-server ctx) store
+                                            (.-appPasswords ctx))
+            ;; Route registration returns router objects, never effects.
+            nil)))}))

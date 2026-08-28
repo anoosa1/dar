@@ -103,9 +103,18 @@ answers 415, files over 8 MiB answer 413, content truncates at 512k code
 units) where the baseline returned raw bytes as a string; thumbnails decode
 through Sharp with the baseline dimension guards (reject over 20,000 px or
 40 M pixels with 413, undecodable data with 415) and re-encode to a JPEG
-quality 70, max width 200 without enlargement. Remaining: download, picker,
-move, search, stats, diffs, activity, WebDAV, assistant tools, widget,
-external storage, public share visitor UI.
+quality 70, max width 200 without enlargement. WebDAV files (Stage 5) serves
+`/dav/files/{username}/...` with scoped Basic app passwords only (browser
+sessions never authorize DAV, per the routes contract): OPTIONS/PROPFIND with
+Depth 0/1 handling (infinity rejected) and the target included in the
+multistatus, GET/HEAD with ETag conditionals and single byte ranges, PUT with
+If-Match/If-None-Match (412) and 201/204 create/overwrite distinction,
+MKCOL/DELETE/COPY/MOVE with Destination checking, and LOCK/UNLOCK backed by
+the engine's advisory locks with derived opaque tokens (423, 409). The
+baseline's `/webdav/` and `/remote.php/dav/files/**` aliases are removed.
+Remaining: download, picker, move, search, stats, diffs, activity, WebDAV
+standard-suite hardening, assistant tools, widget, external storage, public
+share visitor UI.
 
 ### Contacts
 
