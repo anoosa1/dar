@@ -12,6 +12,8 @@
    [:publicRoot string?]
    [:credentialKeys {:optional true} [:maybe string?]]
    [:bodyLimit [:int {:min 1024 :max 1073741824}]]
+   [:uploadBodyLimit [:int {:min 1024 :max 1073741824}]]
+   [:quotaBytes [:int {:min 0 :max 9007199254740991}]]
    [:oidc [:maybe
            [:map {:closed true}
             [:issuer string?]
@@ -59,6 +61,16 @@
                  :publicRoot (.resolve path working-directory "public")
                  :credentialKeys (aget env "DAR_CREDENTIAL_ENCRYPTION_KEYS")
                  :bodyLimit (* 1024 1024)
+                 :uploadBodyLimit (let [value (aget env "DAR_UPLOAD_BODY_LIMIT")]
+                                    (if-not value
+                                      (* 128 1024 1024)
+                                      (let [parsed (js/Number.parseInt value 10)]
+                                        (if (js/Number.isNaN parsed) -1 parsed))))
+                 :quotaBytes (let [value (aget env "DAR_FILES_QUOTA_BYTES")]
+                               (if-not value
+                                 0
+                                 (let [parsed (js/Number.parseInt value 10)]
+                                   (if (js/Number.isNaN parsed) -1 parsed))))
                  :oidc oidc
                  :development development
                  :installSignals true}]

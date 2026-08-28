@@ -1,5 +1,6 @@
 (ns dar.server.main
   (:require [dar.cordis :as cordis]
+            [dar.apps.files-http :as files-http]
             [dar.platform.activity :as activity]
             [dar.platform.app-passwords :as app-passwords]
             [dar.platform.assistant :as assistant]
@@ -95,6 +96,8 @@
                   (cordis/mount! ctx activity/activity-plugin)))
          (.then (fn []
                   (cordis/mount! ctx search/search-plugin)))
+         (.then (fn []
+                  (cordis/mount! ctx files-http/files-plugin runtime-config)))
          (.then (fn []
                   (cordis/mount! ctx core/core-plugin runtime-config)))
          (.then (fn []

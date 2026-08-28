@@ -49,7 +49,11 @@
             (when (str/starts-with? (.-path request) "/api/")
               (.set (.-headers response) "cache-control" "no-store"))
             (cond
-              (and length (> length limit))
+              ;; File uploads opt out of the global limit and enforce their
+              ;; own upload-body limit in the Files route.
+              (and length
+                   (> length limit)
+                   (not= (.-path request) "/api/v1/files/upload"))
               (http/error! response 413 "tooLarge"
                            "The request body is too large." {} request-id)
 

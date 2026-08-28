@@ -9,6 +9,7 @@
     "conflict"
     "rateLimited"
     "tooLarge"
+    "quotaExceeded"
     "unavailable"
     "internal"})
 
@@ -24,6 +25,7 @@
              "conflict"
              "rateLimited"
              "tooLarge"
+             "quotaExceeded"
              "unavailable"
              "internal"]]
      [:message string?]
