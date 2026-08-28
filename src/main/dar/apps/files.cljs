@@ -1107,6 +1107,50 @@
         (fn [user-id]
           (js/Promise.resolve
            (mapv user-share-row->map (.all select-incoming-shares user-id))))
+
+        ;; Public share reads. The listing is one level deep with only
+        ;; entry shape (name, dir, size); downloads are either the shared
+        ;; file itself or a single named entry of a shared folder.
+        share-entries-fn
+        (fn [share]
+          (let [root (files-root data-root (:userId share))
+                relative (vpath->relative (:path share))]
+            (-> (path/verify-no-symlinks! root relative)
+                (.then (fn [_]
+                         (.readdir fs (.resolve node-path root relative)
+                                   #js {:withFileTypes true})))
+                (.then (fn [^js entries]
+                         (js/Promise.all
+                          (.map (js/Array.from entries)
+                                (fn [^js entry]
+                                  (let [child-relative
+                                        (str relative "/" (.-name entry))]
+                                    (-> (entry-stat root child-relative)
+                                        (.then (fn [^js stat]
+                                                 (when (some? stat)
+                                                   {:name (.-name entry)
+                                                    :isDir (.isDirectory stat)
+                                                    :size (.-size stat)}))))))))))
+                (.then (fn [entries]
+                         (->> (js->clj entries)
+                              (remove nil?)
+                              (sort-by (fn [e] [(not (:isDir e))
+                                                (str/lower-case (:name e))]))
+                              (into [])))))))
+
+        share-download!
+        (fn [share entry-name]
+          (let [root (files-root data-root (:userId share))
+                share-relative (vpath->relative (:path share))]
+            (if (str/blank? (str entry-name))
+              (read-bytes! root share-relative)
+              (let [name (str/trim (str entry-name))]
+                (if (or (= name "") (not= name (node-path/basename name))
+                        (str/includes? name "/") (str/includes? name "\\")
+                        (str/includes? name "\u0000"))
+                  (js/Promise.reject
+                   (ex-info "Invalid filename." {:type :invalid}))
+                  (read-bytes! root (str share-relative "/" name)))))))
         ]
 
     #js {:filesRoot (fn [user-id] (files-root data-root user-id))
@@ -1268,4 +1312,30 @@
            (delete-user-share! user-id id))
          :sharedWithMe
          (fn [user-id]
-           (shared-with-me-fn user-id))}))
+           (shared-with-me-fn user-id))
+         :shareEntries
+         (fn [share]
+           (share-entries-fn share))
+         :shareDownload
+         (fn [share entry-name]
+           (share-download! share entry-name))
+         :shareExpired
+         (fn [share]
+           (share-expired? (:expiresAt share)
+                           (quot (.now js/Date) 1000)))
+         :shareRequiresPassword
+         (fn [share]
+           (> (.-length (:passwordHash share)) 0))
+         :shareInfo
+         (fn [share]
+           (let [root (files-root data-root (:userId share))
+                 relative (vpath->relative (:path share))]
+             (-> (path/verify-no-symlinks! root relative)
+                 (.then (fn [_] (entry-stat root relative)))
+                 (.then (fn [^js stat]
+                          (when (nil? stat)
+                            (throw (ex-info "Shared path not found."
+                                            {:type :not-found})))
+                          {:name (node-path/basename relative)
+                           :isDir (.isDirectory stat)
+                           :size (.-size stat)})))))}))

@@ -4,6 +4,7 @@
             [dar.cordis :as cordis]
             [dar.server.http :as http]
             [malli.core :as m]
+            [dar.platform.auth :as auth]
             ["node:buffer" :refer [Buffer]]))
 
 ;; HTTP surface for the Files app. Routes are browser-session authenticated
@@ -54,6 +55,54 @@
    [:path path-schema]
    [:body :string]
    [:parentId {:optional true} :string]])
+
+(def share-body-schema
+  [:map {:closed true}
+   [:path path-schema]
+   [:password {:optional true} :string]
+   [:expiresAt {:optional true} :string]
+   [:drop {:optional true} :boolean]])
+
+(def user-share-body-schema
+  [:map {:closed true}
+   [:path path-schema]
+   [:toUser :string]
+   [:permission {:optional true} [:enum "read" "write"]]])
+
+(def share-unlock-body-schema
+  [:map {:closed true}
+   [:password {:optional true} :string]])
+
+(defn- peer-of [^js request]
+  "Rate limiter keys pair the token with the requester's address."
+  (or (some-> request (.-socket) (.-remoteAddress)) ""))
+
+(def share-access-cookie-name "dar_share_access")
+
+(defn- share-access-cookie
+  "Scoped unlock cookie: only this share's namespace can read it."
+  [token value max-age-seconds secure]
+  (str share-access-cookie-name "=" value
+       "; Path=/share/" token
+       "; SameSite=Strict; HttpOnly"
+       (when secure "; Secure")
+       (when (pos? max-age-seconds) (str "; Max-Age=" max-age-seconds))))
+
+(defn- not-blank [value]
+  (let [value (str value)]
+    (when-not (str/blank? value) value)))
+
+(defn- ensure-live-share!
+  "Resolves a share for public access; unknown tokens are 404 and expired
+  ones are 410. Password and unlock checks stay with the callers."
+  [^js store token]
+  (-> (.readShare store token)
+      (.then (fn [share]
+               (when (nil? share)
+                 (throw (ex-info "Share not found." {:type :not-found})))
+               (when (.shareExpired store share)
+                 (throw (ex-info "This share has expired." {:type :gone})))
+               share))))
 
 (defn- if-match [^js request]
   "Reads the If-Match header; the engine owns precondition semantics."
@@ -112,17 +161,47 @@
                    (ex-message error) data request-id)
       :locked
       (http/error! response 423 "locked" (ex-message error) data request-id)
+      :gone
+      (http/error! response 410 "gone" (ex-message error) data request-id)
+      :invalid-credentials
+      (http/error! response 401 "unauthenticated" (ex-message error)
+                   data request-id)
+      :unauthenticated
+      (http/error! response 401 "unauthenticated" (ex-message error)
+                   data request-id)
+      :forbidden
+      (http/error! response 403 "forbidden" (ex-message error) data request-id)
+      :rate-limited
+      (do
+        (when-let [retry-after (:retry-after-ms data)]
+          (.set (.-headers response) "retry-after"
+                (str (js/Math.ceil (/ retry-after 1000)))))
+        (http/error! response 429 "rateLimited" (ex-message error) data request-id))
+      :share-password-unavailable
+      (http/error! response 503 "unavailable"
+                   "Password-protected shares are unavailable."
+                   data request-id)
       (http/error! response 500 "internal"
                    "The Files operation failed." nil request-id))))
 
 (defn- wrap-errors
-  "Runs a handler, mapping Files engine failures to the error envelope."
+  "Runs a session-authenticated handler, mapping Files engine failures to
+  the error envelope."
   [handler]
   (fn [^js request ^js response _next]
     (when (require-session! request response)
       (-> (js/Promise.resolve)
           (.then (fn [] (handler request response)))
           (.catch (fn [error] (send-error! response error)))))))
+
+(defn- wrap-public!
+  "Runs an unauthenticated handler (the /share namespace) with the same
+  engine-to-envelope error mapping but no session requirement."
+  [handler]
+  (fn [^js request ^js response _next]
+    (-> (js/Promise.resolve)
+        (.then (fn [] (handler request response)))
+        (.catch (fn [error] (send-error! response error))))))
 
 (defn- json-body
   "Reads the request body as JSON and validates it against one schema."
@@ -132,7 +211,7 @@
                (validate! schema (js->clj body :keywordize-keys true))))))
 
 (defn- register-routes!
-  [^js server ^js store {:keys [upload-body-limit quota-bytes]}]
+  [^js server ^js store {:keys [upload-body-limit quota-bytes secure-cookies]}]
   (.get server "/api/v1/files"
         (wrap-errors
          (fn [^js request ^js response]
@@ -359,6 +438,169 @@
               (-> (.unlock store (.-id (.-user request)) (query-path request))
                   (.then (fn [unlocked]
                            (http/json! response 200 unlocked)))))))
+  ;; Shares: owner-managed public links and user-to-user grants.
+  (.get server "/api/v1/files/shares"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (when (require-session! request response)
+             (-> (.listShares store (.-id (.-user request)))
+                 (.then (fn [shares]
+                          (http/json! response
+                                      {:items (vec shares)
+                                       :nextCursor nil}))))))))
+  (.post server "/api/v1/files/shares"
+         (wrap-errors
+          (fn [^js request ^js response]
+            (-> (json-body request share-body-schema)
+                (.then (fn [value]
+                         (when (require-session! request response)
+                           (.createShare store (.-id (.-user request))
+                                         (:path value)
+                                         {:password (:password value)
+                                          :expires-at (not-blank (:expiresAt value))
+                                          :drop (:drop value)}))))
+                (.then (fn [share]
+                         (http/json! response 201 share)))))))
+  (.delete server "/api/v1/files/shares/:token"
+           (wrap-errors
+            (fn [^js request ^js response]
+              (when (require-session! request response)
+                (-> (.deleteShare store (.-id (.-user request))
+                                  (.-token (.-params request)))
+                    (.then (fn [deleted]
+                             (http/json! response 200 deleted))))))))
+  (.post server "/api/v1/files/user-shares"
+         (wrap-errors
+          (fn [^js request ^js response]
+            (-> (json-body request user-share-body-schema)
+                (.then (fn [value]
+                         (when (require-session! request response)
+                           (.createUserShare store (.-id (.-user request))
+                                             {:path (:path value)
+                                              :to-user (:toUser value)
+                                              :permission (:permission value)}))))
+                (.then (fn [share]
+                         (http/json! response 201 share)))))))
+  (.delete server "/api/v1/files/user-shares/:id"
+           (wrap-errors
+            (fn [^js request ^js response]
+              (when (require-session! request response)
+                (-> (.deleteUserShare store (.-id (.-user request))
+                                      (.-id (.-params request)))
+                    (.then (fn [deleted]
+                             (http/json! response 200 deleted))))))))
+  (.get server "/api/v1/files/shared-with-me"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (when (require-session! request response)
+             (-> (.sharedWithMe store (.-id (.-user request)))
+                 (.then (fn [shares]
+                          (http/json! response
+                                      {:items (vec shares)
+                                       :nextCursor nil}))))))))
+  ;; Public share namespace under /share/{token}: no session. Expiry,
+  ;; password gating, and rate limits stay enforced; payloads are JSON per
+  ;; the rewrite contract. Drop uploads take raw bytes with a name query,
+  ;; mirroring the session upload route.
+  (.get server "/share/:token"
+        (wrap-public!
+         (fn [^js request ^js response]
+           (-> (ensure-live-share! store (.-token (.-params request)))
+               (.then (fn [share]
+                        (let [requires-password
+                              (.shareRequiresPassword store share)
+                              unlocked (.isShareUnlocked
+                                        store share
+                                        (auth/request-cookie request
+                                                             share-access-cookie-name))]
+                          (when (and requires-password (not unlocked))
+                            (throw (ex-info "This share requires a password."
+                                            {:type :unauthenticated
+                                             :requiresPassword true})))
+                          (-> (.shareInfo store share)
+                              (.then (fn [info]
+                                       (if (:isDir info)
+                                         (if (:drop share)
+                                           (http/json! response
+                                                       {:name (:name info)
+                                                        :drop true})
+                                           (-> (.shareEntries store share)
+                                               (.then (fn [entries]
+                                                        (http/json! response
+                                                                    {:name (:name info)
+                                                                     :items entries})))))
+                                         (http/json! response
+                                                     {:name (:name info)
+                                                      :file true
+                                                      :size (:size info)}))))))))))))
+  (.get server "/share/:token/download"
+        (wrap-public!
+         (fn [^js request ^js response]
+           (-> (ensure-live-share! store (.-token (.-params request)))
+               (.then (fn [share]
+                        (when (and (.shareRequiresPassword store share)
+                                   (not (.isShareUnlocked
+                                         store share
+                                         (auth/request-cookie request
+                                                              share-access-cookie-name))))
+                          (throw (ex-info "Share access denied."
+                                          {:type :forbidden})))
+                        (.shareDownload store share
+                                        (.get (.-query request) "name"))))
+               (.then (fn [^js bytes]
+                        (set! (.-status response) 200)
+                        (.set (.-headers response) "content-type"
+                              "application/octet-stream")
+                        (.set (.-headers response) "content-disposition"
+                              "attachment")
+                        (.bytes response bytes)
+                        nil))))))
+  (.post server "/share/:token/unlock"
+         (wrap-public!
+          (fn [^js request ^js response]
+            (-> (json-body request share-unlock-body-schema)
+                (.then (fn [value]
+                         (-> (ensure-live-share! store (.-token (.-params request)))
+                             (.then (fn [share]
+                                      (-> (.unlockShare store share
+                                                        (or (:password value) "")
+                                                        (peer-of request))
+                                          (.then (fn [unlocked]
+                                                   [share unlocked]))))))))
+                (.then (fn [pair]
+                         (let [share (nth pair 0)
+                               unlocked (nth pair 1)
+                               max-age (if-let [expires-at (:expiresAt share)]
+                                         (min 3600
+                                              (max 0
+                                                   (- (quot (js/Date.parse expires-at)
+                                                            1000)
+                                                      (quot (js/Date.now) 1000))))
+                                         3600)]
+                           (.set (.-headers response) "set-cookie"
+                                 (share-access-cookie
+                                  (.-token (.-params request))
+                                  (:cookieValue unlocked) max-age secure-cookies))
+                           (http/json! response 200 unlocked))))))))
+  (.post server "/share/:token/upload"
+         (wrap-public!
+          (fn [^js request ^js response]
+            (let [name (.get (.-query request) "name")]
+              (-> (.bytes request)
+                  (.then (fn [^js bytes]
+                           (when (> (.-length bytes) upload-body-limit)
+                             (throw (ex-info "Upload is too large."
+                                             {:type :too-large
+                                              :limit upload-body-limit})))
+                           (-> (ensure-live-share! store (.-token (.-params request)))
+                               (.then (fn [share]
+                                        (.uploadToShare
+                                         store share
+                                         (auth/request-cookie request
+                                                              share-access-cookie-name)
+                                         name bytes (peer-of request)))))))
+                  (.then (fn [saved]
+                           (http/json! response 201 saved))))))))
   nil)
 
 (def files-plugin
@@ -366,7 +608,7 @@
    {:name "dar-files"
     :inject ["database" "atomicFiles" "server" "rateLimiter" "keyring"]
     :apply
-    (fn [^js ctx {:keys [dataRoot quotaBytes uploadBodyLimit]}]
+    (fn [^js ctx {:keys [dataRoot quotaBytes uploadBodyLimit baseUrl]}]
       (let [^js store (files/service dataRoot
                                      {:quota-bytes quotaBytes}
                                      (.-database ctx)
@@ -377,4 +619,6 @@
         (register-routes! (.-server ctx) store
                           {:upload-body-limit (or uploadBodyLimit
                                                   default-upload-body-limit)
-                           :quota-bytes (or quotaBytes 0)})))}))
+                           :quota-bytes (or quotaBytes 0)
+                           :secure-cookies (str/starts-with? (or baseUrl "")
+                                                             "https://")})))}))

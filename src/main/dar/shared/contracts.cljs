@@ -14,6 +14,7 @@
     "preconditionRequired"
     "preconditionFailed"
     "locked"
+    "gone"
     "unavailable"
     "internal"})
 
@@ -34,6 +35,7 @@
              "preconditionRequired"
              "preconditionFailed"
              "locked"
+             "gone"
              "unavailable"
              "internal"]]
      [:message string?]

@@ -88,13 +88,17 @@ For an applicable capability, implement all of these together:
 - WebDAV including conditional requests, ranges, properties, locks, copy/move,
   user isolation, unsafe-path rejection, search, widget, activity, and assistant.
 
-Rewrite status: browse/mutations/trash/favorites/quota (Stage 1) and the
-editor with If-Match 428/412 semantics, versions with read/restore, tags,
-comments, and locks (Stage 2) are implemented and verified under `/api/v1`
-with the new error envelope (`quotaExceeded`, `unsupportedMediaType`,
-`preconditionRequired`, `preconditionFailed`, `locked`). Remaining: download,
-picker, move, search, stats, previews/thumbnails, diffs, shares, activity,
-WebDAV, assistant tools, widget, external storage.
+Rewrite status: browse/mutations/trash/favorites/quota (Stage 1), the editor
+with If-Match 428/412 semantics, versions with read/restore, tags, comments,
+and locks (Stage 2), and public shares, user shares, shared-with-me, drop
+uploads, share unlock rate limits (Stage 3) are implemented and verified under
+`/api/v1` with the new error envelope. Public share visitors use the pinned
+`/share/{token}` JSON namespace; drop uploads take raw bytes with a name
+query; the baseline `/Shared` virtual folder is superseded by the
+shared-with-me API (payload/UI redesign is allowed by this ledger). New stable
+codes this stage: `gone` (410) for expired shares. Remaining: download,
+picker, move, search, stats, previews/thumbnails, diffs, activity, WebDAV,
+assistant tools, widget, external storage, public share visitor UI.
 
 ### Contacts
 
