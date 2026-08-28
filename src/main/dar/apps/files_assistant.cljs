@@ -69,10 +69,21 @@
                              :invoke invoke})
   store)
 
+(defn- note-activity!
+  "Records one files activity event for the acting user; best-effort."
+  [^js activity user-id event-type vpath]
+  (when activity
+    (-> (.record activity user-id "files" event-type
+                 {:path vpath :name (node-path/basename vpath)}
+                 [user-id])
+        (.catch (fn [_] nil)))))
+
 (defn register-tools!
   "Registers the Files assistant tools on the contributions registry."
-  [^js registry ^js store]
-  (let [register! (partial register-tool! registry store)]
+  [^js registry ^js store ^js activity]
+  (let [register! (partial register-tool! registry store)
+        note! (fn [user event-type vpath]
+                (note-activity! activity (user-id user) event-type vpath))]
 
     ;; Reads ------------------------------------------------------------
     (register! "files.list" "List files" "read"
@@ -138,7 +149,9 @@
                      (throw (ex-info "The content is too large for an assistant write."
                                      {:type :too-large})))
                    (-> (.save store (user-id user) vpath (Buffer.from content "utf8"))
-                       (.then (fn [_] {:path vpath :status "ok"}))))))
+                       (.then (fn [_]
+                         (note! user "fileUploaded" vpath)
+                         {:path vpath :status "ok"}))))))
 
     (register! "files.create-folder" "Create a folder" "safeWrite"
                [:map {:closed true}
@@ -146,7 +159,9 @@
                (fn [user {:keys [path]}]
                  (let [vpath (clean-path path)]
                    (-> (.mkdir store (user-id user) vpath)
-                       (.then (fn [_] {:path vpath :status "ok"}))))))
+                       (.then (fn [_]
+                         (note! user "folderCreated" vpath)
+                         {:path vpath :status "ok"}))))))
 
     (register! "files.rename" "Rename a file or folder" "safeWrite"
                [:map {:closed true}
@@ -160,7 +175,9 @@
                                         (if (= "/" (node-path/dirname vpath)) "" "/")
                                         name)]
                    (-> (.rename store (user-id user) vpath destination)
-                       (.then (fn [_] {:path destination :status "ok"}))))))
+                       (.then (fn [_]
+                         (note! user "fileRenamed" destination)
+                         {:path destination :status "ok"}))))))
 
     (register! "files.move" "Move a file or folder" "safeWrite"
                [:map {:closed true}
@@ -168,7 +185,9 @@
                 [:to string?]]
                (fn [user {:keys [from to]}]
                  (-> (.rename store (user-id user) (clean-path from) (clean-path to))
-                     (.then (fn [_] {:path (clean-path to) :status "ok"})))))
+                     (.then (fn [_]
+                       (note! user "fileRenamed" (clean-path to))
+                       {:path (clean-path to) :status "ok"})))))
 
     (register! "files.copy" "Copy a file or folder" "safeWrite"
                [:map {:closed true}
@@ -176,7 +195,9 @@
                 [:to string?]]
                (fn [user {:keys [from to]}]
                  (-> (.copy store (user-id user) (clean-path from) (clean-path to))
-                     (.then (fn [_] {:path (clean-path to) :status "ok"})))))
+                     (.then (fn [_]
+                       (note! user "fileCopied" (clean-path to))
+                       {:path (clean-path to) :status "ok"})))))
 
     (register! "files.favorite" "Set a favorite" "safeWrite"
                [:map {:closed true}
@@ -203,7 +224,9 @@
                  (when (str/blank? id)
                    (throw (ex-info "A trash id is required." {:type :invalid})))
                  (-> (.restore store (user-id user) id)
-                     (.then (fn [_] {:status "ok"})))))
+                     (.then (fn [restored]
+                       (note! user "fileRestored" (:restored restored))
+                        {:status "ok"})))))
 
     ;; External ---------------------------------------------------------
     (register! "files.share" "Create or remove a share" "external"
@@ -219,13 +242,16 @@
                          (throw (ex-info "A share token is required."
                                          {:type :invalid})))
                        (-> (.deleteShare store (user-id user) token)
-                           (.then (fn [_] {:status "ok"}))))
+                           (.then (fn [_]
+                               (note! user "shareRemoved" (str "/shares/" token))
+                                {:status "ok"}))))
                    (let [vpath (clean-path path)]
                      (-> (.createShare store (user-id user) vpath
                                        (cond-> {}
                                          password (assoc :password password)
                                          expiresAt (assoc :expires-at expiresAt)))
                          (.then (fn [share]
+                                   (note! user "fileShared" (:path share))
                                   {:token (:token share)
                                    :path (:path share)
                                    :hasPassword (:hasPassword share)})))))))
@@ -240,6 +266,7 @@
                                      {:type :invalid})))
                    (-> (.delete store (user-id user) vpath)
                        (.then (fn [deleted]
+                                 (note! user "fileTrashed" vpath)
                                 {:id (:id deleted)
                                  :path vpath
                                  :status "trashed"}))))))
@@ -252,7 +279,9 @@
                  (when (str/blank? id)
                    (throw (ex-info "A trash id is required." {:type :invalid})))
                  (-> (.purge store (user-id user) id)
-                     (.then (fn [_] {:status "ok"}))))))
+                     (.then (fn [purged]
+                       (note! user "filePurged" (:path purged))
+                       {:status "ok"}))))))
   store)
 
 (def widget-size-limits

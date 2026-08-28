@@ -142,8 +142,15 @@ external paths. The shared cross-app picker (Stage 7) is implemented under
 mutations; query narrowing; folders-first ordering) and
 `/api/v1/files/picker/validate` (selection/multiple/MIME-prefix checking);
 MIME filtering uses the entry's name-based type rather than the baseline's
-content sniffing. Remaining: activity events, WebDAV standard-suite
-hardening, public share visitor UI.
+content sniffing. Mutations record `files` activity events (upload, edit, create,
+rename, copy, trash, restore, purge, share, share removal) through the
+platform activity service for both the HTTP surface and the assistant
+tools; recipients are the acting user and the baseline's share-recipient
+fan-out is not ported. Browser navigations to `/share/{token}` get the
+SPA shell (Accept negotiation) and render the public share visitor page
+(folder listing, single-file download, password unlock, drop upload);
+fetches keep the pinned JSON namespace. Remaining: WebDAV standard-suite
+hardening, DAV-origin activity.
 
 ### Contacts
 

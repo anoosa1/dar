@@ -239,6 +239,14 @@ test("files search, stats, diff, download, assistant tools, and widget work over
     assert.equal(typeMismatch.status, 400, context.running.output());
     assert.equal((await typeMismatch.json()).error.code, "invalid");
 
+    // Mutations land in the user activity feed.
+    const feed = await getJson("/api/v1/activity");
+    const eventTypes = feed.items.map((event) => event.eventType);
+    for (const type of ["fileUploaded", "fileTrashed", "fileRestored"]) {
+      assert.ok(eventTypes.includes(type), `${type} missing from ${eventTypes.join(",")}`);
+    }
+    assert.ok(feed.items.every((event) => event.appId === "files"), context.running.output());
+
     // The dashboard catalog carries the Files favorites widget and its data.
     const catalog = await getJson("/api/v1/dashboard/catalog");
     assert.ok(

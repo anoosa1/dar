@@ -554,7 +554,9 @@
                            (.write writer
                                    (fn [_]
                                      (.run delete-trash user-id trash-id)))))
-                  (.then (fn [_] {:purged trash-id}))))))
+                  (.then (fn [_]
+                           {:purged trash-id
+                            :path (:original-path record)}))))))
 
         ;; Renames or moves an entry within the user's files root. The
         ;; destination directory must exist; favorites keep their virtual

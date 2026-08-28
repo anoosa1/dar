@@ -544,3 +544,56 @@ a:focus-visible {
     padding: 30px 24px;
   }
 }
+
+/* Public share visitor page: rendered outside the authenticated shell,
+   so it borrows the auth card and reuses the shared panel vocabulary. */
+.sanctuary-share-card {
+  width: min(560px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+
+.sanctuary-share-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sanctuary-share-main {
+  display: grid;
+  gap: 2px;
+}
+
+.sanctuary-share-commands .sanctuary-files-open {
+  text-decoration: none;
+}
+
+.sanctuary-share-meta,
+.sanctuary-share-flash {
+  margin: 0;
+  color: light-dark(#5c6b62, #a9bcb0);
+}
+
+.sanctuary-share-upload,
+.sanctuary-share-unlock {
+  display: grid;
+  gap: 14px;
+}
+
+.sanctuary-share-label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sanctuary-share-label input {
+  padding: 10px 12px;
+  border: 1px solid light-dark(#dacdb7, #394840);
+  border-radius: 12px;
+  background: light-dark(#fffdf7, #222d28);
+  color: inherit;
+  font: inherit;
+}

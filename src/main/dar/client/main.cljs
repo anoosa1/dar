@@ -1,6 +1,7 @@
 (ns dar.client.main
   (:require [clojure.string]
             [dar.client.files :as files]
+            [dar.client.share-visitor :as share-visitor]
             [dar.client.state]
             [dar.cordis :as cordis]
             [re-frame.core :as frame]
@@ -21,7 +22,9 @@
    ["/weather" {:name :weather :label "Weather"}]
    ["/codex" {:name :codex :label "Codex"}]
    ["/settings" {:name :settings :label "Settings"}]
-   ["/login" {:name :login :label "Sign in"}]])
+   ["/login" {:name :login :label "Sign in"}]
+   ;; Public share visitors render outside the authenticated shell.
+   ["/share/:token" {:name :share-visitor :label "Shared with you"}]])
 
 (def app-router (router/router routes))
 
@@ -158,13 +161,19 @@
       [:p.sanctuary-auth-error {:role "alert"} error])
     [:a.sanctuary-login-action {:href "/api/v1/auth/login"} "Continue with OpenID Connect"]]])
 
+(defn- visitor-token []
+  (when (clojure.string/starts-with? (.-pathname js/location) "/share/")
+    (subs (.-pathname js/location) (count "/share/"))))
+
 (defn- app-root []
-  (let [{:keys [status error]} @(frame/subscribe [:session])]
-    (case status
-      :authenticated [shell]
-      :loading [loading-screen]
-      :error [login-screen error]
-      [login-screen nil])))
+  (if-let [token (visitor-token)]
+    [share-visitor/page token]
+    (let [{:keys [status error]} @(frame/subscribe [:session])]
+      (case status
+        :authenticated [shell]
+        :loading [loading-screen]
+        :error [login-screen error]
+        [login-screen nil]))))
 
 (def client-plugin
   (cordis/plugin

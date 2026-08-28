@@ -8,6 +8,7 @@
             [malli.core :as m]
             [dar.platform.auth :as auth]
             ["node:buffer" :refer [Buffer]]
+            ["node:fs/promises" :as fs]
             ["node:path" :as node-path]))
 
 ;; HTTP surface for the Files app. Routes are browser-session authenticated
@@ -146,6 +147,36 @@
       :else (throw (ex-info "The path must be absolute."
                             {:type :invalid})))))
 
+(defn- record-activity!
+  "Records one files activity event for the acting user. Activity is
+  best-effort: failures never break a request that already succeeded."
+  [^js activity user-id event-type vpath]
+  (when activity
+    (-> (.record activity user-id "files" event-type
+                 {:path vpath :name (node-path/basename vpath)}
+                 [user-id])
+        (.catch (fn [_] nil)))))
+
+(defn- wants-html?
+  "True when the request is a browser navigation rather than a fetch;
+  public share URLs then serve the SPA so visitors get the real page."
+  [^js request]
+  (str/includes? (str/lower-case (or (.get (.-headers request) "accept") ""))
+                 "text/html"))
+
+(defn- send-share-spa!
+  "Serves the SPA shell for a public share navigation. Falls back to 404
+  when the shell has not been built."
+  [^js response index-file]
+  (if (nil? index-file)
+    (http/error! response 404 "notFound" "The requested page does not exist.")
+    (-> (.readFile fs index-file "utf8")
+        (.then (fn [html]
+                 (http/text! response 200 html "text/html; charset=utf-8")))
+        (.catch (fn [_]
+                  (http/error! response 404 "notFound"
+                               "The requested page does not exist."))))))
+
 (defn- send-error! [response error]
   (let [data (ex-data error)
         request-id (.-requestId response)]
@@ -221,7 +252,9 @@
                (validate! schema (js->clj body :keywordize-keys true))))))
 
 (defn- register-routes!
-  [^js server ^js store {:keys [upload-body-limit quota-bytes secure-cookies]}]
+  [^js server ^js store
+   {:keys [upload-body-limit quota-bytes secure-cookies share-index-file]}
+   ^js activity]
   (.get server "/api/v1/files"
         (wrap-errors
          (fn [^js request ^js response]
@@ -237,6 +270,8 @@
                 (.then (fn [value]
                          (.mkdir store (.-id (.-user request)) (:path value))))
                 (.then (fn [created]
+                         (record-activity! activity (.-id (.-user request))
+                                           "folderCreated" created)
                          (http/json! response 201 {:path created})))))))
   (.post server "/api/v1/files/files"
          (wrap-errors
@@ -245,6 +280,8 @@
                 (.then (fn [value]
                          (.touch store (.-id (.-user request)) (:path value))))
                 (.then (fn [created]
+                         (record-activity! activity (.-id (.-user request))
+                                           "fileCreated" (:path created))
                          (http/json! response 201 created)))))))
   (.post server upload-path
          (wrap-errors
@@ -258,12 +295,16 @@
                                               :limit upload-body-limit})))
                            (.save store (.-id (.-user request)) path-value bytes)))
                   (.then (fn [saved]
+                           (record-activity! activity (.-id (.-user request))
+                                             "fileUploaded" path-value)
                            (http/json! response 201 saved))))))))
   (.delete server "/api/v1/files/files"
            (wrap-errors
             (fn [^js request ^js response]
               (-> (.delete store (.-id (.-user request)) (query-path request))
                   (.then (fn [deleted]
+                           (record-activity! activity (.-id (.-user request))
+                                             "fileTrashed" (query-path request))
                            (http/json! response 200 deleted)))))))
   (.post server "/api/v1/files/rename"
          (wrap-errors
@@ -273,6 +314,8 @@
                          (.rename store (.-id (.-user request))
                                   (:from value) (:to value))))
                 (.then (fn [renamed]
+                         (record-activity! activity (.-id (.-user request))
+                                           "fileRenamed" (:renamed renamed))
                          (http/json! response 200 renamed)))))))
   (.post server "/api/v1/files/copy"
          (wrap-errors
@@ -282,6 +325,8 @@
                          (.copy store (.-id (.-user request))
                                 (:from value) (:to value))))
                 (.then (fn [copied]
+                         (record-activity! activity (.-id (.-user request))
+                                           "fileCopied" (:copied copied))
                          (http/json! response 200 copied)))))))
   (.post server "/api/v1/files/favorite"
          (wrap-errors
@@ -297,12 +342,16 @@
           (fn [^js request ^js response]
             (-> (.restore store (.-id (.-user request)) (.-id (.-params request)))
                 (.then (fn [restored]
+                         (record-activity! activity (.-id (.-user request))
+                                           "fileRestored" (:restored restored))
                          (http/json! response 200 restored)))))))
   (.delete server "/api/v1/files/trash/:id"
            (wrap-errors
             (fn [^js request ^js response]
               (-> (.purge store (.-id (.-user request)) (.-id (.-params request)))
                   (.then (fn [purged]
+                           (record-activity! activity (.-id (.-user request))
+                                             "filePurged" (:path purged))
                            (http/json! response 200 purged)))))))
   (.get server "/api/v1/files/quota"
         (wrap-errors
@@ -580,6 +629,8 @@
                                           :expires-at (not-blank (:expiresAt value))
                                           :drop (:drop value)}))))
                 (.then (fn [share]
+                         (record-activity! activity (.-id (.-user request))
+                                           "fileShared" (:path share))
                          (http/json! response 201 share)))))))
   (.delete server "/api/v1/files/shares/:token"
            (wrap-errors
@@ -588,6 +639,9 @@
                 (-> (.deleteShare store (.-id (.-user request))
                                   (.-token (.-params request)))
                     (.then (fn [deleted]
+                             (record-activity! activity (.-id (.-user request))
+                                               "shareRemoved"
+                                               (str "/shares/" (:deleted deleted)))
                              (http/json! response 200 deleted))))))))
   (.post server "/api/v1/files/user-shares"
          (wrap-errors
@@ -625,7 +679,9 @@
   (.get server "/share/:token"
         (wrap-public!
          (fn [^js request ^js response]
-           (-> (ensure-live-share! store (.-token (.-params request)))
+           (if (wants-html? request)
+             (send-share-spa! response share-index-file)
+             (-> (ensure-live-share! store (.-token (.-params request)))
                (.then (fn [share]
                         (let [requires-password
                               (.shareRequiresPassword store share)
@@ -652,7 +708,7 @@
                                          (http/json! response
                                                      {:name (:name info)
                                                       :file true
-                                                      :size (:size info)}))))))))))))
+                                                      :size (:size info)})))))))))))))
   (.get server "/share/:token/download"
         (wrap-public!
          (fn [^js request ^js response]
@@ -727,9 +783,9 @@
   (cordis/plugin
    {:name "dar-files"
     :inject ["database" "atomicFiles" "server" "rateLimiter" "keyring"
-             "appPasswords" "contributions"]
+             "appPasswords" "contributions" "activity"]
     :apply
-    (fn [^js ctx {:keys [dataRoot quotaBytes uploadBodyLimit baseUrl]}]
+    (fn [^js ctx {:keys [dataRoot quotaBytes uploadBodyLimit baseUrl publicRoot]}]
       (let [^js store (files/service dataRoot
                                      {:quota-bytes quotaBytes}
                                      (.-database ctx)
@@ -742,10 +798,15 @@
                                                       default-upload-body-limit)
                                :quota-bytes (or quotaBytes 0)
                                :secure-cookies (str/starts-with? (or baseUrl "")
-                                                                 "https://")})
+                                                                 "https://")
+                               :share-index-file (when-not (str/blank? (or publicRoot ""))
+                                                   (.resolve node-path publicRoot
+                                                             "index.html"))}
+                              (.-activity ctx))
             (files-dav/register-dav-routes! (.-server ctx) store
                                             (.-appPasswords ctx))
-            (files-assistant/register-tools! (.-contributions ctx) store)
+            (files-assistant/register-tools! (.-contributions ctx) store
+                                              (.-activity ctx))
             (files-assistant/register-widget! (.-contributions ctx) store)
             ;; Route registration returns router objects, never effects.
             nil)))}))
