@@ -22,12 +22,12 @@
 (deftest applies-numbered-migrations-and-platform-pragmas
   (with-database
     (fn [connection]
-      (is (= 1 (query-value connection
-                            "SELECT version FROM dar_migrations"
+      (is (= 3 (query-value connection
+                            "SELECT max(version) AS version FROM dar_migrations"
                             "version")))
       (is (= 1 (query-value connection "PRAGMA foreign_keys" "foreign_keys")))
       (is (= "wal" (query-value connection "PRAGMA journal_mode" "journal_mode")))
-      (is (= 14 (query-value connection
+      (is (= 25 (query-value connection
                              "SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table'"
                              "count"))))))
 

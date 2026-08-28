@@ -136,7 +136,117 @@ CREATE TABLE plugin_migrations (
 ) STRICT;"}
    {:version 2
     :sql "ALTER TABLE app_passwords ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE app_passwords ADD COLUMN prefix TEXT;"}])
+ALTER TABLE app_passwords ADD COLUMN prefix TEXT;"}
+   {:version 3
+    :sql "
+-- Files metadata. Portable file bytes live under each user's files/ root;
+-- these tables only index them. File rows are path-keyed, records that
+-- survive renames (trash, versions, shares) are id-keyed, per the rewrite
+-- binding contract in docs/rewrite/storage-and-lifecycle.md.
+CREATE TABLE files_favorites (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  PRIMARY KEY (user_id, path)
+) STRICT;
+
+CREATE TABLE files_tags (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL,
+  PRIMARY KEY (user_id, id)
+) STRICT;
+
+CREATE TABLE files_file_tags (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  tag_id TEXT NOT NULL,
+  PRIMARY KEY (user_id, path, tag_id)
+) STRICT;
+
+CREATE TABLE files_trash (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  original_path TEXT NOT NULL,
+  trash_path TEXT NOT NULL,
+  deleted_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, id)
+) STRICT;
+
+CREATE TABLE files_versions (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  id TEXT NOT NULL,
+  blob_path TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, path, id)
+) STRICT;
+
+CREATE TABLE files_public_shares (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  password_salt BLOB NOT NULL DEFAULT X'',
+  password_hash BLOB NOT NULL DEFAULT X'',
+  expires_at TEXT NOT NULL,
+  drop_only INTEGER NOT NULL DEFAULT 0 CHECK (drop_only IN (0, 1)),
+  created_at TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX files_public_shares_user
+  ON files_public_shares(user_id, created_at DESC);
+
+CREATE TABLE files_user_shares (
+  id TEXT PRIMARY KEY,
+  from_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  permission TEXT NOT NULL CHECK (permission IN ('read', 'write')),
+  created_at TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX files_user_shares_users
+  ON files_user_shares(from_user, to_user);
+
+CREATE TABLE files_comments (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  id TEXT NOT NULL,
+  author TEXT NOT NULL,
+  body TEXT NOT NULL,
+  parent_id TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, path, id)
+) STRICT;
+
+CREATE TABLE files_locks (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  owner TEXT NOT NULL,
+  PRIMARY KEY (user_id, path)
+) STRICT;
+
+CREATE TABLE files_activity (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  name TEXT NOT NULL,
+  action TEXT NOT NULL,
+  happened_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, id)
+) STRICT;
+
+CREATE INDEX files_activity_recent
+  ON files_activity(user_id, happened_at DESC);
+
+CREATE TABLE files_operation_leases (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  token TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, path)
+) STRICT;"}])
 
 (defn- applied-versions [^js database]
   (let [statement (.prepare database "SELECT version FROM dar_migrations ORDER BY version")]
