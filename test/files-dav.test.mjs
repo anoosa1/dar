@@ -177,6 +177,21 @@ test("files webdav serves protocol clients with app passwords", async () => {
     assert.equal(del.status, 204, context.running.output());
     const gone = await dav("/dav/files/user-123/Documents/dav.txt");
     assert.equal(gone.status, 404, context.running.output());
+
+    // DAV mutations land in the activity feed with the dav origin.
+    const feed = await fetch(`${base}/api/v1/activity`, {
+      headers: session.authHeaders,
+    });
+    assert.equal(feed.status, 200, context.running.output());
+    const events = (await feed.json()).items;
+    const types = events.map((event) => event.eventType);
+    assert.ok(types.includes("folderCreated"), types.join(","));
+    assert.ok(types.includes("fileUploaded"), types.join(","));
+    assert.ok(types.includes("fileTrashed"), types.join(","));
+    assert.ok(events.every((event) => event.appId === "files"),
+              context.running.output());
+    const trashed = events.find((event) => event.eventType === "fileTrashed");
+    assert.equal(trashed.subject.origin, "dav");
   } finally {
     await stopDarWithOidc(context);
     await rm(dataRoot, { recursive: true, force: true });

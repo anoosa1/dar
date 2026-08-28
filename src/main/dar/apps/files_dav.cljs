@@ -9,6 +9,16 @@
 ;; shaped: 207 multistatus with RFC 4918 depth handling, ETag conditionals,
 ;; single byte ranges, and XML challenges instead of the /api/v1 envelope.
 
+(defn- note-activity!
+  "Records one DAV-origin files activity event; best-effort so a
+  recording failure never fails the protocol operation."
+  [^js activity user-id event-type vpath]
+  (when activity
+    (-> (.record activity user-id "files" event-type
+                 {:path vpath :origin "dav"}
+                 [user-id])
+        (.catch (fn [_] nil)))))
+
 (defn- xml-escape [value]
   (-> (str value)
       (str/replace "&" "&amp;")
@@ -289,13 +299,15 @@
       (catch :default _ nil))))
 
 (defn- copy-or-move!
-  [^js store user-id username vpath ^js request ^js response move?]
+  [^js store user-id username vpath ^js request ^js response move? activity]
   ;; The Destination subject is the URL name, not the internal id.
   (if-let [target (:vpath (destination-target request username))]
     (-> (if move?
           (.rename store user-id vpath target)
           (.copy store user-id vpath target))
         (.then (fn [_]
+                 (note-activity! activity user-id
+                                 (if move? "fileRenamed" "fileCopied") target)
                  (set! (.-status response) 201)
                  nil)))
     (dav-error! response 400
@@ -349,30 +361,33 @@
 (defn- dispatch!
   "Runs one authenticated DAV method. Every branch returns a promise or nil;
   the caller maps engine failures onto the XML error shape."
-  [^js store user-id username vpath ^js request ^js response method]
+  [^js store user-id username vpath ^js request ^js response method activity]
   (case method
     "PROPFIND" (propfind! store user-id vpath
                           (str "/dav/files/" username vpath)
                           request response)
     "GET" (get-or-head! store user-id vpath request response false)
     "HEAD" (get-or-head! store user-id vpath request response true)
-    "PUT" (put! store user-id vpath request response)
+    "PUT" (do (note-activity! activity user-id "fileUploaded" vpath)
+              (put! store user-id vpath request response))
     "DELETE" (-> (.delete store user-id vpath)
                  (.then (fn [_]
+                          (note-activity! activity user-id "fileTrashed" vpath)
                           (set! (.-status response) 204)
                           nil)))
     "MKCOL" (-> (.mkdir store user-id vpath)
                 (.then (fn [_]
+                         (note-activity! activity user-id "folderCreated" vpath)
                          (set! (.-status response) 201)
                          nil)))
-    "COPY" (copy-or-move! store user-id username vpath request response false)
-    "MOVE" (copy-or-move! store user-id username vpath request response true)
+    "COPY" (copy-or-move! store user-id username vpath request response false activity)
+    "MOVE" (copy-or-move! store user-id username vpath request response true activity)
     "LOCK" (lock! store user-id vpath username request response)
     "UNLOCK" (unlock! store user-id vpath username request response)
     (dav-error! response 405 "Method not supported.")))
 
 (defn register-dav-routes!
-  [^js server ^js store ^js app-passwords]
+  [^js server ^js store ^js app-passwords ^js activity]
   (.all server #"/dav/files.*"
         (fn [request response _next]
           (let [request-path (.-path request)
@@ -403,7 +418,7 @@
 
                                :else
                                (dispatch! store (.-id auth) username vpath
-                                          request response method))))
+                                          request response method activity))))
                     (.catch (fn [error]
                               (let [type (:type (ex-data error))]
                                 (case type

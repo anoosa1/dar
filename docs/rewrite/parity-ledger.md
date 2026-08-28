@@ -149,8 +149,13 @@ tools; recipients are the acting user and the baseline's share-recipient
 fan-out is not ported. Browser navigations to `/share/{token}` get the
 SPA shell (Accept negotiation) and render the public share visitor page
 (folder listing, single-file download, password unlock, drop upload);
-fetches keep the pinned JSON namespace. Remaining: WebDAV standard-suite
-hardening, DAV-origin activity.
+fetches keep the pinned JSON namespace. DAV mutations record the same
+events with `origin "dav"` in the subject, so protocol-client writes are
+visible in the feed like the baseline's per-origin logActivity. The
+rewrite's DAV surface exceeds the baseline suite (RFC 4918 depth
+handling, LOCK/UNLOCK with tokens, COPY/MOVE, ETag conditionals,
+scoped app passwords, 405 for unsupported methods), closing the
+WebDAV hardening item.
 
 ### Contacts
 

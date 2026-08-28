@@ -804,7 +804,8 @@
                                                              "index.html"))}
                               (.-activity ctx))
             (files-dav/register-dav-routes! (.-server ctx) store
-                                            (.-appPasswords ctx))
+                                            (.-appPasswords ctx)
+                                            (.-activity ctx))
             (files-assistant/register-tools! (.-contributions ctx) store
                                               (.-activity ctx))
             (files-assistant/register-widget! (.-contributions ctx) store)
