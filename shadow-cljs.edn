@@ -1,0 +1,24 @@
+{:deps true
+ :builds
+ {:server
+  {:target :esm
+   :runtime :node
+   :output-dir "dist/server"
+   :modules {:main {:init-fn dar.server.main/main}}
+   :js-options {:js-provider :import}
+   :compiler-options {:infer-externs :auto}}
+
+  :client
+  {:target :esm
+   :runtime :browser
+   :output-dir "public/assets/js"
+   :asset-path "/assets/js"
+   :modules {:main {:init-fn dar.client.main/init}}
+   :compiler-options {:infer-externs :auto}}
+
+  :test
+  {:target :node-test
+   :output-to "dist/test/tests.cjs"
+   :ns-regexp "-test$"
+   :autorun true
+   :compiler-options {:infer-externs :auto}}}}

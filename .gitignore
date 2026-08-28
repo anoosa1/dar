@@ -11,7 +11,7 @@ zig-pkg/
 *.email-encryption-key
 
 # Binary outputs
-dar
+/dar
 dar-server
 dar-daemon-*
 dar-files
@@ -30,6 +30,14 @@ dar-test-oidc
 /server
 /soosa
 *.exe
+
+# ClojureScript and Node build output
+/node_modules/
+/.shadow-cljs/
+/.cpcache/
+/dist/
+/public/assets/app.css
+/public/assets/js/
 
 # OS
 .DS_Store

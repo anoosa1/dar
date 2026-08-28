@@ -1,0 +1,41 @@
+{
+  "name": "dar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "npm run build:css && shadow-cljs release server client",
+    "build:server": "shadow-cljs release server",
+    "build:client": "npm run build:css && shadow-cljs release client",
+    "build:css": "tailwindcss -i src/main/dar/client/styles.css -o public/assets/app.css --minify",
+    "compile": "shadow-cljs compile server client test",
+    "start": "node dist/server/main.js",
+    "test": "shadow-cljs compile test && node dist/test/tests.cjs",
+    "check": "npm run build && npm test"
+  },
+  "dependencies": {
+    "@cordisjs/plugin-logger-console": "1.0.0",
+    "@cordisjs/plugin-server": "1.7.0",
+    "cordis": "4.0.0-rc.8",
+    "feedsmith": "2.9.6",
+    "ical.js": "2.2.1",
+    "nodemailer": "9.0.5",
+    "openid-client": "6.8.7",
+    "postal-mime": "3.0.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "sanitize-html": "2.17.7",
+    "saxes": "6.0.0",
+    "sharp": "0.35.4",
+    "undici": "8.10.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@tailwindcss/cli": "4.3.3",
+    "shadow-cljs": "3.5.0",
+    "tailwindcss": "4.3.3"
+  }
+}

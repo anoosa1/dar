@@ -1,5 +1,5 @@
 {
-  description = "Dar regression-suite toolchain";
+  description = "Dar ClojureScript and Cordis development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -12,7 +12,15 @@
         let pkgs = import nixpkgs { inherit system; };
         in {
           default = pkgs.mkShell {
-            packages = with pkgs; [ go chromium isync git curl ];
+            packages = with pkgs; [
+              clojure
+              jdk21_headless
+              nodejs_24
+              chromium
+              isync
+              git
+              curl
+            ];
           };
         });
     };

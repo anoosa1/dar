@@ -1,0 +1,300 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: light-dark(#f7f3e8, #17201d);
+  color: light-dark(#26362f, #eef5ef);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: light-dark(#f7f3e8, #17201d);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid light-dark(#bb7047, #e2a179);
+  outline-offset: 2px;
+}
+
+.sanctuary-app {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sanctuary-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 28px 20px;
+  background: light-dark(#eee6d6, #1d2723);
+  border-right: 1px solid light-dark(#dacdb7, #394840);
+}
+
+.sanctuary-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sanctuary-brand > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  background: light-dark(#315c4b, #a9d5bd);
+  color: light-dark(#f7fff9, #193127);
+}
+
+.sanctuary-rail nav {
+  display: grid;
+  gap: 8px;
+}
+
+.sanctuary-nav-link {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 22px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sanctuary-nav-link[aria-current="page"] {
+  background: light-dark(#d8e5d9, #30463c);
+  font-weight: 500;
+}
+
+.sanctuary-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.sanctuary-user > span:last-child {
+  display: grid;
+}
+
+.sanctuary-user small,
+.sanctuary-eyebrow,
+.sanctuary-list small {
+  color: light-dark(#5a685f, #c7d2cb);
+}
+
+.sanctuary-avatar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  background: light-dark(#d9d4ef, #4a4566);
+}
+
+.sanctuary-workspace {
+  min-width: 0;
+}
+
+.sanctuary-topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 30px 34px 22px;
+}
+
+.sanctuary-topbar h1,
+.sanctuary-panel h2,
+.sanctuary-empty h2 {
+  margin: 3px 0 0;
+  font-family: ui-serif, Georgia, serif;
+  font-weight: 500;
+}
+
+.sanctuary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sanctuary-actions button {
+  min-height: 42px;
+  padding: 8px 14px;
+  border: 1px solid light-dark(#d7cbb7, #43534b);
+  border-radius: 21px;
+  background: light-dark(#fffdf7, #28342f);
+  color: inherit;
+  cursor: pointer;
+}
+
+.sanctuary-actions .sanctuary-primary {
+  border-color: transparent;
+  background: light-dark(#315c4b, #a9d5bd);
+  color: light-dark(#f7fff9, #193127);
+}
+
+.sanctuary-content {
+  padding: 12px 34px 40px;
+}
+
+.sanctuary-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sanctuary-panel {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid light-dark(#ded4c2, #3b4942);
+  border-radius: 22px;
+  background: light-dark(#fffdf7, #222d28);
+}
+
+.sanctuary-metrics .sanctuary-panel {
+  display: grid;
+  gap: 6px;
+}
+
+.sanctuary-metrics strong {
+  font-family: ui-serif, Georgia, serif;
+  font-weight: 500;
+}
+
+.sanctuary-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.sanctuary-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sanctuary-panel-heading a {
+  color: light-dark(#315c4b, #a9d5bd);
+}
+
+.sanctuary-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sanctuary-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 2px;
+  border-bottom: 1px solid light-dark(#e8dfce, #35423c);
+}
+
+.sanctuary-list li:last-child {
+  border-bottom: 0;
+}
+
+.sanctuary-list li > span:first-child {
+  display: grid;
+}
+
+.sanctuary-empty {
+  min-height: 60vh;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.sanctuary-empty > div {
+  max-width: 460px;
+}
+
+.sanctuary-empty-symbol {
+  display: inline-grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  border-radius: 50%;
+  background: light-dark(#d8e5d9, #30463c);
+}
+
+.sanctuary-mobile-nav {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .sanctuary-app {
+    display: block;
+    padding-bottom: 76px;
+  }
+
+  .sanctuary-rail {
+    display: none;
+  }
+
+  .sanctuary-topbar {
+    padding: 20px 18px 14px;
+  }
+
+  .sanctuary-actions button:first-child {
+    display: none;
+  }
+
+  .sanctuary-content {
+    padding: 10px 18px 28px;
+  }
+
+  .sanctuary-metrics,
+  .sanctuary-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sanctuary-mobile-nav {
+    position: fixed;
+    z-index: 10;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    padding: 8px 5px;
+    background: light-dark(#fffdf7, #222d28);
+    border-top: 1px solid light-dark(#dacdb7, #394840);
+  }
+
+  .sanctuary-mobile-nav .sanctuary-nav-link {
+    justify-content: center;
+    min-height: 48px;
+    padding: 6px 2px;
+    border-radius: 16px;
+  }
+}
+
