@@ -2,6 +2,7 @@
   (:require [dar.cordis :as cordis]
             [dar.platform.activity :as activity]
             [dar.platform.app-passwords :as app-passwords]
+            [dar.platform.assistant :as assistant]
             [dar.platform.atomic-files :as atomic-files]
             [dar.platform.rate-limiter :as rate-limiter]
             [dar.platform.auth :as auth]
@@ -79,6 +80,8 @@
                   (cordis/mount! ctx atomic-files/atomic-files-plugin)))
          (.then (fn []
                   (cordis/mount! ctx rate-limiter/rate-limiter-plugin)))
+         (.then (fn []
+                  (cordis/mount! ctx assistant/assistant-plugin)))
          (.then (fn []
                   (cordis/mount! ctx oidc/oidc-plugin runtime-config)))
          (.then (fn []

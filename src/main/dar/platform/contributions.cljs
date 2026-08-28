@@ -35,9 +35,10 @@
            (when-not (contains? contribution-kinds kind)
              (throw (ex-info "Unknown contribution kind."
                              {:type :invalid-contribution :kind kind})))
-           (if (.has by-kind kind)
-             (.entries (.get by-kind kind))
-             (js/Map.)))}))
+           ;; Always an entries iterator, even when nothing was registered.
+           (.entries (if (.has by-kind kind)
+                       (.get by-kind kind)
+                       (js/Map.))))}))
 
 (defn- register-routes! [^js ctx _config]
   (let [registry (registry)]
