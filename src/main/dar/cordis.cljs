@@ -11,6 +11,10 @@
   [{:keys [name inject apply]}]
   (let [entry (fn [ctx config]
                 (apply ctx (js->clj config :keywordize-keys true)))]
+    ;; Cordis distinguishes service constructors by the presence of a prototype.
+    ;; CLJS emits constructible functions, so remove that marker to preserve
+    ;; plugin return promises and disposers.
+    (set! (.-prototype entry) js/undefined)
     (js/Object.defineProperty entry "name"
                               #js {:value name
                                    :configurable true})

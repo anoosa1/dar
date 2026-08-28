@@ -1,7 +1,11 @@
 (ns dar.server.main
   (:require [dar.cordis :as cordis]
+            [dar.platform.auth :as auth]
             [dar.platform.database :as database]
             [dar.platform.instance :as instance]
+            [dar.platform.keyring :as keyring]
+            [dar.platform.oidc :as oidc]
+            [dar.platform.security :as security]
             [dar.server.config :as config]
             [dar.server.core :as core]
             ["@cordisjs/plugin-logger-console" :default ConsoleExporter]
@@ -52,7 +56,15 @@
          (.then (fn []
                   (cordis/mount! ctx database/database-plugin)))
          (.then (fn []
+                  (cordis/mount! ctx keyring/keyring-plugin runtime-config)))
+         (.then (fn []
                   (cordis/mount! ctx Server (server-config runtime-config))))
+         (.then (fn []
+                  (cordis/mount! ctx security/security-plugin runtime-config)))
+         (.then (fn []
+                  (cordis/mount! ctx auth/auth-plugin runtime-config)))
+         (.then (fn []
+                  (cordis/mount! ctx oidc/oidc-plugin runtime-config)))
          (.then (fn []
                   (cordis/mount! ctx core/core-plugin runtime-config)))
          (.then (fn []

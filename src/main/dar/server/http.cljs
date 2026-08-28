@@ -25,8 +25,9 @@
 
 (defn error!
   ([response status code message]
-   (error! response status code message nil))
+   (error! response status code message nil (request-id)))
   ([response status code message fields]
+   (error! response status code message fields (request-id)))
+  ([response status code message fields request-id-value]
    (json! response status
-          (contracts/error-envelope code message (request-id) fields))))
-
+          (contracts/error-envelope code message request-id-value fields))))

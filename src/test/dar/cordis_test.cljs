@@ -27,3 +27,26 @@
                     (is false (str error))
                     (done)))))))
 
+(deftest mount-waits-for-asynchronous-plugin-activation
+  (async done
+    (let [activated? (atom false)
+          ctx (cordis/context)
+          test-plugin
+          (cordis/plugin
+           {:name "dar-async-test-plugin"
+            :apply (fn [_ctx _config]
+                     (js/Promise.
+                      (fn [resolve _reject]
+                        (js/setTimeout
+                         (fn []
+                           (reset! activated? true)
+                           (resolve nil))
+                         10))))})]
+      (-> (cordis/mount! ctx test-plugin)
+          (.then (fn []
+                   (is (true? @activated?))
+                   (cordis/dispose! ctx)))
+          (.then done)
+          (.catch (fn [error]
+                    (is false (str error))
+                    (done)))))))
