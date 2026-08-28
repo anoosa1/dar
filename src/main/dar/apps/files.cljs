@@ -144,15 +144,15 @@
     (into #{} (map #(.-path %)) (.all select user-id))))
 
 (defn- tags-for-paths [^js connection user-id]
+  ;; Entries carry tag IDs (baseline loadFileTags), not tag names.
   (let [select (.prepare connection
-                         "SELECT ft.path AS path, t.name AS name FROM files_file_tags ft
-                          JOIN files_tags t ON t.user_id = ft.user_id AND t.id = ft.tag_id
-                          WHERE ft.user_id = ? ORDER BY t.name")
+                         "SELECT path, tag_id AS tag_id FROM files_file_tags
+                          WHERE user_id = ? ORDER BY path, tag_id")
         rows (.all select user-id)]
-    (reduce (fn [acc {:keys [path name]}]
-              (update acc path (fnil conj []) name))
+    (reduce (fn [acc {:keys [path tagId]}]
+              (update acc path (fnil conj []) tagId))
             {}
-            (map (fn [^js row] {:path (.-path row) :name (.-name row)}) rows))))
+            (map (fn [^js row] {:path (.-path row) :tagId (.-tag_id row)}) rows))))
 
 (defn- make-entry [^js stat vpath favorited tags]
   {:name (node-path/basename vpath)
@@ -737,15 +737,18 @@
                    {:deleted tag-id})))
 
         set-file-tag!
+        ;; File tags are stored under the user-rooted virtual path (with its
+        ;; leading slash) so listings can join entries directly (baseline
+        ;; handleTag stores the cleaned virtual path).
         (fn [user-id vpath tag-id add?]
-          (let [relative (vpath->relative vpath)]
+          (let [virtual (str "/" (vpath->relative vpath))]
             (.then (.write writer
                            (fn [_]
                              (if add?
-                               (.run insert-file-tag user-id relative tag-id)
-                               (.run delete-file-tag user-id relative tag-id))))
+                               (.run insert-file-tag user-id virtual tag-id)
+                               (.run delete-file-tag user-id virtual tag-id))))
                    (fn [_]
-                     {:path (str "/" relative) :tag tag-id :added add?}))))
+                     {:path virtual :tag tag-id :added add?}))))
 
         list-comments-fn
         (fn [user-id vpath]

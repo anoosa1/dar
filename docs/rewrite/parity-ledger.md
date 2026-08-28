@@ -88,6 +88,14 @@ For an applicable capability, implement all of these together:
 - WebDAV including conditional requests, ranges, properties, locks, copy/move,
   user isolation, unsafe-path rejection, search, widget, activity, and assistant.
 
+Rewrite status: browse/mutations/trash/favorites/quota (Stage 1) and the
+editor with If-Match 428/412 semantics, versions with read/restore, tags,
+comments, and locks (Stage 2) are implemented and verified under `/api/v1`
+with the new error envelope (`quotaExceeded`, `unsupportedMediaType`,
+`preconditionRequired`, `preconditionFailed`, `locked`). Remaining: download,
+picker, move, search, stats, previews/thumbnails, diffs, shares, activity,
+WebDAV, assistant tools, widget, external storage.
+
 ### Contacts
 
 - Multiple address books, contacts and groups; people and organizations; rich

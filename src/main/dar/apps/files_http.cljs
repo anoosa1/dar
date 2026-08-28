@@ -6,9 +6,10 @@
             [malli.core :as m]
             ["node:buffer" :refer [Buffer]]))
 
-;; HTTP surface for the Files app (Stage 1: browse and core mutations).
-;; Routes are browser-session authenticated and live under /api/v1 with
-;; camelCase JSON. Paths are user-rooted virtual paths ("/a/b").
+;; HTTP surface for the Files app. Routes are browser-session authenticated
+;; and live under /api/v1 with camelCase JSON. Paths are user-rooted virtual
+;; paths ("/a/b"). Stage 2 adds the editor, versions, tags, comments, and
+;; locks on top of the Stage 1 browse and mutation surface.
 
 (def upload-path "/api/v1/files/upload")
 
@@ -31,6 +32,38 @@
   [:map {:closed true}
    [:path path-schema]
    [:favorited :boolean]])
+
+(def editor-body-schema
+  [:map {:closed true}
+   [:content :string]
+   [:name {:optional true} :string]])
+
+(def tag-body-schema
+  [:map {:closed true}
+   [:name :string]
+   [:color :string]])
+
+(def file-tag-body-schema
+  [:map {:closed true}
+   [:path path-schema]
+   [:tagId :string]
+   [:added :boolean]])
+
+(def comment-body-schema
+  [:map {:closed true}
+   [:path path-schema]
+   [:body :string]
+   [:parentId {:optional true} :string]])
+
+(defn- if-match [^js request]
+  "Reads the If-Match header; the engine owns precondition semantics."
+  (.get (.-headers request) "if-match"))
+
+(defn- editor-headers!
+  "Editor documents carry their etag and must never be cached."
+  [^js response doc]
+  (.set (.-headers response) "etag" (str "\"" (:etag doc) "\""))
+  (.set (.-headers response) "cache-control" "no-store"))
 
 (defn- validate!
   "Validates one Malli schema, throwing an :invalid error on failure."
@@ -68,6 +101,17 @@
       (http/error! response 507 "quotaExceeded" (ex-message error) data request-id)
       :too-large
       (http/error! response 413 "tooLarge" (ex-message error) data request-id)
+      :unsupported-media-type
+      (http/error! response 415 "unsupportedMediaType"
+                   (ex-message error) data request-id)
+      :precondition-required
+      (http/error! response 428 "preconditionRequired"
+                   (ex-message error) data request-id)
+      :precondition-failed
+      (http/error! response 412 "preconditionFailed"
+                   (ex-message error) data request-id)
+      :locked
+      (http/error! response 423 "locked" (ex-message error) data request-id)
       (http/error! response 500 "internal"
                    "The Files operation failed." nil request-id))))
 
@@ -179,6 +223,142 @@
                         (http/json! response
                                     {:used used
                                      :total quota-bytes})))))))
+  ;; Editor: read and save text documents. Saves require If-Match; the
+  ;; engine rejects a missing matcher with 428 and a stale one with 412.
+  (.get server "/api/v1/files/editor"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (-> (.readDocument store (.-id (.-user request)) (query-path request))
+               (.then (fn [doc]
+                        (editor-headers! response doc)
+                        (http/json! response doc)))))))
+  (.put server "/api/v1/files/editor"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (-> (json-body request editor-body-schema)
+               (.then (fn [body]
+                        (.saveDocument store (.-id (.-user request))
+                                       (query-path request)
+                                       {:content (:content body)
+                                        :name (:name body)
+                                        :if-match (if-match request)})))
+               (.then (fn [doc]
+                        (editor-headers! response doc)
+                        (http/json! response doc)))))))
+  ;; Versions: list snapshots, read one raw, restore one over the file.
+  (.get server "/api/v1/files/versions"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (-> (.listVersions store (.-id (.-user request)) (query-path request))
+               (.then (fn [versions]
+                        (http/json! response
+                                    {:items (vec versions)
+                                     :nextCursor nil})))))))
+  (.get server "/api/v1/files/versions/:versionId/content"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (-> (.readVersion store (.-id (.-user request)) (query-path request)
+                             (.-versionId (.-params request)))
+               (.then (fn [^js bytes]
+                        (set! (.-status response) 200)
+                        (.set (.-headers response) "content-type"
+                              "application/octet-stream")
+                        (.bytes response bytes)
+                        nil))))))
+  (.post server "/api/v1/files/versions/:versionId/restore"
+         (wrap-errors
+          (fn [^js request ^js response]
+            (-> (json-body request path-body-schema)
+                (.then (fn [value]
+                         (.restoreVersion store (.-id (.-user request))
+                                          (:path value)
+                                          (.-versionId (.-params request)))))
+                (.then (fn [restored]
+                         (http/json! response 200 restored)))))))
+  ;; Tags: user-owned labels, attachable to any file path.
+  (.get server "/api/v1/files/tags"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (-> (.listTags store (.-id (.-user request)))
+               (.then (fn [tags]
+                        (http/json! response
+                                    {:items (vec tags)
+                                     :nextCursor nil})))))))
+  (.post server "/api/v1/files/tags"
+         (wrap-errors
+          (fn [^js request ^js response]
+            (-> (json-body request tag-body-schema)
+                (.then (fn [value]
+                         (.createTag store (.-id (.-user request))
+                                     {:name (:name value)
+                                      :color (:color value)})))
+                (.then (fn [tag]
+                         (http/json! response 201 tag)))))))
+  (.delete server "/api/v1/files/tags/:tagId"
+           (wrap-errors
+            (fn [^js request ^js response]
+              (-> (.deleteTag store (.-id (.-user request))
+                              (.-tagId (.-params request)))
+                  (.then (fn [deleted]
+                           (http/json! response 200 deleted)))))))
+  (.put server "/api/v1/files/file-tags"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (-> (json-body request file-tag-body-schema)
+               (.then (fn [value]
+                        (.setFileTag store (.-id (.-user request))
+                                     (:path value) (:tagId value)
+                                     (:added value))))
+               (.then (fn [applied]
+                        (http/json! response 200 applied)))))))
+  ;; Comments: per-path discussion threads.
+  (.get server "/api/v1/files/comments"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (-> (.listComments store (.-id (.-user request)) (query-path request))
+               (.then (fn [comments]
+                        (http/json! response
+                                    {:items (vec comments)
+                                     :nextCursor nil})))))))
+  (.post server "/api/v1/files/comments"
+         (wrap-errors
+          (fn [^js request ^js response]
+            (-> (json-body request comment-body-schema)
+                (.then (fn [value]
+                         (.addComment store (.-id (.-user request))
+                                      (:path value) (:body value)
+                                      (:parentId value))))
+                (.then (fn [comment]
+                         (http/json! response 201 comment)))))))
+  (.delete server "/api/v1/files/comments/:commentId"
+           (wrap-errors
+            (fn [^js request ^js response]
+              (-> (.deleteComment store (.-id (.-user request))
+                                  (query-path request)
+                                  (.-commentId (.-params request)))
+                  (.then (fn [deleted]
+                           (http/json! response 200 deleted)))))))
+  ;; Locks: explicit advisory locks that block mutations until unlocked.
+  (.get server "/api/v1/files/lock"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (-> (.lockInfo store (.-id (.-user request)) (query-path request))
+               (.then (fn [info]
+                        (http/json! response info)))))))
+  (.post server "/api/v1/files/lock"
+         (wrap-errors
+          (fn [^js request ^js response]
+            (-> (json-body request path-body-schema)
+                (.then (fn [value]
+                         (.lock store (.-id (.-user request)) (:path value))))
+                (.then (fn [locked]
+                         (http/json! response 200 locked)))))))
+  (.delete server "/api/v1/files/lock"
+           (wrap-errors
+            (fn [^js request ^js response]
+              (-> (.unlock store (.-id (.-user request)) (query-path request))
+                  (.then (fn [unlocked]
+                           (http/json! response 200 unlocked)))))))
   nil)
 
 (def files-plugin
