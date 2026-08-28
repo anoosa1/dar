@@ -6,7 +6,8 @@
             ["node:buffer" :refer [Buffer]]
             ["node:crypto" :as crypto]
             ["node:fs/promises" :as fs]
-            ["node:path" :as node-path]))
+            ["node:path" :as node-path]
+            ["sharp" :as sharp]))
 
 ;; Files app engine. User bytes live under <data-root>/users/<id>/files;
 ;; trash and versions have dedicated roots per the fresh data-root contract
@@ -15,6 +16,16 @@
 ;; File bytes are written through the atomic-files journaling service; file
 ;; metadata changes go through the one writer queue; every mutating operation
 ;; serializes per user.
+
+(defn- sharp-factory
+  "Resolves the callable sharp factory across build targets: the CJS
+  node-test shim exposes the factory itself while the ESM server build
+  carries it as the namespace default."
+  [opts]
+  (cond
+    (fn? sharp) (sharp opts)
+    (fn? (.-default sharp)) ((.-default sharp) opts)
+    :else (throw (ex-info "sharp is unavailable." {:type :internal}))))
 
 (def mime-types
   {".txt" "text/plain" ".md" "text/markdown" ".markdown" "text/markdown"
@@ -1151,6 +1162,79 @@
                   (js/Promise.reject
                    (ex-info "Invalid filename." {:type :invalid}))
                   (read-bytes! root (str share-relative "/" name)))))))
+        ;; Previews and thumbnails. Both are pure read-plus-transform: no
+        ;; queue involvement. Previews are text-only in the rewrite; binary
+        ;; content answers 415 instead of guessing at an encoding.
+        preview-byte-limit (* 8 1024 1024)
+        preview-chars (* 512 1024)
+
+        preview-fn
+        (fn [user-id vpath]
+          (let [root (files-root data-root user-id)
+                relative (vpath->relative vpath)]
+            (-> (read-bytes! root relative)
+                (.then (fn [^js bytes]
+                         (when (> (.-length bytes) preview-byte-limit)
+                           (throw (ex-info "File is too large to preview."
+                                           {:type :too-large})))
+                         (let [content (try
+                                         (.decode (js/TextDecoder. "utf8" #js {:fatal true})
+                                                  bytes)
+                                         (catch :default _ nil))]
+                           ;; NUL bytes decode fine as UTF-8 but mark binary
+                           ;; payloads (same rule as the editor).
+                           (when (or (nil? content)
+                                     (str/includes? content "\u0000"))
+                             (throw (ex-info
+                                     "Preview is only available for UTF-8 text."
+                                     {:type :unsupported-media-type})))
+                           {:type (mime-for-name vpath)
+                            :content (if (> (.-length content) preview-chars)
+                                       (.slice content 0 preview-chars)
+                                       content)
+                            :name (node-path/basename relative)}))))))
+
+        thumb-dimension-limit 20000
+        thumb-pixel-limit 40000000
+        thumb-width 200
+
+        thumbnail-fn
+        (fn [user-id vpath]
+          (let [root (files-root data-root user-id)
+                relative (vpath->relative vpath)]
+            (-> (read-bytes! root relative)
+                (.then (fn [^js bytes]
+                         (-> (.metadata (sharp-factory bytes))
+                             (.then (fn [^js meta]
+                                      (let [width (.-width meta)
+                                            height (.-height meta)]
+                                        (if (or (not width) (not height)
+                                                (< width 1) (< height 1)
+                                                (> width thumb-dimension-limit)
+                                                (> height thumb-dimension-limit)
+                                                (> (* width height) thumb-pixel-limit))
+                                          (throw (ex-info
+                                                  "Image dimensions are unsupported."
+                                                  {:type :too-large}))
+                                          ;; ^js hints keep release
+                                          ;; builds from renaming sharp
+                                          ;; properties.
+                                          (let [^js resized
+                                                (-> (sharp-factory bytes)
+                                                    (.resize
+                                                     #js {:width thumb-width
+                                                          :withoutEnlargement true}))
+                                                ^js encoded
+                                                (.jpeg resized
+                                                       #js {:quality 70})]
+                                            (.toBuffer encoded))))))
+                             (.catch (fn [error]
+                                       (if (some? (:type (ex-data error)))
+                                         (js/Promise.reject error)
+                                         (js/Promise.reject
+                                          (ex-info (str "File is not an image ("
+                                                        (ex-message error) ").")
+                                                   {:type :unsupported-media-type})))))))))))
         ]
 
     #js {:filesRoot (fn [user-id] (files-root data-root user-id))
@@ -1281,6 +1365,14 @@
          :unlock
          (fn [user-id vpath]
            (mutate user-id (fn [] (unlock! user-id vpath))))
+         ;; Previews and thumbnails are read-only transforms.
+         :preview
+         (fn [user-id vpath]
+           (preview-fn user-id vpath))
+         :thumbnail
+         (fn [user-id vpath]
+           (thumbnail-fn user-id vpath))
+         ;; Shares: creation and deletes manage their own queue use; the
          ;; Shares: creation and deletes manage their own queue use; the
          ;; unlock/upload checks are public-surface and never enqueue.
          :createShare

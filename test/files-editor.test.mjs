@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import test from "node:test";
 
+import sharp from "sharp";
+
 import {
   loginSession,
   startDarWithOidc,
@@ -219,6 +221,53 @@ test("files editor, versions, tags, comments, and locks work over http", async (
     });
     assert.equal(resaved.status, 200, context.running.output());
     assert.equal((await resaved.json()).content, "writable again");
+
+    // Previews serve UTF-8 text; binaries and images answer 415.
+    const png = await sharp({
+      create: {
+        width: 400,
+        height: 300,
+        channels: 3,
+        background: { r: 20, g: 40, b: 60 },
+      },
+    })
+      .png()
+      .toBuffer();
+    const pic = await fetch(`${base}/api/v1/files/upload?path=%2FDocuments%2Fpic.png`, {
+      method: "POST",
+      headers: {
+        cookie: session.cookies,
+        origin: base,
+        "x-csrf-token": session.csrfToken,
+      },
+      body: png,
+    });
+    assert.equal(pic.status, 201, context.running.output());
+
+    const textPreview = await get("/api/v1/files/preview?path=%2FDocuments%2Fdoc.md");
+    assert.equal(textPreview.status, 200, context.running.output());
+    assert.deepEqual(await textPreview.json(), {
+      type: "text/markdown",
+      content: "writable again",
+      name: "doc.md",
+    });
+
+    const imagePreview = await get("/api/v1/files/preview?path=%2FDocuments%2Fpic.png");
+    assert.equal(imagePreview.status, 415, context.running.output());
+    assert.equal((await imagePreview.json()).error.code, "unsupportedMediaType");
+
+    // Thumbnails re-encode decodable images to a small JPEG.
+    const thumb = await get("/api/v1/files/thumb?path=%2FDocuments%2Fpic.png");
+    assert.equal(thumb.status, 200, context.running.output());
+    assert.equal(thumb.headers.get("content-type"), "image/jpeg");
+    const thumbBytes = Buffer.from(await thumb.arrayBuffer());
+    assert.equal(thumbBytes[0], 0xff);
+    assert.equal(thumbBytes[1], 0xd8);
+    assert.ok(thumbBytes.length < png.length, "thumbnail is smaller than the source");
+
+    const textThumb = await get("/api/v1/files/thumb?path=%2FDocuments%2Fdoc.md");
+    assert.equal(textThumb.status, 415, context.running.output());
+    assert.equal((await textThumb.json()).error.code, "unsupportedMediaType");
   } finally {
     await stopDarWithOidc(context);
     await rm(dataRoot, { recursive: true, force: true });

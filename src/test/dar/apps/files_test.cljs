@@ -10,7 +10,8 @@
             ["node:fs" :as fs]
             ["node:fs/promises" :as fsp]
             ["node:os" :as os]
-            ["node:path" :as path]))
+            ["node:path" :as path]
+            ["sharp" :as sharp]))
 
 (defn- open-service!
   ([] (open-service! {}))
@@ -607,4 +608,53 @@
            (.readShare store (:token (:share @state))))
          (fn [gone]
            (is (nil? gone)))])
+       fixture done))))
+
+(deftest previews-serve-text-and-thumbnails-serve-images
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_]
+           (.save store "user-1" "/notes.md" (Buffer.from "preview me" "utf8")))
+         (fn [_]
+           ;; A 400x300 PNG: wide enough to prove the thumbnail downscales.
+           (.toBuffer (.png (sharp #js {:create #js {:width 400 :height 300
+                                                     :channels 3
+                                                     :background #js {:r 20 :g 40 :b 60}}}))))
+         (fn [^js png]
+           (.save store "user-1" "/pic.png" png))
+         (fn [_]
+           (.save store "user-1" "/blob.bin" (.from Buffer #js [0 1 2 3])))
+         (fn [_]
+           (.preview store "user-1" "/notes.md"))
+         (fn [preview]
+           (is (= "text/markdown" (:type preview)))
+           (is (= "preview me" (:content preview)))
+           (is (= "notes.md" (:name preview)))
+           (settle (.preview store "user-1" "/pic.png") :png-preview))
+         (fn [step]
+           (is (= :png-preview (:outcome step)))
+           (is (= :unsupported-media-type (:type (ex-data (:error step))))))
+         (fn [_]
+           (settle (.preview store "user-1" "/blob.bin") :binary-preview))
+         (fn [step]
+           (is (= :binary-preview (:outcome step)))
+           (is (= :unsupported-media-type (:type (ex-data (:error step))))))
+         (fn [_]
+           (.thumbnail store "user-1" "/pic.png"))
+         (fn [^js jpeg]
+           (is (= 255 (aget jpeg 0)) "JPEG magic first byte")
+           (is (= 216 (aget jpeg 1)) "JPEG magic second byte")
+           (settle (.thumbnail store "user-1" "/notes.md") :text-thumb))
+         (fn [step]
+           (is (= :text-thumb (:outcome step)))
+           (is (= :unsupported-media-type (:type (ex-data (:error step))))))
+         (fn [_]
+           (settle (.thumbnail store "user-1" "/blob.bin") :binary-thumb))
+         (fn [step]
+           (is (= :binary-thumb (:outcome step)))
+           (is (= :unsupported-media-type (:type (ex-data (:error step))))))])
        fixture done))))

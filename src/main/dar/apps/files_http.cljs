@@ -438,6 +438,25 @@
               (-> (.unlock store (.-id (.-user request)) (query-path request))
                   (.then (fn [unlocked]
                            (http/json! response 200 unlocked)))))))
+  ;; Previews are text-only (binary content answers 415); thumbnails
+  ;; re-encode any decodable image to a small JPEG.
+  (.get server "/api/v1/files/preview"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (when (require-session! request response)
+             (-> (.preview store (.-id (.-user request)) (query-path request))
+                 (.then (fn [preview]
+                          (http/json! response preview))))))))
+  (.get server "/api/v1/files/thumb"
+        (wrap-errors
+         (fn [^js request ^js response]
+           (when (require-session! request response)
+             (-> (.thumbnail store (.-id (.-user request)) (query-path request))
+                 (.then (fn [^js bytes]
+                          (set! (.-status response) 200)
+                          (.set (.-headers response) "content-type" "image/jpeg")
+                          (.bytes response bytes)
+                          nil)))))))
   ;; Shares: owner-managed public links and user-to-user grants.
   (.get server "/api/v1/files/shares"
         (wrap-errors

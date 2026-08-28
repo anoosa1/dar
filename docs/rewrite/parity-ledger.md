@@ -96,9 +96,16 @@ uploads, share unlock rate limits (Stage 3) are implemented and verified under
 `/share/{token}` JSON namespace; drop uploads take raw bytes with a name
 query; the baseline `/Shared` virtual folder is superseded by the
 shared-with-me API (payload/UI redesign is allowed by this ledger). New stable
-codes this stage: `gone` (410) for expired shares. Remaining: download,
-picker, move, search, stats, previews/thumbnails, diffs, activity, WebDAV,
-assistant tools, widget, external storage, public share visitor UI.
+codes this stage: `gone` (410) for expired shares. Previews and thumbnails
+(Stage 4) are implemented under `/api/v1/files/preview` and `/api/v1/files/
+thumb`: previews are UTF-8-text only (binary content, including NUL bytes,
+answers 415, files over 8 MiB answer 413, content truncates at 512k code
+units) where the baseline returned raw bytes as a string; thumbnails decode
+through Sharp with the baseline dimension guards (reject over 20,000 px or
+40 M pixels with 413, undecodable data with 415) and re-encode to a JPEG
+quality 70, max width 200 without enlargement. Remaining: download, picker,
+move, search, stats, diffs, activity, WebDAV, assistant tools, widget,
+external storage, public share visitor UI.
 
 ### Contacts
 
