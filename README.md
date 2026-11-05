@@ -3,6 +3,9 @@
 Dar is a Linux-first, self-hosted personal cloud being rebuilt in
 ClojureScript on Node 24. One process hosts the Cordis service graph, the
 standards-first HTTP APIs, and a Reagent/re-frame SPA.
+Files is being migrated to TypeScript and React within that same process and
+SPA; the other apps remain ClojureScript. See the
+[Files migration record](docs/rewrite/files-typescript.md).
 
 The rewrite starts from fresh storage. The previous Go implementation is kept
 as the immutable Git tag `dar-go-baseline-2026-08-27`; it is not shipped or
@@ -38,9 +41,14 @@ Node only; Java and Clojure are build-time tools for `shadow-cljs`.
 - `src/main/dar/platform` — data-root, SQLite, security, and shared services.
 - `src/main/dar/client` — Reagent/re-frame SPA and Sanctuary design system.
 - `src/main/dar/shared` — shared schemas and wire contracts.
+- `src/typescript/files` — TypeScript Files backend and browser workspace.
 - `src/test` — ClojureScript unit and service tests.
 - `test` — process, browser, protocol, and release verification.
 - `docs/rewrite` — binding parity ledger and rewrite contracts.
 
 See [the parity ledger](docs/rewrite/parity-ledger.md) for the complete target
 and [the selected design](docs/rewrite/design.md) for the SPA direction.
+For deployment configuration and stopped-root backup/restore, see the
+[operator guide](docs/rewrite/operator-guide.md). The
+[v1 readiness record](docs/rewrite/v1-readiness.md) tracks verification and
+remaining release gates.

@@ -36,6 +36,8 @@ dar-test-oidc
 /.shadow-cljs/
 /.cpcache/
 /dist/
+/target/typescript/
+/src/main/dar/generated/
 /public/assets/app.css
 /public/assets/js/
 

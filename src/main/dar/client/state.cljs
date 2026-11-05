@@ -6,6 +6,8 @@
   {:route :home
    :notifications {:status :loading :count 0 :items [] :error nil}
    :files nil
+   :calendar nil
+   :contacts nil
    :session {:status :loading
              :user nil
              :error nil}})
@@ -34,20 +36,6 @@
    (.catch #(frame/dispatch [:auth/failed (.-message %)])))))
 
 (frame/reg-fx
- :notifications/load
- (fn [_]
-   (-> (js/fetch "/api/v1/notifications/unread-count"
-                 #js {:credentials "same-origin"})
-       (.then (fn [response]
-                (if (.-ok response)
-                  (-> (.json response)
-                      (.then #(frame/dispatch
-                               [:notifications/loaded
-                                (js->clj % :keywordize-keys true)])))
-                  (frame/dispatch [:notifications/failed "Notifications unavailable."]))))
-       (.catch #(frame/dispatch [:notifications/failed (.-message %)])))))
-
-(frame/reg-fx
  :auth/logout
  (fn [_]
    (-> (js/fetch "/api/v1/auth/logout"
@@ -68,51 +56,40 @@
 
 (frame/reg-event-db
  :route/navigated
- (fn [db [_ route-name]]
-   (assoc db :route route-name)))
+ (fn [db [_ route-name query]]
+   (assoc db :route route-name :routeQuery (or query ""))))
+
+(frame/reg-sub :route-query (fn [db _] (:routeQuery db)))
 
 (frame/reg-event-fx
  :auth/loaded
  (fn [{:keys [db]} [_ session]]
-   {:db (assoc db :session {:status :authenticated
+   {:db (assoc (if (= (get-in db [:session :user :id]) (get-in session [:user :id]))
+                 db (assoc default-db :route (:route db) :routeQuery (:routeQuery db)))
+               :session {:status :authenticated
                             :user (:user session)
                             :expiresAt (:expiresAt session)
-                            :error nil})
-    :dispatch [:notifications/load]}))
+                            :error nil})}))
 
 (frame/reg-event-db
  :auth/unauthenticated
  (fn [db _]
-   (assoc db :session {:status :unauthenticated :user nil :error nil}
+  ;; Session drafts live in user-scoped sessionStorage. In-memory app data
+  ;; must be dropped immediately, before component disposal events arrive.
+  (assoc default-db :route (:route db) :routeQuery (:routeQuery db)
+          :session {:status :unauthenticated :user nil :error nil}
           :notifications {:status :idle :count 0 :items [] :error nil})))
 
 (frame/reg-event-db
  :auth/failed
  (fn [db [_ message]]
-   (assoc db :session {:status :error :user nil :error message})))
+   (assoc default-db :route (:route db) :routeQuery (:routeQuery db)
+          :session {:status :error :user nil :error message})))
 
 (frame/reg-event-fx
  :auth/logout-requested
  (fn [_ _]
    {:auth/logout nil}))
-
-(frame/reg-event-fx
- :notifications/load
- (fn [_ _]
-   {:notifications/load nil}))
-
-(frame/reg-event-db
- :notifications/loaded
- (fn [db [_ result]]
-   (assoc db :notifications {:status :ready
-                             :count (:count result)
-                             :items (:items result)
-                             :error nil})))
-
-(frame/reg-event-db
- :notifications/failed
- (fn [db [_ message]]
-   (assoc db :notifications {:status :error :count 0 :items [] :error message})))
 
 (frame/reg-sub
  :route

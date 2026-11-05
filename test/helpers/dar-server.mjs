@@ -3,8 +3,9 @@
 // session-based tests. Never points at a live data root.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { createServer } from "node:net";
 import path from "node:path";
 
@@ -23,6 +24,9 @@ export async function availablePort() {
 }
 
 export function startDar(dataRoot, port, extraEnvironment = {}) {
+  const developmentSnapshot = process.env.DAR_SERVER_BUILD_SNAPSHOT === "development";
+  if (developmentSnapshot) assert.ok(process.env.NODE_V8_COVERAGE, "The extra server snapshot is only for isolated coverage verification");
+  const entry = developmentSnapshot ? path.join(repositoryRoot, "dist/server/development/main.js") : serverEntry;
   const environment = { ...process.env };
   for (const name of [
     "DAR_BASE_URL",
@@ -35,7 +39,7 @@ export function startDar(dataRoot, port, extraEnvironment = {}) {
   ]) {
     delete environment[name];
   }
-  const child = spawn(process.execPath, [serverEntry], {
+  const child = spawn(process.execPath, [entry], {
     cwd: repositoryRoot,
     env: {
       ...environment,
@@ -63,14 +67,16 @@ async function readRequestBody(request) {
   return body;
 }
 
-export async function fakeOidcProvider() {
+export async function fakeOidcProvider(tls) {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const publicJwk = publicKey.export({ format: "jwk" });
   Object.assign(publicJwk, { kid: "test-key", use: "sig", alg: "RS256" });
   const grants = new Map();
+  const defaultIdentity = { sub: "user-123", name: "Test User", email: "user@example.test", groups: ["users", "dar-admins"] };
+  let identity = defaultIdentity;
   let issuer;
 
-  const server = createHttpServer(async (request, response) => {
+  const serve = async (request, response) => {
     const url = new URL(request.url, issuer);
     if (url.pathname === "/.well-known/openid-configuration") {
       sendJson(response, 200, {
@@ -91,8 +97,9 @@ export async function fakeOidcProvider() {
       return;
     }
     if (url.pathname === "/authorize") {
-      const code = `code-${grants.size + 1}`;
+      const code = `code-${randomUUID()}`;
       grants.set(code, {
+        identity,
         challenge: url.searchParams.get("code_challenge"),
         nonce: url.searchParams.get("nonce"),
         redirectUri: url.searchParams.get("redirect_uri"),
@@ -120,13 +127,10 @@ export async function fakeOidcProvider() {
       const payload = Buffer.from(JSON.stringify({
         iss: issuer,
         aud: "dar-test",
-        sub: "user-123",
+        ...grant.identity,
         nonce: grant.nonce,
         iat: now,
         exp: now + 300,
-        name: "Test User",
-        email: "user@example.test",
-        groups: ["users", "dar-admins"],
       })).toString("base64url");
       const signingInput = `${header}.${payload}`;
       const signature = sign("RSA-SHA256", Buffer.from(signingInput), privateKey).toString("base64url");
@@ -140,15 +144,17 @@ export async function fakeOidcProvider() {
     }
     response.writeHead(404);
     response.end();
-  });
+  };
+  const server = tls ? createHttpsServer(tls, serve) : createHttpServer(serve);
 
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
-  issuer = `http://127.0.0.1:${server.address().port}`;
+  issuer = `${tls ? "https" : "http"}://127.0.0.1:${server.address().port}`;
   return {
     issuer,
+    setIdentity: value => { identity = { ...defaultIdentity, ...value }; },
     close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
   };
 }
@@ -156,13 +162,23 @@ export async function fakeOidcProvider() {
 export async function waitForHealth(port, child, output) {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
+    if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(`Dar exited before health was ready:\n${output()}`);
+    }
+    // /health is registered before every app has finished mounting. Wait for
+    // this child's completed startup, rather than a premature or unrelated
+    // listener on a concurrently allocated test port.
+    if (!output().includes('Dar is ready at ')) {
+      await new Promise(resolve => setTimeout(resolve, 25));
+      continue;
     }
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
       if (response.ok) return response.json();
-    } catch {
+    } catch (error) {
+      if (error.cause?.message === "bad port") {
+        throw new Error(`Port ${port} is restricted by HTTP clients; choose a different preview port.`);
+      }
       // The listener may not be bound yet.
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -171,7 +187,7 @@ export async function waitForHealth(port, child, output) {
 }
 
 export async function stopDar(child) {
-  if (child.exitCode !== null) return child.exitCode;
+  if (child.exitCode !== null || child.signalCode !== null) return child.exitCode;
   const exited = new Promise((resolve, reject) => {
     child.once("exit", resolve);
     child.once("error", reject);
@@ -225,19 +241,36 @@ export async function loginSession(baseUrl, output = () => "") {
 
 export async function startDarWithOidc(dataRoot, options = {}) {
   const provider = await fakeOidcProvider();
-  const port = await availablePort();
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const running = startDar(dataRoot, port, {
-    DAR_BASE_URL: baseUrl,
-    DAR_OIDC_ISSUER: provider.issuer,
-    DAR_OIDC_CLIENT_ID: "dar-test",
-    DAR_OIDC_CLIENT_SECRET: "test-secret",
-    DAR_DEVELOPMENT: "true",
-    DAR_OIDC_ADMIN_CLAIM: "groups",
-    DAR_OIDC_ADMIN_VALUE: "dar-admins",
-    ...options,
-  });
-  return { provider, port, baseUrl, running };
+  try {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const port = await availablePort(), baseUrl = `http://127.0.0.1:${port}`;
+      const running = startDar(dataRoot, port, {
+        DAR_BASE_URL: baseUrl,
+        DAR_OIDC_ISSUER: provider.issuer,
+        DAR_OIDC_CLIENT_ID: "dar-test",
+        DAR_OIDC_CLIENT_SECRET: "test-secret",
+        DAR_DEVELOPMENT: "true",
+        DAR_OIDC_ADMIN_CLAIM: "groups",
+        DAR_OIDC_ADMIN_VALUE: "dar-admins",
+        ...options,
+      });
+      try {
+        await waitForHealth(port, running.child, running.output);
+        return { provider, port, baseUrl, running };
+      } catch (error) {
+        await stopDar(running.child);
+        // The probe must release its socket before Dar can bind it. Another
+        // isolated process may claim that port in between; only that explicit
+        // pre-startup bind failure is eligible for a bounded fresh allocation.
+        const collision = running.output().includes('Error: No open ports available') &&
+          !running.output().includes('Dar is ready at ');
+        if (!collision || attempt === 2 || options.DAR_PORT !== undefined) throw error;
+      }
+    }
+  } catch (error) {
+    await provider.close();
+    throw error;
+  }
 }
 
 export async function stopDarWithOidc(context) {

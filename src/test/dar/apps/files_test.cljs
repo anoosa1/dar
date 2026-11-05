@@ -2,6 +2,8 @@
   (:require [cljs.test :refer [async deftest is]]
             [clojure.string :as str]
             [dar.apps.files :as files]
+            [dar.apps.files-assistant :as files-assistant]
+            [dar.apps.notes :as notes]
             [dar.platform.atomic-files :as atomic-files]
             [dar.platform.database :as database]
             [dar.platform.keyring :as keyring]
@@ -16,7 +18,7 @@
 
 (defn- open-service!
   ([] (open-service! {}))
-  ([{:keys [quota-bytes]}]
+  ([{:keys [quota-bytes search]}]
    (let [directory (.mkdtempSync fs (.resolve path (.tmpdir os) "dar-files-app-test-"))
          connection (database/open! (.resolve path directory "dar.sqlite"))
          database-service #js {:connection connection
@@ -26,12 +28,44 @@
      {:directory directory
       :connection connection
       :data-root data-root
+      :database database-service
+      :atomic-store atomic-store
       :store (files/service data-root {:quota-bytes quota-bytes}
                             database-service atomic-store
                             (rate-limiter/service (fn [] (.now js/Date)))
                             (keyring/keyring
                              [{:id "test-key"
-                               :material (.randomBytes crypto 32)}]))})))
+                               :material (.randomBytes crypto 32)}])
+                             search)})))
+
+(defn- fake-search
+  "In-memory unified-search double recording index mutations per provider."
+  []
+  (let [store-docs (atom {})]
+    #js {:index (fn [user provider id title _body url]
+                  (swap! store-docs assoc-in [user provider id]
+                         {:title title :url url})
+                  (js/Promise.resolve nil))
+         :delete (fn [user provider id]
+                   (swap! store-docs update-in [user provider] dissoc id)
+                   (js/Promise.resolve nil))
+         :reconcileProvider
+         (fn [user provider entries]
+           (let [docs (if (array? entries)
+                        (js->clj entries :keywordize-keys true)
+                        (vec entries))]
+           ;; Mirrors the real service: one generation replaces the whole
+           ;; provider set, so stale documents disappear.
+             (swap! store-docs assoc-in [:calls provider]
+                    (str "reconcile got " (pr-str docs)))
+             (swap! store-docs assoc-in [user provider] {})
+             (doseq [entry docs]
+               (swap! store-docs assoc-in [user provider (:id entry)]
+                      {:title (:title entry) :url (:url entry)}))
+             (js/Promise.resolve
+              #js {:provider provider :generation 1
+                   :count (count docs)})))
+         :docs store-docs}))
 
 (defn- seed-user!
   ([fixture] (seed-user! fixture "user-1"))
@@ -75,6 +109,103 @@
 
 (defn- read-file [fixture relative]
   (.readFileSync fs (.resolve path (:directory fixture) "users" "user-1" "files" relative) "utf8"))
+
+(deftest note-snapshots-follow-renames-and-reject-symlinks
+  (async done
+    (let [fixture (open-service!) ^js store (:store fixture) original (atom nil)]
+      (seed-user! fixture)
+      (finish
+        (run-steps
+          [(fn [_] (.mkdir store "user-1" "/Notes"))
+           (fn [_] (.save store "user-1" "/Notes/First.md" (Buffer.from "# First\nA thought")))
+           (fn [_] (.readDocumentSnapshot store "user-1" "/Notes/First.md"))
+           (fn [snapshot]
+             (reset! original snapshot)
+             (is (= "# First\nA thought" (:content snapshot)))
+             (is (string? (:inode snapshot)))
+             (.rename store "user-1" "/Notes/First.md" "/Notes/Renamed.md"))
+           (fn [_] (.readDocumentSnapshot store "user-1" "/Notes/Renamed.md"))
+           (fn [snapshot]
+             (is (= (select-keys @original [:device :inode :etag]) (select-keys snapshot [:device :inode :etag])))
+             (.symlink fsp "Renamed.md" (.resolve path (:directory fixture) "users/user-1/files/Notes/Link.md")))
+           (fn [_] (settle (.readDocumentSnapshot store "user-1" "/Notes/Link.md") :rejected))
+           (fn [result] (is (= :unsafe-path (:type (ex-data (:error result))))))])
+        fixture done))))
+
+(deftest note-snapshot-rejects-an-external-replacement-after-reading-and-closes-its-handle
+  (async done
+    (let [fixture (open-service!) ^js store (:store fixture)
+          full (.resolve path (:directory fixture) "users/user-1/files/Notes/Racing.md")
+          ^js original-open (.-open fsp) closed (atom false)]
+      (seed-user! fixture)
+      (finish
+        (-> (run-steps
+              [(fn [_] (.mkdir store "user-1" "/Notes"))
+               (fn [_] (.save store "user-1" "/Notes/Racing.md" (Buffer.from "# Before\nOriginal")))
+               (fn [_]
+                 ;; Replace precisely after the handle's read, before the
+                 ;; path's final identity check. No timing race or sleep.
+                 (set! (.-open fsp)
+                       (fn [& args]
+                         (-> (.apply original-open fsp (into-array args))
+                             (.then (fn [^js handle]
+                                      (when (= full (first args))
+                                        (let [^js read (.-read handle) ^js close (.-close handle)]
+                                          (set! (.-read handle)
+                                                (fn [& read-args]
+                                                  (-> (.apply read handle (into-array read-args))
+                                                      (.then (fn [value]
+                                                               (.writeFileSync fs (str full ".swap") "# After\nReplacement")
+                                                               (.renameSync fs (str full ".swap") full) value)))))
+                                          (set! (.-close handle)
+                                                (fn [] (-> (.call close handle) (.then (fn [_] (reset! closed true))))))))
+                                      handle)))))
+                 (settle (.readDocumentSnapshot store "user-1" "/Notes/Racing.md") :rejected))
+               (fn [result]
+                 (is (= :conflict (:type (ex-data (:error result)))))
+                 (is @closed "An inconsistent snapshot still closes its file handle")
+                 (set! (.-open fsp) original-open)
+                 (.readDocumentSnapshot store "user-1" "/Notes/Racing.md"))
+               (fn [snapshot] (is (= "# After\nReplacement" (:content snapshot))))])
+            (.finally #(set! (.-open fsp) original-open)))
+        fixture done))))
+
+(deftest notes-use-files-revisions-versions-and-rename-reconciliation
+  (async done
+    (let [fixture (open-service!) ^js files (:store fixture)
+          ^js notes (notes/service (:database fixture) (:atomic-store fixture) files (constantly false))
+          location {:folder "/Notes" :suffix ".md"} saved (atom nil)]
+      (seed-user! fixture)
+      (finish
+        (run-steps
+          [(fn [_] (.create notes "user-1" location {:content "# Reading\nA thought"}))
+           (fn [note]
+             (reset! saved note) (is (= "Reading" (:title note)))
+             (.update notes "user-1" location (:id note) {:content "# Reading\nA second thought" :category "Books" :favorite true} (:revision note)))
+           (fn [note]
+             (is (= (:id @saved) (:id note)))
+             (is (= "Books" (:category note))) (is (:favorite note))
+             (reset! saved note)
+             (.versions notes "user-1" location (:id note)))
+           (fn [versions]
+             (is (seq versions))
+             (settle (.update notes "user-1" location (:id @saved) {:content "A stale draft"} 1) :rejected))
+           (fn [result]
+             (is (= :precondition-failed (:type (ex-data (:error result)))))
+             (.rename files "user-1" (:path @saved) "/Notes/Books/Renamed.md"))
+           (fn [_] (.read notes "user-1" location (:id @saved)))
+           (fn [note]
+             (is (= "/Notes/Books/Renamed.md" (:path note)))
+             (is (= "# Reading\nA second thought" (:content note)))
+             (.trash notes "user-1" location (:id note) (:revision note)))
+           (fn [note]
+             (is (:deletedAt note))
+             (.restore notes "user-1" location (:id note) (:revision note)))
+           (fn [note]
+             (is (= (:id @saved) (:id note)))
+             (is (nil? (:deletedAt note)))
+             (is (= "# Reading\nA second thought" (:content note))))])
+        fixture done))))
 
 (deftest rejects-unsafe-virtual-paths
   (async done
@@ -149,6 +280,51 @@
            (is (= :already-exists (:type (ex-data (:error step))))))])
        fixture done))))
 
+(deftest mkdir-rejects-missing-parent-as-not-found
+  ;; DAV MKCOL maps this to 409 Conflict (RFC 4918 9.3.1); the JSON API
+  ;; answers 404. Either way it must be a classified error, never a raw
+  ;; ENOENT leaking out of the engine.
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_]
+           (settle (.mkdir store "user-1" "/Missing/Child") :rejected))
+         (fn [step]
+           (is (= :rejected (:outcome step)))
+           (is (= :not-found (:type (ex-data (:error step))))))])
+       fixture done))))
+
+(deftest editor-read-rejects-oversized-and-non-utf8-files
+  ;; The editor GET enforces the same limits as the editor PUT: files over
+  ;; editor-limit answer 413 and non-UTF-8 bytes answer 415, on read too.
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_]
+           (.save store "user-1" "/big.txt"
+                  (js/Buffer.alloc (inc 1048576) 97)))
+         (fn [_]
+           (settle (.readDocument store "user-1" "/big.txt") :rejected))
+         (fn [step]
+           (is (= :rejected (:outcome step)))
+           (is (= :too-large (:type (ex-data (:error step))))))
+         (fn [_]
+           (.save store "user-1" "/binary.bin"
+                  (js/Buffer.from #js [255 254 0])))
+         (fn [_]
+           (settle (.readDocument store "user-1" "/binary.bin") :rejected))
+         (fn [step]
+           (is (= :rejected (:outcome step)))
+           (is (= :unsupported-media-type
+                  (:type (ex-data (:error step))))))])
+       fixture done))))
+
 (deftest delete-moves-to-trash-and-restore-returns-it
   (async done
     (let [fixture (open-service!)
@@ -162,6 +338,12 @@
          (fn [deleted]
            (reset! trash-id (:id deleted))
            (is (string? (:id deleted))))
+          (fn [_] (.listTrash store "user-1"))
+          (fn [trash]
+            (is (= 1 (count trash)))
+            (is (= @trash-id (:id (first trash))))
+            (is (= "/notes.txt" (:originalPath (first trash))))
+            (is (= "notes.txt" (:name (first trash)))))
          (fn [_] (.list store "user-1" "/"))
          (fn [entries]
            (is (= 0 (count entries))))
@@ -192,7 +374,21 @@
          (fn [_] (.favorite store "user-1" "/report.pdf" false))
          (fn [_] (.list store "user-1" "/"))
          (fn [entries]
-           (is (false? (:favorited (first entries)))))])
+           (is (false? (:favorited (first entries)))))
+         (fn [_]
+           (.then (.mkdir store "user-1" "/deep")
+                  (fn [_]
+                    (.then (.mkdir store "user-1" "/deep/nested")
+                           (fn [_]
+                             (.save store "user-1" "/deep/nested/notes.md"
+                                    (Buffer.from "nested" "utf8")))))))
+         (fn [_] (.favorite store "user-1" "/deep/nested/notes.md" true))
+         (fn [_] (.favorite store "user-1" "/report.pdf" true))
+         (fn [_] (.listFavorites store "user-1"))
+         (fn [favorites]
+           (is (= ["/deep/nested/notes.md" "/report.pdf"]
+                  (mapv :path favorites)))
+           (is (every? :favorited favorites)))])
        fixture done))))
 
 (deftest rename-move-copy-and-purge-work
@@ -232,9 +428,117 @@
            (is (= :not-found (:type (ex-data (:error step))))))])
        fixture done))))
 
+(deftest search-index-follows-file-writes
+  (async done
+    (let [search (fake-search)
+          fixture (open-service! {:search search})
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_] (.save store "user-1" "/notes.md" (Buffer.from "body" "utf8")))
+         (fn [_]
+           (let [doc (get-in @(.-docs search) ["user-1" "files" "/notes.md"])]
+             (is (some? doc))
+             (is (= "notes.md" (:title doc)))
+             (is (= "/files?open=%2Fnotes.md" (:url doc)))))
+         ;; Deleting the file drops it from the provider index.
+         (fn [_] (.delete store "user-1" "/notes.md"))
+         (fn [_]
+           (is (nil? (get-in @(.-docs search) ["user-1" "files" "/notes.md"]))))
+         ;; Renaming a directory reconciles the whole tree so nested
+         ;; documents move to their new paths.
+         (fn [_]
+           (.then (.mkdir store "user-1" "/deep")
+                  (fn [_]
+                    (.then (.mkdir store "user-1" "/deep/nested")
+                           (fn [_]
+                             (.save store "user-1" "/deep/nested/notes.md"
+                                    (Buffer.from "nested" "utf8")))))))
+         (fn [_] (.rename store "user-1" "/deep" "/deeper"))
+         (fn [_]
+           (let [docs (get @(.-docs search) "user-1")]
+             (is (nil? (get-in docs ["files" "/deep/nested/notes.md"])))
+             (is (some? (get-in docs ["files" "/deeper/nested/notes.md"]))
+                 (str "indexed docs: " (pr-str docs)))))])
+       fixture done))))
+
+
+(deftest raw-overwrite-snapshots-previous-content
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_] (.save store "user-1" "/doc.txt" (Buffer.from "first" "utf8")))
+         (fn [_] (.save store "user-1" "/doc.txt" (Buffer.from "second" "utf8")))
+         (fn [_] (.listVersions store "user-1" "/doc.txt"))
+         (fn [versions]
+           (is (= 1 (count versions)))
+           (.readVersion store "user-1" "/doc.txt" (:id (first versions))))
+         (fn [bytes]
+           (is (= "first" (.toString bytes "utf8"))))
+         ;; Saving byte-identical content does not add another snapshot.
+         (fn [_] (.save store "user-1" "/doc.txt" (Buffer.from "second" "utf8")))
+         (fn [_] (.listVersions store "user-1" "/doc.txt"))
+         (fn [versions]
+           (is (= 1 (count versions))))])
+       fixture done))))
+
+
+(deftest rename-carries-favorites-tags-and-locks
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)
+          token (atom nil)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_]
+           (.then (.mkdir store "user-1" "/deep")
+                  (fn [_]
+                    (.then (.mkdir store "user-1" "/deep/nested")
+                           (fn [_]
+                             (.save store "user-1" "/deep/nested/notes.md"
+                                    (Buffer.from "nested" "utf8")))))))
+         (fn [_] (.favorite store "user-1" "/deep/nested/notes.md" true))
+         (fn [_] (.createTag store "user-1" {:name "work" :color "#2563eb"}))
+         (fn [tag]
+           (.setFileTag store "user-1" "/deep/nested/notes.md" (:id tag) true))
+         (fn [_] (.lock store "user-1" "/deep/nested/notes.md"))
+         (fn [locked]
+           (is (true? (:locked locked)))
+           (is (string? (:token locked)))
+           (reset! token (:token locked)))
+         (fn [_] (.rename store "user-1" "/deep" "/deeper"))
+         (fn [_] (.listFavorites store "user-1"))
+         (fn [favorites]
+           (is (= ["/deeper/nested/notes.md"] (mapv :path favorites))))
+         (fn [_]
+           (.all (.prepare ^js (:connection fixture)
+                           "SELECT path, tag_id FROM files_file_tags WHERE user_id = ?")
+                 "user-1"))
+         (fn [tag-rows]
+           (is (some (fn [row] (= (.-path row) "/deeper/nested/notes.md")) tag-rows)
+               (str "tag rows: " (pr-str (js->clj tag-rows :keywordize-keys true)))))
+         (fn [_] (.lockInfo store "user-1" "/deeper/nested/notes.md"))
+         (fn [info]
+           (is (= @token (:token info))))
+         (fn [_]
+           (settle (.unlock store "user-1" "/deeper/nested/notes.md"
+                            @token)
+                   :unlocked))
+         (fn [step]
+           (is (= :unlocked (:outcome step))))])
+       fixture done))))
+
+
 (deftest quota-exceeded-rejects-writes-beyond-the-limit
   (async done
-    (let [fixture (open-service! {:quota-bytes 10})
+    ;; Quota 20 leaves room for the automatic version snapshot the raw
+    ;; overwrite takes before replacing /small.txt.
+    (let [fixture (open-service! {:quota-bytes 20})
           ^js store (:store fixture)]
       (seed-user! fixture)
       (finish
@@ -297,9 +601,28 @@
            (is (= "first draft" (.toString bytes "utf8"))))])
        fixture done))))
 
+(deftest versions-refuse-symlinked-blobs
+  (async done
+    (let [fixture (open-service!) ^js store (:store fixture) ^js db (:connection fixture)]
+      (seed-user! fixture)
+      (finish
+        (run-steps
+          [(fn [_] (.save store "user-1" "/version.txt" (Buffer.from "Original")))
+           (fn [_] (.save store "user-1" "/version.txt" (Buffer.from "Changed")))
+           (fn [_]
+             (let [^js row (.get (.prepare db "SELECT id,blob_path FROM files_versions WHERE user_id='user-1' AND path='/version.txt'"))
+                   blob (.-blob_path row)]
+               (.unlinkSync fs blob)
+               (.symlinkSync fs (.resolve path (:directory fixture) "dar.sqlite") blob)
+               (settle (.readVersion store "user-1" "/version.txt" (.-id row)) :unsafe)))
+           (fn [result] (is (= :unsafe (:outcome result)))
+             (is (= :unsafe-path (:type (ex-data (:error result))))))])
+        fixture done))))
+
 (deftest editor-save-rename-creates-snapshot-and-restore-rolls-back
   (async done
-    (let [fixture (open-service! {:quota-bytes 40})
+    ;; Retained v1 (7), retained v2 (27), and restored v1 (7) need 41 bytes.
+    (let [fixture (open-service! {:quota-bytes 41})
           ^js store (:store fixture)]
       (seed-user! fixture)
       (finish
@@ -315,8 +638,7 @@
          (fn [_]
            (.readDocument store "user-1" "/memo.md"))
          (fn [doc]
-           ;; The rename lands first; the oversized write then fails and the
-           ;; catch must restore the original name and content.
+           ;; Reject the oversized save before adding a version or renaming.
            (settle (.saveDocument store "user-1" "/memo.md"
                                   {:content "memo v3 that is much longer and exceeds the quota"
                                    :if-match (:etag doc)
@@ -334,8 +656,8 @@
          (fn [_]
            (.listVersions store "user-1" "/memo.md"))
          (fn [versions]
-           ;; Both changed saves snapshotted the content they replaced.
-           (is (= 2 (count versions)))
+           ;; Rejected writes leave both the content and version quota intact.
+           (is (= 1 (count versions)))
            (.readVersion store "user-1" "/memo.md" (:id (last versions))))
          (fn [bytes]
            (is (= "memo v1" (.toString bytes "utf8")))
@@ -347,13 +669,14 @@
            (.listVersions store "user-1" "/memo.md"))
          (fn [versions]
            ;; Restore snapshots the pre-restore content first.
-           (is (= 3 (count versions))))])
+           (is (= 2 (count versions))))])
        fixture done))))
 
 (deftest explicit-locks-block-mutations-until-unlocked
   (async done
     (let [fixture (open-service!)
-          ^js store (:store fixture)]
+          ^js store (:store fixture)
+          lock-token (atom nil)]
       (seed-user! fixture)
       (finish
        (run-steps
@@ -363,7 +686,15 @@
            (.lock store "user-1" "/locked.md"))
          (fn [result]
            (is (= true (:locked result)))
+            (is (string? (:token result)))
+            (reset! lock-token (:token result))
            (is (= "user-1" (:owner result))))
+          (fn [_]
+            (settle (.then (js/Promise.resolve nil)
+                           (fn [_] (.lock store "user-1" "/locked.md")))
+                    :second-blocked))
+          (fn [step]
+            (is (= :locked (:type (ex-data (:error step))))))
          (fn [_]
            (.lockInfo store "user-1" "/locked.md"))
          (fn [info]
@@ -394,7 +725,13 @@
            (is (= :delete-blocked (:outcome step)))
            (is (= :locked (:type (ex-data (:error step))))))
          (fn [_]
-           (.unlock store "user-1" "/locked.md"))
+           (settle (.then (js/Promise.resolve nil)
+                          (fn [_] (.unlock store "user-1" "/locked.md"
+                                           "wrong-token")))
+                   :wrong-token))
+         (fn [step]
+           (is (= :locked (:type (ex-data (:error step)))))
+           (.unlock store "user-1" "/locked.md" @lock-token))
          (fn [_]
            (.lockInfo store "user-1" "/locked.md"))
          (fn [info]
@@ -458,6 +795,95 @@
            (.listComments store "user-1" "/doc.md"))
          (fn [comments]
            (is (= 0 (count comments))))])
+       fixture done))))
+
+(deftest tagged-listing-follows-tags-across-depth-and-trash
+  ;; The tag filter (baseline /api/files/list?filter=tag) lists every
+  ;; tagged path at any depth with the tag id attached; trashed paths
+  ;; drop out; favorites stay reported independently of tagging.
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_]
+           (.mkdir store "user-1" "/docs"))
+         (fn [_]
+           (.save store "user-1" "/docs/nested.md" (Buffer.from "deep" "utf8")))
+         (fn [_]
+           (.save store "user-1" "/top.md" (Buffer.from "top" "utf8")))
+         (fn [_]
+           (.createTag store "user-1" {:name "projects" :color "#00ff00"}))
+         (fn [tag]
+           (.setFileTag store "user-1" "/docs/nested.md" (:id tag) true))
+         (fn [_]
+           (.createTag store "user-1" {:name "top" :color "#0000ff"}))
+         (fn [top-tag]
+           (.setFileTag store "user-1" "/top.md" (:id top-tag) true))
+         (fn [_]
+           (.favorite store "user-1" "/docs/nested.md" true))
+         (fn [_]
+           (.listTags store "user-1"))
+         (fn [tags]
+           (.listTagged store "user-1" (:id (first tags))))
+         (fn [tagged]
+           ;; "projects" sorts first and matches only the nested file.
+           (is (= 1 (count tagged)))
+           (is (= "/docs/nested.md" (:path (first tagged))))
+           (is (= "nested.md" (:name (first tagged))))
+           (is (= true (:favorited (first tagged))))
+           (.delete store "user-1" "/docs/nested.md"))
+         (fn [_]
+           (.listTags store "user-1"))
+         (fn [tags]
+           (.listTagged store "user-1" (:id (first tags))))
+         (fn [after-trash]
+           (is (= 0 (count after-trash))))])
+       fixture done))))
+
+(deftest share-visitors-can-descend-into-shared-folders
+  ;; Folder descent: a share of /Public exposes sub-paths under /Public
+  ;; (listing and download), but never escapes it (.., absolute, backslash,
+  ;; or NUL segments are rejected before any filesystem access).
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)
+          state (atom {})]
+      (seed-user! fixture)
+      (finish
+       (run-steps
+        [(fn [_]
+           (.then (.mkdir store "user-1" "/Public")
+                  (fn [_]
+                    (.then (.mkdir store "user-1" "/Public/Inner")
+                           (fn [_]
+                             (.then (.save store "user-1" "/Public/Inner/doc.md"
+                                           (Buffer.from "inner doc" "utf8"))
+                                    (fn [_]
+                                      (.save store "user-1" "/secret.md"
+                                             (Buffer.from "secret" "utf8")))))))))
+         (fn [_]
+           (.createShare store "user-1" "/Public" {}))
+         (fn [share]
+           ;; Share rows are re-read so the entity carries :userId, like the
+           ;; HTTP visitor flow (token -> readShare).
+           (.readShare store (:token share)))
+         (fn [entity]
+           (swap! state assoc :share entity)
+           (.shareEntries store entity "Inner"))
+         (fn [entries]
+           (is (= ["doc.md"] (mapv :name entries)))
+           (is (= [false] (mapv :isDir entries))))
+         (fn [_]
+           (.shareDownload store (:share @state) "Inner/doc.md"))
+         (fn [bytes]
+           (is (= "inner doc" (.toString bytes "utf8")))
+           (settle (.shareDownload store (:share @state) "../secret.md")
+                   :rejected))
+         (fn [step]
+           (is (= :rejected (:outcome step)))
+           (is (= :invalid (:type (ex-data (:error step))))))])
        fixture done))))
 
 (deftest sharing-covers-unlocks-drop-uploads-and-user-shares
@@ -569,7 +995,12 @@
                               :permission "write"}))
          (fn [user-share]
            (is (= "user-2" (:toUser user-share)))
-           (is (= "write" (:permission user-share)))
+           (is (= "write" (:permission user-share))))
+         (fn [_]
+           (.listUserShares store "user-1"))
+         (fn [outgoing]
+           (is (= 1 (count outgoing)))
+           (is (= "user-2" (:toUser (first outgoing))))
            (settle (.createUserShare store "user-1"
                                      {:path "/shared.md" :to-user "user-2"
                                       :permission "admin"}) :bad-perm))
@@ -609,6 +1040,104 @@
            (.readShare store (:token (:share @state))))
          (fn [gone]
            (is (nil? gone)))])
+       fixture done))))
+
+(deftest queued-shared-write-revalidates-a-revoked-grant
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)
+          ^js engine (.-typescriptEngine store)
+          host (aget engine "host")
+          read-bounded (aget host "readBounded")
+          started! (atom nil) release! (atom nil)
+          started (js/Promise. (fn [resolve] (reset! started! resolve)))
+          held (js/Promise. (fn [resolve] (reset! release! resolve)))
+          grant (atom nil) queued (atom nil) active (atom nil)]
+      (seed-user! fixture "user-1")
+      (seed-user! fixture "user-2")
+      (finish
+       (-> (run-steps
+            [(fn [_] (.save store "user-1" "/Team/note.txt" (Buffer.from "original")))
+             (fn [_] (.createUserShare store "user-1" {:path "/Team" :to-user "user-2" :permission "write"}))
+             (fn [share]
+               (reset! grant (:id share))
+               ;; Hold an accepted owner read so the recipient write is queued,
+               ;; then revoke from the recipient's independent queue.
+               (aset host "readBounded"
+                     (fn [root relative maximum]
+                       (@started!)
+                       (.then held (fn [_] (read-bounded root relative maximum)))))
+               (reset! active (.readFile store "user-1" "/Team/note.txt"))
+               started)
+             (fn [_]
+               (reset! queued (settle (.save (.location engine "user-2" "shared" @grant)
+                                             "/note.txt" (Buffer.from "unauthorized")) :write))
+               (.deleteUserShare store "user-2" @grant))
+             (fn [_]
+               (aset host "readBounded" read-bounded)
+               (@release!)
+               @active)
+             (fn [_] @queued)
+             (fn [result]
+               (is (= "not-found" (.-type (:error result))))
+               (is (= "original" (read-file fixture "Team/note.txt"))))])
+           (.finally (fn [] (aset host "readBounded" read-bounded) (@release!))))
+       fixture done))))
+
+(deftest incoming-shares-and-maildir-are-scoped-readable-locations
+  (async done
+    (let [fixture (open-service!)
+          ^js store (:store fixture)
+          share-id (atom nil)
+          mail-directory (.resolve path (:data-root fixture) "users" "user-2" "mail" "account" "INBOX" "cur")]
+      (seed-user! fixture "user-1")
+      (seed-user! fixture "user-2")
+      (finish
+       (run-steps
+        [(fn [_] (.mkdir store "user-1" "/Project"))
+         (fn [_] (.save store "user-1" "/Project/readme.txt"
+                        (Buffer.from "shared bytes" "utf8")))
+         (fn [_] (.createUserShare store "user-1"
+                                   {:path "/Project" :to-user "user-2"
+                                    :permission "read"}))
+         (fn [share] (reset! share-id (:id share)))
+         (fn [_] (.listShared store "user-2" @share-id "/"))
+         (fn [entries]
+           (is (= ["readme.txt"] (mapv :name entries)))
+           (.readShared store "user-2" @share-id "/readme.txt"))
+         (fn [bytes]
+           (is (= "shared bytes" (.toString bytes "utf8")))
+           (settle (.then (js/Promise.resolve nil)
+                          (fn [_] (.listShared store "user-1" @share-id "/")))
+                   :owner-denied))
+         (fn [step]
+           (is (= :not-found (:type (ex-data (:error step)))))
+           (settle (.then (js/Promise.resolve nil)
+                          (fn [_] (.saveShared store "user-2" @share-id "/note.txt"
+                                               (Buffer.from "no" "utf8"))))
+                   :read-only))
+         (fn [step]
+           (is (= :forbidden (:type (ex-data (:error step)))))
+           (.createUserShare store "user-1"
+                             {:path "/Project" :to-user "user-2"
+                              :permission "write"}))
+         (fn [write-share]
+           (.saveShared store "user-2" (:id write-share) "/reply.txt"
+                        (Buffer.from "reply bytes" "utf8")))
+         (fn [_]
+           (.readFile store "user-1" "/Project/reply.txt"))
+         (fn [bytes]
+           (is (= "reply bytes" (.toString bytes "utf8")))
+           (-> (.mkdir fsp mail-directory #js {:recursive true})
+               (.then (fn [_]
+                        (.writeFile fsp (.resolve path mail-directory "message.eml")
+                                    "Subject: Test\n\nBody")))))
+         (fn [_] (.listMail store "user-2" "/account/INBOX/cur"))
+         (fn [entries]
+           (is (= ["message.eml"] (mapv :name entries)))
+           (.readMail store "user-2" "/account/INBOX/cur/message.eml"))
+         (fn [bytes]
+           (is (= "Subject: Test\n\nBody" (.toString bytes "utf8"))))])
        fixture done))))
 
 (deftest previews-serve-text-and-thumbnails-serve-images
@@ -731,10 +1260,12 @@
            (reset! first-version (:id (first versions))))
          (fn [_] (.save store "user-1" "/doc.txt"
                         (Buffer.from "line1\nchanged\n" "utf8")))
+         ;; The raw overwrite above auto-snapshotted the replaced
+         ;; content, so the explicit version makes three.
          (fn [_] (.createVersion store "user-1" "/doc.txt"))
          (fn [_] (.listVersions store "user-1" "/doc.txt"))
          (fn [versions]
-           (is (= 2 (count versions)))
+           (is (= 3 (count versions)))
            (reset! second-version (:id (first versions))))
          (fn [_] (.diffVersions store "user-1" "/doc.txt"
                                 @first-version @second-version))
@@ -812,3 +1343,43 @@
            (is (= :duplicate (:outcome step)))
            (is (= :invalid (:type (ex-data (:error step))))))])
        fixture done))))
+
+
+(deftest assistant-source-dispatch-routes-owned-shared-and-mail
+  (async done
+    ;; The assistant source mapping is pure routing: "owned" uses the
+    ;; user's own tree, "shared" an incoming user share id, and "mail" the
+    ;; read-only Maildir location. Writes never accept these sources.
+    (let [calls (atom [])
+          note! (fn [name] (fn [& _] (swap! calls conj name)
+                             (js/Promise.resolve #js {:isDir false})))
+          store #js {:list (note! "owned")
+                     :listShared (note! "shared")
+                     :listMail (note! "mail")
+                     :stat (note! "owned")
+                     :statShared (note! "shared")
+                     :statMail (note! "mail")
+                     :readFile (fn [& _] (js/Promise.resolve (Buffer.from "owned" "utf8")))
+                     :readShared (fn [& _] (js/Promise.resolve (Buffer.from "shared" "utf8")))
+                     :readMail (fn [& _] (js/Promise.resolve (Buffer.from "mail" "utf8")))}
+          user #js {:id "user-1"}]
+      (-> (.then (js/Promise.all
+                  #js [(files-assistant/list-source-dispatch! store user "owned" nil "/")
+                       (files-assistant/list-source-dispatch! store user "shared" "share-1" "/")
+                       (files-assistant/list-source-dispatch! store user "mail" nil "/")])
+                 (fn [_]
+                   (is (= ["owned" "shared" "mail"] @calls))
+                   (reset! calls [])
+                   (js/Promise.all
+                    #js [(files-assistant/read-source-dispatch! store user "owned" nil "/a.md")
+                         (files-assistant/read-source-dispatch! store user "shared" "share-1" "/a.md")
+                         (files-assistant/read-source-dispatch! store user "mail" nil "/a.md")])))
+            (.then (fn [reads]
+                     (is (= ["owned" "shared" "mail"] @calls))
+                     (is (= "owned" (.toString (nth (nth reads 0) 1) "utf8")))
+                     (is (= "shared" (.toString (nth (nth reads 1) 1) "utf8")))
+                     (is (= "mail" (.toString (nth (nth reads 2) 1) "utf8")))))
+            (.then (fn [_] (done)))
+            (.catch (fn [error]
+                      (is nil error)
+                      (done)))))))

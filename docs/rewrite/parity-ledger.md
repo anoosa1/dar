@@ -14,6 +14,10 @@ complete until every applicable surface is implemented and verified.
 - Managed Files storage does not create, follow, index, or serve symbolic links.
   The legacy `files.create_symlink` assistant tool is removed.
 - Photos and Soosa remain removed. `TODO.md` and `ideas` are not requirements.
+- The 2026-10-08 v1 scope covers built-in apps and shared services. Third-party
+  plugin installation is explicitly deferred by the maintainer. The trusted
+  plugin contribution/lifecycle boundary remains applicable; a future plugin
+  manager is not a built-in v1 release requirement.
 
 Everything else below requires behavioral parity, though route payloads and UI
 composition may be redesigned.
@@ -76,6 +80,10 @@ For an applicable capability, implement all of these together:
   retry, cursor pagination, feed filters, RSS token regeneration, and public RSS.
 
 ### Files
+
+Detailed implementation and verification status is tracked in
+[the Files parity matrix](files-parity.md); no row is complete without its named
+automated proof.
 
 - File and folder list/create/read/write/upload/download, text editor, picker,
   validation, touch, rename, move, copy, quota, safe concurrent operations, and
@@ -145,8 +153,9 @@ MIME filtering uses the entry's name-based type rather than the baseline's
 content sniffing. Mutations record `files` activity events (upload, edit, create,
 rename, copy, trash, restore, purge, share, share removal) through the
 platform activity service for both the HTTP surface and the assistant
-tools; recipients are the acting user and the baseline's share-recipient
-fan-out is not ported. Browser navigations to `/share/{token}` get the
+tools; recipients are the acting user plus, for writes into an incoming
+share, the share owner, restoring the baseline's share-recipient fan-out
+without its per-origin logActivity machinery. Browser navigations to `/share/{token}` get the
 SPA shell (Accept negotiation) and render the public share visitor page
 (folder listing, single-file download, password unlock, drop upload);
 fetches keep the pinned JSON namespace. DAV mutations record the same
@@ -157,7 +166,49 @@ handling, LOCK/UNLOCK with tokens, COPY/MOVE, ETag conditionals,
 scoped app passwords, 405 for unsupported methods), closing the
 WebDAV hardening item.
 
+The engine now proves the cross-cutting guarantees the baseline left
+implicit: every save/touch/delete/rename awaits its search index hook
+(indexing, unindexing, or provider reconciliation) before resolving, raw
+overwrites snapshot the previous bytes into the versions root exactly once
+per changed content (byte-identical saves add no snapshot), and renames
+rewrite favorites, tags, versions, public shares, comments, and locks onto
+the renamed virtual path (exact match for the renamed node itself, prefix
+match for descendants, with user shares rewritten on `from_user`) so
+metadata follows files across moves. These flows are proven by the
+`search-index-follows-file-writes`,
+`raw-overwrite-snapshots-previous-content`, and
+`rename-carries-favorites-tags-and-locks` engine unit tests, which drive a
+fake search provider through save, delete, and directory-rename
+reconciliation.
+
+The Files assistant surface is complete under `/api/v1/assistant`: the
+14 `files.*` tool descriptors register through the contributions registry
+(`files.list`/`files.search`/`files.read` accept an optional `source` -
+`owned` (default), an incoming user share by `shareId`, or the controlled
+read-only Maildir location - while writes stay owned-only), the catalog and
+every tool invocation are proven by the `files-assistant` process suite,
+and the source routing itself is pinned by the
+`assistant-source-dispatch-routes-owned-shared-and-mail` engine unit test.
+The Files workspace SPA (views for all/search/favorites/shares/trash/mail,
+URL deep links, row actions, trash restore/purge, editor overlay with
+If-Match conflict resolution, debounced local drafts, Sanctuary styling
+with keyboard/focus/live-region and mobile behavior) is verified by the
+Playwright files browser pass with a clean console. The Files workspace also
+ships a revision-backed Settings view (`/files?view=settings`): effective
+preferences (personal folder, trash alias, default list/grid layout, favorites-
+and folders-first ordering, show hidden, file extensions, delete warnings) are
+loaded, edited, and saved under `If-Match`, the resulting ordering, hidden,
+and extension preferences are applied consistently across the listing views,
+and the WebDAV section shows the standards `Server URL` plus the username and
+lets the operator create and revoke scoped Files app passwords - the one-time
+secret authenticates a real `PROPFIND` and is rejected after revocation. Both
+paths are pinned by the Settings and WebDAV steps in the Playwright files pass.
+
 ### Contacts
+
+Detailed implementation and verification status is tracked in
+[the Contacts parity matrix](contacts-parity.md); no row is complete without its
+named automated proof.
 
 - Multiple address books, contacts and groups; people and organizations; rich
   names, multiple email/phone/address values, birthday, organization, role,
@@ -165,6 +216,20 @@ WebDAV hardening item.
 - Book create/rename/delete/visibility, preferences, Me-card synchronization,
   import/export, recipient lookup, VCF authority, CardDAV, search, activity, and
   assistant tools.
+
+Rewrite status: the contacts engine (books, contacts, groups, import/export,
+group taxonomy, settings), the `/api/v1/contacts*` HTTP surface with the error
+envelope and If-Match revisions, CardDAV (`/dav/addressbooks/`, well-known
+redirect, PROPFIND/REPORT, scoped app passwords), search indexing with
+per-contact unlink, activity events, and 11 assistant tools (reads, safe
+writes, confirmation-gated destructive deletes) are implemented and verified by
+the engine unit suite and the contacts, contacts-dav, and contacts-assistant
+process suites. The Sanctuary Contacts workspace SPA (book sidebar, letter-
+grouped list with search/sort/favorites, detail pane, editor/import/settings
+dialogs, `?book=&contact=` deep links, keyboard/focus/live-region and mobile
+behavior) is verified by the Playwright contacts browser pass with a clean
+console. The Go baseline registers no Contacts dashboard widgets, and none are
+added.
 
 ### Calendar
 
@@ -218,7 +283,14 @@ WebDAV hardening item.
 - User/profile location, geocoding, unit preference, provider fetch, cache,
   stale fallback, configuration errors, and dashboard widget.
 
-### Codex
+### Chat (Codex harness initially)
+
+The maintainer's 2026-09-10 revision replaces the Codex app identity and UI with
+a general Chat app inspired by T3 Chat. [The Chat plan](chat-plan.md) is binding
+for the revised product: conversation history, composer, attachments, streaming,
+edit/retry, and a harness selector with Codex as the only initial implementation.
+Harness and model are distinct choices. Preserve the backend guarantees below
+through the Codex adapter, using Chat routes and user-facing terminology.
 
 - One isolated Codex home and managed CLI app-server per user; executable version
   check; capacity, LRU and idle policies; crash/restart behavior; environment
@@ -231,11 +303,10 @@ WebDAV hardening item.
 ## Dashboard widgets
 
 - `calendar.upcoming`
-- `calendar.on_this_day`
+- `calendar.on-this-day` (native identifier for baseline `calendar.on_this_day`)
 - `email.unread` (configurable)
 - `files.favorites`
 - `notes.list`
 - `todo.upcoming`
 - `prayer.times`
 - `weather.current`
-

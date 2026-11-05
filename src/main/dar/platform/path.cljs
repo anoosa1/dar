@@ -1,6 +1,7 @@
 (ns dar.platform.path
   (:require [clojure.string :as str]
             ["node:fs/promises" :as fs]
+            ["node:fs" :refer [constants]]
             ["node:path" :as path]))
 
 (def reserved-segments
@@ -84,3 +85,39 @@
                    {:current (.resolve path root) :missing false})))
       segments)
      (fn [_] target))))
+
+(defn read-bounded!
+  "Reads a regular managed file through one no-follow handle. Allocation stays
+  bounded even if an external editor grows or replaces the file during reading."
+  [root relative maximum]
+  (when-not (and (int? maximum) (pos? maximum))
+    (throw (ex-info "A positive file limit is required." {:type :invalid})))
+  (-> (verify-no-symlinks! root relative)
+      (.then (fn [full]
+               (-> (.open fs full (bit-or (.-O_RDONLY constants) (.-O_NOFOLLOW constants)))
+                   (.then (fn [^js handle]
+                            (-> (.stat handle)
+                                (.then (fn [^js before]
+                                         (when-not (.isFile before)
+                                           (throw (ex-info "Choose a regular file." {:type :invalid})))
+                                         (when (> (.-size before) maximum)
+                                           (throw (ex-info "The file exceeds the size limit." {:type :too-large})))
+                                         (let [buffer (js/Buffer.alloc (inc (.-size before)))]
+                                           (letfn [(read! [offset]
+                                                     (if (= offset (.-length buffer)) (js/Promise.resolve offset)
+                                                       (-> (.read handle buffer offset (- (.-length buffer) offset) offset)
+                                                           (.then (fn [^js result]
+                                                                    (if (zero? (.-bytesRead result)) offset
+                                                                      (read! (+ offset (.-bytesRead result)))))))))]
+                                             (-> (read! 0)
+                                                 (.then (fn [length]
+                                                          (-> (.lstat fs full)
+                                                              (.then (fn [^js after]
+                                                                       (when-not (and (.isFile after) (= length (.-size before))
+                                                                                      (= (.-dev before) (.-dev after)) (= (.-ino before) (.-ino after))
+                                                                                      (= (.-size before) (.-size after))
+                                                                                      (= (.-mtimeMs before) (.-mtimeMs after))
+                                                                                      (= (.-ctimeMs before) (.-ctimeMs after)))
+                                                                         (throw (ex-info "The file changed during reading. Refresh and retry." {:type :conflict})))
+                                                                       (.subarray buffer 0 length)))))))))))
+                                (.finally #(.close handle))))))))))

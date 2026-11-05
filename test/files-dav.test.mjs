@@ -146,7 +146,7 @@ test("files webdav serves protocol clients with app passwords", async () => {
     assert.equal(lock.status, 200, context.running.output());
     assert.match(await lock.text(), /<d:lockdiscovery>/);
     const lockTokenHeader = lock.headers.get("lock-token");
-    assert.match(lockTokenHeader, /^<opaquelocktoken:dar-[0-9a-f]{64}>$/);
+    assert.match(lockTokenHeader, /^<opaquelocktoken:[0-9a-f-]{36}>$/);
 
     const lockedPut = await dav("/dav/files/user-123/Documents/dav.txt", {
       method: "PUT",
@@ -156,9 +156,9 @@ test("files webdav serves protocol clients with app passwords", async () => {
 
     const unlockWrong = await dav("/dav/files/user-123/Documents/dav.txt", {
       method: "UNLOCK",
-      headers: { "lock-token": "<opaquelocktoken:dar-wrong>" },
+      headers: { "lock-token": "<opaquelocktoken:wrong-token>" },
     });
-    assert.equal(unlockWrong.status, 409, context.running.output());
+    assert.equal(unlockWrong.status, 423, context.running.output());
 
     const unlock = await dav("/dav/files/user-123/Documents/dav.txt", {
       method: "UNLOCK",
@@ -192,6 +192,25 @@ test("files webdav serves protocol clients with app passwords", async () => {
               context.running.output());
     const trashed = events.find((event) => event.eventType === "fileTrashed");
     assert.equal(trashed.subject.origin, "dav");
+
+    // Preconditions are evaluated inside the owner's write queue. Two
+    // simultaneous clients cannot both overwrite the same observed revision.
+    const atomicPath = "/dav/files/user-123/atomic.txt";
+    assert.equal((await dav(atomicPath, { method: "PUT", body: "initial" })).status, 201);
+    const atomicTag = (await dav(atomicPath)).headers.get("etag");
+    const simultaneous = await Promise.all(["first update", "second update"].map(body => dav(atomicPath, {
+      method: "PUT", headers: { "if-match": atomicTag }, body,
+    })));
+    assert.deepEqual(simultaneous.map(response => response.status).sort(), [204, 412]);
+    assert.equal((await dav("/dav/files/user-123/missing/child.txt", { method: "PUT", body: "no implicit parents" })).status, 409);
+
+    const ownedLock = await dav(atomicPath, { method: "LOCK" });
+    assert.equal(ownedLock.status, 200);
+    const ownedToken = ownedLock.headers.get("lock-token");
+    const authorizedPut = await dav(atomicPath, { method: "PUT", headers: { if: `(${ownedToken})` }, body: "token-authorized update" });
+    assert.equal(authorizedPut.status, 204, await authorizedPut.clone().text());
+    assert.equal((await dav(atomicPath, { method: "PUT", headers: { if: "(<opaquelocktoken:wrong>)" }, body: "denied" })).status, 423);
+    assert.equal(await (await dav(atomicPath)).text(), "token-authorized update");
   } finally {
     await stopDarWithOidc(context);
     await rm(dataRoot, { recursive: true, force: true });

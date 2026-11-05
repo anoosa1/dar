@@ -19,7 +19,7 @@
    "/activity"
    "/prayer"
    "/weather"
-   "/codex"
+   "/chat"
    "/settings"])
 
 (defn- read-text! [response filename content-type]
@@ -46,9 +46,27 @@
                (str/starts-with? target (str asset-root (.-sep path))))
       target)))
 
+(defn- own-http-drain! [ctx ^js server]
+  ;; Node's closeIdleConnections only sees sockets idle at that instant. A
+  ;; cancelled app request may finish afterwards and become idle during close.
+  ;; End those sockets after flushing their response, without truncating it.
+  (cordis/effect! ctx "dar.http.response-drain"
+    (fn []
+      (let [^js listener (.-_http server) stopping (atom false)
+            request! (fn [^js request ^js response]
+                       (let [finish! #(when @stopping (.end (.-socket request)))]
+                         (.once response "finish" finish!)
+                         (.once response "close" #(.off response "finish" finish!))))]
+        (.on listener "request" request!)
+        (fn []
+          (reset! stopping true)
+          (.off listener "request" request!)
+          (.closeIdleConnections listener))))))
+
 (defn- register-routes! [^js ctx {:keys [publicRoot oidc]}]
   (let [^js server (.-server ctx)
         index-file (.resolve path publicRoot "index.html")]
+    (own-http-drain! ctx server)
     (.get server "/health"
           (fn [_request response _next]
             (http/json! response

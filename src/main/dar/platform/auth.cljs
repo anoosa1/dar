@@ -44,7 +44,7 @@
         delete-expired (.prepare connection "DELETE FROM sessions WHERE expires_at <= ?")
         upsert-user (.prepare
                      connection
-                     "INSERT INTO users(id, subject, display_name, email, administrator, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(subject) DO UPDATE SET display_name = excluded.display_name, email = excluded.email, administrator = excluded.administrator, updated_at = excluded.updated_at")
+                     "INSERT INTO users(id, subject, display_name, email, administrator, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(subject) DO UPDATE SET display_name = CASE WHEN EXISTS (SELECT 1 FROM personal_profiles WHERE user_id = users.id) THEN users.display_name ELSE excluded.display_name END, email = excluded.email, administrator = excluded.administrator, updated_at = excluded.updated_at")
         find-user (.prepare
                    connection
                    "SELECT id, subject, display_name, email, administrator FROM users WHERE subject = ?")]
@@ -111,6 +111,11 @@
        (contains? #{"POST" "PUT" "PATCH" "DELETE"}
                   (str/upper-case (.-method request)))))
 
+(defn- session-required? [^js request]
+  (and (str/starts-with? (.-path request) "/api/v1/")
+       (not (contains? #{"/api/v1/meta" "/api/v1/auth/login" "/api/v1/auth/callback"}
+                       (.-path request)))))
+
 (defn- register-auth! [^js ctx _config]
   (let [^js server (.-server ctx)
         ^js http-security (.-httpSecurity ctx)
@@ -122,19 +127,19 @@
              request response
              (fn []
                (attach-session! auth request)
-               (if (csrf-protected? request)
-                 (cond
-                   (nil? (.-session request))
+               (cond
+                   (and (or (session-required? request) (csrf-protected? request))
+                        (nil? (.-session request)))
                    (http/error! response 401 "unauthenticated"
                                 "Authentication is required." {} (.-requestId request))
 
-                   (not (csrf-valid? (.-session request)
-                                     (.get (.-headers request) "x-csrf-token")))
+                   (and (csrf-protected? request)
+                        (not (csrf-valid? (.-session request)
+                                         (.get (.-headers request) "x-csrf-token"))))
                    (http/error! response 403 "forbidden"
                                 "The CSRF token is missing or invalid." {} (.-requestId request))
 
-                   :else (next))
-                 (next))))))
+                   :else (next))))))
     (.get server "/api/v1/session"
           (fn [^js request response _next]
             (if-let [^js session (.-session request)]

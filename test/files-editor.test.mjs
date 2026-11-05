@@ -86,6 +86,12 @@ test("files editor, versions, tags, comments, and locks work over http", async (
     assert.ok(version.id);
     assert.equal(version.size, 11);
     assert.ok(version.createdAt);
+    const emptyRestore = await fetch(`${base}/api/v1/files/versions/${version.id}/restore`, {
+      method: "POST", headers: session.authHeaders,
+    });
+    assert.equal(emptyRestore.status, 400, context.running.output());
+    assert.equal((await emptyRestore.json()).error.code, "invalid");
+    assert.equal((await (await get(editorPath)).json()).content, "second draft");
 
     const versionRead = await get(
       `/api/v1/files/versions/${version.id}/content?path=%2FDocuments%2Fdoc.md`,
@@ -184,10 +190,17 @@ test("files editor, versions, tags, comments, and locks work over http", async (
       body: JSON.stringify({ path: docPath }),
     });
     assert.equal(locked.status, 200, context.running.output());
-    assert.deepEqual(await locked.json(), { locked: true, owner: session.user.id });
+    const lockBody = await locked.json();
+    assert.equal(lockBody.locked, true);
+    assert.equal(lockBody.owner, session.user.id);
+    assert.match(lockBody.token, /^[0-9a-f-]{36}$/);
+    assert.equal(lockBody.timeoutSeconds, 3600);
 
     const lockInfo = await get(`/api/v1/files/lock?path=${encodeURIComponent(docPath)}`);
-    assert.deepEqual(await lockInfo.json(), { locked: true, owner: session.user.id });
+    const lockInfoBody = await lockInfo.json();
+    assert.equal(lockInfoBody.locked, true);
+    assert.equal(lockInfoBody.owner, session.user.id);
+    assert.equal(lockInfoBody.token, lockBody.token);
 
     const blockedSave = await fetch(`${base}${editorPath}`, {
       method: "PUT",
@@ -209,7 +222,7 @@ test("files editor, versions, tags, comments, and locks work over http", async (
 
     const unlocked = await fetch(
       `${base}/api/v1/files/lock?path=${encodeURIComponent(docPath)}`,
-      { method: "DELETE", headers: session.authHeaders },
+      { method: "DELETE", headers: { ...session.authHeaders, "x-lock-token": lockBody.token } },
     );
     assert.equal(unlocked.status, 200, context.running.output());
     assert.deepEqual(await unlocked.json(), { locked: false });

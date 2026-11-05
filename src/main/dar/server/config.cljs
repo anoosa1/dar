@@ -11,6 +11,8 @@
    [:dataRoot string?]
    [:publicRoot string?]
    [:credentialKeys {:optional true} [:maybe string?]]
+   [:codexExecutable {:optional true} [:maybe string?]]
+   [:mbsyncExecutable {:optional true} [:maybe string?]]
    [:bodyLimit [:int {:min 1024 :max 1073741824}]]
    [:uploadBodyLimit [:int {:min 1024 :max 1073741824}]]
    [:quotaBytes [:int {:min 0 :max 9007199254740991}]]
@@ -60,6 +62,8 @@
                                      (or (aget env "DAR_DATA_ROOT") "data"))
                  :publicRoot (.resolve path working-directory "public")
                  :credentialKeys (aget env "DAR_CREDENTIAL_ENCRYPTION_KEYS")
+                 :codexExecutable (aget env "DAR_CODEX_EXECUTABLE")
+                 :mbsyncExecutable (aget env "DAR_MBSYNC_EXECUTABLE")
                  :bodyLimit (* 1024 1024)
                  :uploadBodyLimit (let [value (aget env "DAR_UPLOAD_BODY_LIMIT")]
                                     (if-not value

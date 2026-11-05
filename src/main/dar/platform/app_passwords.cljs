@@ -198,7 +198,7 @@
     (.post server "/api/v1/app-passwords"
            (fn [^js request response _next]
              (when (require-session! request response)
-               (-> (.json request)
+               (-> (http/read-json! request)
                    (.then (fn [body]
                             (let [value (js->clj body :keywordize-keys true)]
                               (.create store

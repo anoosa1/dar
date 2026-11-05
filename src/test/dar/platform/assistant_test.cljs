@@ -125,6 +125,18 @@
                     (is false (str "confirmation flow failed: " (.-message error)))
                     (done)))))))
 
+(deftest non-boolean-confirmations-never-authorize-an-effect
+  (async done
+    (let [^js registry (fresh-registry)]
+      (-> (js/Promise.all
+            (into-array (map #(assistant/invoke registry #js {:id "user-1"}
+                                               "test.destroy" {:target "a"} %)
+                             [nil false "false" "true" 0 1 {} []])))
+          (.then (fn [outcomes]
+                   (is (every? #(= :confirmation-required (:error %)) (array-seq outcomes)))
+                   (done)))
+          (.catch (fn [error] (is false (ex-message error)) (done)))))))
+
 (deftest tool-failures-carry-stable-categories
   (async done
     (let [^js registry (contributions/registry)]

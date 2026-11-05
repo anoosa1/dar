@@ -182,7 +182,7 @@ test("files api covers browse, mutations, trash, favorites, and quota reporting"
 
 test("files quota rejects uploads that exceed the configured limit", async () => {
   const dataRoot = await mkdtemp("/tmp/dar-files-quota-test-");
-  const context = await startDarWithOidc(dataRoot, { DAR_FILES_QUOTA_BYTES: "10" });
+  const context = await startDarWithOidc(dataRoot, { DAR_FILES_QUOTA_BYTES: "100" });
   try {
     await waitForHealth(context.port, context.running.child, context.running.output);
     const session = await loginSession(context.baseUrl, context.running.output);
@@ -206,7 +206,7 @@ test("files quota rejects uploads that exceed the configured limit", async () =>
         origin: base,
         "x-csrf-token": session.csrfToken,
       },
-      body: "0123456789ABCDEF",
+      body: "x".repeat(101),
     });
     assert.equal(oversized.status, 507, context.running.output());
     assert.equal((await oversized.json()).error.code, "quotaExceeded");
@@ -258,6 +258,64 @@ test("file uploads enforce their dedicated body limit", async () => {
       body: "x".repeat(512),
     });
     assert.equal(fits.status, 201, context.running.output());
+  } finally {
+    await stopDarWithOidc(context);
+    await rm(dataRoot, { recursive: true, force: true });
+  }
+});
+
+test("files settings return defaults and update under If-Match", async () => {
+  const dataRoot = await mkdtemp("/tmp/dar-files-settings-test-");
+  const context = await startDarWithOidc(dataRoot);
+  try {
+    await waitForHealth(context.port, context.running.child, context.running.output);
+    const session = await loginSession(context.baseUrl, context.running.output);
+    const base = context.baseUrl;
+
+    const initial = await fetch(`${base}/api/v1/files/settings`, {
+      headers: { cookie: session.cookies },
+    });
+    assert.equal(initial.status, 200, context.running.output());
+    const initialBody = await initial.json();
+    assert.equal(initialBody.settings.defaultView, "list");
+    assert.equal(initialBody.settings.sortFavoritesFirst, true);
+    assert.equal(initialBody.revision, 0);
+
+    const rejected = await fetch(`${base}/api/v1/files/settings`, {
+      method: "PUT",
+      headers: { ...session.authHeaders, "if-match": '"5"' },
+      body: JSON.stringify({ settings: { defaultView: "grid" } }),
+    });
+    assert.equal(rejected.status, 412, context.running.output());
+
+    const updated = await fetch(`${base}/api/v1/files/settings`, {
+      method: "PUT",
+      headers: {
+        ...session.authHeaders,
+        "if-match": `"${initialBody.revision}"`,
+      },
+      body: JSON.stringify({
+        settings: { defaultView: "grid", personalFolder: "/Docs" },
+      }),
+    });
+    assert.equal(updated.status, 200, context.running.output());
+    const updatedBody = await updated.json();
+    assert.equal(updatedBody.settings.defaultView, "grid");
+    assert.equal(updatedBody.settings.personalFolder, "/Docs");
+    assert.equal(updatedBody.settings.trashFolder, "/.local/share/Trash");
+    assert.equal(updatedBody.revision, 1);
+
+    const invalid = await fetch(`${base}/api/v1/files/settings`, {
+      method: "PUT",
+      headers: session.authHeaders,
+      body: JSON.stringify({ settings: { defaultView: "mosaic" } }),
+    });
+    assert.equal(invalid.status, 400, context.running.output());
+
+    const refetched = await fetch(`${base}/api/v1/files/settings`, {
+      headers: { cookie: session.cookies },
+    });
+    assert.equal(refetched.headers.get("etag"), `"${updatedBody.revision}"`);
   } finally {
     await stopDarWithOidc(context);
     await rm(dataRoot, { recursive: true, force: true });

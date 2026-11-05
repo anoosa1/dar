@@ -152,7 +152,7 @@
                 (send-error! response error)))))
     (.put server "/api/v1/preferences/:namespace/:key"
           (fn [^js request response _next]
-            (-> (.json request)
+            (-> (http/read-json! request)
                 (.then (fn [body]
                          (.set store (.-id (.-user request))
                                           (.-namespace (.-params request))

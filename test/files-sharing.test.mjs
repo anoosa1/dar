@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -231,10 +231,12 @@ test("public shares gate on password, rate limits, and drop uploads over http", 
 
     // User shares resolve recipients by email and are removable.
     const seedUser = new DatabaseSync(`${dataRoot}/dar.sqlite`);
-    seedUser.exec(
-      "INSERT INTO users(id, subject, display_name, email, administrator, created_at, updated_at) VALUES ('user-b', 'sub-b', 'User B', 'b@example.test', 0, datetime(), datetime())",
-    );
-    seedUser.close();
+    try {
+      seedUser.exec("PRAGMA busy_timeout=5000");
+      seedUser.exec(
+        "INSERT INTO users(id, subject, display_name, email, administrator, created_at, updated_at) VALUES ('user-b', 'sub-b', 'User B', 'b@example.test', 0, datetime(), datetime())",
+      );
+    } finally { seedUser.close(); }
 
     const noRecipient = await fetch(`${base}/api/v1/files/user-shares`, {
       method: "POST",
@@ -260,6 +262,29 @@ test("public shares gate on password, rate limits, and drop uploads over http", 
     const grantedBody = await granted.json();
     assert.equal(grantedBody.toUser, "user-b");
     assert.equal(grantedBody.permission, "write");
+
+    const outgoing = await get("/api/v1/files/user-shares");
+    const outgoingBody = await outgoing.json();
+    assert.deepEqual(outgoingBody.items.map((share) => share.id), [grantedBody.id]);
+
+    const mailPath = `${dataRoot}/users/${session.user.id}/mail/account/INBOX/cur`;
+    await mkdir(mailPath, { recursive: true });
+    await writeFile(`${mailPath}/message.eml`, "Subject: HTTP test\n\nMail body");
+    const mailListing = await get(
+      "/api/v1/files?source=mail&path=%2Faccount%2FINBOX%2Fcur",
+    );
+    assert.equal(mailListing.status, 200, context.running.output());
+    assert.deepEqual((await mailListing.json()).items.map((item) => item.name), ["message.eml"]);
+    const mailDownload = await get(
+      "/api/v1/files/download?source=mail&path=%2Faccount%2FINBOX%2Fcur%2Fmessage.eml",
+    );
+    assert.equal(await mailDownload.text(), "Subject: HTTP test\n\nMail body");
+    const mailMutation = await fetch(
+      `${base}/api/v1/files/files?source=mail`,
+      { method: "POST", headers: session.authHeaders, body: JSON.stringify({ path: "/blocked.txt" }) },
+    );
+    assert.equal(mailMutation.status, 403, context.running.output());
+    assert.equal((await mailMutation.json()).error.code, "forbidden");
 
     const sharedWithMe = await get("/api/v1/files/shared-with-me");
     assert.equal((await sharedWithMe.json()).items.length, 0);

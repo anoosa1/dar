@@ -45,6 +45,24 @@
     (is (true? changed))
     (is (= ["clock.widget"] (map :id (:layout normalized))))))
 
+(deftest saved-layout-normalization-repairs-malformed-generic-preferences
+  (let [definitions (fixture-definitions)
+        [normalized changed] (dashboard/normalize-layout
+                              {:layout [nil "broken" {:id "clock.widget" :x "not-a-number" :y "not-a-number" :size "wide"}
+                                        {:id "notes.widget" :x -50 :y 9 :size "unsupported"}]} definitions)]
+    (is changed)
+    (is (= 2 (count (:layout normalized))))
+    (is (every? #(and (js/Number.isSafeInteger (:x %)) (<= 0 (:x %) 11)
+                      (js/Number.isSafeInteger (:y %)) (<= 0 (:y %) dashboard/max-y)) (:layout normalized)))
+    (is (= #{"wide" "standard"} (set (map :size (:layout normalized)))))
+    (doseq [value ["broken" {:layout "broken"} {:layout nil}]]
+      (let [[repaired changed] (dashboard/normalize-layout value definitions)]
+        (is changed) (is (= 2 (count (:layout repaired)))))))
+  (let [[repaired changed] (dashboard/normalize-layout {:layout [{:id "clock.widget" :x 1000000000 :y 1000000000 :size "standard"}]}
+                                                      (fixture-definitions))]
+    (is changed)
+    (is (= [{:id "clock.widget" :x 8 :y 0 :size "standard"}] (:layout repaired)))))
+
 (deftest validate-rejects-broken-layouts
   (let [definitions (fixture-definitions)]
     (is (= :unknown-widget
@@ -90,6 +108,19 @@
     ;; because duplicates are a validation concern, not a geometry one.
     (is (= 3 (count (:layout layout))))
     (is (= 0 (:y (first (sort-by (fn [i] [(:y i) (:x i)]) (:layout layout))))))))
+
+(deftest compaction-is-stable-after-a-single-save
+  (let [widgets (mapv #(hash-map :id (str "widget-" %) :defaultSize "standard"
+                                 :supportedSizes ["standard" "wide" "large"]) (range 7))
+        definitions (into {} (map (juxt :id identity) widgets))
+        initial {:layout (mapv (fn [index widget]
+                                {:id (:id widget) :x 0 :y (* index 10)
+                                 :size (if (zero? index) "wide" "standard")}) (range) widgets)
+                 :activeId ""}
+        saved (dashboard/reflow initial definitions)]
+    (is (= saved (dashboard/reflow saved definitions)))
+    (is (= [saved false] (dashboard/normalize-layout saved definitions)))
+    (is (= [0 4 7 10 13 16 19] (mapv :y (:layout saved))))))
 
 (deftest catalog-lists-registered-widget-definitions
   (let [^js registry (contributions/registry)]

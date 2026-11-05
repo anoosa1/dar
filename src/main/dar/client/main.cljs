@@ -1,10 +1,26 @@
 (ns dar.client.main
   (:require [clojure.string]
+            [dar.client.activity :as activity]
+            [dar.client.appearance :as appearance]
+            [dar.client.calendar :as calendar]
+            [dar.client.chat :as chat]
+            [dar.client.todo :as todo]
+            [dar.client.notes :as notes]
+            [dar.client.prayer :as prayer]
+            [dar.client.weather :as weather]
+            [dar.client.news :as news]
+            [dar.client.email :as email]
+            [dar.client.contacts :as contacts]
             [dar.client.files :as files]
+            [dar.client.navigation :as navigation]
+            [dar.client.home :as home]
             [dar.client.share-visitor :as share-visitor]
             [dar.client.state]
+            [dar.client.workspace :as workspace]
+            [dar.client.ui :as ui]
             [dar.cordis :as cordis]
             [re-frame.core :as frame]
+            [reagent.core :as r]
             [reagent.dom.client :as rdom]
             [reitit.frontend :as router]))
 
@@ -20,21 +36,13 @@
    ["/activity" {:name :activity :label "Activity"}]
    ["/prayer" {:name :prayer :label "Prayer"}]
    ["/weather" {:name :weather :label "Weather"}]
-   ["/codex" {:name :codex :label "Codex"}]
+   ["/chat" {:name :chat :label "Chat"}]
    ["/settings" {:name :settings :label "Settings"}]
    ["/login" {:name :login :label "Sign in"}]
    ;; Public share visitors render outside the authenticated shell.
    ["/share/:token" {:name :share-visitor :label "Shared with you"}]])
 
 (def app-router (router/router routes))
-
-(def primary-apps
-  [{:name :home :label "Home" :path "/"}
-   {:name :files :label "Files" :path "/files"}
-   {:name :calendar :label "Calendar" :path "/calendar"}
-   {:name :email :label "Email" :path "/email"}
-   {:name :codex :label "Codex" :path "/codex"}
-   {:name :settings :label "Settings" :path "/settings"}])
 
 (defonce client-context (atom nil))
 (defonce react-root (atom nil))
@@ -45,55 +53,47 @@
               :name)
       :home))
 
+(defn- remember-login-route! [_event]
+  (try
+    (.setItem js/sessionStorage "dar-login-return"
+      (js/JSON.stringify #js {:path (str (.-pathname js/location) (.-search js/location) (.-hash js/location))
+                              :at (js/Date.now)}))
+    (catch :default _ nil)))
+
+(defn- restore-login-route!
+  "The OIDC callback returns to Home. Consume a recent tab-local intent before
+  initializing the SPA, retaining private deep links without an open redirect."
+  []
+  (try
+    (when-let [raw (.getItem js/sessionStorage "dar-login-return")]
+      (.removeItem js/sessionStorage "dar-login-return")
+      (when (= "/" (.-pathname js/location))
+        (let [intent (js->clj (js/JSON.parse raw) :keywordize-keys true)
+              age (when (number? (:at intent)) (- (js/Date.now) (:at intent)))
+              url (when (string? (:path intent)) (js/URL. (:path intent) (.-origin js/location)))
+              route (when url (some-> (router/match-by-path app-router (.-pathname url)) :data :name))]
+          (when (and url route (not (contains? #{:login :share-visitor} route))
+                     (= (.-origin js/location) (.-origin url)) (number? age) (<= 0 age 600000))
+            (.replaceState js/history nil "" (str (.-pathname url) (.-search url) (.-hash url)))))))
+    (catch :default _ nil)))
+
 (defn- navigate! [event path]
-  (.preventDefault event)
-  (.pushState js/history nil "" path)
-  (frame/dispatch [:route/navigated (route-name)]))
-
-(defn- app-link [{:keys [name label path]} active]
-  [:a.sanctuary-nav-link
-   {:href path
-    :aria-current (when (= name active) "page")
-    :on-click #(navigate! % path)}
-   label])
-
-(defn- dashboard []
-  [:div.sanctuary-dashboard
-   [:section.sanctuary-metrics
-    [:article.sanctuary-panel
-     [:span.sanctuary-eyebrow "Weather · Toronto"]
-     [:strong "21° · Clear"]
-     [:span "Feels like 20°"]]
-    [:article.sanctuary-panel
-     [:span.sanctuary-eyebrow "Next prayer"]
-     [:strong "Asr · 5:14 PM"]
-     [:span "In 2 hours 18 minutes"]]
-    [:article.sanctuary-panel
-     [:span.sanctuary-eyebrow "Inbox"]
-     [:strong "7 unread"]
-     [:span "2 need a reply"]]]
-   [:section.sanctuary-dashboard-grid
-    [:article.sanctuary-panel
-     [:div.sanctuary-panel-heading [:h2 "Today"] [:a {:href "/calendar"} "Open calendar"]]
-     [:ul.sanctuary-list
-      [:li [:span [:strong "Design review"] [:small "10:30–11:15 AM"]] [:span "in 24 min"]]
-      [:li [:span [:strong "Dar planning"] [:small "2:00–3:00 PM"]] [:span "Team"]]
-      [:li [:span [:strong "Ship plugin manifest"] [:small "Due today"]] [:span "Todo"]]]]
-    [:article.sanctuary-panel
-     [:div.sanctuary-panel-heading [:h2 "Recent files"] [:a {:href "/files"} "All files"]]
-     [:ul.sanctuary-list
-      [:li [:span [:strong "Rewrite parity ledger"] [:small "Docs · 42 KB"]] [:span "8m"]]
-      [:li [:span [:strong "Budget 2026"] [:small "Finance · 318 KB"]] [:span "1h"]]
-      [:li [:span [:strong "Calendar audit"] [:small "Design · 60 KB"]] [:span "Yesterday"]]]]]])
+  (when-not (or (.-ctrlKey event) (.-metaKey event) (.-shiftKey event) (.-altKey event))
+    (.preventDefault event)
+    (.pushState js/history nil "" path)
+    (frame/dispatch [:route/navigated (route-name) (.-search js/location)])))
 
 (defn- placeholder [route]
   [:section.sanctuary-empty
    [:div
     [:span.sanctuary-empty-symbol "D"]
-    [:h2 (str (:label route) " is mapped")]
-    [:p "Its existing behavior is preserved in the parity ledger and will be implemented as a complete vertical slice."]]])
+    [:h2 (str (:label route) " isn't available yet")]
+    [:a {:href "/"} "Back to Home"]]])
 
-(defn- shell []
+(defn- focus-main! [node]
+  (when node (.focus node)))
+
+(defn- shell-content []
   (let [active @(frame/subscribe [:route])
         session @(frame/subscribe [:session])
         notifications @(frame/subscribe [:notifications])
@@ -101,14 +101,14 @@
         route (or (some #(when (= active (get-in % [1 :name])) (second %)) routes)
                   {:name :home :label "Home"})]
     [:div.sanctuary-app
+     [appearance/wallpaper]
+     [:a.sanctuary-skip-link {:href "#workspace-content"} "Skip to content"]
      [:aside.sanctuary-rail
       [:a.sanctuary-brand {:href "/" :on-click #(navigate! % "/")}
        [:span "D"] [:strong "Dar"]]
-      [:nav {:aria-label "Applications"}
-       (for [app primary-apps]
-         ^{:key (:name app)} [app-link app active])]
+      [navigation/bar :desktop active navigate!]
       [:div.sanctuary-user
-       [:span.sanctuary-avatar
+       [:span.sanctuary-avatar {:title (str (:displayName profile) (when (:administrator profile) " · Administrator"))}
         (->> (clojure.string/split (or (:displayName profile) "Dar User") #"\s+")
              (take 2)
              (map #(subs % 0 1))
@@ -121,26 +121,40 @@
         "Sign out"]]]
      [:div.sanctuary-workspace
       [:header.sanctuary-topbar
-       [:div [:span.sanctuary-eyebrow "Sanctuary workspace"]
+       [:div
         [:h1 (if (= active :home)
                (str "Welcome, " (or (:displayName profile) "home"))
                (:label route))]]
        [:div.sanctuary-actions
-        [:button {:type "button"} "Search"]
-        [:button.sanctuary-mobile-signout
-         {:type "button" :on-click #(frame/dispatch [:auth/logout-requested])}
-         "Sign out"]
-        [:button {:type "button" :aria-label "Notifications"}
-         (:count notifications)]
-        [:button.sanctuary-primary {:type "button"} "New"]]]
-      [:main.sanctuary-content
+        [ui/icon-button {:on-click #(workspace/open! :search)} :search "Search"]
+        [:button {:type "button" :aria-label "Notifications"
+                  :on-click #(workspace/open! :notifications)}
+         [ui/icon-action :notifications "Notifications"]
+         (when (pos? (or (:count notifications) 0)) [:span.sanctuary-icon-badge {:aria-hidden true} (:count notifications)])]]]
+      [:main.sanctuary-content {:id "workspace-content" :key active :ref focus-main! :tab-index -1}
        (cond
-         (= active :home) [dashboard]
+         (= active :home) [home/page]
          (= active :files) [files/page]
+         (= active :calendar) [calendar/page]
+         (= active :contacts) [contacts/page]
+         (= active :activity) [activity/page]
+         (= active :chat) [chat/page]
+         (= active :todo) [todo/page]
+         (= active :notes) [notes/page]
+         (= active :prayer) [prayer/page]
+         (= active :weather) [weather/page]
+         (= active :news) [news/page]
+         (= active :email) [email/page]
+         (= active :settings) [workspace/settings]
          :else [placeholder route])]]
-     [:nav.sanctuary-mobile-nav {:aria-label "Mobile applications"}
-      (for [app (take 5 primary-apps)]
-        ^{:key (:name app)} [app-link app active])]]))
+     [:div.sanctuary-mobile-nav [navigation/bar :mobile active navigate!]]
+     [workspace/panels]]))
+
+(def shell
+  (r/create-class
+   {:component-did-mount workspace/mount!
+    :component-will-unmount workspace/unmount!
+    :reagent-render shell-content}))
 
 (defn- loading-screen []
   [:main.sanctuary-auth
@@ -159,15 +173,16 @@
     [:p "Files, calendars, mail, tasks, notes, and your assistant—kept together on your own instance."]
     (when error
       [:p.sanctuary-auth-error {:role "alert"} error])
-    [:a.sanctuary-login-action {:href "/api/v1/auth/login"} "Continue with OpenID Connect"]]])
+    [:a.sanctuary-login-action {:href "/api/v1/auth/login" :on-click remember-login-route!} "Continue with OpenID Connect"]]])
 
 (defn- visitor-token []
   (when (clojure.string/starts-with? (.-pathname js/location) "/share/")
     (subs (.-pathname js/location) (count "/share/"))))
 
 (defn- app-root []
+  @(frame/subscribe [:route])
   (if-let [token (visitor-token)]
-    [share-visitor/page token]
+    ^{:key token} [share-visitor/page token]
     (let [{:keys [status error]} @(frame/subscribe [:session])]
       (case status
         :authenticated [shell]
@@ -183,14 +198,15 @@
               ctx
               "dar.client.popstate"
               (fn []
-                (let [listener #(frame/dispatch [:route/navigated (route-name)])]
+                (let [listener #(frame/dispatch [:route/navigated (route-name) (.-search js/location)])]
                   (.addEventListener js/window "popstate" listener)
                   (fn [] (.removeEventListener js/window "popstate" listener)))))
              nil)}))
 
 (defn init []
+  (restore-login-route!)
   (frame/dispatch-sync [:initialize])
-  (frame/dispatch-sync [:route/navigated (route-name)])
+  (frame/dispatch-sync [:route/navigated (route-name) (.-search js/location)])
   (let [ctx (cordis/context)
         root (rdom/create-root (.getElementById js/document "app"))]
     (reset! client-context ctx)

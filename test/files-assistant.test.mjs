@@ -246,6 +246,13 @@ test("files search, stats, diff, download, assistant tools, and widget work over
       assert.ok(eventTypes.includes(type), `${type} missing from ${eventTypes.join(",")}`);
     }
     assert.ok(feed.items.every((event) => event.appId === "files"), context.running.output());
+    const assistantWrite = feed.items.find(event => event.eventType === "fileUploaded" && event.subject.path === "/Docs/assistant.md");
+    assert.equal(assistantWrite.subject.url,"/files?path=%2FDocs&item=%2FDocs%2Fassistant.md");
+    const assistantFolder = feed.items.find(event => event.eventType === "folderCreated" && event.subject.path === "/Docs/Nested");
+    assert.equal(assistantFolder.subject.url,"/files?path=%2FDocs%2FNested");
+    const assistantTrash = feed.items.find(event => event.eventType === "fileTrashed" && event.subject.path === "/Docs/copied.md");
+    assert.equal(assistantTrash.subject.url,"/files?view=trash");
+    assert.equal(assistantTrash.subject.deleted,true);
 
     // The dashboard catalog carries the Files favorites widget and its data.
     const catalog = await getJson("/api/v1/dashboard/catalog");

@@ -160,7 +160,8 @@
     (.set reconcilers "dar.atomic-write" reconcile-atomic-write!)
     #js {:registerReconciler
          (fn [operation handler]
-           (.set reconcilers operation handler))
+           (.set reconcilers operation handler)
+           (fn [] (when (= handler (.get reconcilers operation)) (.delete reconcilers operation))))
          :journal
          (fn [{:keys [operation payload user-id]}]
            (when-not (and (string? operation) (some? payload))

@@ -49,11 +49,13 @@
             (when (str/starts-with? (.-path request) "/api/")
               (.set (.-headers response) "cache-control" "no-store"))
             (cond
-              ;; File uploads opt out of the global limit and enforce their
-              ;; own upload-body limit in the Files route.
+              ;; Uploads and the bounded News archive stream enforce their
+              ;; app's byte/deadline/capacity limits at the route.
               (and length
                    (> length limit)
-                   (not= (.-path request) "/api/v1/files/upload"))
+                   (not (or (contains? #{"/api/v1/files/upload" "/api/v1/email/attachments" "/api/v1/news/articles"} (.-path request))
+                            (re-matches #"/api/v1/notes/[^/]+/attachments" (.-path request))
+                            (re-matches #"/api/v1/chat/conversations/[^/]+/attachments" (.-path request)))))
               (http/error! response 413 "tooLarge"
                            "The request body is too large." {} request-id)
 

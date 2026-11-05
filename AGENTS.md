@@ -4,6 +4,11 @@ Dar is a Linux-first self-hosted personal cloud written in ClojureScript. One
 Node 24 process hosts a Cordis service graph, one `node:sqlite` database,
 portable user files, standards endpoints, and a Reagent/re-frame SPA.
 
+The maintainer authorized the Files app's full TypeScript migration on
+2026-11-04. Files uses TypeScript/React inside the existing process and SPA;
+other apps remain ClojureScript. TypeScript and Node/React type definitions are
+approved development dependencies. See `docs/rewrite/files-typescript.md`.
+
 The Go baseline is immutable at `dar-go-baseline-2026-08-27`. Do not restore a
 parallel Go implementation or add compatibility paths. The binding rewrite
 contract lives in `docs/rewrite`.
@@ -99,6 +104,7 @@ The selected design direction is Sanctuary; its rules are in
 - `src/main/dar/platform` — shared persistence and security services.
 - `src/main/dar/client` — SPA shell, state, apps, and design system.
 - `src/main/dar/shared` — schemas and cross-runtime contracts.
+- `src/typescript/files` — Files engine, HTTP/DAV, tools, widget, and React UI.
 - `src/test` — ClojureScript unit/service tests.
 - `test` — process, browser, protocol, fuzz, and release tests.
 - `docs/rewrite` — parity ledger and binding specifications.

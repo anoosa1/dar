@@ -22,9 +22,14 @@
   {:invalid [400 "invalid"]
    :not-found [404 "notFound"]
    :forbidden [403 "forbidden"]
+   :readonly [403 "forbidden"]
    :conflict [409 "conflict"]
    :rate-limited [429 "rateLimited"]
    :too-large [413 "tooLarge"]
+   :precondition-required [428 "preconditionRequired"]
+   :precondition-failed [412 "preconditionFailed"]
+   :preference-conflict [412 "preconditionFailed"]
+   :preference-not-found [412 "preconditionFailed"]
    :unavailable [503 "unavailable"]})
 
 (defn- valid-descriptor? [descriptor]
@@ -150,24 +155,21 @@
     (.post server "/api/v1/assistant/tools/:id/invoke"
            (fn [^js request response _next]
              (when (require-session! request response)
-               (-> (.json request)
+               (-> (http/read-json! request)
                    (.then (fn [body]
                             (let [value (js->clj body :keywordize-keys true)]
                               (invoke registry
                                       (.-user request)
                                       (.-id (.-params request))
                                       (:arguments value)
-                                      (boolean (:confirm value))))))
+                                      (:confirm value)))))
                    (.then (fn [outcome]
                             (if-let [failure (:error outcome)]
                               (if (= :tool-failed failure)
                                 (send-tool-failure! response (:cause outcome))
                                 (send-invocation-error! response outcome))
                               (http/json! response (:result outcome)))))
-                   (.catch (fn [_error]
-                             (http/error! response 500 "internal"
-                                          "The tool failed." {}
-                                          (.-requestId response))))))))
+                   (.catch (fn [error] (send-tool-failure! response error)))))))
     nil))
 
 (def assistant-plugin
