@@ -18,6 +18,9 @@ import { handlePimHttp } from "./pim/http.ts";
 import { pimService } from "./pim/service.ts";
 import { deliverReminders } from "./pim/reminders.ts";
 import { handlePimDav } from "./pim/dav.ts";
+import { identityProvider } from "./identity/provider.ts";
+import { handleIdentityHttp } from "./identity/http.ts";
+import { handleScim } from "./identity/scim.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
@@ -69,6 +72,7 @@ export async function startServer(config: ServerConfig) {
   const databasePublicUrl = `${(config.databasePublicUrl ?? (config.development ? config.databaseUrl : `${config.origin}/spacetime`)).replace(/\/$/, "")}/`;
   const issuer = await createIssuer(path.join(root, "secrets"), `${config.origin}/auth/issuer`);
   const auth = await authService(db, issuer);
+  const identity = await identityProvider(db,auth,path.join(root,"secrets"),config.origin,!!config.development);
   const bootstrap = (await readFile(config.bootstrapTokenFile, "utf8")).trim();
   if (bootstrap.length < 32) throw new Error("The operator bootstrap token must have at least 32 characters.");
   const ctx = new Context();
@@ -93,6 +97,13 @@ export async function startServer(config: ServerConfig) {
     try {
       const url = new URL(req.url ?? "/", config.origin);
       const method = req.method ?? "GET";
+      if(url.pathname==="/oidc-form.js"&&method==="GET"){res.writeHead(200,{"content-type":"text/javascript","cache-control":"public, max-age=3600"});res.end('document.getElementById("oidc-response")?.requestSubmit();');return;}
+      if(url.pathname==="/oidc"||url.pathname.startsWith("/oidc/")){
+        const key=`oidc:${req.socket.remoteAddress??"unknown"}`,previous=attempts.get(key),attempt=previous&&previous.until>Date.now()?previous:{count:0,until:Date.now()+60000};
+        if(++attempt.count>400||(!previous&&attempts.size>=10000))throw new AppError("rateLimited",429);attempts.set(key,attempt);
+        return await identity.handle(req,res);
+      }
+      if(url.pathname==="/scim/v2"||url.pathname.startsWith("/scim/v2/"))return await handleScim(req,res,url,db,auth,config.origin);
       if (["/.well-known/carddav", "/.well-known/caldav"].includes(url.pathname)) { res.writeHead(308, { location: "/dav/" }); res.end(); return; }
       if (url.pathname.startsWith("/dav/") && !url.pathname.startsWith("/dav/files/")) return await handlePimDav(req, res, db, config.origin);
       if (url.pathname.startsWith("/dav/")) return await handleDav(req, res, db, blobs, config.origin);
@@ -132,6 +143,15 @@ export async function startServer(config: ServerConfig) {
         const authenticated = await auth.authenticate(secret);
         if (!authenticated) throw new AppError("unauthenticated", 401);
         if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !authorizeCookieWrite(config.origin, origin, typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : undefined, authenticated.session.csrfDigest)) throw new AppError("csrfRejected", 403);
+        if(url.pathname.startsWith("/api/v1/identity/")){
+          let attempt:{count:number;until:number}|undefined;
+          if(method==="POST"&&(url.pathname.endsWith("/confirmation")||url.pathname.includes("/interactions/"))){
+            const key=`identity:${req.socket.remoteAddress??"unknown"}`,previous=attempts.get(key);attempt=previous&&previous.until>Date.now()?previous:{count:0,until:Date.now()+60000};
+            if(++attempt.count>20||(!previous&&attempts.size>=10000))throw new AppError("rateLimited",429);attempts.set(key,attempt);
+          }
+          await handleIdentityHttp(req,res,url,db,auth,authenticated,identity,config.origin,!!config.development,()=>body(req,256*1024));
+          if(attempt)attempt.count=Math.max(0,attempt.count-1);return;
+        }
         if (/^\/api\/v1\/(contacts|calendar|pim)(\/|$)/.test(url.pathname)) return await handlePimHttp(req, res, url, pimService(db, authenticated.session.id), () => body(req, 3 * 1024 * 1024));
         if (url.pathname === "/api/v1/auth/session" && method === "GET") return json(res, { user: authenticated.user, csrfToken: issuer.csrf(secret!) });
         if (url.pathname === "/api/v1/auth/token" && method === "POST") return json(res, { token: await issuer.token(authenticated.session.id, authenticated.session.expiresAt, url.searchParams.get("tab") ?? undefined), databaseUrl: databasePublicUrl, databaseName: config.databaseName });
@@ -188,6 +208,8 @@ export async function startServer(config: ServerConfig) {
         throw new AppError("notFound", 404);
       }
       if (method !== "GET" && method !== "HEAD") throw new AppError("notFound", 404);
+      const interactionPage=/^\/identity\/interaction\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if(interactionPage&&method==="GET")await identity.prepareInteraction(req,res,interactionPage[1]);
       const asset = url.pathname === "/app.js" ? "app.js" : url.pathname === "/app.css" ? "app.css" : "index.html";
       const content = await readFile(new URL(`../dist/${asset}`, import.meta.url));
       res.writeHead(200, { "content-type": asset.endsWith(".js") ? "text/javascript" : asset.endsWith(".css") ? "text/css" : "text/html", "cache-control": "no-cache" });
@@ -216,6 +238,7 @@ export async function startServer(config: ServerConfig) {
       for (const [key, attempt] of attempts) if (attempt.until <= Date.now()) attempts.delete(key);
       await reconcileStorage(db, blobs);
       await deliverReminders(db);
+      await identity.maintain();
     })().catch(() => { console.warn("Storage maintenance will retry."); }).finally(() => { maintenance = undefined; });
   };
   const timer = setInterval(maintain, 60_000);

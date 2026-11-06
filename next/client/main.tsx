@@ -4,6 +4,7 @@ import { Auth } from "./auth.tsx";
 import { Files } from "./files.tsx";
 import { Contacts } from "./pim/contacts.tsx";
 import { Calendar } from "./pim/calendar.tsx";
+import { IdentitySettings,IdentityInteraction } from "./identity.tsx";
 import { request, RequestError, type BrowserSession } from "./api.ts";
 import "./styles.css";
 import "./loading.css";
@@ -28,6 +29,8 @@ function App() {
   if (error) return <main className="startup-state"><h1>Unable to connect</h1><p role="alert">{error}</p><button className="primary-button" onClick={() => location.reload()}>Try again</button></main>;
   if (!ready || !status) return <main className="startup-state" aria-busy="true"><div className="brand-mark" /><p role="status">Opening your space…</p></main>;
   const signedOut = () => { setSession(null); setStatus({ initialized: true }); };
+  if(location.pathname.startsWith("/identity/interaction/"))return <IdentityInteraction session={session} onLogin={setSession}/>;
+  if(session&&["/identity","/settings"].includes(location.pathname))return <IdentitySettings session={session} onSignedOut={signedOut}/>;
   return session ? location.pathname === "/contacts" ? <Contacts session={session} onSignedOut={signedOut} /> : location.pathname === "/calendar" ? <Calendar session={session} onSignedOut={signedOut} /> : <Files session={session} onSignedOut={signedOut} /> : <Auth initialized={status.initialized} onLogin={setSession} />;
 }
 createRoot(document.getElementById("root")!).render(<App />);

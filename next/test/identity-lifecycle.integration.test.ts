@@ -1,0 +1,60 @@
+import assert from "node:assert/strict";
+import {test} from "node:test";
+import {randomUUID} from "node:crypto";
+import {readFile} from "node:fs/promises";
+import * as oidc from "openid-client";
+import {identityAdmin,authorize,exchange,PASSWORD,CookieJar} from "./identity-helpers.ts";
+import {login} from "./integration-helpers.ts";
+import {modelKey} from "../runtime/identity/store.ts";
+import {database} from "../runtime/database.ts";
+import {PATCH} from "../runtime/identity/scim-model.ts";
+const origin=process.env.DAR_INTEGRATION_ORIGIN;
+test("native logout, password change and SCIM suspension revoke the correct OIDC authority",{skip:!origin,timeout:60000},async()=>{
+  const base=origin!,admin=await identityAdmin(base),client=await admin.client(),scim=await admin.credential(),username=`lifecycle-${randomUUID().slice(0,8)}`;
+  const headers={authorization:`Bearer ${scim.secret}`,"content-type":"application/scim+json"};
+  const create=await fetch(`${base}/scim/v2/Users`,{method:"POST",headers,body:JSON.stringify({userName:username,password:PASSWORD})});assert.equal(create.status,201);const user=await create.json() as {id:string};
+  const first=await login(base,username),second=await login(base,username),a=await exchange(client,await authorize(base,first,client)),b=await exchange(client,await authorize(base,second,client));
+  const info=(token:string)=>oidc.fetchUserInfo(client.config,token,user.id);
+  assert.equal((await fetch(`${base}/api/v1/auth/logout`,{method:"POST",headers:first.headers})).status,200);await assert.rejects(info(a.access_token));assert.equal((await info(b.access_token)).sub,user.id);
+  const disabled=await fetch(`${base}/scim/v2/Users/${user.id}`,{method:"PATCH",headers,body:JSON.stringify({schemas:[PATCH],Operations:[{op:"replace",path:"active",value:false}]})});assert.equal(disabled.status,200);await assert.rejects(info(b.access_token));await assert.rejects(oidc.refreshTokenGrant(client.config,b.refresh_token!));assert.equal((await fetch(`${base}/api/v1/auth/session`,{headers:second.headers})).status,401);
+  const enabled=await fetch(`${base}/scim/v2/Users/${user.id}`,{method:"PATCH",headers,body:JSON.stringify({schemas:[PATCH],Operations:[{op:"replace",path:"active",value:true}]})});assert.equal(enabled.status,200);
+  const freshSession=await login(base,username),fresh=await exchange(client,await authorize(base,freshSession,client));
+  const changed=await fetch(`${base}/api/v1/auth/password`,{method:"POST",headers:{...freshSession.headers,"content-type":"application/json"},body:JSON.stringify({currentPassword:PASSWORD,password:PASSWORD+" replaced"})});assert.equal(changed.status,200);await assert.rejects(info(fresh.access_token));await assert.rejects(oidc.refreshTokenGrant(client.config,fresh.refresh_token!));
+  const after=await login(base,username,PASSWORD+" replaced");assert.equal((await fetch(`${base}/api/v1/auth/session`,{headers:after.headers})).status,200);
+});
+test("code expiry, native interaction CSRF, client-secret rotation and private provider tables fail closed",{skip:!origin,timeout:60000},async()=>{
+  const base=origin!,admin=await identityAdmin(base),client=await admin.client(),db=await database(process.env.DAR_DATABASE_URL!,process.env.DAR_DATABASE_NAME!,process.env.DAR_DATABASE_TOKEN_FILE!);
+  const flow=await authorize(base,admin.session,client),id=modelKey("AuthorizationCode",flow.url.searchParams.get("code")!);
+  const row=await db.call<Record<string,unknown>|null>("service_provider",["find",JSON.stringify({id})]);assert.ok(row);assert.equal(row.encrypted?.toString().includes(flow.nonce),false);
+  await db.call("service_provider",["upsert",JSON.stringify({...row,expiresAt:Date.now()-1000,expiryKey:String(Date.now()-1000).padStart(16,"0")})]);await assert.rejects(exchange(client,flow));
+  const verifier=oidc.randomPKCECodeVerifier(),url=oidc.buildAuthorizationUrl(client.config,{redirect_uri:client.redirect,response_type:"code",scope:"openid",code_challenge:await oidc.calculatePKCECodeChallenge(verifier),code_challenge_method:"S256"}),jar=new CookieJar(admin.session.headers.cookie);
+  const started=await jar.fetch(url),location=new URL(started.headers.get("location")!,base),uid=location.pathname.split("/").at(-1)!;
+  const evil=await jar.fetch(`${base}/api/v1/identity/interactions/${uid}`,{method:"POST",headers:{origin:"https://evil.example","content-type":"application/json","x-csrf-token":admin.session.headers["x-csrf-token"]},body:JSON.stringify({action:"login",password:PASSWORD})});assert.equal(evil.status,403);
+  const noCsrf=await jar.fetch(`${base}/api/v1/identity/interactions/${uid}`,{method:"POST",headers:{origin:base,"content-type":"application/json"},body:JSON.stringify({action:"login",password:PASSWORD})});assert.equal(noCsrf.status,403);
+  const good=await exchange(client,await authorize(base,admin.session,client)),list=await (await admin.api("/clients")).json() as {items:{id:string;revision:number}[]},c=list.items.find(v=>v.id===client.id)!;
+  const rotation=await admin.write(`/clients/${client.id}/secret`,"POST",undefined,`W/"${c.revision}"`);assert.equal(rotation.status,200);const replacement=await rotation.json() as {secret:string};assert.notEqual(replacement.secret,client.secret);await assert.rejects(oidc.refreshTokenGrant(client.config,good.refresh_token!));
+  const freshConfig=await oidc.discovery(new URL(`${base}/oidc`),client.id,replacement.secret,oidc.ClientSecretBasic(replacement.secret),{execute:[oidc.allowInsecureRequests]});
+  const newClient={...client,config:freshConfig,secret:replacement.secret};assert.ok((await exchange(newClient,await authorize(base,admin.session,newClient))).id_token);
+  const ownerToken=await readFile(process.env.DAR_DATABASE_TOKEN_FILE!,"utf8");
+  for(const table of ["provider_models","identity_clients","directory_profiles","directory_members","provisioning_tokens","identity_proofs"]){
+    const sql=`${process.env.DAR_DATABASE_URL}/v1/database/${process.env.DAR_DATABASE_NAME}/sql`,body=`SELECT * FROM ${table}`;
+    const owner=await fetch(sql,{method:"POST",headers:{authorization:`Bearer ${ownerToken}`,"content-type":"text/plain"},body});assert.equal(owner.ok,true,`Owner can query existing private table ${table}`);await owner.arrayBuffer();
+    const response=await fetch(sql,{method:"POST",headers:{authorization:`Bearer ${admin.session.token}`,"content-type":"text/plain"},body});assert.equal(response.ok,false,table);await response.arrayBuffer();
+  }
+  const withoutProof=await admin.api("/credentials","POST",{label:"not confirmed",scope:"write",days:1});assert.equal(withoutProof.status,403);
+});
+test("OIDC prompt, max_age, client/redirect binding and protocol revocation follow the registered contract",{skip:!origin,timeout:60000},async()=>{
+  const base=origin!,admin=await identityAdmin(base),client=await admin.client("public","openid profile"),other=await admin.client("public","openid profile");
+  assert.deepEqual([...(client.config.serverMetadata().token_endpoint_auth_methods_supported??[])].sort(),["client_secret_basic","none"]);
+  const initial=await authorize(base,admin.session,client,{scope:"openid profile"});await exchange(client,initial);
+  const silent=await authorize(base,admin.session,client,{scope:"openid profile",prompt:"none",jar:initial.jar,onInteraction:()=>assert.fail("prompt=none must not render interaction")});assert.ok(silent.url.searchParams.get("code"));await exchange(client,silent);
+  let confirmed=false;
+  const forced=await authorize(base,admin.session,client,{scope:"openid profile",prompt:"login",jar:initial.jar,onInteraction:d=>{if(d.prompt==="login"){assert.equal(typeof d.requiresPassword,"boolean");confirmed=true;}}});assert.equal(confirmed,true);await exchange(client,forced);
+  let reauthenticated=false;
+  const aged=await authorize(base,admin.session,client,{scope:"openid profile",prompt:"consent",params:{max_age:"0"},jar:initial.jar,onInteraction:d=>{if(d.prompt==="login")reauthenticated=true;}}),agedTokens=await exchange(client,aged);assert.equal(reauthenticated,true);assert.equal(typeof agedTokens.claims()!.auth_time,"number");
+  const mismatched=await authorize(base,admin.session,client,{scope:"openid profile"});
+  await assert.rejects(oidc.authorizationCodeGrant(other.config,mismatched.url,{pkceCodeVerifier:mismatched.verifier,expectedState:mismatched.state,expectedNonce:mismatched.nonce}));
+  const redirectMismatch=await authorize(base,admin.session,client,{scope:"openid profile"});
+  const rejectedRedirect=await fetch(`${base}/oidc/token`,{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"authorization_code",client_id:client.id,code:redirectMismatch.url.searchParams.get("code")!,code_verifier:redirectMismatch.verifier,redirect_uri:"http://127.0.0.1:49999/unregistered"})});assert.equal(rejectedRedirect.status,400);assert.equal((await rejectedRedirect.json() as {error:string}).error,"invalid_grant");
+  const revoked=await fetch(`${base}/oidc/token/revocation`,{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:client.id,token:agedTokens.access_token,token_type_hint:"access_token"})});assert.equal(revoked.status,200);await assert.rejects(oidc.fetchUserInfo(client.config,agedTokens.access_token,agedTokens.claims()!.sub!));
+});

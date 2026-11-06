@@ -33,7 +33,7 @@ export async function authService(db: Database, issuer: Issuer) {
     },
     async login(username: string, password: string) {
       const account = await db.call<Account | null>("service_account", [username.toLowerCase()]);
-      const valid = await bounded(() => verifyPassword(password, account?.verifier ?? dummy));
+      const valid = await bounded(() => verifyPassword(password, account?.verifier || dummy));
       if (!valid || !account?.enabled) throw new AppError("invalidCredentials", 401, "The username or password is incorrect.");
       const token = createOpaqueToken();
       const csrf = issuer.csrf(token.secret);
@@ -44,6 +44,15 @@ export async function authService(db: Database, issuer: Issuer) {
     async authenticate(secret: string | undefined): Promise<Authenticated | null> {
       if (!secret || !/^[A-Za-z0-9_-]{43}$/.test(secret)) return null;
       return db.call<Authenticated | null>("service_session", [digestToken(secret)]);
+    },
+    async confirm(auth: Authenticated, password: string) {
+      const account=await db.call<Account>("service_account",[auth.user.username]);
+      if(!await bounded(()=>verifyPassword(password,account?.verifier||dummy)))throw new AppError("invalidCredentials",401);
+      return account.verifier;
+    },
+    async provisionPassword(password: string) {
+      try { validateNewPassword(password); } catch { throw new AppError("invalidPassword",400,"Use at least 15 characters, up to 1024 UTF-8 bytes."); }
+      return bounded(()=>hashPassword(password));
     },
     async changePassword(auth: Authenticated, current: string, replacement: string) {
       try { validateNewPassword(replacement); } catch { throw new AppError("invalidPassword", 400, "Use at least 15 characters, up to 1024 UTF-8 bytes."); }

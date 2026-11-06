@@ -61,7 +61,7 @@ The final arrow is a logical reference, not database access to the filesystem.
 The runtime's durable upload records bridge that boundary. Metadata commits never
 pretend to make a filesystem write atomic.
 
-## Native identity now; OIDC and SCIM later
+## Native identity and standards providers
 
 The application handles authentication itself; there is no external identity
 provider dependency. Cordis owns first-administrator setup, login, logout,
@@ -83,21 +83,23 @@ sizes before expensive hashing. Never log credentials, tokens, or session IDs.
 
 Browser login creates an opaque Secure, HttpOnly, SameSite cookie. Store its
 digest, not its secret. Cookie writes require CSRF and exact configured-origin
-checks. The runtime ignores forwarded identity/origin headers. First setup is a
+checks. The configured origin is authoritative. The provider accepts TLS forwarding
+only from the local reverse proxy with a canonical Host and HTTPS flag. First setup is a
 single transaction and requires an operator bootstrap secret. Public registration
 is disabled. Recovery uses an explicit operator password-file flow, without
 depending on a future Email app or implementing an unused recovery-token system.
 
 Direct browser SpacetimeDB connections need a compatible signed identity token.
 The native identity service exchanges an active cookie session for a short-lived
-connection token, held in browser memory. Implement only the issuer/discovery/
-public-key surface required for this integration initially. This is not yet a
-general third-party OIDC provider. Use a maintained JOSE implementation rather
+connection token, held in browser memory. The internal `/auth/issuer` keeps the
+minimal discovery/public-key surface required for this integration, separately
+from the external `/oidc` provider. Use a maintained JOSE implementation rather
 than inventing JWT validation. Pin issuer and audience in the module, reject
 anonymous and unrelated identities, validate expiry, and preserve stable subject
 mapping. Signing keys use an AES-GCM keyring and private OS file permissions.
 The colocated master key is operator trust, not protection from a compromised
-host. Automated signing-key rotation is future work.
+host. Internal SDK key rotation remains operator recovery work; external OIDC
+keys have their own tested rotation and retirement lifecycle.
 
 Connection subjects combine the cookie session ID with a per-tab UUID. Principal
 records bind them to live sessions, while navigation belongs to the tab identity.
@@ -114,10 +116,11 @@ runtime capabilities; if the SDK cannot support the proposed direct-connection
 policy, document and resolve the transport design before proceeding. Do not
 silently ship stale authorized connections or substitute permanent host tokens.
 
-Eventually expose OIDC authorization-code/PKCE, registered clients, consent,
-discovery, token/UserInfo endpoints, and key rotation over the same directory.
-SCIM service endpoints manage that directory; outbound SCIM provisioning is a
-separate optional worker capability. Neither future feature is implemented now.
+The approved [OIDC and SCIM provider milestone](identity-provider.md) adds code/PKCE,
+registered clients, native consent, token/UserInfo/revocation/logout endpoints,
+signing-key rotation and SCIM Users/Groups over the same directory. Private
+SpacetimeDB tables persist encrypted provider artifacts and directory revisions.
+There is no outbound SCIM provisioning connector.
 
 ## Files data model
 

@@ -8,6 +8,8 @@ import path from "node:path";
 import { login, upload, connect } from "./integration-helpers.ts";
 import { database } from "../runtime/database.ts";
 import { deliverReminders } from "../runtime/pim/reminders.ts";
+import {identityAdmin,authorize,exchange} from "./identity-helpers.ts";
+import * as oidc from "openid-client";
 
 if (!process.env.DAR_SPACETIME_BIN) throw new Error("DAR_SPACETIME_BIN is required.");
 async function freePort() {
@@ -45,6 +47,10 @@ try {
   const setup = await fetch(`${origin}/api/v1/auth/setup`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ username: "admin", displayName: "Restart proof", password: "a long isolated test password", bootstrapToken: await readFile(path.join(root, "secrets/bootstrap-token"), "utf8") }) });
   assert.equal(setup.status, 200);
   const session = await login(origin);
+  const identity=await identityAdmin(origin),client=await identity.client(),credential=await identity.credential();
+  const activeTokens=await exchange(client,await authorize(origin,identity.session,client)),pendingCode=await authorize(origin,identity.session,client);
+  const providerKeys=await (await fetch(`${origin}/oidc/jwks`)).json();
+  const directoryResponse=await fetch(`${origin}/scim/v2/Users`,{method:"POST",headers:{authorization:`Bearer ${credential.secret}`,"content-type":"application/scim+json"},body:JSON.stringify({userName:"durable-directory",displayName:"Durable directory"})});assert.equal(directoryResponse.status,201);const directoryUser=await directoryResponse.json();
   const calendarResponse = await fetch(`${origin}/api/v1/calendar/calendars`, { method: "POST", headers: { ...session.headers, "content-type": "application/json" }, body: JSON.stringify({ name: "Durable calendar", color: "#2563eb" }) });
   assert.equal(calendarResponse.status,201); const calendar = await calendarResponse.json();
   const reminderStart = new Date(Date.now()+3605000).toISOString().slice(0,19), reminderEnd = new Date(Date.now()+7205000).toISOString().slice(0,19);
@@ -64,6 +70,9 @@ try {
   const stopped = new Promise(resolve => child.once("exit", resolve));
   process.kill(pids.runtime, "SIGKILL"); await stopped; request.destroy();
   await start();
+  assert.deepEqual(await (await fetch(`${origin}/oidc/jwks`)).json(),providerKeys);
+  const redeemed=await exchange(client,pendingCode);assert.ok(redeemed.id_token);assert.ok((await oidc.refreshTokenGrant(client.config,activeTokens.refresh_token)).access_token);
+  const restoredDirectory=await fetch(`${origin}/scim/v2/Users/${directoryUser.id}`,{headers:{authorization:`Bearer ${credential.secret}`}});assert.equal(restoredDirectory.status,200);assert.equal((await restoredDirectory.json()).id,directoryUser.id);
   assert.deepEqual(await readdir(path.join(root, "uploads")), []);
   assert.equal(await (await fetch(`${origin}/api/v1/files/${durable.fileId}/content`, { headers: session.headers })).text(), "Committed content survives process failure.");
   const retry = await fetch(`${origin}/api/v1/files/uploads/${reservation.id}`, { method: "PUT", headers: session.headers, body: Buffer.alloc(4096, "r") });
@@ -79,4 +88,5 @@ try {
   assert.equal(inbox.items.filter(row => row.resourceId === calendarEvent.id).length,1);
   console.info("PASS forced runtime failure during upload, full process/database restart, stale-lock/temp reconciliation, durable bytes, persisted login, reconnection and idempotent upload completion.");
   console.info("PASS Calendar resource and reminder watermark survive the same crash/restart; due delivery resumes without duplication.");
+  console.info("PASS unredeemed OIDC code, active refresh token, client registration, signing keys, native binding and SCIM directory/credential survive the same forced process/database restart.");
 } finally { await stop(); }

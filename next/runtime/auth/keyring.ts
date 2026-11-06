@@ -46,3 +46,13 @@ export async function signingJwk(directory: string): Promise<JWK> {
     return JSON.parse(Buffer.concat([decipher.update(Buffer.from(envelope.ciphertext, "base64url")), decipher.final()]).toString("utf8"));
   } catch { throw new Error("The identity signing key cannot be decrypted. Restore the matching keyring and signing key."); }
 }
+
+/** Purpose-bound boxes let private provider state live in SpacetimeDB without
+ * placing bearer material or client secrets there as plaintext. */
+export async function keyringBox(directory: string, purpose: string) {
+  const key=await masterKey(directory),aad=Buffer.from(`dar.identity.${purpose}.v1`);
+  return {
+    encrypt(value:unknown){const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",key,iv);cipher.setAAD(aad);const data=Buffer.concat([cipher.update(JSON.stringify(value),"utf8"),cipher.final()]);return JSON.stringify({iv:iv.toString("base64url"),tag:cipher.getAuthTag().toString("base64url"),data:data.toString("base64url")});},
+    decrypt<T>(encoded:string):T {try{const p=JSON.parse(encoded),decipher=createDecipheriv("aes-256-gcm",key,Buffer.from(p.iv,"base64url"));decipher.setAAD(aad);decipher.setAuthTag(Buffer.from(p.tag,"base64url"));return JSON.parse(Buffer.concat([decipher.update(Buffer.from(p.data,"base64url")),decipher.final()]).toString("utf8"));}catch{throw new Error("The identity payload cannot be decrypted.");}}
+  };
+}

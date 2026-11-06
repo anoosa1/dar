@@ -6,6 +6,7 @@ a Node/Cordis runtime handles native login and immutable local file content.
 There is no SQLite or external identity provider. The React interface implements
 selected mock C, with Nextcloud-style Material 3 and centered persistent search.
 Contacts and Calendar extend that workspace using selected mock A.
+Native OIDC/SCIM administration uses selected mock B, Account settings tabs.
 See the [architecture and acceptance record](../docs/spacetimedb/architecture.md).
 
 ## Run locally
@@ -62,7 +63,9 @@ npm --prefix next run serve
 Create `/srv/dar` empty and owned by that account. The production launcher uses
 Secure, HttpOnly, SameSite cookies and HSTS. It requires an HTTPS origin without
 a path or trailing slash. It deliberately ignores forwarded identity/origin
-headers: the configured origin is authoritative. Changing it revokes old sessions.
+headers as identity authority: the configured origin is authoritative. Changing
+it revokes old sessions. OIDC requires the local proxy to preserve the canonical
+Host and send `X-Forwarded-Proto: https`; mismatched forwarding hosts are rejected.
 
 Terminate TLS at your reverse proxy. Forward ordinary requests to
 `127.0.0.1:4311`. The browser's only public database route is the WebSocket
@@ -94,8 +97,9 @@ tests exercise the application on isolated loopback instances.
 
 The pinned SDK requires CSP `unsafe-eval` for its generated binary codecs. Inline
 scripts, remote runtime assets and active-file previews remain disallowed. The
-issuer surface serves this app's SpacetimeDB authentication only; third-party
-OIDC and SCIM provider endpoints are future work.
+internal `/auth/issuer` serves this app's SpacetimeDB authentication only.
+The separate `/oidc` issuer provides third-party sign-in, while `/scim/v2`
+provides directory provisioning. See [identity administration](#identity-and-provisioning).
 
 ## Files and limits
 
@@ -221,11 +225,44 @@ iterator steps per resource and 2,000 returned occurrences per series. Queries
 that exceed limits fail rather than returning a silently incomplete calendar.
 These are explicit safety bounds, not a large-archive performance guarantee.
 
-Instance backups now use `dar-backup-v2`, including Contacts, Calendar, grants,
-preferences, reminder inbox and watermarks. Restore still accepts the initial
-`dar-backup-v1` auth/Files format and rejects unknown future formats. The additive
-module upgrade is tested against the committed auth/Files baseline without
-resetting its database. See the [delivery and verification record](../docs/spacetimedb/contacts-calendar.md).
+Instance backups use `dar-backup-v3`, including app content, directory profiles,
+groups, registered clients and the encrypted external signing keyring. Restoring
+preserves IDs and client secrets, but invalidates native/provider sessions,
+codes, tokens and provisioning credentials. Sign in and issue new SCIM credentials.
+Restore also accepts v1 auth/Files and v2 Contacts/Calendar backups and rejects
+unknown formats. Additive upgrades are tested against both committed baselines.
+See the [identity delivery record](../docs/spacetimedb/identity-provider.md).
+
+## Identity and provisioning
+
+Open **Account security → Applications and identity settings**, or `/settings`.
+Administrators can register applications, manage directory people/groups, issue
+SCIM credentials and rotate OIDC keys. Sensitive changes in these settings need
+password confirmation, valid for five minutes. Ordinary users can review and
+revoke their connected applications.
+
+- Use **`https://your-instance/oidc`** as the external issuer. Discovery is at
+  `/oidc/.well-known/openid-configuration`. Register exact redirect/logout URLs;
+  confidential clients use HTTP Basic client authentication and public clients
+  use no client secret. Every client needs S256 PKCE. Secrets are shown once.
+- Allowed permissions are `openid`, `profile`, `email`, `groups` and
+  `offline_access`. Group claims contain immutable directory group IDs. Supplied
+  emails remain unverified. Offline access is bounded by the originating native
+  session; native logout, suspension and password changes revoke live tokens.
+- Point provisioners at **`https://your-instance/scim/v2`** using a dedicated
+  read-only or read/write bearer credential. Credentials expire in 1–365 days;
+  DAV passwords and OIDC profile access tokens cannot provision users.
+- SCIM supports Users/Groups CRUD, PATCH, filters, projections and pagination.
+  Groups contain users only and grant no app or administrator permissions.
+  Deactivation revokes access; deletion also tombstones the directory identity
+  while preserving owned app data. A tombstoned username stays reserved.
+- External ID tokens last five minutes. Key rotation retains prior keys for ten
+  minutes. Signed tokens already held by clients and an RP's independent session
+  cookie cannot be remotely erased; the RP must implement its own session policy.
+
+The [protocol contract and limits](../docs/spacetimedb/identity-provider.md)
+documents the precise supported subset. No dynamic client registration, implicit
+flow, password grant, SCIM Bulk, nested groups or outbound provisioning is enabled.
 
 ## Verify
 
@@ -234,16 +271,17 @@ npm --prefix next run verify
 ```
 
 This builds and starts a fresh real database and storage root, typechecks both
-projects, runs 31 focused Node tests, exercises Chromium at desktop and phone
+projects, runs the focused Node acceptance suite, exercises Chromium at desktop and phone
 sizes, and forces a runtime failure during upload before restarting the database.
 It verifies native recovery and revocation, permissions, file bytes and revisions,
 backup/restore, export, orphan cleanup, backup pin protection and reconnect during
 navigation, Contacts/Calendar native and DAV behavior, reminders, module upgrades
-and vdirsyncer interoperability. Tests never use
+and vdirsyncer interoperability, independent OIDC RP flows, SCIM lifecycle,
+production proxy headers and restart/restore of provider state. Tests never use
 the default state directory. `run test` alone skips integration tests without an
 explicit test instance and does not establish acceptance.
 
 The indexed collection fixture has 250 entries; its timing and process-tree RSS
 are reported as measurements of that fixture, not a large-archive capacity claim.
-The accepted milestone is auth and Files, not bug-free software or complete
-Nextcloud feature parity.
+The accepted app/protocol subsets are documented; this is not a claim of bug-free
+software, formal OIDC certification or complete Nextcloud feature parity.

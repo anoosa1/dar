@@ -10,11 +10,16 @@ import { database } from "../runtime/database.ts";
 import { backup, restore, exportFiles } from "../runtime/backup.ts";
 import { startServer } from "../runtime/server.ts";
 import { login, upload } from "./integration-helpers.ts";
+import {identityAdmin,authorize,exchange} from "./identity-helpers.ts";
+import * as oidc from "openid-client";
 
 const origin = process.env.DAR_INTEGRATION_ORIGIN;
 test("consistent backup, corruption rejection, empty-root restore, session invalidation and byte recovery", { skip: !origin || !process.env.DAR_TEST_ROOT, timeout: 40_000 }, async () => {
   const sourceRoot = process.env.DAR_TEST_ROOT!, base = origin!;
   const session = await login(base);
+  const identity=await identityAdmin(base),registeredClient=await identity.client(),provisioning=await identity.credential();
+  const beforeTokens=await exchange(registeredClient,await authorize(base,identity.session,registeredClient));
+  const beforeKeys=await (await fetch(`${base}/oidc/jwks`)).json();
   const file = await upload(base, session, `backup-${randomUUID()}.txt`, "This content must survive a full restore.");
   const beforePim = await (await fetch(`${base}/api/v1/contacts/books`, { headers: session.headers })).json() as { items: { id: string; name: string }[] };
   const sampleBook = beforePim.items[0];
@@ -34,7 +39,8 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   assert.equal(await readFile(path.join(exported, manifest.files.find(item => item.id === file.fileId)!.contentFile!), "utf8"), "This content must survive a full restore.");
   assert.doesNotMatch(JSON.stringify(manifest), /verifier|csrfDigest|signing-key/);
   const saved = await readFile(path.join(directory, "snapshot.json"), "utf8");
-  assert.match(saved, /dar-backup-v2/);
+  assert.match(saved, /dar-backup-v3/);
+  assert.doesNotMatch(saved,/"providerModels"|"provisioningTokens"|"identityProofs"/);
   const listener = createServer(); await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
   const port = (listener.address() as import("node:net").AddressInfo).port;
   await new Promise<void>(resolve => listener.close(() => resolve()));
@@ -53,6 +59,12 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   try {
     assert.equal((await fetch(`${newOrigin}/api/v1/auth/session`, { headers: session.headers })).status, 401);
     const recovered = await login(newOrigin);
+    assert.deepEqual(await (await fetch(`${newOrigin}/oidc/jwks`)).json(),beforeKeys);
+    assert.equal((await fetch(`${newOrigin}/scim/v2/Users`,{headers:{authorization:`Bearer ${provisioning.secret}`}})).status,401);
+    assert.equal((await fetch(`${newOrigin}/oidc/me`,{headers:{authorization:`Bearer ${beforeTokens.access_token}`}})).status,401);
+    const registered=await (await fetch(`${newOrigin}/api/v1/identity/clients`,{headers:recovered.headers})).json() as {items:{id:string}[]};assert.ok(registered.items.some(c=>c.id===registeredClient.id));
+    const configuration=await oidc.discovery(new URL(`${newOrigin}/oidc`),registeredClient.id,registeredClient.secret,oidc.ClientSecretBasic(registeredClient.secret!),{execute:[oidc.allowInsecureRequests]});
+    const afterClient={...registeredClient,config:configuration};assert.ok((await exchange(afterClient,await authorize(newOrigin,recovered,afterClient))).id_token);
     assert.equal(await (await fetch(`${newOrigin}/api/v1/files/${file.fileId}/content`, { headers: recovered.headers })).text(), "This content must survive a full restore.");
     const afterPim = await (await fetch(`${newOrigin}/api/v1/contacts/books`, { headers: recovered.headers })).json() as typeof beforePim;
     assert.deepEqual(afterPim.items.map(row => row.id).sort(), beforePim.items.map(row => row.id).sort());

@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { open, link, unlink } from "node:fs/promises";
+import { open, link, unlink, rename, lstat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
@@ -13,4 +13,11 @@ export async function createDurableFile(filename: string, content: string) {
     const parent = await open(path.dirname(filename), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     try { await parent.sync(); } finally { await parent.close(); }
   } finally { await file.close(); await unlink(temporary); }
+}
+
+export async function replaceDurableFile(filename:string,content:string){
+  const old=await lstat(filename);if(!old.isFile()||(old.mode&0o077))throw new Error("Unsafe private state file.");
+  const temporary=`${filename}.${randomUUID()}.tmp`,file=await open(temporary,constants.O_CREAT|constants.O_EXCL|constants.O_WRONLY|constants.O_NOFOLLOW,0o600);
+  try{await file.writeFile(content);await file.sync();await file.close();await rename(temporary,filename);const parent=await open(path.dirname(filename),constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);try{await parent.sync();}finally{await parent.close();}}
+  finally{await file.close();await unlink(temporary).catch((error:NodeJS.ErrnoException)=>{if(error.code!=="ENOENT")throw error;});}
 }

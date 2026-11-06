@@ -17,6 +17,6 @@ portable-file requirements for this directory only. Do not alter existing work.
 - Do not treat passing primitive tests as completion of auth or Files.
 - Contacts and Calendar mock A, Focused workspace, was selected on November 6:
   Contacts list/details and Calendar time grid, with the existing centered search.
-- OIDC/SCIM provider work was requested next. The concrete plan is
-  `../docs/spacetimedb/identity-provider.md`; its new provider dependency and
-  identity/consent UI selection are pending explicit maintainer approval.
+- OIDC/SCIM provider dependencies `oidc-provider@9.13.3`, its internal Koa and
+  `@types/oidc-provider@9.13.1` are approved. Layout B, Account settings tabs,
+  is selected. See `../docs/spacetimedb/identity-provider.md` for scope.

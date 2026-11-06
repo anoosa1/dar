@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import {test} from "node:test";
+import {execFileSync,spawnSync} from "node:child_process";
+import {mkdtemp,mkdir,writeFile,symlink} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import path from "node:path";
+import {randomUUID} from "node:crypto";
+import {database} from "../runtime/database.ts";
+import {hashPassword} from "../runtime/auth/password.ts";
+test("Contacts/Calendar v2 module upgrades and v2 backups restore with stable directory identities",{skip:!process.env.DAR_DATABASE_URL,timeout:60000},async()=>{
+  const project=path.resolve(import.meta.dirname,".."),root=await mkdtemp(path.join(tmpdir(),"dar-identity-upgrade-")),old=path.join(root,"old"),issuer=`${process.env.DAR_INTEGRATION_ORIGIN}/auth/issuer`,baseline="d9758fc";
+  await mkdir(path.join(old,"src"),{recursive:true});
+  const files=execFileSync("git",["ls-tree","-r","--name-only",baseline,"next/module/src"],{cwd:path.dirname(project),encoding:"utf8"}).trim().split("\n");assert.ok(files.length>1);
+  for(const file of files)await writeFile(path.join(old,"src",path.basename(file)),execFileSync("git",["show",`${baseline}:${file}`],{cwd:project}));
+  await writeFile(path.join(old,"package.json"),JSON.stringify({type:"module",dependencies:{spacetimedb:"2.14.1"}}));await symlink(path.join(project,"node_modules"),path.join(old,"node_modules"));
+  await writeFile(path.join(old,"tsconfig.json"),execFileSync("git",["show",`${baseline}:next/module/tsconfig.json`],{cwd:project}));
+  const cli=process.env.DAR_SPACETIME_BIN!,prefix=["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!],env={...process.env,DAR_ISSUER:issuer};
+  function run(args:string[]){const result=spawnSync(cli,[...prefix,...args],{env,encoding:"utf8",timeout:30000,maxBuffer:1024*1024});assert.equal(result.status,0,result.stdout+result.stderr);}
+  run(["build","--module-path",old]);const name=`dar-identity-upgrade-${randomUUID().slice(0,8)}`,url=process.env.DAR_DATABASE_URL!;
+  run(["publish",name,"--js-path",path.join(old,"dist/bundle.js"),"--server",url,"--yes","--no-config"]);
+  const db=await database(url,name,process.env.DAR_DATABASE_TOKEN_FILE!),id=randomUUID(),sid=randomUUID(),verifier=await hashPassword("old directory account password"),collectionId=randomUUID();
+  await db.call("service_create_account",[id,"old-directory","Old directory",verifier,true]);await db.call("service_create_session",[sid,id,"upgrade-digest","",Date.now()+60000,verifier]);
+  await db.call("service_pim",[sid,"createCollection",JSON.stringify({id:collectionId,kind:"contacts",name:"Existing contacts",color:"#2563eb"})]);
+  const pin=randomUUID(),snapshot=await db.call<any>("service_backup",[pin]);await db.call("service_release_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v2");
+  run(["publish",name,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",url,"--yes","--no-config"]);await db.call("service_startup",[issuer]);
+  const users=await db.call<any[]>("service_identity",[sid,"","","users","{}"]);assert.equal(users[0].id,id);assert.equal(users[0].userName,"old-directory");assert.equal(users[0].revision,1);
+  const upgraded=await db.call<any>("service_backup",[randomUUID()]);assert.equal(upgraded.format,"dar-backup-v3");assert.equal(upgraded.pim.collections[0].id,collectionId);
+  const restoredName=`dar-v2-restore-${randomUUID().slice(0,8)}`;run(["publish",restoredName,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",url,"--yes","--no-config"]);
+  const restored=await database(url,restoredName,process.env.DAR_DATABASE_TOKEN_FILE!);await restored.call("service_restore",[JSON.stringify(snapshot)]);
+  const recovered=await restored.call<any>("service_backup",[randomUUID()]);assert.equal(recovered.accounts[0].id,id);assert.equal(recovered.pim.collections[0].id,collectionId);assert.equal(recovered.identity.clients.length,0);
+});

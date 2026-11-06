@@ -2,6 +2,8 @@ import { Identity, ScheduleAt } from "spacetimedb";
 import { schema, table, t, Range, SenderError, type InferSchema, type ReducerCtx, type ViewCtx } from "spacetimedb/server";
 import { pimTables, pimChanges } from "./pim-tables.ts";
 import { pimOperation, pimSnapshot, restorePim, reminderWork, commitReminders, deferReminder } from "./pim.ts";
+import { identityTables } from "./identity-tables.ts";
+import { identityActor, directoryOperation, providerOperation, revokeProvider, revokeUser, identitySnapshot, restoreIdentity, touchProfile } from "./identity.ts";
 
 const instance = table({}, { id: t.string().primaryKey(), service: t.identity(), issuer: t.string() });
 const accounts = table({}, {
@@ -32,7 +34,7 @@ const backupPins = table({}, { id: t.string().primaryKey(), backupId: t.string()
 const appPasswords = table({}, { id: t.string().primaryKey(), userId: t.string().index("btree"), digest: t.string().unique(), label: t.string(), scope: t.string(), sessionId: t.string().unique(), principal: t.identity(), expiresAt: t.f64(), revoked: t.bool() });
 const rootRevisions = table({}, { userId: t.string().primaryKey(), revision: t.u32(), modifiedAt: t.f64() });
 const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().index("btree"), fileId: t.string(), action: t.string(), at: t.f64() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, ...pimTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, ...pimTables, ...identityTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -166,7 +168,7 @@ export const connected = db.clientConnected(ctx => {
 export const expireSession = db.reducer({ onSchedule: sessionExpiry }, { expiry: sessionExpiry.rowType }, (ctx, { expiry }) => {
   if (!ctx.senderAuth.isInternal) fail("forbidden");
   const session = ctx.db.sessions.id.find(expiry.sessionId);
-  if (session && session.expiresAt <= now(ctx)) ctx.db.sessions.id.update({ ...session, active: false });
+  if (session && session.expiresAt <= now(ctx)) {ctx.db.sessions.id.update({ ...session, active: false });revokeProvider(ctx,undefined,session.id);}
 });
 export const serviceStatus = db.procedure(t.string(), ctx => ctx.withTx(tx => {
   service(tx);
@@ -174,10 +176,12 @@ export const serviceStatus = db.procedure(t.string(), ctx => ctx.withTx(tx => {
 }));
 export const serviceStartup = db.reducer({ issuer: t.string() }, (ctx, { issuer }) => {
   service(ctx);
+  if (!ctx.db.identityMigrations.id.find(1)) ctx.db.identityMigrations.insert({ id:1, appliedAt:now(ctx) });
   if (issuer !== ctx.env.DAR_ISSUER) fail("invalidInput");
   const config = ctx.db.instance.id.find("instance")!;
   if (config.issuer === issuer) return;
   ctx.db.instance.id.update({ ...config, issuer });
+  revokeProvider(ctx);
   for (const session of ctx.db.sessions.iter()) if (session.active) ctx.db.sessions.id.update({ ...session, active: false });
   for (const password of ctx.db.appPasswords.iter()) if (!password.revoked) ctx.db.appPasswords.id.update({ ...password, revoked: true });
 });
@@ -193,6 +197,7 @@ export const serviceCreateAccount = db.reducer({
   opaqueId(p.id);
   if (!/^[a-z0-9][a-z0-9_.-]{2,63}$/.test(p.username) || p.displayName.length < 1 || p.displayName.length > 100) fail("invalidInput");
   if (ctx.db.accounts.username.find(p.username)) fail("conflict");
+  if (ctx.db.accounts.count()>=10000n)fail("operationTooLarge");
   ctx.db.accounts.insert({ id: p.id, username: p.username, displayName: p.displayName, verifier: p.verifier,
     administrator: p.first, enabled: true, createdAt: now(ctx) });
   ctx.db.usage.insert({ userId: p.id, used: 0, reserved: 0 });
@@ -219,6 +224,7 @@ export const serviceRevokeSession = db.reducer({ id: t.string() }, (ctx, { id })
   service(ctx);
   const session = ctx.db.sessions.id.find(id);
   if (session) ctx.db.sessions.id.update({ ...session, active: false });
+  revokeProvider(ctx, undefined, id);
 });
 export const serviceChangePassword = db.reducer({ userId: t.string(), verifier: t.string(), expectedVerifier: t.string() }, (ctx, { userId, verifier, expectedVerifier }) => {
   service(ctx);
@@ -226,16 +232,17 @@ export const serviceChangePassword = db.reducer({ userId: t.string(), verifier: 
   if (!user) fail("notFound");
   if (user.verifier !== expectedVerifier) fail("conflict");
   ctx.db.accounts.id.update({ ...user, verifier });
-  for (const session of ctx.db.sessions.userId.filter(userId)) ctx.db.sessions.id.update({ ...session, active: false });
-  for (const password of ctx.db.appPasswords.userId.filter(userId)) ctx.db.appPasswords.id.update({ ...password, revoked: true });
+  touchProfile(ctx,userId);
+  revokeUser(ctx,userId);
 });
 export const serviceSetEnabled = db.reducer({ userId: t.string(), enabled: t.bool() }, (ctx, { userId, enabled }) => {
   service(ctx);
   const user = ctx.db.accounts.id.find(userId);
   if (!user || user.administrator) fail("forbidden");
+  if(enabled&&ctx.db.directoryProfiles.userId.find(userId)?.deleted)fail("notFound");
   ctx.db.accounts.id.update({ ...user, enabled });
-  if (!enabled) for (const session of ctx.db.sessions.userId.filter(userId)) ctx.db.sessions.id.update({ ...session, active: false });
-  if (!enabled) for (const password of ctx.db.appPasswords.userId.filter(userId)) ctx.db.appPasswords.id.update({ ...password, revoked: true });
+  if(user.enabled!==enabled)touchProfile(ctx,userId);
+  if (!enabled) revokeUser(ctx,userId);
 });
 export const me = db.view({ public: true }, t.option(safeUser), ctx => {
   const user = userFor(ctx);
@@ -587,7 +594,7 @@ export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, 
     tx.db.backupPins.insert({ id: `${id}/${blobId}`, backupId: id, blobId });
     return { id: blobId, size: upload.size, digest: upload.digest };
   });
-  return JSON.stringify({ format: "dar-backup-v2", pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
+  return JSON.stringify({ format: "dar-backup-v3", identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
     accounts: [...tx.db.accounts.iter()], files: [...tx.db.fileEntries.iter()], versions: history,
     grants: [...tx.db.grants.iter()], publicShares: [...tx.db.publicShares.iter()], favorites: [...tx.db.favorites.iter()],
     uploads: blobIds.map(blobId => tx.db.uploads.id.find(blobId)),
@@ -615,9 +622,9 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
   const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; files: FileEntry[]; versions: Row<"versions">[];
     grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads: Row<"uploads">[];
-    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot> };
-  if (!["dar-backup-v1", "dar-backup-v2"].includes(value.format)) fail("invalidInput");
-  if (value.format === "dar-backup-v2" && !value.pim) fail("invalidInput");
+    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot> };
+  if (!["dar-backup-v1", "dar-backup-v2", "dar-backup-v3"].includes(value.format)) fail("invalidInput");
+  if (value.format !== "dar-backup-v1" && !value.pim || value.format === "dar-backup-v3" && !value.identity) fail("invalidInput");
   for (const row of value.accounts) {
     ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0 });
   }
@@ -649,6 +656,7 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   for (const row of value.uploads) ctx.db.uploads.insert({ ...row, state: "complete" });
   for (const row of value.activity) ctx.db.activity.insert(row);
   restorePim(ctx, value.pim);
+  restoreIdentity(ctx,value.identity);
 });
 
 export const serviceSessions = db.procedure({ sessionId: t.string() }, t.string(), (ctx, { sessionId }) => ctx.withTx(tx => {
@@ -683,7 +691,26 @@ export const serviceRevokeOwnedSession = db.reducer({ sessionId: t.string(), id:
   service(ctx); const user = fromSession(ctx, p.sessionId), session = ctx.db.sessions.id.find(p.id);
   if (!session || session.userId !== user.id) fail("notFound");
   ctx.db.sessions.id.update({ ...session, active: false });
+  revokeProvider(ctx,undefined,p.id);
 });
+
+export const serviceIdentity = db.procedure({ sessionId:t.string(), bearer:t.string(), proof:t.string(), operation:t.string(), payload:t.string() },t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const actor=identityActor(tx,p.sessionId,p.bearer,p.proof,!["authorize","users","user","groups","group","clients","tokens"].includes(p.operation));
+  return JSON.stringify(directoryOperation(tx,p.operation,JSON.parse(p.payload),actor));
+}));
+export const serviceIdentityProof = db.reducer({ sessionId:t.string(), digest:t.string(), expectedVerifier:t.string() },(ctx,p)=>{
+  service(ctx);const user=fromSession(ctx,p.sessionId);if(!user.administrator||user.verifier!==p.expectedVerifier)fail("forbidden");
+  for(const proof of ctx.db.identityProofs.iter())if(proof.expiresAt<=now(ctx))ctx.db.identityProofs.digest.delete(proof.digest);
+  if(ctx.db.identityProofs.count()>=2000n)fail("operationTooLarge");
+  ctx.db.identityProofs.insert({digest:p.digest,sessionId:p.sessionId,verifier:user.verifier,expiresAt:now(ctx)+300000});
+});
+export const serviceProvider = db.procedure({ operation:t.string(), payload:t.string() },t.string(),(ctx,p)=>ctx.withTx(tx=>{service(tx);return JSON.stringify(providerOperation(tx,p.operation,JSON.parse(p.payload)));}));
+export const serviceConnectedApplications = db.procedure({sessionId:t.string(),revoke:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);
+  const grants=[...tx.db.providerModels.accountId.filter(user.id)].filter(m=>m.model==="Grant"&&m.expiresAt>now(tx));
+  if(p.revoke){const matching=grants.filter(g=>g.clientId===p.revoke);if(!matching.length)fail("notFound");for(const grant of matching)providerOperation(tx,"revokeGrant",{id:grant.id});}
+  return JSON.stringify([...new Set(grants.filter(g=>g.clientId!==p.revoke).map(g=>g.clientId))].map(id=>({id,clientId:id,name:JSON.parse(tx.db.identityClients.id.find(id)?.metadata??"{}").client_name})));
+}));
 export const serviceCreateAppPassword = db.reducer({ sessionId: t.string(), id: t.string(), digest: t.string(), label: t.string(), scope: t.string() }, (ctx, p) => {
   service(ctx); const user = fromSession(ctx, p.sessionId);
   if (!p.label.trim() || p.label.length > 100 || !["read", "write", "contacts:read", "contacts:write", "calendar:read", "calendar:write"].includes(p.scope) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("invalidInput");

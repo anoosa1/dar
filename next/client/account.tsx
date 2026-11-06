@@ -24,6 +24,7 @@ export function AccountSecurity({ session, onSignedOut }: { session: BrowserSess
     void run(async () => { setSecret(await request("/api/v1/auth/app-passwords", { method: "POST", body: JSON.stringify(values) }, session.csrfToken)); await refresh(); });
   }
   return <div className="account-security">
+    <p><a href="/settings">Applications and identity settings</a></p>
     {error && <p role="alert" className="error">{error}</p>}
     <h3>Password</h3><form onSubmit={changePassword}><label>Current password<input name="currentPassword" type="password" autoComplete="current-password" required /></label><label>New password<input name="password" type="password" autoComplete="new-password" minLength={15} required /></label><p className="muted small">Use at least 15 characters. Changing it revokes browser sessions and app passwords.</p><button className="secondary-button" disabled={busy}>Change password</button></form>
     <h3>Signed-in sessions</h3>{sessions.map(item => <div className="grant" key={item.id}><span>{item.current ? "This browser session" : "Another browser session"}<small>Signed in {new Date(item.createdAt).toLocaleString()}</small></span>{!item.current && <button className="text-button danger" disabled={busy} onClick={() => { void run(async () => { await request(`/api/v1/auth/sessions/${item.id}`, { method: "DELETE" }, session.csrfToken); await refresh(); }); }}>Sign out</button>}</div>)}
