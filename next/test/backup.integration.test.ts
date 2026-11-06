@@ -16,6 +16,15 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   const sourceRoot = process.env.DAR_TEST_ROOT!, base = origin!;
   const session = await login(base);
   const file = await upload(base, session, `backup-${randomUUID()}.txt`, "This content must survive a full restore.");
+  const beforePim = await (await fetch(`${base}/api/v1/contacts/books`, { headers: session.headers })).json() as { items: { id: string; name: string }[] };
+  const sampleBook = beforePim.items[0];
+  const beforeCards = sampleBook ? await (await fetch(`${base}/api/v1/contacts/books/${sampleBook.id}/export`, { headers: session.headers })).text() : "";
+  const beforeCalendars = await (await fetch(`${base}/api/v1/calendar/calendars`, { headers: session.headers })).json() as { items: { id: string }[] };
+  let eventProof: { collectionId: string; href: string; content: string } | undefined;
+  for (const calendar of beforeCalendars.items) {
+    const rows = await (await fetch(`${base}/api/v1/calendar/calendars/${calendar.id}/items`, { headers: session.headers })).json() as { items: { href: string }[] };
+    if (rows.items[0]) { const event = await (await fetch(`${base}/api/v1/calendar/calendars/${calendar.id}/items/${rows.items[0].href}`, { headers: session.headers })).json() as { content: string }; eventProof = { collectionId: calendar.id, href: rows.items[0].href, content: event.content }; break; }
+  }
   const source = await database(process.env.DAR_DATABASE_URL!, process.env.DAR_DATABASE_NAME!, process.env.DAR_DATABASE_TOKEN_FILE!);
   const temporary = await mkdtemp(path.join(tmpdir(), "dar-backup-proof-")), directory = path.join(temporary, "backup");
   const result = await backup(source, sourceRoot, directory);
@@ -25,7 +34,7 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   assert.equal(await readFile(path.join(exported, manifest.files.find(item => item.id === file.fileId)!.contentFile!), "utf8"), "This content must survive a full restore.");
   assert.doesNotMatch(JSON.stringify(manifest), /verifier|csrfDigest|signing-key/);
   const saved = await readFile(path.join(directory, "snapshot.json"), "utf8");
-  assert.match(saved, /dar-backup-v1/);
+  assert.match(saved, /dar-backup-v2/);
   const listener = createServer(); await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
   const port = (listener.address() as import("node:net").AddressInfo).port;
   await new Promise<void>(resolve => listener.close(() => resolve()));
@@ -45,6 +54,10 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
     assert.equal((await fetch(`${newOrigin}/api/v1/auth/session`, { headers: session.headers })).status, 401);
     const recovered = await login(newOrigin);
     assert.equal(await (await fetch(`${newOrigin}/api/v1/files/${file.fileId}/content`, { headers: recovered.headers })).text(), "This content must survive a full restore.");
+    const afterPim = await (await fetch(`${newOrigin}/api/v1/contacts/books`, { headers: recovered.headers })).json() as typeof beforePim;
+    assert.deepEqual(afterPim.items.map(row => row.id).sort(), beforePim.items.map(row => row.id).sort());
+    if (sampleBook) assert.equal(await (await fetch(`${newOrigin}/api/v1/contacts/books/${sampleBook.id}/export`, { headers: recovered.headers })).text(), beforeCards);
+    if (eventProof) { const event = await (await fetch(`${newOrigin}/api/v1/calendar/calendars/${eventProof.collectionId}/items/${eventProof.href}`, { headers: recovered.headers })).json() as { content: string }; assert.equal(event.content, eventProof.content); }
     await assert.rejects(restore(target, directory, root), /Another runtime/);
   } finally { await runtime.close(); }
   await assert.rejects(access(path.join(root, "runtime.lock")));

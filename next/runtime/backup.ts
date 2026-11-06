@@ -59,7 +59,7 @@ export async function restore(db: Database, source: string, root: string) {
   const complete = JSON.parse(await readFile(path.join(source, "complete.json"), "utf8"));
   if (complete.format !== "dar-backup-v1" || complete.snapshotDigest !== createHash("sha256").update(text).digest("hex")) throw new Error("Incomplete or corrupted backup.");
   const snapshot = JSON.parse(text) as Manifest;
-  if (snapshot.format !== "dar-backup-v1") throw new Error("Unsupported backup format.");
+  if (!["dar-backup-v1", "dar-backup-v2"].includes(snapshot.format)) throw new Error("Unsupported backup format.");
   await openRoot(root); const release = await lockRoot(root);
   try {
     const bootstrapFiles = new Set(["bootstrap-token", "database-token"]);

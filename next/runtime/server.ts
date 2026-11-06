@@ -14,6 +14,10 @@ import { lockRoot } from "./lock.ts";
 import { handleDav } from "./files/dav.ts";
 import { createOpaqueToken } from "./auth/session.ts";
 import { reconcileStorage } from "./files/maintenance.ts";
+import { handlePimHttp } from "./pim/http.ts";
+import { pimService } from "./pim/service.ts";
+import { deliverReminders } from "./pim/reminders.ts";
+import { handlePimDav } from "./pim/dav.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
@@ -25,13 +29,13 @@ function json(res: ServerResponse, value: unknown, status = 200) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
   res.end(JSON.stringify(value));
 }
-async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function body(req: IncomingMessage, limit = 16_384): Promise<Record<string, unknown>> {
   if (!req.headers["content-type"]?.startsWith("application/json")) throw new AppError("invalidContentType", 415);
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req.iterator({ destroyOnReturn: false })) {
     size += chunk.length;
-    if (size > 16_384) { req.resume(); throw new AppError("requestTooLarge", 413); }
+    if (size > limit) { req.resume(); throw new AppError("requestTooLarge", 413); }
     chunks.push(chunk);
   }
   try {
@@ -89,6 +93,8 @@ export async function startServer(config: ServerConfig) {
     try {
       const url = new URL(req.url ?? "/", config.origin);
       const method = req.method ?? "GET";
+      if (["/.well-known/carddav", "/.well-known/caldav"].includes(url.pathname)) { res.writeHead(308, { location: "/dav/" }); res.end(); return; }
+      if (url.pathname.startsWith("/dav/") && !url.pathname.startsWith("/dav/files/")) return await handlePimDav(req, res, db, config.origin);
       if (url.pathname.startsWith("/dav/")) return await handleDav(req, res, db, blobs, config.origin);
       if (url.pathname === "/auth/issuer/.well-known/openid-configuration") return json(res, { issuer: issuer.issuer, jwks_uri: `${issuer.issuer}/jwks`, id_token_signing_alg_values_supported: ["ES256"], subject_types_supported: ["public"] });
       if (url.pathname === "/auth/issuer/jwks") return json(res, issuer.jwks);
@@ -126,6 +132,7 @@ export async function startServer(config: ServerConfig) {
         const authenticated = await auth.authenticate(secret);
         if (!authenticated) throw new AppError("unauthenticated", 401);
         if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !authorizeCookieWrite(config.origin, origin, typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : undefined, authenticated.session.csrfDigest)) throw new AppError("csrfRejected", 403);
+        if (/^\/api\/v1\/(contacts|calendar|pim)(\/|$)/.test(url.pathname)) return await handlePimHttp(req, res, url, pimService(db, authenticated.session.id), () => body(req, 3 * 1024 * 1024));
         if (url.pathname === "/api/v1/auth/session" && method === "GET") return json(res, { user: authenticated.user, csrfToken: issuer.csrf(secret!) });
         if (url.pathname === "/api/v1/auth/token" && method === "POST") return json(res, { token: await issuer.token(authenticated.session.id, authenticated.session.expiresAt, url.searchParams.get("tab") ?? undefined), databaseUrl: databasePublicUrl, databaseName: config.databaseName });
         if (url.pathname === "/api/v1/auth/logout" && method === "POST") {
@@ -141,8 +148,9 @@ export async function startServer(config: ServerConfig) {
         if (url.pathname === "/api/v1/auth/app-passwords" && method === "GET") return json(res, { items: await db.call("service_app_passwords", [authenticated.session.id]) });
         if (url.pathname === "/api/v1/auth/app-passwords" && method === "POST") {
           const p = await body(req), token = createOpaqueToken(), id = randomUUID();
-          await db.call("service_create_app_password", [authenticated.session.id, id, token.digest, string(p.label, 100), string(p.scope, 10)]);
-          return json(res, { id, secret: token.secret, davUrl: `${config.origin}/dav/files/${encodeURIComponent(authenticated.user.username)}/` }, 201);
+          const scope = string(p.scope, 20), app = scope.startsWith("contacts:") ? "addressbooks" : scope.startsWith("calendar:") ? "calendars" : "files";
+          await db.call("service_create_app_password", [authenticated.session.id, id, token.digest, string(p.label, 100), scope]);
+          return json(res, { id, secret: token.secret, davUrl: `${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
         }
         const passwordRoute = /^\/api\/v1\/auth\/app-passwords\/([^/]+)$/.exec(url.pathname);
         if (passwordRoute && method === "DELETE") { await db.call("service_revoke_app_password", [authenticated.session.id, passwordRoute[1]]); return json(res, { ok: true }); }
@@ -207,6 +215,7 @@ export async function startServer(config: ServerConfig) {
     maintenance = (async () => {
       for (const [key, attempt] of attempts) if (attempt.until <= Date.now()) attempts.delete(key);
       await reconcileStorage(db, blobs);
+      await deliverReminders(db);
     })().catch(() => { console.warn("Storage maintenance will retry."); }).finally(() => { maintenance = undefined; });
   };
   const timer = setInterval(maintain, 60_000);

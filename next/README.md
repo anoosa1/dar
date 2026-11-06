@@ -1,10 +1,11 @@
-# Dar: native auth and Files on SpacetimeDB
+# Dar on SpacetimeDB
 
 The new application runs independently here, preserving unrelated work in the
 previous checkout. SpacetimeDB owns accounts, authorization and file metadata;
 a Node/Cordis runtime handles native login and immutable local file content.
 There is no SQLite or external identity provider. The React interface implements
 selected mock C, with Nextcloud-style Material 3 and centered persistent search.
+Contacts and Calendar extend that workspace using selected mock A.
 See the [architecture and acceptance record](../docs/spacetimedb/architecture.md).
 
 ## Run locally
@@ -173,6 +174,59 @@ current file bytes and `manifest.json`, which maps opaque filenames back to the
 original names and folder hierarchy; they exclude credentials and version history.
 They are distinct from complete instance backups.
 
+## Contacts and Calendar
+
+Use the Application selector in the top bar, or open `/contacts` and `/calendar`.
+Both share native login, account security and live permission revocation with Files.
+
+Contacts provides multiple address books, structured names and postal addresses,
+labeled emails/phones/websites, organizations, birthdays, groups, favorites,
+search, saved name sorting, book sharing, and per-book/contact vCard exports.
+vCard 3.0/4.0 imports report each item's result; duplicate UIDs are rejected rather
+than silently overwriting records. Unchanged properties and their parameters
+survive editing, including fields the editor does not expose.
+
+Calendar provides named/color calendars, visibility, read/write sharing,
+day/week/month/agenda, display timezone and week-start preferences, timed/floating/
+all-day events, recurring series and individual exceptions. Move/resize opens the
+same revision-checked editor as keyboard editing. All-day end dates are exclusive.
+Enable Show cancelled events to find and edit cancelled events/occurrences again.
+ICS import/export preserves UIDs, exceptions and unknown properties; native zoned
+exports include an embedded VTIMEZONE generated from the runtime's IANA data.
+
+Reminders have durable per-resource watermarks, duplicate suppression and an
+acknowledgeable in-app inbox. The calendar owner receives reminders; shared readers
+do not inherit the owner's alarms. The worker checks due work every minute and
+catches up after downtime. Floating/all-day alarms use the owner's saved display
+timezone, defaulting to UTC. Editing/deleting an event invalidates its previous
+revision's reminders. Native edits support a display reminder up to seven days
+before start. Other imported alarms are retained as data; email/audio effects,
+external invitation delivery and remote feed subscriptions are not implemented.
+Saving attendee information does not send invitations.
+
+Create separate Contacts or Calendar app passwords under Account security.
+CardDAV homes are `/dav/addressbooks/<username>/`; CalDAV homes are
+`/dav/calendars/<username>/`. Existing Files app passwords stay Files-scoped.
+Supported operations include principal/home discovery, PROPFIND, resource
+GET/HEAD/PUT/DELETE, query and multiget REPORTs, and conditional writes. Create new
+collections in the native UI. Sync tokens, LOCK, PROPPATCH, MKCALENDAR, VTODO and
+iTIP scheduling are not advertised. Unsupported filters fail explicitly. Tested
+interoperability uses vdirsyncer 0.20.0, including native/client round trips.
+
+Each owner can create 100 collections; native Contacts views paginate 200 rows
+within a bounded 10,000-contact search set. Collections hold up to 10,000 resources.
+Imports accept 2 MiB/1,000 resources and exports up to 8 MiB; individual resources
+are limited to 256 KiB. Native recurrence windows span at most one year, 10,000
+iterator steps per resource and 2,000 returned occurrences per series. Queries
+that exceed limits fail rather than returning a silently incomplete calendar.
+These are explicit safety bounds, not a large-archive performance guarantee.
+
+Instance backups now use `dar-backup-v2`, including Contacts, Calendar, grants,
+preferences, reminder inbox and watermarks. Restore still accepts the initial
+`dar-backup-v1` auth/Files format and rejects unknown future formats. The additive
+module upgrade is tested against the committed auth/Files baseline without
+resetting its database. See the [delivery and verification record](../docs/spacetimedb/contacts-calendar.md).
+
 ## Verify
 
 ```sh
@@ -180,11 +234,12 @@ npm --prefix next run verify
 ```
 
 This builds and starts a fresh real database and storage root, typechecks both
-projects, runs 18 focused Node tests, exercises Chromium at desktop and phone
+projects, runs 31 focused Node tests, exercises Chromium at desktop and phone
 sizes, and forces a runtime failure during upload before restarting the database.
 It verifies native recovery and revocation, permissions, file bytes and revisions,
 backup/restore, export, orphan cleanup, backup pin protection and reconnect during
-navigation. Tests never use
+navigation, Contacts/Calendar native and DAV behavior, reminders, module upgrades
+and vdirsyncer interoperability. Tests never use
 the default state directory. `run test` alone skips integration tests without an
 explicit test instance and does not establish acceptance.
 

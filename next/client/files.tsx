@@ -3,6 +3,7 @@ import { DbConnection } from "./module_bindings/index.ts";
 import type { FileEntries as FileEntry, Usage as MyUsage } from "./module_bindings/types.ts";
 import { Brand } from "./auth.tsx";
 import { AccountSecurity } from "./account.tsx";
+import { AppSwitcher } from "./apps.tsx";
 import { Icon, type IconName } from "./icons.tsx";
 import { Dialog } from "./dialog.tsx";
 import { formatBytes, request, readProcedure, type BrowserSession } from "./api.ts";
@@ -264,7 +265,7 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   const initials = session.user.displayName.split(/\s+/).map(word => word[0]).join("").slice(0, 2).toUpperCase();
 
   return <div className="app-shell" onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); if (section === "files") void upload(event.dataTransfer.files); } }}>
-    <header className="topbar"><div className="topbar-brand"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebar(!sidebar)}><Icon name="menu" /></button><Brand /><span className="app-name">Files</span></div>
+    <header className="topbar"><div className="topbar-brand"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebar(!sidebar)}><Icon name="menu" /></button><Brand /><AppSwitcher active="files" /></div>
       <label className="global-search"><Icon name="search" /><input aria-label="Search filenames starting with" placeholder="Search filenames…" value={query} onChange={event => { setQuery(event.target.value); setCursor(""); setPrevious([]); }} /><span className="search-scope">Current folder · prefix</span>{query && <button className="icon-button" aria-label="Clear search" onClick={() => setQuery("")}><Icon name="close" /></button>}</label>
       <div className="account-area"><button className="avatar" aria-label="Open account menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>{initials}</button>{menu && <div className="account-menu"><strong>{session.user.displayName}</strong><span className="muted">@{session.user.username}</span><button onClick={() => openModal({ type: "account" })}>Account security</button>{session.user.administrator && <button onClick={() => openModal({ type: "user" })}>Create user</button>}<button onClick={() => { void logout(); }}>Sign out</button></div>}</div>
     </header>

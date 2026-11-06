@@ -2,9 +2,12 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Auth } from "./auth.tsx";
 import { Files } from "./files.tsx";
+import { Contacts } from "./pim/contacts.tsx";
+import { Calendar } from "./pim/calendar.tsx";
 import { request, RequestError, type BrowserSession } from "./api.ts";
 import "./styles.css";
 import "./loading.css";
+import "./pim/styles.css";
 function App() {
   const [status, setStatus] = useState<{ initialized: boolean } | null>(null);
   const [session, setSession] = useState<BrowserSession | null>(null);
@@ -24,6 +27,7 @@ function App() {
   }, []);
   if (error) return <main className="startup-state"><h1>Unable to connect</h1><p role="alert">{error}</p><button className="primary-button" onClick={() => location.reload()}>Try again</button></main>;
   if (!ready || !status) return <main className="startup-state" aria-busy="true"><div className="brand-mark" /><p role="status">Opening your space…</p></main>;
-  return session ? <Files session={session} onSignedOut={() => { setSession(null); setStatus({ initialized: true }); }} /> : <Auth initialized={status.initialized} onLogin={setSession} />;
+  const signedOut = () => { setSession(null); setStatus({ initialized: true }); };
+  return session ? location.pathname === "/contacts" ? <Contacts session={session} onSignedOut={signedOut} /> : location.pathname === "/calendar" ? <Calendar session={session} onSignedOut={signedOut} /> : <Files session={session} onSignedOut={signedOut} /> : <Auth initialized={status.initialized} onLogin={setSession} />;
 }
 createRoot(document.getElementById("root")!).render(<App />);

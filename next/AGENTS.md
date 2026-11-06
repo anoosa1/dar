@@ -15,3 +15,5 @@ portable-file requirements for this directory only. Do not alter existing work.
   centered persistent search, desktop details, and focused phone panels. Continue
   that direction; review new static mocks only for a new visual direction.
 - Do not treat passing primitive tests as completion of auth or Files.
+- Contacts and Calendar mock A, Focused workspace, was selected on November 6:
+  Contacts list/details and Calendar time grid, with the existing centered search.

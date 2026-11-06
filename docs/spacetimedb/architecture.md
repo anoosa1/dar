@@ -5,6 +5,10 @@ crash/restart acceptance passed on November 6, 2026. See `next/README.md` for us
 and explicit interoperability/capacity limits.
 Branch: `codex/spacetimedb-auth-files`.
 
+The November 6 extension adds Contacts and Calendar in the same architecture;
+see [their delivery contract](contacts-calendar.md). The original milestone below
+records the auth/Files foundation, not a restriction on that subsequent approval.
+
 ## Authority and scope
 
 The maintainer requested this fresh architecture in the November 5, 2026

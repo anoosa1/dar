@@ -6,6 +6,8 @@ import { mkdtemp, readFile, stat, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { login, upload, connect } from "./integration-helpers.ts";
+import { database } from "../runtime/database.ts";
+import { deliverReminders } from "../runtime/pim/reminders.ts";
 
 if (!process.env.DAR_SPACETIME_BIN) throw new Error("DAR_SPACETIME_BIN is required.");
 async function freePort() {
@@ -43,6 +45,13 @@ try {
   const setup = await fetch(`${origin}/api/v1/auth/setup`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ username: "admin", displayName: "Restart proof", password: "a long isolated test password", bootstrapToken: await readFile(path.join(root, "secrets/bootstrap-token"), "utf8") }) });
   assert.equal(setup.status, 200);
   const session = await login(origin);
+  const calendarResponse = await fetch(`${origin}/api/v1/calendar/calendars`, { method: "POST", headers: { ...session.headers, "content-type": "application/json" }, body: JSON.stringify({ name: "Durable calendar", color: "#2563eb" }) });
+  assert.equal(calendarResponse.status,201); const calendar = await calendarResponse.json();
+  const reminderStart = new Date(Date.now()+3605000).toISOString().slice(0,19), reminderEnd = new Date(Date.now()+7205000).toISOString().slice(0,19);
+  const eventResponse = await fetch(`${origin}/api/v1/calendar/calendars/${calendar.id}/items`, { method: "POST", headers: { ...session.headers, "content-type": "application/json" }, body: JSON.stringify({ data: { title: "Reminder after crash", start: reminderStart, end: reminderEnd, timezone: "UTC", reminderMinutes: 60 } }) });
+  assert.equal(eventResponse.status,201); const calendarEvent = await eventResponse.json();
+  const owner = await database(`http://127.0.0.1:${databasePort}`, "dar-restart", path.join(root,"secrets/database-token"));
+  await deliverReminders(owner);
   const durable = await upload(origin, session, "Durable.txt", "Committed content survives process failure.");
   const reservationResponse = await fetch(`${origin}/api/v1/files/uploads`, { method: "POST", headers: { ...session.headers, "content-type": "application/json" }, body: JSON.stringify({ name: "Interrupted.txt", parentId: "", size: 4096, mediaType: "text/plain" }) });
   assert.equal(reservationResponse.status, 201); const reservation = await reservationResponse.json();
@@ -64,5 +73,10 @@ try {
   assert.equal(await (await fetch(`${origin}/api/v1/files/${reservation.fileId}/content`, { headers: session.headers })).text(), "r".repeat(4096));
   const db = await connect(session);
   try { assert.equal([...db.db.myFiles.iter()].some(entry => entry.id === durable.fileId), true); } finally { db.disconnect(); }
+  await new Promise(resolve => setTimeout(resolve, Math.max(0,Date.parse(reminderStart+"Z")-3600000-Date.now()+25)));
+  await deliverReminders(owner); await deliverReminders(owner);
+  const inbox = await (await fetch(`${origin}/api/v1/pim/reminders`, { headers: session.headers })).json();
+  assert.equal(inbox.items.filter(row => row.resourceId === calendarEvent.id).length,1);
   console.info("PASS forced runtime failure during upload, full process/database restart, stale-lock/temp reconciliation, durable bytes, persisted login, reconnection and idempotent upload completion.");
+  console.info("PASS Calendar resource and reminder watermark survive the same crash/restart; due delivery resumes without duplication.");
 } finally { await stop(); }

@@ -4,8 +4,10 @@ Requested November 6, 2026, on `codex/spacetimedb-auth-files`, following the
 verified auth/Files milestone. This extends `next/`; it does not migrate the old
 Dar implementation, require its services, or alter unrelated local work.
 
-Status: scope and static visual options prepared; implementation and verification
-pending. Do not describe this milestone as complete until the evidence below exists.
+Status: mock A, Focused workspace, implemented and verified on November 6, 2026.
+The full isolated verification command passed: 31 Node tests, both desktop/phone
+browser journeys, independent vdirsyncer round trips, module upgrade/restore,
+and forced crash/restart with reminder recovery. No required checks remain failing.
 
 ## Product scope
 
@@ -110,19 +112,78 @@ separate claims requiring their own evidence.
    reminders and app navigation against real state.
 5. Verify every row below and update this record with actual commands/results.
 
-| Area | Required proof | Status |
+| Area | Required proof | Passing evidence |
 | --- | --- | --- |
-| Contacts | Multi-value CRUD, UID conflicts, unknown-field round trip, groups and pagination | Pending |
-| Calendar basics | Timed/floating/all-day CRUD, timezone validation, exclusive end dates | Pending |
-| Recurrence | DST boundary, leap day, EXDATE/RDATE, changed/cancelled instance, bounded infinite RRULE | Pending |
-| Concurrency | Stale revision and concurrent native/DAV write conflict without lost updates | Pending |
-| Authorization | Two-user isolation, read-only grants, revocation, credential scope and expiry | Pending |
-| DAV | Discovery, query/multiget filters, XML namespaces, preconditions and real sync client | Pending |
-| Reminders | Due delivery, edit/cancel invalidation, restart and duplicate suppression | Pending |
-| Imports/exports | Multiple resources, invalid input, lossless fields, stable UID and byte-safe Unicode | Pending |
-| Persistence | Existing-module upgrade, old backup import, new backup round trip and relationship validation | Pending |
-| Browser | Desktop/phone CRUD, search, recurring edits, keyboard/focus and clean console | Pending |
-| Lifecycle | Bounded subscriptions/work, reconnect, restart and deterministic Cordis cleanup | Pending |
+| Contacts | Multi-value CRUD, UID conflicts, unknown-field round trip, groups and pagination | `pim-standards.test.ts`, `pim.integration.test.ts`, `pim-browser.mjs` |
+| Calendar basics | Timed/floating/all-day CRUD, timezone validation, exclusive end dates | `pim-standards.test.ts`, `pim.integration.test.ts` |
+| Recurrence | DST boundary, leap day, EXDATE/RDATE periods, changed/cancelled instance, bounded infinite RRULE | `pim-standards.test.ts`, browser occurrence edit/cancel/restore |
+| Concurrency | Stale revisions and conditional native/DAV mutations without lost updates | `pim.integration.test.ts`, independent vdirsyncer round trip |
+| Authorization | Two-user isolation, read-only grants, live revocation, credential scope and expiry | `pim.integration.test.ts`, existing auth/session security tests |
+| DAV | Discovery, namespace-aware query/multiget, preconditions and real sync client | `pim.integration.test.ts`, `pim-dav-client.mjs` with vdirsyncer 0.20.0 |
+| Reminders | Due delivery, acknowledgement, edit/delete invalidation, restart and duplicate suppression | `pim.integration.test.ts`, `restart.mjs` |
+| Imports/exports | Multiple resources, invalid input, preserved properties/parameters, stable UID and Unicode folding | `pim-standards.test.ts`, `pim.integration.test.ts`, browser export |
+| Persistence | Existing-module upgrade, old backup import, new backup round trip and relationship validation | `pim-upgrade.integration.test.ts`, extended `backup.integration.test.ts` |
+| Browser | Desktop/phone CRUD, search, recurring edits, move/resize, focus and console | `pim-browser.mjs` plus retained Files journey |
+| Lifecycle | Bounded subscriptions/work, reconnect, crash/restart and Cordis cleanup | Existing reconnect journey, extended `restart.mjs`, watermark conflict checks |
+
+## Running and operational limits
+
+From the repository root, use `nix develop ./next`, `npm ci --prefix next`, and
+`npm --prefix next run dev`. The Application selector opens Contacts and Calendar;
+no account or Files migration is required. Full verification is
+`npm --prefix next run verify`; it builds a real isolated module/database and
+runs 31 Node tests, both app browser journeys, vdirsyncer and a forced restart.
+The module upgrade proof uses immutable auth/Files commit `bf782c0` and therefore
+requires this checkout's Git history. It never deletes the existing database.
+
+The final Chromium runs use 1440×950 and 390×844 viewports and verify a clean
+console, no page-level phone overflow, saved-contact focus restoration, stable
+contact URLs, all calendar views, recurring edits/cancellation/reversal and real
+move/resize saves. The independent client is vdirsyncer 0.20.0. Capacity fixtures
+include 250 Contacts records, the retained 250-entry Files window proof and 205
+calendar resources for reminder queue fairness. The final database process-tree
+RSS was 451 MiB, including auxiliary upgrade/restore databases; this is a fixture
+measurement, not a production capacity guarantee. Test data and browser artifacts
+remain outside the repository.
+
+Contacts native views have opaque cursors, 200-row pages and a bounded
+10,000-contact search set. They scan validated projections inside that bound;
+this is not a full-text index or an unbounded directory service. Each owner can
+create 100 collections and each collection holds at most 10,000 resources.
+Resources are limited to 256 KiB, imports to 2 MiB/1,000 resources, and native
+collection exports to 8 MiB. Oversized queries fail explicitly.
+
+Native calendar windows span at most one year. Each series expansion is bounded
+to 10,000 iterator steps and 2,000 returned occurrences; calendar windows cap the
+aggregate at 5,000 occurrences. The native UI edits RRULE and occurrence overrides;
+RDATE, EXDATE, custom properties and organizer/attendee parameters are preserved
+through standards import/export. Native IANA timezone exports include VTIMEZONE;
+the runtime snapshots explicit transitions for two centuries and recurring annual
+tails where the IANA data is stable. Political timezone changes still require
+runtime/tzdata updates and re-exporting affected events.
+
+Move and resize open a reviewable editor. Editing/deleting recurring events asks
+whether to change one occurrence or the whole series. Show cancelled events makes
+cancelled resources and occurrences visible for reversal. Permanent deletion is
+explicitly confirmed; collection confirmations show the affected resource count.
+
+Reminders use durable per-resource revision/watermark state and an indexed due
+queue, catching up in seven-day chunks. Batches advance beyond the first 200
+resources; failed resources retain their watermark and retry after five minutes
+without blocking later work. A minute timer is owned and drained by the existing Cordis
+runtime. The inbox belongs to the calendar owner. Native edits support a DISPLAY
+reminder zero to 10,080 minutes before start; unsupported imported alarm effects
+are preserved as data, not executed. Browser notification permission is never
+requested automatically. External invitation/RSVP delivery, remote calendar feeds
+and a general scheduling inbox/outbox remain outside this local-app milestone.
+
+CardDAV and CalDAV expose only the capabilities they implement: principal/home
+discovery, PROPFIND, GET/HEAD/PUT/DELETE, query and multiget. Collections are created
+and managed in the native UI. There is no advertised sync-collection, LOCK,
+PROPPATCH, MKCALENDAR, VTODO or full iTIP scheduling support. Existing Files
+credentials retain their original scope. Unsupported filters fail rather than
+returning misleading results. See `next/README.md` for self-hosting and operator
+backup/recovery instructions.
 
 “100%” means the agreed features have working end-to-end paths and passing
 evidence. It is not a license to mark incomplete scheduling, sync or reminder

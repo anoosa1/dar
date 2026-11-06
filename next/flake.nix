@@ -57,6 +57,6 @@
               ln -s spacetimedb-cli $out/bin/spacetime
             '';
           };
-        in { default = pkgs.mkShell { packages = [ node npm spacetime pkgs.chromium pkgs.curl pkgs.git ]; }; });
+        in { default = pkgs.mkShell { packages = [ node npm spacetime pkgs.chromium pkgs.curl pkgs.git pkgs.vdirsyncer ]; }; });
     };
 }

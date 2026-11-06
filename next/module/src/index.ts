@@ -1,5 +1,7 @@
 import { Identity, ScheduleAt } from "spacetimedb";
 import { schema, table, t, Range, SenderError, type InferSchema, type ReducerCtx, type ViewCtx } from "spacetimedb/server";
+import { pimTables, pimChanges } from "./pim-tables.ts";
+import { pimOperation, pimSnapshot, restorePim, reminderWork, commitReminders, deferReminder } from "./pim.ts";
 
 const instance = table({}, { id: t.string().primaryKey(), service: t.identity(), issuer: t.string() });
 const accounts = table({}, {
@@ -30,9 +32,9 @@ const backupPins = table({}, { id: t.string().primaryKey(), backupId: t.string()
 const appPasswords = table({}, { id: t.string().primaryKey(), userId: t.string().index("btree"), digest: t.string().unique(), label: t.string(), scope: t.string(), sessionId: t.string().unique(), principal: t.identity(), expiresAt: t.f64(), revoked: t.bool() });
 const rootRevisions = table({}, { userId: t.string().primaryKey(), revision: t.u32(), modifiedAt: t.f64() });
 const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().index("btree"), fileId: t.string(), action: t.string(), at: t.f64() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, ...pimTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
-type Ctx = ReducerCtx<InferSchema<typeof db>>;
+export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
 type FileEntry = NonNullable<ReturnType<Ctx["db"]["fileEntries"]["id"]["find"]>>;
 type ReadCtx = Pick<VCtx, "sender" | "db">;
@@ -585,7 +587,7 @@ export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, 
     tx.db.backupPins.insert({ id: `${id}/${blobId}`, backupId: id, blobId });
     return { id: blobId, size: upload.size, digest: upload.digest };
   });
-  return JSON.stringify({ format: "dar-backup-v1", id, createdAt: now(tx), blobs,
+  return JSON.stringify({ format: "dar-backup-v2", pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
     accounts: [...tx.db.accounts.iter()], files: [...tx.db.fileEntries.iter()], versions: history,
     grants: [...tx.db.grants.iter()], publicShares: [...tx.db.publicShares.iter()], favorites: [...tx.db.favorites.iter()],
     uploads: blobIds.map(blobId => tx.db.uploads.id.find(blobId)),
@@ -613,8 +615,9 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
   const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; files: FileEntry[]; versions: Row<"versions">[];
     grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads: Row<"uploads">[];
-    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[] };
-  if (value.format !== "dar-backup-v1") fail("invalidInput");
+    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot> };
+  if (!["dar-backup-v1", "dar-backup-v2"].includes(value.format)) fail("invalidInput");
+  if (value.format === "dar-backup-v2" && !value.pim) fail("invalidInput");
   for (const row of value.accounts) {
     ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0 });
   }
@@ -645,11 +648,36 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   for (const row of value.favorites) ctx.db.favorites.insert(row);
   for (const row of value.uploads) ctx.db.uploads.insert({ ...row, state: "complete" });
   for (const row of value.activity) ctx.db.activity.insert(row);
+  restorePim(ctx, value.pim);
 });
 
 export const serviceSessions = db.procedure({ sessionId: t.string() }, t.string(), (ctx, { sessionId }) => ctx.withTx(tx => {
   service(tx); const user = fromSession(tx, sessionId);
   return JSON.stringify([...tx.db.sessions.userId.filter(user.id)].filter(s => s.active && !s.digest.startsWith("protocol:") && s.expiresAt > now(tx)).map(s => ({ id: s.id, createdAt: s.createdAt, expiresAt: s.expiresAt, current: s.id === sessionId })));
+}));
+
+export const myPimChanges = db.view({ public: true }, t.option(pimChanges.rowType), ctx => {
+  const user = userFor(ctx);
+  return user ? ctx.db.pimChanges.userId.find(user.id) ?? { userId: user.id, revision: 0 } : undefined;
+});
+export const servicePimReminderWork = db.procedure(t.string(), ctx => ctx.withTx(tx => { service(tx); return JSON.stringify(reminderWork(tx)); }));
+export const servicePimCommitReminders = db.reducer({ resourceId: t.string(), revision: t.u32(), from: t.f64(), to: t.f64(), reminders: t.string() }, (ctx, p) => {
+  service(ctx); commitReminders(ctx, p.resourceId, p.revision, p.from, p.to, JSON.parse(p.reminders));
+});
+export const servicePimDeferReminder = db.reducer({ resourceId: t.string(), revision: t.u32(), from: t.f64() }, (ctx, p) => { service(ctx); deferReminder(ctx, p.resourceId, p.revision, p.from); });
+export const servicePim = db.procedure({ sessionId: t.string(), operation: t.string(), payload: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
+  service(tx); const user = fromSession(tx, p.sessionId);
+  const password = tx.db.appPasswords.sessionId.find(p.sessionId);
+  if (password && (password.revoked || password.expiresAt <= now(tx))) fail("unauthenticated");
+  return JSON.stringify(pimOperation(tx, user.id, p.operation, JSON.parse(p.payload), password?.scope));
+}));
+export const servicePimAuthenticate = db.procedure({ username: t.string(), digest: t.string(), app: t.string(), write: t.bool() }, t.string(), (ctx, p) => ctx.withTx(tx => {
+  service(tx); const password = tx.db.appPasswords.digest.find(p.digest);
+  const user = password && tx.db.accounts.id.find(password.userId);
+  const session = password && tx.db.sessions.id.find(password.sessionId);
+  if (!password || password.revoked || password.expiresAt <= now(tx) || !user?.enabled || user.username !== p.username.toLowerCase() || !session?.active) fail("unauthenticated");
+  if (!["contacts", "calendar"].includes(p.app) || ![p.app + ":read", p.app + ":write"].includes(password.scope) || p.write && password.scope !== p.app + ":write") fail("forbidden");
+  return JSON.stringify({ sessionId: session.id, username: user.username });
 }));
 export const serviceRevokeOwnedSession = db.reducer({ sessionId: t.string(), id: t.string() }, (ctx, p) => {
   service(ctx); const user = fromSession(ctx, p.sessionId), session = ctx.db.sessions.id.find(p.id);
@@ -658,7 +686,7 @@ export const serviceRevokeOwnedSession = db.reducer({ sessionId: t.string(), id:
 });
 export const serviceCreateAppPassword = db.reducer({ sessionId: t.string(), id: t.string(), digest: t.string(), label: t.string(), scope: t.string() }, (ctx, p) => {
   service(ctx); const user = fromSession(ctx, p.sessionId);
-  if (!p.label.trim() || p.label.length > 100 || !["read", "write"].includes(p.scope) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("invalidInput");
+  if (!p.label.trim() || p.label.length > 100 || !["read", "write", "contacts:read", "contacts:write", "calendar:read", "calendar:write"].includes(p.scope) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("invalidInput");
   // The internal principal cannot be authenticated by a browser token. Only the
   // service-owned protocol adapter can invoke domain functions on its behalf.
   const protocolSession = unusedUuid(ctx);
@@ -685,6 +713,7 @@ export const serviceProtocolAuthenticate = db.procedure({ username: t.string(), 
   const session = password && tx.db.sessions.id.find(password.sessionId);
   if (!password || password.revoked || password.expiresAt <= now(tx) || !user?.enabled || user.username !== p.username.toLowerCase() || !session?.active) fail("unauthenticated");
   if (p.write && password.scope !== "write") fail("forbidden");
+  if (!["read", "write"].includes(password.scope)) fail("forbidden");
   return JSON.stringify({ sessionId: password.sessionId, username: user.username });
 }));
 

@@ -40,8 +40,12 @@ try {
   run(["node_modules/typescript/bin/tsc", "-p", "module/tsconfig.json"]);
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
+  run(["--test", "--test-concurrency=1", "test/pim-standards.test.ts", "test/pim.integration.test.ts"]);
+  run(["--test", "test/pim-upgrade.integration.test.ts"]);
   run(["--test", "--test-concurrency=1", "test/auth-primitives.test.ts", "test/auth-security.integration.test.ts", "test/files.integration.test.ts", "test/dav.integration.test.ts", "test/backup.integration.test.ts", "test/gc.integration.test.ts", "test/keyring.test.ts", "test/pagination.integration.test.ts", "test/storage.test.ts"]);
   run(["test/browser.mjs"]);
+  run(["test/pim-browser.mjs"]);
+  run(["test/pim-dav-client.mjs"]);
   // This deliberately consumes the fixture's login failure budget.
   run(["--test", "test/http-security.integration.test.ts"]);
   run(["test/restart.mjs"]);
