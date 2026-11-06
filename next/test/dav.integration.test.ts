@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { test } from "node:test";
+import { login } from "./integration-helpers.ts";
+const origin = process.env.DAR_INTEGRATION_ORIGIN;
+test("scoped app passwords: WebDAV create, upload, list, conditional update, move, copy, delete and revocation", { skip: !origin, timeout: 30_000 }, async () => {
+  const base = origin!, session = await login(base);
+  async function credential(scope: string) {
+    const response = await fetch(`${base}/api/v1/auth/app-passwords`, { method: "POST", headers: { ...session.headers, "content-type": "application/json" }, body: JSON.stringify({ label: "Protocol test", scope }) });
+    assert.equal(response.status, 201, await response.clone().text());
+    return await response.json() as { id: string; secret: string; davUrl: string };
+  }
+  const write = await credential("write"), read = await credential("read");
+  const headers = { authorization: `Basic ${Buffer.from(`admin:${write.secret}`).toString("base64")}` };
+  const readHeaders = { authorization: `Basic ${Buffer.from(`admin:${read.secret}`).toString("base64")}` };
+  const folder = `${write.davUrl}Protocol-${randomUUID()}/`, file = `${folder}hello.txt`;
+  assert.equal((await fetch(folder, { method: "MKCOL", headers })).status, 201);
+  const initial = await fetch(file, { method: "PUT", headers, body: "version one" });
+  assert.equal(initial.status, 201, await initial.clone().text());
+  const etag = initial.headers.get("etag")!;
+  const listing = await fetch(folder, { method: "PROPFIND", headers: { ...headers, depth: "1" } });
+  assert.equal(listing.status, 207); assert.match(await listing.text(), /hello\.txt/);
+  assert.equal(await (await fetch(file, { headers: readHeaders })).text(), "version one");
+  assert.equal((await fetch(file, { method: "PUT", headers: readHeaders, body: "denied" })).status, 403);
+  assert.equal((await fetch(file, { method: "PUT", headers, body: "missing precondition" })).status, 428);
+  const update = await fetch(file, { method: "PUT", headers: { ...headers, "if-match": etag }, body: "version two" });
+  assert.equal(update.status, 204, await update.clone().text());
+  assert.equal((await fetch(file, { method: "PUT", headers: { ...headers, "if-match": etag }, body: "stale" })).status, 412);
+  const moved = `${folder}moved.txt`, copy = `${folder}copy.txt`;
+  assert.equal((await fetch(file, { method: "MOVE", headers: { ...headers, "if-match": update.headers.get("etag")!, destination: moved } })).status, 204);
+  const currentEtag = (await fetch(moved, { method: "HEAD", headers })).headers.get("etag")!;
+  assert.equal((await fetch(moved, { method: "COPY", headers: { ...headers, "if-match": currentEtag, destination: copy } })).status, 201);
+  assert.equal(await (await fetch(copy, { headers })).text(), "version two");
+  assert.equal((await fetch(moved, { method: "DELETE", headers: { ...headers, "if-match": currentEtag } })).status, 204);
+  assert.equal((await fetch(moved, { headers })).status, 404);
+  const revoked = await fetch(`${base}/api/v1/auth/app-passwords/${write.id}`, { method: "DELETE", headers: session.headers });
+  assert.equal(revoked.status, 200);
+  assert.equal((await fetch(copy, { headers })).status, 401);
+  assert.equal((await fetch(copy, { headers: { authorization: `Basic ${Buffer.from("admin:a long isolated test password").toString("base64")}` } })).status, 401);
+});
