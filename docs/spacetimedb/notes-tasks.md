@@ -1,0 +1,138 @@
+# Notes and Tasks delivery plan
+
+Requested November 6, 2026, after native identity, Files, Contacts and Calendar.
+Branch: `codex/spacetimedb-auth-files`. Status: scope and static mocks prepared;
+layout selection is pending. Neither app is implemented by this document.
+
+## Architecture
+
+Keep the existing Node 24/Cordis process, SpacetimeDB database, immutable blob
+store and native identity. No additional runtime, database, worker or dependency
+is proposed. The previous Dar implementation stays untouched.
+
+Reuse the private collection/resource/grant/change boundaries where they represent
+the same behavior: ownership, read/write sharing, revision checks, activity and
+live invalidation. Keep Markdown and VTODO validation in separate typed adapters.
+Existing PIM collections use string kinds; extend the allowed kinds for notebooks
+without changing the meaning of existing Contacts or Calendar resources.
+
+Notes hold Markdown in SpacetimeDB, with title, notebook, tags and favorite
+metadata. Metadata and content updates commit together. Notes are not mirrored
+into a second authoritative Files tree. Markdown export supplies portable files.
+File links use existing authorized download routes; a notebook grant must never
+implicitly grant access to a linked file. Do not add a duplicate attachment store.
+
+Tasks use standard ICS VTODO resources in calendar collections, so the Tasks app
+and CalDAV clients edit the same records. Calendar collections may contain event
+and task resources; adapters classify components explicitly. Calendar views,
+event export/import and reminders must not accidentally interpret tasks as
+VEVENTs or omit tasks from a complete collection export. Task-only collections
+and mixed collections advertise their supported components accurately.
+
+Reuse the existing owned reminder maintenance loop and inbox, with task-specific
+alarm/recurrence handling and durable delivery watermarks. Do not create another
+background scheduler. Cancellation, edits, completion and deletion invalidate
+obsolete reminders transactionally.
+
+## Notes acceptance scope
+
+- Notebook create/rename/delete, read/write sharing and live permission revocation.
+- Note create/read/edit, rename, move between authorized notebooks, duplicate,
+  favorite, tags, full title/body search, sort and deep links.
+- Markdown source editing and a safe rendered preview: headings, paragraphs,
+  emphasis, links, lists/checklists, quotes and fenced code. Define the supported
+  Markdown dialect explicitly; raw HTML stays inert and active URL schemes fail
+  closed. No CDN assets, outbound image fetching or remote embed execution.
+- Debounced revision-checked saves, explicit saving/saved/error/conflict states,
+  retry and unsaved-navigation protection. A reconnect must not overwrite a newer
+  revision; retain the unsaved text for deliberate recovery. No offline editing
+  or collaborative character-level editing is claimed.
+- Recoverable trash, restore and explicit permanent deletion. Preserve note ID
+  and content when moving, restoring or renaming; deletion must be reversible
+  until the user explicitly purges it.
+- Individual Markdown import/export and bounded notebook import/export with
+  readable metadata. Preserve exact source text across edit/export/restart.
+
+## Tasks acceptance scope
+
+- Task-list/calendar create/rename/color/delete and existing read/write sharing.
+- Tasks, subtasks and parent/child relationships; reject cycles and invalid
+  cross-list parent references. Move/copy without silently breaking relationships.
+- Title, description, start/due dates, date-only versus zoned times, priority,
+  status, progress, completion timestamp and categories. Undated tasks stay undated.
+- Inbox, Today, Upcoming, Important and Completed views; list/search/filter/sort,
+  task details and keyboard completion/reopening. Show overdue tasks correctly in
+  the user's timezone; mobile editing has the same capabilities.
+- Recurring VTODO series, individual occurrences and exceptions, with explicit
+  completion/reopening semantics. Never materialize an unbounded recurrence or
+  shift a date-only due date through a timezone conversion.
+- Durable in-app reminders and acknowledgement, including downtime catch-up and
+  edit/completion invalidation. No outbound email invitations or push service.
+- ICS import/export and CalDAV discovery, supported-component metadata, VTODO
+  query/multiget, date filters and conditional GET/PUT/DELETE. Preserve UID,
+  RELATED-TO, recurrence exceptions, timezone definitions and unknown properties.
+- Explicit delete confirmation and safe parent/child deletion behavior; retain
+  completed tasks for reopening and export.
+
+Recurring completion applies to the selected occurrence, persisted as a completed
+exception; the master remains active for subsequent occurrences. Stopping a series
+is a separate explicit action. Native recurrence requires a start date and uses
+bounded expansion. Parent completion must offer deliberate handling of unfinished
+subtasks; reopening a parent must not silently reopen completed children. Parent
+deletion offers detaching children or deleting the bounded subtree, with the
+selected action committed atomically.
+
+## Integration and safety
+
+Add `/notes` and `/tasks` to the shared application switcher, keeping the centered
+search and Nextcloud-style Material 3 shell. Browser APIs live under
+`/api/v1/notes` and `/api/v1/tasks`, with camelCase envelopes, stable errors,
+pagination and revision-backed ETags/If-Match. CalDAV remains under `/dav`.
+Use existing Calendar-scoped app credentials for VTODOs and keep Files/Contacts
+credentials isolated. Sharing a calendar deliberately shares its events/tasks.
+
+Validate both sides of resource moves in the same database transaction. Keep
+user scope explicit in every lookup, stream, reminder and export. Revocation,
+account suspension, password changes and session expiry must invalidate access
+without waiting for a browser reload. Bound imports, body size, hierarchy depth,
+result windows and recurrence work; report limits instead of truncating silently.
+
+Integrate search, activity, preferences and the existing reminder inbox. This new
+project has no assistant/widget/plugin contribution host yet; do not invent one
+or claim those surfaces exist. Document that platform boundary explicitly.
+
+## Delivery order
+
+1. Select one of the paired static layouts in `notes-tasks-mocks.html`.
+2. Add typed documents, validators and additive numbered migrations. Prove existing
+   accounts, Files, Contacts, Calendar and identity-provider state survive upgrade.
+3. Implement Notes transactions, APIs, safe preview, search, sharing, trash and
+   portable import/export; implement Tasks/VTODO transactions and protocol paths.
+4. Extend reminder processing, CalDAV component filtering and collection exports;
+   prove existing VEVENT clients still work with mixed collections.
+5. Build the selected React layouts and all loading/empty/error/conflict/offline,
+   keyboard, focus, selection and phone states.
+6. Extend backup/restore for new state and retained trash, accepting existing v1,
+   v2 and v3 backups. Test an actual old-database upgrade and complete restore.
+7. Run the full isolated acceptance command, real desktop/phone browser journeys,
+   independent CalDAV round trips and forced runtime/database restarts. Record
+   precise supported capabilities, limitations and evidence before marking done.
+
+## Verification matrix
+
+| Surface | Required proof | Status |
+| --- | --- | --- |
+| Notes data | Exact Markdown round trip, atomic metadata/content, revision conflict and recovery | Pending |
+| Notes lifecycle | Move, duplicate, trash/restore/purge, sharing and revocation | Pending |
+| Preview security | Raw HTML, active URLs, images/embeds and malformed source stay safe | Pending |
+| Tasks data | Status/progress/completion, hierarchy validation, move and reopen | Pending |
+| Tasks dates | Date-only, floating/zoned due dates, DST, recurrence and exceptions | Pending |
+| CalDAV | VTODO CRUD/query/multiget, ETags, mixed VEVENT/VTODO compatibility and credential isolation | Pending |
+| Reminders | Restart catch-up, completion/edit invalidation, bounded recurrence and duplicate suppression | Pending |
+| Browser | Real desktop/phone Notes and Tasks journeys, drafts/conflicts, focus and console | Pending |
+| Upgrade/restore | Existing database and v1/v2/v3 restore, new state/trash survives backup and restart | Pending |
+| Existing apps | Complete auth/Files/Contacts/Calendar/OIDC/SCIM acceptance suite remains green | Pending |
+
+The request for “100%” is a completion requirement for this documented scope,
+including protocols and lifecycle, not a claim of every possible third-party
+feature or formal protocol certification. No acceptance row is passed yet.
