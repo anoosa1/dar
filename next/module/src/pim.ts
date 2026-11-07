@@ -1,4 +1,5 @@
 import { Range, SenderError } from "spacetimedb/server";
+import {passwordAllows} from "../../shared/app-scopes.ts";
 import type { Ctx } from "./index.ts";
 import {trashNote,validateTaskParent} from "./workspace.ts";
 
@@ -36,7 +37,7 @@ function log(ctx: Ctx, ownerId: string, resourceId: string, action: string) {
 /** Runs only behind the owner-credential boundary, for a freshly checked session. */
 export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Record<string, unknown>, protocolScope?: string, batch=false) {
   const at = Number(ctx.timestamp.toMillis());
-  const allowsKind = (kind: string) => !protocolScope || protocolScope.startsWith(`${kind}:`) || protocolScope.startsWith("pim:") && ["contacts", "calendar"].includes(kind);
+  const allowsKind = (kind: string) => !protocolScope || passwordAllows(protocolScope,kind,"read") || passwordAllows(protocolScope,kind,"write");
   if (protocolScope && !["collections", "list", "read", "put", "delete"].includes(operation)) fail("forbidden");
   if (operation === "collections") {
     const rows = [...ctx.db.pimCollections.ownerId.filter(userId)].map(row => ({ ...row, role: "owner" }));
@@ -72,11 +73,12 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
   }
   const c = collection(ctx, userId, p.collectionId, !["list", "read", "grants"].includes(operation));
   if (!allowsKind(c.kind)) fail("forbidden");
-  if (protocolScope?.endsWith(":read") && !["list", "read"].includes(operation)) fail("forbidden");
+  const metadataOnly=operation==="list" && p.metadataOnly===true;
+  if (protocolScope && !passwordAllows(protocolScope,c.kind,["list","read"].includes(operation)&&!metadataOnly?"read":"write")) fail("forbidden");
   if (operation === "list") {
     const rows = [];
     for (const row of ctx.db.pimResources.collectionId.filter(c.id)) { if (rows.length >= 10000) fail("operationTooLarge"); rows.push(row); }
-    return { collection: c, items: rows };
+    return { collection: c, items: metadataOnly ? rows.map(({content,projection,...row})=>({...row,content:"",projection:""})) : rows };
   }
   if (["renameCollection", "deleteCollection", "share", "revoke", "grants"].includes(operation)) {
     if (c.role !== "owner") fail("forbidden");
@@ -124,6 +126,8 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
     invalidateReminders(ctx, old.id); ctx.db.pimResources.id.delete(old.id);
   } else {
     const uid = text(p.uid, 1024), uidKey = `${c.id}/${uid}`, duplicate = ctx.db.pimResources.uidKey.find(uidKey);
+    if(old && old.uid!==uid)fail("invalidInput");
+    if(old && c.kind==="calendar" && (JSON.parse(old.projection).kind==="task")!==(JSON.parse(text(p.projection,65536)).kind==="task"))fail("invalidInput");
     if (duplicate && duplicate.id !== old?.id) fail("conflict");
     if (!old && [...ctx.db.pimResources.collectionId.filter(c.id)].length >= 10000) fail("operationTooLarge");
     if(typeof p.content!=="string"||p.content.length>262144||p.content.includes("\u0000"))fail("invalidInput");
@@ -157,7 +161,7 @@ export function restorePim(ctx: Ctx, data: Snapshot | undefined) {
     if (!ctx.db.pimCollections.id.find(row.collectionId) || !ctx.db.accounts.id.find(row.userId)) fail("invalidInput");
     ctx.db.pimGrants.insert(row);
   }
-  for (const row of data.preferences) { if (!ctx.db.accounts.id.find(row.userId)) fail("invalidInput"); ctx.db.pimPreferences.insert(row); }
+  for (const row of data.preferences) { if (row.userId!=="instance:appearance" && !ctx.db.accounts.id.find(row.userId)) fail("invalidInput"); ctx.db.pimPreferences.insert(row); }
   for (const row of data.reminders) {
     if (!ctx.db.accounts.id.find(row.userId) || !ctx.db.pimResources.id.find(row.resourceId)) fail("invalidInput");
     ctx.db.pimReminders.insert(row);

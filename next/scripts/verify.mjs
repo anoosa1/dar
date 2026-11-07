@@ -43,6 +43,10 @@ try {
   run(["node_modules/typescript/bin/tsc", "-p", "module/tsconfig.json"]);
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
+  if(!identityOnly&&!workspaceOnly&&!pimOnly){
+    run(["--test","test/appearance-scopes.integration.test.ts"]);
+    run(["test/appearance-scopes-browser.mjs"]);
+  }
   if(!identityOnly&&!workspaceOnly&&!pimOnly)run(["test/production-proxy.mjs"]);
   if(!identityOnly&&!workspaceOnly){
     run(["--test", "--test-concurrency=1", "test/calendar-navigation.test.ts", "test/davx5.integration.test.ts", "test/pim-standards.test.ts", "test/pim.integration.test.ts"]);

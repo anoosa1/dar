@@ -233,7 +233,10 @@ before start. Other imported alarms are retained as data; email/audio effects,
 external invitation delivery and remote feed subscriptions are not implemented.
 Saving attendee information does not send invitations.
 
-Create separate Contacts or Calendar app passwords under Account security.
+Create app passwords under Account security. Select Read, Write, or both for
+each of Files, Contacts, and Calendar; one password can connect multiple apps.
+Write alone does not allow reading or syncing content. Most sync clients need
+both permissions. Existing passwords keep their original permissions.
 CardDAV homes are `/dav/addressbooks/<username>/`; CalDAV homes are
 `/dav/calendars/<username>/`. Existing Files app passwords stay Files-scoped.
 Supported operations include principal/home discovery, PROPFIND, resource
@@ -241,6 +244,15 @@ GET/HEAD/PUT/DELETE, query and multiget REPORTs, and conditional writes. Create 
 collections in the native UI. Sync tokens, LOCK, PROPPATCH, MKCALENDAR and
 iTIP scheduling are not advertised. Unsupported filters fail explicitly. Tested
 interoperability uses vdirsyncer 0.20.0, including native/client round trips.
+
+Administration → Appearance configures the public sign-in logo (PNG or WebP,
+up to 256 KiB), with a preview and a reset to the built-in Dar logo. Branding is
+stored in the existing revisioned settings store and included in backups.
+Public `GET /api/v1/appearance` returns its revision and same-origin logo URL;
+admin-only `PUT /api/v1/appearance` requires CSRF and an
+`If-Match: "appearance:<revision>"` header. App-password scope strings accept
+`v2 files:read contacts:read contacts:write calendar:write`, with independent
+grants; legacy scope values remain accepted with their existing semantics.
 
 Each owner can create 100 collections; native Contacts views paginate 200 rows
 within a bounded 10,000-contact search set. Collections hold up to 10,000 resources.

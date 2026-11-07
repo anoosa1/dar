@@ -22,6 +22,7 @@ import { identityProvider } from "./identity/provider.ts";
 import { handleIdentityHttp } from "./identity/http.ts";
 import { handleScim } from "./identity/scim.ts";
 import {handleWorkspaceHttp} from "./pim/workspace-http.ts";
+import {passwordApps,passwordGrants} from "../shared/app-scopes.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
@@ -111,6 +112,14 @@ export async function startServer(config: ServerConfig) {
       if (url.pathname === "/auth/issuer/.well-known/openid-configuration") return json(res, { issuer: issuer.issuer, jwks_uri: `${issuer.issuer}/jwks`, id_token_signing_alg_values_supported: ["ES256"], subject_types_supported: ["public"] });
       if (url.pathname === "/auth/issuer/jwks") return json(res, issuer.jwks);
       if (url.pathname === "/api/v1/auth/status" && method === "GET") return json(res, await auth.status());
+      if (url.pathname === "/api/v1/appearance" && method === "GET" || url.pathname === "/api/v1/appearance/logo" && method === "GET") {
+        const row=await db.call<{revision:number;value:string}>("service_appearance",["",0,""]), value=JSON.parse(row.value);
+        if(url.pathname.endsWith("/logo")){
+          if(!value.logo)throw new AppError("notFound",404);
+          res.writeHead(200,{"content-type":value.mediaType,"cache-control":"no-store"});res.end(Buffer.from(value.logo,"base64"));return;
+        }
+        return json(res,{revision:row.revision,logoUrl:value.logo?`/api/v1/appearance/logo?revision=${row.revision}`:null});
+      }
       if (url.pathname.startsWith("/public/files/") && ["GET", "HEAD"].includes(method)) {
         const token = url.pathname.slice("/public/files/".length);
         if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new AppError("notFound", 404);
@@ -162,6 +171,19 @@ export async function startServer(config: ServerConfig) {
         }
         if (/^\/api\/v1\/(contacts|calendar|pim)(\/|$)/.test(url.pathname)) return await handlePimHttp(req, res, url, pimService(db, authenticated.session.id), () => body(req, 3 * 1024 * 1024));
         if (url.pathname === "/api/v1/auth/session" && method === "GET") return json(res, { user: authenticated.user, csrfToken: issuer.csrf(secret!) });
+        if(url.pathname==="/api/v1/appearance" && method==="PUT"){
+          if(!authenticated.user.administrator)throw new AppError("forbidden",403);
+          const p=await body(req,360000),logo=string(p.logo,350000),mediaType=string(p.mediaType,20);
+          const bytes=Buffer.from(logo,"base64");
+          if(logo && (bytes.length>256*1024 || bytes.toString("base64")!==logo ||
+            !(mediaType==="image/png" && bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ||
+              mediaType==="image/webp" && bytes.subarray(0,4).toString()==="RIFF" && bytes.subarray(8,12).toString()==="WEBP")))
+            throw new AppError("invalidInput",400,"Choose a PNG or WebP image up to 256 KiB.");
+          const revision=integer(p.revision,0xffffffff);
+          if(req.headers["if-match"]!==`"appearance:${revision}"`)throw new AppError("preconditionRequired",428);
+          const row=await db.call<{revision:number}>("service_appearance",[authenticated.session.id,revision,JSON.stringify({logo,mediaType:logo?mediaType:""})]);
+          return json(res,{revision:row.revision,logoUrl:logo?`/api/v1/appearance/logo?revision=${row.revision}`:null});
+        }
         if (url.pathname === "/api/v1/auth/token" && method === "POST") return json(res, { token: await issuer.token(authenticated.session.id, authenticated.session.expiresAt, url.searchParams.get("tab") ?? undefined), databaseUrl: databasePublicUrl, databaseName: config.databaseName });
         if (url.pathname === "/api/v1/auth/logout" && method === "POST") {
           await auth.logout(authenticated); res.setHeader("set-cookie", cookie("", 0)); return json(res, { ok: true });
@@ -176,9 +198,9 @@ export async function startServer(config: ServerConfig) {
         if (url.pathname === "/api/v1/auth/app-passwords" && method === "GET") return json(res, { items: await db.call("service_app_passwords", [authenticated.session.id]) });
         if (url.pathname === "/api/v1/auth/app-passwords" && method === "POST") {
           const p = await body(req), token = createOpaqueToken(), id = randomUUID();
-          const scope = string(p.scope, 20), app = scope.startsWith("contacts:") ? "addressbooks" : scope.startsWith("calendar:") ? "calendars" : "files";
+          const scope = string(p.scope, 120), apps=passwordApps.filter(app=>passwordGrants(scope).some(g=>g.startsWith(app+":"))), app = apps[0] === "contacts" ? "addressbooks" : apps[0] === "calendar" ? "calendars" : "files";
           await db.call("service_create_app_password", [authenticated.session.id, id, token.digest, string(p.label, 100), scope]);
-          return json(res, { id, secret: token.secret, davUrl: scope.startsWith("pim:")?`${config.origin}/dav/`:`${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
+          return json(res, { id, secret: token.secret, davUrl: apps.length>1?`${config.origin}/dav/`:`${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
         }
         const passwordRoute = /^\/api\/v1\/auth\/app-passwords\/([^/]+)$/.exec(url.pathname);
         if (passwordRoute && method === "DELETE") { await db.call("service_revoke_app_password", [authenticated.session.id, passwordRoute[1]]); return json(res, { ok: true }); }

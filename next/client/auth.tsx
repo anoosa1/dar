@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { request, type BrowserSession } from "./api.ts";
 
 export function Brand() { return <div className="brand"><span className="brand-mark" aria-hidden="true"></span><span>dar</span></div>; }
 export function Auth({ initialized, onLogin }: { initialized: boolean; onLogin: (session: BrowserSession) => void }) {
+  const [logo,setLogo]=useState<string|null>(null);
+  useEffect(()=>{const controller=new AbortController();void request<{logoUrl:string|null}>("/api/v1/appearance",{signal:controller.signal}).then(value=>setLogo(value.logoUrl)).catch(()=>{});return()=>controller.abort();},[]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -14,6 +16,8 @@ export function Auth({ initialized, onLogin }: { initialized: boolean; onLogin: 
   }
   return <main className="auth-page">
     <section className="auth-card" aria-label={initialized ? "Sign in" : "Set up Dar"}>
+      <div className="signin-brand">{logo?<img src={logo} alt="Dar" onError={()=>setLogo(null)}/>:<Brand/>}</div>
+      {initialized && <h1>Sign in</h1>}
       {!initialized && <h1>Set up Dar</h1>}
       <form onSubmit={submit}>
         {!initialized && <label>Display name<input name="displayName" autoComplete="name" maxLength={100} required autoFocus /></label>}

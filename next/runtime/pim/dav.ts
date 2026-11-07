@@ -69,7 +69,7 @@ export async function handlePimDav(req: IncomingMessage, res: ServerResponse, db
   const collection = tail[0] ? collections.find(c => c.id === tail[0]) : undefined;
   if (tail.length && !collection) throw new AppError("notFound", 404);
   const href = tail[1], path = collection ? `${home}${collection.id}/` : url.pathname;
-  const info = collection ? await service.list(collection.id) : undefined;
+  const info = collection ? write ? await service.call<{items: import("../../shared/pim.ts").PimResource[]}>("list",{collectionId:collection.id,metadataOnly:true}) : await service.list(collection.id) : undefined;
   const resource = href ? info?.items.find(r => r.href === href) : undefined;
   function props(name: string, isCollection: boolean, row?: { id: string; revision: number; modifiedAt: number | string; content?: string }) {
     const propertyCollection = row ? collections.find(c => c.id === row.id) : undefined;
@@ -179,7 +179,7 @@ export async function handlePimDav(req: IncomingMessage, res: ServerResponse, db
   }
   if (method === "PUT") {
     const revision = requireMatch(req, resource), content = await readBody(req);
-    const row = await service.put(collection, href, { content }, revision, resource?.content); res.writeHead(resource ? 204 : 201, { etag: pimEtag(row) }); res.end(); return;
+    const row = await service.put(collection, href, { content }, revision); res.writeHead(resource ? 204 : 201, { etag: pimEtag(row) }); res.end(); return;
   }
   if (method === "DELETE") {
     if (!resource) throw new AppError("notFound", 404);

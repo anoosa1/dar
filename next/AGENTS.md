@@ -1,5 +1,8 @@
 # SpacetimeDB application
 
+- Sign-in branding and app-password permissions use mock A in
+  ../docs/spacetimedb/signin-app-password-mocks.html, selected November 7.
+
 
 - The November 7 follow-up selects creation/appearance mock A, Focused pane.
   Creation/editing uses right panes; Files adds a New menu and text/Markdown

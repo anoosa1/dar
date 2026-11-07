@@ -1,4 +1,5 @@
 import {RegionalSettings} from "./regional.tsx";
+import {InstanceAppearanceSettings} from "./instance-appearance.tsx";
 import {AppearanceSettings} from "./appearance.tsx";
 import { useEffect,useState,type FormEvent,type ReactNode } from "react";
 import { request,RequestError,type BrowserSession } from "./api.ts";
@@ -17,7 +18,7 @@ interface Person extends Data {id:string;userName:string;displayName:string;acti
 interface Group extends Data {id:string;displayName:string;meta:{version:string};members:{value:string}[]}
 const enterprise="urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
 const personalSections=[{id:"Appearance",label:"Appearance",route:"appearance"},{id:"Profile",label:"Profile",route:"profile"},{id:"Account",label:"Security",route:"security"},{id:"Regional settings",label:"Regional settings",route:"regional"},{id:"Connected applications",label:"Connected applications",route:"connected"}];
-const adminSections=[{id:"Applications",label:"Applications",route:"applications"},{id:"Directory",label:"Directory",route:"directory"},{id:"SCIM",label:"SCIM",route:"scim"},{id:"Signing keys",label:"Signing keys",route:"keys"}];
+const adminSections=[{id:"Instance appearance",label:"Appearance",route:"instanceAppearance"},{id:"Applications",label:"Applications",route:"applications"},{id:"Directory",label:"Directory",route:"directory"},{id:"SCIM",label:"SCIM",route:"scim"},{id:"Signing keys",label:"Signing keys",route:"keys"}];
 function initialSection(admin:boolean){return [...personalSections,...(admin?adminSections:[])].find(s=>s.route===new URLSearchParams(location.search).get("section"))?.id??"Profile";}
 function Header({session}:{children:ReactNode;session:BrowserSession;query:string;onQuery:(s:string)=>void}){return <WorkspaceHeader app="settings" session={session} onSignedOut={()=>location.assign("/")} query="" onQuery={()=>{}}/>;}
 export function IdentitySettings({session,onSignedOut}:{session:BrowserSession;onSignedOut:()=>void}){
@@ -52,9 +53,10 @@ export function IdentitySettings({session,onSignedOut}:{session:BrowserSession;o
   function chooseSection(id:string){setTab(id);setQuery("");setNavigation(false);const section=[...personalSections,...adminSections].find(s=>s.id===id)!;history.pushState(null,"",`/settings?section=${section.route}`);}
   useEffect(()=>{const pop=()=>setTab(initialSection(session.user.administrator));window.addEventListener("popstate",pop);return()=>window.removeEventListener("popstate",pop);},[]);
   const matches=(value:unknown)=>JSON.stringify(value).toLowerCase().includes(query.toLowerCase());
-  return <div className="identity-settings"><WorkspaceHeader app="settings" session={session} onSignedOut={onSignedOut} query={query} onQuery={setQuery} searchLabel="Search settings" onNavigation={()=>setNavigation(!navigation)}/><div className="ui-settings-layout">{navigation&&<button className="nav-scrim" aria-label="Close navigation" onClick={()=>setNavigation(false)}/>}<aside className={`sidebar ui-settings-nav ${navigation?"is-open":""}`}><nav aria-label="Personal settings"><h2>Personal</h2>{personalSections.map(s=><button key={s.id} aria-current={tab===s.id?"page":undefined} onClick={()=>chooseSection(s.id)}>{s.label}</button>)}</nav>{admin&&<nav aria-label="Administration settings"><h2>Administration</h2>{adminSections.map(s=><button key={s.id} aria-current={tab===s.id?"page":undefined} onClick={()=>chooseSection(s.id)}>{s.label}</button>)}</nav>}</aside><main className="identity-main" aria-busy={busy||loading}>
+  return <div className="identity-settings"><WorkspaceHeader app="settings" session={session} onSignedOut={onSignedOut} query={query} onQuery={setQuery} searchLabel="Search settings" onNavigation={()=>setNavigation(!navigation)}/><div className="ui-settings-layout">{navigation&&<button className="nav-scrim" aria-label="Close navigation" onClick={()=>setNavigation(false)}/>}<aside className={`sidebar ui-settings-nav ${navigation?"is-open":""}`}><nav aria-label="Personal settings"><h2>Personal</h2>{personalSections.map(s=><button key={s.id} aria-current={tab===s.id?"page":undefined} onClick={()=>chooseSection(s.id)}>{s.label}</button>)}</nav>{admin&&<nav aria-label="Administration settings"><h2>Administration</h2>{adminSections.map(s=><button key={s.id} aria-label={s.id==="Instance appearance"?"Administration appearance":undefined} aria-current={tab===s.id?"page":undefined} onClick={()=>chooseSection(s.id)}>{s.label}</button>)}</nav>}</aside><main className="identity-main" aria-busy={busy||loading}>
     {error&&<div className="identity-message"><p role="alert" className="error">{error}</p><button className="text-button" onClick={()=>{setLoading(true);void run(refresh).finally(()=>setLoading(false));}}>Reload settings</button></div>}{notice&&<p role="status" className="success-banner">{notice}</p>}{loading?<p role="status">Loading settings…</p>:<>
     {tab==="Appearance"&&<AppearanceSettings session={session}/>}
+    {admin&&tab==="Instance appearance"&&<InstanceAppearanceSettings session={session}/>}
     {tab==="Regional settings"&&<RegionalSettings session={session}/>}
     {tab==="Profile"&&<ProfileSettings session={session}/>}
     {tab==="Account"&&<><h1>Account security</h1><AccountSecurity session={session} onSignedOut={onSignedOut}/></>}

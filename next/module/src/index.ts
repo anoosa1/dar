@@ -1,4 +1,5 @@
 import { Identity, ScheduleAt } from "spacetimedb";
+import {passwordAllows, validPasswordScope} from "../../shared/app-scopes.ts";
 import { schema, table, t, Range, SenderError, type InferSchema, type ReducerCtx, type ViewCtx } from "spacetimedb/server";
 import { pimTables, pimChanges } from "./pim-tables.ts";
 import { pimOperation, pimSnapshot, restorePim, reminderWork, commitReminders, deferReminder } from "./pim.ts";
@@ -175,6 +176,22 @@ export const expireSession = db.reducer({ onSchedule: sessionExpiry }, { expiry:
 export const serviceStatus = db.procedure(t.string(), ctx => ctx.withTx(tx => {
   service(tx);
   return JSON.stringify({ initialized: tx.db.accounts.count() > 0n });
+}));
+// Instance branding shares the existing revisioned settings store and backup path.
+export const serviceAppearance = db.procedure({sessionId:t.string(), revision:t.u32(), value:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);
+  const userId = "instance:appearance", old = tx.db.pimPreferences.userId.find(userId);
+  if(p.value){
+    const user=fromSession(tx,p.sessionId);
+    if(!user.administrator || tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+    if((old?.revision??0)!==p.revision)fail("conflict");
+    const value=JSON.parse(p.value);
+    if(typeof value.logo!=="string" || value.logo.length>350000 || !["","image/png","image/webp"].includes(value.mediaType))fail("invalidInput");
+    const row={userId,revision:(old?.revision??0)+1,value:JSON.stringify({logo:value.logo,mediaType:value.mediaType})};
+    if(old)tx.db.pimPreferences.userId.update(row);else tx.db.pimPreferences.insert(row);
+    return JSON.stringify(row);
+  }
+  return JSON.stringify(old??{userId,revision:0,value:'{"logo":"","mediaType":""}'});
 }));
 export const serviceStartup = db.reducer({ issuer: t.string() }, (ctx, { issuer }) => {
   service(ctx);
@@ -533,6 +550,8 @@ export const serviceCancelUpload = db.reducer({ sessionId: t.string(), id: t.str
 });
 export const serviceDownload = db.procedure({ sessionId: t.string(), id: t.string(), versionId: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); const user = fromSession(tx, p.sessionId), entry = tx.db.fileEntries.id.find(p.id);
+  const password=tx.db.appPasswords.sessionId.find(p.sessionId);
+  if(password && !passwordAllows(password.scope,"files","read"))fail("forbidden");
   if (!entry || entry.kind !== "file" || !access(tx, entry, user.id)) fail("notFound");
   const version = p.versionId ? tx.db.versions.id.find(p.versionId) : undefined;
   if (p.versionId && version?.fileId !== entry.id) fail("notFound");
@@ -714,7 +733,7 @@ export const servicePimAuthenticate = db.procedure({ username: t.string(), diges
   const user = password && tx.db.accounts.id.find(password.userId);
   const session = password && tx.db.sessions.id.find(password.sessionId);
   if (!password || password.revoked || password.expiresAt <= now(tx) || !user?.enabled || user.username !== p.username.toLowerCase() || !session?.active) fail("unauthenticated");
-  if (!["contacts", "calendar"].includes(p.app) || ![p.app + ":read", p.app + ":write", "pim:read", "pim:write"].includes(password.scope) || p.write && ![p.app + ":write", "pim:write"].includes(password.scope)) fail("forbidden");
+  if (!["contacts", "calendar"].includes(p.app) || !passwordAllows(password.scope,p.app,p.write?"write":"read")) fail("forbidden");
   return JSON.stringify({ sessionId: session.id, username: user.username });
 }));
 export const serviceRevokeOwnedSession = db.reducer({ sessionId: t.string(), id: t.string() }, (ctx, p) => {
@@ -743,7 +762,7 @@ export const serviceConnectedApplications = db.procedure({sessionId:t.string(),r
 }));
 export const serviceCreateAppPassword = db.reducer({ sessionId: t.string(), id: t.string(), digest: t.string(), label: t.string(), scope: t.string() }, (ctx, p) => {
   service(ctx); const user = fromSession(ctx, p.sessionId);
-  if (!p.label.trim() || p.label.length > 100 || !["read", "write", "contacts:read", "contacts:write", "calendar:read", "calendar:write", "pim:read", "pim:write"].includes(p.scope) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("invalidInput");
+  if (!p.label.trim() || p.label.length > 100 || !validPasswordScope(p.scope) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("invalidInput");
   // The internal principal cannot be authenticated by a browser token. Only the
   // service-owned protocol adapter can invoke domain functions on its behalf.
   const protocolSession = unusedUuid(ctx);
@@ -769,15 +788,16 @@ export const serviceProtocolAuthenticate = db.procedure({ username: t.string(), 
   const user = password && tx.db.accounts.id.find(password.userId);
   const session = password && tx.db.sessions.id.find(password.sessionId);
   if (!password || password.revoked || password.expiresAt <= now(tx) || !user?.enabled || user.username !== p.username.toLowerCase() || !session?.active) fail("unauthenticated");
-  if (p.write && password.scope !== "write") fail("forbidden");
-  if (!["read", "write"].includes(password.scope)) fail("forbidden");
+  if (!passwordAllows(password.scope,"files",p.write?"write":"read")) fail("forbidden");
   return JSON.stringify({ sessionId: password.sessionId, username: user.username });
 }));
 
 export const serviceDav = db.procedure({ sessionId: t.string(), method: t.string(), path: t.string(), destination: t.string(), expectedRevision: t.u32(), overwrite: t.bool(), depth: t.u32() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); const user = fromSession(tx, p.sessionId), password = tx.db.appPasswords.sessionId.find(p.sessionId);
   if (!password || password.revoked || password.expiresAt <= now(tx)) fail("unauthenticated");
-  if (!["STAT", "PROPFIND", "PREPARE"].includes(p.method) && password.scope !== "write") fail("forbidden");
+  const permission = ["STAT", "PROPFIND"].includes(p.method) ? "read" : "write";
+  // Writes need metadata for revision checks, without granting content reads.
+  if (!passwordAllows(password.scope,"files",permission) && !(p.method === "STAT" && passwordAllows(password.scope,"files","write"))) fail("forbidden");
   const actor = new Proxy(tx, { get(target, property) {
     if (property === "sender") return password.principal;
     const value = Reflect.get(target, property, target);
