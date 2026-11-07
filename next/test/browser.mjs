@@ -95,7 +95,7 @@ try {
   await mobile.close();
   await page.getByRole("button", { name: "Open account menu", exact: true }).click();
   await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
-  await page.getByRole("heading", { name: "Welcome back", exact: true }).waitFor();
+  await page.getByRole("region", { name: "Sign in", exact: true }).waitFor();
   assert.deepEqual(failures, []);
   console.info("PASS desktop/mobile auth, upload/cancel, preview, rename, favorite, trash/restore, reconnect during navigation, and logout; no page/console errors or mobile overflow.");
   await context.close();

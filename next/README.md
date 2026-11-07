@@ -296,6 +296,9 @@ password confirmation, valid for five minutes. Ordinary users can review and
 revoke their connected applications.
 
 Every app has a lower-sidebar app-settings entry using the same settings dialog.
+Sidebar navigation shares hover and selected highlights across all five apps and
+settings in both themes. Sign-in uses a centered username/password form without
+promotional copy; first-account setup retains its required fields and guidance.
 Preferences persist per account with revision checks, including Contacts sorting,
 Calendar week start/cancelled visibility, Notes sorting/editor mode and Tasks sorting/default
 view. Profile edits save names and primary email; username and privileges cannot
