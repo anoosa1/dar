@@ -1,0 +1,240 @@
+- text: Keyboard navigation help
+- button "Skip to app navigation"
+- button "Skip to main content"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Files": Files
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation "Files":
+  - searchbox "Search here"
+  - button "Clear search"
+  - button "Search scope options"
+  - list "Views":
+    - listitem:
+      - link "All files":
+        - /url: /apps/files/files
+    - listitem:
+      - link "Personal files":
+        - /url: /apps/files/personal
+    - listitem:
+      - link "Recent":
+        - /url: /apps/files/recent
+    - listitem:
+      - link "Favorites":
+        - /url: /apps/files/favorites
+    - listitem:
+      - link "Shares":
+        - /url: /apps/files/shareoverview
+      - button "Open menu"
+    - listitem:
+      - link "Tags":
+        - /url: /apps/files/tags
+    - listitem:
+      - link "External storage":
+        - /url: /apps/files/extstoragemounts
+    - listitem:
+      - link "Folder tree":
+        - /url: /apps/files/folders
+      - button "Open menu"
+    - listitem:
+      - link "Deleted files":
+        - /url: /apps/files/trashbin
+  - list:
+    - listitem:
+      - link "360 B used":
+        - /url: "#"
+    - listitem:
+      - link "Files settings":
+        - /url: "#"
+- button "Close navigation" [expanded]
+- main:
+  - heading "All files" [level=1]
+  - button "New"
+  - navigation "Current directory path":
+    - list:
+      - listitem:
+        - button "All files"
+  - button "Type"
+  - button "Modified"
+  - button "Tags"
+  - button "People"
+  - button "Switch to grid view"
+  - list:
+    - listitem: Sample note.md Last updated 8 minutes ago Path name /Notes/Sample note.md
+    - listitem: Dar UX audit renamed Last updated 11 minutes ago Path name /Dar UX audit renamed
+  - table "List of your files and folders. Column headers with buttons are sortable. This list is not fully rendered for performance reasons. The files will be rendered as you navigate through the list.":
+    - caption: List of your files and folders. Column headers with buttons are sortable. This list is not fully rendered for performance reasons. The files will be rendered as you navigate through the list.
+    - rowgroup:
+      - row "Toggle selection for all files and folders Name Actions Size Modified":
+        - columnheader "Toggle selection for all files and folders":
+          - checkbox "Toggle selection for all files and folders"
+        - columnheader "Name":
+          - button "Name"
+        - columnheader "Actions"
+        - columnheader "Size":
+          - button "Size"
+        - columnheader "Modified":
+          - button "Modified"
+    - rowgroup:
+      - 'row "Toggle selection for folder \"Dar UX audit renamed\" Open folder Dar UX audit renamed: Dar UX audit renamed Sharing options Actions 0 KB 11 minutes ago"':
+        - cell "Toggle selection for folder \"Dar UX audit renamed\"":
+          - checkbox "Toggle selection for folder \"Dar UX audit renamed\""
+        - 'cell "Open folder Dar UX audit renamed: Dar UX audit renamed"':
+          - 'button "Open folder Dar UX audit renamed: Dar UX audit renamed"': Dar UX audit renamed
+        - cell "Sharing options Actions":
+          - button "Sharing options"
+          - button "Actions"
+        - cell "0 KB"
+        - cell "11 minutes ago"
+      - 'row "Toggle selection for folder \"Notes\" Open folder Notes: Notes Sharing options Actions < 1 KB 8 minutes ago"':
+        - cell "Toggle selection for folder \"Notes\"":
+          - checkbox "Toggle selection for folder \"Notes\""
+        - 'cell "Open folder Notes: Notes"':
+          - 'button "Open folder Notes: Notes"': Notes
+        - cell "Sharing options Actions":
+          - button "Sharing options"
+          - button "Actions"
+        - cell "< 1 KB"
+        - cell "8 minutes ago"
+    - rowgroup:
+      - row "Total rows summary 2 folders < 1 KB":
+        - rowheader "Total rows summary"
+        - cell "2 folders"
+        - cell
+        - cell "< 1 KB"
+        - cell
+- dialog "Files settings":
+  - heading "Files settings" [level=2]
+  - navigation "Settings navigation":
+    - text: Files settings
+    - list:
+      - listitem:
+        - link "General":
+          - /url: "#settings-section_settings"
+      - listitem:
+        - link "Appearance":
+          - /url: "#settings-section_appearance"
+      - listitem:
+        - link "Additional settings":
+          - /url: "#settings-section_api-settings"
+      - listitem:
+        - link "Warnings":
+          - /url: "#settings-section_warning"
+      - listitem:
+        - link "WebDAV":
+          - /url: "#settings-section_webdav"
+      - listitem:
+        - link "Keyboard shortcuts":
+          - /url: "#settings-section_keyboard-shortcuts"
+  - region "General":
+    - heading "General" [level=3]
+    - text: Sort favorites first
+    - switch "Sort favorites first" [checked]
+    - text: Sort folders before files
+    - switch "Sort folders before files" [checked]
+    - text: Enable folder tree view
+    - switch "Enable folder tree view" [checked]
+    - group "Default view":
+      - text: Default view All files
+      - radio "All files" [checked]
+      - text: Personal files
+      - radio "Personal files"
+  - region "Appearance":
+    - heading "Appearance" [level=3]
+    - text: Show hidden files
+    - switch "Show hidden files"
+    - text: Show file type column
+    - switch "Show file type column"
+    - text: Show file extensions
+    - switch "Show file extensions" [checked]
+    - text: Crop image previews
+    - switch "Crop image previews" [checked]
+  - region "Additional settings":
+    - heading "Additional settings" [level=3]
+    - checkbox "Show recommendations" [checked]
+    - text: Show recommendations Show folder description
+    - switch "Show folder description" [checked]
+  - region "Warnings":
+    - heading "Warnings" [level=3]
+    - text: Warn before changing a file extension
+    - switch "Warn before changing a file extension" [checked]
+    - text: Warn before deleting a file
+    - switch "Warn before deleting a file"
+  - region "WebDAV":
+    - heading "WebDAV" [level=3]
+    - button "Copy to clipboard WebDAV URL"
+    - text: https://hub.asherif.xyz/remote.php/dav/files/TestUser
+    - link "How to access files using WebDAV":
+      - /url: https://docs.nextcloud.com/server/stable/go.php?to=user-webdav
+  - region "Keyboard shortcuts":
+    - heading "Keyboard shortcuts" [level=3]
+    - text: Actions
+    - list "Actions":
+      - listitem:
+        - term: A
+        - definition: File actions
+      - listitem:
+        - term: S
+        - definition: Add or remove favorite
+      - listitem:
+        - term: D
+        - definition: Open the details sidebar
+      - listitem:
+        - term: T
+        - definition: Manage tags
+      - listitem:
+        - term: F2
+        - definition: Rename
+      - listitem:
+        - term: Delete
+        - definition: Delete
+    - text: Selection
+    - list "Selection":
+      - listitem:
+        - term: Ctrl A
+        - definition: Select all files
+      - listitem:
+        - term: Escape
+        - definition: Deselect all
+      - listitem:
+        - term: Ctrl Space
+        - definition: Select or deselect
+      - listitem:
+        - term: Ctrl Shift Space
+        - definition: Select a range
+    - text: Navigation
+    - list "Navigation":
+      - listitem:
+        - term: Alt ↑
+        - definition: Go to parent folder
+      - listitem:
+        - term: ↑
+        - definition: Go to file above
+      - listitem:
+        - term: ↓
+        - definition: Go to file below
+      - listitem:
+        - term: ←
+        - definition: Go left in grid
+      - listitem:
+        - term: →
+        - definition: Go right in grid
+    - text: View
+    - list "View":
+      - listitem:
+        - term: V
+        - definition: Toggle grid view
+      - listitem:
+        - term: "?"
+        - definition: Show those shortcuts
+  - button "Close"

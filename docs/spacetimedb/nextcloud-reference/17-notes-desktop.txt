@@ -1,0 +1,53 @@
+- text: Keyboard navigation help
+- link "Skip to app navigation":
+  - /url: "#app-navigation-vue"
+- link "Skip to main content":
+  - /url: "#app-content-vue"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Notes": Notes
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation:
+  - list:
+    - listitem:
+      - link "All notes":
+        - /url: "#"
+      - text: "0"
+    - listitem:
+      - text: Categories
+      - button "New category"
+  - list:
+    - listitem:
+      - link "Notes settings":
+        - /url: "#"
+- button "Close navigation" [expanded]
+- main:
+  - heading "Notes" [level=2]
+  - text: Start writing a note by clicking on “New note”.
+  - button "New note"
+  - text: Write down your thoughts without any distractions. Use Markdown markups to style your text.
+  - button "Create a sample note with Markdown"
+  - text: Organize your notes in categories.
+  - group "Android":
+    - text: Android
+    - link:
+      - /url: https://play.google.com/store/apps/details?id=it.niedermann.owncloud.notes
+      - img
+    - link:
+      - /url: https://f-droid.org/repository/browse/?fdid=it.niedermann.owncloud.notes
+      - img
+  - group "iPhone and iPad":
+    - text: iPhone and iPad
+    - link:
+      - /url: https://apps.apple.com/app/nextcloud-notes/id813973264
+      - img

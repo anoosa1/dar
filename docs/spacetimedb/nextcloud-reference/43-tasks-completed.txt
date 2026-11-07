@@ -1,0 +1,66 @@
+- text: Keyboard navigation help
+- link "Skip to app navigation":
+  - /url: "#app-navigation-vue"
+- link "Skip to main content":
+  - /url: "#app-content-vue"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Tasks": Tasks
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation:
+  - list:
+    - listitem:
+      - link "Completed":
+        - /url: /apps/tasks/collections/completed
+      - text: "1"
+    - listitem:
+      - link "Tasks":
+        - /url: /apps/tasks/calendars/tasks
+      - list:
+        - listitem
+    - listitem:
+      - link "Add List…":
+        - /url: "#"
+      - list:
+        - listitem
+    - listitem:
+      - link "Trash bin":
+        - /url: "#"
+  - button "Tasks settings"
+- button "Close navigation" [expanded]
+- main:
+  - textbox "Add a task to \"Tasks\"…"
+  - text: Add a task to "Tasks"…
+  - button "Actions"
+  - button "Actions"
+- complementary:
+  - checkbox "Task is completed" [checked]
+  - heading "Dar UX audit sample task" [level=2]
+  - button "Actions"
+  - paragraph: Completed today at 10:49 PM
+  - button "Close sidebar"
+  - text: Set start date Set due date Tasks
+  - combobox [disabled]
+  - tablist:
+    - tab "Details" [selected]
+    - tab "Notes"
+  - tabpanel "Details":
+    - heading "Details" [level=3]
+    - text: When shared show full event
+    - combobox
+    - text: Completed
+    - combobox
+    - text: Completed today at 10:49 PM No priority assigned 100 % completed Set a location Set a URL
+    - combobox "Select tags"
+    - paragraph: No reminders
+    - button "Add reminder"

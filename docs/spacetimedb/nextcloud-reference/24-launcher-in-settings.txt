@@ -1,0 +1,152 @@
+- text: Keyboard navigation help
+- button "Skip to app navigation"
+- button "Skip to main content"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu" [expanded]
+    - button "Open apps menu, currently in Settings" [expanded]: Settings
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- 'heading "Settings: Profile & contact" [level=1]'
+- navigation:
+  - heading "Personal" [level=2]
+  - list "Personal":
+    - listitem:
+      - link "Profile & contact":
+        - /url: /settings/user/profile-contact
+    - listitem:
+      - link "Language & locale":
+        - /url: /settings/user/language-locale
+    - listitem:
+      - link "Security":
+        - /url: /settings/user/security
+    - listitem:
+      - link "Notifications":
+        - /url: /settings/user/notifications
+    - listitem:
+      - link "Mobile & desktop":
+        - /url: /settings/user/sync-clients
+    - listitem:
+      - link "Appearance and accessibility":
+        - /url: /settings/user/theming
+    - listitem:
+      - link "Sharing":
+        - /url: /settings/user/sharing
+    - listitem:
+      - link "Availability":
+        - /url: /settings/user/availability
+    - listitem:
+      - link "Flow":
+        - /url: /settings/user/workflow
+    - listitem:
+      - link "Privacy":
+        - /url: /settings/user/privacy
+- button "Close navigation" [expanded]
+- main:
+  - heading "Profile & contact" [level=2]
+  - button "Avatar of TestUser"
+  - button "Upload profile picture"
+  - button "Choose from Nextcloud Files"
+  - button "Change scope level of profile picture, current scope is federated"
+  - text: The file must be a PNG or JPG
+  - textbox "Full name":
+    - /placeholder: Your full name
+    - text: Test
+  - text: Full name
+  - button "Change scope level of full name, current scope is federated"
+  - textbox "Pronouns":
+    - /placeholder: Your pronouns. E.g. he/him
+  - text: Pronouns
+  - button "Change scope level of pronouns, current scope is federated"
+  - textbox "Location":
+    - /placeholder: Your city
+  - text: Location
+  - button "Change scope level of location, current scope is local"
+  - text: Date of birth
+  - textbox "Date of birth"
+  - button "Change scope level of date of birth, current scope is local"
+  - heading "Contact" [level=3]
+  - paragraph: Notifications and password reset requests will be sent to your primary email
+  - textbox "Primary email address":
+    - /placeholder: ""
+  - text: Primary email address
+  - button "Remove primary email" [disabled]
+  - button "Additional address" [disabled]
+  - textbox "Phone number":
+    - /placeholder: Your phone number
+  - text: Phone number
+  - button "Change scope level of phone number, current scope is local"
+  - textbox "Website":
+    - /placeholder: Your website
+  - text: Website
+  - button "Change scope level of website, current scope is local"
+  - textbox "Fediverse (e.g. Mastodon)":
+    - /placeholder: Your handle
+  - text: Fediverse (e.g. Mastodon)
+  - button "Change scope level of fediverse (e.g. mastodon), current scope is local"
+  - textbox "Bluesky":
+    - /placeholder: Bluesky handle
+  - text: Bluesky
+  - button "Change scope level of bluesky, current scope is local"
+  - textbox "X (formerly Twitter)":
+    - /placeholder: Your X (formerly Twitter) handle
+  - text: X (formerly Twitter)
+  - button "Change scope level of x (formerly twitter), current scope is local"
+  - paragraph:
+    - text: You are using
+    - strong: 0 B
+  - progressbar
+  - paragraph:
+    - link "Reasons to use Nextcloud in your organization":
+      - /url: /settings/download/reasons
+  - paragraph:
+    - text: Developed by the
+    - link "Nextcloud community":
+      - /url: https://nextcloud.com/contribute
+    - text: ", the"
+    - link "source code":
+      - /url: https://github.com/nextcloud
+    - text: is licensed under the
+    - link "AGPL":
+      - /url: https://www.gnu.org/licenses/agpl-3.0.html
+    - text: .
+  - paragraph:
+    - link "Like our Facebook page":
+      - /url: https://www.facebook.com/Nextclouders/
+      - img "Like our Facebook page"
+    - link "Follow us on Bluesky":
+      - /url: https://bsky.app/profile/nextcloud.bsky.social
+      - img "Follow us on Bluesky"
+    - link "Follow us on Mastodon":
+      - /url: https://mastodon.xyz/@nextcloud
+      - img "Follow us on Mastodon"
+    - link "Check out our blog":
+      - /url: https://nextcloud.com/blog/
+      - img "Check out our blog"
+    - link "Subscribe to our newsletter":
+      - /url: https://newsletter.nextcloud.com/?p=subscribe&id=1
+      - img "Subscribe to our newsletter"
+- menu "Apps":
+  - menuitem "Dashboard"
+  - menuitem "Files"
+  - menuitem "Office"
+  - menuitem "Photos"
+  - menuitem "Calendar"
+  - menuitem "Contacts"
+  - menuitem "Teams"
+  - menuitem "Activity"
+  - menuitem "Notes"
+  - menuitem "Music"
+  - menuitem "Tasks"
+  - menuitem "News"
+  - menuitem "Cookbook"
+  - group "Actions":
+    - menuitem "Text document"

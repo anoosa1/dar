@@ -1,0 +1,20 @@
+- text: Keyboard navigation help
+- link "Skip to app navigation":
+  - /url: "#app-navigation-vue"
+- link "Skip to main content":
+  - /url: "#app-content-vue"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+  - search:
+    - button "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- main:
+  - button "Go back to the list"

@@ -1,0 +1,145 @@
+- text: Keyboard navigation help
+- link "Skip to app navigation":
+  - /url: "#app-navigation-vue"
+- link "Skip to main content":
+  - /url: "#app-content-vue"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Notes": Notes
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation:
+  - list:
+    - listitem:
+      - link "All notes":
+        - /url: "#"
+      - text: "1"
+    - listitem:
+      - text: Categories
+      - button "New category"
+    - listitem:
+      - link "Uncategorized":
+        - /url: "#"
+      - text: "1"
+  - list:
+    - listitem:
+      - link "Zen mode":
+        - /url: "#"
+    - listitem:
+      - link "Notes settings":
+        - /url: "#"
+- button "Close navigation" [expanded]
+- main:
+  - button "New note"
+  - textbox "Search for notes":
+    - /placeholder: ""
+  - text: Search for notes
+  - list:
+    - listitem:
+      - link "Sample note":
+        - /url: /apps/notes/note/232
+  - separator
+- dialog "Notes settings":
+  - heading "Notes settings" [level=2]
+  - navigation "Settings navigation":
+    - text: Notes settings
+    - list:
+      - listitem:
+        - link "General":
+          - /url: "#settings-section_note-mode-section"
+      - listitem:
+        - link "Mobile apps":
+          - /url: "#settings-section_undefined"
+      - listitem:
+        - link "Shortcuts":
+          - /url: "#settings-section_keyboard-shortcuts"
+  - region "General":
+    - heading "General" [level=3]
+    - group "Display":
+      - text: Display Rich text
+      - radio "Rich text" [checked]
+      - text: Plain text
+      - radio "Plain text"
+      - text: Preview
+      - radio "Preview"
+    - group "File extension":
+      - text: File extension For new notes .md
+      - radio ".md" [checked]
+      - text: .txt
+      - radio ".txt"
+      - text: Custom
+      - radio "Custom"
+    - group "Files":
+      - text: Files
+      - button "Notes folder"
+      - text: /Notes
+    - checkbox "Show hidden files"
+    - text: Show hidden files
+    - checkbox "Load recently updated note on startup" [checked]
+    - text: Load recently updated note on startup
+  - region "Mobile apps":
+    - heading "Mobile apps" [level=3]
+    - group "Android":
+      - text: Android
+      - link:
+        - /url: https://play.google.com/store/apps/details?id=it.niedermann.owncloud.notes
+        - img
+      - link:
+        - /url: https://f-droid.org/repository/browse/?fdid=it.niedermann.owncloud.notes
+        - img
+    - group "iPhone and iPad":
+      - text: iPhone and iPad
+      - link:
+        - /url: https://apps.apple.com/app/nextcloud-notes/id813973264
+        - img
+  - region "Shortcuts":
+    - heading "Shortcuts" [level=3]
+    - text: Keyboard shortcuts
+    - list "Keyboard shortcuts":
+      - listitem:
+        - term: Ctrl B
+        - definition: Make the selection bold
+      - listitem:
+        - term: Ctrl I
+        - definition: Make the selection italic
+      - listitem:
+        - term: Ctrl +
+        - definition: Wrap the selection in quotes
+      - listitem:
+        - term: Ctrl Alt C
+        - definition: The selection will be turned into monospace
+      - listitem:
+        - term: Ctrl E
+        - definition: Remove any styles from the selected text
+      - listitem:
+        - term: Ctrl L
+        - definition: Makes the current line a list element
+      - listitem:
+        - term: Ctrl Alt L
+        - definition: Makes the current line a list element with a number
+      - listitem:
+        - term: Ctrl H
+        - definition: Toggle heading for current line
+      - listitem:
+        - term: Ctrl Shift H
+        - definition: Set the current line as a big heading
+      - listitem:
+        - term: Ctrl K
+        - definition: Insert link
+      - listitem:
+        - term: Ctrl Alt I
+        - definition: Insert image
+      - listitem:
+        - term: Ctrl /
+        - definition: Switch between editor and viewer
+  - text: notes 6.1.0
+  - button "Close"

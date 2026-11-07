@@ -1,0 +1,34 @@
+- link "Skip to main content":
+  - /url: "#app-dashboard"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Dashboard": Dashboard
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — offline
+- heading "Dashboard" [level=1]
+- main:
+  - heading "Hello, Test" [level=2]
+  - heading "Recommended files" [level=2]
+  - list
+  - note:
+    - paragraph: No recommendations yet
+  - heading "Upcoming events" [level=2]
+  - note:
+    - paragraph: No more events today
+  - list:
+    - listitem:
+      - link "Example event - open me! in 7 days":
+        - /url: https://hub.asherif.xyz/apps/calendar/?objectId=2uWdNCVq4KNkdzdynzN0rLKBgAAmO3nn
+        - heading "Example event - open me!" [level=3]
+        - text: in 7 days
+  - button "Customize"
+- dialog: Welcome to Nextcloud!

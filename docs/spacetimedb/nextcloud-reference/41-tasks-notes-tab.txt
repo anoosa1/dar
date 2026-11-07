@@ -1,0 +1,72 @@
+- text: Keyboard navigation help
+- link "Skip to app navigation":
+  - /url: "#app-navigation-vue"
+- link "Skip to main content":
+  - /url: "#app-content-vue"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Tasks": Tasks
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation:
+  - list:
+    - listitem:
+      - link "All":
+        - /url: /apps/tasks/collections/all
+      - text: "1"
+    - listitem:
+      - link "Current":
+        - /url: /apps/tasks/collections/current
+      - text: "1"
+    - listitem:
+      - link "Tasks":
+        - /url: /apps/tasks/calendars/tasks
+      - text: "1"
+      - list:
+        - listitem
+    - listitem:
+      - link "Add List…":
+        - /url: "#"
+      - list:
+        - listitem
+    - listitem:
+      - link "Trash bin":
+        - /url: "#"
+  - button "Tasks settings"
+- button "Close navigation" [expanded]
+- main:
+  - textbox "Add a task to \"Tasks\"…"
+  - text: Add a task to "Tasks"…
+  - button "Actions"
+  - button "Actions"
+  - heading "Tasks" [level=2]
+  - list:
+    - listitem:
+      - checkbox "Task is not completed"
+      - text: Dar UX audit sample task
+      - button "Actions"
+      - button "Toggle starred"
+      - list
+- complementary:
+  - checkbox "Task is not completed"
+  - heading "Dar UX audit sample task" [level=2]
+  - button "Actions"
+  - paragraph: Last modified today at 10:35 PM
+  - button "Close sidebar"
+  - text: Set start date Set due date Tasks
+  - combobox [disabled]
+  - tablist:
+    - tab "Details"
+    - tab "Notes" [selected]
+  - tabpanel "Notes":
+    - heading "Notes" [level=3]
+    - paragraph: Click here to add a note.

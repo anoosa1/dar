@@ -1,0 +1,58 @@
+- text: Keyboard navigation help
+- button "Skip to app navigation"
+- button "Skip to main content"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+  - search:
+    - button "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- button "Open navigation [n]"
+- main:
+  - heading "All files" [level=1]
+  - navigation "Current directory path":
+    - list:
+      - listitem:
+        - button "All files"
+  - button "Filters"
+  - button "Switch to grid view"
+  - list:
+    - listitem: Sample note.md Last updated 2 minutes ago Path name /Notes/Sample note.md
+    - listitem: Dar UX audit sample Last updated 5 minutes ago Path name /Dar UX audit sample
+  - table "List of your files and folders. Column headers with buttons are sortable. This list is not fully rendered for performance reasons. The files will be rendered as you navigate through the list.":
+    - caption: List of your files and folders. Column headers with buttons are sortable. This list is not fully rendered for performance reasons. The files will be rendered as you navigate through the list.
+    - rowgroup:
+      - row "Toggle selection for all files and folders Name Actions":
+        - columnheader "Toggle selection for all files and folders":
+          - checkbox "Toggle selection for all files and folders"
+        - columnheader "Name":
+          - button "Name"
+        - columnheader "Actions"
+    - rowgroup:
+      - 'row "Toggle selection for folder \"Dar UX audit sample\" Open folder Dar UX audit sample: Dar UX audit sample Actions"':
+        - cell "Toggle selection for folder \"Dar UX audit sample\"":
+          - checkbox "Toggle selection for folder \"Dar UX audit sample\""
+        - 'cell "Open folder Dar UX audit sample: Dar UX audit sample"':
+          - 'button "Open folder Dar UX audit sample: Dar UX audit sample"': Dar UX audit sample
+        - cell "Actions":
+          - button "Actions"
+      - 'row "Toggle selection for folder \"Notes\" Open folder Notes: Notes Actions"':
+        - cell "Toggle selection for folder \"Notes\"":
+          - checkbox "Toggle selection for folder \"Notes\""
+        - 'cell "Open folder Notes: Notes"':
+          - 'button "Open folder Notes: Notes"': Notes
+        - cell "Actions":
+          - button "Actions"
+    - rowgroup:
+      - row "Total rows summary 2 folders":
+        - rowheader "Total rows summary"
+        - cell "2 folders"
+        - cell
+- button "New"

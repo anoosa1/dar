@@ -1,0 +1,135 @@
+- text: Keyboard navigation help
+- button "Skip to app navigation"
+- button "Skip to main content"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Files": Files
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation "Files":
+  - searchbox "Search here"
+  - button "Clear search"
+  - button "Search scope options"
+  - list "Views":
+    - listitem:
+      - link "All files":
+        - /url: /apps/files/files
+    - listitem:
+      - link "Personal files":
+        - /url: /apps/files/personal
+    - listitem:
+      - link "Recent":
+        - /url: /apps/files/recent
+    - listitem:
+      - link "Favorites":
+        - /url: /apps/files/favorites
+    - listitem:
+      - link "Shares":
+        - /url: /apps/files/shareoverview
+      - button "Open menu"
+    - listitem:
+      - link "Tags":
+        - /url: /apps/files/tags
+    - listitem:
+      - link "External storage":
+        - /url: /apps/files/extstoragemounts
+    - listitem:
+      - link "Folder tree":
+        - /url: /apps/files/folders
+      - button "Open menu"
+    - listitem:
+      - link "Deleted files":
+        - /url: /apps/files/trashbin
+  - list:
+    - listitem:
+      - link "0 B used":
+        - /url: "#"
+    - listitem:
+      - link "Files settings":
+        - /url: "#"
+- button "Close navigation" [expanded]
+- main:
+  - heading "All files" [level=1]
+  - button "New"
+  - navigation "Current directory path":
+    - list:
+      - listitem:
+        - button "All files"
+  - button "Filters"
+  - button "Switch to grid view"
+  - table "List of your files and folders. Column headers with buttons are sortable. This list is not fully rendered for performance reasons. The files will be rendered as you navigate through the list.":
+    - caption: List of your files and folders. Column headers with buttons are sortable. This list is not fully rendered for performance reasons. The files will be rendered as you navigate through the list.
+    - rowgroup:
+      - row "Toggle selection for all files and folders Name Actions Modified":
+        - columnheader "Toggle selection for all files and folders":
+          - checkbox "Toggle selection for all files and folders"
+        - columnheader "Name":
+          - button "Name"
+        - columnheader "Actions"
+        - columnheader "Modified":
+          - button "Modified"
+    - rowgroup:
+      - 'row "Toggle selection for folder \"Dar UX audit sample\" Open folder Dar UX audit sample: Dar UX audit sample Sharing options Actions a few seconds ago"':
+        - cell "Toggle selection for folder \"Dar UX audit sample\"":
+          - checkbox "Toggle selection for folder \"Dar UX audit sample\""
+        - 'cell "Open folder Dar UX audit sample: Dar UX audit sample"':
+          - 'button "Open folder Dar UX audit sample: Dar UX audit sample"': Dar UX audit sample
+        - cell "Sharing options Actions":
+          - button "Sharing options"
+          - button "Actions"
+        - cell "a few seconds ago"
+    - rowgroup:
+      - row "Total rows summary 1 folder":
+        - rowheader "Total rows summary"
+        - cell "1 folder"
+        - cell
+        - cell
+- complementary:
+  - heading "Dar UX audit sample" [level=2]
+  - button "Actions"
+  - paragraph: 0 B • 17 seconds ago • Test
+  - button "Close sidebar"
+  - tablist:
+    - tab "Sharing" [selected]
+    - tab "Activity"
+  - tabpanel "Sharing":
+    - heading "Sharing" [level=3]
+    - heading "Internal shares" [level=4]
+    - button "Internal shares explanation"
+    - text: Search for internal recipients
+    - combobox "Search for internal recipients"
+    - button
+    - img:
+      - img
+    - list "Shares"
+    - list:
+      - listitem:
+        - text: Others with access
+        - button "Toggle list of others with access to this directory"
+    - list:
+      - listitem:
+        - text: Internal link
+        - paragraph: For people who already have access
+        - button "Copy internal link"
+    - heading "External shares" [level=4]
+    - button "External shares explanation"
+    - text: Enter external recipients
+    - combobox "Enter external recipients"
+    - button
+    - list "Shares"
+    - list "Link shares":
+      - listitem:
+        - text: Create public link
+        - button "Create a new share link"
+    - heading "Additional shares" [level=4]
+    - button "Additional shares explanation"
+- list

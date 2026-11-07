@@ -1,0 +1,62 @@
+- text: Keyboard navigation help
+- button "Skip to app navigation"
+- button "Skip to main content"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+  - search:
+    - button "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- 'heading "Settings: Security" [level=1]'
+- button "Open navigation [n]"
+- main:
+  - heading "Password" [level=2]
+  - textbox "Current password":
+    - /placeholder: ""
+  - text: Current password
+  - button "Show password"
+  - textbox "New password":
+    - /placeholder: ""
+  - text: New password
+  - button "Show password"
+  - button "Change password"
+  - heading "Two-Factor Authentication" [level=2]
+  - link "Open documentation":
+    - /url: https://docs.nextcloud.com/server/35/go.php?to=user-2fa
+  - paragraph: Use a second factor besides your password to increase security for your account.
+  - paragraph: If you use third party applications to connect to Nextcloud, please make sure to create and configure an app password for each before enabling second factor authentication.
+  - list:
+    - listitem:
+      - heading "TOTP (Authenticator app)" [level=3]
+      - checkbox "Enable TOTP"
+      - text: Enable TOTP
+    - listitem:
+      - heading "Backup code" [level=3]
+      - button "Generate backup codes"
+  - heading "Passwordless Authentication" [level=2]
+  - paragraph: Set up your account for passwordless authentication following the FIDO2 standard.
+  - note: No devices configured.
+  - button "Add WebAuthn device"
+  - heading "Devices & sessions" [level=2]
+  - paragraph: Web, desktop and mobile clients currently logged in to your account.
+  - table:
+    - rowgroup:
+      - row "Device Last activity Actions":
+        - columnheader "Device"
+        - columnheader "Last activity"
+        - columnheader "Actions"
+    - rowgroup:
+      - row "This session 1 minute ago":
+        - cell "This session"
+        - cell "1 minute ago"
+        - cell
+  - textbox "App name"
+  - text: App name
+  - button "Create new app password" [disabled]

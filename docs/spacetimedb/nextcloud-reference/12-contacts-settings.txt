@@ -1,0 +1,147 @@
+- text: Keyboard navigation help
+- link "Skip to app navigation":
+  - /url: "#app-navigation-vue"
+- link "Skip to main content":
+  - /url: "#app-content-vue"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Contacts": Contacts
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation:
+  - button "New contact"
+  - list:
+    - listitem:
+      - link "All contacts":
+        - /url: /apps/contacts/All%20contacts
+      - text: "3"
+    - listitem:
+      - link "Not grouped":
+        - /url: /apps/contacts/Not%20grouped
+      - text: "3"
+    - listitem:
+      - text: Address books
+      - button "Add address book"
+    - listitem:
+      - link "Contacts":
+        - /url: /apps/contacts/addressbook/contacts
+      - text: "1"
+    - listitem:
+      - link "Recently contacted":
+        - /url: /apps/contacts/addressbook/z-app-generated--contactsinteraction--recent
+    - listitem:
+      - link "Accounts":
+        - /url: /apps/contacts/addressbook/z-server-generated--system
+      - text: "2"
+    - listitem:
+      - text: Contact groups
+      - button "Actions"
+  - button "Open the contacts app settings": Contacts settings
+- button "Close navigation" [expanded]
+- main "Contacts":
+  - textbox "Search contacts …":
+    - /placeholder: ""
+  - text: Search contacts …
+  - listitem:
+    - link "Select Leon Green Leon Green Company":
+      - /url: /apps/contacts/addressbook/contacts/NDAxMDNhNmItYTkwNy00ZGI2LWE1NTUtYjA1NzE1ZjE1ZDI1fmNvbnRhY3Rz
+      - checkbox "Select Leon Green"
+      - text: Leon Green Company
+  - heading "Leon Green" [level=2]
+  - text: Manager at Company
+  - link "leon@example.com":
+    - /url: mailto:leon@example.com
+  - link "+999999999999":
+    - /url: tel:+999999999999
+  - button "Edit"
+  - button "Actions"
+  - heading "Phone" [level=3]
+  - text: Home
+  - paragraph: "+999999999999"
+  - button "copy"
+  - link "send an email":
+    - /url: tel:+999999999999
+  - heading "Email" [level=3]
+  - text: Home
+  - paragraph: leon@example.com
+  - button "copy"
+  - link "send an email":
+    - /url: mailto:leon@example.com
+  - heading "Address" [level=3]
+  - text: Home Address
+  - paragraph: 123 Street Street
+  - button "copy"
+  - text: City
+  - paragraph: City
+  - button "copy"
+  - text: State or province
+  - paragraph: State
+  - button "copy"
+  - text: Country
+  - paragraph: Country
+  - button "copy"
+  - heading "Personal dates" [level=3]
+  - text: Birthday
+  - textbox "Birthday":
+    - /placeholder: ""
+    - text: January 1, 2000
+  - text: Birthday
+  - heading "Website" [level=3]
+  - text: Website
+  - paragraph: www.nextcloud.com
+  - button "copy"
+  - link "send an email":
+    - /url: https://www.nextcloud.com
+  - heading "Notes" [level=3]
+  - paragraph: This is an example contact
+  - button "copy"
+  - heading "Address book" [level=3]
+  - text: Address book
+  - paragraph: Contacts
+  - note "No shared items with this contact"
+  - text: Last modified 2 minutes ago
+- dialog "Contacts settings":
+  - heading "Contacts settings" [level=2]
+  - navigation "Settings navigation":
+    - text: Contacts settings
+    - list:
+      - listitem:
+        - link "General":
+          - /url: "#settings-section_general"
+      - listitem:
+        - link "Address books":
+          - /url: "#settings-section_address-books"
+  - region "General":
+    - heading "General" [level=3]
+    - text: Sort contacts by Displa y name
+    - combobox
+    - button "Clear selected"
+    - text: Update avatars from social media Refreshed once per week
+    - switch "Update avatars from social media"
+    - button "Import contacts"
+  - region "Address books":
+    - heading "Address books" [level=3]
+    - list:
+      - listitem:
+        - text: Contacts 1 contact - 0 groups
+        - link:
+          - /url: "#"
+        - button "Actions"
+      - listitem:
+        - text: Recently contacted 0 contacts - 0 groups
+        - button "Actions"
+      - listitem:
+        - text: Accounts System address book which holds all accounts 2 contacts - 0 groups
+        - button "Actions"
+    - button "New address book"
+  - text: contacts 8.9.1
+  - button "Close"

@@ -1,0 +1,74 @@
+- text: Keyboard navigation help
+- button "Skip to app navigation"
+- button "Skip to main content"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Files": Files
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation "Files":
+  - searchbox "Search here"
+  - button "Clear search"
+  - button "Search scope options"
+  - list "Views":
+    - listitem:
+      - link "All files":
+        - /url: /apps/files/files
+    - listitem:
+      - link "Personal files":
+        - /url: /apps/files/personal
+    - listitem:
+      - link "Recent":
+        - /url: /apps/files/recent
+    - listitem:
+      - link "Favorites":
+        - /url: /apps/files/favorites
+    - listitem:
+      - link "Shares":
+        - /url: /apps/files/shareoverview
+      - button "Open menu"
+    - listitem:
+      - link "Tags":
+        - /url: /apps/files/tags
+    - listitem:
+      - link "External storage":
+        - /url: /apps/files/extstoragemounts
+    - listitem:
+      - link "Folder tree":
+        - /url: /apps/files/folders
+      - button "Open menu"
+    - listitem:
+      - link "Deleted files":
+        - /url: /apps/files/trashbin
+  - list:
+    - listitem:
+      - link "0 B used":
+        - /url: "#"
+    - listitem:
+      - link "Files settings":
+        - /url: "#"
+- button "Close navigation" [expanded]
+- main:
+  - heading "All files" [level=1]
+  - button "New"
+  - navigation "Current directory path":
+    - list:
+      - listitem:
+        - button "All files"
+  - button "Type"
+  - button "Modified"
+  - button "Tags"
+  - button "People"
+  - button "Switch to grid view"
+  - note "No files in here":
+    - text: No files in here
+    - paragraph: Upload some content or sync with your devices!

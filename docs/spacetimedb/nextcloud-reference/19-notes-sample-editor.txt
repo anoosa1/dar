@@ -1,0 +1,108 @@
+- text: Keyboard navigation help
+- link "Skip to app navigation":
+  - /url: "#app-navigation-vue"
+- link "Skip to main content":
+  - /url: "#app-content-vue"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Notes": Notes
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation:
+  - list:
+    - listitem:
+      - link "All notes":
+        - /url: "#"
+      - text: "1"
+    - listitem:
+      - text: Categories
+      - button "New category"
+    - listitem:
+      - link "Uncategorized":
+        - /url: "#"
+      - text: "1"
+  - list:
+    - listitem:
+      - link "Zen mode":
+        - /url: "#"
+    - listitem:
+      - link "Notes settings":
+        - /url: "#"
+- button "Close navigation" [expanded]
+- main:
+  - button "New note"
+  - textbox "Search for notes":
+    - /placeholder: ""
+  - text: Search for notes
+  - list:
+    - listitem:
+      - link "Sample note *":
+        - /url: /apps/notes/note/232
+  - separator
+  - region "Editor actions":
+    - toolbar "Formatting menu bar":
+      - button "Undo" [disabled]
+      - button "Redo" [disabled]
+      - button "Headings, \"Heading 1\" is selected"
+      - button "Bold"
+      - button "Italic"
+      - button "Underline"
+      - button "Strikethrough"
+      - button "Highlight"
+      - button "Lists" [disabled]
+      - button "Blocks"
+      - button "Table"
+      - button "Annotations"
+      - button "Insert link"
+      - button "Insert attachment"
+      - menu "Insert emoji"
+      - button "Remaining actions"
+    - button "Save document":
+      - img:
+        - img
+    - button "Active people"
+  - document:
+    - textbox:
+      - heading "Sample note" [level=1]
+      - list:
+        - listitem:
+          - paragraph: 📅 15 January 2021, via Nextcloud Notes
+        - listitem:
+          - paragraph: 👥 Me, you, and all our friends!
+      - heading "Tasks ✅" [level=2]
+      - list:
+        - listitem:
+          - paragraph: Write nice todo lists
+        - listitem:
+          - paragraph: Buy Fries
+        - listitem:
+          - paragraph: …
+      - heading "Birthdays" [level=2]
+      - list:
+        - listitem:
+          - paragraph: Jen, in three days!
+        - listitem:
+          - paragraph: Moss, 21.03.1973
+        - listitem:
+          - paragraph: Roy, 1979
+      - heading "Review Steps 🔁" [level=2]
+      - list:
+        - listitem:
+          - paragraph: Turn PC off
+        - listitem:
+          - paragraph: Turn PC on
+        - listitem:
+          - paragraph: Then call IT
+      - heading "Quotes 💬" [level=2]
+      - blockquote:
+        - paragraph: Nextcloud, a safe home for all your data
+      - paragraph

@@ -1,0 +1,73 @@
+- text: Keyboard navigation help
+- link "Skip to app navigation":
+  - /url: "#app-navigation-vue"
+- link "Skip to main content":
+  - /url: "#app-content-vue"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+  - search:
+    - button "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- main "Contacts":
+  - button "Go back to the list"
+  - heading "Leon Green" [level=2]
+  - text: Manager at Company
+  - link "leon@example.com":
+    - /url: mailto:leon@example.com
+  - link "+999999999999":
+    - /url: tel:+999999999999
+  - button "Edit"
+  - button "Actions"
+  - heading "Phone" [level=3]
+  - text: Home
+  - paragraph: "+999999999999"
+  - button "copy"
+  - link "send an email":
+    - /url: tel:+999999999999
+  - heading "Email" [level=3]
+  - text: Home
+  - paragraph: leon@example.com
+  - button "copy"
+  - link "send an email":
+    - /url: mailto:leon@example.com
+  - heading "Address" [level=3]
+  - text: Home Address
+  - paragraph: 123 Street Street
+  - button "copy"
+  - text: City
+  - paragraph: City
+  - button "copy"
+  - text: State or province
+  - paragraph: State
+  - button "copy"
+  - text: Country
+  - paragraph: Country
+  - button "copy"
+  - heading "Personal dates" [level=3]
+  - text: Birthday
+  - textbox "Birthday":
+    - /placeholder: ""
+    - text: January 1, 2000
+  - text: Birthday
+  - heading "Website" [level=3]
+  - text: Website
+  - paragraph: www.nextcloud.com
+  - button "copy"
+  - link "send an email":
+    - /url: https://www.nextcloud.com
+  - heading "Notes" [level=3]
+  - paragraph: This is an example contact
+  - button "copy"
+  - heading "Address book" [level=3]
+  - text: Address book
+  - paragraph: Contacts
+  - note "No shared items with this contact"
+  - text: Last modified 7 minutes ago

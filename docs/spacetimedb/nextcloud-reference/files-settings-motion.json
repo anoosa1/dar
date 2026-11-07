@@ -1,0 +1,332 @@
+[
+  {
+    "target": "BUTTON",
+    "classes": "button-vue button-vue--size-normal button-vue--icon-and-text button-vue--vue-tertiary button-vue--tertiary",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 100,
+      "easing": "linear",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "backgroundColor": "oklab(0.492886 -0.0545054 -0.104676 / 0.08)",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "computedOffset": 1
+      }
+    ]
+  },
+  {
+    "target": "DIV",
+    "classes": "app-navigation-entry",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 200,
+      "easing": "ease-in-out",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "backgroundColor": "oklab(0.492886 -0.0545054 -0.104676 / 0.08)",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "computedOffset": 1
+      }
+    ]
+  },
+  {
+    "target": "DIV",
+    "classes": "modal-mask dialog__modal app-settings fade-enter-active fade-enter-to",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 250,
+      "easing": "ease",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "0",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "1",
+        "computedOffset": 1
+      }
+    ]
+  },
+  {
+    "target": "DIV",
+    "classes": "modal-header fade-visibility-enter-active fade-visibility-enter-to",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 250,
+      "easing": "ease",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "0",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "1",
+        "computedOffset": 1
+      }
+    ]
+  },
+  {
+    "target": "DIV",
+    "classes": "modal-header fade-visibility-enter-active fade-visibility-enter-to",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 250,
+      "easing": "ease",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "visibility": "hidden",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "visibility": "visible",
+        "computedOffset": 1
+      }
+    ]
+  },
+  {
+    "target": "DIV",
+    "classes": "modal-wrapper modal-wrapper--large modal-in-enter-active modal-in-enter-to",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 250,
+      "easing": "ease",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "0",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "1",
+        "computedOffset": 1
+      }
+    ]
+  },
+  {
+    "target": "DIV",
+    "classes": "modal-container",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 300,
+      "easing": "ease",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "transform": "scale(0.9)",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "transform": "none",
+        "computedOffset": 1
+      }
+    ]
+  },
+  {
+    "target": "DIV",
+    "classes": "modal-mask dialog__modal app-settings",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 250,
+      "easing": "ease",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "0",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "1",
+        "computedOffset": 1
+      }
+    ]
+  },
+  {
+    "target": "DIV",
+    "classes": "modal-header",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 250,
+      "easing": "ease",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "0",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "1",
+        "computedOffset": 1
+      }
+    ]
+  },
+  {
+    "target": "DIV",
+    "classes": "modal-header",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 250,
+      "easing": "ease",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "visibility": "hidden",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "visibility": "visible",
+        "computedOffset": 1
+      }
+    ]
+  },
+  {
+    "target": "DIV",
+    "classes": "modal-wrapper modal-wrapper--large",
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 250,
+      "easing": "ease",
+      "endDelay": 0,
+      "fill": "backwards",
+      "iterationStart": 0,
+      "iterations": 1
+    },
+    "keyframes": [
+      {
+        "offset": 0,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "0",
+        "computedOffset": 0
+      },
+      {
+        "offset": 1,
+        "easing": "linear",
+        "composite": "auto",
+        "opacity": "1",
+        "computedOffset": 1
+      }
+    ]
+  }
+]

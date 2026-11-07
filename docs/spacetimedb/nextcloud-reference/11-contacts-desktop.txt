@@ -1,0 +1,65 @@
+- text: Keyboard navigation help
+- link "Skip to app navigation":
+  - /url: "#app-navigation-vue"
+- link "Skip to main content":
+  - /url: "#app-content-vue"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Contacts": Contacts
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation:
+  - button "New contact"
+  - list:
+    - listitem:
+      - link "All contacts":
+        - /url: /apps/contacts/All%20contacts
+      - text: "3"
+    - listitem:
+      - link "Not grouped":
+        - /url: /apps/contacts/Not%20grouped
+      - text: "3"
+    - listitem:
+      - text: Address books
+      - button "Add address book"
+    - listitem:
+      - link "Contacts":
+        - /url: /apps/contacts/addressbook/contacts
+      - text: "1"
+    - listitem:
+      - link "Recently contacted":
+        - /url: /apps/contacts/addressbook/z-app-generated--contactsinteraction--recent
+    - listitem:
+      - link "Accounts":
+        - /url: /apps/contacts/addressbook/z-server-generated--system
+      - text: "2"
+    - listitem:
+      - text: Contact groups
+      - button "Actions"
+  - button "Open the contacts app settings": Contacts settings
+- button "Close navigation" [expanded]
+- main "Contacts":
+  - textbox "Search contacts …":
+    - /placeholder: ""
+  - text: Search contacts …
+  - listitem:
+    - link "Select Leon Green Leon Green Company":
+      - /url: /apps/contacts/addressbook/contacts/NDAxMDNhNmItYTkwNy00ZGI2LWE1NTUtYjA1NzE1ZjE1ZDI1fmNvbnRhY3Rz
+      - checkbox "Select Leon Green"
+      - text: Leon Green Company
+  - heading "Leon Green" [level=2]
+  - text: Manager at Company
+  - button "Edit"
+  - button "Actions"
+  - img:
+    - img
+  - text: Last modified seconds ago

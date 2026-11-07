@@ -1,0 +1,144 @@
+- text: Keyboard navigation help
+- link "Skip to app navigation":
+  - /url: "#app-navigation-vue"
+- link "Skip to main content":
+  - /url: "#app-content-vue"
+- banner:
+  - link "Go to Dashboard":
+    - /url: /
+  - navigation "Applications":
+    - button "Open apps menu"
+    - button "Open apps menu, currently in Contacts": Contacts
+  - search:
+    - combobox "Apps, files, messages, and more"
+  - button "Notifications":
+    - img
+  - button "Search contacts"
+  - navigation "Settings menu":
+    - button "Settings menu"
+    - text: Avatar of Test — Online
+- navigation:
+  - button "New contact"
+  - list:
+    - listitem:
+      - link "All contacts":
+        - /url: /apps/contacts/All%20contacts
+      - text: "3"
+    - listitem:
+      - link "Not grouped":
+        - /url: /apps/contacts/Not%20grouped
+      - text: "3"
+    - listitem:
+      - text: Address books
+      - button "Add address book"
+    - listitem:
+      - link "Contacts":
+        - /url: /apps/contacts/addressbook/contacts
+      - text: "1"
+    - listitem:
+      - link "Recently contacted":
+        - /url: /apps/contacts/addressbook/z-app-generated--contactsinteraction--recent
+    - listitem:
+      - link "Accounts":
+        - /url: /apps/contacts/addressbook/z-server-generated--system
+      - text: "2"
+    - listitem:
+      - text: Contact groups
+      - button "Actions"
+  - button "Open the contacts app settings": Contacts settings
+- button "Close navigation" [expanded]
+- main "Contacts":
+  - textbox "Search contacts …":
+    - /placeholder: ""
+  - text: Search contacts …
+  - listitem:
+    - link "Select Leon Green Leon Green Company":
+      - /url: /apps/contacts/addressbook/contacts/NDAxMDNhNmItYTkwNy00ZGI2LWE1NTUtYjA1NzE1ZjE1ZDI1fmNvbnRhY3Rz
+      - checkbox "Select Leon Green"
+      - text: Leon Green Company
+  - button "Actions"
+  - heading "Leon Green Name" [level=2]:
+    - textbox "Name":
+      - /placeholder: ""
+      - text: Leon Green
+    - text: Name
+  - textbox "Title":
+    - /placeholder: ""
+    - text: Manager
+  - text: Title
+  - textbox "Company":
+    - /placeholder: ""
+  - text: Company
+  - button "Save"
+  - button "Actions"
+  - heading "Phone" [level=3]
+  - button "Add property of this type"
+  - text: Home
+  - combobox
+  - button "Clear selected"
+  - textbox "tel":
+    - /placeholder: ""
+    - text: "+999999999999"
+  - text: Phone
+  - button "Delete"
+  - heading "Email" [level=3]
+  - button "Add property of this type"
+  - text: Home
+  - combobox
+  - button "Clear selected"
+  - textbox "Email":
+    - /placeholder: ""
+    - text: leon@example.com
+  - text: Email
+  - button "Delete"
+  - heading "Address" [level=3]
+  - button "Add property of this type"
+  - text: Home
+  - combobox
+  - button "Clear selected"
+  - button "Delete"
+  - textbox "Post office box":
+    - /placeholder: ""
+  - text: Post office box
+  - textbox "Address":
+    - /placeholder: ""
+    - text: 123 Street Street
+  - text: Address
+  - textbox "Extended address":
+    - /placeholder: ""
+  - text: Extended address
+  - textbox "Postal code":
+    - /placeholder: ""
+  - text: Postal code
+  - textbox "City":
+    - /placeholder: ""
+  - text: City
+  - textbox "State or province":
+    - /placeholder: ""
+    - text: State
+  - text: State or province
+  - textbox "Country":
+    - /placeholder: ""
+  - text: Country
+  - heading "Personal dates" [level=3]
+  - text: Birthday
+  - textbox "Birthday":
+    - /placeholder: Select date
+    - text: 1/1/00
+  - button "Actions"
+  - heading "Website" [level=3]
+  - button "Add property of this type"
+  - text: Website
+  - textbox "url": www.nextcloud.com
+  - button "Delete"
+  - heading "Notes" [level=3]
+  - textbox "Notes":
+    - /placeholder: ""
+    - text: This is an example contact
+  - text: Notes
+  - button "Delete"
+  - heading "Contact groups" [level=3]
+  - text: Contact groups
+  - combobox
+  - button "Add more info"
+  - text: Last modified 7 minutes ago
