@@ -37,6 +37,13 @@ other `/spacetime/` routes. It supplies the configured canonical Host and
 HTTPS scheme to the application. DAV and its well-known discovery routes pass to
 the same application host. Requests are streamed with a 1 GiB body limit.
 
+With `configureNginx = true`, the module also maps the public hostname to
+`127.0.0.1` in the server's `/etc/hosts`. SpacetimeDB verifies browser tokens by
+fetching Dar's HTTPS signing-key endpoint, so the server must be able to reach its
+own origin. This local mapping avoids depending on a public-IP hairpin or VPN
+route; the public issuer, TLS verification and other machines' DNS are unchanged.
+With a separately managed proxy, ensure the origin is reachable from the Dar host.
+
 Options: `package`, `origin`, `port` (4311), `databasePort` (4310), `databaseName`
 (`dar`), `stateDirectory` (`dar` below `/var/lib`), `configureNginx` and
 `openFirewall` (defaults to the nginx choice). Keep the origin, database name and

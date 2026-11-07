@@ -31,6 +31,7 @@
         assert service.environment.DAR_ROOT == "/var/lib/dar";
         assert service.serviceConfig.ProtectSystem == "strict";
         assert builtins.hasAttr "dar.example.test" evaluated.config.services.nginx.virtualHosts;
+        assert builtins.elem "dar.example.test" evaluated.config.networking.hosts."127.0.0.1";
         pkgs.runCommand "dar-module-evaluation" {} ''
           grep -F '127.0.0.1:4311' ${nginxConfig}
           grep -F '127.0.0.1:4310/v1/database/dar/subscribe' ${nginxConfig}

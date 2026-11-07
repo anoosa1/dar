@@ -52,6 +52,9 @@ in {
         ReadWritePaths = [ "/var/lib/${cfg.stateDirectory}" ]; LimitNOFILE = 65536;
       };
     };
+    # SpacetimeDB fetches signing keys through the canonical HTTPS issuer.
+    # Use the colocated TLS proxy even when the host cannot reach its public IP.
+    networking.hosts."127.0.0.1" = lib.mkIf cfg.configureNginx [ host ];
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ 80 443 ];
     services.nginx = lib.mkIf cfg.configureNginx {
       enable = true;
