@@ -239,6 +239,8 @@ Write alone does not allow reading or syncing content. Most sync clients need
 both permissions. Existing passwords keep their original permissions.
 CardDAV homes are `/dav/addressbooks/<username>/`; CalDAV homes are
 `/dav/calendars/<username>/`. Existing Files app passwords stay Files-scoped.
+Files-enabled passwords can discover the Files home from `/dav/` or mount the
+explicit `/dav/files/<username>/` URL in DAVx⁵. See [DAV setup](../docs/davx5.md).
 Supported operations include principal/home discovery, PROPFIND, resource
 GET/HEAD/PUT/DELETE, query and multiget REPORTs, and conditional writes. Create new
 collections in the native UI. Sync tokens, LOCK, PROPPATCH, MKCALENDAR and

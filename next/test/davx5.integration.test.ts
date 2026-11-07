@@ -4,6 +4,34 @@ import {randomUUID} from "node:crypto";
 import {login} from "./integration-helpers.ts";
 const base=process.env.DAR_INTEGRATION_ORIGIN;
 
+test("DAVx5 Files mounts recognize DAV and discover the Files home from the generic root",{skip:!base},async()=>{
+  const session=await login(base!);
+  async function credential(scope:string){
+    const response=await fetch(base+"/api/v1/auth/app-passwords",{method:"POST",headers:{...session.headers,"content-type":"application/json"},body:JSON.stringify({label:"Files mount proof",scope})});
+    assert.equal(response.status,201);
+    const {secret}=await response.json() as {secret:string};
+    return {authorization:"Basic "+Buffer.from("admin:"+secret).toString("base64")};
+  }
+  const files=await credential("v2 files:read files:write"),mixed=await credential("v2 files:read contacts:read calendar:read"),pim=await credential("pim:read");
+  for(const path of ["/dav/","/dav/files/admin","/dav/files/admin/"]){
+    const options=await fetch(base+path,{method:"OPTIONS"});
+    assert.equal(options.status,204);assert.match(options.headers.get("dav")??"",/\b1\b/);
+  }
+  const file="Mount-"+randomUUID()+".txt",content="Visible through the Files mount";
+  assert.equal((await fetch(base+"/dav/files/admin/"+file,{method:"PUT",headers:files,body:content})).status,201);
+  const body='<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:displayname/><d:resourcetype/><d:getetag/><d:getcontentlength/><d:getcontenttype/></d:prop></d:propfind>';
+  for(const headers of [files,mixed]){
+    const root=await fetch(base+"/dav/",{method:"PROPFIND",headers:{...headers,depth:"1"},body});
+    assert.equal(root.status,207,await root.clone().text());assert.match(await root.text(),/<d:href>\/dav\/files\/admin\/<\/d:href>/);
+    const listing=await fetch(base+"/dav/files/admin",{method:"PROPFIND",headers:{...headers,depth:"1"},body});
+    assert.equal(listing.status,207);assert.match(await listing.text(),new RegExp(file.replace(".","\\.")));
+    assert.equal(await (await fetch(base+"/dav/files/admin/"+file,{headers})).text(),content);
+  }
+  const unrelated=await fetch(base+"/dav/",{method:"PROPFIND",headers:{...pim,depth:"1"},body});
+  assert.equal(unrelated.status,207);assert.doesNotMatch(await unrelated.text(),/<d:href>\/dav\/files\//);
+  assert.equal((await fetch(base+"/dav/files/admin/",{method:"PROPFIND",headers:{...pim,depth:"1"}})).status,403);
+});
+
 test("DAVx5-style discovery and ETag synchronization use one scoped credential for both homes",{skip:!base,timeout:30000},async()=>{
   const session=await login(base!);
   async function post(path:string,value:object){const response=await fetch(base+path,{method:"POST",headers:{...session.headers,"content-type":"application/json"},body:JSON.stringify(value)});assert.equal(response.status,201,await response.clone().text());return response.json() as Promise<any>;}

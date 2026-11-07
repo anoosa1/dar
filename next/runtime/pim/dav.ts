@@ -58,11 +58,21 @@ export async function handlePimDav(req: IncomingMessage, res: ServerResponse, db
   const write = ["PUT", "DELETE"].includes(method);
   let kind: "contacts" | "calendar" = url.pathname.startsWith("/dav/calendars/") ? "calendar" : "contacts";
   async function authenticate(app: string) { return db.call<{ sessionId: string; username: string }>("service_pim_authenticate", [username, digestToken(secret), app, write]); }
-  let authenticated;
+  let authenticated, pimAccess=true, files: {sessionId:string;username:string}|undefined;
+  const discovery=url.pathname==="/dav/"||url.pathname.startsWith("/dav/principals/");
+  if(discovery){
+    try{files=await db.call("service_protocol_authenticate",[username,digestToken(secret),false]);}
+    catch(error){if(!(error instanceof AppError)||![401,403].includes(error.status))throw error;}
+  }
   try { authenticated = await authenticate(kind); }
-  catch (error) { if (url.pathname !== "/dav/" && !url.pathname.startsWith("/dav/principals/")) throw error; kind = "calendar"; authenticated = await authenticate(kind); }
+  catch (error) {
+    if (!discovery || !(error instanceof AppError) || ![401,403].includes(error.status)) throw error;
+    kind = "calendar";
+    try{authenticated=await authenticate(kind);}
+    catch(error){if(!files || !(error instanceof AppError) || ![401,403].includes(error.status))throw error;authenticated=files;pimAccess=false;}
+  }
   const service = pimService(db, authenticated.sessionId), user = encodeURIComponent(authenticated.username), home = `/dav/${kind === "contacts" ? "addressbooks" : "calendars"}/${user}/`, principal = `/dav/principals/${user}/`;
-  const collections = (await service.collections()).filter(c => c.kind === kind);
+  const collections = pimAccess ? (await service.collections()).filter(c => c.kind === kind) : [];
   const atHome = url.pathname === home, atRoot = ["/dav/", "/dav/addressbooks/", "/dav/calendars/"].includes(url.pathname), atPrincipal = url.pathname === principal;
   const tail = url.pathname.startsWith(home) ? url.pathname.slice(home.length).split("/").filter(Boolean) : [];
   if (!atRoot && !atPrincipal && !atHome && (!tail.length || tail.length > 2)) throw new AppError("notFound", 404);
@@ -80,6 +90,7 @@ export async function handlePimDav(req: IncomingMessage, res: ServerResponse, db
       [`${A}|addressbook-home-set`, `<a:addressbook-home-set><d:href>/dav/addressbooks/${user}/</d:href></a:addressbook-home-set>`],
       [`${C}|calendar-home-set`, `<c:calendar-home-set><d:href>/dav/calendars/${user}/</d:href></c:calendar-home-set>`],
     ]);
+    if(!pimAccess){map.delete(`${A}|addressbook-home-set`);map.delete(`${C}|calendar-home-set`);}
     if (row) { map.set(`${D}|getetag`, `<d:getetag>${escape(pimEtag(row))}</d:getetag>`); map.set(`${D}|getlastmodified`, `<d:getlastmodified>${new Date(row.modifiedAt).toUTCString()}</d:getlastmodified>`); }
     if (row?.content) { map.set(`${D}|getcontenttype`, `<d:getcontenttype>${kind === "contacts" ? "text/vcard" : "text/calendar"}</d:getcontenttype>`); map.set(`${D}|getcontentlength`, `<d:getcontentlength>${Buffer.byteLength(row.content)}</d:getcontentlength>`); map.set(`${kind === "contacts" ? A : C}|${kind === "contacts" ? "address-data" : "calendar-data"}`, kind === "contacts" ? `<a:address-data>${escape(row.content)}</a:address-data>` : `<c:calendar-data>${escape(row.content)}</c:calendar-data>`); }
     if (isCollection && propertyCollection) {
@@ -106,6 +117,12 @@ export async function handlePimDav(req: IncomingMessage, res: ServerResponse, db
     if (!["0", "1"].includes(String(req.headers.depth ?? "1"))) throw new AppError("finiteDepthRequired", 403);
     if (href && !resource) throw new AppError("notFound", 404);
     const result = [response(url.pathname, props(resource?.href ?? collection?.name ?? authenticated.username, !href, resource ?? collection))];
+    // The generic DAV root must expose the Files home to WebDAV/SAF mounts too.
+    if(url.pathname==="/dav/" && req.headers.depth!=="0" && files)
+      result.push(response(`/dav/files/${encodeURIComponent(files.username)}/`,new Map([
+        [`${D}|displayname`,"<d:displayname>Files</d:displayname>"],
+        [`${D}|resourcetype`,"<d:resourcetype><d:collection/></d:resourcetype>"],
+      ])));
     if (req.headers.depth !== "0" && !href) {
       if (collection) for (const row of info!.items) result.push(response(path + row.href, props(row.href, false, row)));
       else if (atHome) for (const c of collections) result.push(response(home + c.id + "/", props(c.name, true, c)));

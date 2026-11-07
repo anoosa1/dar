@@ -65,6 +65,7 @@ try {
   if(!pimOnly){run(["--test", "--test-concurrency=1", "test/auth-primitives.test.ts", "test/auth-security.integration.test.ts", "test/files.integration.test.ts", "test/dav.integration.test.ts", "test/backup.integration.test.ts", "test/gc.integration.test.ts", "test/keyring.test.ts", "test/pagination.integration.test.ts", "test/storage.test.ts"]);
   run(["test/browser.mjs"]);}
   run(["test/pim-browser.mjs"]);
+  run(["test/contacts-layout-browser.mjs"]);
   run(["test/pim-dav-client.mjs"]);
   // This deliberately consumes the fixture's login failure budget.
   run(["--test", "test/http-security.integration.test.ts"]);

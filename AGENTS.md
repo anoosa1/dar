@@ -5,6 +5,10 @@ blobs and a React/TypeScript client. The active application is in next/. Nix
 packaging and the NixOS module are in nix/; the root flake is authoritative.
 The historical Go baseline tag remains immutable. Do not restore legacy apps.
 
+Read docs/design.md before any UI work. It is the shared design contract across
+all apps; reuse the established interactions and keep it current with maintainer
+decisions.
+
 - Keep systems simple and type boundaries explicit. Use patch-based edits.
 - Preserve unrelated work. Questions are read-only; answer before changing files.
 - No dependencies, databases, major abstractions or public contract changes

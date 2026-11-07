@@ -200,7 +200,7 @@ export async function startServer(config: ServerConfig) {
           const p = await body(req), token = createOpaqueToken(), id = randomUUID();
           const scope = string(p.scope, 120), apps=passwordApps.filter(app=>passwordGrants(scope).some(g=>g.startsWith(app+":"))), app = apps[0] === "contacts" ? "addressbooks" : apps[0] === "calendar" ? "calendars" : "files";
           await db.call("service_create_app_password", [authenticated.session.id, id, token.digest, string(p.label, 100), scope]);
-          return json(res, { id, secret: token.secret, davUrl: apps.length>1?`${config.origin}/dav/`:`${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
+          return json(res, { id, secret: token.secret, filesDavUrl:apps.includes("files")?`${config.origin}/dav/files/${encodeURIComponent(authenticated.user.username)}/`:undefined, davUrl: apps.length>1?`${config.origin}/dav/`:`${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
         }
         const passwordRoute = /^\/api\/v1\/auth\/app-passwords\/([^/]+)$/.exec(url.pathname);
         if (passwordRoute && method === "DELETE") { await db.call("service_revoke_app_password", [authenticated.session.id, passwordRoute[1]]); return json(res, { ok: true }); }

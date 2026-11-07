@@ -22,6 +22,7 @@ export async function handleDav(req: IncomingMessage, res: ServerResponse, db: D
   const method = req.method ?? "GET";
   if (req.headers.origin && req.headers.origin !== origin) throw new AppError("invalidOrigin", 403);
   res.setHeader("allow", "OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY");
+  res.setHeader("dav", "1");
   res.setHeader("cache-control", "no-store");
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return; }
   const authorization = req.headers.authorization;

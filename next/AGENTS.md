@@ -1,5 +1,8 @@
 # SpacetimeDB application
 
+Read ../docs/design.md before UI work. All apps follow the same interaction and
+layout rules; app-specific implementations must not drift from that contract.
+
 - Sign-in branding and app-password permissions use mock A in
   ../docs/spacetimedb/signin-app-password-mocks.html, selected November 7.
 

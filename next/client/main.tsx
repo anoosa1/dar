@@ -15,6 +15,7 @@ import "./pim/styles.css";
 import "./ui-layout.css";
 import "./theme.css";
 import "./calendar-layout.css";
+import "./contacts-layout.css";
 function App() {
   const [status, setStatus] = useState<{ initialized: boolean } | null>(null);
   const [session, setSession] = useState<BrowserSession | null>(null);
