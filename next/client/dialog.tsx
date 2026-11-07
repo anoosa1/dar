@@ -6,7 +6,7 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     ref.current?.showModal();
-    return () => { if (previous?.isConnected) previous.focus(); };
+    return () => {const rect=previous?.getBoundingClientRect();if(previous&&previous!==document.body&&previous.isConnected&&rect&&rect.width&&rect.height&&rect.right>0&&rect.left<innerWidth&&rect.bottom>0&&rect.top<innerHeight)previous.focus();else{const navigation=document.querySelector<HTMLElement>(".topbar .mobile-menu"),visible=navigation?.getBoundingClientRect();if(visible?.width)navigation?.focus();else document.querySelector<HTMLElement>("main")?.focus();}};
   }, []);
   return <dialog ref={ref} className="dialog" aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose(); }}>
     <div className="dialog-heading"><h2 id={titleId}>{title}</h2><button className="icon-button" aria-label="Close dialog" onClick={onClose}><Icon name="close" /></button></div>{children}

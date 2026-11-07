@@ -145,6 +145,12 @@ export async function startServer(config: ServerConfig) {
         if (!authenticated) throw new AppError("unauthenticated", 401);
         if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !authorizeCookieWrite(config.origin, origin, typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : undefined, authenticated.session.csrfDigest)) throw new AppError("csrfRejected", 403);
         if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
+        if(url.pathname==="/api/v1/account/profile"){
+          const profile=await db.call<{id:string;revision:number}>("service_profile",[authenticated.session.id,"read","{}"]),etag=`"${profile.id}:${profile.revision}"`;
+          if(method==="GET"){res.setHeader("etag",etag);return json(res,profile);}
+          if(method==="PUT"){if(!req.headers["if-match"])throw new AppError("preconditionRequired",428);if(req.headers["if-match"]!==etag)throw new AppError("revisionConflict",412);const p=await body(req);if(Object.keys(p).some(key=>!["displayName","givenName","familyName","email"].includes(key)))throw new AppError("invalidInput",400,"Only personal profile fields can be changed here.");const result=await db.call<{id:string;revision:number}>("service_profile",[authenticated.session.id,"save",JSON.stringify({revision:profile.revision,displayName:p.displayName,givenName:p.givenName??"",familyName:p.familyName??"",email:p.email??""})]);res.setHeader("etag",`"${result.id}:${result.revision}"`);return json(res,result);}
+          throw new AppError("methodNotAllowed",405);
+        }
         if(url.pathname.startsWith("/api/v1/identity/")){
           let attempt:{count:number;until:number}|undefined;
           if(method==="POST"&&(url.pathname.endsWith("/confirmation")||url.pathname.includes("/interactions/"))){

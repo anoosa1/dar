@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 const paths = {
+  settings:"M10 3h4l.6 3 2 .9 2.7-1 2 3.4-2.2 2v2.4l2.2 2-2 3.4-2.7-1-2 .9-.6 3h-4l-.6-3-2-.9-2.7 1-2-3.4 2.2-2v-2.4l-2.2-2 2-3.4 2.7 1 2-.9ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
   folder: "M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z",
   file: "M6 3h8l4 4v14H6ZM14 3v5h4M9 12h6M9 16h6",
   search: "M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0",

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {fileDetails} from "./ui-helpers.mjs";
 import { chromium } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 const origin = process.env.DAR_INTEGRATION_ORIGIN;
@@ -42,7 +43,7 @@ try {
   await page.getByRole("button", { name: "Cancel upload Cancelled.txt", exact: true }).click();
   await page.getByText("Upload cancelled.", { exact: true }).waitFor(); releaseReservation();
   await page.getByRole("button", { name: "Dismiss finished uploads", exact: true }).click();
-  await page.getByRole("button", { name: "Details for Welcome.txt", exact: true }).click();
+  await fileDetails(page,"Welcome.txt");
   await page.getByRole("heading", { name: "Welcome.txt", exact: true }).waitFor();
   await page.screenshot({ path: "/tmp/dar-files-desktop.png", fullPage: true });
   await page.getByRole("button", { name: "Rename", exact: true }).click();
@@ -58,10 +59,10 @@ try {
   await page.getByRole("button", { name: "Close details", exact: true }).click();
   await page.getByRole("button", { name: "Favorites", exact: true }).click();
   await page.getByRole("button", { name: "A little hello.txt", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Details for A little hello.txt", exact: true }).click();
+  await fileDetails(page,"A little hello.txt");
   await page.getByRole("button", { name: "Move to deleted files", exact: true }).click();
   await page.getByRole("button", { name: "Deleted files", exact: true }).click();
-  await page.getByRole("button", { name: "Details for A little hello.txt", exact: true }).click();
+  await fileDetails(page,"A little hello.txt");
   await page.getByRole("button", { name: "Restore", exact: true }).click();
   await page.getByRole("button", { name: "All files", exact: true }).first().click();
   await page.getByRole("button", { name: folder, exact: true }).click();
@@ -86,14 +87,14 @@ try {
   await phone.getByRole("button", { name: "A little hello.txt", exact: true }).waitFor();
   assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await phone.screenshot({ path: "/tmp/dar-files-mobile.png", fullPage: true });
-  await phone.getByRole("button", { name: "Details for A little hello.txt", exact: true }).click();
+  await fileDetails(phone,"A little hello.txt");
   await phone.getByRole("heading", { name: "A little hello.txt", exact: true }).waitFor();
   assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await phone.screenshot({ path: "/tmp/dar-files-mobile-details.png", fullPage: true });
   await phone.getByRole("button", { name: "Close details", exact: true }).click();
   await mobile.close();
   await page.getByRole("button", { name: "Open account menu", exact: true }).click();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
   await page.getByRole("heading", { name: "Welcome back", exact: true }).waitFor();
   assert.deepEqual(failures, []);
   console.info("PASS desktop/mobile auth, upload/cancel, preview, rename, favorite, trash/restore, reconnect during navigation, and logout; no page/console errors or mobile overflow.");

@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DbConnection } from "../module_bindings/index.ts";
 import { request, type BrowserSession } from "../api.ts";
-import { AppSwitcher } from "../apps.tsx";
-import { Brand } from "../auth.tsx";
-import { Icon } from "../icons.tsx";
-import { AccountSecurity } from "../account.tsx";
+import {WorkspaceHeader} from "../shell.tsx";
+import {Select} from "../controls.tsx";
+import {AppSettingsButton,AppSettings} from "../app-settings.tsx";
 import { Dialog } from "../dialog.tsx";
 import type { PimCollection, PimResource } from "../../shared/pim.ts";
 export const etag = (row: { id: string; revision: number }) => `"${row.id}:${row.revision}"`;
 export interface Item<T> extends PimResource { data: T }
-export interface Preferences { revision: number; timezone?: string; weekStart?: 0 | 1; contactSort?: string; hiddenCalendars?: string[]; notesSort?:string; tasksSort?:string }
+export type {Preferences} from "../../shared/preferences.ts";
 export function usePim(session: BrowserSession, onSignedOut: () => void) {
   const [epoch, setEpoch] = useState(0), [connectionState, setConnectionState] = useState("Connecting…");
   useEffect(() => {
@@ -31,14 +30,14 @@ export function usePim(session: BrowserSession, onSignedOut: () => void) {
   return { epoch, connectionState, refresh: () => setEpoch(n => n + 1) };
 }
 export function PimShell({ kind, session, onSignedOut, query, onQuery, sidebar, children, details, connectionState }: { kind: "contacts" | "calendar"|"notes"|"tasks"; session: BrowserSession; onSignedOut: () => void; query: string; onQuery: (query: string) => void; sidebar: ReactNode; children: ReactNode; details?: ReactNode; connectionState: string }) {
-  const [navigation, setNavigation] = useState(false), [account, setAccount] = useState(false), [menu, setMenu] = useState(false), [error, setError] = useState("");
+  const [navigation, setNavigation] = useState(false), [settings, setSettings] = useState(false);
   const main = useRef<HTMLElement>(null), hadDetails = useRef(false);
   useEffect(() => { if (hadDetails.current && !details && document.activeElement === document.body) main.current?.focus(); hadDetails.current = !!details; }, [!!details]);
   return <div className={`app-shell pim-shell ${details ? "has-pim-details" : ""}`}>
-    <header className="topbar"><div className="topbar-brand"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setNavigation(!navigation)}><Icon name="menu" /></button><Brand /><AppSwitcher active={kind} /></div><label className="global-search"><Icon name="search" /><input aria-label={`Search ${kind}`} placeholder={`Search ${kind === "contacts" ? "people" : kind==="calendar"?"events":kind}…`} value={query} onChange={e => onQuery(e.target.value)} />{query && <button className="icon-button" aria-label="Clear search" onClick={() => onQuery("")}><Icon name="close" /></button>}</label><div className="account-area"><button className="avatar" aria-label="Open account menu" onClick={() => setMenu(!menu)}>{session.user.displayName.slice(0,2).toUpperCase()}</button>{menu && <div className="account-menu"><strong>{session.user.displayName}</strong><button onClick={() => { setAccount(true); setMenu(false); }}>Account security</button><button onClick={() => { void request("/api/v1/auth/logout", { method: "POST" }, session.csrfToken).then(onSignedOut).catch(cause => setError(cause.message)); }}>Sign out</button></div>}</div></header>
-    {error && <p role="alert" className="error">{error}</p>}{connectionState && <p className="connection-state" role="status">{connectionState}</p>}
-    <div className="pim-workspace">{navigation && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setNavigation(false)} />}<aside className={`sidebar ${navigation ? "is-open" : ""}`} onClick={e => { if ((e.target as HTMLElement).closest("button")) setNavigation(false); }}>{sidebar}</aside><main ref={main} tabIndex={-1} className="pim-main">{children}</main>{details && <aside className="pim-details" aria-label={`${({contacts:"Contact",calendar:"Event",notes:"Note",tasks:"Task"})[kind]} details`}>{details}</aside>}</div>
-    {account && <Dialog title="Account security" onClose={() => setAccount(false)}><AccountSecurity session={session} onSignedOut={onSignedOut} /></Dialog>}
+    <WorkspaceHeader app={kind} session={session} onSignedOut={onSignedOut} query={query} onQuery={onQuery} onNavigation={()=>setNavigation(!navigation)}/>
+    {connectionState && <p className="connection-state" role="status">{connectionState}</p>}
+    <div className="pim-workspace">{navigation && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setNavigation(false)} />}<aside className={`sidebar ${navigation ? "is-open" : ""}`} onClick={e => { if ((e.target as HTMLElement).closest("button") && !(e.target as HTMLElement).closest(".ui-select")) setNavigation(false); }}>{sidebar}<AppSettingsButton app={kind} onClick={()=>setSettings(true)}/></aside><main ref={main} tabIndex={-1} className="pim-main">{children}</main>{details && <aside className="pim-details" aria-label={`${({contacts:"Contact",calendar:"Event",notes:"Note",tasks:"Task"})[kind]} details`}>{details}</aside>}</div>
+    {settings&&<AppSettings app={kind} session={session} onClose={()=>setSettings(false)}/>}
   </div>;
 }
 export function CollectionEditor({ collection, title, onSave, onClose }: { collection?: PimCollection; title: string; onSave: (name: string, color: string) => Promise<void>; onClose: () => void }) {
@@ -49,5 +48,5 @@ export function Sharing({ collection, base, session, onClose, onChanged }: { col
   const [grants, setGrants] = useState<{ id: string; username: string; role: string }[]>([]), [current, setCurrent] = useState(collection), [error, setError] = useState("");
   async function refresh() { const [row, list] = await Promise.all([request<PimCollection>(base), request<{ items: typeof grants }>(base + "/grants")]); setCurrent(row); setGrants(list.items); onChanged(); }
   useEffect(() => { void refresh().catch(cause => setError(cause.message)); }, []);
-  return <Dialog title={`Share ${collection.name}`} onClose={onClose}>{error && <p role="alert" className="error">{error}</p>}<form onSubmit={e => { e.preventDefault(); const values = Object.fromEntries(new FormData(e.currentTarget)); void request(base + "/grants", { method: "POST", headers: { "if-match": etag(current) }, body: JSON.stringify(values) }, session.csrfToken).then(refresh).catch(cause => setError(cause.message)); }}><label>Username<input name="username" required /></label><label>Permission<select name="role"><option value="read">Can view</option><option value="write">Can edit</option></select></label><button className="primary-button">Share</button></form>{grants.map(grant => <div className="grant" key={grant.id}><span>@{grant.username}<small>{grant.role === "write" ? "Can edit" : "Can view"}</small></span><button className="text-button danger" onClick={() => { void request(base + "/grants", { method: "DELETE", headers: { "if-match": etag(current) }, body: JSON.stringify({ id: grant.id }) }, session.csrfToken).then(refresh).catch(cause => setError(cause.message)); }}>Revoke</button></div>)}</Dialog>;
+  return <Dialog title={`Share ${collection.name}`} onClose={onClose}>{error && <p role="alert" className="error">{error}</p>}<form onSubmit={e => { e.preventDefault(); const values = Object.fromEntries(new FormData(e.currentTarget)); void request(base + "/grants", { method: "POST", headers: { "if-match": etag(current) }, body: JSON.stringify(values) }, session.csrfToken).then(refresh).catch(cause => setError(cause.message)); }}><label>Username<input name="username" required /></label><label>Permission<Select name="role"><option value="read">Can view</option><option value="write">Can edit</option></Select></label><button className="primary-button">Share</button></form>{grants.map(grant => <div className="grant" key={grant.id}><span>@{grant.username}<small>{grant.role === "write" ? "Can edit" : "Can view"}</small></span><button className="text-button danger" onClick={() => { void request(base + "/grants", { method: "DELETE", headers: { "if-match": etag(current) }, body: JSON.stringify({ id: grant.id }) }, session.csrfToken).then(refresh).catch(cause => setError(cause.message)); }}>Revoke</button></div>)}</Dialog>;
 }

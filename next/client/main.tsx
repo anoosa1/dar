@@ -9,6 +9,7 @@ import {Workspace} from "./pim/workspace.tsx";
 import { request, RequestError, type BrowserSession } from "./api.ts";
 import "./styles.css";
 import "./loading.css";
+import "./shared-ui.css";
 import "./pim/styles.css";
 function App() {
   const [status, setStatus] = useState<{ initialized: boolean } | null>(null);

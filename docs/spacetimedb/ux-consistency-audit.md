@@ -1,10 +1,13 @@
 # Nextcloud reference audit and shared Dar experience
 
-Status: Dar source audit and an initial five-app reference pass are documented.
+Status: the maintainer selected **B — Material 3**. The shared implementation
+passed full isolated acceptance on November 7, 2026; the initial five-app
+reference pass is documented.
 The supplied Nextcloud instance was inspected as TestUser. The maintainer chose
 to mark Administration unavailable to that personal account. Observations and
 coverage gaps are in `nextcloud-reference/interactions.md`; screenshots are in
-`nextcloud-reference/index.html`. Production UI has not changed for this request.
+`nextcloud-reference/index.html`. Findings below describe the pre-change source;
+the delivery record distinguishes implemented changes from remaining parity gaps.
 
 ## Scope and evidence
 
@@ -74,7 +77,7 @@ those boundaries instead of introducing a second UI framework or parallel shell.
 | Administration | Users/groups/directory, applications, access/provisioning and any identity-provider integration installed; distinguish app settings from instance administration |
 | Cross-cutting | Button geometry, icons, spacing, focus, menu alignment, scroll ownership, animation/reduced motion, dialog/drawer dismissal, success/error/conflict states, disabled/read-only controls |
 
-## Shared implementation direction — to validate against reference and mocks
+## Selected shared implementation direction
 
 - `AppShell`/`WorkspaceHeader`: persistent brand, themed app launcher, centered
   search and identical AccountMenu, including on global settings pages.
@@ -85,8 +88,8 @@ those boundaries instead of introducing a second UI framework or parallel shell.
   existing typed operations; opening the menu never opens file details.
 - `Dialog`, `Drawer`, `Select`/`Combobox` and `NewItemButton`: actual shared React
   components and CSS tokens, not app-specific copies with similar class names.
-- One motion contract for entry/exit/backdrops and reduced-motion overrides.
-  Verify interaction completion and focus after exit, not only the opening frame.
+- One motion contract for opening dialogs/backdrops and reduced-motion overrides.
+  Verify dismissal and focus restoration. Animated exits remain a separate gap.
 - `AppSettings`: common container/entry and save/error feedback; each app owns
   its actual preferences. Persist to existing SpacetimeDB ownership boundaries,
   preserving independent app preferences during concurrent edits.
@@ -102,8 +105,8 @@ those boundaries instead of introducing a second UI framework or parallel shell.
 2. Populate the per-app interaction ledger and screenshot index with observed
    evidence; list coverage gaps instead of claiming exhaustive verification.
 3. Prepare several static variants of the shared shell, Files action menu, app
-   settings and Personal/Administration settings. Wait for selection as required
-   by AGENTS.md; no new visual direction is selected by this document.
+   settings and Personal/Administration settings (done). The maintainer selected
+   B, Material 3, as required by AGENTS.md.
 4. Implement shared components first, migrate all five apps and global settings,
    then wire the requested file actions and durable app preferences.
 5. Verify uniform menus/settings entries, modal motion/focus, permission handling,
@@ -157,6 +160,65 @@ the same app-settings container. All retain the same planned functionality.
     with file/task/note operations. Remove the requested footer and use a common,
     concise empty/loading/error-state component and copy style.
 
-Production UI remains unchanged until mock selection. Controlled reference test
-content was used for mutations; existing account security and real records were
-not changed. This audit does not claim all listed feature gaps are implemented.
+Controlled reference test content was used for mutations; existing account
+security and real records were not changed. This audit does not claim all listed
+feature gaps are implemented.
+
+## Material 3 delivery
+
+- `WorkspaceHeader`, `AppSwitcher` and `ActionMenu` supply the same themed launcher
+  and account menu in Files, Contacts, Calendar, Notes, Tasks and global settings.
+  The account menu always exposes Settings, Account security and Sign out;
+  Administration is added only for administrators. Search remains scoped to the
+  current app/settings list; cross-app search is not implemented.
+- `NewItemButton`, `Select`, `Dialog` and shared CSS supply common creation
+  controls, themed value choices, menu keyboard navigation, dialog entry motion
+  and reduced-motion handling. Dialogs use a 300 ms scale/fade and 250 ms backdrop
+  fade, based on the measured reference. Dismissal restores usable focus.
+- All five apps expose a lower-sidebar settings entry and the same General /
+  Keyboard shortcuts dialog. Preferences are stored per user in SpacetimeDB,
+  validated and revision checked; writes preserve other app preferences.
+- Files settings cover list/grid, hidden files, confirmation before trash and the
+  initial details tab. Contacts saves name sorting; Calendar saves timezone and
+  week start; Notes saves sort/editor mode; Tasks saves sort/default view.
+- Files overflow menus expose Details separately from file operations. Copy,
+  Cut, Paste, Move to, Copy to, Rename, favorite, download/preview, trash,
+  restore and permanent deletion reuse the existing authorization/revision
+  boundaries. The account-scoped single-item clipboard is retained in this
+  browser tab. Folder operations retain existing bounded recursive behavior.
+  Confirmation before trash applies to the menu, toolbar and details actions.
+  The promotional sidebar footer is removed.
+- Global settings groups Profile, Security and Connected applications under
+  Personal. Administrators additionally get Applications, Directory, SCIM and
+  Signing keys. Profile changes persist names and primary email with revision
+  checks; username, roles and security cannot be changed through the personal
+  endpoint. Supplied email addresses remain unverified.
+
+The personal profile API is `GET/PUT /api/v1/account/profile`. Reads return the
+current user's directory profile with ETag `"<userId>:<revision>"`. PUT accepts
+only `displayName`, `givenName`, `familyName` and `email`, requires that ETag in
+`If-Match`, and uses the existing cookie/CSRF/origin boundary. Missing conditions
+return 428; stale conditions return 412 (or a transaction conflict if raced).
+Identity/privilege fields are rejected. Preferences remain at
+`GET/PUT /api/v1/pim/preferences`, sharing the existing revision boundary.
+
+Remaining reference gaps include cross-app search, Notes rich-text formatting
+and Files integration, broader Files sorting, inline Tasks creation and animated
+overlay exits. The reference ledger also retains unexercised branches and
+unavailable Administration screens. This delivery implements the selected shared
+experience and requested fixes, not complete Nextcloud feature parity.
+
+## Verification
+
+`nix develop ./next -c npm --prefix next run verify` passed both TypeScript
+projects, 57 Node tests and five real Chromium journeys: identity, Notes/Tasks,
+shared UI, Files, and Contacts/Calendar. The shared journey covers all five app
+settings, persistent preferences, profile permissions, copy/cut/paste bytes,
+trash-confirmation entry points, phone/tablet drawers, themed sidebar choices,
+focus restoration, dialog entry motion, reduced motion and console errors.
+
+The same run passed independent vdirsyncer round trips, module/backup upgrades,
+backup/restore and forced process/database restart recovery for Files, PIM,
+Notes/Tasks and identity. Calendar drag/resize uses native mouse gestures and
+asserts the saved event times; it initiates dragging before destination scrolling.
+Generated test artifacts remain outside the repository.

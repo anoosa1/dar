@@ -1,3 +1,5 @@
-export function AppSwitcher({ active }: { active: "files" | "contacts" | "calendar"|"notes"|"tasks" }) {
-  return <label className="app-switcher"><span className="sr-only">Application</span><select aria-label="Application" value={active} onChange={event => { location.href = event.target.value === "files" ? "/" : `/${event.target.value}`; }}><option value="files">Files</option><option value="contacts">Contacts</option><option value="calendar">Calendar</option><option value="notes">Notes</option><option value="tasks">Tasks</option></select></label>;
-}
+import {ActionMenu} from "./controls.tsx";
+import {Icon,type IconName} from "./icons.tsx";
+export type AppId="files"|"contacts"|"calendar"|"notes"|"tasks"|"settings";
+const apps:{id:AppId;label:string;icon:IconName;href:string}[]=[{id:"files",label:"Files",icon:"folder",href:"/"},{id:"contacts",label:"Contacts",icon:"share",href:"/contacts"},{id:"calendar",label:"Calendar",icon:"clock",href:"/calendar"},{id:"notes",label:"Notes",icon:"file",href:"/notes"},{id:"tasks",label:"Tasks",icon:"check",href:"/tasks"}];
+export function AppSwitcher({active}:{active:AppId}){return <ActionMenu label="Open applications" className="ui-app-launcher" actions={apps.map(app=>({label:app.label,href:app.href,icon:app.icon,current:app.id===active}))}><Icon name="grid"/><span>{apps.find(a=>a.id===active)?.label??"Settings"}</span><Icon name="chevron"/></ActionMenu>;}

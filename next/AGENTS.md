@@ -24,3 +24,9 @@ portable-file requirements for this directory only. Do not alter existing work.
   `../docs/spacetimedb/notes-tasks.md` and `notes-tasks-mocks.html` beside it.
   Layout A, Focused workspace, is selected for both apps. No additional
   dependencies/workers are proposed.
+- The shared UX revision selects B, Material 3, in
+  `../docs/spacetimedb/ux-consistency-mocks.html`. Use one shared header, themed
+  launcher/account menu, controls, dialog motion, lower-sidebar app settings and
+  Personal/Administration global settings across all five apps and settings.
+  This supersedes earlier per-app shell/settings variations; no further mock
+  approval is needed for implementing the selected shared direction.

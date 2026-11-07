@@ -1,0 +1,4 @@
+/** Operate the visible themed choices rather than a hidden form field. */
+export async function choose(control,value){const id=await control.getAttribute("aria-controls");await control.click();const list=control.page().locator(`[id=${JSON.stringify(id)}]`);if(typeof value==="object")await list.getByRole("option",{name:value.label,exact:true}).click();else await list.locator(`[role=option][data-value=${JSON.stringify(String(value))}]`).click();}
+export async function switchApp(page,id){await page.getByRole("button",{name:"Open applications",exact:true}).click();await page.getByRole("menuitem",{name:({files:"Files",contacts:"Contacts",calendar:"Calendar",notes:"Notes",tasks:"Tasks"})[id],exact:true}).click();}
+export async function fileDetails(page,name){await page.getByRole("button",{name:`Actions for ${name}`,exact:true}).click();await page.getByRole("menuitem",{name:"Details",exact:true}).click();}

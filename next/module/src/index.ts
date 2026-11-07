@@ -5,7 +5,7 @@ import { pimOperation, pimSnapshot, restorePim, reminderWork, commitReminders, d
 import { identityTables } from "./identity-tables.ts";
 import {workspaceTables} from "./workspace-tables.ts";
 import {workspaceSnapshot,restoreWorkspace,noteTrashOperation,validateTaskParent} from "./workspace.ts";
-import { identityActor, directoryOperation, providerOperation, revokeProvider, revokeUser, identitySnapshot, restoreIdentity, touchProfile } from "./identity.ts";
+import { identityActor, directoryOperation, providerOperation, revokeProvider, revokeUser, identitySnapshot, restoreIdentity, touchProfile,profile as directoryProfile } from "./identity.ts";
 
 const instance = table({}, { id: t.string().primaryKey(), service: t.identity(), issuer: t.string() });
 const accounts = table({}, {
@@ -256,6 +256,8 @@ export const myFiles = db.view({ public: true }, t.array(fileEntries.rowType), c
   const user = userFor(ctx);
   if (!user) return [];
   const principal = ctx.db.principals.identity.find(ctx.sender)!;
+  const preferences=JSON.parse(ctx.db.pimPreferences.userId.find(user.id)?.value??"{}");
+  const visible=(entry:FileEntry)=>preferences.filesShowHidden===true||!entry.name.startsWith(".");
   const nav = ctx.db.navigation.sessionId.find(ctx.sender.toHexString());
   const parentId = nav?.parentId ?? "";
   const section = nav?.section ?? "files";
@@ -264,7 +266,7 @@ export const myFiles = db.view({ public: true }, t.array(fileEntries.rowType), c
     const prefix = `${user.id}/${nav?.query ?? ""}`;
     for (const saved of ctx.db.favorites.listKey.filter(windowOf(prefix, nav?.cursor?.startsWith(prefix) ? nav.cursor : undefined))) {
       const entry = ctx.db.fileEntries.id.find(saved.fileId);
-      if (entry && access(ctx, entry, user.id)) result.push({ ...entry, listKey: saved.listKey });
+      if (entry && visible(entry) && access(ctx, entry, user.id)) result.push({ ...entry, listKey: saved.listKey });
       if (result.length >= 201) break;
     }
     return result;
@@ -274,7 +276,7 @@ export const myFiles = db.view({ public: true }, t.array(fileEntries.rowType), c
     const prefix = `${user.id}/${nav?.query ?? ""}`;
     for (const grant of ctx.db.grants.listKey.filter(windowOf(prefix, nav?.cursor?.startsWith(prefix) ? nav.cursor : undefined))) {
       const entry = ctx.db.fileEntries.id.find(grant.fileId);
-      if (entry && access(ctx, entry, user.id)) result.push({ ...entry, favorite: false, listKey: grant.listKey });
+      if (entry && visible(entry) && access(ctx, entry, user.id)) result.push({ ...entry, favorite: false, listKey: grant.listKey });
       if (result.length >= 201) break;
     }
     return result;
@@ -285,6 +287,7 @@ export const myFiles = db.view({ public: true }, t.array(fileEntries.rowType), c
   const start = windowOf(prefix, nav?.cursor && nav.cursor.startsWith(prefix) ? nav.cursor : undefined);
   const result: FileEntry[] = [];
   for (const entry of ctx.db.fileEntries.listKey.filter(start)) {
+    if(!visible(entry))continue;
     if (section !== "trash" && !access(ctx, entry, user.id)) continue;
     if (nav?.query && !entry.name.toLowerCase().includes(nav.query)) continue;
     result.push(entry);
@@ -692,6 +695,19 @@ export const serviceWorkspace=db.procedure({sessionId:t.string(),operation:t.str
   for(const op of data.operations){if(!["put","delete","move"].includes(op.operation))fail("invalidInput");for(const id of [op.collectionId,op.targetCollectionId])if(id)affected.add(id);result.push(pimOperation(tx,user.id,op.operation,op,undefined,true));}
   for(const id of affected)for(const row of tx.db.pimResources.collectionId.filter(id))validateTaskParent(tx,id,row.uid,row.projection);
   return JSON.stringify({items:result});
+}));
+/** Personal profile writes cannot rename an account, grant roles or alter security. */
+export const serviceProfile=db.procedure({sessionId:t.string(),operation:t.string(),payload:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");const old=directoryProfile(tx,user.id)!;
+  if(p.operation==="read")return JSON.stringify(old);if(p.operation!=="save")fail("invalidInput");const input=JSON.parse(p.payload);
+  if(input.revision!==old.revision)fail("conflict");
+  for(const key of ["displayName","givenName","familyName"])if(typeof input[key]!=="string"||input[key].length>100||/[\u0000-\u001f]/.test(input[key]))fail("invalidInput");
+  if(!input.displayName.trim()||typeof input.email!=="string"||input.email.length>254||input.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))fail("invalidInput");
+  const attributes=JSON.parse(tx.db.directoryProfiles.userId.find(user.id)?.document??"{}"),emails=[...(attributes.emails??[])];let position=emails.findIndex((e:{primary?:boolean})=>e.primary);if(position<0)position=0;
+  if(input.email)emails.splice(position,emails.length?1:0,{...emails[position],value:input.email,primary:true});else if(emails.length)emails.splice(position,1);
+  if(emails.length&&!emails.some(e=>e.primary))emails[0]={...emails[0],primary:true};
+  const document={...attributes,userName:user.username,displayName:input.displayName.trim(),active:user.enabled,name:{...attributes.name,givenName:input.givenName,familyName:input.familyName},emails};
+  return JSON.stringify(directoryOperation(tx,"saveUser",{id:user.id,revision:old.revision,document:JSON.stringify(document)},{id:user.id,scim:false}));
 }));
 export const servicePimAuthenticate = db.procedure({ username: t.string(), digest: t.string(), app: t.string(), write: t.bool() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); const password = tx.db.appPasswords.digest.find(p.digest);

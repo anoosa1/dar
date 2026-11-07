@@ -3,10 +3,10 @@
 The new application runs independently here, preserving unrelated work in the
 previous checkout. SpacetimeDB owns accounts, authorization and file metadata;
 a Node/Cordis runtime handles native login and immutable local file content.
-There is no SQLite or external identity provider. The React interface implements
-selected mock C, with Nextcloud-style Material 3 and centered persistent search.
-Contacts and Calendar extend that workspace using selected mock A.
-Native OIDC/SCIM administration uses selected mock B, Account settings tabs.
+There is no SQLite or external identity provider. The React interface uses the
+selected shared Material 3 layout B, with centered persistent search, themed menus
+and shared settings. App workspaces retain the selected Files C and
+Contacts/Calendar/Notes/Tasks A layouts.
 See the [architecture and acceptance record](../docs/spacetimedb/architecture.md).
 
 ## Run locally
@@ -23,8 +23,8 @@ Open <http://127.0.0.1:4311>. The launcher prints the **path** to the operator
 setup key. Read that local file and enter the key in first-administrator setup;
 choose your own username and a password of at least 15 characters. Registration
 is administrator-only after setup. Account security manages passwords, sessions
-and scoped WebDAV app passwords; administrators can create users from the account
-menu. Recovery is an operator command below.
+and scoped WebDAV app passwords. **Settings → Administration → Directory** lets
+administrators create users. Recovery is an operator command below.
 
 The Nix shell pins Node 24.22.1 and SpacetimeDB 2.14.1. Without Nix, install those
 versions and provide Chromium for browser verification. Linux x86-64 is verified;
@@ -109,6 +109,12 @@ trash/restore, permanent deletion, user grants and expiring public download link
 Live views react to session revocation and sharing changes. Each browser tab has
 independent navigation; folder URLs survive refresh and browser history.
 
+Three-dot menus expose ordinary file actions and an explicit Details command.
+Copy/Cut/Paste supports one item or folder at a time, including Ctrl/Cmd C/X/V;
+F2 renames the selected item. The clipboard is account-scoped to this browser tab.
+Files settings saves view, hidden-file visibility, confirmation before trash and
+the initial details tab for the account.
+
 - Uploads are limited to 1 GiB each, four concurrent runtime streams, and a
   one-hour reservation. Retained versions and copies count toward a 10 GiB logical
   quota per owner; physical capacity still needs operator monitoring.
@@ -180,7 +186,7 @@ They are distinct from complete instance backups.
 
 ## Contacts and Calendar
 
-Use the Application selector in the top bar, or open `/contacts` and `/calendar`.
+Use the themed application launcher in the top bar, or open `/contacts` and `/calendar`.
 Both share native login, account security and live permission revocation with Files.
 
 Contacts provides multiple address books, structured names and postal addresses,
@@ -235,7 +241,7 @@ See the [identity delivery record](../docs/spacetimedb/identity-provider.md).
 
 ## Notes and Tasks
 
-Open `/notes` or `/tasks` from the shared Application selector. Both use selected
+Open `/notes` or `/tasks` from the shared application launcher. Both use selected
 layout A: a focused list/details workspace with the persistent centered search.
 
 Notes provides notebooks, sharing, exact Markdown source, safe preview, tags,
@@ -262,11 +268,21 @@ recurrence semantics, sharing and protocol details.
 
 ## Identity and provisioning
 
-Open **Account security → Applications and identity settings**, or `/settings`.
+Open **Account menu → Settings**, or `/settings`. Personal settings contains
+Profile, Security and Connected applications. Administration contains Applications,
+Directory, SCIM and Signing keys, and is visible only to administrators.
 Administrators can register applications, manage directory people/groups, issue
 SCIM credentials and rotate OIDC keys. Sensitive changes in these settings need
 password confirmation, valid for five minutes. Ordinary users can review and
 revoke their connected applications.
+
+Every app has a lower-sidebar app-settings entry using the same settings dialog.
+Preferences persist per account with revision checks, including Contacts sorting,
+Calendar timezone/week start, Notes sorting/editor mode and Tasks sorting/default
+view. Profile edits save names and primary email; username and privileges cannot
+be changed through Personal settings. The shared launcher and account menu remain
+available in global settings. See the [UX audit and delivery record](../docs/spacetimedb/ux-consistency-audit.md)
+and [Nextcloud reference screenshots](../docs/spacetimedb/nextcloud-reference/index.html).
 
 - Use **`https://your-instance/oidc`** as the external issuer. Discovery is at
   `/oidc/.well-known/openid-configuration`. Register exact redirect/logout URLs;
@@ -296,6 +312,10 @@ flow, password grant, SCIM Bulk, nested groups or outbound provisioning is enabl
 ```sh
 npm --prefix next run verify
 ```
+
+For focused isolated checks, run `node next/scripts/verify.mjs --workspace`,
+`--pim` or `--identity` from the repository root inside the Nix shell. These
+subsets do not replace the full acceptance run.
 
 This builds and starts a fresh real database and storage root, typechecks both
 projects, runs the focused Node acceptance suite, exercises Chromium at desktop and phone

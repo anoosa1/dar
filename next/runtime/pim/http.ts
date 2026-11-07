@@ -22,11 +22,13 @@ export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, u
     if (method === "GET") return json({ revision: old.revision, ...JSON.parse(old.value) }, 200, { id: "preferences", revision: old.revision });
     if (method === "PUT") {
       requireMatch(req, { id: "preferences", revision: old.revision }); const p = await body();
-      const zone = timezone(field(p.timezone ?? "UTC", 100)), weekStart = p.weekStart ?? 1;
+      const previous=JSON.parse(old.value),get=(key:string,fallback:unknown)=>p[key]===undefined?previous[key]??fallback:p[key];
+      const zone = timezone(field(get("timezone","UTC"), 100)), weekStart = get("weekStart",1);
       if (weekStart !== 0 && weekStart !== 1) invalid("Week starts on Sunday or Monday.");
       if (p.hiddenCalendars !== undefined && (!Array.isArray(p.hiddenCalendars) || p.hiddenCalendars.length > 200 || p.hiddenCalendars.some(v => typeof v !== "string"))) invalid("Invalid hidden calendar list.");
-      const previous=JSON.parse(old.value);for(const key of ["notesSort","tasksSort"])if(p[key]!==undefined&&!["modified","title",...(key==="tasksSort"?["due"]:[])].includes(String(p[key])))invalid("Invalid workspace sort.");
-      const value = JSON.stringify({ notesSort:p.notesSort??previous.notesSort, tasksSort:p.tasksSort??previous.tasksSort, timezone: zone, weekStart, contactSort: p.contactSort === "lastName" ? "lastName" : "firstName", hiddenCalendars: p.hiddenCalendars ?? [] });
+      const choice=(key:string,allowed:string[],fallback:string)=>{const value=get(key,fallback);if(typeof value!=="string"||!allowed.includes(value))invalid(`Invalid ${key}.`);return value;};
+      const flag=(key:string,fallback:boolean)=>{const value=get(key,fallback);if(typeof value!=="boolean")invalid(`Invalid ${key}.`);return value;};
+      const value = JSON.stringify({timezone:zone,weekStart,contactSort:choice("contactSort",["firstName","lastName"],"firstName"),hiddenCalendars:get("hiddenCalendars",[]),notesSort:choice("notesSort",["modified","title"],"modified"),tasksSort:choice("tasksSort",["modified","title","due"],"due"),filesView:choice("filesView",["list","grid"],"list"),filesShowHidden:flag("filesShowHidden",false),filesConfirmTrash:flag("filesConfirmTrash",false),filesDetailsTab:choice("filesDetailsTab",["details","versions","sharing"],"details"),notesEditorMode:choice("notesEditorMode",["write","preview"],"write"),tasksView:choice("tasksView",["all","inbox","today","upcoming","important","completed"],"today")});
       const result = await service.call<{ revision: number }>("savePreferences", { revision: old.revision, value }); return json({ ...JSON.parse(value), revision: result.revision });
     }
   }
