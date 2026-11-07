@@ -43,7 +43,10 @@ state directory stable across upgrades. No credentials belong in Nix expressions
 
 The `dar` system user owns `/var/lib/dar` with mode 0700. A static user is deliberate:
 DynamicUser's private-state symlinks conflict with Dar's managed-path rules. Use
-real directories or bind mounts for persistent storage, not symlink components.
+real directories or bind mounts for the state directory and its managed contents.
+Host directory aliases such as `/var/lib -> /data/lib` are supported: Dar resolves
+the parent path and uses the canonical storage path internally. The state directory
+itself and managed directories such as `blobs` must not be symlinks.
 The service uses private temporary storage, a read-only system, and writable access
 to its state directory. It drains the runtime and database on stop.
 

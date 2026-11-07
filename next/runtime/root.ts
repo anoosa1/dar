@@ -1,20 +1,19 @@
-import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { createDurableFile } from "./atomic.ts";
 
-/** Fresh roots only. Every existing ancestor must be a real directory. */
+/** Resolve host directory aliases; the root and managed storage cannot be symlinks. */
 export async function openRoot(root: string) {
   root = path.resolve(root);
-  let component = path.parse(root).root;
-  for (const segment of root.slice(component.length).split(path.sep)) {
-    component = path.join(component, segment);
-    try {
-      const stat = await lstat(component);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Managed storage cannot contain symlinks or non-directory ancestors.");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      await mkdir(component, { mode: 0o700 });
-    }
+  const parent = path.dirname(root);
+  await mkdir(parent, { recursive: true, mode: 0o700 });
+  root = path.join(await realpath(parent), path.basename(root));
+  try {
+    const stat = await lstat(root);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Managed storage root cannot be a symlink or non-directory.");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    await mkdir(root, { mode: 0o700 });
   }
   const marker = path.join(root, "instance.json");
   try {
