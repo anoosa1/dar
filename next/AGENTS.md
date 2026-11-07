@@ -34,3 +34,8 @@ portable-file requirements for this directory only. Do not alter existing work.
   Personal/Administration global settings across all five apps and settings.
   This supersedes earlier per-app shell/settings variations; no further mock
   approval is needed for implementing the selected shared direction.
+- Calendar's November 7 refinement uses Month by default, one date/today control
+  beside the period arrows, per-calendar action menus, and compact paged calendar
+  navigation. Import/export and cancelled-event visibility belong in Calendar
+  settings; timezone belongs in Personal → Regional settings. Files storage usage
+  stays directly above its sidebar settings entry.

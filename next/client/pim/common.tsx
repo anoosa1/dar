@@ -30,14 +30,14 @@ export function usePim(session: BrowserSession, onSignedOut: () => void) {
   }, [session]);
   return { epoch, connectionState, refresh: () => setEpoch(n => n + 1) };
 }
-export function PimShell({ kind, session, onSignedOut, query, onQuery, sidebar, children, details, connectionState }: { kind: "contacts" | "calendar"|"notes"|"tasks"; session: BrowserSession; onSignedOut: () => void; query: string; onQuery: (query: string) => void; sidebar: ReactNode; children: ReactNode; details?: ReactNode; connectionState: string }) {
+export function PimShell({ kind, session, onSignedOut, query, onQuery, sidebar, children, details, connectionState, mainClassName="" }: { kind: "contacts" | "calendar"|"notes"|"tasks"; session: BrowserSession; onSignedOut: () => void; query: string; onQuery: (query: string) => void; sidebar: ReactNode; children: ReactNode; details?: ReactNode; connectionState: string;mainClassName?:string }) {
   const [navigation, setNavigation] = useState(false), [settings, setSettings] = useState(false);
   const main = useRef<HTMLElement>(null), hadDetails = useRef(false);
   useEffect(() => { if (hadDetails.current && !details && document.activeElement === document.body) main.current?.focus(); hadDetails.current = !!details; }, [!!details]);
   return <div className={`app-shell pim-shell ${details ? "has-pim-details" : ""}`}>
     <WorkspaceHeader app={kind} session={session} onSignedOut={onSignedOut} query={query} onQuery={onQuery} onNavigation={()=>setNavigation(!navigation)}/>
     {connectionState && <p className="connection-state" role="status">{connectionState}</p>}
-    <div className="pim-workspace">{navigation && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setNavigation(false)} />}<aside className={`sidebar ${navigation ? "is-open" : ""}`} onClick={e => { if ((e.target as HTMLElement).closest("button") && !(e.target as HTMLElement).closest(".ui-select")) setNavigation(false); }}>{sidebar}<AppSettingsButton app={kind} onClick={()=>setSettings(true)}/></aside><main ref={main} tabIndex={-1} className="pim-main">{children}</main>{details && <aside className="pim-details" aria-label={`${({contacts:"Contact",calendar:"Event",notes:"Note",tasks:"Task"})[kind]} details`}>{details}</aside>}</div>
+    <div className="pim-workspace">{navigation && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setNavigation(false)} />}<aside className={`sidebar ${navigation ? "is-open" : ""}`} onClick={e => { if ((e.target as HTMLElement).closest("button") && !(e.target as HTMLElement).closest(".ui-select") && (!(e.target as HTMLElement).closest(".ui-menu")||(e.target as HTMLElement).closest('[role="menuitem"]'))) setNavigation(false); }}>{sidebar}<AppSettingsButton app={kind} onClick={()=>setSettings(true)}/></aside><main ref={main} tabIndex={-1} className={`pim-main ${mainClassName}`}>{children}</main>{details && <aside className="pim-details" aria-label={`${({contacts:"Contact",calendar:"Event",notes:"Note",tasks:"Task"})[kind]} details`}>{details}</aside>}</div>
     {settings&&<AppSettings app={kind} session={session} onClose={()=>setSettings(false)}/>}
   </div>;
 }

@@ -44,7 +44,7 @@ try {
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
   if(!identityOnly&&!workspaceOnly){
-    run(["--test", "--test-concurrency=1", "test/pim-standards.test.ts", "test/pim.integration.test.ts"]);
+    run(["--test", "--test-concurrency=1", "test/calendar-navigation.test.ts", "test/pim-standards.test.ts", "test/pim.integration.test.ts"]);
     run(["--test", "test/pim-upgrade.integration.test.ts"]);
   }
   if(!workspaceOnly&&!pimOnly){

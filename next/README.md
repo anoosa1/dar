@@ -209,7 +209,17 @@ Calendar provides named/color calendars, visibility, read/write sharing,
 day/week/month/agenda, display timezone and week-start preferences, timed/floating/
 all-day events, recurring series and individual exceptions. Move/resize opens the
 same revision-checked editor as keyboard editing. All-day end dates are exclusive.
-Enable Show cancelled events to find and edit cancelled events/occurrences again.
+Month is the default for fresh navigation; explicit view/date links are retained.
+The centre date control updates with the arrows and always returns to today when
+clicked. Views fit the workspace; crowded month cells link to the full day, and
+long calendar lists use compact paging rather than scrolling the whole sidebar.
+Each owned calendar has its own Edit/Share/Delete menu.
+
+Calendar settings contains week start, persistent Show cancelled events, and
+Import and export with an explicit calendar selector. Timezone is configured
+globally under **Settings → Personal → Regional settings** and is also used by
+Tasks and reminders. Enable Show cancelled events in Calendar settings to find
+and edit cancelled events/occurrences again.
 ICS import/export preserves UIDs, exceptions and unknown properties; native zoned
 exports include an embedded VTIMEZONE generated from the runtime's IANA data.
 
@@ -287,7 +297,7 @@ revoke their connected applications.
 
 Every app has a lower-sidebar app-settings entry using the same settings dialog.
 Preferences persist per account with revision checks, including Contacts sorting,
-Calendar timezone/week start, Notes sorting/editor mode and Tasks sorting/default
+Calendar week start/cancelled visibility, Notes sorting/editor mode and Tasks sorting/default
 view. Profile edits save names and primary email; username and privileges cannot
 be changed through Personal settings. The shared launcher and account menu remain
 available in global settings. See the [UX audit and delivery record](../docs/spacetimedb/ux-consistency-audit.md)
