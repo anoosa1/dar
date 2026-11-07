@@ -34,8 +34,12 @@
         pkgs.runCommand "dar-module-evaluation" {} ''
           grep -F '127.0.0.1:4311' ${nginxConfig}
           grep -F '127.0.0.1:4310/v1/database/dar/subscribe' ${nginxConfig}
+          grep -F '127.0.0.1:4310/v1/identity/websocket-token' ${nginxConfig}
           grep -F 'proxy_set_header Host dar.example.test;' ${nginxConfig}
-          touch $out
+          mkdir $out
+          cp ${nginxConfig} $out/nginx.conf
+          ln -s ${pkgs.nginx}/bin/nginx $out/nginx
+          ln -s ${pkgs.openssl}/bin/openssl $out/openssl
         '';
       });
     };

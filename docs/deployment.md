@@ -32,7 +32,8 @@ The example creates nginx HTTPS routing and opens 80/443. Existing nginx users c
 leave `configureNginx = false` and use their own proxy instead. The application
 and database listen only on loopback; do not expose the database admin/SQL API.
 The generated proxy forwards only its exact subscription WebSocket endpoint and
-rejects other `/spacetime/` routes. It supplies the configured canonical Host and
+the SDK's POST-only `/spacetime/v1/identity/websocket-token` exchange. It rejects
+other `/spacetime/` routes. It supplies the configured canonical Host and
 HTTPS scheme to the application. DAV and its well-known discovery routes pass to
 the same application host. Requests are streamed with a 1 GiB body limit.
 
@@ -92,7 +93,11 @@ nix develop --command node next/scripts/verify-package.mjs /nix/store/REPLACE-WI
 ```
 
 The module check evaluates the service and builds/lints the generated nginx
-configuration. Package verification starts the immutable package on isolated
+configuration. Full `verify` also runs that configuration on isolated loopback
+ports with a temporary TLS certificate and a separate database. It verifies
+first-account setup, the SDK token exchange and WebSocket subscriptions, persisted
+Files/Calendar writes, restricted database routes, and desktop/phone connection
+failure and retry. Package verification starts the immutable package on isolated
 loopback ports, initializes fresh storage and runs DAV round trips. It does not
 boot a complete NixOS VM. x86_64 Linux is the exercised platform; ARM64 sources
 are pinned and exported but need a native ARM64 build/run before relying on them.

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DbConnection } from "../module_bindings/index.ts";
 import { request, type BrowserSession } from "../api.ts";
 import {WorkspaceHeader} from "../shell.tsx";
+import {ConnectionStatus, type ConnectionState} from "../connection-status.tsx";
 import {Select} from "../controls.tsx";
 import {AppSettingsButton,AppSettings} from "../app-settings.tsx";
 import { Dialog } from "../dialog.tsx";
@@ -11,11 +12,11 @@ export const etag = (row: { id: string; revision: number }) => `"${row.id}:${row
 export interface Item<T> extends PimResource { data: T }
 export type {Preferences} from "../../shared/preferences.ts";
 export function usePim(session: BrowserSession, onSignedOut: () => void) {
-  const [epoch, setEpoch] = useState(0), [connectionState, setConnectionState] = useState("Connecting…");
+  const [epoch, setEpoch] = useState(0), [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   useEffect(() => {
     let disposed = false, db: DbConnection | undefined;
     const tab = crypto.randomUUID();
-    async function token() { try { return await request<{ token: string; databaseUrl: string; databaseName: string }>(`/api/v1/auth/token?tab=${tab}`, { method: "POST" }, session.csrfToken); } catch (error) { if (!disposed) setConnectionState("Unable to connect. Check your session or refresh."); throw error; } }
+    async function token() { return await request<{ token: string; databaseUrl: string; databaseName: string }>(`/api/v1/auth/token?tab=${tab}`, { method: "POST" }, session.csrfToken); }
     void token().then(config => {
       if (disposed) return;
       db = DbConnection.builder().withUri(config.databaseUrl.replace(/^http/, "ws")).withDatabaseName(config.databaseName).withToken(config.token).withAutomaticReconnect().withTokenProvider(async () => (await token()).token)
@@ -23,21 +24,23 @@ export function usePim(session: BrowserSession, onSignedOut: () => void) {
           const changed = () => { if (!disposed) setEpoch(n => n + 1); };
           c.db.myPimChanges.onInsert(changed); c.db.myPimChanges.onUpdate(changed);
           c.db.me.onDelete(() => { if (!disposed) onSignedOut(); });
-          c.subscriptionBuilder().onApplied(() => { if (!disposed) { setConnectionState(""); changed(); } }).onError(() => { if (!disposed) setConnectionState("Your live data could not be loaded. Refresh to retry."); }).subscribe(["SELECT * FROM me", "SELECT * FROM my_pim_changes"]);
-        }).onDisconnect(() => { if (!disposed) setConnectionState("Connection lost. Reconnecting…"); }).onConnectError(() => { if (!disposed) setConnectionState("Unable to connect. Refresh to retry."); }).build();
-    }).catch(() => {});
+          c.subscriptionBuilder().onApplied(() => { if (!disposed) { setConnectionState("ready"); changed(); } }).onError(() => { if (!disposed) setConnectionState("error"); }).subscribe(["SELECT * FROM me", "SELECT * FROM my_pim_changes"]);
+        }).onAutomaticReconnect(() => { if (!disposed) setConnectionState("reconnecting"); })
+        .onDisconnect((_ctx, _error, next) => { if (!disposed) setConnectionState(next ? "reconnecting" : "error"); }).onConnectError(() => { if (!disposed) setConnectionState("error"); }).build();
+    }).catch(() => { if (!disposed) setConnectionState("error"); });
     return () => { disposed = true; db?.disconnect(); };
   }, [session]);
   return { epoch, connectionState, refresh: () => setEpoch(n => n + 1) };
 }
-export function PimShell({ kind, session, onSignedOut, query, onQuery, sidebar, children, details, connectionState, mainClassName="" }: { kind: "contacts" | "calendar"|"notes"|"tasks"; session: BrowserSession; onSignedOut: () => void; query: string; onQuery: (query: string) => void; sidebar: ReactNode; children: ReactNode; details?: ReactNode; connectionState: string;mainClassName?:string }) {
+export function PimShell({ kind, session, onSignedOut, query, onQuery, sidebar, children, details, connectionState, mainClassName="" }: { kind: "contacts" | "calendar"|"notes"|"tasks"; session: BrowserSession; onSignedOut: () => void; query: string; onQuery: (query: string) => void; sidebar: ReactNode; children: ReactNode; details?: ReactNode; connectionState: ConnectionState;mainClassName?:string }) {
   const [navigation, setNavigation] = useState(false), [settings, setSettings] = useState(false);
-  const main = useRef<HTMLElement>(null), hadDetails = useRef(false);
+  // Suppress initial empty states, but keep editors mounted during reconnects.
+  const main = useRef<HTMLElement>(null), hadDetails = useRef(false), hasConnected = useRef(false);
+  if (connectionState === "ready") hasConnected.current = true;
   useEffect(() => { if (hadDetails.current && !details && document.activeElement === document.body) main.current?.focus(); hadDetails.current = !!details; }, [!!details]);
   return <div className={`app-shell pim-shell ${details ? "has-pim-details" : ""}`}>
     <WorkspaceHeader app={kind} session={session} onSignedOut={onSignedOut} query={query} onQuery={onQuery} onNavigation={()=>setNavigation(!navigation)}/>
-    {connectionState && <p className="connection-state" role="status">{connectionState}</p>}
-    <div className="pim-workspace">{navigation && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setNavigation(false)} />}<aside className={`sidebar ${navigation ? "is-open" : ""}`} onClick={e => { if ((e.target as HTMLElement).closest("button") && !(e.target as HTMLElement).closest(".ui-select") && (!(e.target as HTMLElement).closest(".ui-menu")||(e.target as HTMLElement).closest('[role="menuitem"]'))) setNavigation(false); }}>{sidebar}<AppSettingsButton app={kind} onClick={()=>setSettings(true)}/></aside><main ref={main} tabIndex={-1} className={`pim-main ${mainClassName}`}>{children}</main>{details && <aside className="pim-details" aria-label={`${({contacts:"Contact",calendar:"Event",notes:"Note",tasks:"Task"})[kind]} details`}>{details}</aside>}</div>
+    <div className="pim-workspace">{navigation && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setNavigation(false)} />}<aside className={`sidebar ${navigation ? "is-open" : ""}`} onClick={e => { if ((e.target as HTMLElement).closest("button") && !(e.target as HTMLElement).closest(".ui-select") && (!(e.target as HTMLElement).closest(".ui-menu")||(e.target as HTMLElement).closest('[role="menuitem"]'))) setNavigation(false); }}>{sidebar}<AppSettingsButton app={kind} onClick={()=>setSettings(true)}/></aside><main ref={main} tabIndex={-1} className={`pim-main ${mainClassName}`}><ConnectionStatus state={connectionState}/>{hasConnected.current && children}</main>{details && <aside className="pim-details" aria-label={`${({contacts:"Contact",calendar:"Event",notes:"Note",tasks:"Task"})[kind]} details`}>{details}</aside>}</div>
     {settings&&<AppSettings app={kind} session={session} onClose={()=>setSettings(false)}/>}
   </div>;
 }

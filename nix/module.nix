@@ -68,6 +68,14 @@ in {
             proxyPass = "http://127.0.0.1:${toString cfg.databasePort}/v1/database/${cfg.databaseName}/subscribe";
             proxyWebsockets = true; recommendedProxySettings = false; extraConfig = proxyHeaders;
           };
+          "= /spacetime/v1/identity/websocket-token" = {
+            proxyPass = "http://127.0.0.1:${toString cfg.databasePort}/v1/identity/websocket-token";
+            recommendedProxySettings = false;
+            extraConfig = proxyHeaders + ''
+              limit_except POST { deny all; }
+              client_max_body_size 1k;
+            '';
+          };
           "/spacetime/".return = "404";
         };
       };
