@@ -222,10 +222,10 @@ export function expand(resource: PimResource, viewerZone: string, from: Date, to
 }
 export function splitCalendarImport(content: string): string[] {
   const root = parsed(content, "vcalendar"), groups = new Map<string, ICAL.Component[]>();
-  for (const c of root.getAllSubcomponents("vevent")) { const uid = value(c, "uid"); if (!uid) invalid("Imported events need UIDs."); const group = groups.get(uid) ?? []; group.push(c); groups.set(uid, group); }
+  for (const c of root.getAllSubcomponents().filter(c=>["vevent","vtodo"].includes(c.name))) { const uid = value(c, "uid"); if (!uid) invalid("Imported resources need UIDs."); const key=`${c.name}/${uid}`,group = groups.get(key) ?? []; group.push(c); groups.set(key, group); }
   if (!groups.size || groups.size > 1000) invalid("Import needs between 1 and 1,000 event resources.");
   return [...groups.values()].map(components => {
-    const copy = new ICAL.Component(JSON.parse(JSON.stringify(root.toJSON()))); copy.removeAllSubcomponents("vevent");
+    const copy = new ICAL.Component(JSON.parse(JSON.stringify(root.toJSON()))); copy.removeAllSubcomponents("vevent");copy.removeAllSubcomponents("vtodo");
     for (const c of components) copy.addSubcomponent(new ICAL.Component(JSON.parse(JSON.stringify(c.toJSON()))));
     return serialize(copy);
   });

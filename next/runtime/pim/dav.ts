@@ -7,6 +7,7 @@ import { pimEtag, pimService } from "./service.ts";
 import { requireMatch } from "./http.ts";
 import { expand } from "./calendar.ts";
 import { parsed } from "./standards.ts";
+import {isTask,taskMatchesRange} from "./tasks.ts";
 
 const D = "DAV:", A = "urn:ietf:params:xml:ns:carddav", C = "urn:ietf:params:xml:ns:caldav";
 const escape = (value: unknown) => String(value).replace(/[<>&"']/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]!);
@@ -84,7 +85,7 @@ export async function handlePimDav(req: IncomingMessage, res: ServerResponse, db
       const ns = kind === "contacts" ? "a" : "c", reports = kind === "contacts" ? ["addressbook-query", "addressbook-multiget"] : ["calendar-query", "calendar-multiget"];
       map.set(`${D}|supported-report-set`, `<d:supported-report-set>${reports.map(report => `<d:supported-report><d:report><${ns}:${report}/></d:report></d:supported-report>`).join("")}</d:supported-report-set>`);
       map.set("http://calendarserver.org/ns/|getctag", `<cs:getctag>${escape(pimEtag(propertyCollection))}</cs:getctag>`);
-      if (kind === "calendar") map.set(`${C}|supported-calendar-component-set`, '<c:supported-calendar-component-set><c:comp name="VEVENT"/></c:supported-calendar-component-set>');
+      if (kind === "calendar") map.set(`${C}|supported-calendar-component-set`, '<c:supported-calendar-component-set><c:comp name="VEVENT"/><c:comp name="VTODO"/></c:supported-calendar-component-set>');
     }
     return map;
   }
@@ -156,13 +157,16 @@ export async function handlePimDav(req: IncomingMessage, res: ServerResponse, db
     }
     if (filter && kind === "calendar") {
       const root = children(filter, C, "comp-filter")[0], components = children(root, C, "comp-filter");
-      if (!root || filter.children.length !== 1 || root.children.length !== components.length || root.attrs.name !== "VCALENDAR" || components.length !== 1 || components[0].attrs.name !== "VEVENT") throw new AppError("unsupportedFilter", 403);
+      if (!root || filter.children.length !== 1 || root.children.length !== components.length || root.attrs.name !== "VCALENDAR" || components.length !== 1 || !["VEVENT","VTODO"].includes(components[0].attrs.name)) throw new AppError("unsupportedFilter", 403);
       const component = components[0], range = children(component, C, "time-range")[0];
-      if (component.children.length !== (range ? 1 : 0)) throw new AppError("unsupportedFilter", 403);
+      rows=rows.filter(row=>isTask(row.content)===(component.attrs.name==="VTODO"));
+      const properties=children(component,C,"prop-filter");
+      if (component.children.length !== (range ? 1 : 0)+properties.length) throw new AppError("unsupportedFilter", 403);
+      for(const property of properties){const name=(property.attrs.name??"").toLowerCase(),absent=children(property,C,"is-not-defined")[0],text=children(property,C,"text-match")[0];if(!name||property.children.length!==(absent?1:text?1:0)||text&&!['i;ascii-casemap','i;unicode-casemap','i;octet',undefined].includes(text.attrs.collation))throw new AppError("unsupportedFilter",403);rows=rows.filter(row=>{const root=parsed(row.content,"vcalendar"),values=root.getAllSubcomponents(component.attrs.name.toLowerCase()).flatMap(c=>c.getAllProperties(name).flatMap(p=>p.getValues().map(String)));if(absent)return !values.length;if(!text)return !!values.length;const fold=(v:string)=>text.attrs.collation==="i;octet"?v:v.toLowerCase(),matched=values.some(v=>fold(v).includes(fold(text.text)));return values.length>0&&(text.attrs["negate-condition"]==="yes"?!matched:matched);});}
       if (range) {
         if (!range.attrs.start && !range.attrs.end) throw new AppError("invalidTimeRange");
         const from = range.attrs.start ? davDate(range.attrs.start) : new Date("0001-01-01T00:00:00Z"), to = range.attrs.end ? davDate(range.attrs.end) : new Date("9999-12-31T23:59:59Z");
-        rows = rows.filter(row => expand(row, "UTC", from, to, true, true).length > 0);
+        rows = rows.filter(row => isTask(row.content)?taskMatchesRange(row,from,to):expand(row, "UTC", from, to, true, true).length > 0);
       }
     }
     return multi(rows.map(row => response(path + row.href, props(row.href, false, row))));

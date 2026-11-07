@@ -22,4 +22,5 @@ portable-file requirements for this directory only. Do not alter existing work.
   is selected. See `../docs/spacetimedb/identity-provider.md` for scope.
 - Notes and Tasks were requested next. Scope and paired static mocks are in
   `../docs/spacetimedb/notes-tasks.md` and `notes-tasks-mocks.html` beside it.
-  Layout selection is pending; no additional dependencies/workers are proposed.
+  Layout A, Focused workspace, is selected for both apps. No additional
+  dependencies/workers are proposed.

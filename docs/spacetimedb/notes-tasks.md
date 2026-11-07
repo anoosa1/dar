@@ -1,8 +1,9 @@
 # Notes and Tasks delivery plan
 
 Requested November 6, 2026, after native identity, Files, Contacts and Calendar.
-Branch: `codex/spacetimedb-auth-files`. Status: scope and static mocks prepared;
-layout selection is pending. Neither app is implemented by this document.
+Branch: `codex/spacetimedb-auth-files`. Layout A, Focused workspace, was selected
+for both apps. Implementation and full acceptance verification are complete.
+The delivery contract and supported limits are recorded below.
 
 ## Architecture
 
@@ -75,8 +76,11 @@ obsolete reminders transactionally.
   completed tasks for reopening and export.
 
 Recurring completion applies to the selected occurrence, persisted as a completed
-exception; the master remains active for subsequent occurrences. Stopping a series
-is a separate explicit action. Native recurrence requires a start date and uses
+exception; the master remains active for subsequent occurrences. A finite series
+becomes completed when no pending occurrences remain. Reopen an individual
+completed occurrence through the editor's Edit scope selector. Completing the
+whole series is an explicit action that stops subsequent reminders; reactivating
+the master retains its completed exceptions. Native recurrence requires a start date and uses
 bounded expansion. Parent completion must offer deliberate handling of unfinished
 subtasks; reopening a parent must not silently reopen completed children. Parent
 deletion offers detaching children or deleting the bounded subtree, with the
@@ -122,17 +126,106 @@ or claim those surfaces exist. Document that platform boundary explicitly.
 
 | Surface | Required proof | Status |
 | --- | --- | --- |
-| Notes data | Exact Markdown round trip, atomic metadata/content, revision conflict and recovery | Pending |
-| Notes lifecycle | Move, duplicate, trash/restore/purge, sharing and revocation | Pending |
-| Preview security | Raw HTML, active URLs, images/embeds and malformed source stay safe | Pending |
-| Tasks data | Status/progress/completion, hierarchy validation, move and reopen | Pending |
-| Tasks dates | Date-only, floating/zoned due dates, DST, recurrence and exceptions | Pending |
-| CalDAV | VTODO CRUD/query/multiget, ETags, mixed VEVENT/VTODO compatibility and credential isolation | Pending |
-| Reminders | Restart catch-up, completion/edit invalidation, bounded recurrence and duplicate suppression | Pending |
-| Browser | Real desktop/phone Notes and Tasks journeys, drafts/conflicts, focus and console | Pending |
-| Upgrade/restore | Existing database and v1/v2/v3 restore, new state/trash survives backup and restart | Pending |
-| Existing apps | Complete auth/Files/Contacts/Calendar/OIDC/SCIM acceptance suite remains green | Pending |
+| Notes data | Exact Markdown round trip, atomic metadata/content, revision conflict and recovery | Pass: API, source/security unit tests and interrupted-save browser journey |
+| Notes lifecycle | Move, duplicate, trash/restore/purge, sharing and revocation | Pass: workspace integration and browser trash/restore |
+| Preview security | Raw HTML, active URLs, images/embeds and malformed source stay safe | Pass: renderer security test and real browser preview |
+| Tasks data | Status/progress/completion, hierarchy validation, move and reopen | Pass: hierarchy/subtree integration and browser completion/reopen |
+| Tasks dates | Date-only, floating/zoned due dates, DST, recurrence and exceptions | Pass: standards tests and recurring browser journey |
+| CalDAV | VTODO CRUD/query/multiget, ETags, mixed VEVENT/VTODO compatibility and credential isolation | Pass: protocol integration and independent vdirsyncer round trips |
+| Reminders | Restart catch-up, completion/edit invalidation, bounded recurrence and duplicate suppression | Pass: due-only task delivery/invalidation, existing Calendar checks and forced restart |
+| Browser | Real desktop/phone Notes and Tasks journeys, drafts/conflicts, focus and console | Pass: integrated Chromium journeys and shared dialog/shell behavior |
+| Upgrade/restore | Existing database and v1/v2/v3 restore, new state/trash survives backup and restart | Pass: all three baseline upgrades, backup restore and forced restart |
+| Existing apps | Complete auth/Files/Contacts/Calendar/OIDC/SCIM acceptance suite remains green | Pass: complete acceptance command |
 
-The request for “100%” is a completion requirement for this documented scope,
-including protocols and lifecycle, not a claim of every possible third-party
-feature or formal protocol certification. No acceptance row is passed yet.
+Final verification: `nix develop ./next -c npm --prefix next run verify` passed
+55 Node tests with no failures/skips, both TypeScript checks, four desktop/phone
+browser journeys, independent vdirsyncer contact/event/task synchronization and
+forced runtime/database restart. Isolated evidence is at
+`/tmp/nix-shell.yjq4ci/dar-acceptance-lzWvPq`. The full multi-database acceptance
+fixture measured 813 MiB database process-tree RSS; the focused workspace fixture
+measured 360 MiB. These are test-fixture measurements, not production capacity
+or minimum-memory promises. No tests used the default data root.
+
+## Delivered behavior and limits
+
+Notes use `/api/v1/notes/notebooks` and `/api/v1/notes/items`; Tasks use
+`/api/v1/tasks/lists` and `/api/v1/tasks/items`. Collection grants, import and
+export are subresources of each notebook/list. Item GET/PUT/DELETE use opaque IDs;
+copy/move/export are item subresources. All mutations of existing resources require
+the current `If-Match` ETag. Note trash is private to the notebook owner under
+`/api/v1/notes/trash`, with item GET/DELETE and POST `/:id/restore`. A deleted
+notebook's notes can be restored into another owned notebook.
+
+Moves preserve IDs/UIDs and require writable source/destination collections with
+the same owner. Copies receive new IDs/UIDs and require a readable source and
+writable destination. Task subtree moves/copies preserve relationships inside
+the selected subtree and detach its root from its former parent. Cross-owner
+copies deliberately create independent records. Sharing a task list shares all
+VEVENTs and VTODOs in that calendar.
+
+Markdown preview is a deliberately small dialect: headings 1–6, separate paragraph
+lines, single-line emphasis/strong/code/links, flat ordered/unordered/check lists,
+single-line quotes and triple-backtick fenced code. It does not claim CommonMark
+compatibility or syntax highlighting. Source HTML and image/embed syntax remain
+literal text. Links accept HTTP(S) and authorized Files content routes. Nested
+formatting, tables and remote images are not rendered. Editing/export always
+preserves the original source independently of this preview dialect.
+
+Autosave waits 650 ms and uses revision checks. Failed/interrupted writes retain
+a tab-local, account-and-note-scoped sessionStorage draft, with explicit recovery
+and conflict choices. Navigation retains the recovery draft; closing/reloading the
+page with unsaved text invokes the browser's standard beforeunload protection.
+Drafts are not an offline editing system and do not survive clearing browser
+storage. Read-only grants disable editing. The shared live authorization boundary
+closes inaccessible details after revocation and invalidates suspended sessions.
+
+Notes/Tasks save sort preferences in the existing revision-checked PIM preferences.
+Tasks use the saved Calendar display timezone, falling back to the browser timezone
+when no preference exists. Timed due dates are classified into Today/Upcoming in
+that timezone; date-only dates keep their literal day. Overdue rows are labeled.
+Task status/progress and explicit completion timestamps survive ICS round trips.
+Parent completion requires completed/cancelled children or explicit completion of
+the bounded subtree. Parent deletion offers atomic detachment or subtree deletion.
+
+The task editor offers whole-series and occurrence edits. Completing an occurrence
+advances the displayed next pending date without creating separate resources.
+EXDATE/RDATE, overrides, embedded timezones and unknown ICS properties are retained.
+Native date input rejects invalid calendar dates and nonexistent DST local times.
+Undated and due-only tasks remain valid; duration-based imported VTODOs are retained.
+CalDAV advertises VEVENT and VTODO and supports conditional resource CRUD,
+calendar-query/multiget, component selection, time ranges and basic property
+presence/text filters. Unsupported filters fail explicitly. No scheduling/iTIP,
+CalDAV sync-token, MKCALENDAR or certification claim is added.
+
+Task reminders reuse the existing owner-only in-app inbox and durable cursor.
+Relative DISPLAY alarms are delivered; absolute, repeated, AUDIO/EMAIL effects
+are retained as source data without those effects. Completing/cancelling a series,
+editing, moving or deleting a task invalidates its old reminder revision. Completed
+individual occurrences do not emit reminders. The owned minute scheduler catches
+up after downtime; the tests also drive the same delivery function at due boundaries.
+
+Each owner has at most 100 collections. Native searches span at most 10,000 accessible
+resources and paginate 200 rows. Trash is capped at 10,000 entries per instance
+and paginates 200 metadata rows; source content is available through individual
+trash reads. Notes are at most 256 KiB. Notebook JSON import/export is bounded to
+500 notes and 2 MiB, allowing its exports to be imported again. Individual Markdown
+export remains available beyond the notebook bound. ICS imports use the existing
+2 MiB/1,000-resource bounds and report per-resource results; parents are imported
+before children. Task subtree mutations are bounded to 500 records and hierarchy
+depth 32. Recurrence windows span at most one year, 10,000 iterator steps and 2,000
+results per resource; first-match protocol/pending queries allow open-ended dates
+while retaining the iterator bound. Limits produce errors rather than silent
+truncation. No large-archive performance guarantee is claimed.
+
+The additive workspace migration is numbered 1 in `workspaceMigrations`. Instance
+backups now use `dar-backup-v4`, including retained note trash; restore accepts
+existing v1/v2/v3 backups. Identity/session invalidation follows the existing
+restore policy. Upgrade tests publish the committed v3 module before upgrading,
+and the complete acceptance command retains the earlier v1/v2 upgrade proofs.
+
+The new platform has no assistant tool, widget or plugin contribution host yet;
+neither app claims those integrations. No new dependency or worker was introduced.
+
+The request for “100%” applies to the documented delivery scope, including protocols
+and lifecycle. It is not a claim of every possible third-party feature, bug-free
+software, or formal protocol certification.

@@ -56,6 +56,14 @@ try {
   const reminderStart = new Date(Date.now()+3605000).toISOString().slice(0,19), reminderEnd = new Date(Date.now()+7205000).toISOString().slice(0,19);
   const eventResponse = await fetch(`${origin}/api/v1/calendar/calendars/${calendar.id}/items`, { method: "POST", headers: { ...session.headers, "content-type": "application/json" }, body: JSON.stringify({ data: { title: "Reminder after crash", start: reminderStart, end: reminderEnd, timezone: "UTC", reminderMinutes: 60 } }) });
   assert.equal(eventResponse.status,201); const calendarEvent = await eventResponse.json();
+  const workspaceHeaders={...session.headers,"content-type":"application/json"};
+  async function createWorkspace(endpoint,value){const response=await fetch(origin+"/api/v1/"+endpoint,{method:"POST",headers:workspaceHeaders,body:JSON.stringify(value)});assert.equal(response.status,201,await response.clone().text());return {row:await response.json(),etag:response.headers.get("etag")};}
+  const notebook=(await createWorkspace("notes/notebooks",{name:"Durable notes"})).row;
+  const exactMarkdown="# Durable source\r\n\r\nUnchanged after a crash.\n";
+  const note=await createWorkspace("notes/items",{collectionId:notebook.id,title:"Durable note",content:exactMarkdown,tags:["restart"],favorite:true});
+  const trashed=await createWorkspace("notes/items",{collectionId:notebook.id,title:"Durable trash",content:exactMarkdown});
+  assert.equal((await fetch(`${origin}/api/v1/notes/items/${trashed.row.id}`,{method:"DELETE",headers:{...workspaceHeaders,"if-match":trashed.etag}})).status,200);
+  const task=(await createWorkspace("tasks/items",{collectionId:calendar.id,data:{title:"Task reminder after crash",start:reminderStart,due:reminderEnd,timezone:"UTC",reminderMinutes:60,recurrence:"FREQ=DAILY;COUNT=2"}})).row;
   const owner = await database(`http://127.0.0.1:${databasePort}`, "dar-restart", path.join(root,"secrets/database-token"));
   await deliverReminders(owner);
   const durable = await upload(origin, session, "Durable.txt", "Committed content survives process failure.");
@@ -86,7 +94,12 @@ try {
   await deliverReminders(owner); await deliverReminders(owner);
   const inbox = await (await fetch(`${origin}/api/v1/pim/reminders`, { headers: session.headers })).json();
   assert.equal(inbox.items.filter(row => row.resourceId === calendarEvent.id).length,1);
+  assert.equal(inbox.items.filter(row=>row.resourceId===task.id).length,1);
+  const recoveredNote=await (await fetch(`${origin}/api/v1/notes/items/${note.row.id}`,{headers:session.headers})).json();assert.equal(recoveredNote.content,exactMarkdown);assert.equal(recoveredNote.uid,note.row.uid);assert.equal(recoveredNote.data.favorite,true);
+  const recoveredTrash=await (await fetch(`${origin}/api/v1/notes/trash`,{headers:session.headers})).json();assert.ok(recoveredTrash.items.some(row=>row.id===trashed.row.id));
+  const recoveredTask=await (await fetch(`${origin}/api/v1/tasks/items/${task.id}`,{headers:session.headers})).json();assert.equal(recoveredTask.content,task.content);assert.equal(recoveredTask.uid,task.uid);
   console.info("PASS forced runtime failure during upload, full process/database restart, stale-lock/temp reconciliation, durable bytes, persisted login, reconnection and idempotent upload completion.");
   console.info("PASS Calendar resource and reminder watermark survive the same crash/restart; due delivery resumes without duplication.");
+  console.info("PASS exact Notes source/metadata/private trash and recurring VTODO survive the same crash; task reminders catch up exactly once.");
   console.info("PASS unredeemed OIDC code, active refresh token, client registration, signing keys, native binding and SCIM directory/credential survive the same forced process/database restart.");
 } finally { await stop(); }

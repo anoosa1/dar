@@ -118,8 +118,8 @@ independent navigation; folder URLs survive refresh and browser history.
   Offline editing, E2EE, public folder browsing, and password-protected public
   links are outside this milestone. Existing downloads may finish after revocation.
 - There is no migration from the previous Dar storage or legacy Nextcloud API.
-  This is the initial fresh schema; future schema changes need explicit migration
-  and restore compatibility work before deployment.
+  Additive upgrades and older backup formats are tested; future schema changes
+  still need explicit migration and restore compatibility work before deployment.
 
 WebDAV is available at `/dav/files/<username>/`, using a scoped app password from
 Account security. Supported operations are GET/HEAD/ranges, Depth 0/1 PROPFIND,
@@ -213,7 +213,7 @@ CardDAV homes are `/dav/addressbooks/<username>/`; CalDAV homes are
 `/dav/calendars/<username>/`. Existing Files app passwords stay Files-scoped.
 Supported operations include principal/home discovery, PROPFIND, resource
 GET/HEAD/PUT/DELETE, query and multiget REPORTs, and conditional writes. Create new
-collections in the native UI. Sync tokens, LOCK, PROPPATCH, MKCALENDAR, VTODO and
+collections in the native UI. Sync tokens, LOCK, PROPPATCH, MKCALENDAR and
 iTIP scheduling are not advertised. Unsupported filters fail explicitly. Tested
 interoperability uses vdirsyncer 0.20.0, including native/client round trips.
 
@@ -225,13 +225,40 @@ iterator steps per resource and 2,000 returned occurrences per series. Queries
 that exceed limits fail rather than returning a silently incomplete calendar.
 These are explicit safety bounds, not a large-archive performance guarantee.
 
-Instance backups use `dar-backup-v3`, including app content, directory profiles,
+Instance backups use `dar-backup-v4`, including Notes, retained note trash, VTODOs, directory profiles,
 groups, registered clients and the encrypted external signing keyring. Restoring
 preserves IDs and client secrets, but invalidates native/provider sessions,
 codes, tokens and provisioning credentials. Sign in and issue new SCIM credentials.
-Restore also accepts v1 auth/Files and v2 Contacts/Calendar backups and rejects
+Restore also accepts v1 auth/Files, v2 Contacts/Calendar and v3 identity backups and rejects
 unknown formats. Additive upgrades are tested against both committed baselines.
 See the [identity delivery record](../docs/spacetimedb/identity-provider.md).
+
+## Notes and Tasks
+
+Open `/notes` or `/tasks` from the shared Application selector. Both use selected
+layout A: a focused list/details workspace with the persistent centered search.
+
+Notes provides notebooks, sharing, exact Markdown source, safe preview, tags,
+favorites, autosave, explicit conflict/draft recovery, move/copy, private owner
+trash/restore and Markdown/notebook import/export. Preview supports a small
+documented dialect; HTML, remote images and active links remain inert. Notes live
+in SpacetimeDB and are independent of Files. Linked Files retain their own access
+checks. A recovery draft is scoped to the account/note in this browser tab.
+
+Tasks uses VTODO in the same calendars as CalDAV. Lists, subtasks, priorities,
+progress/status, dates/timezones, categories, recurrence/occurrence editing,
+completion/reopening, search/views, subtree move/copy and explicit parent deletion
+share the database authorization and revision boundary. Completing an occurrence
+advances to the next pending slot; exhausted finite series finish. Reopen a
+completed slot through Edit scope. The existing owner reminder inbox and scheduler
+also deliver task alarms with durable restart catch-up.
+
+Native views paginate 200 rows within 10,000 resources; Notes trash also paginates.
+Notebook JSON import/export accepts 500 notes/2 MiB; individual notes accept
+256 KiB. Task subtree mutations accept 500 records and depth 32. Existing calendar
+recurrence/import bounds remain in force. Read the [delivery record and precise
+limits](../docs/spacetimedb/notes-tasks.md) for API routes, supported Markdown,
+recurrence semantics, sharing and protocol details.
 
 ## Identity and provisioning
 
@@ -277,7 +304,8 @@ It verifies native recovery and revocation, permissions, file bytes and revision
 backup/restore, export, orphan cleanup, backup pin protection and reconnect during
 navigation, Contacts/Calendar native and DAV behavior, reminders, module upgrades
 and vdirsyncer interoperability, independent OIDC RP flows, SCIM lifecycle,
-production proxy headers and restart/restore of provider state. Tests never use
+production proxy headers and restart/restore of provider state, Notes drafts and
+trash, VTODO native/DAV interoperability, task reminders and workspace upgrades. Tests never use
 the default state directory. `run test` alone skips integration tests without an
 explicit test instance and does not establish acceptance.
 

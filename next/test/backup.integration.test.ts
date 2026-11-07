@@ -21,6 +21,12 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   const beforeTokens=await exchange(registeredClient,await authorize(base,identity.session,registeredClient));
   const beforeKeys=await (await fetch(`${base}/oidc/jwks`)).json();
   const file = await upload(base, session, `backup-${randomUUID()}.txt`, "This content must survive a full restore.");
+  const noteHeaders={...session.headers,"content-type":"application/json"},trashBook=await (await fetch(`${base}/api/v1/notes/notebooks`,{method:"POST",headers:noteHeaders,body:JSON.stringify({name:"Backup trash proof"})})).json() as {id:string};
+  const trashResponse=await fetch(`${base}/api/v1/notes/items`,{method:"POST",headers:noteHeaders,body:JSON.stringify({collectionId:trashBook.id,title:"Retained in trash",content:"Trash must survive restore."})}),trashNote=await trashResponse.json() as {id:string};assert.equal(trashResponse.status,201);
+  assert.equal((await fetch(`${base}/api/v1/notes/items/${trashNote.id}`,{method:"DELETE",headers:{...noteHeaders,"if-match":trashResponse.headers.get("etag")!}})).status,200);
+  const notes=await (await fetch(`${base}/api/v1/notes/items?view=all`,{headers:session.headers})).json() as {items:{id:string}[]};
+  const trash=await (await fetch(`${base}/api/v1/notes/trash`,{headers:session.headers})).json() as {items:{id:string}[]};
+  const noteProof=notes.items[0]?await (await fetch(`${base}/api/v1/notes/items/${notes.items[0].id}`,{headers:session.headers})).json() as {id:string;content:string}:undefined;
   const beforePim = await (await fetch(`${base}/api/v1/contacts/books`, { headers: session.headers })).json() as { items: { id: string; name: string }[] };
   const sampleBook = beforePim.items[0];
   const beforeCards = sampleBook ? await (await fetch(`${base}/api/v1/contacts/books/${sampleBook.id}/export`, { headers: session.headers })).text() : "";
@@ -39,7 +45,7 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   assert.equal(await readFile(path.join(exported, manifest.files.find(item => item.id === file.fileId)!.contentFile!), "utf8"), "This content must survive a full restore.");
   assert.doesNotMatch(JSON.stringify(manifest), /verifier|csrfDigest|signing-key/);
   const saved = await readFile(path.join(directory, "snapshot.json"), "utf8");
-  assert.match(saved, /dar-backup-v3/);
+  assert.match(saved, /dar-backup-v4/);
   assert.doesNotMatch(saved,/"providerModels"|"provisioningTokens"|"identityProofs"/);
   const listener = createServer(); await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
   const port = (listener.address() as import("node:net").AddressInfo).port;
@@ -59,6 +65,8 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   try {
     assert.equal((await fetch(`${newOrigin}/api/v1/auth/session`, { headers: session.headers })).status, 401);
     const recovered = await login(newOrigin);
+    if(noteProof){const after=await (await fetch(`${newOrigin}/api/v1/notes/items/${noteProof.id}`,{headers:recovered.headers})).json() as {content:string};assert.equal(after.content,noteProof.content);}
+    const restoredTrash=await (await fetch(`${newOrigin}/api/v1/notes/trash`,{headers:recovered.headers})).json() as typeof trash;assert.deepEqual(restoredTrash.items.map(r=>r.id).sort(),trash.items.map(r=>r.id).sort());
     assert.deepEqual(await (await fetch(`${newOrigin}/oidc/jwks`)).json(),beforeKeys);
     assert.equal((await fetch(`${newOrigin}/scim/v2/Users`,{headers:{authorization:`Bearer ${provisioning.secret}`}})).status,401);
     assert.equal((await fetch(`${newOrigin}/oidc/me`,{headers:{authorization:`Bearer ${beforeTokens.access_token}`}})).status,401);

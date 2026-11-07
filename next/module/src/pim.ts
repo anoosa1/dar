@@ -1,5 +1,6 @@
 import { Range, SenderError } from "spacetimedb/server";
 import type { Ctx } from "./index.ts";
+import {trashNote,validateTaskParent} from "./workspace.ts";
 
 function fail(code: string): never { throw new SenderError(code); }
 function text(value: unknown, max = 255): string { if (typeof value !== "string" || !value || value.length > max || /[\u0000]/.test(value)) fail("invalidInput"); return value; }
@@ -33,7 +34,7 @@ function log(ctx: Ctx, ownerId: string, resourceId: string, action: string) {
 }
 
 /** Runs only behind the owner-credential boundary, for a freshly checked session. */
-export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Record<string, unknown>, protocolScope?: string) {
+export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Record<string, unknown>, protocolScope?: string, batch=false) {
   const at = Number(ctx.timestamp.toMillis());
   if (protocolScope && !["collections", "list", "read", "put", "delete"].includes(operation)) fail("forbidden");
   if (operation === "collections") {
@@ -47,7 +48,7 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
   }
   if (operation === "createCollection") {
     const kind = text(p.kind);
-    if (!["contacts", "calendar"].includes(kind)) fail("invalidInput");
+    if (!["contacts", "calendar", "notes"].includes(kind)) fail("invalidInput");
     if ([...ctx.db.pimCollections.ownerId.filter(userId)].length >= 100) fail("operationTooLarge");
     const color = text(p.color, 7); if (!/^#[0-9a-f]{6}$/i.test(color)) fail("invalidInput");
     const row = { id: id(p.id), ownerId: userId, kind, name: text(text(p.name).trim()), color, revision: 1, modifiedAt: at };
@@ -93,7 +94,7 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
     } else if (operation === "deleteCollection") {
       notify(ctx, c);
       let count = 0;
-      for (const row of ctx.db.pimResources.collectionId.filter(c.id)) { if (++count > 10000) fail("operationTooLarge"); invalidateReminders(ctx, row.id); ctx.db.pimResources.id.delete(row.id); }
+      for (const row of ctx.db.pimResources.collectionId.filter(c.id)) { if (++count > 10000) fail("operationTooLarge"); if(c.kind==="notes")trashNote(ctx,row);invalidateReminders(ctx, row.id); ctx.db.pimResources.id.delete(row.id); }
       for (const grant of ctx.db.pimGrants.collectionId.filter(c.id)) ctx.db.pimGrants.id.delete(grant.id);
       ctx.db.pimCollections.id.delete(c.id); log(ctx, userId, c.id, `${c.kind}.collectionDeleted`); return { ok: true };
     }
@@ -103,18 +104,31 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
     ctx.db.pimCollections.id.update(updated); notify(ctx, c); log(ctx, userId, c.id, `${c.kind}.${operation}`); return updated;
   }
   const href = text(p.href, 255);
-  if (!/^[a-zA-Z0-9_.-]+\.(vcf|ics)$/.test(href)) fail("invalidInput");
+  if (!/^[a-zA-Z0-9_.-]+\.(vcf|ics|md)$/.test(href)||!href.endsWith(c.kind==="contacts"?".vcf":c.kind==="notes"?".md":".ics")) fail("invalidInput");
   const old = ctx.db.pimResources.hrefKey.find(`${c.id}/${href}`);
   if (operation === "read") { if (!old) fail("notFound"); return old; }
+  if(operation==="move"){
+    if(!batch||!old)fail("invalidInput");expected(old.revision,p.revision);const target=collection(ctx,userId,p.targetCollectionId,true);if(target.kind!==c.kind||target.ownerId!==c.ownerId)fail("forbidden");if(target.id===c.id)return old;
+    if(ctx.db.pimResources.uidKey.find(`${target.id}/${old.uid}`)||ctx.db.pimResources.hrefKey.find(`${target.id}/${href}`))fail("conflict");
+    const moved={...old,collectionId:target.id,hrefKey:`${target.id}/${href}`,uidKey:`${target.id}/${old.uid}`,content:p.content===undefined?old.content:text(p.content,262144),projection:p.projection===undefined?old.projection:text(p.projection,65536),revision:old.revision+1,modifiedAt:at};
+    invalidateReminders(ctx,old.id);ctx.db.pimResources.id.delete(old.id);ctx.db.pimResources.insert(moved);validateTaskParent(ctx,target.id,old.uid,moved.projection);if(target.kind==="calendar")ctx.db.pimReminderCursors.insert({resourceId:old.id,revision:moved.revision,at,runAt:dueKey(at+1000)});
+    for(const item of [c,target]){const {role:_role,...base}=item;ctx.db.pimCollections.id.update({...base,revision:item.revision+1,modifiedAt:at});notify(ctx,item);}log(ctx,c.ownerId,old.id,`${c.kind}.moved`);return moved;
+  }
   if (operation !== "put" && operation !== "delete") fail("invalidInput");
   expected(old?.revision ?? 0, p.revision);
   if (operation === "delete") {
-    if (!old) fail("notFound"); invalidateReminders(ctx, old.id); ctx.db.pimResources.id.delete(old.id);
+    if (!old) fail("notFound");
+    if(c.kind==="notes")trashNote(ctx,old);
+    if(JSON.parse(old.projection).kind==="task")for(const child of ctx.db.pimResources.collectionId.filter(c.id))if(JSON.parse(child.projection).parentUid===old.uid)fail("conflict");
+    invalidateReminders(ctx, old.id); ctx.db.pimResources.id.delete(old.id);
   } else {
     const uid = text(p.uid, 1024), uidKey = `${c.id}/${uid}`, duplicate = ctx.db.pimResources.uidKey.find(uidKey);
     if (duplicate && duplicate.id !== old?.id) fail("conflict");
     if (!old && [...ctx.db.pimResources.collectionId.filter(c.id)].length >= 10000) fail("operationTooLarge");
-    const row = { id: old?.id ?? id(p.id), collectionId: c.id, href, hrefKey: `${c.id}/${href}`, uid, uidKey, content: text(p.content, 262144), projection: text(p.projection, 65536), revision: (old?.revision ?? 0) + 1, modifiedAt: at };
+    if(typeof p.content!=="string"||p.content.length>262144||p.content.includes("\u0000"))fail("invalidInput");
+    const row = { id: old?.id ?? id(p.id), collectionId: c.id, href, hrefKey: `${c.id}/${href}`, uid, uidKey, content: c.kind==="notes"?p.content:text(p.content, 262144), projection: text(p.projection, 65536), revision: (old?.revision ?? 0) + 1, modifiedAt: at };
+    validateTaskParent(ctx,c.id,uid,row.projection);
+    const task=JSON.parse(row.projection);if(task.kind==="task"&&task.status==="COMPLETED")for(const child of ctx.db.pimResources.collectionId.filter(c.id)){const data=JSON.parse(child.projection);if(data.parentUid===uid&&!["COMPLETED","CANCELLED"].includes(data.status))fail("conflict");}
     if (old) { invalidateReminders(ctx, old.id); ctx.db.pimResources.id.update(row); } else ctx.db.pimResources.insert(row);
     if (c.kind === "calendar") ctx.db.pimReminderCursors.insert({ resourceId: row.id, revision: row.revision, at, runAt: dueKey(at + 1000) });
   }
@@ -131,7 +145,7 @@ type Snapshot = ReturnType<typeof pimSnapshot>;
 export function restorePim(ctx: Ctx, data: Snapshot | undefined) {
   if (!data) return;
   for (const row of data.collections) {
-    if (!ctx.db.accounts.id.find(row.ownerId) || !["contacts", "calendar"].includes(row.kind)) fail("invalidInput");
+    if (!ctx.db.accounts.id.find(row.ownerId) || !["contacts", "calendar", "notes"].includes(row.kind)) fail("invalidInput");
     ctx.db.pimCollections.insert(row);
   }
   for (const row of data.resources) {

@@ -42,9 +42,10 @@ test("HTTP limits, CSRF/origin rejection, operator recovery, split Unicode input
     assert.deepEqual(errors[0], errors[1]);
     let limited = false;
     for (let i = 0; i < 11; i++) {
-      const response = await fetch(`${base}/api/v1/auth/login`, { method: "POST", headers: json, body: JSON.stringify({ username, password: "wrong password" }) });
-      if (response.status === 429) { limited = true; break; }
-      assert.equal(response.status, 401);
+      // Give this probe a fresh peer/window, independent of earlier suite logins.
+      const status=await new Promise<number>((resolve,reject)=>{const req=request(`${base}/api/v1/auth/login`,{method:"POST",localAddress:"127.0.0.2",headers:json},res=>{res.resume();res.on("end",()=>resolve(res.statusCode!));});req.on("error",reject);req.end(JSON.stringify({username,password:"wrong password"}));});
+      if (status === 429) { limited = true; break; }
+      assert.equal(status, 401);
     }
     assert.equal(limited, true);
   } finally { connection.disconnect(); await rm(temporary, { recursive: true, force: true }); }

@@ -1,4 +1,4 @@
-export type PimKind = "contacts" | "calendar";
+export type PimKind = "contacts" | "calendar" | "notes";
 export interface PimCollection { id: string; ownerId: string; kind: PimKind; name: string; color: string; revision: number; modifiedAt: number | string; role: "owner" | "read" | "write" }
 export interface PimResource { id: string; collectionId: string; href: string; uid: string; content: string; projection: string; revision: number; modifiedAt: number | string }
 export interface ContactValue { value: string; label: string }

@@ -1,0 +1,2 @@
+export interface NoteData {kind:"note";title:string;tags:string[];favorite:boolean}
+export interface TaskData {kind:"task";title:string;description:string;start:string;due:string;timezone:string;allDay:boolean;priority:number;status:"NEEDS-ACTION"|"IN-PROCESS"|"COMPLETED"|"CANCELLED";progress:number;completedAt:string;categories:string[];parentUid:string;recurrence:string;recurring?:boolean;reminderMinutes:number|null}

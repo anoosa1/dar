@@ -1,0 +1,32 @@
+import {test} from "node:test";
+import assert from "node:assert/strict";
+import {readNote} from "../runtime/pim/notes.ts";
+import {readTask,writeTask,taskOccurrences,taskMatchesRange,nextTaskOccurrence,taskDue} from "../runtime/pim/tasks.ts";
+import {renderToStaticMarkup} from "react-dom/server";
+import {build} from "esbuild";
+const previewBundle=await build({entryPoints:[new URL("../client/pim/markdown.tsx",import.meta.url).pathname],bundle:true,platform:"node",format:"esm",write:false,jsx:"automatic"});
+const {Markdown}=await import("data:text/javascript;base64,"+Buffer.from(previewBundle.outputFiles[0].text).toString("base64"));
+import {createElement} from "react";
+const resource=(content:string)=>({id:"test",collectionId:"c",href:"t.ics",uid:"test",content,projection:"{}",revision:1,modifiedAt:0});
+test("Occurrence completion advances, finite series finish, and reopening preserves the recurrence slot",()=>{
+  let task=writeTask({title:"Daily",start:"2026-11-06T09:00",due:"2026-11-06T10:00",timezone:"UTC",recurrence:"FREQ=DAILY;COUNT=2"});
+  task=writeTask({status:"COMPLETED"},task.content,"2026-11-06T09:00:00Z");
+  assert.equal(task.data.status,"NEEDS-ACTION");assert.equal(nextTaskOccurrence(resource(task.content),"UTC")?.start,"2026-11-07T09:00:00");
+  task=writeTask({status:"COMPLETED"},task.content,"2026-11-07T09:00:00Z");assert.equal(task.data.status,"COMPLETED");assert.equal(nextTaskOccurrence(resource(task.content),"UTC"),undefined);
+  task=writeTask({status:"NEEDS-ACTION",progress:0},task.content,"2026-11-07T09:00:00Z");assert.equal(task.data.status,"NEEDS-ACTION");assert.equal(nextTaskOccurrence(resource(task.content),"UTC")?.start,"2026-11-07T09:00:00");
+  assert.throws(()=>writeTask({status:"COMPLETED"},task.content,"2026-11-08T09:00:00Z"));
+});
+test("Task dates reject normalization and invalid durations; timed due days use the viewer zone",()=>{
+  assert.throws(()=>writeTask({title:"Bad date",due:"2026-02-30",allDay:true}));
+  assert.throws(()=>writeTask({title:"Gap",start:"2026-03-08T02:30",timezone:"America/Toronto"}));
+  const zoned=writeTask({title:"Existing zoned task",start:"2026-03-07T02:30",timezone:"America/Toronto"});assert.throws(()=>writeTask({start:"2026-03-08T02:30"},zoned.content));
+  assert.throws(()=>writeTask({title:"Invalid rule",start:"2026-11-06",allDay:true,recurrence:"FREQ=INVALID"}));
+  const task=writeTask({title:"Late",due:"2026-11-07T01:00",timezone:"UTC"});assert.equal(taskDue(resource(task.content),"America/Toronto").day,"2026-11-06");
+  const day=writeTask({title:"Day",due:"2026-11-07",allDay:true});assert.equal(taskDue(resource(day.content),"America/Toronto").day,"2026-11-07");
+  assert.throws(()=>readTask(task.content.replace("DUE:20261107T010000Z","DURATION:PT1H")));
+});
+test("Notes preserve exact Markdown and validate metadata without executing source",()=>{const content="# Hello\r\n\r\n<script>alert(1)</script>\n";const n=readNote({content,title:"A note",tags:["work","work"],favorite:true});assert.equal(n.content,content);assert.deepEqual(n.data.tags,["work"]);assert.equal(readNote({content:""}).content,"");assert.throws(()=>readNote({content:"x\u0000"}));});
+test("Markdown preview escapes HTML and refuses active links, images and embeds",()=>{const html=renderToStaticMarkup(createElement(Markdown,{source:'<img src=x onerror=alert(1)>\n\n[bad](javascript:alert(1))\n\n![remote](https://example.com/track.png)\n\n[good](https://example.com/)\n\n```html\n<script>alert(1)</script>\n```'}));assert.doesNotMatch(html,/<script|<img|href="javascript:/);assert.match(html,/&lt;img/);assert.match(html,/href="https:\/\/example.com\/"/);});
+test("VTODO date filters distinguish undated, due-only and completed resources",()=>{const from=new Date("2026-11-06T12:00Z"),to=new Date("2026-11-06T13:00Z");const row=(content:string)=>({id:"t",collectionId:"c",href:"t.ics",uid:"u",content,projection:"{}",revision:1,modifiedAt:0});assert.equal(taskMatchesRange(row(writeTask({title:"Undated"}).content),from,to),true);const due=writeTask({title:"Due",due:"2026-11-06T13:00",timezone:"UTC"});assert.equal(taskMatchesRange(row(due.content),from,to),true);assert.equal(taskMatchesRange(row(due.content),to,new Date("2026-11-06T14:00Z")),false);assert.equal(taskMatchesRange(row(writeTask({title:"Future",start:"2026-11-07T12:00",timezone:"UTC"}).content),from,to),false);});
+test("VTODO edits retain UID and unknown properties and allow undated tasks",()=>{const task=writeTask({title:"Undated"});assert.equal(task.data.start,"");assert.equal(task.data.due,"");const raw=task.content.replace("END:VTODO","X-PRIVATE:retain-me\r\nEND:VTODO");const updated=writeTask({title:"Edited",status:"COMPLETED"},raw);assert.equal(updated.uid,task.uid);assert.match(updated.content,/X-PRIVATE:retain-me/);assert.equal(updated.data.progress,100);assert.ok(updated.data.completedAt);assert.equal(writeTask({status:"NEEDS-ACTION",progress:0},updated.content).data.completedAt,"");assert.throws(()=>writeTask({title:"Bad",start:"2026-11-08",due:"2026-11-07",allDay:true}));});
+test("VTODO recurrence crosses DST and completed exceptions do not complete the series",()=>{const task=writeTask({title:"Weekly",start:"2026-10-26T09:00",due:"2026-10-26T10:00",timezone:"America/Toronto",recurrence:"FREQ=WEEKLY;COUNT=3"});const row={id:"test",collectionId:"c",href:"t.ics",uid:task.uid,content:task.content,projection:JSON.stringify(task.data),revision:1,modifiedAt:0};const items=taskOccurrences(row,"America/Toronto",new Date("2026-10-25"),new Date("2026-11-12"));assert.equal(items.length,3);assert.equal(items[0].startAt,"2026-10-26T13:00:00.000Z");assert.equal(items[1].startAt,"2026-11-02T14:00:00.000Z");const completed=writeTask({...task.data,start:"2026-11-02T09:00",due:"2026-11-02T10:00",status:"COMPLETED"},task.content,"2026-11-02T09:00:00");assert.equal(readTask(completed.content).data.status,"NEEDS-ACTION");const after=taskOccurrences({...row,content:completed.content},"America/Toronto",new Date("2026-10-25"),new Date("2026-11-12"));assert.equal(after[1].status,"COMPLETED");});

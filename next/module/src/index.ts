@@ -3,6 +3,8 @@ import { schema, table, t, Range, SenderError, type InferSchema, type ReducerCtx
 import { pimTables, pimChanges } from "./pim-tables.ts";
 import { pimOperation, pimSnapshot, restorePim, reminderWork, commitReminders, deferReminder } from "./pim.ts";
 import { identityTables } from "./identity-tables.ts";
+import {workspaceTables} from "./workspace-tables.ts";
+import {workspaceSnapshot,restoreWorkspace,noteTrashOperation,validateTaskParent} from "./workspace.ts";
 import { identityActor, directoryOperation, providerOperation, revokeProvider, revokeUser, identitySnapshot, restoreIdentity, touchProfile } from "./identity.ts";
 
 const instance = table({}, { id: t.string().primaryKey(), service: t.identity(), issuer: t.string() });
@@ -34,7 +36,7 @@ const backupPins = table({}, { id: t.string().primaryKey(), backupId: t.string()
 const appPasswords = table({}, { id: t.string().primaryKey(), userId: t.string().index("btree"), digest: t.string().unique(), label: t.string(), scope: t.string(), sessionId: t.string().unique(), principal: t.identity(), expiresAt: t.f64(), revoked: t.bool() });
 const rootRevisions = table({}, { userId: t.string().primaryKey(), revision: t.u32(), modifiedAt: t.f64() });
 const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().index("btree"), fileId: t.string(), action: t.string(), at: t.f64() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, ...pimTables, ...identityTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, ...pimTables, ...identityTables, ...workspaceTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -177,6 +179,7 @@ export const serviceStatus = db.procedure(t.string(), ctx => ctx.withTx(tx => {
 export const serviceStartup = db.reducer({ issuer: t.string() }, (ctx, { issuer }) => {
   service(ctx);
   if (!ctx.db.identityMigrations.id.find(1)) ctx.db.identityMigrations.insert({ id:1, appliedAt:now(ctx) });
+  if(!ctx.db.workspaceMigrations.id.find(1))ctx.db.workspaceMigrations.insert({id:1,appliedAt:now(ctx)});
   if (issuer !== ctx.env.DAR_ISSUER) fail("invalidInput");
   const config = ctx.db.instance.id.find("instance")!;
   if (config.issuer === issuer) return;
@@ -594,7 +597,7 @@ export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, 
     tx.db.backupPins.insert({ id: `${id}/${blobId}`, backupId: id, blobId });
     return { id: blobId, size: upload.size, digest: upload.digest };
   });
-  return JSON.stringify({ format: "dar-backup-v3", identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
+  return JSON.stringify({ format: "dar-backup-v4", workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
     accounts: [...tx.db.accounts.iter()], files: [...tx.db.fileEntries.iter()], versions: history,
     grants: [...tx.db.grants.iter()], publicShares: [...tx.db.publicShares.iter()], favorites: [...tx.db.favorites.iter()],
     uploads: blobIds.map(blobId => tx.db.uploads.id.find(blobId)),
@@ -622,9 +625,9 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
   const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; files: FileEntry[]; versions: Row<"versions">[];
     grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads: Row<"uploads">[];
-    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot> };
-  if (!["dar-backup-v1", "dar-backup-v2", "dar-backup-v3"].includes(value.format)) fail("invalidInput");
-  if (value.format !== "dar-backup-v1" && !value.pim || value.format === "dar-backup-v3" && !value.identity) fail("invalidInput");
+    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot> };
+  if (!["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4"].includes(value.format)) fail("invalidInput");
+  if (value.format !== "dar-backup-v1" && !value.pim || ["dar-backup-v3","dar-backup-v4"].includes(value.format) && !value.identity||value.format==="dar-backup-v4"&&!value.workspace) fail("invalidInput");
   for (const row of value.accounts) {
     ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0 });
   }
@@ -657,6 +660,7 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   for (const row of value.activity) ctx.db.activity.insert(row);
   restorePim(ctx, value.pim);
   restoreIdentity(ctx,value.identity);
+  restoreWorkspace(ctx,value.workspace);
 });
 
 export const serviceSessions = db.procedure({ sessionId: t.string() }, t.string(), (ctx, { sessionId }) => ctx.withTx(tx => {
@@ -678,6 +682,16 @@ export const servicePim = db.procedure({ sessionId: t.string(), operation: t.str
   const password = tx.db.appPasswords.sessionId.find(p.sessionId);
   if (password && (password.revoked || password.expiresAt <= now(tx))) fail("unauthenticated");
   return JSON.stringify(pimOperation(tx, user.id, p.operation, JSON.parse(p.payload), password?.scope));
+}));
+export const serviceWorkspace=db.procedure({sessionId:t.string(),operation:t.string(),payload:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");const data=JSON.parse(p.payload);
+  if(p.operation!=="batch")return JSON.stringify(noteTrashOperation(tx,user.id,p.operation,data));
+  if(!Array.isArray(data.operations)||data.operations.length>500)fail("operationTooLarge");
+  for(const [id,revision]of Object.entries(data.collections??{})){const c=tx.db.pimCollections.id.find(id);if(!c||c.revision!==revision)fail("conflict");}
+  const result=[];const affected=new Set<string>();
+  for(const op of data.operations){if(!["put","delete","move"].includes(op.operation))fail("invalidInput");for(const id of [op.collectionId,op.targetCollectionId])if(id)affected.add(id);result.push(pimOperation(tx,user.id,op.operation,op,undefined,true));}
+  for(const id of affected)for(const row of tx.db.pimResources.collectionId.filter(id))validateTaskParent(tx,id,row.uid,row.projection);
+  return JSON.stringify({items:result});
 }));
 export const servicePimAuthenticate = db.procedure({ username: t.string(), digest: t.string(), app: t.string(), write: t.bool() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); const password = tx.db.appPasswords.digest.find(p.digest);

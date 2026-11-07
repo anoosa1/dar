@@ -25,7 +25,8 @@ export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, u
       const zone = timezone(field(p.timezone ?? "UTC", 100)), weekStart = p.weekStart ?? 1;
       if (weekStart !== 0 && weekStart !== 1) invalid("Week starts on Sunday or Monday.");
       if (p.hiddenCalendars !== undefined && (!Array.isArray(p.hiddenCalendars) || p.hiddenCalendars.length > 200 || p.hiddenCalendars.some(v => typeof v !== "string"))) invalid("Invalid hidden calendar list.");
-      const value = JSON.stringify({ timezone: zone, weekStart, contactSort: p.contactSort === "lastName" ? "lastName" : "firstName", hiddenCalendars: p.hiddenCalendars ?? [] });
+      const previous=JSON.parse(old.value);for(const key of ["notesSort","tasksSort"])if(p[key]!==undefined&&!["modified","title",...(key==="tasksSort"?["due"]:[])].includes(String(p[key])))invalid("Invalid workspace sort.");
+      const value = JSON.stringify({ notesSort:p.notesSort??previous.notesSort, tasksSort:p.tasksSort??previous.tasksSort, timezone: zone, weekStart, contactSort: p.contactSort === "lastName" ? "lastName" : "firstName", hiddenCalendars: p.hiddenCalendars ?? [] });
       const result = await service.call<{ revision: number }>("savePreferences", { revision: old.revision, value }); return json({ ...JSON.parse(value), revision: result.revision });
     }
   }

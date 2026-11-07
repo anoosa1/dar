@@ -7,6 +7,7 @@ import path from "node:path";
 
 const project = path.resolve(import.meta.dirname, "..");
 const identityOnly=process.argv.includes("--identity");
+const workspaceOnly=process.argv.includes("--workspace");
 const root = await mkdtemp(path.join(tmpdir(), "dar-acceptance-"));
 async function freePort() {
   const server = net.createServer(); await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -41,15 +42,19 @@ try {
   run(["node_modules/typescript/bin/tsc", "-p", "module/tsconfig.json"]);
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
-  if(!identityOnly){
+  if(!identityOnly&&!workspaceOnly){
     run(["--test", "--test-concurrency=1", "test/pim-standards.test.ts", "test/pim.integration.test.ts"]);
     run(["--test", "test/pim-upgrade.integration.test.ts"]);
   }
+  if(!workspaceOnly){
   run(["--test", "--test-concurrency=1", "test/scim-model.test.ts", "test/identity.integration.test.ts", "test/identity-lifecycle.integration.test.ts"]);
   run(["--test", "test/identity-upgrade.integration.test.ts"]);
   run(["--test", "test/identity-proxy.integration.test.ts"]);
   run(["test/identity-browser.mjs"]);
-  if(!identityOnly){
+  }
+  if(!identityOnly)run(["--test","--test-concurrency=1","test/workspace-standards.test.ts","test/workspace.integration.test.ts","test/workspace-upgrade.integration.test.ts"]);
+  if(!identityOnly)run(["test/workspace-browser.mjs"]);
+  if(!identityOnly&&!workspaceOnly){
   run(["--test", "--test-concurrency=1", "test/auth-primitives.test.ts", "test/auth-security.integration.test.ts", "test/files.integration.test.ts", "test/dav.integration.test.ts", "test/backup.integration.test.ts", "test/gc.integration.test.ts", "test/keyring.test.ts", "test/pagination.integration.test.ts", "test/storage.test.ts"]);
   run(["test/browser.mjs"]);
   run(["test/pim-browser.mjs"]);

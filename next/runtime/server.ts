@@ -21,6 +21,7 @@ import { handlePimDav } from "./pim/dav.ts";
 import { identityProvider } from "./identity/provider.ts";
 import { handleIdentityHttp } from "./identity/http.ts";
 import { handleScim } from "./identity/scim.ts";
+import {handleWorkspaceHttp} from "./pim/workspace-http.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
@@ -143,6 +144,7 @@ export async function startServer(config: ServerConfig) {
         const authenticated = await auth.authenticate(secret);
         if (!authenticated) throw new AppError("unauthenticated", 401);
         if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !authorizeCookieWrite(config.origin, origin, typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : undefined, authenticated.session.csrfDigest)) throw new AppError("csrfRejected", 403);
+        if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
         if(url.pathname.startsWith("/api/v1/identity/")){
           let attempt:{count:number;until:number}|undefined;
           if(method==="POST"&&(url.pathname.endsWith("/confirmation")||url.pathname.includes("/interactions/"))){
