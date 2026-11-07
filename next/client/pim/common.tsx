@@ -1,3 +1,4 @@
+import {EditorPane} from "../pane.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DbConnection } from "../module_bindings/index.ts";
 import { request, type BrowserSession } from "../api.ts";
@@ -42,7 +43,7 @@ export function PimShell({ kind, session, onSignedOut, query, onQuery, sidebar, 
 }
 export function CollectionEditor({ collection, title, onSave, onClose }: { collection?: PimCollection; title: string; onSave: (name: string, color: string) => Promise<void>; onClose: () => void }) {
   const [error, setError] = useState(""), [busy, setBusy] = useState(false);
-  return <Dialog title={title} onClose={onClose}><form onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); setBusy(true); setError(""); void onSave(String(data.get("name")), String(data.get("color"))).then(onClose).catch(cause => setError(cause.message)).finally(() => setBusy(false)); }}><label>Name<input name="name" autoFocus required maxLength={255} defaultValue={collection?.name} /></label><label>Color<input name="color" type="color" defaultValue={collection?.color ?? "#2563eb"} /></label>{error && <p role="alert" className="error">{error}</p>}<div className="dialog-actions"><button type="button" className="text-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy}>Save</button></div></form></Dialog>;
+  return <EditorPane title={title} onClose={onClose}><form onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); setBusy(true); setError(""); void onSave(String(data.get("name")), String(data.get("color"))).then(onClose).catch(cause => setError(cause.message)).finally(() => setBusy(false)); }}><label>Name<input name="name" autoFocus required maxLength={255} defaultValue={collection?.name} /></label><label>Color<input name="color" type="color" defaultValue={collection?.color ?? "#2563eb"} /></label>{error && <p role="alert" className="error">{error}</p>}<div className="dialog-actions"><button type="button" className="text-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy}>Save</button></div></form></EditorPane>;
 }
 export function Sharing({ collection, base, session, onClose, onChanged }: { collection: PimCollection; base: string; session: BrowserSession; onClose: () => void; onChanged: () => void }) {
   const [grants, setGrants] = useState<{ id: string; username: string; role: string }[]>([]), [current, setCurrent] = useState(collection), [error, setError] = useState("");

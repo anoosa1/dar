@@ -115,6 +115,15 @@ F2 renames the selected item. The clipboard is account-scoped to this browser ta
 Files settings saves view, hidden-file visibility, confirmation before trash and
 the initial details tab for the account.
 
+**New → New folder / New file** opens a right-hand creation pane. Text and
+Markdown files up to 1 MiB open in the Files editor, with Markdown formatting,
+safe preview, autosave, explicit Save/Ctrl/Cmd S, undo/redo, recovery drafts and
+revision-conflict review. Saves use the existing immutable upload/version path;
+read-only shares stay read-only. Larger/binary files retain preview/download.
+Creation and editing of contacts, calendars/events, tasks and their collections
+also use the shared right pane with complete forms. Unsaved forms require an
+explicit discard; destructive confirmations remain dialogs.
+
 - Uploads are limited to 1 GiB each, four concurrent runtime streams, and a
   one-hour reservation. Retained versions and copies count toward a 10 GiB logical
   quota per owner; physical capacity still needs operator monitoring.
@@ -283,6 +292,11 @@ view. Profile edits save names and primary email; username and privileges cannot
 be changed through Personal settings. The shared launcher and account menu remain
 available in global settings. See the [UX audit and delivery record](../docs/spacetimedb/ux-consistency-audit.md)
 and [Nextcloud reference screenshots](../docs/spacetimedb/nextcloud-reference/index.html).
+
+**Personal → Appearance** persists Light (Catppuccin Latte), Dark (Catppuccin
+Mocha), or Follow system for the account. Shared tokens apply to all apps,
+settings, menus, creation panes and the editor. Colors derive from the
+[official Catppuccin palette](https://catppuccin.com/palette/).
 
 - Use **`https://your-instance/oidc`** as the external issuer. Discovery is at
   `/oidc/.well-known/openid-configuration`. Register exact redirect/logout URLs;

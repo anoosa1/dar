@@ -222,3 +222,38 @@ backup/restore and forced process/database restart recovery for Files, PIM,
 Notes/Tasks and identity. Calendar drag/resize uses native mouse gestures and
 asserts the saved event times; it initiates dragging before destination scrolling.
 Generated test artifacts remain outside the repository.
+
+## November 7 follow-up
+
+Files action menus now choose their opening direction using the viewport midpoint
+and cap their scrollable height to fit the available half-window. Details tabs
+share a fixed frame with an internal stable scroll gutter. Rename, Move, Copy,
+trash and permanent deletion are available from the action menu rather than
+duplicated in Details. Promotional app eyebrow labels and Files subtitles are
+removed; permission, recovery and safety instructions remain.
+
+The maintainer selected A in `creation-appearance-mocks.html`, with Catppuccin
+Latte for light mode and Mocha for dark. Shared non-modal right panes now host
+folder/file, contact, calendar/event, task and collection creation/editing.
+Phones use the same complete forms at full width. Unsaved forms offer explicit
+discard; destructive confirmation and app settings remain dialogs.
+
+Files New offers Folder or File → Text/Markdown. Text files up to 1 MiB open in
+an editor using the existing upload/version boundary, autosave/manual save,
+Markdown formatting and safe preview, undo/redo, account/file-scoped recovery
+drafts and revision-conflict review. The revision advances only by the editor's
+own successful write; it never silently adopts a concurrent writer's revision.
+Read-only shares cannot save. Binary/oversized files keep preview/download.
+
+Personal → Appearance stores `appearance: system|latte|mocha` in the existing
+revision-checked preferences. Common CSS tokens cover all apps and surfaces;
+system mode observes OS theme changes. The source palette is
+https://catppuccin.com/palette/. No dependency or database was added.
+
+Verification: the full isolated acceptance suite passed (57 Node tests, five
+browser journeys, independent DAV synchronization and forced restart recovery).
+The extended shared journey additionally passed 520/700/1000 px menu bounds,
+stable Details/Versions/Sharing dimensions, removal of duplicate details actions,
+Markdown file creation/save/reopen and exact bytes/version counts, stale-write
+conflict review without overwriting the other writer, interrupted-save recovery
+after reload, and explicit Latte/Mocha/System switching with OS-change handling.

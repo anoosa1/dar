@@ -1,3 +1,4 @@
+import {useAppearance} from "./appearance.tsx";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Auth } from "./auth.tsx";
@@ -11,9 +12,12 @@ import "./styles.css";
 import "./loading.css";
 import "./shared-ui.css";
 import "./pim/styles.css";
+import "./ui-layout.css";
+import "./theme.css";
 function App() {
   const [status, setStatus] = useState<{ initialized: boolean } | null>(null);
   const [session, setSession] = useState<BrowserSession | null>(null);
+  useAppearance(session);
   const [ready, setReady] = useState(false), [error, setError] = useState("");
   useEffect(() => {
     let active = true;

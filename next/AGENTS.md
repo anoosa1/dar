@@ -1,5 +1,9 @@
 # SpacetimeDB application
 
+
+- The November 7 follow-up selects creation/appearance mock A, Focused pane.
+  Creation/editing uses right panes; Files adds a New menu and text/Markdown
+  editor. Appearance uses Catppuccin Latte (light) and Mocha (dark).
 The maintainer authorized a fresh SpacetimeDB architecture and implementation of
 native auth and Files, extended to Contacts and Calendar on November 6, 2026.
 Read `../docs/spacetimedb/architecture.md` for the

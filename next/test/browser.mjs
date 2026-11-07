@@ -22,9 +22,9 @@ try {
   await page.screenshot({ path: "/tmp/dar-auth-desktop.png", fullPage: true });
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForFunction(() => !document.body.textContent.includes("Connecting…"));
-  await page.getByRole("button", { name: "New folder", exact: true }).click();
+  await page.getByRole("button",{name:"New",exact:true}).click();await page.getByRole("menuitem",{name:"New folder",exact:true}).click();
   const folder = `Browser ${randomUUID().slice(0, 6)}`;
-  await page.getByRole("dialog").getByLabel("Name", { exact: true }).fill(folder);
+  await page.locator("dialog,[data-editor-pane]").getByLabel("Name", { exact: true }).fill(folder);
   await page.getByRole("button", { name: "Create folder", exact: true }).click();
   await page.getByRole("button", { name: folder, exact: true }).click();
   await page.getByRole("heading", { name: folder, exact: true }).waitFor();
@@ -46,12 +46,12 @@ try {
   await fileDetails(page,"Welcome.txt");
   await page.getByRole("heading", { name: "Welcome.txt", exact: true }).waitFor();
   await page.screenshot({ path: "/tmp/dar-files-desktop.png", fullPage: true });
-  await page.getByRole("button", { name: "Rename", exact: true }).click();
-  await page.getByRole("dialog").getByLabel("Name", { exact: true }).fill("A little hello.txt");
-  await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button",{name:"Actions for Welcome.txt",exact:true}).click();await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+  await page.locator("dialog,[data-editor-pane]").getByLabel("Name", { exact: true }).fill("A little hello.txt");
+  await page.locator("dialog,[data-editor-pane]").getByRole("button", { name: "Save", exact: true }).click();
   await page.getByRole("heading", { name: "A little hello.txt", exact: true }).waitFor();
   await page.getByRole("button", { name: "Preview", exact: true }).click();
-  await page.getByRole("dialog").getByText("A real file uploaded through the Files app.", { exact: true }).waitFor();
+  await page.locator("dialog,[data-editor-pane]").getByText("A real file uploaded through the Files app.", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Close dialog", exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Preview");
   await page.getByRole("button", { name: "Add to favorites", exact: true }).click();
@@ -60,7 +60,7 @@ try {
   await page.getByRole("button", { name: "Favorites", exact: true }).click();
   await page.getByRole("button", { name: "A little hello.txt", exact: true }).waitFor();
   await fileDetails(page,"A little hello.txt");
-  await page.getByRole("button", { name: "Move to deleted files", exact: true }).click();
+  await page.getByRole("button",{name:"Actions for A little hello.txt",exact:true}).click();await page.getByRole("menuitem", { name: "Move to deleted files", exact: true }).click();
   await page.getByRole("button", { name: "Deleted files", exact: true }).click();
   await fileDetails(page,"A little hello.txt");
   await page.getByRole("button", { name: "Restore", exact: true }).click();
