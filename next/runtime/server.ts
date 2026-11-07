@@ -105,7 +105,7 @@ export async function startServer(config: ServerConfig) {
         return await identity.handle(req,res);
       }
       if(url.pathname==="/scim/v2"||url.pathname.startsWith("/scim/v2/"))return await handleScim(req,res,url,db,auth,config.origin);
-      if (["/.well-known/carddav", "/.well-known/caldav"].includes(url.pathname)) { res.writeHead(308, { location: "/dav/" }); res.end(); return; }
+      if (["/dav", "/.well-known/carddav", "/.well-known/caldav"].includes(url.pathname)) { res.writeHead(308, { location: "/dav/" }); res.end(); return; }
       if (url.pathname.startsWith("/dav/") && !url.pathname.startsWith("/dav/files/")) return await handlePimDav(req, res, db, config.origin);
       if (url.pathname.startsWith("/dav/")) return await handleDav(req, res, db, blobs, config.origin);
       if (url.pathname === "/auth/issuer/.well-known/openid-configuration") return json(res, { issuer: issuer.issuer, jwks_uri: `${issuer.issuer}/jwks`, id_token_signing_alg_values_supported: ["ES256"], subject_types_supported: ["public"] });
@@ -178,7 +178,7 @@ export async function startServer(config: ServerConfig) {
           const p = await body(req), token = createOpaqueToken(), id = randomUUID();
           const scope = string(p.scope, 20), app = scope.startsWith("contacts:") ? "addressbooks" : scope.startsWith("calendar:") ? "calendars" : "files";
           await db.call("service_create_app_password", [authenticated.session.id, id, token.digest, string(p.label, 100), scope]);
-          return json(res, { id, secret: token.secret, davUrl: `${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
+          return json(res, { id, secret: token.secret, davUrl: scope.startsWith("pim:")?`${config.origin}/dav/`:`${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
         }
         const passwordRoute = /^\/api\/v1\/auth\/app-passwords\/([^/]+)$/.exec(url.pathname);
         if (passwordRoute && method === "DELETE") { await db.call("service_revoke_app_password", [authenticated.session.id, passwordRoute[1]]); return json(res, { ok: true }); }
@@ -226,7 +226,7 @@ export async function startServer(config: ServerConfig) {
       if (res.headersSent) { res.destroy(); return; }
       const failure = error instanceof AppError ? error : new AppError("internalError", 500, "The request could not be completed.");
       if (failure.status === 413) res.setHeader("connection", "close");
-      if (failure.status === 401 && req.url?.startsWith("/dav/")) res.setHeader("www-authenticate", 'Basic realm="Dar Files", charset="UTF-8"');
+      if (failure.status === 401 && req.url?.startsWith("/dav/")) res.setHeader("www-authenticate", 'Basic realm="Dar", charset="UTF-8"');
       json(res, { error: { code: failure.code, message: failure.message } }, failure.status);
     }
   };

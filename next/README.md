@@ -1,7 +1,7 @@
 # Dar on SpacetimeDB
 
-The new application runs independently here, preserving unrelated work in the
-previous checkout. SpacetimeDB owns accounts, authorization and file metadata;
+The current application runs from this directory. Legacy source was archived
+outside the checkout and removed from this branch. SpacetimeDB owns accounts, authorization and file metadata;
 a Node/Cordis runtime handles native login and immutable local file content.
 There is no SQLite or external identity provider. The React interface uses the
 selected shared Material 3 layout B, with centered persistent search, themed menus
@@ -14,7 +14,7 @@ See the [architecture and acceptance record](../docs/spacetimedb/architecture.md
 From the repository root:
 
 ```sh
-nix develop ./next
+nix develop
 npm ci --prefix next
 npm --prefix next run dev
 ```

@@ -12,7 +12,8 @@ body:has(.editing-pane) .workspace,body:has(.editing-pane) .pim-workspace{paddin
 body:has(.editing-pane) .details-panel,body:has(.editing-pane) .pim-details{display:none}
 body:has(.editing-pane) .pim-shell .pim-workspace{grid-template-columns:230px minmax(0,1fr)}
 .files-new-menu{display:block;margin:0 8px 24px}.files-new-menu>.ui-menu-trigger{display:flex;gap:10px;background:var(--tonal);color:var(--accent);border-radius:26px;padding:12px 22px;min-height:46px;font-weight:650}
-.files-new-menu>.ui-menu-panel{left:0;right:auto}
+.files-new-menu>.ui-menu-trigger{width:100%}.files-new-menu>.ui-menu-panel{left:0;right:auto;width:100%;min-width:0;max-width:100%}.files-new-menu .ui-menu-item{white-space:normal;padding:10px 8px}.files-new-menu>.ui-menu-trigger>.icon:last-child{margin-left:auto;transform:rotate(90deg);width:15px}
+:root[data-theme=mocha] .new-button.ui-new,:root[data-theme=mocha] .files-new-menu>.ui-menu-trigger{border:1px solid var(--accent);background:var(--tonal);color:var(--accent)}
 .file-text-editor{position:fixed;top:78px;bottom:0;left:230px;right:0;z-index:24;background:var(--panel);color:var(--text);display:flex;flex-direction:column;min-width:0}
 .text-editor-heading{display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--border);padding:12px 18px;flex-wrap:wrap}
 .text-editor-heading h1{font-size:18px;margin:0;flex:1;overflow-wrap:anywhere}.text-editor-heading [role=status]{font-size:12px;color:var(--muted)}

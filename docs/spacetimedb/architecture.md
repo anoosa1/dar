@@ -229,7 +229,7 @@ of scope; initial name search and structured filters are explicit and bounded.
 | UI | Desktop and phone, focus restoration, console, real server writes | Pass: Chromium at 1440×950 and 390×844, including pending-upload cancellation and reconnect during navigation |
 | Capacity/lifecycle | Indexed bounded windows, shutdown ownership, observed memory | Pass for 250-entry fixture; larger archive sizing remains unmeasured |
 
-Reproduce with `nix develop ./next`, `npm ci --prefix next`, then
+Reproduce with `nix develop`, `npm ci --prefix next`, then
 `npm --prefix next run verify`. The command runs both TypeScript checks, 18 Node
 tests against isolated state, the browser journey, and the forced restart journey.
 On November 6 the indexed fixture took 296 ms (creation plus query/collision work)

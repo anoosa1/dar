@@ -36,6 +36,7 @@ function log(ctx: Ctx, ownerId: string, resourceId: string, action: string) {
 /** Runs only behind the owner-credential boundary, for a freshly checked session. */
 export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Record<string, unknown>, protocolScope?: string, batch=false) {
   const at = Number(ctx.timestamp.toMillis());
+  const allowsKind = (kind: string) => !protocolScope || protocolScope.startsWith(`${kind}:`) || protocolScope.startsWith("pim:") && ["contacts", "calendar"].includes(kind);
   if (protocolScope && !["collections", "list", "read", "put", "delete"].includes(operation)) fail("forbidden");
   if (operation === "collections") {
     const rows = [...ctx.db.pimCollections.ownerId.filter(userId)].map(row => ({ ...row, role: "owner" }));
@@ -44,7 +45,7 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
       if (row) rows.push({ ...row, role: grant.role });
     }
     if (rows.length > 200) fail("operationTooLarge");
-    return protocolScope ? rows.filter(row => protocolScope.startsWith(`${row.kind}:`)) : rows;
+    return rows.filter(row => allowsKind(row.kind));
   }
   if (operation === "createCollection") {
     const kind = text(p.kind);
@@ -70,7 +71,7 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
     ctx.db.pimReminders.id.update({ ...reminder, acknowledged: true }); bump(ctx, userId); return { ok: true };
   }
   const c = collection(ctx, userId, p.collectionId, !["list", "read", "grants"].includes(operation));
-  if (protocolScope && !protocolScope.startsWith(`${c.kind}:`)) fail("forbidden");
+  if (!allowsKind(c.kind)) fail("forbidden");
   if (protocolScope?.endsWith(":read") && !["list", "read"].includes(operation)) fail("forbidden");
   if (operation === "list") {
     const rows = [];

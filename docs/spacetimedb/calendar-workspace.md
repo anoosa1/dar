@@ -32,7 +32,7 @@ action targets when another calendar is selected, settings ICS round trips,
 cancelled-event settings and regional timezone inheritance in new events.
 Pure navigation tests cover day/week periods, leap years and month/year clamps.
 
-Verification passed: `nix develop ./next -c npm --prefix next run verify` ran
+Verification passed: `nix develop -c npm --prefix next run verify` ran
 58 Node tests and five real Chromium journeys, independent vdirsyncer round
 trips, module/backup upgrades and forced process/database restart recovery.
 The Calendar journey exercised a multi-page list, desktop/tablet/phone viewport

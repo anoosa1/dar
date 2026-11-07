@@ -128,7 +128,7 @@ separate claims requiring their own evidence.
 
 ## Running and operational limits
 
-From the repository root, use `nix develop ./next`, `npm ci --prefix next`, and
+From the repository root, use `nix develop`, `npm ci --prefix next`, and
 `npm --prefix next run dev`. The Application selector opens Contacts and Calendar;
 no account or Files migration is required. Full verification is
 `npm --prefix next run verify`; it builds a real isolated module/database and

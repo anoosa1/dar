@@ -65,7 +65,7 @@ async function stop() {
 try {
   const database = start(cli, ["--root-dir", cliRoot, "start", "--data-dir", path.join(root, "database"), "--listen-addr", `127.0.0.1:${databasePort}`, "--non-interactive"], path.join(root, "database.log"));
   await waitFor(`${databaseUrl}/v1/ping`, database);
-  run(process.execPath, ["scripts/build-module.mjs"]);
+  if(process.env.DAR_PREBUILT!=="1")run(process.execPath, ["scripts/build-module.mjs"]);
   run(cli, ["--root-dir", cliRoot, "publish", environment.DAR_DATABASE_NAME, "--js-path", "module/dist/bundle.js", "--server", databaseUrl, "--yes", "--no-config"]);
   const config = await readFile(path.join(cliRoot, "config/cli.toml"), "utf8");
   const token = config.match(/spacetimedb_token\s*=\s*"([^"]+)"/)?.[1];
@@ -73,7 +73,7 @@ try {
   try { if ((await readFile(serviceFile, "utf8")) !== token) throw new Error("Stored database identity changed; refusing to overwrite it."); }
   catch (error) { if (error.code !== "ENOENT") throw error; await createDurableFile(serviceFile, token); }
   if (restorePath) await restore(await connectDatabase(databaseUrl, environment.DAR_DATABASE_NAME, serviceFile), path.resolve(restorePath), root);
-  run(process.execPath, ["scripts/build-client.mjs"]);
+  if(process.env.DAR_PREBUILT!=="1")run(process.execPath, ["scripts/build-client.mjs"]);
   const runtime = start(process.execPath, ["runtime/main.ts"]);
   await writeFile(path.join(root, "service-pids.json"), JSON.stringify({ database: database.pid, runtime: runtime.pid }), { mode: 0o600 });
   await waitFor(`${localOrigin}/api/v1/auth/status`, runtime);

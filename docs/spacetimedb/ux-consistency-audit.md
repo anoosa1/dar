@@ -210,7 +210,7 @@ experience and requested fixes, not complete Nextcloud feature parity.
 
 ## Verification
 
-`nix develop ./next -c npm --prefix next run verify` passed both TypeScript
+`nix develop -c npm --prefix next run verify` passed both TypeScript
 projects, 57 Node tests and five real Chromium journeys: identity, Notes/Tasks,
 shared UI, Files, and Contacts/Calendar. The shared journey covers all five app
 settings, persistent preferences, profile permissions, copy/cut/paste bytes,
@@ -257,3 +257,27 @@ stable Details/Versions/Sharing dimensions, removal of duplicate details actions
 Markdown file creation/save/reopen and exact bytes/version counts, stale-write
 conflict review without overwriting the other writer, interrupted-save recovery
 after reload, and explicit Latte/Mocha/System switching with OS-change handling.
+
+## Deployment follow-up
+
+Files New now uses the trigger's exact width and alignment, with Folder and File
+labels. Mocha creation buttons share an accent outline and tonal fill across all
+five apps. The shared browser journey checks menu geometry and computed borders.
+
+Combined Contacts/Calendar app passwords support a single DAVx⁵ account at /dav/.
+Discovery exposes both homes; collection and resource access retains user, grant,
+scope and revision checks. The new integration proof covers both home listings,
+ctag changes, conditional writes, read-only denial, Files isolation and revocation.
+See [DAV setup and limits](../davx5.md); Android-device testing remains separate.
+
+The root flake now builds an immutable package and exports a NixOS module. Legacy
+sources, tooling and old local artifacts were archived outside the checkout before
+removal. The active application and its migration fixtures remain in next/.
+Active user data was preserved. See [deployment](../deployment.md).
+
+Verification on x86_64 Linux: 59 Node tests, five browser journeys, independent
+vdirsyncer contacts/events/tasks synchronization, upgrade/backup and forced restart
+checks passed. The Nix package build and generated nginx configuration lint passed.
+The installed package also passed fresh-root startup, administrator setup/auth,
+combined DAV discovery/permissions and independent DAV round trips without builds
+or npm installation at startup. A full NixOS VM and ARM64 runtime were not tested.

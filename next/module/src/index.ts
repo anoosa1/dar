@@ -714,7 +714,7 @@ export const servicePimAuthenticate = db.procedure({ username: t.string(), diges
   const user = password && tx.db.accounts.id.find(password.userId);
   const session = password && tx.db.sessions.id.find(password.sessionId);
   if (!password || password.revoked || password.expiresAt <= now(tx) || !user?.enabled || user.username !== p.username.toLowerCase() || !session?.active) fail("unauthenticated");
-  if (!["contacts", "calendar"].includes(p.app) || ![p.app + ":read", p.app + ":write"].includes(password.scope) || p.write && password.scope !== p.app + ":write") fail("forbidden");
+  if (!["contacts", "calendar"].includes(p.app) || ![p.app + ":read", p.app + ":write", "pim:read", "pim:write"].includes(password.scope) || p.write && ![p.app + ":write", "pim:write"].includes(password.scope)) fail("forbidden");
   return JSON.stringify({ sessionId: session.id, username: user.username });
 }));
 export const serviceRevokeOwnedSession = db.reducer({ sessionId: t.string(), id: t.string() }, (ctx, p) => {
@@ -743,7 +743,7 @@ export const serviceConnectedApplications = db.procedure({sessionId:t.string(),r
 }));
 export const serviceCreateAppPassword = db.reducer({ sessionId: t.string(), id: t.string(), digest: t.string(), label: t.string(), scope: t.string() }, (ctx, p) => {
   service(ctx); const user = fromSession(ctx, p.sessionId);
-  if (!p.label.trim() || p.label.length > 100 || !["read", "write", "contacts:read", "contacts:write", "calendar:read", "calendar:write"].includes(p.scope) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("invalidInput");
+  if (!p.label.trim() || p.label.length > 100 || !["read", "write", "contacts:read", "contacts:write", "calendar:read", "calendar:write", "pim:read", "pim:write"].includes(p.scope) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("invalidInput");
   // The internal principal cannot be authenticated by a browser token. Only the
   // service-owned protocol adapter can invoke domain functions on its behalf.
   const protocolSession = unusedUuid(ctx);

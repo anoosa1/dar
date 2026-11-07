@@ -22,7 +22,7 @@ try {
   await page.screenshot({ path: "/tmp/dar-auth-desktop.png", fullPage: true });
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForFunction(() => !document.body.textContent.includes("Connecting…"));
-  await page.getByRole("button",{name:"New",exact:true}).click();await page.getByRole("menuitem",{name:"New folder",exact:true}).click();
+  await page.getByRole("button",{name:"New",exact:true}).click();await page.getByRole("menuitem",{name:"Folder",exact:true}).click();
   const folder = `Browser ${randomUUID().slice(0, 6)}`;
   await page.locator("dialog,[data-editor-pane]").getByLabel("Name", { exact: true }).fill(folder);
   await page.getByRole("button", { name: "Create folder", exact: true }).click();

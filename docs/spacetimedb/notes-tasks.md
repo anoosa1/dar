@@ -137,7 +137,7 @@ or claim those surfaces exist. Document that platform boundary explicitly.
 | Upgrade/restore | Existing database and v1/v2/v3 restore, new state/trash survives backup and restart | Pass: all three baseline upgrades, backup restore and forced restart |
 | Existing apps | Complete auth/Files/Contacts/Calendar/OIDC/SCIM acceptance suite remains green | Pass: complete acceptance command |
 
-Final verification: `nix develop ./next -c npm --prefix next run verify` passed
+Final verification: `nix develop -c npm --prefix next run verify` passed
 55 Node tests with no failures/skips, both TypeScript checks, four desktop/phone
 browser journeys, independent vdirsyncer contact/event/task synchronization and
 forced runtime/database restart. Isolated evidence is at

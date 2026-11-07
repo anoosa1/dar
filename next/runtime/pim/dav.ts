@@ -46,6 +46,7 @@ export async function handlePimDav(req: IncomingMessage, res: ServerResponse, db
   const method = req.method ?? "GET", url = new URL(req.url!, origin);
   if (req.headers.origin && req.headers.origin !== origin) throw new AppError("invalidOrigin", 403);
   res.setHeader("cache-control", "no-store");
+  res.setHeader("dav", "1, calendar-access, addressbook");
   res.setHeader("allow", "OPTIONS, PROPFIND, REPORT, GET, HEAD, PUT, DELETE");
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return; }
   const authorization = req.headers.authorization;

@@ -1,54 +1,75 @@
 # Dar
 
-Dar is a Linux-first, self-hosted personal cloud being rebuilt in
-ClojureScript on Node 24. One process hosts the Cordis service graph, the
-standards-first HTTP APIs, and a Reagent/re-frame SPA.
-Files is being migrated to TypeScript and React within that same process and
-SPA; the other apps remain ClojureScript. See the
-[Files migration record](docs/rewrite/files-typescript.md).
+A self-hosted personal cloud with Files, Contacts, Calendar, Notes, Tasks, native
+accounts and an OIDC/SCIM provider. Node 24 and Cordis host the application;
+SpacetimeDB owns structured data and immutable local blobs hold file content.
 
-The rewrite starts from fresh storage. The previous Go implementation is kept
-as the immutable Git tag `dar-go-baseline-2026-08-27`; it is not shipped or
-loaded by this branch.
+The UI uses Material 3 with Catppuccin Latte/Mocha. The current application lives
+in next/. Legacy application sources are removed from this branch; their Git
+history and the immutable baseline tag remain available.
 
-## Development
+## Run locally
 
-Enter the pinned Linux development environment and install the exact npm graph:
-
-```bash
+```sh
 nix develop
-npm ci
+npm ci --prefix next
+npm --prefix next run dev
 ```
 
-Build and test everything currently implemented:
+Open http://127.0.0.1:4311. The launcher prints the path to the private first-setup
+key. Default state is ~/.local/share/dar-spacetime (or XDG_DATA_HOME/dar-spacetime).
+Use an isolated DAR_ROOT when experimenting. Never initialize over other data.
 
-```bash
-./test/run.sh fast
+## Deploy on NixOS
+
+```nix
+{
+  inputs.dar.url = "github:YOUR-ACCOUNT/dar?ref=YOUR-DEPLOYMENT-REVISION";
+  outputs = { nixpkgs, dar, ... }: {
+    nixosConfigurations.cloud = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [ dar.nixosModules.default ({ ... }: {
+        services.dar = {
+          enable = true;
+          origin = "https://cloud.example.com";
+          configureNginx = true;
+        };
+        security.acme = {
+          acceptTerms = true;
+          defaults.email = "operator@example.com";
+        };
+        # Include your normal host/hardware configuration too.
+      }) ];
+    };
+  };
+}
 ```
 
-Run an isolated local instance:
+The service stores private state under /var/lib/dar. Only nginx ports 80/443 are
+opened; HTTP and database listeners stay on loopback. Configure DNS before ACME.
+Read [deployment, setup, upgrades and backups](docs/deployment.md).
 
-```bash
-DAR_DATA_ROOT="$(mktemp -d)" ./launch.sh
+Build the precompiled package with `nix build .#dar`. It performs no npm install or
+application build at service startup. ARM64 is declared; see the deployment record
+for which platform was actually built and exercised.
+
+## DAVx⁵
+
+Create an app password under **Settings → Personal → Security** and select
+**DAVx⁵ · Contacts and Calendar**. Add an account by URL in DAVx⁵ using
+`https://cloud.example.com/dav/`, your Dar username and that app password.
+Create address books/calendars in Dar first, then select them in DAVx⁵.
+See [DAV setup and protocol limits](docs/davx5.md).
+
+## Verify and reference
+
+```sh
+nix develop --command npm --prefix next run verify
+nix build .#dar .#checks.x86_64-linux.module-evaluation --no-link
 ```
 
-The server listens on `http://127.0.0.1:8080` by default. Production builds use
-Node only; Java and Clojure are build-time tools for `shadow-cljs`.
-
-## Repository map
-
-- `src/main/dar/server` — process composition and HTTP delivery.
-- `src/main/dar/platform` — data-root, SQLite, security, and shared services.
-- `src/main/dar/client` — Reagent/re-frame SPA and Sanctuary design system.
-- `src/main/dar/shared` — shared schemas and wire contracts.
-- `src/typescript/files` — TypeScript Files backend and browser workspace.
-- `src/test` — ClojureScript unit and service tests.
-- `test` — process, browser, protocol, and release verification.
-- `docs/rewrite` — binding parity ledger and rewrite contracts.
-
-See [the parity ledger](docs/rewrite/parity-ledger.md) for the complete target
-and [the selected design](docs/rewrite/design.md) for the SPA direction.
-For deployment configuration and stopped-root backup/restore, see the
-[operator guide](docs/rewrite/operator-guide.md). The
-[v1 readiness record](docs/rewrite/v1-readiness.md) tracks verification and
-remaining release gates.
+The acceptance suite uses real isolated database/blob roots, Chromium, an
+independent DAV client and forced restart/restore checks. No live data is used.
+[Application contracts and limits](next/README.md) ·
+[Architecture](docs/spacetimedb/architecture.md) ·
+[UX delivery record](docs/spacetimedb/ux-consistency-audit.md)
