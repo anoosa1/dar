@@ -10,6 +10,7 @@
     in {
       packages = eachSystem (system: let pkgs = pkgsFor system; in {
         dar = pkgs.callPackage ./nix/package.nix { runtime = runtimeFor system; };
+        prayer-times = pkgs.callPackage ./nix/prayer-times.nix { runtime = runtimeFor system; };
         default = self.packages.${system}.dar;
       });
       apps = eachSystem (system: { default = { type = "app"; program = "${self.packages.${system}.dar}/bin/dar"; }; });

@@ -118,6 +118,12 @@ update this guide when a design decision changes.
   Reopen command. Contact email, phone and supported website values are links.
 - Tasks: preserve the shared list/details pattern, hierarchy, completion,
   recurrence-slot editing and date/timezone behavior.
+- Prayer Times: layout B was selected November 8. Use a week list and
+  focused right daily timetable; settings editing replaces that pane. Phones open
+  a full-width day with an explicit return to the week and restored row focus.
+  See [the app platform](spacetimedb/app-platform.md). Calculations use Dar's own
+  dependency-free library with explicit method/high-latitude settings and labelled
+  unavailable solar events. It ships as a separate trusted app package.
 - Scheduling forms offer common repetition, priority and reminder choices.
   Exact imported values and custom rules remain available in advanced controls;
   summaries must not simplify schedules they do not understand.

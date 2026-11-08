@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import {test} from "node:test";
+import {randomUUID} from "node:crypto";
+import {spawnSync} from "node:child_process";
+import path from "node:path";
+import {login} from "./integration-helpers.ts";
+import {database} from "../runtime/database.ts";
+test("installed apps isolate users/apps, require revisions, enforce quotas and restore private data",{skip:!process.env.DAR_INTEGRATION_ORIGIN,timeout:60000},async()=>{
+  const base=process.env.DAR_INTEGRATION_ORIGIN!,admin=await login(base),db=await database(process.env.DAR_DATABASE_URL!,process.env.DAR_DATABASE_NAME!,process.env.DAR_DATABASE_TOKEN_FILE!);
+  const installed=await(await fetch(base+"/api/v1/apps",{headers:admin.headers})).json() as {items:{id:string;permissions:string[]}[]};assert.ok(installed.items.length);
+  const app=installed.items[0].id,endpoint=base+`/api/v1/apps/${app}/userData/`,key="test-"+randomUUID();
+  const user="app-user-"+randomUUID().slice(0,6);assert.equal((await fetch(base+"/api/v1/auth/users",{method:"POST",headers:{...admin.headers,"content-type":"application/json"},body:JSON.stringify({username:user,displayName:"App isolation",password:"a long isolated test password"})})).status,201);const other=await login(base,user);
+  const put=(session:typeof admin,k:string,revision:number,value:unknown)=>fetch(endpoint+k,{method:"PUT",headers:{...session.headers,"content-type":"application/json","if-match":`"${revision}"`},body:JSON.stringify({schemaVersion:1,value})});
+  assert.equal((await fetch(endpoint+key)).status,401);assert.equal((await put(admin,key,0,{secret:"private"})).status,200);assert.equal((await put(admin,key,0,{})).status,409);
+  assert.equal((await fetch(endpoint+key,{headers:admin.headers})).headers.get("etag"),'"1"');assert.equal(await(await fetch(endpoint+key,{headers:other.headers})).json(),null);
+  assert.equal((await fetch(endpoint+key,{method:"PUT",headers:{...admin.headers,"content-type":"application/json"},body:JSON.stringify({value:{},schemaVersion:1})})).status,428);
+  assert.equal((await fetch(endpoint+key,{method:"PUT",headers:{cookie:admin.headers.cookie,origin:base,"content-type":"application/json","if-match":'"1"'},body:'{"schemaVersion":1,"value":{}}'})).status,403);
+  assert.equal((await fetch(base+"/api/v1/admin/installedApps",{headers:other.headers})).status,403);
+  assert.equal((await put(admin,"large",0,"x".repeat(65536))).status,413);
+  for(let i=0;i<17;i++)assert.equal((await put(admin,`quota${i}`,0,"x".repeat(60000))).status,200);
+  assert.equal((await put(admin,"quota-overflow",0,"x".repeat(60000))).status,507);
+  for(let i=0;i<17;i++)assert.equal((await fetch(endpoint+`quota${i}`,{method:"DELETE",headers:{...admin.headers,"if-match":'"1"'}})).status,200);
+  assert.equal((await fetch(base+"/api/v1/auth/logout",{method:"POST",headers:other.headers})).status,200);assert.equal((await fetch(endpoint+key,{headers:other.headers})).status,401);
+  const session=(await db.call<{accounts:{id:string;username:string}[]}>("service_backup",[randomUUID()])).accounts.find(u=>u.username==="admin")!;
+  const loggedIn=await(await fetch(base+"/api/v1/auth/session",{headers:admin.headers})).json();assert.equal(loggedIn.user.id,session.id);
+  const sessions=await db.call<{id:string;current:boolean}[]>("service_sessions",[(await db.call<{session:{id:string}}>("service_session",[(await import("../runtime/auth/session.ts")).digestToken(admin.headers.cookie.split("=")[1])])).session.id]);
+  const sid=sessions.find(s=>s.current)!.id,second={id:"org.example.other",permissions:["ownUserData:read","ownUserData:write"]};
+  await db.call("service_installed_apps",[JSON.stringify([...installed.items,second])]);
+  try{
+    assert.equal(await db.call("service_app_data",[sid,second.id,"get",key,0,1,""]),null);
+    await db.call("service_installed_apps",[JSON.stringify([...installed.items,{...second,permissions:["ownUserData:read"]}])]);
+    await assert.rejects(db.call("service_app_data",[sid,second.id,"put",key,0,1,"{}"]),/forbidden/);
+    await db.call("service_installed_apps",["[]"]);assert.equal((await fetch(endpoint+key,{headers:admin.headers})).status,404);
+  }finally{await db.call("service_installed_apps",[JSON.stringify(installed.items)]);}
+  const pin=randomUUID(),snapshot=await db.call<any>("service_backup",[pin]);await db.call("service_release_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v5");assert.ok(snapshot.apps.data.some((r:{key:string})=>r.key===key));
+  const name=`dar-app-restore-${randomUUID().slice(0,8)}`,project=path.resolve(import.meta.dirname,".."),result=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(result.status,0,result.stderr);
+  const restored=await database(process.env.DAR_DATABASE_URL!,name,process.env.DAR_DATABASE_TOKEN_FILE!);await restored.call("service_restore",[JSON.stringify(snapshot)]);
+  const recovered=await restored.call<any>("service_backup",[randomUUID()]);assert.deepEqual(recovered.apps.data,snapshot.apps.data);assert.deepEqual(recovered.apps.inventory,[]);
+  assert.equal((await fetch(endpoint+key,{method:"DELETE",headers:{...admin.headers,"if-match":'"1"'}})).status,200);
+});

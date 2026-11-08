@@ -1,0 +1,8 @@
+.extension-shell{height:100dvh;min-height:0;overflow:hidden}.extension-shell>.topbar{flex:none}
+.extension-workspace{display:grid;grid-template-columns:230px minmax(0,1fr);flex:1;min-height:0;overflow:hidden}
+.has-extension-details .extension-workspace{grid-template-columns:230px minmax(220px,1fr) minmax(300px,420px)}
+.extension-workspace>.sidebar{position:relative;top:auto;min-height:0;height:100%;width:auto}
+.extension-workspace>main,.extension-details{min-height:0;min-width:0;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;background:var(--panel);padding:28px 24px}
+.extension-details{border-left:1px solid var(--border)}
+@media(max-width:1000px) and (min-width:801px){.has-extension-details .extension-workspace{grid-template-columns:200px minmax(180px,1fr) minmax(280px,1fr)}}
+@media(max-width:800px){.extension-workspace,.has-extension-details .extension-workspace{display:block}.extension-workspace>main,.extension-details{height:100%;padding:24px 18px}.has-extension-details .extension-workspace>main{display:none}.extension-details{border:0}.extension-workspace>.sidebar.is-open{position:fixed;top:116px;width:250px;height:calc(100dvh - 116px)}}

@@ -9,6 +9,10 @@ or builds application code on the server.
 
 ## NixOS service
 
+Optional trusted apps are configured with `services.dar.apps`; see the
+[installation and author guide](apps.md). The flake provides a separate
+`prayer-times` package. No third-party app is installed by default.
+
 Add this repository as a flake input and import `dar.nixosModules.default`:
 
 ```nix

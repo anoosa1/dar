@@ -24,12 +24,16 @@ import { handleIdentityHttp } from "./identity/http.ts";
 import { handleScim } from "./identity/scim.ts";
 import {handleWorkspaceHttp} from "./pim/workspace-http.ts";
 import {passwordApps,passwordGrants} from "../shared/app-scopes.ts";
+import {loadApps} from "./apps/registry.ts";
+import {handleAppHttp} from "./apps/http.ts";
+import {activateApps} from "./apps/server.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
   databaseUrl: string; databaseName: string; serviceTokenFile: string; bootstrapTokenFile: string;
   databasePublicUrl?: string;
   development?: boolean;
+  appsFile?:string;
 }
 function json(res: ServerResponse, value: unknown, status = 200) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
@@ -69,9 +73,17 @@ export async function startServer(config: ServerConfig) {
   const root = await openRoot(config.root);
   const releaseRoot = await lockRoot(root);
   let ownedContext: Context | undefined;
+  let appRuntime:Awaited<ReturnType<typeof activateApps>>|undefined;
   try {
   const db = await database(config.databaseUrl, config.databaseName, config.serviceTokenFile);
   await db.call("service_startup", [`${config.origin}/auth/issuer`]);
+  const appRegistry=await loadApps(config.appsFile??path.join(root,"apps.json")).catch(error=>{
+    if(error.code==="ENOENT")return {apps:new Map(),inventory:[]};
+    console.warn("Installed app registry is unavailable; starting without external apps.");
+    return {apps:new Map(),inventory:[{id:"registry",name:"App registry",version:"",status:"Invalid registry. Check host configuration.",permissions:[]}]};
+  });
+  appRuntime=await activateApps(appRegistry);
+  await db.call("service_installed_apps",[JSON.stringify([...appRegistry.apps.values()].map(a=>a.descriptor))]);
   const databasePublicUrl = `${(config.databasePublicUrl ?? (config.development ? config.databaseUrl : `${config.origin}/spacetime`)).replace(/\/$/, "")}/`;
   const issuer = await createIssuer(path.join(root, "secrets"), `${config.origin}/auth/issuer`);
   const auth = await authService(db, issuer);
@@ -107,6 +119,13 @@ export async function startServer(config: ServerConfig) {
     try {
       const url = new URL(req.url ?? "/", config.origin);
       const method = req.method ?? "GET";
+      if(url.pathname.startsWith("/appAssets/")){
+        const parts=url.pathname.split("/"),app=appRegistry.apps.get(parts[2]);
+        const name=parts.slice(4).join("/"),bytes=app?.descriptor.digest===parts[3]?app.assets.get(name):undefined;
+        if(!bytes||!app||name===app.manifest.server||!["GET","HEAD"].includes(method))throw new AppError("notFound",404);
+        const contentType=name.endsWith(".js")?"text/javascript":name.endsWith(".css")?"text/css":name.endsWith(".png")?"image/png":name.endsWith(".webp")?"image/webp":name.endsWith(".svg")?"image/svg+xml":"application/json";
+        res.writeHead(200,{"content-type":contentType,"cache-control":"public, max-age=31536000, immutable"});res.end(method==="HEAD"?undefined:bytes);return;
+      }
       if(url.pathname==="/oidc-form.js"&&method==="GET"){res.writeHead(200,{"content-type":"text/javascript","cache-control":"public, max-age=3600"});res.end('document.getElementById("oidc-response")?.requestSubmit();');return;}
       if(url.pathname==="/oidc"||url.pathname.startsWith("/oidc/")){
         const key=`oidc:${peer(req)}`,previous=attempts.get(key),attempt=previous&&previous.until>Date.now()?previous:{count:0,until:Date.now()+60000};
@@ -161,6 +180,7 @@ export async function startServer(config: ServerConfig) {
         const authenticated = await auth.authenticate(secret);
         if (!authenticated) throw new AppError("unauthenticated", 401);
         if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !authorizeCookieWrite(config.origin, origin, typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : undefined, authenticated.session.csrfDigest)) throw new AppError("csrfRejected", 403);
+        if(url.pathname==="/api/v1/apps"||url.pathname.startsWith("/api/v1/apps/")||url.pathname==="/api/v1/admin/installedApps")return await handleAppHttp(req,res,url,appRegistry,db,authenticated.session.id,authenticated.user,appRuntime!.handlers,()=>body(req,80*1024));
         if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
         if(url.pathname==="/api/v1/account/profile"){
           const profile=await db.call<{id:string;revision:number}>("service_profile",[authenticated.session.id,"read","{}"]),etag=`"${profile.id}:${profile.revision}"`;
@@ -248,7 +268,7 @@ export async function startServer(config: ServerConfig) {
       if (method !== "GET" && method !== "HEAD") throw new AppError("notFound", 404);
       const interactionPage=/^\/identity\/interaction\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
       if(interactionPage&&method==="GET")await identity.prepareInteraction(req,res,interactionPage[1]);
-      const asset = url.pathname === "/app.js" ? "app.js" : url.pathname === "/app.css" ? "app.css" : "index.html";
+      const asset = /^\/(?:app|sdk)\.(?:js|css)$/.test(url.pathname)||/^\/chunks\/[a-zA-Z0-9_-]+\.js$/.test(url.pathname)?url.pathname.slice(1):"index.html";
       const content = await readFile(new URL(`../dist/${asset}`, import.meta.url));
       res.writeHead(200, { "content-type": asset.endsWith(".js") ? "text/javascript" : asset.endsWith(".css") ? "text/css" : "text/html", "cache-control": "no-cache" });
       res.end(method === "HEAD" ? undefined : content);
@@ -286,9 +306,9 @@ export async function startServer(config: ServerConfig) {
       await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
       await Promise.allSettled([...inflight]);
       await maintenance;
-    } finally { attempts.clear(); await releaseRoot(); }
+    } finally { attempts.clear();await appRuntime?.close(); await releaseRoot(); }
   };
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(config.port, config.host, resolve); });
   return { server, ctx, close: () => ctx.fiber.dispose() };
-  } catch (error) { if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
+  } catch (error) {await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
 }

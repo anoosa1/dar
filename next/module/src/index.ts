@@ -1,4 +1,7 @@
 import { Identity, ScheduleAt } from "spacetimedb";
+import {appTables} from "./app-tables.ts";
+import {appOperation,appSnapshot,restoreApps} from "./apps.ts";
+import {validAppId} from "../../shared/installed-apps.ts";
 import {passwordAllows, validPasswordScope} from "../../shared/app-scopes.ts";
 import { schema, table, t, Range, SenderError, type InferSchema, type ReducerCtx, type ViewCtx } from "spacetimedb/server";
 import { pimTables, pimChanges } from "./pim-tables.ts";
@@ -37,7 +40,7 @@ const backupPins = table({}, { id: t.string().primaryKey(), backupId: t.string()
 const appPasswords = table({}, { id: t.string().primaryKey(), userId: t.string().index("btree"), digest: t.string().unique(), label: t.string(), scope: t.string(), sessionId: t.string().unique(), principal: t.identity(), expiresAt: t.f64(), revoked: t.bool() });
 const rootRevisions = table({}, { userId: t.string().primaryKey(), revision: t.u32(), modifiedAt: t.f64() });
 const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().index("btree"), fileId: t.string(), action: t.string(), at: t.f64() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, ...pimTables, ...identityTables, ...workspaceTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, ...pimTables, ...identityTables, ...workspaceTables,...appTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -624,7 +627,7 @@ export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, 
     tx.db.backupPins.insert({ id: `${id}/${blobId}`, backupId: id, blobId });
     return { id: blobId, size: upload.size, digest: upload.digest };
   });
-  return JSON.stringify({ format: "dar-backup-v4", workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
+  return JSON.stringify({ format: "dar-backup-v5", apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
     accounts: [...tx.db.accounts.iter()], files: [...tx.db.fileEntries.iter()], versions: history,
     grants: [...tx.db.grants.iter()], publicShares: [...tx.db.publicShares.iter()], favorites: [...tx.db.favorites.iter()],
     uploads: blobIds.map(blobId => tx.db.uploads.id.find(blobId)),
@@ -652,9 +655,9 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
   const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; files: FileEntry[]; versions: Row<"versions">[];
     grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads: Row<"uploads">[];
-    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot> };
-  if (!["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4"].includes(value.format)) fail("invalidInput");
-  if (value.format !== "dar-backup-v1" && !value.pim || ["dar-backup-v3","dar-backup-v4"].includes(value.format) && !value.identity||value.format==="dar-backup-v4"&&!value.workspace) fail("invalidInput");
+    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot> };
+  if (!["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5"].includes(value.format)) fail("invalidInput");
+  if (value.format !== "dar-backup-v1" && !value.pim || ["dar-backup-v3","dar-backup-v4","dar-backup-v5"].includes(value.format) && !value.identity||["dar-backup-v4","dar-backup-v5"].includes(value.format)&&!value.workspace||value.format==="dar-backup-v5"&&!value.apps) fail("invalidInput");
   for (const row of value.accounts) {
     ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0 });
   }
@@ -688,7 +691,19 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   restorePim(ctx, value.pim);
   restoreIdentity(ctx,value.identity);
   restoreWorkspace(ctx,value.workspace);
+  restoreApps(ctx,value.apps);
 });
+
+export const serviceInstalledApps=db.reducer({document:t.string()},(ctx,p)=>{
+  service(ctx);const apps=JSON.parse(p.document) as {id:string}[];
+  if(!Array.isArray(apps)||apps.length>100||apps.some(a=>!validAppId(a.id)))fail("invalidInput");
+  for(const old of ctx.db.installedApps.iter())ctx.db.installedApps.id.delete(old.id);
+  for(const app of apps)ctx.db.installedApps.insert({id:app.id,document:JSON.stringify(app)});
+});
+export const serviceAppData=db.procedure({sessionId:t.string(),appId:t.string(),operation:t.string(),key:t.string(),revision:t.u32(),schemaVersion:t.u32(),value:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+  return JSON.stringify(appOperation(tx,user.id,p.appId,p.operation,p.key,p.revision,p.schemaVersion,p.value));
+}));
 
 export const serviceSessions = db.procedure({ sessionId: t.string() }, t.string(), (ctx, { sessionId }) => ctx.withTx(tx => {
   service(tx); const user = fromSession(tx, sessionId);

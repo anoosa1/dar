@@ -10,6 +10,7 @@ import { database } from "../runtime/database.ts";
 import { deliverReminders } from "../runtime/pim/reminders.ts";
 import {identityAdmin,authorize,exchange} from "./identity-helpers.ts";
 import * as oidc from "openid-client";
+import {manageApps} from "../runtime/apps/install.ts";
 
 if (!process.env.DAR_SPACETIME_BIN) throw new Error("DAR_SPACETIME_BIN is required.");
 async function freePort() {
@@ -18,6 +19,7 @@ async function freePort() {
 }
 const root = await mkdtemp(path.join(tmpdir(), "dar-restart-proof-")), port = await freePort(), databasePort = await freePort();
 const origin = `http://127.0.0.1:${port}`, project = path.resolve(import.meta.dirname, "..");
+await manageApps(root,"apps-install",path.resolve(project,"../apps/prayer-times/dist"));
 const environment = { ...process.env, DAR_ROOT: root, DAR_PORT: String(port), DAR_DATABASE_PORT: String(databasePort), DAR_DATABASE_NAME: "dar-restart" };
 let child;
 async function until(probe) {
@@ -47,6 +49,8 @@ try {
   const setup = await fetch(`${origin}/api/v1/auth/setup`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ username: "admin", displayName: "Restart proof", password: "a long isolated test password", bootstrapToken: await readFile(path.join(root, "secrets/bootstrap-token"), "utf8") }) });
   assert.equal(setup.status, 200);
   const session = await login(origin);
+  const appEndpoint=origin+"/api/v1/apps/org.dar.prayer-times/userData/restartProof";
+  assert.equal((await fetch(appEndpoint,{method:"PUT",headers:{...session.headers,"content-type":"application/json","if-match":'"0"'},body:JSON.stringify({schemaVersion:1,value:{location:"private restart proof"}})})).status,200);
   const identity=await identityAdmin(origin),client=await identity.client(),credential=await identity.credential();
   const activeTokens=await exchange(client,await authorize(origin,identity.session,client)),pendingCode=await authorize(origin,identity.session,client);
   const providerKeys=await (await fetch(`${origin}/oidc/jwks`)).json();
@@ -99,6 +103,10 @@ try {
   const recoveredTrash=await (await fetch(`${origin}/api/v1/notes/trash`,{headers:session.headers})).json();assert.ok(recoveredTrash.items.some(row=>row.id===trashed.row.id));
   const recoveredTask=await (await fetch(`${origin}/api/v1/tasks/items/${task.id}`,{headers:session.headers})).json();assert.equal(recoveredTask.content,task.content);assert.equal(recoveredTask.uid,task.uid);
   console.info("PASS forced runtime failure during upload, full process/database restart, stale-lock/temp reconciliation, durable bytes, persisted login, reconnection and idempotent upload completion.");
+  assert.equal((await(await fetch(appEndpoint,{headers:session.headers})).json()).value.location,"private restart proof");
+  await stop();await manageApps(root,"apps-disable","org.dar.prayer-times");await start();assert.equal((await fetch(appEndpoint,{headers:session.headers})).status,404);
+  await stop();await manageApps(root,"apps-uninstall","org.dar.prayer-times");await manageApps(root,"apps-install",path.resolve(project,"../apps/prayer-times/dist"));await start();assert.equal((await(await fetch(appEndpoint,{headers:session.headers})).json()).value.location,"private restart proof");
+  console.info("PASS external app data survives crash/restart and explicit disable/uninstall/reinstall without a core rebuild.");
   console.info("PASS Calendar resource and reminder watermark survive the same crash/restart; due delivery resumes without duplication.");
   console.info("PASS exact Notes source/metadata/private trash and recurring VTODO survive the same crash; task reminders catch up exactly once.");
   console.info("PASS unredeemed OIDC code, active refresh token, client registration, signing keys, native binding and SCIM directory/credential survive the same forced process/database restart.");

@@ -4,12 +4,16 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import net from "node:net";
 import path from "node:path";
+import {manageApps} from "../runtime/apps/install.ts";
 
 const project = path.resolve(import.meta.dirname, "..");
 const identityOnly=process.argv.includes("--identity");
 const workspaceOnly=process.argv.includes("--workspace");
 const pimOnly=process.argv.includes("--pim");
 const root = await mkdtemp(path.join(tmpdir(), "dar-acceptance-"));
+const appBuild=spawnSync(process.execPath,["sdk/build.mjs","../apps/prayer-times"],{cwd:project,stdio:"inherit"});
+if(appBuild.status!==0)throw new Error("Example app build failed.");
+await manageApps(root,"apps-install",path.resolve(project,"../apps/prayer-times/dist"));
 async function freePort() {
   const server = net.createServer(); await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address(); await new Promise(resolve => server.close(resolve)); return port;
@@ -43,6 +47,8 @@ try {
   run(["node_modules/typescript/bin/tsc", "-p", "module/tsconfig.json"]);
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
+  run(["--test","../apps/prayer-times/test/calculations.test.ts","test/app-packages.test.ts","test/apps.integration.test.ts"]);
+  run(["test/prayer-times-browser.mjs"]);
   if(!identityOnly&&!workspaceOnly&&!pimOnly){
     run(["--test","test/appearance-scopes.integration.test.ts"]);
     run(["test/appearance-scopes-browser.mjs"]);

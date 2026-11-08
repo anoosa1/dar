@@ -23,7 +23,7 @@ buildNpmPackage {
   installPhase = ''
     runHook preInstall
     mkdir -p $out/lib/dar $out/bin
-    cp -r runtime shared dist module package.json package-lock.json node_modules $out/lib/dar/
+    cp -r runtime shared sdk dist module package.json package-lock.json node_modules $out/lib/dar/
     mkdir -p $out/lib/dar/scripts
     cp scripts/dev.mjs scripts/serve.mjs scripts/operator.ts $out/lib/dar/scripts/
     rm -rf $out/lib/dar/module/src

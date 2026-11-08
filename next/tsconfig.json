@@ -9,8 +9,9 @@
     "erasableSyntaxOnly": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "paths":{"@dar/app-sdk":["./sdk/client.tsx"],"@dar/app-sdk/jsx-runtime":["./sdk/client.tsx"],"@dar/app-sdk/server":["./sdk/server.ts"]}
   },
-  "include": ["runtime/**/*.ts", "test/**/*.ts", "client/**/*.tsx", "client/**/*.ts"],
+  "include": ["runtime/**/*.ts", "test/**/*.ts", "client/**/*.tsx", "client/**/*.ts","sdk/**/*.tsx","../apps/prayer-times/**/*.ts","../apps/prayer-times/**/*.tsx"],
   "exclude": ["node_modules", "module"]
 }

@@ -2,6 +2,7 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.dar;
+  appsFile = pkgs.writeText "dar-apps.json" (builtins.toJSON (map (package: { path = toString package; }) cfg.apps));
   hostMatch = builtins.match "https://([A-Za-z0-9][A-Za-z0-9.-]*)(:[0-9]+)?" cfg.origin;
   host = if hostMatch == null then "invalid" else builtins.head hostMatch;
   proxyHeaders = ''
@@ -12,6 +13,7 @@ let
 in {
   options.services.dar = {
     enable = lib.mkEnableOption "Dar personal cloud";
+    apps = lib.mkOption { type = lib.types.listOf lib.types.package; default = []; description = "Trusted prebuilt Dar app packages. Changes activate on service restart."; };
     package = lib.mkOption { type = lib.types.package; default = self.packages.${pkgs.stdenv.hostPlatform.system}.dar; description = "Dar package to run."; };
     origin = lib.mkOption { type = lib.types.str; default = ""; example = "https://cloud.example.com"; description = "Canonical public HTTPS origin without a trailing slash."; };
     port = lib.mkOption { type = lib.types.port; default = 4311; description = "Loopback HTTP port."; };
@@ -37,6 +39,7 @@ in {
         DAR_ROOT = "/var/lib/${cfg.stateDirectory}"; DAR_ORIGIN = cfg.origin;
         DAR_PORT = toString cfg.port; DAR_DATABASE_PORT = toString cfg.databasePort;
         DAR_DATABASE_NAME = cfg.databaseName;
+        DAR_APPS_FILE = toString appsFile;
       };
       serviceConfig = {
         Type = "simple"; ExecStart = "${cfg.package}/bin/dar";

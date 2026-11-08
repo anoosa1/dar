@@ -9,6 +9,7 @@ const runtime = await startServer({
   origin: required("DAR_ORIGIN"), root: required("DAR_ROOT"), databaseUrl: required("DAR_DATABASE_URL"),
   databaseName: required("DAR_DATABASE_NAME"), serviceTokenFile: required("DAR_DATABASE_TOKEN_FILE"),
   databasePublicUrl: process.env.DAR_DATABASE_PUBLIC_URL,
+  appsFile:process.env.DAR_APPS_FILE,
   bootstrapTokenFile: required("DAR_BOOTSTRAP_TOKEN_FILE"), development: process.env.DAR_DEVELOPMENT === "1",
 });
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { void runtime.close(); });

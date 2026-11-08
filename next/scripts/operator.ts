@@ -2,9 +2,11 @@ import { readFile } from "node:fs/promises";
 import { database } from "../runtime/database.ts";
 import { backup, restore, exportFiles } from "../runtime/backup.ts";
 import { hashPassword } from "../runtime/auth/password.ts";
+import {manageApps} from "../runtime/apps/install.ts";
 function required(name: string) { const value = process.env[name]; if (!value) throw new Error(`${name} is required.`); return value; }
-const db = await database(required("DAR_DATABASE_URL"), required("DAR_DATABASE_NAME"), required("DAR_DATABASE_TOKEN_FILE"));
 const [command, argument, filename] = process.argv.slice(2);
+if(command?.startsWith("apps-")){console.info(await manageApps(required("DAR_ROOT"),command,argument));process.exit(0);}
+const db = await database(required("DAR_DATABASE_URL"), required("DAR_DATABASE_NAME"), required("DAR_DATABASE_TOKEN_FILE"));
 if (command === "backup" && argument) console.info(await backup(db, required("DAR_ROOT"), argument));
 else if (command === "restore" && argument) console.info(await restore(db, argument, required("DAR_ROOT")));
 else if (command === "export-files" && argument && filename) console.info(await exportFiles(db, required("DAR_ROOT"), argument, filename));
