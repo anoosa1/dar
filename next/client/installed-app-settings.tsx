@@ -3,7 +3,7 @@ import {request,type BrowserSession} from "./api.ts";
 import type {AppSettings,ManagedApp} from "../shared/app-settings.ts";
 import {Icon,type IconName} from "./icons.tsx";
 type Inventory=AppSettings&{items:ManagedApp[]};
-const icons:Record<string,IconName>={files:"folder",contacts:"share",calendar:"clock",notes:"file",tasks:"check"};
+const icons:Record<string,IconName>={files:"folder",contacts:"contacts",calendar:"calendar",notes:"file",tasks:"check"};
 export function InstalledAppsSettings({session}:{session:BrowserSession}){
   const [inventory,setInventory]=useState<Inventory>(),[error,setError]=useState(""),[busy,setBusy]=useState(false),[notice,setNotice]=useState("");
   async function refresh(signal?:AbortSignal){setInventory(await request<Inventory>("/api/v1/admin/installedApps",{signal}));}

@@ -1,8 +1,14 @@
-.ui-app-launcher .ui-menu-panel{display:block;min-width:245px;width:270px;padding:8px;border-radius:16px}
-.ui-app-launcher .ui-menu-item{flex-direction:row;gap:14px;min-height:48px;padding:10px 12px;border-radius:10px;font-size:14px}
-.ui-app-launcher .ui-menu-item .icon{width:24px;height:24px;flex:none}
+.ui-app-launcher>.ui-menu-trigger{min-height:40px;padding:8px 10px;border:1px solid var(--surface-soft);border-radius:10px;background:var(--surface-soft);gap:8px;font-size:13px}
+.ui-app-launcher>.ui-menu-trigger:hover,.ui-app-launcher>.ui-menu-trigger[aria-expanded=true]{background:var(--tonal)}
+.ui-app-launcher .ui-menu-panel{display:block;min-width:240px;width:256px;padding:6px;border-radius:14px}
+.ui-app-launcher .ui-account-heading{margin:0 4px 4px;padding:8px 6px 10px;font-size:11px;color:var(--muted)}
+.ui-app-launcher .ui-menu-panel hr{margin:6px 4px}
+.ui-app-launcher .ui-menu-panel>div:last-child:has(hr) .ui-menu-item{font-size:12px}
+.ui-app-launcher .ui-menu-panel>div:last-child:has(hr) .ui-menu-item>.icon{width:20px;height:20px;padding:0;background:transparent}
+.ui-app-launcher .ui-menu-item{flex-direction:row;gap:12px;min-height:44px;padding:6px 10px;border-radius:8px;font-size:13px}
+.ui-app-launcher .ui-menu-item>.icon{width:30px;height:30px;padding:5px;border-radius:8px;background:var(--surface-soft);color:var(--text);flex:none}
 .ui-app-launcher .ui-menu-item[aria-current=page]{background:var(--tonal);color:var(--on-tonal);font-weight:650}
-.ui-app-launcher .ui-menu-item .ui-menu-current{margin-left:auto;width:18px;height:18px;color:var(--ui-color)}
+.ui-app-launcher .ui-menu-item .ui-menu-current{margin-left:auto;width:18px;height:18px;padding:0;background:transparent;color:var(--on-tonal)}
 .managed-apps{border:1px solid var(--ui-border);border-radius:18px;padding:0 18px;margin-top:24px}
 .managed-app{display:flex;align-items:center;gap:16px;min-height:82px;padding:16px 0}
 .managed-app+.managed-app{border-top:1px solid var(--ui-border)}

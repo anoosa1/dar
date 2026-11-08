@@ -43,6 +43,13 @@ update this guide when a design decision changes.
   at 24px desktop / 22px phone and align tools with their pane's content inset.
   Preserve the existing header heights and independently scrolling panes. The
   maintainer explicitly requested direct implementation without further mocks.
+- The follow-up navigation/settings refinement uses compact rounded navigation
+  rows, consistent collection headings and restrained app-launcher icon tiles.
+  Personal and Administration settings share a bounded content panel on the
+  workspace background, icon-labelled navigation and clearly separated security
+  sections. Appearance choices are comparable tiles; app-settings dialogs use
+  compact section tabs. Continue direct implementation under the maintainer's
+  standing request to skip mocks.
 - Keep primary creation actions in the same place. Files uses a New menu with
   Folder and File, including Text/Markdown creation. Its menu matches the trigger
   width and alignment. Creation buttons share a filled primary action in both themes.

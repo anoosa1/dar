@@ -70,8 +70,8 @@ try{
   await page.goto(base+"/settings");await page.getByLabel("Display name",{exact:true}).waitFor();
   for(const viewport of [{width:1280,height:700},{width:780,height:700},{width:390,height:568}]){
     await page.setViewportSize(viewport);
-    const frame=await page.locator(".identity-main").evaluate(el=>({box:el.getBoundingClientRect().toJSON(),background:getComputedStyle(el).backgroundColor,panel:getComputedStyle(document.querySelector(".topbar")).backgroundColor,doc:document.documentElement.scrollHeight,overflow:document.documentElement.scrollWidth>innerWidth}));
-    assert.equal(frame.background,frame.panel);assert.equal(frame.overflow,false);assert.ok(frame.doc<=viewport.height+1);assert.ok(frame.box.bottom<=viewport.height+1);
+    const frame=await page.locator(".identity-main").evaluate(el=>({box:el.getBoundingClientRect().toJSON(),background:getComputedStyle(el).backgroundColor,surface:getComputedStyle(document.querySelector(".ui-settings-nav")).backgroundColor,content:getComputedStyle(el.querySelector(".settings-content")).backgroundColor,panel:getComputedStyle(document.querySelector(".topbar")).backgroundColor,doc:document.documentElement.scrollHeight,overflow:document.documentElement.scrollWidth>innerWidth}));
+    assert.equal(frame.background,frame.surface);assert.equal(frame.content,frame.panel);assert.equal(frame.overflow,false);assert.ok(frame.doc<=viewport.height+1);assert.ok(frame.box.bottom<=viewport.height+1);
     await page.getByRole("button",{name:"Save changes",exact:true}).scrollIntoViewIfNeeded();assert.equal(await page.locator(".topbar").evaluate(el=>el.getBoundingClientRect().top),0);
     if(viewport.width>800){const nav=await page.locator(".ui-settings-nav").boundingBox();assert.equal(nav.width,230);assert.equal(nav.y,78);}
   }
