@@ -16,9 +16,8 @@ decisions.
 - Use Cordis ownership and deterministic disposal for runtime effects.
 - Keep account scope and revision checks explicit. No managed symlinks. Never
   expose credentials in logs, Git, Nix expressions or the Nix store.
-- Built-in apps share controls and settings. The selected direction is Material 3
-  with Catppuccin Latte/Mocha, centered search and focused right editing panes.
-  Make distinct static mocks and wait for selection before a new visual direction.
+- Built-in apps share controls and settings. The selected direction is Material 3,
+  centered search and focused right editing panes.
 - No browser prompt/confirm dialogs or inline product styles. Preserve keyboard
   use, focus, responsive layouts, reduced motion and error/recovery states.
 - Use existing standards routes under /dav and camelCase APIs under /api/v1.

@@ -3,6 +3,16 @@
 A self-hosted personal cloud for Linux with Files, Contacts, Calendar, Notes and
 Tasks.
 
+## Screenshots
+
+| Files · light | Calendar · dark |
+| --- | --- |
+| ![Files in the light theme](docs/screenshots/files.png) | ![Calendar in the dark theme](docs/screenshots/calendar.png) |
+
+| Notes · light | Tasks · dark |
+| --- | --- |
+| ![Notes in the light theme](docs/screenshots/notes.png) | ![Tasks in the dark theme](docs/screenshots/tasks.png) |
+
 ## Run locally
 
 ```sh
