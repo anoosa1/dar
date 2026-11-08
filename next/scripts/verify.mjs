@@ -74,6 +74,7 @@ try {
   run(["test/browser.mjs"]);}
   run(["test/pim-browser.mjs"]);
   run(["test/contacts-layout-browser.mjs"]);
+  if(!pimOnly)run(["test/twilight-browser.mjs"]);
   run(["test/pim-dav-client.mjs"]);
   // This deliberately consumes the fixture's login failure budget.
   run(["--test", "test/http-security.integration.test.ts"]);

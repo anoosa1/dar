@@ -12,8 +12,13 @@ update this guide when a design decision changes.
 
 ## Shared visual direction
 
-- Use the selected compact Material 3 workspace with Catppuccin Latte for light
-  mode and Mocha for dark mode. Support the saved System appearance preference.
+- Use the selected compact Material 3 workspace with Twilight Afterglow (light)
+  and Twilight Nightfall (dark). Support the saved System appearance preference.
+  The [selected November 8 twilight mock](spacetimedb/twilight-mocks.html)
+  uses plum/violet structure, orchid/rose
+  actions and restrained warm accents. Keep text neutral, selection violet and
+  errors/success/warnings distinct. Stored `latte`/`mocha` preferences remain
+  compatible; those identifiers no longer describe the displayed palette.
 - Keep one shared header, centered persistent search, themed app launcher and
   account menu across every app and settings. Keep the launcher usable in settings.
 - The header search searches across apps, rather than filtering only the current
@@ -29,7 +34,7 @@ update this guide when a design decision changes.
   between apps. No inline product styles or browser prompt/confirm dialogs.
 - Keep primary creation actions in the same place. Files uses a New menu with
   Folder and File, including Text/Markdown creation. Its menu matches the trigger
-  width and alignment. Dark creation buttons share an accent outline and tonal fill.
+  width and alignment. Creation buttons share a filled primary action in both themes.
 - Avoid promotional app labels, subtitles and footer copy. Keep useful permission,
   safety and recovery explanations.
 
@@ -83,7 +88,7 @@ update this guide when a design decision changes.
 - Personal settings include Profile, Appearance, Security, Regional settings and
   Connected applications. Administration includes Appearance, registered
   Applications, Directory, SCIM and Signing keys as permissions allow.
-- Personal Appearance selects System/Latte/Mocha. Administration Appearance
+- Personal Appearance selects System/Twilight Afterglow/Twilight Nightfall. Administration Appearance
   customizes the public sign-in logo, with preview and reset to the Dar logo.
 - App passwords use a compact app/Read/Write matrix. Users may select multiple
   apps and Read, Write or both for each. Display the saved grants clearly.
