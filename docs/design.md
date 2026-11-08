@@ -37,6 +37,12 @@ update this guide when a design decision changes.
 - Use shared buttons, menus, form controls, panes, dialogs, empty states and error
   states. A control's spacing, behavior and placement must not vary arbitrarily
   between apps. No inline product styles or browser prompt/confirm dialogs.
+- The November 8 spacing refinement uses shared 20px desktop / 16px phone pane
+  insets, 16px group and form-field gaps, 56px contact/prayer list rows and compact
+  Files rows. Avoid stacking row padding with padded inner buttons. Keep headings
+  at 24px desktop / 22px phone and align tools with their pane's content inset.
+  Preserve the existing header heights and independently scrolling panes. The
+  maintainer explicitly requested direct implementation without further mocks.
 - Keep primary creation actions in the same place. Files uses a New menu with
   Folder and File, including Text/Markdown creation. Its menu matches the trigger
   width and alignment. Creation buttons share a filled primary action in both themes.

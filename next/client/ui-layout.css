@@ -11,25 +11,25 @@ html{scrollbar-gutter:stable}
 .identity-settings{display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden}
 .identity-settings>.topbar{flex:none}
 .identity-settings .ui-settings-layout{flex:1;min-height:0;overflow:hidden;grid-template-columns:230px minmax(0,1fr)}
-.identity-settings .ui-settings-nav{width:auto;height:100%;min-height:0;position:relative;top:auto;padding:27px 15px 15px;overflow-y:auto}
+.identity-settings .ui-settings-nav{width:auto;height:100%;min-height:0;position:relative;top:auto;padding:var(--pane-padding) 12px 12px;overflow-y:auto}
 .ui-settings-nav nav button{color:var(--muted)}
-.identity-settings .identity-main{max-width:none;min-width:0;min-height:0;overflow-y:auto;scrollbar-gutter:stable;background:var(--panel);padding:30px 32px}
+.identity-settings .identity-main{max-width:none;min-width:0;min-height:0;overflow-y:auto;scrollbar-gutter:stable;background:var(--panel);padding:var(--pane-padding)}
 @media(max-width:800px){
   .identity-settings .ui-settings-layout{min-height:0}
-  .identity-settings .identity-main{height:100%;padding:24px 18px}
+  .identity-settings .identity-main{height:100%;padding:var(--pane-padding)}
 }
 .details-panel{display:flex;flex-direction:column;overflow:hidden}
 .details-panel>.details-heading,.details-panel>.details-preview,.details-panel>h2,.details-panel>.details-summary,.details-panel>.details-tabs{flex-shrink:0}
 .details-panel>.details-content{flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable;width:100%}
 .editing-pane{position:fixed;top:78px;bottom:0;right:0;width:420px;z-index:26;background:var(--panel);color:var(--text);border-left:1px solid var(--border);display:flex;flex-direction:column;box-shadow:-8px 0 24px #0000000a;animation:ui-pane-in 180ms ease}
-.editing-pane-heading{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);flex:none}
-.editing-pane-heading h2{font-size:20px;margin:0}.editing-pane-content{padding:22px;overflow-y:auto;scrollbar-gutter:stable;min-height:0;flex:1}
+.editing-pane-heading{display:flex;align-items:center;justify-content:space-between;padding:12px var(--pane-padding);border-bottom:1px solid var(--border);flex:none}
+.editing-pane-heading h2{font-size:20px;margin:0}.editing-pane-content{padding:var(--pane-padding);overflow-y:auto;scrollbar-gutter:stable;min-height:0;flex:1}
 .editing-pane textarea{width:100%;font:inherit;padding:12px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;resize:vertical}
-.editing-pane .pim-form-grid,.editing-pane .workspace-form-grid{grid-template-columns:1fr}.editing-pane .dialog-actions{position:sticky;bottom:-22px;padding:14px 0;background:var(--panel);z-index:2}
+.editing-pane .pim-form-grid,.editing-pane .workspace-form-grid{grid-template-columns:1fr}.editing-pane .dialog-actions{position:sticky;bottom:calc(-1 * var(--pane-padding));padding:12px 0;background:var(--panel);z-index:2}
 body:has(.editing-pane) .workspace,body:has(.editing-pane) .pim-workspace{padding-right:420px}
 body:has(.editing-pane) .details-panel,body:has(.editing-pane) .pim-details{display:none}
 body:has(.editing-pane) .pim-shell .pim-workspace{grid-template-columns:230px minmax(0,1fr)}
-.files-new-menu{display:block;margin:0 8px 24px}.files-new-menu>.ui-menu-trigger{display:flex;gap:10px;background:var(--accent);color:var(--on-accent);border:1px solid var(--accent);border-radius:12px;padding:12px 22px;min-height:46px;font-weight:650}
+.files-new-menu{display:block;margin:0 0 var(--section-gap)}.files-new-menu>.ui-menu-trigger{display:flex;gap:10px;background:var(--accent);color:var(--on-accent);border:1px solid var(--accent);border-radius:12px;padding:12px 22px;min-height:46px;font-weight:650}
 .files-new-menu>.ui-menu-trigger{width:100%}.files-new-menu>.ui-menu-panel{left:0;right:auto;width:100%;min-width:0;max-width:100%}.files-new-menu .ui-menu-item{white-space:normal;padding:10px 8px}.files-new-menu>.ui-menu-trigger>.icon:last-child{margin-left:auto;transform:rotate(90deg);width:15px}
 .new-button.ui-new{border:1px solid var(--accent);background:var(--accent);color:var(--on-accent)}
 .file-text-editor{position:fixed;top:78px;bottom:0;left:230px;right:0;z-index:24;background:var(--panel);color:var(--text);display:flex;flex-direction:column;min-width:0}
