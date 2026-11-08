@@ -1,5 +1,16 @@
 .ui-menu>.ui-menu-panel{max-height:min(470px,calc(50dvh - 60px))}
 html{scrollbar-gutter:stable}
+/* Settings uses the same viewport frame and surfaces as the app workspaces. */
+.identity-settings{display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden}
+.identity-settings>.topbar{flex:none}
+.identity-settings .ui-settings-layout{flex:1;min-height:0;overflow:hidden;grid-template-columns:230px minmax(0,1fr)}
+.identity-settings .ui-settings-nav{width:auto;height:100%;min-height:0;position:relative;top:auto;padding:27px 15px 15px;overflow-y:auto}
+.ui-settings-nav nav button{color:var(--muted)}
+.identity-settings .identity-main{max-width:none;min-width:0;min-height:0;overflow-y:auto;scrollbar-gutter:stable;background:var(--panel);padding:30px 32px}
+@media(max-width:800px){
+  .identity-settings .ui-settings-layout{min-height:0}
+  .identity-settings .identity-main{height:100%;padding:24px 18px}
+}
 .details-panel{display:flex;flex-direction:column;overflow:hidden}
 .details-panel>.details-heading,.details-panel>.details-preview,.details-panel>h2,.details-panel>.details-summary,.details-panel>.details-tabs{flex-shrink:0}
 .details-panel>.details-content{flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable;width:100%}

@@ -9,3 +9,23 @@
 .workspace-note-editor .note-title,.workspace-note-editor .note-source{color:var(--text)}
 .workspace-note-editor .text-formatting{padding:4px 0;margin-bottom:12px}
 @media(max-width:800px){.pim-workspace:has(.workspace-list)>.sidebar{overflow-y:auto}}
+/* Bound the grid row before allowing either content pane to scroll. */
+.pim-shell:has(.workspace-list)>.topbar{flex:none}
+.app-shell.pim-shell .pim-workspace:has(.workspace-list){min-height:0;height:calc(100dvh - 78px);grid-template-rows:minmax(0,1fr)}
+.pim-workspace:has(.workspace-list)>.sidebar{position:relative;top:auto;width:auto;height:100%}
+.pim-workspace:has(.workspace-list)>.pim-main,
+.pim-workspace:has(.workspace-list)>.pim-details{height:100%;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable}
+.app-shell.pim-shell.has-pim-details:has(.workspace-note-editor) .pim-workspace{grid-template-columns:230px minmax(200px,350px) minmax(0,1fr)}
+.workspace-note-editor .workspace-editor-top,
+.workspace-note-editor .workspace-note-meta,
+.workspace-note-editor .text-formatting,
+.workspace-note-editor .workspace-editor-footer{flex-shrink:0}
+@media(max-width:1000px) and (min-width:801px){
+  .app-shell.pim-shell.has-pim-details:has(.workspace-note-editor) .pim-workspace{grid-template-columns:230px minmax(180px,240px) minmax(0,1fr)}
+}
+@media(max-width:800px){
+  .app-shell.pim-shell .pim-workspace:has(.workspace-list){height:calc(100dvh - 116px);min-height:0}
+  .app-shell.pim-shell.has-pim-details:has(.workspace-note-editor) .pim-workspace{display:block}
+  .pim-workspace:has(.workspace-list)>.pim-details{min-height:0}
+  .pim-workspace:has(.workspace-list)>.sidebar.is-open{position:fixed;top:116px;height:calc(100dvh - 116px)}
+}

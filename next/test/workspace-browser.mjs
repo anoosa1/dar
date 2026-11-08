@@ -16,6 +16,22 @@ try{
  await page.getByLabel("Note title",{exact:true}).fill(title);await page.getByLabel("Markdown content",{exact:true}).fill(source);await page.getByLabel("Tags",{exact:true}).fill("weekly, personal");await page.getByLabel("Favorite",{exact:true}).check();await page.getByText("All changes saved",{exact:true}).waitFor();const deep=page.url();await page.screenshot({path:path.join(process.env.DAR_TEST_ROOT,"notes-write-desktop.png"),fullPage:true});await page.getByRole("button",{name:"Preview",exact:true}).click();await page.locator(".markdown-preview h1").getByText("A quieter week",{exact:true}).waitFor();assert.equal(await page.evaluate(()=>window.noteInjected),undefined);assert.equal(await page.locator('.markdown-preview a[href^="javascript:"]').count(),0);assert.equal(await page.locator(".markdown-preview pre").textContent(),"const value = 1;");await page.screenshot({path:path.join(process.env.DAR_TEST_ROOT,"notes-desktop.png"),fullPage:true});
  const download=page.waitForEvent("download");await page.getByRole("link",{name:"Export Markdown",exact:true}).click();const {readFile}=await import("node:fs/promises");assert.equal(await readFile(await (await download).path(),"utf8"),source);
  await page.reload();await page.getByLabel("Note title",{exact:true}).waitFor();assert.equal(await page.getByLabel("Markdown content",{exact:true}).inputValue(),source);assert.equal(page.url(),deep);
+ // Opening an editor must not grow the grid row or shift its sibling navigation.
+ for(const viewport of [{width:1280,height:800},{width:900,height:700},{width:801,height:700},{width:780,height:800},{width:390,height:568}]){
+  await page.setViewportSize(viewport);
+  for(const mode of ["Write","Preview"]){
+   await page.getByRole("button",{name:mode,exact:true}).click();
+   const layout=await page.evaluate(()=>{const panel=document.querySelector(".pim-details"),main=document.querySelector(".pim-main"),sidebar=document.querySelector(".sidebar"),header=document.querySelector(".topbar");return {panel:panel.getBoundingClientRect().toJSON(),main:main.getBoundingClientRect().toJSON(),sidebar:sidebar.getBoundingClientRect().toJSON(),header:header.getBoundingClientRect().toJSON(),mainVisible:getComputedStyle(main).display!=="none",overflow:document.documentElement.scrollWidth>innerWidth,documentHeight:document.documentElement.scrollHeight};});
+   assert.equal(layout.overflow,false);assert.ok(layout.documentHeight<=viewport.height+1,JSON.stringify(layout));
+   assert.ok(Math.abs(layout.panel.top-layout.header.bottom)<1&&layout.panel.bottom<=viewport.height+1,JSON.stringify(layout));
+   if(viewport.width>800){assert.equal(layout.sidebar.top,layout.header.bottom);assert.ok(layout.sidebar.right<=layout.main.left&&layout.main.right<=layout.panel.left,JSON.stringify(layout));}
+   else{assert.equal(layout.mainVisible,false);assert.equal(layout.panel.left,0);}
+   await page.locator(".workspace-editor-footer").scrollIntoViewIfNeeded();
+   const footer=await page.locator(".workspace-editor-footer").boundingBox();assert.ok(footer.y+footer.height<=viewport.height+1);
+   assert.equal(await page.locator(".topbar").evaluate(el=>el.getBoundingClientRect().top),0);
+  }
+ }
+ await page.setViewportSize({width:1440,height:950});await page.getByRole("button",{name:"Write",exact:true}).click();
  // Hold refreshes behind a gate: a successful save must not load the older selected row.
  const savedEndpoint=base+"/api/v1/notes/items/"+new URL(deep).searchParams.get("item");let releaseRefresh;const refreshGate=new Promise(resolve=>{releaseRefresh=resolve;});
  await page.route(savedEndpoint,async route=>{if(route.request().method()==="GET")await refreshGate;await route.continue();});
