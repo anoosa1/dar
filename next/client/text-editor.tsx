@@ -1,7 +1,8 @@
 import {useEffect,useRef,useState} from "react";
 import type {FileEntries as FileEntry} from "./module_bindings/types.ts";
 import {request,RequestError,type BrowserSession} from "./api.ts";
-import {Markdown} from "./pim/markdown.tsx";
+import {formatMarkdown} from "./pim/format-markdown.ts";
+import {Markdown,MarkdownToolbar} from "./pim/markdown.tsx";
 import {Icon} from "./icons.tsx";
 
 export const editableText=(entry:FileEntry)=>entry.kind==="file"&&entry.size<=1024*1024&&(/\.(txt|md|markdown)$/i.test(entry.name)||/^text\//.test(entry.mediaType)||entry.mediaType==="application/json");
@@ -22,7 +23,7 @@ export function TextEditor({entry,session,load,onClose}:{entry:FileEntry;session
   useEffect(()=>{if(!dirty||error||!ready||recovery!==undefined||conflict)return;const timer=setTimeout(()=>{void save();},900);return()=>clearTimeout(timer);},[text,saved,ready,error,recovery,conflict]);
   useEffect(()=>{if(ready&&!readOnly&&!preview)input.current?.focus({preventScroll:true});},[ready,readOnly,preview]);
   function change(value:string){history.current.push(text);if(history.current.length>100)history.current.shift();future.current=[];setText(value);setStatus("Unsaved");}
-  function format(before:string,after=""){const field=input.current;if(!field)return;const start=field.selectionStart,end=field.selectionEnd;change(text.slice(0,start)+before+text.slice(start,end)+after+text.slice(end));requestAnimationFrame(()=>{field.focus();field.setSelectionRange(start+before.length,end+before.length);});}
+  function format(before:string,after=""){const field=input.current;if(!field)return;const result=formatMarkdown(text,field.selectionStart,field.selectionEnd,before,after);change(result.text);requestAnimationFrame(()=>{field.focus();field.setSelectionRange(result.start,result.end);});}
   function close(){if(dirty||saving.current)setDiscard(true);else onClose();}
   return <section className="file-text-editor" aria-label={`Editor for ${entry.name}`} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="s"){event.preventDefault();void save();}else if(event.key==="Escape"&&!event.defaultPrevented){event.preventDefault();close();}}}>
     <header className="text-editor-heading"><button className="text-button" onClick={close}><Icon name="back"/>Close editor</button><h1>{entry.name}</h1><span role="status">{status}{dirty&&status==="Saved"?" · Unsaved changes":""}</span>{markdown&&<button className="secondary-button" onClick={()=>setPreview(!preview)}>{preview?"Write":"Preview"}</button>}<button className="primary-button" disabled={!ready||readOnly||!dirty||status==="Saving…"||!!conflict} onClick={()=>{void save();}}>Save</button></header>
@@ -30,7 +31,7 @@ export function TextEditor({entry,session,load,onClose}:{entry:FileEntry;session
     {error&&<div className="error-banner" role="alert"><span>{error}</span><button className="text-button" onClick={()=>{void save();}}>Retry save</button><button className="text-button" onClick={()=>{void compare();}}>Review saved version</button></div>}
     {recovery!==undefined&&<div className="draft-banner" role="alert"><p>A recovery draft is available.</p><button className="text-button" onClick={()=>{change(recovery);setRecovery(undefined);}}>Restore draft</button><button className="text-button" onClick={()=>{setRecovery(undefined);sessionStorage.removeItem(key);}}>Discard draft</button></div>}
     {conflict&&<div className="draft-banner" role="alert"><p>The saved file changed. Your text has been kept.</p><details><summary>View saved version</summary><pre>{conflict.text}</pre></details><button className="text-button" onClick={()=>{revision.current=conflict.entry.revision;setText(conflict.text);setSaved(conflict.text);setConflict(undefined);setError("");setStatus("Saved");}}>Use saved version</button><button className="text-button" onClick={()=>{revision.current=conflict.entry.revision;setConflict(undefined);setError("");setStatus("Unsaved");}}>Keep my version</button></div>}
-    {markdown&&!preview&&<div className="text-formatting" aria-label="Markdown formatting">{[['Heading','# ',''],['Bold','**','**'],['Italic','*','*'],['Link','[','](https://example.com)'],['Bullet list','- ',''],['Task list','- [ ] ',''],['Quote','> ',''],['Code','`','`'],['Code block','\n```\n','\n```\n']].map(([label,before,after])=><button key={label} className="text-button" disabled={readOnly||!ready} onClick={()=>format(before,after)}>{label}</button>)}<button className="text-button" disabled={!history.current.length||readOnly} onClick={()=>{future.current.push(text);setText(history.current.pop()!);}}>Undo</button><button className="text-button" disabled={!future.current.length||readOnly} onClick={()=>{history.current.push(text);setText(future.current.pop()!);}}>Redo</button></div>}
+    {markdown&&!preview&&<MarkdownToolbar onFormat={format} disabled={readOnly||!ready}><button className="text-button" disabled={!history.current.length||readOnly} onClick={()=>{future.current.push(text);setText(history.current.pop()!);}}>Undo</button><button className="text-button" disabled={!future.current.length||readOnly} onClick={()=>{history.current.push(text);setText(future.current.pop()!);}}>Redo</button></MarkdownToolbar>}
     {preview?<article className="file-document"><Markdown source={text}/></article>:<textarea ref={input} className="file-document-source" aria-label="File contents" spellCheck={markdown} readOnly={readOnly||!ready||recovery!==undefined} value={text} onChange={event=>change(event.target.value)}/>}
   </section>;
 }

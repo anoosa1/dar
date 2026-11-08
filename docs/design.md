@@ -96,10 +96,31 @@ update this guide when a design decision changes.
   a day when events overflow. Put week start, cancelled-event visibility and ICS
   transfers in Calendar settings. Put the user's timezone in Personal → Regional
   settings; retain per-event/task timezone fields.
+- Calendar shows inclusive all-day ending dates in forms and details, translating
+  them to the existing exclusive end in stored/exported calendar data.
 - Notes: preserve exact Markdown, safe preview, autosave/manual save, private
   recovery drafts and explicit conflict handling.
+- Notes and Files share source-preserving Markdown formatting controls. Writing
+  uses the normal text color; accent colors identify actions and selection.
+- Block formatting applies at line boundaries. Closing an unsaved note offers
+  save/retry, keep a private recovery draft and close, or explicit discard.
+  Switching notes, views or notebooks uses that same decision and resumes the
+  requested destination only after it succeeds. Keep editing cancels navigation;
+  unavailable draft storage keeps the editor open. Dialog actions wrap to fit.
+  Cancelling departure invalidates an in-flight save's close action. Transient
+  refresh failures retain the editor and offer retry; confirmed access loss closes it.
+  Selected-item recovery actions belong in the visible details pane on phones.
+- Notes and Tasks use the same paged collection rows and owner action menus as
+  Contacts and Calendar. Their collection import/export lives in app settings,
+  with an explicit notebook or task-list target.
+- Notes and Tasks put item commands in row action menus. Task details show
+  readable status, priority, dates and repetition, with a specific Complete or
+  Reopen command. Contact email, phone and supported website values are links.
 - Tasks: preserve the shared list/details pattern, hierarchy, completion,
   recurrence-slot editing and date/timezone behavior.
+- Scheduling forms offer common repetition, priority and reminder choices.
+  Exact imported values and custom rules remain available in advanced controls;
+  summaries must not simplify schedules they do not understand.
 - Sign-in: show the Dar logo by default and use the saved instance logo when
   configured. Fall back to Dar when the custom image cannot load.
 
@@ -107,6 +128,11 @@ update this guide when a design decision changes.
 
 - Preserve keyboard use, visible focus, accessible names and responsive layouts.
   Respect reduced motion. Reuse the shared dialog/menu/pane motion behavior.
+- Ctrl/Cmd+K focuses the current app's search outside open editors/dialogs;
+  Escape clears that search. Ctrl/Cmd+S saves the active Notes or Files editor.
+- Phone details move focus into the opened panel and return it to the originating
+  row on close, with a visible fallback if removed. Navigation exposes expanded
+  state, focuses its controls, and restores its opener when dismissed with Escape.
 - Include loading, empty, error, retry, read-only and unsaved/conflict states.
   Do not silently overwrite another revision or discard a draft.
 - Verify actual persistence, permissions and resulting data, not just a click or

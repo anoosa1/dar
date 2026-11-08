@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {request as httpsRequest} from "node:https";
 import {spawn, spawnSync} from "node:child_process";
 import {mkdtemp, mkdir, readFile, writeFile, rm} from "node:fs/promises";
 import {existsSync} from "node:fs";
@@ -146,6 +147,14 @@ try {
     }
   }
   assert.deepEqual(errors, []);
+  // nginx must overwrite client-supplied identity, and preserve separate peers.
+  async function badLogin(localAddress,claimedAddress){return new Promise((resolve,reject)=>{
+    const req=httpsRequest(origin+"/api/v1/auth/login",{method:"POST",localAddress,rejectUnauthorized:false,headers:{origin,"content-type":"application/json","x-dar-client-ip":claimedAddress}},res=>{res.resume();res.on("end",()=>resolve(res.statusCode));});
+    req.on("error",reject);req.end(JSON.stringify({username:"missing-proxy-probe",password:"incorrect password"}));
+  });}
+  for(let i=0;i<10;i++)assert.equal(await badLogin("127.0.0.2","203.0.113.9"),401);
+  assert.equal(await badLogin("127.0.0.2","203.0.113.10"),429);
+  assert.equal(await badLogin("127.0.0.3","203.0.113.9"),401);
   console.info("PASS generated NixOS nginx: first-account setup, SDK token exchange and WebSocket subscriptions, persisted Files/Calendar writes, blocked database routes, shared desktop/phone connection failure and retry.");
   console.info(`Proxy browser artifacts: ${root}`);
 } catch (error) {

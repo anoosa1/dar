@@ -497,13 +497,16 @@ export const serviceBeginUpload = db.procedure({ sessionId: t.string(), id: t.st
   service(tx); const user = fromSession(tx, p.sessionId);
   opaqueId(p.id); opaqueId(p.fileId);
   if (!Number.isSafeInteger(p.size) || p.size < 0 || p.size > 1024 ** 3 || p.mediaType.length > 150 || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(p.mediaType)) fail("invalidInput");
-  let ownerId = destination(tx, p.parentId, user.id), name = nameOf(p.name), parentId = p.parentId;
+  let ownerId: string, name: string, parentId: string;
   const existing = tx.db.fileEntries.id.find(p.fileId);
   if (p.expectedRevision) {
     if (!existing || existing.kind !== "file") fail("notFound");
     writable(tx, existing.id, user.id); revision(existing, p.expectedRevision);
     ownerId = existing.ownerId; name = existing.name; parentId = existing.parentId;
-  } else if (existing || findKey(tx, key(ownerId, parentId, name))) fail("conflict");
+  } else {
+    ownerId = destination(tx, p.parentId, user.id); name = nameOf(p.name); parentId = p.parentId;
+    if (existing || findKey(tx, key(ownerId, parentId, name))) fail("conflict");
+  }
   let meter = tx.db.usage.userId.find(ownerId);
   if (!meter) meter = tx.db.usage.insert({ userId: ownerId, used: 0, reserved: 0 });
   if (meter.used + meter.reserved + p.size > 10 * 1024 ** 3) fail("quotaExceeded");
@@ -529,7 +532,9 @@ export const serviceFinishUpload = db.reducer({ sessionId: t.string(), id: t.str
     if (!existing) fail("notFound");
     writable(ctx, existing.id, user.id); revision(existing, upload.expectedRevision);
   } else if (existing || findKey(ctx, key(upload.ownerId, upload.parentId, upload.name))) fail("conflict");
-  if (destination(ctx, upload.parentId, user.id) !== upload.ownerId) fail("forbidden");
+  // Replacements require current access to the file; creating a child requires
+  // access to its destination. A direct file grant need not grant its parent.
+  if (!upload.expectedRevision && destination(ctx, upload.parentId, user.id) !== upload.ownerId) fail("forbidden");
   const entry = { id: upload.fileId, ownerId: upload.ownerId, parentId: upload.parentId, name: upload.name, kind: "file", blobId: upload.id,
     size: upload.size, mediaType: upload.mediaType, revision: (existing?.revision ?? 0) + 1, modifiedAt: now(ctx), trashed: false, favorite: existing?.favorite ?? false,
     listKey: key(upload.ownerId, upload.parentId, upload.name) };

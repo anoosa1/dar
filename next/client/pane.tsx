@@ -3,8 +3,9 @@ import {createPortal} from "react-dom";
 import {Icon} from "./icons.tsx";
 
 /** Non-modal workspace editor. Its form owns validation and persistence. */
-export function EditorPane({title,onClose,children}:{title:string;onClose:()=>void;children:ReactNode}){
+export function EditorPane({title,onClose,children,dirty:formDirty}:{title:string;onClose:()=>void;children:ReactNode;dirty?:boolean}){
   const ref=useRef<HTMLElement>(null),id=useId(),dirty=useRef(false),[discard,setDiscard]=useState(false);
+  if(formDirty!==undefined)dirty.current=formDirty;
   function close(){if(dirty.current)setDiscard(true);else onClose();}
   useEffect(()=>{
     const previous=document.activeElement as HTMLElement|null;

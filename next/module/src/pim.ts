@@ -2,6 +2,8 @@ import { Range, SenderError } from "spacetimedb/server";
 import {passwordAllows} from "../../shared/app-scopes.ts";
 import type { Ctx } from "./index.ts";
 import {trashNote,validateTaskParent} from "./workspace.ts";
+import type {ContactData} from "../../shared/pim.ts";
+import type {NoteData} from "../../shared/workspace.ts";
 
 function fail(code: string): never { throw new SenderError(code); }
 function text(value: unknown, max = 255): string { if (typeof value !== "string" || !value || value.length > max || /[\u0000]/.test(value)) fail("invalidInput"); return value; }
@@ -39,6 +41,34 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
   const at = Number(ctx.timestamp.toMillis());
   const allowsKind = (kind: string) => !protocolScope || passwordAllows(protocolScope,kind,"read") || passwordAllows(protocolScope,kind,"write");
   if (protocolScope && !["collections", "list", "read", "put", "delete"].includes(operation)) fail("forbidden");
+  if(operation === "resource") {
+    const row=ctx.db.pimResources.id.find(String(p.id));if(!row)fail("notFound");
+    collection(ctx,userId,row.collectionId);return row;
+  }
+  if(operation === "search") {
+    if(p.kind!=="notes"&&p.kind!=="contacts")fail("invalidInput");
+    const collections=pimOperation(ctx,userId,"collections",{}) as ReturnType<typeof collection>[];
+    const groups=new Set<string>(),q=String(p.q??"").normalize("NFC").toLowerCase(),cursor=String(p.cursor??"");
+    const results:{key:string;row:object}[]=[];
+    for(const c of collections){
+      if(c.kind!==p.kind||p.collection&&c.id!==p.collection)continue;
+      for(const row of ctx.db.pimResources.collectionId.filter(c.id)){
+        const data=JSON.parse(row.projection) as ContactData|NoteData,contact="displayName" in data;
+        if(contact)for(const group of data.groups)groups.add(group);
+        if(q&&!`${row.projection}\n${contact?"":row.content}`.normalize("NFC").toLowerCase().includes(q))continue;
+        if(p.favorite&&!data.favorite||p.tag&&!(contact?data.groups:data.tags).includes(String(p.tag)))continue;
+        const name=contact?(p.sort==="lastName"?data.lastName:data.firstName)||data.displayName:data.title;
+        const key=!contact&&p.sort!=="title"?`${String(9999999999999-row.modifiedAt).padStart(13,"0")}\u0000${row.id}`:`${name.normalize("NFC").toLowerCase()}\u0000${row.id}`;
+        if(key<=cursor)continue;
+        let lo=0,hi=results.length;while(lo<hi){const mid=(lo+hi)>>>1;if(results[mid].key<key)lo=mid+1;else hi=mid;}
+        if(lo>200)continue;
+        const {content,...metadata}=row;
+        results.splice(lo,0,{key,row:{...metadata,data,role:c.role,...contact?{bookName:c.name}:{collectionName:c.name,snippet:content.slice(0,180)}}});
+        if(results.length>201)results.pop();
+      }
+    }
+    return {items:results.slice(0,200).map(r=>r.row),groups:[...groups].sort(),nextCursor:results.length>200?results[199].key:""};
+  }
   if (operation === "collections") {
     const rows = [...ctx.db.pimCollections.ownerId.filter(userId)].map(row => ({ ...row, role: "owner" }));
     for (const grant of ctx.db.pimGrants.userId.filter(userId)) {
@@ -71,8 +101,14 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
     if (!reminder || reminder.userId !== userId) fail("notFound");
     ctx.db.pimReminders.id.update({ ...reminder, acknowledged: true }); bump(ctx, userId); return { ok: true };
   }
-  const c = collection(ctx, userId, p.collectionId, !["list", "read", "grants"].includes(operation));
+  const c = collection(ctx, userId, p.collectionId, !["list", "read", "grants", "page"].includes(operation));
   if (!allowsKind(c.kind)) fail("forbidden");
+  if(operation === "page") {
+    const cursor=String(p.cursor??"");
+    const items=[];
+    for(const row of ctx.db.pimResources.byCollectionHref.filter([c.id,new Range(cursor?{tag:"excluded",value:cursor}:{tag:"unbounded"},{tag:"unbounded"})])){items.push(row);if(items.length===201)break;}
+    return {items:items.slice(0,200),nextCursor:items.length>200?items[199].href:""};
+  }
   const metadataOnly=operation==="list" && p.metadataOnly===true;
   if (protocolScope && !passwordAllows(protocolScope,c.kind,["list","read"].includes(operation)&&!metadataOnly?"read":"write")) fail("forbidden");
   if (operation === "list") {

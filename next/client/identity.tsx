@@ -8,7 +8,7 @@ import { Auth,Brand } from "./auth.tsx";
 import { Dialog } from "./dialog.tsx";
 import { Icon } from "./icons.tsx";
 import {Select} from "./controls.tsx";
-import {WorkspaceHeader} from "./shell.tsx";
+import {WorkspaceHeader,useMobileNavigation} from "./shell.tsx";
 import {ProfileSettings} from "./profile.tsx";
 import "./identity.css";
 
@@ -22,10 +22,11 @@ const adminSections=[{id:"Instance appearance",label:"Appearance",route:"instanc
 function initialSection(admin:boolean){return [...personalSections,...(admin?adminSections:[])].find(s=>s.route===new URLSearchParams(location.search).get("section"))?.id??"Profile";}
 function Header({session}:{children:ReactNode;session:BrowserSession;query:string;onQuery:(s:string)=>void}){return <WorkspaceHeader app="settings" session={session} onSignedOut={()=>location.assign("/")} query="" onQuery={()=>{}}/>;}
 export function IdentitySettings({session,onSignedOut}:{session:BrowserSession;onSignedOut:()=>void}){
-  const [tab,setTab]=useState(()=>initialSection(session.user.administrator)),[navigation,setNavigation]=useState(false),[query,setQuery]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState(""),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false);
+  const [tab,setTab]=useState(()=>initialSection(session.user.administrator)),[query,setQuery]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState(""),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false);
   const [clients,setClients]=useState<Client[]>([]),[users,setUsers]=useState<Person[]>([]),[groups,setGroups]=useState<Group[]>([]),[credentials,setCredentials]=useState<Data[]>([]),[connections,setConnections]=useState<Data[]>([]),[status,setStatus]=useState<Data>();
   const [editor,setEditor]=useState<{kind:"client"|"user"|"group"|"credential";item?:Data}>(),[confirmation,setConfirmation]=useState<{title:string;description:string;work:()=>Promise<void>}>(),[secret,setSecret]=useState<{secret:string;id?:string}>();
   const [proof,setProof]=useState<{value:string;until:number}>(),[pending,setPending]=useState<((value:string)=>Promise<void>)>();
+  const {open:navigation,setOpen:setNavigation,id:navigationId,ref:navigationRef}=useMobileNavigation();
   const admin=session.user.administrator;
   async function refresh(){
     const connected=await request<{items:Data[]}>("/api/v1/identity/connections");setConnections(connected.items);
@@ -53,7 +54,7 @@ export function IdentitySettings({session,onSignedOut}:{session:BrowserSession;o
   function chooseSection(id:string){setTab(id);setQuery("");setNavigation(false);const section=[...personalSections,...adminSections].find(s=>s.id===id)!;history.pushState(null,"",`/settings?section=${section.route}`);}
   useEffect(()=>{const pop=()=>setTab(initialSection(session.user.administrator));window.addEventListener("popstate",pop);return()=>window.removeEventListener("popstate",pop);},[]);
   const matches=(value:unknown)=>JSON.stringify(value).toLowerCase().includes(query.toLowerCase());
-  return <div className="identity-settings"><WorkspaceHeader app="settings" session={session} onSignedOut={onSignedOut} query={query} onQuery={setQuery} searchLabel="Search settings" onNavigation={()=>setNavigation(!navigation)}/><div className="ui-settings-layout">{navigation&&<button className="nav-scrim" aria-label="Close navigation" onClick={()=>setNavigation(false)}/>}<aside className={`sidebar ui-settings-nav ${navigation?"is-open":""}`}><nav aria-label="Personal settings"><h2>Personal</h2>{personalSections.map(s=><button key={s.id} aria-current={tab===s.id?"page":undefined} onClick={()=>chooseSection(s.id)}>{s.label}</button>)}</nav>{admin&&<nav aria-label="Administration settings"><h2>Administration</h2>{adminSections.map(s=><button key={s.id} aria-label={s.id==="Instance appearance"?"Administration appearance":undefined} aria-current={tab===s.id?"page":undefined} onClick={()=>chooseSection(s.id)}>{s.label}</button>)}</nav>}</aside><main className="identity-main" aria-busy={busy||loading}>
+  return <div className="identity-settings"><WorkspaceHeader app="settings" session={session} onSignedOut={onSignedOut} query={query} onQuery={setQuery} searchLabel="Search settings" onNavigation={()=>setNavigation(!navigation)} navigationOpen={navigation} navigationId={navigationId}/><div className="ui-settings-layout">{navigation&&<button className="nav-scrim" aria-label="Close navigation" onClick={()=>setNavigation(false)}/>}<aside id={navigationId} ref={navigationRef} className={`sidebar ui-settings-nav ${navigation?"is-open":""}`}><nav aria-label="Personal settings"><h2>Personal</h2>{personalSections.map(s=><button key={s.id} aria-current={tab===s.id?"page":undefined} onClick={()=>chooseSection(s.id)}>{s.label}</button>)}</nav>{admin&&<nav aria-label="Administration settings"><h2>Administration</h2>{adminSections.map(s=><button key={s.id} aria-label={s.id==="Instance appearance"?"Administration appearance":undefined} aria-current={tab===s.id?"page":undefined} onClick={()=>chooseSection(s.id)}>{s.label}</button>)}</nav>}</aside><main className="identity-main" aria-busy={busy||loading}>
     {error&&<div className="identity-message"><p role="alert" className="error">{error}</p><button className="text-button" onClick={()=>{setLoading(true);void run(refresh).finally(()=>setLoading(false));}}>Reload settings</button></div>}{notice&&<p role="status" className="success-banner">{notice}</p>}{loading?<p role="status">Loading settings…</p>:<>
     {tab==="Appearance"&&<AppearanceSettings session={session}/>}
     {admin&&tab==="Instance appearance"&&<InstanceAppearanceSettings session={session}/>}

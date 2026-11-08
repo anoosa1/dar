@@ -58,7 +58,7 @@ try {
   run(["--test", "test/identity-proxy.integration.test.ts"]);
   run(["test/identity-browser.mjs"]);
   }
-  if(!identityOnly&&!pimOnly)run(["--test","--test-concurrency=1","test/ui-settings.integration.test.ts","test/workspace-standards.test.ts","test/workspace.integration.test.ts","test/workspace-upgrade.integration.test.ts"]);
+  if(!identityOnly&&!pimOnly)run(["--test","--test-concurrency=1","test/ui-settings.integration.test.ts","test/presentation.test.ts","test/format-markdown.test.ts","test/workspace-standards.test.ts","test/workspace.integration.test.ts","test/workspace-upgrade.integration.test.ts"]);
   if(!identityOnly&&!pimOnly)run(["test/workspace-browser.mjs"]);
   if(!identityOnly&&!pimOnly)run(["test/shared-ui-browser.mjs"]);
   if(!identityOnly&&!workspaceOnly){

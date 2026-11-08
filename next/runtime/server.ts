@@ -2,6 +2,7 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { timingSafeEqual, randomUUID } from "node:crypto";
 import path from "node:path";
+import { isIP } from "node:net";
 import { Context } from "cordis";
 import { database } from "./database.ts";
 import { openRoot } from "./root.ts";
@@ -88,6 +89,13 @@ export async function startServer(config: ServerConfig) {
   const attempts = new Map<string, { count: number; until: number }>();
   const cookieName = config.development ? "dar_session" : "__Host-dar_session";
   const cookie = (value: string, age: number) => `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${config.development ? "" : "; Secure"}`;
+  // Only the canonical local TLS proxy may supply this overwritten client header.
+  const peer = (req: IncomingMessage) => {
+    const remote = req.socket.remoteAddress ?? "unknown", forwarded = req.headers["x-dar-client-ip"];
+    return !config.development && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(remote)
+      && req.headers.host === baseUrl.host && req.headers["x-forwarded-proto"] === "https"
+      && typeof forwarded === "string" && isIP(forwarded) ? forwarded : remote;
+  };
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
     res.setHeader("x-content-type-options", "nosniff");
     res.setHeader("referrer-policy", "no-referrer");
@@ -101,7 +109,7 @@ export async function startServer(config: ServerConfig) {
       const method = req.method ?? "GET";
       if(url.pathname==="/oidc-form.js"&&method==="GET"){res.writeHead(200,{"content-type":"text/javascript","cache-control":"public, max-age=3600"});res.end('document.getElementById("oidc-response")?.requestSubmit();');return;}
       if(url.pathname==="/oidc"||url.pathname.startsWith("/oidc/")){
-        const key=`oidc:${req.socket.remoteAddress??"unknown"}`,previous=attempts.get(key),attempt=previous&&previous.until>Date.now()?previous:{count:0,until:Date.now()+60000};
+        const key=`oidc:${peer(req)}`,previous=attempts.get(key),attempt=previous&&previous.until>Date.now()?previous:{count:0,until:Date.now()+60000};
         if(++attempt.count>400||(!previous&&attempts.size>=10000))throw new AppError("rateLimited",429);attempts.set(key,attempt);
         return await identity.handle(req,res);
       }
@@ -131,7 +139,7 @@ export async function startServer(config: ServerConfig) {
       const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
       if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && origin !== config.origin) throw new AppError("invalidOrigin", 403);
       if (["/api/v1/auth/login", "/api/v1/auth/setup"].includes(url.pathname) && method === "POST") {
-        const key = req.socket.remoteAddress ?? "unknown";
+        const key = peer(req);
         const previous = attempts.get(key);
         const attempt = previous && previous.until > Date.now() ? previous : { count: 0, until: Date.now() + 60_000 };
         if (++attempt.count > 10 || (!previous && attempts.size >= 10_000)) throw new AppError("rateLimited", 429);
@@ -163,7 +171,7 @@ export async function startServer(config: ServerConfig) {
         if(url.pathname.startsWith("/api/v1/identity/")){
           let attempt:{count:number;until:number}|undefined;
           if(method==="POST"&&(url.pathname.endsWith("/confirmation")||url.pathname.includes("/interactions/"))){
-            const key=`identity:${req.socket.remoteAddress??"unknown"}`,previous=attempts.get(key);attempt=previous&&previous.until>Date.now()?previous:{count:0,until:Date.now()+60000};
+            const key=`identity:${peer(req)}`,previous=attempts.get(key);attempt=previous&&previous.until>Date.now()?previous:{count:0,until:Date.now()+60000};
             if(++attempt.count>20||(!previous&&attempts.size>=10000))throw new AppError("rateLimited",429);attempts.set(key,attempt);
           }
           await handleIdentityHttp(req,res,url,db,auth,authenticated,identity,config.origin,!!config.development,()=>body(req,256*1024));

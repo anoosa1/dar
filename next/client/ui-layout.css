@@ -21,6 +21,7 @@ body:has(.editing-pane) .pim-shell .pim-workspace{grid-template-columns:230px mi
 .file-document-source{display:block;flex:1;min-height:0;width:100%;resize:none;border:0;padding:30px max(28px,calc((100% - 780px)/2));font:15px/1.8 ui-monospace,monospace;background:var(--panel);color:var(--text);outline-offset:-3px}
 .file-document{overflow:auto;flex:1;min-height:0;padding:28px max(28px,calc((100% - 780px)/2));line-height:1.8}.file-text-editor .draft-banner{max-height:35dvh;overflow:auto;flex:none;margin:0;border-radius:0}.file-text-editor .draft-banner pre{white-space:pre-wrap;overflow-wrap:anywhere}
 .editing-pane .draft-banner{padding:16px;background:var(--warning-soft)}
+.editing-pane details{margin-bottom:18px}.editing-pane summary{cursor:pointer;color:var(--accent);padding:8px 0;font-size:12px}.editing-pane details[open]>label{margin-top:12px}
 @keyframes ui-pane-in{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
 @media(max-width:1000px){.editing-pane{width:390px}body:has(.editing-pane) .workspace,body:has(.editing-pane) .pim-workspace{padding-right:390px}}
 @media(max-width:1150px){.file-text-editor{left:195px}}

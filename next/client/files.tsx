@@ -2,7 +2,7 @@ import {TextEditor,editableText,writeTextFile} from "./text-editor.tsx";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { DbConnection } from "./module_bindings/index.ts";
 import type { FileEntries as FileEntry, Usage as MyUsage } from "./module_bindings/types.ts";
-import {WorkspaceHeader} from "./shell.tsx";
+import {WorkspaceHeader,useMobileNavigation} from "./shell.tsx";
 import {ConnectionStatus, type ConnectionState} from "./connection-status.tsx";
 import {ActionMenu,Select,NewItemButton} from "./controls.tsx";
 import {AppSettings,AppSettingsButton,usePreferences,savePreferences} from "./app-settings.tsx";
@@ -61,7 +61,8 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   const [previous, setPrevious] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set()), [details, setDetails] = useState<Details | null>(null);
   const [tab, setTab] = useState<"details" | "versions" | "sharing">("details");
-  const [grid, setGrid] = useState(false), [sidebar, setSidebar] = useState(false);
+  const [grid, setGrid] = useState(false);
+  const {open:sidebar,setOpen:setSidebar,id:sidebarId,ref:sidebarRef}=useMobileNavigation();
   const [modal, setModal] = useState<Modal | null>(null), [busy, setBusy] = useState(false);
   const [targetPath, setTargetPath] = useState<{ id: string; name: string }[]>([]);
   const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
@@ -277,13 +278,13 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   const owner = details?.role === "owner", canWrite = owner || details?.role === "write";
 
   return <div className="app-shell" onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); if (section === "files") void upload(event.dataTransfer.files); } }}>
-    <WorkspaceHeader app="files" session={session} onSignedOut={onSignedOut} query={query} onQuery={value=>{setQuery(value);setCursor("");setPrevious([]);}} onNavigation={()=>setSidebar(!sidebar)} searchLabel="Search filenames starting with" searchHint="Current folder · prefix"/>
+    <WorkspaceHeader app="files" session={session} onSignedOut={onSignedOut} query={query} onQuery={value=>{setQuery(value);setCursor("");setPrevious([]);}} onNavigation={()=>setSidebar(!sidebar)} navigationOpen={sidebar} navigationId={sidebarId} searchLabel="Search filenames starting with" searchHint="Current folder · prefix"/>
 
 
 
     <div className="workspace">
       {sidebar && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setSidebar(false)} />}
-      <aside className={`sidebar ${sidebar ? "is-open" : ""}`} aria-label="Files navigation"><ActionMenu label="New" className="files-new-menu" actions={[{label:"Folder",icon:"folder",disabled:!connected||section!=="files",run:()=>openModal({type:"folder"})},{label:"File",icon:"file",disabled:!connected||section!=="files",items:[{label:"Text file",run:()=>{setSidebar(false);setNewFile("text");}},{label:"Markdown file",run:()=>{setSidebar(false);setNewFile("markdown");}}]}]}><Icon name="plus"/><span>New</span><Icon name="chevron"/></ActionMenu><nav>{sections.map(item => <button className={`nav-item ${section === item.id ? "active" : ""}`} aria-current={section === item.id ? "page" : undefined} key={item.id} onClick={() => navigate(item.id)}><Icon name={item.icon} />{item.label}</button>)}</nav>
+      <aside id={sidebarId} ref={sidebarRef} className={`sidebar ${sidebar ? "is-open" : ""}`} aria-label="Files navigation"><ActionMenu label="New" className="files-new-menu" actions={[{label:"Folder",icon:"folder",disabled:!connected||section!=="files",run:()=>openModal({type:"folder"})},{label:"File",icon:"file",disabled:!connected||section!=="files",items:[{label:"Text file",run:()=>{setSidebar(false);setNewFile("text");}},{label:"Markdown file",run:()=>{setSidebar(false);setNewFile("markdown");}}]}]}><Icon name="plus"/><span>New</span><Icon name="chevron"/></ActionMenu><nav>{sections.map(item => <button className={`nav-item ${section === item.id ? "active" : ""}`} aria-current={section === item.id ? "page" : undefined} key={item.id} onClick={() => navigate(item.id)}><Icon name={item.icon} />{item.label}</button>)}</nav>
         <div className="storage"><Icon name="folder" /><strong>Your storage</strong><progress max={10 * 1024 ** 3} value={usage?.used ?? 0} aria-label="Storage used" /><span>{formatBytes(usage?.used ?? 0)} of 10 GB used</span></div>
         <AppSettingsButton app="files" onClick={()=>{setSidebar(false);setSettings(true);}}/>
       </aside>

@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
-import type { PimCollection, PimResource, ContactData } from "../../shared/pim.ts";
+import type { PimCollection, PimResource } from "../../shared/pim.ts";
 import { AppError } from "../errors.ts";
 import type { PimService } from "./service.ts";
 import { pimEtag } from "./service.ts";
@@ -36,22 +36,8 @@ export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, u
   const reminder = /^\/api\/v1\/pim\/reminders\/([^/]+)$/.exec(url.pathname);
   if (reminder && method === "DELETE") return json(await service.call("acknowledge", { id: decodeURIComponent(reminder[1]) }));
   if (url.pathname === "/api/v1/contacts/people" && method === "GET") {
-    const books = (await service.collections()).filter(c => c.kind === "contacts" && (!url.searchParams.get("book") || c.id === url.searchParams.get("book")));
-    const rows: (Omit<PimResource, "content"> & { data: ContactData; bookName: string; role: string })[] = [];
-    for (const book of books) {
-      for (const { content: _content, ...row } of (await service.list(book.id)).items) {
-        if (rows.length >= 10000) throw new AppError("operationTooLarge", 413);
-        rows.push({ ...row, data: JSON.parse(row.projection), bookName: book.name, role: book.role });
-      }
-    }
-    const groups = [...new Set(rows.flatMap(row => (row.data.groups as string[]) ?? []))].sort();
-    const query = (url.searchParams.get("q") ?? "").normalize("NFC").toLowerCase(), group = url.searchParams.get("group"), favorites = url.searchParams.get("favorite") === "1";
-    let cursor = "";
-    try { cursor = Buffer.from(url.searchParams.get("cursor") ?? "", "base64url").toString("utf8"); } catch { invalid("Invalid cursor."); }
-    const sort = url.searchParams.get("sort") === "lastName" ? "lastName" : "firstName";
-    const key = (row: typeof rows[number]) => `${String(row.data[sort] || row.data.displayName).normalize("NFC").toLowerCase()}\u0000${row.id}`;
-    const filtered = rows.filter(row => key(row) > cursor && (!query || JSON.stringify(row.data).normalize("NFC").toLowerCase().includes(query)) && (!group || row.data.groups?.includes(group)) && (!favorites || row.data.favorite)).sort((a,b) => key(a) < key(b) ? -1 : 1);
-    return json({ items: filtered.slice(0,200), groups, nextCursor: filtered.length > 200 ? Buffer.from(key(filtered[199])).toString("base64url") : "" });
+    const result=await service.call<{items:unknown[];groups:string[];nextCursor:string}>("search",{kind:"contacts",collection:url.searchParams.get("book")??"",q:url.searchParams.get("q")??"",tag:url.searchParams.get("group")??"",favorite:url.searchParams.get("favorite")==="1",sort:url.searchParams.get("sort"),cursor:Buffer.from(url.searchParams.get("cursor")??"","base64url").toString("utf8")});
+    return json({...result,nextCursor:result.nextCursor?Buffer.from(result.nextCursor).toString("base64url"):""});
   }
   const match = /^\/api\/v1\/(contacts|calendar)\/(books|calendars)(?:\/([a-f0-9-]{36}))?(?:\/(items|export|import|occurrences|grants)(?:\/([a-zA-Z0-9_.-]+))?)?$/.exec(url.pathname);
   if (!match || match[1] === "contacts" && match[2] !== "books" || match[1] === "calendar" && match[2] !== "calendars") throw new AppError("notFound", 404);

@@ -30,16 +30,43 @@ export async function handleWorkspaceHttp(req:IncomingMessage,res:ServerResponse
     if(!sub){if(method==="GET")return json(c,200,c);if(["PUT","DELETE"].includes(method))return json(await service.call(method==="PUT"?"renameCollection":"deleteCollection",{...method==="PUT"?await body():{},collectionId:id,revision:requireMatch(req,c)}));}
   }
   const item=/^\/items(?:\/([^/]+))?(?:\/(export|move|copy|complete|occurrences))?$/.exec(path);if(!item)throw new AppError("notFound",404);
-  const rows:{row:PimResource;c:PimCollection}[]=[];for(const c of collections){for(const row of (await service.list(c.id)).items){if(notes||isTask(row.content))rows.push({row,c});if(rows.length>10000)throw new AppError("operationTooLarge",413);}}
-  const [,id,action]=item,found=rows.find(r=>r.row.id===id);
+  const [,id,action]=item;
   if(!id&&method==="GET"){
-    let items=rows.map(({row,c})=>{const data=JSON.parse(row.projection) as NoteData|TaskData;const nextOccurrence=!notes&&(data as TaskData).recurring?nextTaskOccurrence(row,viewerZone):undefined,due=!notes?taskDue(row,viewerZone,nextOccurrence):undefined,today=!notes?new Intl.DateTimeFormat("en-CA",{timeZone:viewerZone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()):"";return {...row,data,role:c.role,collectionName:c.name,overdue:!!due?.day&&due.day<today&&!["COMPLETED","CANCELLED"].includes((data as TaskData).status),nextOccurrence};});const q=(url.searchParams.get("q")??"").normalize("NFC").toLowerCase(),cid=url.searchParams.get("collection"),view=url.searchParams.get("view"),tag=url.searchParams.get("tag");
-    items=items.filter(r=>(!cid||r.collectionId===cid)&&(!q||`${JSON.stringify(r.data)}\n${notes?r.content:""}`.normalize("NFC").toLowerCase().includes(q))&&(!tag||("tags"in r.data?r.data.tags:r.data.categories).includes(tag))&&(!notes||view!=="favorites"||(r.data as NoteData).favorite));
-    if(!notes){const zone=url.searchParams.get("timezone")??"UTC",today=new Intl.DateTimeFormat("en-CA",{timeZone:zone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());items=items.filter(r=>{const d=(r.nextOccurrence??r.data) as TaskData,day=taskDue(r,viewerZone,r.nextOccurrence).day,done=d.status==="COMPLETED";return view==="completed"?done:view==="all"?true:!done&&d.status!=="CANCELLED"&&(view==="today"?!!d.due&&day<=today:view==="upcoming"?!!d.due&&day>today:view==="important"?d.priority>0&&d.priority<=4:view==="inbox"?!d.parentUid:true);});}
-    const sort=url.searchParams.get("sort")??"modified",key=(r:typeof items[number])=>sort==="title"?`${r.data.title.toLowerCase()}\u0000${r.id}`:sort==="due"?`${taskDue(r,viewerZone,r.nextOccurrence).sort}\u0000${r.id}`:`${String(9999999999999-Number(r.modifiedAt)).padStart(13,"0")}\u0000${r.id}`;items.sort((a,b)=>key(a)<key(b)?-1:1);let cursor="";try{cursor=Buffer.from(url.searchParams.get("cursor")??"","base64url").toString("utf8");}catch{invalid("Invalid cursor.");}items=items.filter(r=>key(r)>cursor);return json({items:items.slice(0,200).map(({content,...row})=>({...row,snippet:notes?content.slice(0,180):undefined})),nextCursor:items.length>200?Buffer.from(key(items[199])).toString("base64url"):""});
+    const cursor=Buffer.from(url.searchParams.get("cursor")??"","base64url").toString("utf8"),cid=url.searchParams.get("collection"),view=url.searchParams.get("view"),sort=url.searchParams.get("sort")??"modified",tag=url.searchParams.get("tag")??"",q=(url.searchParams.get("q")??"").normalize("NFC").toLowerCase();
+    if(notes){
+      const result=await service.call<{items:unknown[];nextCursor:string}>("search",{kind:"notes",collection:cid,q,tag,favorite:view==="favorites",sort,cursor});
+      return json({items:result.items,nextCursor:result.nextCursor?Buffer.from(result.nextCursor).toString("base64url"):""});
+    }
+    const today=new Intl.DateTimeFormat("en-CA",{timeZone:viewerZone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+    type Candidate={key:string;row:Omit<PimResource,"content">&{data:TaskData;role:string;collectionName:string;overdue:boolean;nextOccurrence:ReturnType<typeof nextTaskOccurrence>|undefined}};
+    const results:Candidate[]=[];
+    // Recurrence needs the standards adapter. Stream bounded database pages and
+    // retain only this response's best 201 candidates, computing each key once.
+    for(const c of collections){
+      if(cid&&c.id!==cid)continue;
+      let scanCursor="";
+      do{
+        const page=await service.call<{items:PimResource[];nextCursor:string}>("page",{collectionId:c.id,cursor:scanCursor});scanCursor=page.nextCursor;
+        for(const row of page.items){
+          const data=JSON.parse(row.projection) as TaskData;if(data.kind!=="task")continue;
+          if(q&&!row.projection.normalize("NFC").toLowerCase().includes(q)||tag&&!data.categories.includes(tag))continue;
+          const nextOccurrence=data.recurring?nextTaskOccurrence(row,viewerZone):undefined,d=nextOccurrence??data,due=taskDue(row,viewerZone,nextOccurrence),done=d.status==="COMPLETED";
+          if(!(view==="completed"?done:view==="all"?true:!done&&d.status!=="CANCELLED"&&(view==="today"?!!d.due&&due.day<=today:view==="upcoming"?!!d.due&&due.day>today:view==="important"?d.priority>0&&d.priority<=4:view==="inbox"?!d.parentUid:true)))continue;
+          const key=`${sort==="title"?data.title.toLowerCase():sort==="due"?due.sort:String(9999999999999-Number(row.modifiedAt)).padStart(13,"0")}\u0000${row.id}`;
+          if(key<=cursor)continue;
+          let lo=0,hi=results.length;while(lo<hi){const mid=(lo+hi)>>>1;if(results[mid].key<key)lo=mid+1;else hi=mid;}
+          if(lo>200)continue;
+          const {content,...metadata}=row;
+          results.splice(lo,0,{key,row:{...metadata,data,role:c.role,collectionName:c.name,overdue:!!due.day&&due.day<today&&!["COMPLETED","CANCELLED"].includes(data.status),nextOccurrence}});if(results.length>201)results.pop();
+        }
+      }while(scanCursor);
+    }
+    return json({items:results.slice(0,200).map(r=>r.row),nextCursor:results.length>200?Buffer.from(results[199].key).toString("base64url"):""});
   }
   if(!id&&method==="POST"){const p=await body(),c=collections.find(c=>c.id===p.collectionId);if(!c)throw new AppError("notFound",404);const row=await service.put(c,`${randomUUID()}.${notes?"md":"ics"}`,notes?p:{component:"task",data:p.data??p},0);return json({...row,data:JSON.parse(row.projection)},201,row);}
-  if(!found)throw new AppError("notFound",404);const {row,c}=found;
+  const row=await service.call<PimResource>("resource",{id}),c=collections.find(c=>c.id===row.collectionId);
+  if(!c||!notes&&!isTask(row.content))throw new AppError("notFound",404);
+  const found={row,c},rows:{row:PimResource;c:PimCollection}[]=!notes&&(!action&&method==="GET"||method==="DELETE"||["move","copy","complete"].includes(action))?(await service.list(c.id)).items.filter(r=>isTask(r.content)).map(row=>({row,c})):[];
   if(!action&&method==="GET")return json({...row,data:JSON.parse(row.projection),role:c.role,...!notes?{nextOccurrence:JSON.parse(row.projection).recurring?nextTaskOccurrence(row,"UTC"):undefined,children:rows.filter(r=>r.c.id===c.id&&(JSON.parse(r.row.projection) as TaskData).parentUid===row.uid).map(r=>({id:r.row.id,uid:r.row.uid,title:JSON.parse(r.row.projection).title,status:JSON.parse(r.row.projection).status})),parentId:rows.find(r=>r.c.id===c.id&&r.row.uid===JSON.parse(row.projection).parentUid)?.row.id}:{}},200,row);
   if(!notes&&action==="complete"&&method==="POST"){
     requireMatch(req,row);const p=await body(),selected=[found],seen=new Set([row.uid]);for(let i=0;i<selected.length;i++)for(const child of rows)if(child.c.id===c.id&&!seen.has(child.row.uid)&&JSON.parse(child.row.projection).parentUid===selected[i].row.uid){seen.add(child.row.uid);selected.push(child);if(selected.length>500)invalid("Task subtree exceeds 500 items.");}

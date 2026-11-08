@@ -185,7 +185,29 @@ export function expand(resource: PimResource, viewerZone: string, from: Date, to
     master.addProperty(first);
   }
   for (const c of root.getAllSubcomponents("vevent")) if (c !== master) event.relateException(c);
-  const iterator = event.iterator(), result: Occurrence[] = [], seen = new Set<string>();
+  // Plain fixed-interval rules can seek by whole wall-time intervals. Keep the
+  // original event for durations/exceptions, and preserve COUNT's original end.
+  // Complex BY* rules retain the bounded standards iterator.
+  let iteratorEvent = event;
+  const rules = master.getAllProperties("rrule"), rule = rules[0]?.getFirstValue() as ICAL.Recur | undefined;
+  const seconds = ({SECONDLY:1,MINUTELY:60,HOURLY:3600,DAILY:86400,WEEKLY:604800} as Record<string,number>)[rule?.freq ?? ""];
+  if (rules.length === 1 && rule && seconds && !Object.keys(rule.parts).length) {
+    const zone = timeZone(master) === "floating" ? viewerZone : timeZone(master);
+    try {
+      const duration = Math.max(0, wallEpoch(dateString(event.endDate),"UTC")-wallEpoch(dateString(event.startDate),"UTC"));
+      const step = seconds * rule.interval, margin = zone === "UTC" ? 2*step*1000 : 2*86400000;
+      const target = wallEpoch(wall(+from-duration-margin,zone),"UTC"), start = wallEpoch(dateString(event.startDate),"UTC");
+      let skipped = Math.max(0,Math.floor((target-start)/(step*1000)));
+      if(rule.count)skipped=Math.min(skipped,rule.count-1);
+      if(skipped){
+        const component=new ICAL.Component(JSON.parse(JSON.stringify(master.toJSON()))), shifted=event.startDate.clone();
+        shifted.adjust(0,0,0,skipped*step);component.updatePropertyWithValue("dtstart",shifted);
+        const adjusted=ICAL.Recur.fromString(rule.toString());if(adjusted.count)adjusted.count-=skipped;
+        component.updatePropertyWithValue("rrule",adjusted);iteratorEvent=new ICAL.Event(component);
+      }
+    } catch { /* Custom embedded zones use the original standards iterator. */ }
+  }
+  const iterator = iteratorEvent.iterator(), result: Occurrence[] = [], seen = new Set<string>();
   for (let i = 0; ; i++) {
     if (i >= 10000) throw new AppError("operationTooLarge", 413, "This series exceeds the recurrence expansion limit.");
     const next = iterator.next(); if (!next) break;

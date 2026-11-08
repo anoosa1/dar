@@ -5,6 +5,17 @@ import {login} from "./integration-helpers.ts";
 import {database} from "../runtime/database.ts";
 import {deliverReminders} from "../runtime/pim/reminders.ts";
 const origin=process.env.DAR_INTEGRATION_ORIGIN;
+test("task windows page across indexed resource batches and keep collection scope",{skip:!origin,timeout:30000},async()=>{
+  const base=origin!,session=await login(base),headers={...session.headers,"content-type":"application/json"};
+  async function post(path:string,body:unknown){const r=await fetch(base+path,{method:"POST",headers,body:JSON.stringify(body)});assert.ok(r.ok,await r.clone().text());return r.json() as Promise<{id:string}>;}
+  const list=await post("/api/v1/tasks/lists",{name:"Paged task window"}),other=await post("/api/v1/tasks/lists",{name:"Other task scope"});
+  const content=Array.from({length:205},(_,i)=>`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:page-task-${i}\r\nSUMMARY:Paged ${String(i).padStart(3,"0")}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n`).join("");
+  await post(`/api/v1/tasks/lists/${list.id}/import`,{content});
+  const unrelated=await post("/api/v1/tasks/items",{collectionId:other.id,data:{title:"Paged outside scope"}});
+  const endpoint=`${base}/api/v1/tasks/items?view=all&sort=title&collection=${list.id}`,first=await(await fetch(endpoint,{headers})).json() as {items:{id:string;data:{title:string}}[];nextCursor:string},second=await(await fetch(endpoint+"&cursor="+encodeURIComponent(first.nextCursor),{headers})).json() as typeof first;
+  assert.equal(first.items.length,200);assert.equal(second.items.length,5);assert.equal(second.nextCursor,"");assert.equal(new Set([...first.items,...second.items].map(r=>r.id)).size,205);assert.equal(first.items[0].data.title,"Paged 000");assert.ok(![...first.items,...second.items].some(r=>r.id===unrelated.id));
+  assert.equal((await fetch(`${base}/api/v1/tasks/items/${unrelated.id}`,{headers})).status,200);
+});
 test("Notebook export/import and Unicode search paginate without losing source or metadata",{skip:!origin,timeout:30000},async()=>{
   const base=origin!,session=await login(base),headers={...session.headers,"content-type":"application/json"};
   const post=async(path:string,body:unknown)=>fetch(base+"/api/v1/notes"+path,{method:"POST",headers,body:JSON.stringify(body)});

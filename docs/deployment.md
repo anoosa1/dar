@@ -36,6 +36,10 @@ the SDK's POST-only `/spacetime/v1/identity/websocket-token` exchange. It reject
 other `/spacetime/` routes. It supplies the configured canonical Host and
 HTTPS scheme to the application. DAV and its well-known discovery routes pass to
 the same application host. Requests are streamed with a 1 GiB body limit.
+The proxy also overwrites `X-Dar-Client-IP` with its client address so login and
+OIDC rate limits do not combine every user into one loopback bucket. A separately
+managed local proxy must overwrite this header too, along with canonical `Host`
+and `X-Forwarded-Proto: https`; never forward a client-supplied value unchanged.
 
 With `configureNginx = true`, the module also maps the public hostname to
 `127.0.0.1` in the server's `/etc/hosts`. SpacetimeDB verifies browser tokens by

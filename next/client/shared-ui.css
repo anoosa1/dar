@@ -3,12 +3,16 @@
 /* A menu fits within either half of the viewport around its trigger. */
 .ui-menu-panel{max-height:min(470px,calc(50dvh - 60px))}
 html{scrollbar-gutter:stable}
+.dialog-actions{flex-wrap:wrap}
+.dialog-actions>button{max-width:100%;white-space:normal}
 .details-panel{display:flex;flex-direction:column;overflow:hidden}
 .details-panel>.details-heading,.details-panel>.details-preview,.details-panel>h2,.details-panel>.details-summary,.details-panel>.details-tabs{flex-shrink:0}
 .details-panel>.details-content{flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable;width:100%}
 
 .avatar{display:inline-flex;align-items:center;justify-content:center;flex:none}
 .sidebar{overflow-y:auto}
+.search-shortcut{flex:none;white-space:nowrap;font-family:inherit;font-size:11px;color:var(--muted);padding:3px 6px;border:1px solid var(--border);border-radius:5px}
+@media(max-width:800px){.search-shortcut{display:none}}
 .pim-main:has(>.calendar-time-scroll){display:flex;flex-direction:column;height:calc(100dvh - 78px);min-height:0}
 .pim-main>.calendar-time-scroll{flex:1;min-height:160px;max-height:none}
 .ui-switch input{appearance:none;width:42px!important;height:24px!important;min-height:24px!important;border:1px solid var(--muted);border-radius:20px;background:var(--surface-soft);position:relative;flex:none;margin:0;transition:background 150ms ease}

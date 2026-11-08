@@ -77,6 +77,18 @@ test("user isolation, read-only grants, live revocation and public-link revocati
     assert.equal(await (await fetch(publicUrl)).text(), "private content");
     await db.reducers.revokePublicShare({ id: shareId });
     assert.equal((await fetch(publicUrl)).status, 404);
+    for (const parentId of ["", randomUUID()]) {
+      if(parentId)await db.reducers.createFolder({id:parentId,parentId:"",name:`private-parent-${randomUUID()}`});
+      const direct=await upload(base,owner,`write-${randomUUID()}.txt`,"original",parentId),grant=randomUUID();
+      await db.reducers.grantAccess({id:grant,fileId:direct.fileId,username,role:"write",expectedRevision:1});
+      await upload(base,session,"ignored.txt","edited",parentId,direct.fileId,2);
+      assert.equal(await (await fetch(`${base}/api/v1/files/${direct.fileId}/content`,{headers:owner.headers})).text(),"edited");
+      const reservation=await fetch(`${base}/api/v1/files/uploads`,{method:"POST",headers:{...session.headers,"content-type":"application/json"},body:JSON.stringify({fileId:direct.fileId,expectedRevision:3,parentId,name:"ignored.txt",size:6,mediaType:"text/plain"})});
+      assert.equal(reservation.status,201);const pending=await reservation.json() as {id:string};
+      await db.reducers.revokeGrant({id:grant});
+      assert.equal((await fetch(`${base}/api/v1/files/uploads/${pending.id}`,{method:"PUT",headers:session.headers,body:"denied"})).status,403);
+      await assert.rejects(upload(base,session,"ignored.txt","denied",parentId,direct.fileId,3));
+    }
     assert.equal((await fetch(`${base}/api/v1/files/uploads`, { method: "POST", headers: { cookie: owner.headers.cookie, origin: "https://attacker.example", "content-type": "application/json" }, body: "{}" })).status, 403);
   } finally { db.disconnect(); recipient?.disconnect(); }
 });

@@ -7,6 +7,7 @@ let
   proxyHeaders = ''
     proxy_set_header Host ${lib.removePrefix "https://" cfg.origin};
     proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Dar-Client-IP $remote_addr;
   '';
 in {
   options.services.dar = {

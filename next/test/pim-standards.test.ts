@@ -22,6 +22,19 @@ test("contact editing preserves unknown vCard properties, UID and multi-value da
 });
 const base = { title: "Design review", start: "2026-03-01T09:00", end: "2026-03-01T10:00", timezone: "America/Toronto", recurrence: "FREQ=WEEKLY;COUNT=4", attendees: [], reminderMinutes: 10, allDay: false };
 function resource(content: string) { return { id: "r", collectionId: "c", href: "e.ics", revision: 1, content } as PimResource; }
+test("old fixed-interval series seek to the window without changing COUNT or exceptions", () => {
+  const old=writeEvent({...base,start:"2024-01-01T09:00",end:"2024-01-01T09:30",timezone:"UTC",recurrence:"FREQ=HOURLY"});
+  const from=new Date("2026-11-07"),to=new Date("2026-11-08");
+  assert.equal(expand(resource(old.content),"UTC",from,to).length,24);
+  const seconds=writeEvent({...old.data,end:"2024-01-01T09:00:01",recurrence:"FREQ=SECONDLY"},old.content);
+  assert.equal(expand(resource(seconds.content),"UTC",from,new Date(+from+60000)).length,60);
+  const zoned=writeEvent({...old.data,timezone:"America/Toronto",recurrence:"FREQ=DAILY;COUNT=1100"});
+  assert.deepEqual(expand(resource(zoned.content),"America/Toronto",new Date("2026-11-01"),new Date("2026-11-03")).map(o=>o.startAt),["2026-11-01T14:00:00.000Z","2026-11-02T14:00:00.000Z"]);
+  const finite=writeEvent({...old.data,recurrence:"FREQ=HOURLY;COUNT=10001"},old.content);
+  assert.equal(expand(resource(finite.content),"UTC",from,to).length,0);
+  const moved=writeEvent({...old.data,title:"Moved",start:"2026-11-07T10:15",end:"2026-11-07T10:45"},old.content,"2024-01-01T09:00:00Z");
+  assert.equal(expand(resource(moved.content),"UTC",from,to).filter(o=>o.title==="Moved").length,1);
+});
 test("weekly local-time recurrence crosses DST without shifting the wall time", () => {
   const event = writeEvent(base), list = expand(resource(event.content), "UTC", new Date("2026-03-01"), new Date("2026-04-01"));
   assert.equal(list.length, 4); assert.equal(list[0].startAt, "2026-03-01T14:00:00.000Z"); assert.equal(list[1].startAt, "2026-03-08T13:00:00.000Z");
