@@ -1,7 +1,7 @@
 # Dar
 
 A self-hosted personal cloud for Linux with Files, Contacts, Calendar, Notes and
-Tasks. Built with Node.js, Cordis, SpacetimeDB and React.
+Tasks.
 
 ## Run locally
 
