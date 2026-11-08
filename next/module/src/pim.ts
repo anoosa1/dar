@@ -2,6 +2,7 @@ import { Range, SenderError } from "spacetimedb/server";
 import {passwordAllows} from "../../shared/app-scopes.ts";
 import type { Ctx } from "./index.ts";
 import {trashNote,validateTaskParent} from "./workspace.ts";
+import {appEnabled} from "./app-settings.ts";
 import type {ContactData} from "../../shared/pim.ts";
 import type {NoteData} from "../../shared/workspace.ts";
 
@@ -21,6 +22,7 @@ function notify(ctx: Ctx, collection: { id: string; ownerId: string }) {
 function collection(ctx: Ctx, userId: string, value: unknown, write = false) {
   const row = ctx.db.pimCollections.id.find(id(value));
   if (!row) fail("notFound");
+  if(row.kind==="notes"&&!appEnabled(ctx,"notes"))fail("notFound");
   const role = row.ownerId === userId ? "owner" : ctx.db.pimGrants.id.find(`${row.id}/${userId}`)?.role;
   if (!role) fail("notFound");
   if (write && role === "read") fail("forbidden");
@@ -76,10 +78,11 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
       if (row) rows.push({ ...row, role: grant.role });
     }
     if (rows.length > 200) fail("operationTooLarge");
-    return rows.filter(row => allowsKind(row.kind));
+    return rows.filter(row => allowsKind(row.kind)&&(row.kind!=="notes"||appEnabled(ctx,"notes")));
   }
   if (operation === "createCollection") {
     const kind = text(p.kind);
+    if(kind==="notes"&&!appEnabled(ctx,"notes"))fail("notFound");
     if (!["contacts", "calendar", "notes"].includes(kind)) fail("invalidInput");
     if ([...ctx.db.pimCollections.ownerId.filter(userId)].length >= 100) fail("operationTooLarge");
     const color = text(p.color, 7); if (!/^#[0-9a-f]{6}$/i.test(color)) fail("invalidInput");
@@ -197,7 +200,7 @@ export function restorePim(ctx: Ctx, data: Snapshot | undefined) {
     if (!ctx.db.pimCollections.id.find(row.collectionId) || !ctx.db.accounts.id.find(row.userId)) fail("invalidInput");
     ctx.db.pimGrants.insert(row);
   }
-  for (const row of data.preferences) { if (row.userId!=="instance:appearance" && !ctx.db.accounts.id.find(row.userId)) fail("invalidInput"); ctx.db.pimPreferences.insert(row); }
+  for (const row of data.preferences) { if (!["instance:appearance","instance:apps"].includes(row.userId) && !ctx.db.accounts.id.find(row.userId)) fail("invalidInput"); ctx.db.pimPreferences.insert(row); }
   for (const row of data.reminders) {
     if (!ctx.db.accounts.id.find(row.userId) || !ctx.db.pimResources.id.find(row.resourceId)) fail("invalidInput");
     ctx.db.pimReminders.insert(row);

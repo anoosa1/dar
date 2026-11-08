@@ -18,6 +18,14 @@ import "./ui-layout.css";
 import "./theme.css";
 import "./calendar-layout.css";
 import "./contacts-layout.css";
+import "./app-launcher.css";
+import {useAppSettings} from "./app-availability.tsx";
+import {WorkspaceHeader} from "./shell.tsx";
+function OptionalWorkspace({kind,session,onSignedOut}:{kind:"notes"|"tasks";session:BrowserSession;onSignedOut:()=>void}){
+  const {settings,error}=useAppSettings();
+  if(settings&&!settings.disabled.includes(kind))return <Workspace kind={kind} session={session} onSignedOut={onSignedOut}/>;
+  return <div className="app-shell"><WorkspaceHeader app={kind} session={session} onSignedOut={onSignedOut} query="" onQuery={()=>{}}/><main className="startup-state">{error?<><h1>Unable to load apps</h1><p role="alert">{error}</p><button className="primary-button" onClick={()=>location.reload()}>Try again</button></>:settings?<><h1>App disabled</h1><p>This app has been disabled by an administrator.</p></>:<p role="status">Opening app…</p>}<a href="/">Return to Files</a></main></div>;
+}
 function App() {
   const [status, setStatus] = useState<{ initialized: boolean } | null>(null);
   const [session, setSession] = useState<BrowserSession | null>(null);
@@ -42,7 +50,7 @@ function App() {
   if(location.pathname.startsWith("/identity/interaction/"))return <IdentityInteraction session={session} onLogin={setSession}/>;
   if(session&&location.pathname.startsWith("/apps/"))return <InstalledAppPage id={location.pathname.split("/")[2]} session={session} onSignedOut={signedOut}/>;
   if(session&&["/identity","/settings"].includes(location.pathname))return <IdentitySettings session={session} onSignedOut={signedOut}/>;
-  if(session&&["/notes","/tasks"].includes(location.pathname))return <Workspace kind={location.pathname==="/notes"?"notes":"tasks"} session={session} onSignedOut={signedOut}/>;
+  if(session&&["/notes","/tasks"].includes(location.pathname))return <OptionalWorkspace kind={location.pathname==="/notes"?"notes":"tasks"} session={session} onSignedOut={signedOut}/>;
   return session ? location.pathname === "/contacts" ? <Contacts session={session} onSignedOut={signedOut} /> : location.pathname === "/calendar" ? <Calendar session={session} onSignedOut={signedOut} /> : <Files session={session} onSignedOut={signedOut} /> : <Auth initialized={status.initialized} onLogin={setSession} />;
 }
 createRoot(document.getElementById("root")!).render(<App />);

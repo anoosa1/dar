@@ -4,18 +4,23 @@ import path from "node:path";
 import type {loadApps} from "./registry.ts";
 import type {Activate,ServerApp} from "../../sdk/server.ts";
 /** Trusted Node hooks receive Cordis-owned effects, not Dar's service credential. */
-export async function activateApps(registry:Awaited<ReturnType<typeof loadApps>>){
-  const handlers=new Map<string,ServerApp>(),contexts:Context[]=[];
-  for(const [id,app] of registry.apps){
-    if(!app.manifest.server)continue;
-    const ctx=new Context(),controller=new AbortController();contexts.push(ctx);
+export async function activateApps(registry:Awaited<ReturnType<typeof loadApps>>,disabled:readonly string[]=[]){
+  const handlers=new Map<string,ServerApp>(),contexts=new Map<string,Context>(),packages=new Map(registry.apps);
+  async function setEnabled(id:string,enabled:boolean){
+    const app=packages.get(id);if(!app)return;
+    if(!enabled){registry.apps.delete(id);handlers.delete(id);const ctx=contexts.get(id);contexts.delete(id);await ctx?.fiber.dispose();return;}
+    registry.apps.set(id,app);
+    const item=registry.inventory.find(item=>item.id===id);if(item)item.status="Ready";
+    if(!app.manifest.server||contexts.has(id))return;
+    const ctx=new Context(),controller=new AbortController();contexts.set(id,ctx);
     ctx.effect(()=>()=>controller.abort());
     let timer:ReturnType<typeof setTimeout>|undefined;
     try{
       const task=(async()=>{const module=await import(pathToFileURL(path.join(app.root,app.manifest.server!)).href+`?digest=${app.descriptor.digest}`) as {activate:Activate};if(typeof module.activate!=="function")throw Error("Missing activate");const handler=await module.activate({signal:controller.signal,effect:start=>{ctx.effect(start);}});if(typeof handler?.handle!=="function")throw Error("Missing handle");return handler;})();
-      const handler=await Promise.race([task,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error("App startup timed out")),5000);})]);handlers.set(id,handler);
-    }catch{registry.apps.delete(id);const item=registry.inventory.find(i=>i.id===id);if(item)item.status="App startup failed. Disable or replace the package, then restart.";controller.abort();await ctx.fiber.dispose();}
+      const handler=await Promise.race([task,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error("App startup timed out")),5000);})]);handlers.set(id,{handle:request=>handler.handle({...request,signal:AbortSignal.any([request.signal,controller.signal])})});
+    }catch{registry.apps.delete(id);contexts.delete(id);const item=registry.inventory.find(i=>i.id===id);if(item)item.status="App startup failed. Disable or replace the package, then restart.";controller.abort();await ctx.fiber.dispose();}
     finally{clearTimeout(timer);}
   }
-  return {handlers,close:async()=>{await Promise.allSettled(contexts.map(ctx=>ctx.fiber.dispose()));}};
+  for(const id of packages.keys())await setEnabled(id,!disabled.includes(id));
+  return {handlers,setEnabled,close:async()=>{await Promise.allSettled([...contexts.values()].map(ctx=>ctx.fiber.dispose()));}};
 }

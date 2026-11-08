@@ -6,6 +6,7 @@ export function navigateSearchResult(href:string){const event=new CustomEvent("d
 export function GlobalSearch(){
   const [query,setQuery]=useState(""),[open,setOpen]=useState(false),[result,setResult]=useState<SearchResults>({items:[],truncated:false}),[loading,setLoading]=useState(false),[error,setError]=useState(""),[retry,setRetry]=useState(0),[active,setActive]=useState(-1);
   const input=useRef<HTMLInputElement>(null),root=useRef<HTMLDivElement>(null),id=useId();
+  useEffect(()=>{const refresh=()=>setRetry(n=>n+1);window.addEventListener("dar:apps",refresh);return()=>window.removeEventListener("dar:apps",refresh);},[]);
   useEffect(()=>{const shortcut=(event:KeyboardEvent)=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"&&!event.defaultPrevented&&!document.querySelector("dialog[open],[data-editor-pane]")){event.preventDefault();input.current?.focus();input.current?.select();}};const outside=(event:PointerEvent)=>{if(!root.current?.contains(event.target as Node))setOpen(false);};document.addEventListener("keydown",shortcut);document.addEventListener("pointerdown",outside);return()=>{document.removeEventListener("keydown",shortcut);document.removeEventListener("pointerdown",outside);};},[]);
   useEffect(()=>{
     const controller=new AbortController();setActive(-1);setResult({items:[],truncated:false});setError("");if(!query.trim()){setLoading(false);return;}

@@ -162,8 +162,10 @@ Do not turn the existing PIM preferences object into an unbounded plugin map.
 
 ## Installation, upgrade, disable and recovery
 
-The configured package set is authoritative for code and enabled status. Do not
-introduce a conflicting second installation list in the database. At startup,
+The configured package set is authoritative for code and host availability. An
+administrator can further disable host-enabled apps in Administration → Apps;
+this revisioned instance setting also covers Notes and Tasks and survives backups.
+It cannot enable a package disabled or absent in host configuration. At startup,
 reconcile this set into a core-owned database availability record so data procedures
 can reject absent/disabled apps. Never persist code paths or secrets in user data.
 
@@ -175,7 +177,11 @@ can reject absent/disabled apps. Never persist code paths or secrets in user dat
 - Development: template plus `build` and isolated `dev` commands. No checkout of
   Dar or edits to its source required; point the fixture at the built package.
 
-V1 is restart-based, including enable/disable/update; UI shows that explicitly.
+Host package changes are restart-based, including host enable/disable/update.
+Administration app toggles apply immediately; external hooks dispose their owned
+effects on disable and activate again on enable. Files, Contacts and Calendar have
+no toggles or protected-status labels. The selected Nextcloud-style launcher is
+option A in [launcher mocks](app-launcher-mocks.html).
 Administration inventories installed version, API compatibility, enabled state,
 declared capabilities and failures. No browser-based code upload or marketplace
 installer initially. Package installation requires host access, not an ordinary

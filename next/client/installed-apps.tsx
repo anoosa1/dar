@@ -5,7 +5,7 @@ import type {AppHost,AppModule} from "../sdk/client.tsx";
 import type {InstalledApp} from "../shared/installed-apps.ts";
 export function useInstalledApps(){
   const [items,setItems]=useState<InstalledApp[]>([]);
-  useEffect(()=>{const controller=new AbortController();void request<{items:InstalledApp[]}>("/api/v1/apps",{signal:controller.signal}).then(r=>setItems(r.items)).catch(()=>{});return()=>controller.abort();},[]);return items;
+  useEffect(()=>{let controller:AbortController;const refresh=()=>{controller?.abort();controller=new AbortController();void request<{items:InstalledApp[]}>("/api/v1/apps",{signal:controller.signal}).then(r=>setItems(r.items)).catch(()=>{});};refresh();window.addEventListener("dar:apps",refresh);window.addEventListener("focus",refresh);return()=>{controller.abort();window.removeEventListener("dar:apps",refresh);window.removeEventListener("focus",refresh);};},[]);return items;
 }
 export function InstalledAppPage({id,session,onSignedOut}:{id:string;session:BrowserSession;onSignedOut:()=>void}){
   const element=useRef<HTMLDivElement>(null),[error,setError]=useState(""),[loading,setLoading]=useState(true);

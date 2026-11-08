@@ -38,7 +38,11 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   }
   const source = await database(process.env.DAR_DATABASE_URL!, process.env.DAR_DATABASE_NAME!, process.env.DAR_DATABASE_TOKEN_FILE!);
   const temporary = await mkdtemp(path.join(tmpdir(), "dar-backup-proof-")), directory = path.join(temporary, "backup");
-  const result = await backup(source, sourceRoot, directory);
+  const appSettings=await(await fetch(base+"/api/v1/appSettings",{headers:session.headers})).json() as {revision:number};
+  async function setTasks(enabled:boolean,revision:number){const r=await fetch(base+"/api/v1/admin/installedApps",{method:"PUT",headers:{...session.headers,"content-type":"application/json","if-match":`"apps:${revision}"`},body:JSON.stringify({id:"tasks",enabled,revision})});assert.equal(r.status,200);return r.json() as Promise<{revision:number}>;}
+  const disabled=await setTasks(false,appSettings.revision);
+  let result:Awaited<ReturnType<typeof backup>>;
+  try{result=await backup(source,sourceRoot,directory);}finally{await setTasks(true,disabled.revision);}
   assert.ok(result.blobs > 0);
   const exported = path.join(temporary, "export"); await exportFiles(source, sourceRoot, "admin", exported);
   const manifest = JSON.parse(await readFile(path.join(exported, "manifest.json"), "utf8")) as { files: { id: string; contentFile?: string }[] };
@@ -65,6 +69,8 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   try {
     assert.equal((await fetch(`${newOrigin}/api/v1/auth/session`, { headers: session.headers })).status, 401);
     const recovered = await login(newOrigin);
+    assert.ok((await(await fetch(newOrigin+"/api/v1/appSettings",{headers:recovered.headers})).json() as {disabled:string[]}).disabled.includes("tasks"));
+    assert.equal((await fetch(newOrigin+"/api/v1/tasks/items",{headers:recovered.headers})).status,404);
     if(noteProof){const after=await (await fetch(`${newOrigin}/api/v1/notes/items/${noteProof.id}`,{headers:recovered.headers})).json() as {content:string};assert.equal(after.content,noteProof.content);}
     const restoredTrash=await (await fetch(`${newOrigin}/api/v1/notes/trash`,{headers:recovered.headers})).json() as typeof trash;assert.deepEqual(restoredTrash.items.map(r=>r.id).sort(),trash.items.map(r=>r.id).sort());
     assert.deepEqual(await (await fetch(`${newOrigin}/oidc/jwks`)).json(),beforeKeys);

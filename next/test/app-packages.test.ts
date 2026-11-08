@@ -22,7 +22,10 @@ test("optional server hooks dispose effects and a failed app leaves other apps a
   await writeFile(path.join(root,"client.js"),"export function mount(){};");
   await writeFile(path.join(root,"server.js"),'export function activate(ctx){ctx.effect(()=>()=>{globalThis.darAppDisposed=true;});return {handle:async()=>({ok:true})};}');
   await writeFile(path.join(root,"dar-app.json"),JSON.stringify({...manifest,server:"server.js",files:["client.js","server.js"]}));const file=path.join(root,"registry.json");await writeFile(file,JSON.stringify([{path:root}]));
-  const registry=await loadApps(file),runtime=await activateApps(registry);assert.equal(runtime.handlers.size,1);await runtime.close();assert.equal((globalThis as {darAppDisposed?:boolean}).darAppDisposed,true);delete (globalThis as {darAppDisposed?:boolean}).darAppDisposed;
+  const registry=await loadApps(file),runtime=await activateApps(registry,[manifest.id]);assert.equal(runtime.handlers.size,0);assert.equal(registry.apps.size,0);
+  await runtime.setEnabled(manifest.id,true);assert.equal(runtime.handlers.size,1);
+  await runtime.setEnabled(manifest.id,false);assert.equal(runtime.handlers.size,0);assert.equal(registry.apps.size,0);assert.equal((globalThis as {darAppDisposed?:boolean}).darAppDisposed,true);delete (globalThis as {darAppDisposed?:boolean}).darAppDisposed;
+  await runtime.setEnabled(manifest.id,true);assert.equal(runtime.handlers.size,1);await runtime.close();assert.equal((globalThis as {darAppDisposed?:boolean}).darAppDisposed,true);delete (globalThis as {darAppDisposed?:boolean}).darAppDisposed;
   await writeFile(path.join(root,"server.js"),'throw Error("broken app");');const broken=await loadApps(file),failed=await activateApps(broken);assert.equal(broken.apps.size,0);assert.match(broken.inventory[0].status,/startup failed/);await failed.close();
 });
 test("operator can reinstall, disable and remove a package without replacing the managed root",async()=>{

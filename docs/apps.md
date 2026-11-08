@@ -55,7 +55,7 @@ read-only host configuration. Absolute package roots may resolve through host
 aliases, including Nix paths, but managed package files may not be symlinks.
 `DAR_DISABLE_APPS=1` is recovery mode. Restart after changing either variable.
 An invalid individual package or failed Node hook leaves core apps usable and
-appears in Administration → Installed apps. A malformed registry starts without
+appears in Administration → Apps. A malformed registry starts without
 external apps; correct host configuration and restart.
 
 These commands affect the default private registry only. When `DAR_APPS_FILE` is
@@ -63,6 +63,17 @@ set (including NixOS), change that configured registry instead. No browser code
 upload, marketplace, automatic update, dependency resolver or hot reload is shipped.
 
 ## Data, upgrades and restore
+
+Administrators can also disable/enable Notes, Tasks and host-enabled external apps
+in Administration → Apps, or reach it through the launcher's Manage apps entry.
+Changes apply immediately and persist through restart and backup/restore. Files,
+Contacts and Calendar cannot be disabled. Disabled apps leave the launcher and
+global search; their app APIs are unavailable and external Node effects are
+disposed. Data is retained. Calendar's underlying standards routes remain available
+as part of the essential Calendar service, including task synchronization.
+Host configuration remains authoritative for installed packages: a package disabled
+or removed on the host cannot be enabled in the browser. This additional setting
+can only restrict host-enabled packages; installing/upgrading still needs a restart.
 
 Every record is scoped to a live account and app, with exact revision checks,
 64 KiB/record, 1 MiB/account/app and 128-record limits. Up to 50 records are returned

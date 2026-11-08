@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App launcher options</title>
+<style>
+:root{color-scheme:dark;--foreground:#eee8f2;--muted:#c0b3cb;--card:#271f31;--popover:#30263c;--secondary:#44334f;--border:#594561;--primary:#e9b4f6;--accent:#735682;--radius:18px;--font-sans:system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;color:var(--foreground);font:14px var(--font-sans)}h2{font-size:17px;margin:0 0 8px}p{line-height:1.5;color:var(--muted);margin:0 0 16px}.options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.option{min-width:0}.scene{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;min-height:420px}.top{display:flex;align-items:center;gap:9px;padding:9px 2px 19px}.trigger{border-radius:12px;background:var(--secondary);padding:9px 12px;font-weight:600}.menu{background:var(--popover);border:1px solid var(--border);border-radius:16px;padding:8px;box-shadow:0 12px 24px #0003}.row{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;font-size:13px}.selected{background:var(--secondary)}.row .mark{margin-left:auto;color:var(--primary)}.icon{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:10px;background:var(--secondary);color:var(--primary)}svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.tile{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 0;border-radius:10px;font-size:11px;text-align:center}.tile .icon{width:36px;height:36px}.footer{border-top:1px solid var(--border);margin-top:6px;padding:12px 8px 6px;font-size:12px;color:var(--primary)}.find{border:1px solid var(--border);border-radius:10px;color:var(--muted);padding:10px;margin-bottom:8px;font-size:12px}.section-label{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding:12px 10px 4px}.compact .row{padding:8px}.compact .icon{width:25px;height:25px;background:transparent}.management{margin-top:24px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px}.manage-row{display:flex;align-items:center;gap:12px;padding:13px 0;border-top:1px solid var(--border)}.manage-row .status{margin-left:auto;font-size:12px;color:var(--muted)}.button{background:var(--secondary);border:1px solid var(--border);border-radius:10px;padding:8px 13px;font:inherit;color:var(--primary)}.caption{font-size:12px;margin-top:10px}.defs{position:absolute;width:0;height:0;overflow:hidden}@media(max-width:600px){.options{grid-template-columns:1fr}.scene{min-height:0}.option{margin-bottom:12px}.tiles .tile{font-size:13px}.manage-row{flex-wrap:wrap}}
+</style>
+<svg class="defs" aria-hidden="true"><defs>
+<symbol id="files" viewBox="0 0 24 24"><path d="M3 6h7l2 3h9v11H3Z"/></symbol>
+<symbol id="contacts" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="9" r="2.5"/><path d="M8 17c0-4 8-4 8 0M2 7h3M2 12h3M2 17h3"/></symbol>
+<symbol id="calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18M8 15h2m4 0h2"/></symbol>
+<symbol id="notes" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5ZM9 9h6M9 13h6M9 17h4"/></symbol>
+<symbol id="tasks" viewBox="0 0 24 24"><path d="m3 6 2 2 4-4m3 3h9M3 14l2 2 4-4m3 3h9M12 21h9"/></symbol>
+<symbol id="prayer" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></symbol>
+</defs></svg>
+<main>
+<div class="options">
+<section class="option"><h2>A · Nextcloud list</h2><p>Simple icon-and-name dropdown.</p><div class="scene"><div class="top"><span class="trigger">▦ &nbsp; Files ⌄</span></div><div class="menu">
+<div class="row selected"><span class="icon"><svg><use href="#files"/></svg></span>Files<span class="mark">✓</span></div>
+<div class="row"><span class="icon"><svg><use href="#contacts"/></svg></span>Contacts</div>
+<div class="row"><span class="icon"><svg><use href="#calendar"/></svg></span>Calendar</div>
+<div class="row"><span class="icon"><svg><use href="#notes"/></svg></span>Notes</div>
+<div class="row"><span class="icon"><svg><use href="#tasks"/></svg></span>Tasks</div>
+<div class="row"><span class="icon"><svg><use href="#prayer"/></svg></span>Prayer Times</div>
+<div class="footer">⚙ &nbsp; Manage apps</div></div></div></section>
+<section class="option"><h2>B · App tiles</h2><p>Three columns with larger targets.</p><div class="scene"><div class="top"><span class="trigger">▦ &nbsp; Files ⌄</span></div><div class="menu"><div class="tiles">
+<div class="tile selected"><span class="icon"><svg><use href="#files"/></svg></span>Files</div>
+<div class="tile"><span class="icon"><svg><use href="#contacts"/></svg></span>Contacts</div>
+<div class="tile"><span class="icon"><svg><use href="#calendar"/></svg></span>Calendar</div>
+<div class="tile"><span class="icon"><svg><use href="#notes"/></svg></span>Notes</div>
+<div class="tile"><span class="icon"><svg><use href="#tasks"/></svg></span>Tasks</div>
+<div class="tile"><span class="icon"><svg><use href="#prayer"/></svg></span>Prayer Times</div>
+</div><div class="footer">⚙ &nbsp; Manage apps</div></div></div></section>
+<section class="option"><h2>C · Searchable list</h2><p>Compact groups for more apps.</p><div class="scene"><div class="top"><span class="trigger">▦ &nbsp; Files ⌄</span></div><div class="menu compact"><div class="find">⌕ &nbsp; Find an app…</div><div class="section-label">Essentials</div>
+<div class="row selected"><span class="icon"><svg><use href="#files"/></svg></span>Files<span class="mark">✓</span></div>
+<div class="row"><span class="icon"><svg><use href="#contacts"/></svg></span>Contacts</div>
+<div class="row"><span class="icon"><svg><use href="#calendar"/></svg></span>Calendar</div>
+<div class="section-label">Apps</div>
+<div class="row"><span class="icon"><svg><use href="#notes"/></svg></span>Notes</div>
+<div class="row"><span class="icon"><svg><use href="#tasks"/></svg></span>Tasks</div>
+<div class="row"><span class="icon"><svg><use href="#prayer"/></svg></span>Prayer Times</div>
+<div class="footer">⚙ &nbsp; Manage apps</div></div></div></section>
+</div>
+<section class="management"><h2>Administration → Apps · common to all options</h2><p>Disable optional apps for everyone. Saved data is retained.</p>
+<div class="manage-row"><span class="icon"><svg><use href="#files"/></svg></span><strong>Files</strong></div>
+<div class="manage-row"><span class="icon"><svg><use href="#contacts"/></svg></span><strong>Contacts</strong></div>
+<div class="manage-row"><span class="icon"><svg><use href="#calendar"/></svg></span><strong>Calendar</strong></div>
+<div class="manage-row"><span class="icon"><svg><use href="#notes"/></svg></span><strong>Notes</strong><span class="status">Enabled</span><button class="button" type="button">Disable</button></div>
+<div class="manage-row"><span class="icon"><svg><use href="#tasks"/></svg></span><strong>Tasks</strong><span class="status">Disabled</span><button class="button" type="button">Enable</button></div>
+<div class="manage-row"><span class="icon"><svg><use href="#prayer"/></svg></span><strong>Prayer Times</strong><span class="status">Enabled</span><button class="button" type="button">Disable</button></div>
+<p class="caption">Static proposal. Manage apps is shown to administrators. Disabled apps leave the launcher and search, and their routes are unavailable. Package installation stays on the host.</p>
+</section>
+</main>
+</html>

@@ -21,6 +21,11 @@ update this guide when a design decision changes.
   compatible; those identifiers no longer describe the displayed palette.
 - Keep one shared header, centered persistent search, themed app launcher and
   account menu across every app and settings. Keep the launcher usable in settings.
+- The November 8 app-launcher refinement selects option A in
+  [launcher mocks](spacetimedb/app-launcher-mocks.html): a Nextcloud-style vertical
+  icon/name list, current-app marker and administrator-only Manage apps footer.
+  Administration → Apps enables/disables optional apps instance-wide, retaining
+  data. Files, Contacts and Calendar have no status label or toggle.
 - The header search searches across apps, rather than filtering only the current
   app. Group results by app, keep authorization explicit, and provide keyboard
   selection, loading, empty, partial-error and retry states. Do not add duplicate

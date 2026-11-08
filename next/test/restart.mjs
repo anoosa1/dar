@@ -62,6 +62,7 @@ try {
   const setup = await fetch(`${origin}/api/v1/auth/setup`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ username: "admin", displayName: "Restart proof", password: "a long isolated test password", bootstrapToken: await readFile(path.join(root, "secrets/bootstrap-token"), "utf8") }) });
   assert.equal(setup.status, 200);
   const session = await login(origin);
+  async function setApp(id,enabled){const settings=await(await fetch(origin+"/api/v1/appSettings",{headers:session.headers})).json();const r=await fetch(origin+"/api/v1/admin/installedApps",{method:"PUT",headers:{...session.headers,"content-type":"application/json","if-match":`"apps:${settings.revision}"`},body:JSON.stringify({id,enabled,revision:settings.revision})});assert.equal(r.status,200,await r.clone().text());}
   const appEndpoint=origin+"/api/v1/apps/org.dar.prayer-times/userData/restartProof";
   assert.equal((await fetch(appEndpoint,{method:"PUT",headers:{...session.headers,"content-type":"application/json","if-match":'"0"'},body:JSON.stringify({schemaVersion:1,value:{location:"private restart proof"}})})).status,200);
   const identity=await identityAdmin(origin),client=await identity.client(),credential=await identity.credential();
@@ -93,8 +94,11 @@ try {
   const processInfo = await readFile(`/proc/${pids.runtime}/stat`, "utf8");
   assert.equal(Number(processInfo.slice(processInfo.lastIndexOf(")") + 2).split(" ")[1]), child.pid);
   const stopped = new Promise(resolve => child.once("exit", resolve));
+  await setApp("notes",false);await setApp("org.dar.prayer-times",false);
   process.kill(pids.runtime, "SIGKILL"); await stopped; request.destroy();
   await start();
+  assert.equal((await fetch(origin+"/api/v1/notes/items",{headers:session.headers})).status,404);assert.equal((await fetch(appEndpoint,{headers:session.headers})).status,404);
+  await setApp("notes",true);await setApp("org.dar.prayer-times",true);
   assert.deepEqual(await (await fetch(`${origin}/oidc/jwks`)).json(),providerKeys);
   const redeemed=await exchange(client,pendingCode);assert.ok(redeemed.id_token);assert.ok((await oidc.refreshTokenGrant(client.config,activeTokens.refresh_token)).access_token);
   const restoredDirectory=await fetch(`${origin}/scim/v2/Users/${directoryUser.id}`,{headers:{authorization:`Bearer ${credential.secret}`}});assert.equal(restoredDirectory.status,200);assert.equal((await restoredDirectory.json()).id,directoryUser.id);

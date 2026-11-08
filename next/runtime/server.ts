@@ -27,6 +27,7 @@ import {passwordApps,passwordGrants} from "../shared/app-scopes.ts";
 import {loadApps} from "./apps/registry.ts";
 import {handleAppHttp} from "./apps/http.ts";
 import {activateApps} from "./apps/server.ts";
+import type {AppSettings,ManagedApp} from "../shared/app-settings.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
@@ -82,8 +83,17 @@ export async function startServer(config: ServerConfig) {
     console.warn("Installed app registry is unavailable; starting without external apps.");
     return {apps:new Map(),inventory:[{id:"registry",name:"App registry",version:"",status:"Invalid registry. Check host configuration.",permissions:[]}]};
   });
-  appRuntime=await activateApps(appRegistry);
+  const readAppSettings=()=>db.call<AppSettings>("service_app_settings",["","",false,0]);
+  const initialAppSettings=await readAppSettings();
+  const hostEnabledApps=new Set(appRegistry.apps.keys());
+  appRuntime=await activateApps(appRegistry,initialAppSettings.disabled);
   await db.call("service_installed_apps",[JSON.stringify([...appRegistry.apps.values()].map(a=>a.descriptor))]);
+  // Keep revisioned writes and hook disposal/activation in the same order.
+  let appUpdate:Promise<unknown>=Promise.resolve();
+  const managedApps=(settings:AppSettings):ManagedApp[]=>[
+    ...["files","contacts","calendar","notes","tasks"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks"].includes(id)})),
+    ...appRegistry.inventory.map(item=>({...item,enabled:appRegistry.apps.has(item.id)&&!settings.disabled.includes(item.id),canToggle:hostEnabledApps.has(item.id)})),
+  ];
   const databasePublicUrl = `${(config.databasePublicUrl ?? (config.development ? config.databaseUrl : `${config.origin}/spacetime`)).replace(/\/$/, "")}/`;
   const issuer = await createIssuer(path.join(root, "secrets"), `${config.origin}/auth/issuer`);
   const auth = await authService(db, issuer);
@@ -181,7 +191,25 @@ export async function startServer(config: ServerConfig) {
         if (!authenticated) throw new AppError("unauthenticated", 401);
         if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !authorizeCookieWrite(config.origin, origin, typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : undefined, authenticated.session.csrfDigest)) throw new AppError("csrfRejected", 403);
         if(url.pathname==="/api/v1/search"&&method==="GET")return json(res,await db.call("service_global_search",[authenticated.session.id,string(url.searchParams.get("q")??"",800)]));
-        if(url.pathname==="/api/v1/apps"||url.pathname.startsWith("/api/v1/apps/")||url.pathname==="/api/v1/admin/installedApps")return await handleAppHttp(req,res,url,appRegistry,db,authenticated.session.id,authenticated.user,appRuntime!.handlers,()=>body(req,80*1024));
+        if(url.pathname==="/api/v1/appSettings"&&method==="GET")return json(res,await readAppSettings());
+        if(url.pathname==="/api/v1/admin/installedApps"){
+          if(!authenticated.user.administrator)throw new AppError("forbidden",403);
+          if(method==="GET"){const settings=await readAppSettings();return json(res,{...settings,items:managedApps(settings)});}
+          if(method!=="PUT")throw new AppError("methodNotAllowed",405);
+          const p=await body(req),id=string(p.id,100),revision=integer(p.revision,0xffffffff);
+          if(typeof p.enabled!=="boolean")throw new AppError("invalidInput");
+          if(req.headers["if-match"]!==`"apps:${revision}"`)throw new AppError("preconditionRequired",428);
+          const update=appUpdate.catch(()=>{}).then(async()=>{
+            if(!managedApps(await readAppSettings()).some(app=>app.id===id&&app.canToggle))throw new AppError("forbidden",403);
+            const settings=await db.call<AppSettings>("service_app_settings",[authenticated.session.id,id,p.enabled,revision]);
+            await appRuntime!.setEnabled(id,p.enabled as boolean);
+            await db.call("service_installed_apps",[JSON.stringify([...appRegistry.apps.values()].map(a=>a.descriptor))]);
+            return {...settings,items:managedApps(settings)};
+          });appUpdate=update;return json(res,await update);
+        }
+        if(url.pathname==="/api/v1/apps"||url.pathname.startsWith("/api/v1/apps/"))return await handleAppHttp(req,res,url,appRegistry,db,authenticated.session.id,authenticated.user,appRuntime!.handlers,()=>body(req,80*1024));
+        const optionalApp=/^\/api\/v1\/(notes|tasks)(\/|$)/.exec(url.pathname);
+        if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);
         if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
         if(url.pathname==="/api/v1/account/profile"){
           const profile=await db.call<{id:string;revision:number}>("service_profile",[authenticated.session.id,"read","{}"]),etag=`"${profile.id}:${profile.revision}"`;

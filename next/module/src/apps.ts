@@ -1,10 +1,11 @@
 import {SenderError} from "spacetimedb/server";
 import type {Ctx} from "./index.ts";
 import {validAppId,validAppKey} from "../../shared/installed-apps.ts";
+import {appEnabled} from "./app-settings.ts";
 function fail(code:string):never{throw new SenderError(code);}
 const bytes=(s:string)=>encodeURIComponent(s).replace(/%[A-F\d]{2}/g,"x").length;
 export function appOperation(ctx:Ctx,userId:string,appId:string,operation:string,key:string,revision:number,schemaVersion:number,value:string){
-  const app=ctx.db.installedApps.id.find(appId);if(!app)fail("notFound");
+  const app=ctx.db.installedApps.id.find(appId);if(!app||!appEnabled(ctx,appId))fail("notFound");
   const permissions=JSON.parse(app.document).permissions as string[];
   if(!permissions.includes(operation==="put"||operation==="delete"?"ownUserData:write":"ownUserData:read"))fail("forbidden");
   const ownerKey=JSON.stringify([appId,userId]),id=JSON.stringify([appId,userId,key]);

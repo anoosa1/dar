@@ -7,7 +7,6 @@ type Registry=Awaited<ReturnType<typeof loadApps>>;
 export async function handleAppHttp(req:IncomingMessage,res:ServerResponse,url:URL,registry:Registry,db:Database,sessionId:string,user:{id:string;username:string;displayName:string;administrator:boolean},handlers:Map<string,ServerApp>,body:()=>Promise<Record<string,unknown>>){
   const method=req.method??"GET",send=(value:unknown)=>{res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(value));};
   if(url.pathname==="/api/v1/apps"&&method==="GET")return send({items:[...registry.apps.values()].map(a=>a.descriptor)});
-  if(url.pathname==="/api/v1/admin/installedApps"&&method==="GET"){if(!user.administrator)throw new AppError("forbidden",403);return send({items:registry.inventory,restartRequired:true});}
   const custom=/^\/api\/v1\/apps\/([^/]+)\/api(?:\/(.*))?$/.exec(url.pathname),handler=custom&&handlers.get(custom[1]);
   if(custom&&handler){
     const controller=new AbortController(),abort=()=>controller.abort();res.once("close",abort);

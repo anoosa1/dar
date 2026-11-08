@@ -1,5 +1,6 @@
 import {Range} from "spacetimedb/server";
 import {pimOperation} from "./pim.ts";
+import {appEnabled} from "./app-settings.ts";
 import type {Ctx} from "./index.ts";
 import type {SearchGroup,SearchResult,SearchResults} from "../../shared/search.ts";
 type FileEntry=NonNullable<ReturnType<Ctx["db"]["fileEntries"]["id"]["find"]>>;
@@ -26,14 +27,16 @@ export function globalSearch(ctx:Ctx,userId:string,query:string,canRead:(entry:F
     if(!visit())break;const data=JSON.parse(row.projection) as Record<string,unknown>;
     if(!matches(row.projection+(collection.kind==="notes"?"\n"+row.content:"")))continue;
     const group:SearchGroup=collection.kind==="notes"?"Notes":collection.kind==="contacts"?"Contacts":data.kind==="task"?"Tasks":"Calendar";
+    if(group==="Tasks"&&!appEnabled(ctx,"tasks"))continue;
     const title=String(data.displayName??data.title??"Untitled"),date=String(data.start??"").slice(0,10);
     const href=group==="Notes"||group==="Tasks"?`/${group.toLowerCase()}?item=${row.id}`:group==="Contacts"?`/contacts?book=${collection.id}&contact=${encodeURIComponent(row.href)}`:`/calendar?book=${collection.id}&event=${encodeURIComponent(row.href)}${/^\d{4}-\d\d-\d\d$/.test(date)?`&date=${date}`:""}`;
     add({id:row.id,group,title,detail:collection.name,href});
   }if(remaining<=0)break;}
   for(const app of ctx.db.installedApps.iter()){const data=JSON.parse(app.document) as {name:string;permissions:string[]};
+    if(!appEnabled(ctx,app.id))continue;
     if(matches(data.name))add({id:app.id,group:"Applications",title:data.name,detail:"Installed app",href:`/apps/${app.id}`});
     if(data.permissions.includes("ownUserData:read"))for(const row of ctx.db.appData.ownerKey.filter(JSON.stringify([app.id,userId]))){if(!visit())break;if(matches(row.value))add({id:app.id,group:"Applications",title:data.name,detail:"Matching saved app data",href:`/apps/${app.id}`});}
   }
-  for(const [name,href]of [["Files","/"],["Contacts","/contacts"],["Calendar","/calendar"],["Notes","/notes"],["Tasks","/tasks"],["Settings","/settings"]])if(matches(name))add({id:href,group:"Applications",title:name,detail:"Open app",href});
+  for(const [name,href]of [["Files","/"],["Contacts","/contacts"],["Calendar","/calendar"],["Notes","/notes"],["Tasks","/tasks"],["Settings","/settings"]])if(appEnabled(ctx,name.toLowerCase())&&matches(name))add({id:href,group:"Applications",title:name,detail:"Open app",href});
   return {items:[...groups.values()].flat(),truncated};
 }

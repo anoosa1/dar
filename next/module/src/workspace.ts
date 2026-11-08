@@ -1,11 +1,13 @@
 import {SenderError} from "spacetimedb/server";
 import type {Ctx} from "./index.ts";
+import {appEnabled} from "./app-settings.ts";
 type Resource=NonNullable<ReturnType<Ctx["db"]["pimResources"]["id"]["find"]>>;
 function fail(code:string):never{throw new SenderError(code);}
 function changed(ctx:Ctx,userId:string,id:string,action:string){const old=ctx.db.pimChanges.userId.find(userId),row={userId,revision:(old?.revision??0)+1};if(old)ctx.db.pimChanges.userId.update(row);else ctx.db.pimChanges.insert(row);let eventId=ctx.newUuidV4().toString();while(ctx.db.activity.id.find(eventId))eventId=ctx.newUuidV4().toString();ctx.db.activity.insert({id:eventId,ownerId:userId,fileId:id,action,at:Number(ctx.timestamp.toMillis())});}
 function notify(ctx:Ctx,collectionId:string){const c=ctx.db.pimCollections.id.find(collectionId)!;for(const id of new Set([c.ownerId,...[...ctx.db.pimGrants.collectionId.filter(c.id)].map(g=>g.userId)])){const old=ctx.db.pimChanges.userId.find(id),row={userId:id,revision:(old?.revision??0)+1};if(old)ctx.db.pimChanges.userId.update(row);else ctx.db.pimChanges.insert(row);}ctx.db.pimCollections.id.update({...c,revision:c.revision+1,modifiedAt:Number(ctx.timestamp.toMillis())});}
 export function trashNote(ctx:Ctx,row:Resource){const c=ctx.db.pimCollections.id.find(row.collectionId)!;if(c.kind!=="notes")fail("invalidInput");if(ctx.db.noteTrash.count()>=10000n)fail("operationTooLarge");ctx.db.noteTrash.insert({id:row.id,ownerId:c.ownerId,document:JSON.stringify(row),notebookName:c.name,trashedAt:Number(ctx.timestamp.toMillis())});}
 export function noteTrashOperation(ctx:Ctx,userId:string,operation:string,p:Record<string,unknown>){
+  if(!appEnabled(ctx,"notes"))fail("notFound");
   if(operation==="trash"){
     const rows=[...ctx.db.noteTrash.ownerId.filter(userId)].filter(row=>p.id?row.id===p.id:row.id>String(p.cursor??"")).sort((a,b)=>a.id.localeCompare(b.id));
     return {items:rows.slice(0,p.id?1:200).map(row=>({...row,resource:p.id?JSON.parse(row.document):{...JSON.parse(row.document),content:undefined},document:undefined})),nextCursor:!p.id&&rows.length>200?rows[199].id:""};

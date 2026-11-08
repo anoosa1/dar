@@ -3,6 +3,8 @@ import {appTables} from "./app-tables.ts";
 import {appOperation,appSnapshot,restoreApps} from "./apps.ts";
 import {validAppId} from "../../shared/installed-apps.ts";
 import {globalSearch} from "./global-search.ts";
+import {appSettings} from "./app-settings.ts";
+import {essentialApps} from "../../shared/app-settings.ts";
 import {passwordAllows, validPasswordScope} from "../../shared/app-scopes.ts";
 import { schema, table, t, Range, SenderError, type InferSchema, type ReducerCtx, type ViewCtx } from "spacetimedb/server";
 import { pimTables, pimChanges } from "./pim-tables.ts";
@@ -701,6 +703,21 @@ export const serviceInstalledApps=db.reducer({document:t.string()},(ctx,p)=>{
   for(const old of ctx.db.installedApps.iter())ctx.db.installedApps.id.delete(old.id);
   for(const app of apps)ctx.db.installedApps.insert({id:app.id,document:JSON.stringify(app)});
 });
+export const serviceAppSettings=db.procedure({sessionId:t.string(),appId:t.string(),enabled:t.bool(),revision:t.u32()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);
+  const settings=appSettings(tx);
+  if(!p.appId)return JSON.stringify(settings);
+  const user=fromSession(tx,p.sessionId);
+  if(!user.administrator||tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+  if((essentialApps as readonly string[]).includes(p.appId))fail("forbidden");
+  if(!["notes","tasks"].includes(p.appId)&&!validAppId(p.appId))fail("invalidInput");
+  if(settings.revision!==p.revision)fail("conflict");
+  const disabled=settings.disabled.filter(id=>id!==p.appId);if(!p.enabled)disabled.push(p.appId);
+  if(disabled.length>200)fail("operationTooLarge");
+  const old=tx.db.pimPreferences.userId.find("instance:apps"),row={userId:"instance:apps",revision:settings.revision+1,value:JSON.stringify({disabled})};
+  if(old)tx.db.pimPreferences.userId.update(row);else tx.db.pimPreferences.insert(row);
+  return JSON.stringify({revision:row.revision,disabled});
+}));
 export const serviceAppData=db.procedure({sessionId:t.string(),appId:t.string(),operation:t.string(),key:t.string(),revision:t.u32(),schemaVersion:t.u32(),value:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
   return JSON.stringify(appOperation(tx,user.id,p.appId,p.operation,p.key,p.revision,p.schemaVersion,p.value));

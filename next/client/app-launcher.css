@@ -1,0 +1,11 @@
+.ui-app-launcher .ui-menu-panel{display:block;min-width:245px;width:270px;padding:8px;border-radius:16px}
+.ui-app-launcher .ui-menu-item{flex-direction:row;gap:14px;min-height:48px;padding:10px 12px;border-radius:10px;font-size:14px}
+.ui-app-launcher .ui-menu-item .icon{width:24px;height:24px;flex:none}
+.ui-app-launcher .ui-menu-item[aria-current=page]{background:var(--tonal);color:var(--on-tonal);font-weight:650}
+.ui-app-launcher .ui-menu-item .ui-menu-current{margin-left:auto;width:18px;height:18px;color:var(--ui-color)}
+.managed-apps{border:1px solid var(--ui-border);border-radius:18px;padding:0 18px;margin-top:24px}
+.managed-app{display:flex;align-items:center;gap:16px;min-height:82px;padding:16px 0}
+.managed-app+.managed-app{border-top:1px solid var(--ui-border)}
+.managed-app-icon{display:grid;place-items:center;width:42px;height:42px;flex:none;border-radius:12px;background:var(--tonal);color:var(--on-tonal)}
+.managed-app-icon .icon{width:24px;height:24px}.managed-app-name{min-width:0;flex:1}.managed-app h2{font-size:15px;margin:0}.managed-app p{margin:5px 0 0;overflow-wrap:anywhere}.managed-app-status{font-size:13px;color:var(--muted)}
+@media(max-width:650px){.ui-app-launcher>.ui-menu-panel,.ui-app-launcher[data-side=up]>.ui-menu-panel{position:fixed;left:15px;right:15px;top:62px;bottom:auto;width:auto;min-width:0;max-width:none;max-height:calc(100dvh - 82px)}.managed-apps{padding:0 12px}.managed-app{gap:10px;flex-wrap:wrap}.managed-app-status{margin-left:auto}.managed-app .secondary-button{min-width:80px}}
