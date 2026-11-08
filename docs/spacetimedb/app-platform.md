@@ -223,7 +223,7 @@ V1 scope:
   a click; denial leaves manual entry available. It does not auto-detect timezone.
 - Selected layout B: a seven-day list with previous/next week and Today controls;
   selecting a day opens its daily timetable in the right pane. Prayer settings
-  replace that pane while editing. On phones, day selection opens a full-width
+  use the shared app-settings modal. On phones, day selection opens a full-width
   timetable and “Back to week” restores the originating list row and focus.
 - A date/Today control, daily Fajr, Sunrise, Dhuhr, Asr, Maghrib and Isha rows;
   sunrise is labelled as a solar event, not an additional obligatory prayer.

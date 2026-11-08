@@ -4,6 +4,13 @@ Installed apps are trusted administrator-approved code. Node hooks and same-orig
 browser code are not sandboxed. Never put secrets in a browser bundle or manifest.
 The SDK is experimental v1; manifests use `apiVersion: 1` and exact package versions.
 
+The host header always searches across apps. The `AppWorkspace` query/onQuery and
+searchLabel props remain accepted for existing app builds, but do not scope the
+global search. Saved own-user records from enabled apps with ownUserData:read are
+searched without exposing record contents in the result snippet. App settings
+use the shared `Dialog` with the `ui-settings-dialog` presentation, not EditorPane.
+Pass `dirty` to Dialog to preserve edits on Escape/close with explicit discard.
+
 ## Build an app outside Dar
 
 Maintainers can distribute the SDK without publishing to npm:

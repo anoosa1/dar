@@ -75,6 +75,8 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   const uploadReservations = useRef(new Map<string, AbortController>());
   const detailSequence = useRef(0), active = useRef(true);
   const navigationReady = useRef(false);
+  const initialFile=useRef(new URLSearchParams(location.search).get("file"));
+  useEffect(()=>{if(!connection||state!=="ready"||!initialFile.current)return;const id=initialFile.current;initialFile.current=null;let active=true;void connection.procedures.fileDetails({id}).then(value=>{if(!active)return;const data=readProcedure<Details>(value);setDetails(data);setSelected(new Set([data.entry.id]));setTab("details");}).catch(cause=>{if(active)setError(failure(cause));});return()=>{active=false;};},[connection,state]);
   const currentDetails = useRef(details); currentDetails.current = details;
   const visible = rows.slice(0, 200), hasMore = rows.length > 200;
   useEffect(()=>{setGrid(preferences.filesView==="grid");},[preferences.filesView]);
@@ -150,7 +152,7 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
     if (!current || !connection) return;
     const row = rows.find(item => item.id === current.entry.id);
     if (row && row.revision !== current.entry.revision) void showDetails(row);
-    else if (!row) { setDetails(null); detailSequence.current++; }
+    else if (!row) void showDetails(current.entry);
   }, [rows]);
   useEffect(() => {
     if (modal?.type !== "move" && modal?.type !== "copy" || !connection) return;

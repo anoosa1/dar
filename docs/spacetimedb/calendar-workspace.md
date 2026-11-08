@@ -7,7 +7,9 @@ and retain Catppuccin Latte/Mocha. No dependency or database is added.
   meaning. Previous/Next move by the selected view's period; Month navigation
   preserves the selected day where possible and clamps month/year boundaries.
 - The single centre control shows Today for today's date and the selected date
-  otherwise. Clicking it always returns to today in the user's configured zone.
+  otherwise. Clicking it opens the themed month-grid date popover. Selecting a
+  day navigates there; Go to today returns to today in the configured timezone.
+  This November 8 refinement replaces the separate native Go to date field.
   There is no duplicate Today action in the sidebar.
 - All calendar views use the available workspace height. Day/week/agenda scroll
   their own content; Month keeps six bounded week rows. Crowded cells expose a

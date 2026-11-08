@@ -39,10 +39,23 @@ async function start() {
 }
 async function stop() {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  // This fixture has no systemd cgroup: own the runtime as well as its launcher.
+  const {runtime}=JSON.parse(await readFile(path.join(root,"service-pids.json"),"utf8"));
+  function signalRuntime(signal){try{process.kill(runtime,signal);}catch(error){if(error.code!=="ESRCH")throw error;}}
+  signalRuntime("SIGTERM");
   await new Promise(resolve => {
+    const runtimeTimer=setTimeout(()=>signalRuntime("SIGKILL"),5000);
     const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
-    child.once("exit", () => { clearTimeout(timer); resolve(); }); child.kill("SIGTERM");
+    child.once("close", () => { clearTimeout(timer);clearTimeout(runtimeTimer); resolve(); }); child.kill("SIGTERM");
   });
+  // The launcher can exit before its runtime's inherited pipes/lock finish closing.
+  const deadline=Date.now()+5000;
+  while(true){
+    try{const record=JSON.parse(await readFile(path.join(root,"runtime.lock"),"utf8"));process.kill(record.pid,0);}
+    catch(error){if(["ENOENT","ESRCH"].includes(error.code))break;throw error;}
+    if(Date.now()>=deadline)throw Error("Fixture runtime still owns its root after shutdown.");
+    await new Promise(resolve=>setTimeout(resolve,25));
+  }
 }
 try {
   await start();

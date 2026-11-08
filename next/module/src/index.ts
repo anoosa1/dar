@@ -2,6 +2,7 @@ import { Identity, ScheduleAt } from "spacetimedb";
 import {appTables} from "./app-tables.ts";
 import {appOperation,appSnapshot,restoreApps} from "./apps.ts";
 import {validAppId} from "../../shared/installed-apps.ts";
+import {globalSearch} from "./global-search.ts";
 import {passwordAllows, validPasswordScope} from "../../shared/app-scopes.ts";
 import { schema, table, t, Range, SenderError, type InferSchema, type ReducerCtx, type ViewCtx } from "spacetimedb/server";
 import { pimTables, pimChanges } from "./pim-tables.ts";
@@ -703,6 +704,11 @@ export const serviceInstalledApps=db.reducer({document:t.string()},(ctx,p)=>{
 export const serviceAppData=db.procedure({sessionId:t.string(),appId:t.string(),operation:t.string(),key:t.string(),revision:t.u32(),schemaVersion:t.u32(),value:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
   return JSON.stringify(appOperation(tx,user.id,p.appId,p.operation,p.key,p.revision,p.schemaVersion,p.value));
+}));
+export const serviceGlobalSearch=db.procedure({sessionId:t.string(),query:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+  if(p.query.length>200)fail("invalidInput");if(!p.query.trim())return JSON.stringify({items:[],truncated:false});
+  return JSON.stringify(globalSearch(tx,user.id,p.query,entry=>!!access(tx,entry,user.id)));
 }));
 
 export const serviceSessions = db.procedure({ sessionId: t.string() }, t.string(), (ctx, { sessionId }) => ctx.withTx(tx => {

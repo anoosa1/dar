@@ -180,6 +180,7 @@ export async function startServer(config: ServerConfig) {
         const authenticated = await auth.authenticate(secret);
         if (!authenticated) throw new AppError("unauthenticated", 401);
         if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !authorizeCookieWrite(config.origin, origin, typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : undefined, authenticated.session.csrfDigest)) throw new AppError("csrfRejected", 403);
+        if(url.pathname==="/api/v1/search"&&method==="GET")return json(res,await db.call("service_global_search",[authenticated.session.id,string(url.searchParams.get("q")??"",800)]));
         if(url.pathname==="/api/v1/apps"||url.pathname.startsWith("/api/v1/apps/")||url.pathname==="/api/v1/admin/installedApps")return await handleAppHttp(req,res,url,appRegistry,db,authenticated.session.id,authenticated.user,appRuntime!.handlers,()=>body(req,80*1024));
         if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
         if(url.pathname==="/api/v1/account/profile"){

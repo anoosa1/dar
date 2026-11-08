@@ -58,6 +58,8 @@ try {
     run(["--test", "--test-concurrency=1", "test/calendar-navigation.test.ts", "test/davx5.integration.test.ts", "test/pim-standards.test.ts", "test/pim.integration.test.ts"]);
     run(["--test", "test/pim-upgrade.integration.test.ts"]);
   }
+  run(["--test","test/global-search.integration.test.ts"]);
+  run(["test/refinement-browser.mjs"]);
   if(!workspaceOnly&&!pimOnly){
   run(["--test", "--test-concurrency=1", "test/scim-model.test.ts", "test/identity.integration.test.ts", "test/identity-lifecycle.integration.test.ts"]);
   run(["--test", "test/identity-upgrade.integration.test.ts"]);

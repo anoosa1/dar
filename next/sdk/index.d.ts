@@ -11,5 +11,6 @@ export interface AppHost {
 }
 export function AppWorkspace(props:{host:AppHost;query:string;onQuery:(value:string)=>void;sidebar:ReactNode;children:ReactNode;details?:ReactNode;searchLabel?:string}):ReactNode;
 export function EditorPane(props:{title:string;onClose:()=>void;dirty?:boolean;children:ReactNode}):ReactNode;
+export function Dialog(props:{title:string;onClose:()=>void;dirty?:boolean;children:ReactNode}):ReactNode;
 export function Select(props:import("react").SelectHTMLAttributes<HTMLSelectElement>):ReactNode;
 export function Icon(props:{name:"settings"|"close"|"back"|"chevron"|"clock"|"plus"|"check"}):ReactNode;
