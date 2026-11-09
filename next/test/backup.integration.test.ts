@@ -49,7 +49,7 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   assert.equal(await readFile(path.join(exported, manifest.files.find(item => item.id === file.fileId)!.contentFile!), "utf8"), "This content must survive a full restore.");
   assert.doesNotMatch(JSON.stringify(manifest), /verifier|csrfDigest|signing-key/);
   const saved = await readFile(path.join(directory, "snapshot.json"), "utf8");
-  assert.match(saved, /dar-backup-v5/);
+  assert.match(saved, /dar-backup-v6/);
   assert.doesNotMatch(saved,/"providerModels"|"provisioningTokens"|"identityProofs"/);
   const listener = createServer(); await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
   const port = (listener.address() as import("node:net").AddressInfo).port;

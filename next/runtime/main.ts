@@ -11,6 +11,7 @@ const runtime = await startServer({
   databasePublicUrl: process.env.DAR_DATABASE_PUBLIC_URL,
   appsFile:process.env.DAR_APPS_FILE,
   oidcFile: process.env.DAR_OIDC_FILE,
+  codexFile:process.env.DAR_CODEX_FILE,
   bootstrapTokenFile: required("DAR_BOOTSTRAP_TOKEN_FILE"), development: process.env.DAR_DEVELOPMENT === "1",
 });
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { void runtime.close(); });

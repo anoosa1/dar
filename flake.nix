@@ -36,6 +36,11 @@
         service = evaluated.config.systemd.services.dar;
         nginxConfig = evaluated.config.environment.etc."nginx/nginx.conf".source;
         invalidPublic = evaluated.extendModules { modules = [ { services.dar.oidc.clients.public.requirePkce = false; } ]; };
+        agentEnabled = evaluated.extendModules { modules = [ { services.dar.agent = {
+          enable = true; package = pkgs.writeShellScriptBin "codex" "exit 1";
+          userId = "00000000-0000-0000-0000-000000000000"; gitHosts = [ "github.com" ];
+        }; } ]; };
+        agentService = agentEnabled.config.systemd.services.dar;
       in { module-evaluation = assert service.serviceConfig.User == "dar";
         assert service.environment.DAR_ROOT == "/var/lib/dar";
         assert service.serviceConfig.ProtectSystem == "strict";
@@ -43,6 +48,11 @@
         assert evaluated.config.services.dar.oidc.clients.gitea.requirePkce == false;
         assert evaluated.config.services.dar.oidc.clients.photos.requirePkce;
         assert evaluated.config.services.dar.oidc.clients.public.requirePkce;
+        assert agentService.serviceConfig.ProtectHome;
+        assert agentService.serviceConfig.MemoryMax == "2G";
+        assert agentService.serviceConfig.TasksMax == 256;
+        assert builtins.elem "/var/lib/dar-codex" agentService.serviceConfig.ReadWritePaths;
+        assert builtins.hasAttr "DAR_CODEX_FILE" agentService.environment;
         assert builtins.any (item: !item.assertion && nixpkgs.lib.hasPrefix "services.dar.oidc.clients.public " item.message) invalidPublic.config.assertions;
         assert builtins.hasAttr "DAR_OIDC_FILE" service.environment;
         assert builtins.hasAttr "dar.example.test" evaluated.config.services.nginx.virtualHosts;

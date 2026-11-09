@@ -62,6 +62,10 @@ export function directoryOperation(ctx: Ctx, operation: string,p:Record<string,u
     if(!a||old?.deleted)fail("notFound");if(a.administrator)fail("forbidden");expected(old?.revision??1,p.revision);
     revokeUser(ctx,a.id);ctx.db.accounts.id.update({...a,enabled:false});
     for(const record of ctx.db.appData.ownerId.filter(a.id))ctx.db.appData.id.delete(record.id);
+    for(const row of ctx.db.agentMessages.ownerId.filter(a.id))ctx.db.agentMessages.id.delete(row.id);
+    for(const row of ctx.db.agentRuns.ownerId.filter(a.id))ctx.db.agentRuns.id.delete(row.id);
+    for(const row of ctx.db.agentThreads.ownerId.filter(a.id))ctx.db.agentThreads.id.delete(row.id);
+    for(const row of ctx.db.agentProjects.ownerId.filter(a.id))ctx.db.agentProjects.id.delete(row.id);
     const row={userId:a.id,document:old?.document??"{}",revision:(old?.revision??1)+1,modifiedAt:now(ctx),deleted:true};
     if(old)ctx.db.directoryProfiles.userId.update(row);else ctx.db.directoryProfiles.insert(row);
     for(const member of ctx.db.directoryMembers.userId.filter(a.id)){ctx.db.directoryMembers.id.delete(member.id);const g=ctx.db.directoryGroups.id.find(member.groupId)!;ctx.db.directoryGroups.id.update({...g,revision:g.revision+1,modifiedAt:now(ctx)});}

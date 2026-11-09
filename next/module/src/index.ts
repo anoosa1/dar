@@ -1,5 +1,8 @@
 import { Identity, ScheduleAt } from "spacetimedb";
 import {appTables} from "./app-tables.ts";
+import {agentTables} from "./agent-tables.ts";
+import {agentOperation,agentSnapshot,restoreAgent} from "./agent.ts";
+import {agentWorker} from "./agent-runs.ts";
 import {appOperation,appSnapshot,restoreApps} from "./apps.ts";
 import {validAppId} from "../../shared/installed-apps.ts";
 import {globalSearch} from "./global-search.ts";
@@ -43,7 +46,7 @@ const backupPins = table({}, { id: t.string().primaryKey(), backupId: t.string()
 const appPasswords = table({}, { id: t.string().primaryKey(), userId: t.string().index("btree"), digest: t.string().unique(), label: t.string(), scope: t.string(), sessionId: t.string().unique(), principal: t.identity(), expiresAt: t.f64(), revoked: t.bool() });
 const rootRevisions = table({}, { userId: t.string().primaryKey(), revision: t.u32(), modifiedAt: t.f64() });
 const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().index("btree"), fileId: t.string(), action: t.string(), at: t.f64() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, ...pimTables, ...identityTables, ...workspaceTables,...appTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, ...pimTables, ...identityTables, ...workspaceTables,...appTables,...agentTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -630,7 +633,7 @@ export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, 
     tx.db.backupPins.insert({ id: `${id}/${blobId}`, backupId: id, blobId });
     return { id: blobId, size: upload.size, digest: upload.digest };
   });
-  return JSON.stringify({ format: "dar-backup-v5", apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
+  return JSON.stringify({ format: "dar-backup-v6", agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
     accounts: [...tx.db.accounts.iter()], files: [...tx.db.fileEntries.iter()], versions: history,
     grants: [...tx.db.grants.iter()], publicShares: [...tx.db.publicShares.iter()], favorites: [...tx.db.favorites.iter()],
     uploads: blobIds.map(blobId => tx.db.uploads.id.find(blobId)),
@@ -658,9 +661,9 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
   const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; files: FileEntry[]; versions: Row<"versions">[];
     grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads: Row<"uploads">[];
-    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot> };
-  if (!["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5"].includes(value.format)) fail("invalidInput");
-  if (value.format !== "dar-backup-v1" && !value.pim || ["dar-backup-v3","dar-backup-v4","dar-backup-v5"].includes(value.format) && !value.identity||["dar-backup-v4","dar-backup-v5"].includes(value.format)&&!value.workspace||value.format==="dar-backup-v5"&&!value.apps) fail("invalidInput");
+    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot>;agent?:ReturnType<typeof agentSnapshot> };
+  const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6"],version=formats.indexOf(value.format)+1;
+  if (!version||version>=2&&!value.pim||version>=3&&!value.identity||version>=4&&!value.workspace||version>=5&&!value.apps||version>=6&&!value.agent) fail("invalidInput");
   for (const row of value.accounts) {
     ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0 });
   }
@@ -695,6 +698,7 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   restoreIdentity(ctx,value.identity);
   restoreWorkspace(ctx,value.workspace);
   restoreApps(ctx,value.apps);
+  restoreAgent(ctx,value.agent);
 });
 
 export const serviceInstalledApps=db.reducer({document:t.string()},(ctx,p)=>{
@@ -710,7 +714,7 @@ export const serviceAppSettings=db.procedure({sessionId:t.string(),appId:t.strin
   const user=fromSession(tx,p.sessionId);
   if(!user.administrator||tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
   if((essentialApps as readonly string[]).includes(p.appId))fail("forbidden");
-  if(!["notes","tasks"].includes(p.appId)&&!validAppId(p.appId))fail("invalidInput");
+  if(!["notes","tasks","agent"].includes(p.appId)&&!validAppId(p.appId))fail("invalidInput");
   if(settings.revision!==p.revision)fail("conflict");
   const disabled=settings.disabled.filter(id=>id!==p.appId);if(!p.enabled)disabled.push(p.appId);
   if(disabled.length>200)fail("operationTooLarge");
@@ -721,6 +725,15 @@ export const serviceAppSettings=db.procedure({sessionId:t.string(),appId:t.strin
 export const serviceAppData=db.procedure({sessionId:t.string(),appId:t.string(),operation:t.string(),key:t.string(),revision:t.u32(),schemaVersion:t.u32(),value:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
   return JSON.stringify(appOperation(tx,user.id,p.appId,p.operation,p.key,p.revision,p.schemaVersion,p.value));
+}));
+export const serviceAgent=db.procedure({sessionId:t.string(),operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+  if(p.document.length>128*1024)fail("operationTooLarge");
+  const value:unknown=JSON.parse(p.document);if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");
+  return JSON.stringify(agentOperation(tx,user.id,p.operation,value as Record<string,unknown>,entry=>!!access(tx,entry,user.id),p.sessionId));
+}));
+export const serviceAgentWorker=db.procedure({id:t.string(),lease:t.string(),operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);return JSON.stringify(agentWorker(tx,p.id,p.lease,p.operation,p.document,sid=>fromSession(tx,sid).id,(entry,userId)=>!!access(tx,entry,userId)));
 }));
 export const serviceGlobalSearch=db.procedure({sessionId:t.string(),query:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");

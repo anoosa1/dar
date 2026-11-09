@@ -29,6 +29,8 @@ import {handleAppHttp} from "./apps/http.ts";
 import {activateApps} from "./apps/server.ts";
 import type {AppSettings,ManagedApp} from "../shared/app-settings.ts";
 import { configureOidc } from "./identity/config.ts";
+import {handleAgentHttp} from "./agent/http.ts";
+import {createAgentRuntime,type AgentRuntime} from "./agent/runtime.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
@@ -37,6 +39,7 @@ export interface ServerConfig {
   development?: boolean;
   appsFile?:string;
   oidcFile?: string;
+  codexFile?:string;
 }
 function json(res: ServerResponse, value: unknown, status = 200) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
@@ -77,6 +80,7 @@ export async function startServer(config: ServerConfig) {
   const releaseRoot = await lockRoot(root);
   let ownedContext: Context | undefined;
   let appRuntime:Awaited<ReturnType<typeof activateApps>>|undefined;
+  let agentRuntime:AgentRuntime|undefined;
   try {
   const db = await database(config.databaseUrl, config.databaseName, config.serviceTokenFile);
   await db.call("service_startup", [`${config.origin}/auth/issuer`]);
@@ -93,7 +97,7 @@ export async function startServer(config: ServerConfig) {
   // Keep revisioned writes and hook disposal/activation in the same order.
   let appUpdate:Promise<unknown>=Promise.resolve();
   const managedApps=(settings:AppSettings):ManagedApp[]=>[
-    ...["files","contacts","calendar","notes","tasks"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks"].includes(id)})),
+    ...["files","contacts","calendar","notes","tasks","agent"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","agent"].includes(id)})),
     ...appRegistry.inventory.map(item=>({...item,enabled:appRegistry.apps.has(item.id)&&!settings.disabled.includes(item.id),canToggle:hostEnabledApps.has(item.id)})),
   ];
   const databasePublicUrl = `${(config.databasePublicUrl ?? (config.development ? config.databaseUrl : `${config.origin}/spacetime`)).replace(/\/$/, "")}/`;
@@ -109,6 +113,7 @@ export async function startServer(config: ServerConfig) {
   // Independent Cordis effects can dispose concurrently. One ordered disposer
   // keeps the storage lock held until HTTP handlers and maintenance have drained.
   ctx.effect(() => () => disposeResources(), "runtime-resources");
+  agentRuntime=await createAgentRuntime(db,root,config.codexFile??path.join(root,"codex.json"));
   const blobs = blobStore(root);
   await blobs.recover();
   const attempts = new Map<string, { count: number; until: number }>();
@@ -205,12 +210,14 @@ export async function startServer(config: ServerConfig) {
           const update=appUpdate.catch(()=>{}).then(async()=>{
             if(!managedApps(await readAppSettings()).some(app=>app.id===id&&app.canToggle))throw new AppError("forbidden",403);
             const settings=await db.call<AppSettings>("service_app_settings",[authenticated.session.id,id,p.enabled,revision]);
+            if(id==="agent"&&!p.enabled)agentRuntime!.cancelAll();
             await appRuntime!.setEnabled(id,p.enabled as boolean);
             await db.call("service_installed_apps",[JSON.stringify([...appRegistry.apps.values()].map(a=>a.descriptor))]);
             return {...settings,items:managedApps(settings)};
           });appUpdate=update;return json(res,await update);
         }
         if(url.pathname==="/api/v1/apps"||url.pathname.startsWith("/api/v1/apps/"))return await handleAppHttp(req,res,url,appRegistry,db,authenticated.session.id,authenticated.user,appRuntime!.handlers,()=>body(req,80*1024));
+        if(/^\/api\/v1\/agent(\/|$)/.test(url.pathname))return await handleAgentHttp(req,res,url,db,authenticated.session.id,authenticated.user.id,agentRuntime!,()=>body(req,128*1024));
         const optionalApp=/^\/api\/v1\/(notes|tasks)(\/|$)/.exec(url.pathname);
         if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);
         if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
@@ -246,7 +253,7 @@ export async function startServer(config: ServerConfig) {
         }
         if (url.pathname === "/api/v1/auth/token" && method === "POST") return json(res, { token: await issuer.token(authenticated.session.id, authenticated.session.expiresAt, url.searchParams.get("tab") ?? undefined), databaseUrl: databasePublicUrl, databaseName: config.databaseName });
         if (url.pathname === "/api/v1/auth/logout" && method === "POST") {
-          await auth.logout(authenticated); res.setHeader("set-cookie", cookie("", 0)); return json(res, { ok: true });
+          await auth.logout(authenticated);agentRuntime!.cancelSession(authenticated.session.id); res.setHeader("set-cookie", cookie("", 0)); return json(res, { ok: true });
         }
         if (url.pathname === "/api/v1/auth/password" && method === "POST") {
           const p = await body(req); await auth.changePassword(authenticated, string(p.currentPassword), string(p.password));
@@ -338,9 +345,9 @@ export async function startServer(config: ServerConfig) {
       await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
       await Promise.allSettled([...inflight]);
       await maintenance;
-    } finally { attempts.clear();await appRuntime?.close(); await releaseRoot(); }
+    } finally { attempts.clear();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
   };
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(config.port, config.host, resolve); });
   return { server, ctx, close: () => ctx.fiber.dispose() };
-  } catch (error) {await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
+  } catch (error) {await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
 }

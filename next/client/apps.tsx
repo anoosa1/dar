@@ -3,8 +3,8 @@ import {Icon,type IconName} from "./icons.tsx";
 import {useInstalledApps} from "./installed-apps.tsx";
 import {useAppSettings} from "./app-availability.tsx";
 import type {MenuAction} from "./controls.tsx";
-export type AppId="files"|"contacts"|"calendar"|"notes"|"tasks"|"settings"|`app:${string}`;
-const apps:{id:AppId;label:string;icon:IconName;href:string}[]=[{id:"files",label:"Files",icon:"folder",href:"/"},{id:"contacts",label:"Contacts",icon:"contacts",href:"/contacts"},{id:"calendar",label:"Calendar",icon:"calendar",href:"/calendar"},{id:"notes",label:"Notes",icon:"file",href:"/notes"},{id:"tasks",label:"Tasks",icon:"check",href:"/tasks"}];
+export type AppId="files"|"contacts"|"calendar"|"notes"|"tasks"|"agent"|"settings"|`app:${string}`;
+const apps:{id:AppId;label:string;icon:IconName;href:string}[]=[{id:"files",label:"Files",icon:"folder",href:"/"},{id:"contacts",label:"Contacts",icon:"contacts",href:"/contacts"},{id:"calendar",label:"Calendar",icon:"calendar",href:"/calendar"},{id:"notes",label:"Notes",icon:"file",href:"/notes"},{id:"tasks",label:"Tasks",icon:"check",href:"/tasks"},{id:"agent",label:"Agent",icon:"agent",href:"/agent"}];
 export function AppSwitcher({active,administrator=false}:{active:AppId;administrator?:boolean}){
   const installed=useInstalledApps(),{settings}=useAppSettings(),all=[...apps.filter(app=>!settings?.disabled.includes(app.id)),...installed.map(app=>({id:`app:${app.id}` as AppId,label:app.name,icon:"clock" as IconName,href:`/apps/${app.id}`}))];
   const actions:MenuAction[]=all.map(app=>({label:app.label,href:app.href,icon:app.icon,current:app.id===active}));

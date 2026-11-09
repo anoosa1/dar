@@ -2,6 +2,10 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.dar;
+  codexFile = pkgs.writeText "dar-codex.json" (builtins.toJSON {
+    executable = if cfg.agent.package == null then "" else "${cfg.agent.package}/bin/codex";
+    inherit (cfg.agent) home userId gitHosts;
+  });
   appsFile = pkgs.writeText "dar-apps.json" (builtins.toJSON (map (package: { path = toString package; }) cfg.apps));
   oidcFile = pkgs.writeText "dar-oidc.json" (builtins.toJSON {
     clients = lib.mapAttrsToList (id: client:
@@ -19,6 +23,13 @@ let
 in {
   options.services.dar = {
     enable = lib.mkEnableOption "Dar personal cloud";
+    agent = {
+      enable = lib.mkEnableOption "Codex execution for one Dar account using an existing service-user ChatGPT login";
+      package = lib.mkOption { type = lib.types.nullOr lib.types.package; default = null; description = "Codex CLI with named permission-profile support. Tested with 0.166.0. No automatic download."; };
+      home = lib.mkOption { type = lib.types.strMatching "/var/lib/[a-zA-Z0-9_/-]+"; default = "/var/lib/dar-codex"; description = "Private Codex home for the dar service user. Login tokens never enter the Nix store."; };
+      userId = lib.mkOption { type = lib.types.str; default = ""; description = "Immutable Dar account UUID permitted to use this Codex login. Shown in Agent settings."; };
+      gitHosts = lib.mkOption { type = lib.types.listOf (lib.types.strMatching "[A-Za-z0-9][A-Za-z0-9.-]*"); default = []; description = "Allowed HTTPS repository hosts. Redirects and credential-bearing URLs are rejected."; };
+    };
     apps = lib.mkOption { type = lib.types.listOf lib.types.package; default = []; description = "Trusted prebuilt Dar app packages. Changes activate on service restart."; };
     oidc.clients = lib.mkOption {
       default = {};
@@ -49,6 +60,7 @@ in {
     assertions = [
       { assertion = hostMatch != null; message = "services.dar.origin must be HTTPS without a path/trailing slash."; }
       { assertion = cfg.port != cfg.databasePort; message = "Dar HTTP and database ports must differ."; }
+      { assertion = !cfg.agent.enable || cfg.agent.package != null && builtins.match "[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}" cfg.agent.userId != null && !(lib.hasInfix "/../" cfg.agent.home) && !(lib.hasInfix "/./" cfg.agent.home) && cfg.agent.home != "/var/lib/"; message = "Dar Agent needs an explicit Codex package, Dar account UUID and private /var/lib Codex home."; }
     ] ++ lib.mapAttrsToList (id: client: {
       assertion = builtins.match "[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}" id != null
         && client.name != "" && client.redirectUris != [] && builtins.elem "openid" client.scopes
@@ -60,6 +72,7 @@ in {
     # DynamicUser state uses private-directory symlinks, which managed paths reject.
     users.groups.dar = {};
     users.users.dar = { isSystemUser = true; group = "dar"; home = "/var/lib/${cfg.stateDirectory}"; };
+    systemd.tmpfiles.rules = lib.optional cfg.agent.enable "d ${cfg.agent.home} 0700 dar dar -";
     systemd.services.dar = {
       description = "Dar personal cloud";
       wantedBy = [ "multi-user.target" ];
@@ -69,7 +82,8 @@ in {
         DAR_PORT = toString cfg.port; DAR_DATABASE_PORT = toString cfg.databasePort;
         DAR_DATABASE_NAME = cfg.databaseName;
         DAR_APPS_FILE = toString appsFile;
-      } // lib.optionalAttrs (cfg.oidc.clients != {}) { DAR_OIDC_FILE = toString oidcFile; };
+      } // lib.optionalAttrs (cfg.oidc.clients != {}) { DAR_OIDC_FILE = toString oidcFile; }
+        // lib.optionalAttrs cfg.agent.enable { DAR_CODEX_FILE = toString codexFile; };
       serviceConfig = {
         Type = "simple"; ExecStart = "${cfg.package}/bin/dar";
         User = "dar"; Group = "dar";
@@ -84,7 +98,8 @@ in {
         ProtectKernelTunables = true; ProtectKernelModules = true; ProtectControlGroups = true;
         RestrictSUIDSGID = true;
         RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
-        ReadWritePaths = [ "/var/lib/${cfg.stateDirectory}" ]; LimitNOFILE = 65536;
+        ReadWritePaths = [ "/var/lib/${cfg.stateDirectory}" ] ++ lib.optional cfg.agent.enable cfg.agent.home; LimitNOFILE = 65536;
+        TasksMax = lib.mkIf cfg.agent.enable 256; MemoryMax = lib.mkIf cfg.agent.enable "2G";
       };
     };
     # SpacetimeDB fetches signing keys through the canonical HTTPS issuer.

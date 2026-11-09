@@ -172,6 +172,19 @@ update this guide when a design decision changes.
   See [the app platform](spacetimedb/app-platform.md). Calculations use Dar's own
   dependency-free library with explicit method/high-latitude settings and labelled
   unavailable solar events. It ships as a separate trusted app package.
+- Agent: the November 8 [workspace mock](spacetimedb/agent-workspace-mock.html)
+  is approved. Follow the T3-style composition: projects and threads on the left,
+  conversation/composer in the center, focused changes on the right and
+  collapsible output below. Keep Dar's shared header/search and Twilight themes.
+  Phone views show one panel at a time and preserve drafts. Projects select either
+  a Git repository or a Dar Files folder; blob paths are never project paths.
+  The implementation persists projects, threads, messages and Codex runs. Clearly
+  distinguish saving a message from running it. Use the existing-login Codex
+  provider first, with model selection, live activity/output, Stop and persisted
+  completion/error states. Review changes before applying text edits to Files.
+  Execution launches `codex exec --json` directly with the CLI's saved login;
+  do not use an app-server RPC layer or replace it with an API-key integration.
+  Do not present sample tool output or simulated assistant replies as real work.
 - Scheduling forms offer common repetition, priority and reminder choices.
   Exact imported values and custom rules remain available in advanced controls;
   summaries must not simplify schedules they do not understand.

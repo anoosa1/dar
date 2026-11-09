@@ -11,6 +11,7 @@ import { deliverReminders } from "../runtime/pim/reminders.ts";
 import {identityAdmin,authorize,exchange} from "./identity-helpers.ts";
 import * as oidc from "openid-client";
 import {manageApps} from "../runtime/apps/install.ts";
+import {randomUUID} from "node:crypto";
 
 if (!process.env.DAR_SPACETIME_BIN) throw new Error("DAR_SPACETIME_BIN is required.");
 async function freePort() {
@@ -77,6 +78,10 @@ try {
   const workspaceHeaders={...session.headers,"content-type":"application/json"};
   async function createWorkspace(endpoint,value){const response=await fetch(origin+"/api/v1/"+endpoint,{method:"POST",headers:workspaceHeaders,body:JSON.stringify(value)});assert.equal(response.status,201,await response.clone().text());return {row:await response.json(),etag:response.headers.get("etag")};}
   const notebook=(await createWorkspace("notes/notebooks",{name:"Durable notes"})).row;
+  const agentProject=(await createWorkspace("agent/projects",{id:randomUUID(),name:"Durable Agent project",sourceType:"git",sourceRef:"https://example.test/you/repo.git"})).row;
+  const agentThread=(await createWorkspace("agent/threads",{id:randomUUID(),projectId:agentProject.id,title:"Durable conversation"})).row;
+  const agentMessage={id:randomUUID(),content:"Keep this task through a runtime crash."};
+  assert.equal((await fetch(`${origin}/api/v1/agent/threads/${agentThread.id}/messages`,{method:"POST",headers:{...workspaceHeaders,"if-match":'"1"'},body:JSON.stringify(agentMessage)})).status,201);
   const exactMarkdown="# Durable source\r\n\r\nUnchanged after a crash.\n";
   const note=await createWorkspace("notes/items",{collectionId:notebook.id,title:"Durable note",content:exactMarkdown,tags:["restart"],favorite:true});
   const trashed=await createWorkspace("notes/items",{collectionId:notebook.id,title:"Durable trash",content:exactMarkdown});
@@ -119,6 +124,7 @@ try {
   const recoveredNote=await (await fetch(`${origin}/api/v1/notes/items/${note.row.id}`,{headers:session.headers})).json();assert.equal(recoveredNote.content,exactMarkdown);assert.equal(recoveredNote.uid,note.row.uid);assert.equal(recoveredNote.data.favorite,true);
   const recoveredTrash=await (await fetch(`${origin}/api/v1/notes/trash`,{headers:session.headers})).json();assert.ok(recoveredTrash.items.some(row=>row.id===trashed.row.id));
   const recoveredTask=await (await fetch(`${origin}/api/v1/tasks/items/${task.id}`,{headers:session.headers})).json();assert.equal(recoveredTask.content,task.content);assert.equal(recoveredTask.uid,task.uid);
+  const recoveredAgent=await(await fetch(`${origin}/api/v1/agent/threads/${agentThread.id}/messages`,{headers:session.headers})).json();assert.equal(recoveredAgent.thread.projectId,agentProject.id);assert.equal(recoveredAgent.items[0].id,agentMessage.id);assert.equal(recoveredAgent.items[0].content,agentMessage.content);
   console.info("PASS forced runtime failure during upload, full process/database restart, stale-lock/temp reconciliation, durable bytes, persisted login, reconnection and idempotent upload completion.");
   assert.equal((await(await fetch(appEndpoint,{headers:session.headers})).json()).value.location,"private restart proof");
   await stop();await manageApps(root,"apps-disable","org.dar.prayer-times");await start();assert.equal((await fetch(appEndpoint,{headers:session.headers})).status,404);
@@ -126,5 +132,6 @@ try {
   console.info("PASS external app data survives crash/restart and explicit disable/uninstall/reinstall without a core rebuild.");
   console.info("PASS Calendar resource and reminder watermark survive the same crash/restart; due delivery resumes without duplication.");
   console.info("PASS exact Notes source/metadata/private trash and recurring VTODO survive the same crash; task reminders catch up exactly once.");
+  console.info("PASS Agent project, thread and exact saved message survive the same forced runtime/database restart.");
   console.info("PASS unredeemed OIDC code, active refresh token, client registration, signing keys, native binding and SCIM directory/credential survive the same forced process/database restart.");
 } finally { await stop(); }

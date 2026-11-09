@@ -41,7 +41,7 @@ export async function backup(db: Database, root: string, destination: string) {
   for (const blob of snapshot.blobs) await copyVerified(blobPath(root, blob.id), blobPath(destination, blob.id), blob);
   await copyVerified(path.join(root, "secrets/signing-key.json"), path.join(destination, "signing-key.json"));
   await copyVerified(path.join(root, "secrets/identity-keyring.key"), path.join(destination, "identity-keyring.key"));
-  if(["dar-backup-v3","dar-backup-v4","dar-backup-v5"].includes(snapshot.format))await copyVerified(path.join(root,"secrets/oidc-keyring.json"),path.join(destination,"oidc-keyring.json"));
+  if(["dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6"].includes(snapshot.format))await copyVerified(path.join(root,"secrets/oidc-keyring.json"),path.join(destination,"oidc-keyring.json"));
   const text = JSON.stringify(snapshot);
   await createDurableFile(path.join(destination, "snapshot.json"), text);
   await syncDirectory(path.join(destination, "blobs"));
@@ -60,15 +60,15 @@ export async function restore(db: Database, source: string, root: string) {
   const complete = JSON.parse(await readFile(path.join(source, "complete.json"), "utf8"));
   if (complete.format !== "dar-backup-v1" || complete.snapshotDigest !== createHash("sha256").update(text).digest("hex")) throw new Error("Incomplete or corrupted backup.");
   const snapshot = JSON.parse(text) as Manifest;
-  if (!["dar-backup-v1", "dar-backup-v2", "dar-backup-v3", "dar-backup-v4", "dar-backup-v5"].includes(snapshot.format)) throw new Error("Unsupported backup format.");
+  if (!["dar-backup-v1", "dar-backup-v2", "dar-backup-v3", "dar-backup-v4", "dar-backup-v5", "dar-backup-v6"].includes(snapshot.format)) throw new Error("Unsupported backup format.");
   await openRoot(root); const release = await lockRoot(root);
   try {
     const bootstrapFiles = new Set(["bootstrap-token", "database-token"]);
-    if ((await readdir(path.join(root, "blobs"))).length || (await readdir(path.join(root, "secrets"))).some(name => !bootstrapFiles.has(name))) throw new Error("Restore requires an empty content and identity root.");
+    if ((await readdir(path.join(root, "blobs"))).length || (await readdir(path.join(root,"agent-workspaces"))).length || (await readdir(path.join(root, "secrets"))).some(name => !bootstrapFiles.has(name))) throw new Error("Restore requires an empty content and identity root.");
     for (const blob of snapshot.blobs) await copyVerified(blobPath(source, blob.id), blobPath(root, blob.id), blob);
     await copyVerified(path.join(source, "signing-key.json"), path.join(root, "secrets/signing-key.json"));
     await copyVerified(path.join(source, "identity-keyring.key"), path.join(root, "secrets/identity-keyring.key"));
-    if(["dar-backup-v3","dar-backup-v4","dar-backup-v5"].includes(snapshot.format))await copyVerified(path.join(source,"oidc-keyring.json"),path.join(root,"secrets/oidc-keyring.json"));
+    if(["dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6"].includes(snapshot.format))await copyVerified(path.join(source,"oidc-keyring.json"),path.join(root,"secrets/oidc-keyring.json"));
     await syncDirectory(path.join(root, "blobs")); await syncDirectory(path.join(root, "secrets"));
     await db.call("service_restore", [text]);
   } finally { await release(); }

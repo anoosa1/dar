@@ -92,11 +92,36 @@ code reclamation and per-app data purge/export commands are not shipped yet;
 there is no implicit destructive cleanup. Account deletion removes that account's
 app data while following Dar's existing account/domain retention policy.
 
-Backup format v5 contains all app records, including disabled/orphaned data, and
-the active package inventory/digests. V1–v4 backups remain readable. Restore does
+Backup format v6 contains all app records, including disabled/orphaned data, the
+active package inventory/digests and private Agent projects, threads, messages and runs.
+V1–v5 backups remain readable. Restore does
 not fetch or execute packages, and the restored active inventory is empty until
 the configured packages are reconciled at startup. Keep pinned packages/flake
 locks alongside backups; executable code is not included in backup contents.
+
+## Agent
+
+Agent is an optional built-in app under `/agent`, with instance-wide enable/disable
+in Administration → Apps. Its native account-scoped storage is separate from the
+installed-app SDK's small settings/document quota. Disabling it retains data.
+
+Projects reference either a credential-free Git repository URL (HTTPS or
+`git@host:path`) or an authorized folder identity in Dar Files. A Files project
+does not expose physical blob paths or change how Files stores its content.
+Threads and messages use revision-checked appends and recovery drafts scoped to
+the account/thread in the current browser tab. Optional Codex execution reuses an
+existing server-side ChatGPT login, bound to one immutable Dar account ID. Models
+come from that Codex installation. Runs provide bounded live output, cancellation,
+persisted assistant messages and reviewable changes in isolated working copies.
+
+Git provisioning currently supports public, credential-free HTTPS repositories on
+configured hosts. Files projects copy authorized file versions, with revision
+checks before materialization. Modified text files up to 64 KiB can be reviewed
+and applied through the existing Files upload/version path. New files, deletions,
+SSH authentication, Git commits/pushes and deployment are not published by Agent.
+
+See [Codex setup](codex.md) and the [delivery contract](spacetimedb/agent-workspace.md).
+Unconfigured accounts can save messages without sending them to a model.
 
 ## Prayer Times
 

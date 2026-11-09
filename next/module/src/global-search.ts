@@ -37,6 +37,10 @@ export function globalSearch(ctx:Ctx,userId:string,query:string,canRead:(entry:F
     if(matches(data.name))add({id:app.id,group:"Applications",title:data.name,detail:"Installed app",href:`/apps/${app.id}`});
     if(data.permissions.includes("ownUserData:read"))for(const row of ctx.db.appData.ownerKey.filter(JSON.stringify([app.id,userId]))){if(!visit())break;if(matches(row.value))add({id:app.id,group:"Applications",title:data.name,detail:"Matching saved app data",href:`/apps/${app.id}`});}
   }
-  for(const [name,href]of [["Files","/"],["Contacts","/contacts"],["Calendar","/calendar"],["Notes","/notes"],["Tasks","/tasks"],["Settings","/settings"]])if(appEnabled(ctx,name.toLowerCase())&&matches(name))add({id:href,group:"Applications",title:name,detail:"Open app",href});
+  if(appEnabled(ctx,"agent")){
+    for(const row of ctx.db.agentProjects.ownerId.filter(userId)){if(!visit())break;if(matches(row.name))add({id:row.id,group:"Applications",title:row.name,detail:"Agent project",href:`/agent?project=${row.id}`});}
+    for(const row of ctx.db.agentThreads.ownerId.filter(userId)){if(!visit())break;if(matches(row.title))add({id:row.id,group:"Applications",title:row.title,detail:"Agent thread",href:`/agent?project=${row.projectId}&thread=${row.id}`});}
+  }
+  for(const [name,href]of [["Files","/"],["Contacts","/contacts"],["Calendar","/calendar"],["Notes","/notes"],["Tasks","/tasks"],["Agent","/agent"],["Settings","/settings"]])if(appEnabled(ctx,name.toLowerCase())&&matches(name))add({id:href,group:"Applications",title:name,detail:"Open app",href});
   return {items:[...groups.values()].flat(),truncated};
 }
