@@ -23,9 +23,9 @@ export async function identityAdmin(base:string){
   }
   return {session,api,write,credential,client};
 }
-export async function authorize(base:string,session:Pick<Awaited<ReturnType<typeof login>>,"headers">,client:Pick<Awaited<ReturnType<Awaited<ReturnType<typeof identityAdmin>>["client"]>>,"config"|"redirect">,options:{deny?:boolean;scope?:string;prompt?:string;params?:Record<string,string>;jar?:CookieJar;onInteraction?:(detail:{prompt:string;requiresPassword:boolean})=>void}={}){
+export async function authorize(base:string,session:Pick<Awaited<ReturnType<typeof login>>,"headers">,client:Pick<Awaited<ReturnType<Awaited<ReturnType<typeof identityAdmin>>["client"]>>,"config"|"redirect">,options:{pkce?:boolean;deny?:boolean;scope?:string;prompt?:string;params?:Record<string,string>;jar?:CookieJar;onInteraction?:(detail:{prompt:string;requiresPassword:boolean})=>void}={}){
   const verifier=oidc.randomPKCECodeVerifier(),challenge=await oidc.calculatePKCECodeChallenge(verifier),state=oidc.randomState(),nonce=oidc.randomNonce();
-  const url=oidc.buildAuthorizationUrl(client.config,{redirect_uri:client.redirect,response_type:"code",scope:options.scope??"openid profile email groups offline_access",code_challenge:challenge,code_challenge_method:"S256",state,nonce,prompt:options.prompt??"consent",...options.params});
+  const url=oidc.buildAuthorizationUrl(client.config,{redirect_uri:client.redirect,response_type:"code",scope:options.scope??"openid profile email groups offline_access",...(options.pkce===false?{}:{code_challenge:challenge,code_challenge_method:"S256"}),state,nonce,prompt:options.prompt??"consent",...options.params});
   const jar=options.jar??new CookieJar(session.headers.cookie);let next=url.href;
   for(let i=0;i<12;i++){
     const target=new URL(next);if(target.origin!==base)return {url:target,verifier,state,nonce,jar};

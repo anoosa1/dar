@@ -48,7 +48,10 @@ Generate a random secret of at least 32 characters, store it in the protected
 secret and client ID. A trailing newline is removed; relative secret paths resolve
 beside the JSON file. Secrets are encrypted in the database and excluded from
 public client metadata. Public clients use `"type": "public"` and omit
-`secretFile`. All clients require PKCE/S256. The issuer is `<DAR_ORIGIN>/oidc`.
+`secretFile`. PKCE/S256 is required by default and always required for public
+clients. A confidential client that cannot send PKCE (such as Gitea) may set
+`"requirePkce": false`; client-secret authentication remains required. The issuer
+is `<DAR_ORIGIN>/oidc`. See the [Gitea Nix example](../docs/deployment.md#oidc-clients).
 Redirect URLs must be exact HTTPS URLs; development permits loopback HTTP.
 
 Restart Dar to apply changes. Listed IDs are created or updated, including IDs

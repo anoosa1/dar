@@ -25,6 +25,7 @@
           services.dar = {
             enable = true; origin = "https://dar.example.test"; configureNginx = true;
             oidc.clients = {
+              gitea = { name = "Gitea"; requirePkce = false; redirectUris = [ "https://git.example.test/user/oauth2/dar/callback" ]; secretFile = "/run/secrets/dar-gitea"; };
               photos = { name = "Photos"; redirectUris = [ "https://photos.example.test/callback" ]; secretFile = "/run/secrets/dar-photos"; };
               public = { name = "Public"; type = "public"; redirectUris = [ "https://public.example.test/callback" ]; };
             };
@@ -34,10 +35,15 @@
         }) ]; };
         service = evaluated.config.systemd.services.dar;
         nginxConfig = evaluated.config.environment.etc."nginx/nginx.conf".source;
+        invalidPublic = evaluated.extendModules { modules = [ { services.dar.oidc.clients.public.requirePkce = false; } ]; };
       in { module-evaluation = assert service.serviceConfig.User == "dar";
         assert service.environment.DAR_ROOT == "/var/lib/dar";
         assert service.serviceConfig.ProtectSystem == "strict";
-        assert service.serviceConfig.LoadCredential == [ "oidc-photos:/run/secrets/dar-photos" ];
+        assert service.serviceConfig.LoadCredential == [ "oidc-gitea:/run/secrets/dar-gitea" "oidc-photos:/run/secrets/dar-photos" ];
+        assert evaluated.config.services.dar.oidc.clients.gitea.requirePkce == false;
+        assert evaluated.config.services.dar.oidc.clients.photos.requirePkce;
+        assert evaluated.config.services.dar.oidc.clients.public.requirePkce;
+        assert builtins.any (item: !item.assertion && nixpkgs.lib.hasPrefix "services.dar.oidc.clients.public " item.message) invalidPublic.config.assertions;
         assert builtins.hasAttr "DAR_OIDC_FILE" service.environment;
         assert builtins.hasAttr "dar.example.test" evaluated.config.services.nginx.virtualHosts;
         assert builtins.elem "dar.example.test" evaluated.config.networking.hosts."127.0.0.1";

@@ -36,7 +36,8 @@ Using a certified library does not mean this Dar configuration is certified.
   `services.dar.oidc.clients`; see [deployment](../deployment.md#oidc-clients).
   Startup uses the same encrypted storage, revision checks and grant revocation
   as administration. Omitted clients are retained; explicit disabling revokes access.
-- Authorization code flow with required S256 PKCE. Support nonce, state passthrough,
+- Authorization code flow with S256 PKCE required by default (mandatory for public
+  clients; explicit confidential-client compatibility opt-out). Support nonce, state passthrough,
   prompt/reauthentication, max_age, consent approval/denial and account switching.
   No password, implicit or hybrid grant. Persist codes and consume them atomically;
   replay, expiry, wrong verifier and redirect/client mismatches must fail.
@@ -177,7 +178,9 @@ metadata. Directory resources carry standard SCIM names and schema URNs.
 | `/api/v1/identity/connections` | Own applications and revocation across own grants |
 
 Clients are confidential web clients using `client_secret_basic`, or public web
-clients using `none`. Both require S256 PKCE and exact registered redirects.
+clients using `none`. Both require exact registered redirects. S256 PKCE is required
+by default; the maintainer approved `requirePkce = false` for confidential clients
+such as Gitea that cannot send PKCE. Public clients cannot opt out.
 Production redirects use HTTPS; explicit loopback HTTP redirects are accepted in
 development. Custom URI schemes, dynamic registration, implicit/hybrid/password
 grants, DPoP, PAR, JWT request objects and arbitrary claim selection are disabled.

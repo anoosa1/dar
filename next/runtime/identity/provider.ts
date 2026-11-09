@@ -21,7 +21,9 @@ export async function identityProvider(db:Database,auth:Awaited<ReturnType<typeo
       cookies:{keys:[state.cookieKey],names:{session:"dar_oidc",interaction:"dar_oidc_interaction",resume:"dar_oidc_resume"},long:{httpOnly:true,secure:!development,sameSite:"lax",signed:true},short:{httpOnly:true,secure:!development,sameSite:"lax",signed:true}},
       responseTypes:["code"],scopes:Object.keys(permissionNames),subjectTypes:["public"],
       claims:{openid:["sub"],profile:["name","preferred_username","given_name","family_name"],email:["email","email_verified"],groups:["groups"]},
-      pkce:{required:()=>true},clientAuthMethods:["none","client_secret_basic"],
+      // Only explicitly opted-out clients authenticated with a secret may omit PKCE.
+      extraClientMetadata:{properties:["require_pkce"]},
+      pkce:{required:(_ctx,client)=>client.tokenEndpointAuthMethod!=="client_secret_basic"||client.require_pkce!==false},clientAuthMethods:["none","client_secret_basic"],
       enabledJWA:{idTokenSigningAlgValues:["RS256"]},
       features:{devInteractions:{enabled:false},revocation:{enabled:true},introspection:{enabled:true},rpInitiatedLogout:{enabled:true,logoutSource:async(ctx,form)=>{formPolicy(ctx,ctx.oidc.params?.post_logout_redirect_uri);ctx.type="html";ctx.body=page("Sign out of connected applications?",`<p>This ends the provider session and its application grants. Your Dar browser session stays signed in.</p>${form}<div class="dialog-actions"><a class="secondary-button" href="/settings">Cancel</a><button class="primary-button" type="submit" form="op.logoutForm" name="logout" value="yes">Sign out</button></div>`);},postLogoutSuccessSource:async ctx=>{ctx.type="html";ctx.body=page("Signed out","<p>The provider session has ended.</p><a href=\"/\">Return to Dar</a>");}},registration:{enabled:false},registrationManagement:{enabled:false},pushedAuthorizationRequests:{enabled:false},dPoP:{enabled:false},resourceIndicators:{enabled:false}},
       ttl:{AuthorizationCode:60,AccessToken:300,IdToken:300,RefreshToken:7*86400,Grant:7*86400,Session:7*86400,Interaction:600},

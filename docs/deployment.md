@@ -79,13 +79,49 @@ root-only; only the credential copy is made available to Dar. Manage its content
 with your preferred secret provisioning tool. Nix stores only public metadata.
 
 Public clients set `type = "public"` and omit `secretFile`. Optional settings are
-`postLogoutRedirectUris` (default `[]`) and `enabled` (default `true`). All clients
-require PKCE/S256. Changes apply on restart; restart after changing secret contents
-as well. Listed clients override UI edits; omitted clients are retained. To remove
+`postLogoutRedirectUris` (default `[]`), `enabled` (default `true`) and
+`requirePkce` (default `true`). Public clients always require PKCE/S256.
+Confidential clients may explicitly disable the requirement for compatibility;
+they still authenticate with their client secret. Changes apply on restart;
+restart after changing secret contents as well. Listed clients override UI edits;
+omitted clients are retained. To remove
 access, set `enabled = false` and restart, or delete the client in Administration.
 If no clients are declared, Dar reads the optional `/var/lib/dar/oidc.json` instead.
 See the [JSON configuration guide](../next/README.md#oidc-text-configuration)
 for validation, update and revocation behavior.
+
+For Gitea 28.2.0, which does not send PKCE when using an OIDC login source:
+
+```nix
+services.dar.oidc.clients.gitea = {
+  name = "Gitea";
+  type = "confidential";
+  requirePkce = false;
+  redirectUris = [ "https://git.example.com/user/oauth2/dar/callback" ];
+  scopes = [ "openid" "profile" "email" ];
+  secretFile = "/run/secrets/dar-gitea";
+};
+```
+
+Update your Dar flake input/package to a revision containing this option.
+Provision a random secret of at least 32 characters in `/run/secrets/dar-gitea`
+outside the Nix store, then run `sudo nixos-rebuild switch`. In Gitea's
+Site Administration → Identity & Access → Authentication Sources, add or edit
+an OAuth2 source with provider **OpenID Connect** and authentication name `dar`:
+
+- Client ID (Key): `gitea` (or your existing Dar client ID).
+- Client Secret: the contents of the secret file.
+- OpenID Connect Auto Discovery URL:
+  `https://cloud.example.com/oidc/.well-known/openid-configuration`.
+- Additional scopes: `profile` and `email`.
+
+Replace the example domains with your own. The authentication name is part of
+Gitea's callback URL: if you use a different name, register the exact callback
+URL shown by Gitea. For an existing Dar client, use its current client ID as the
+Nix attribute name to update it rather than registering another client. Keeping
+the same secret avoids a secret rotation; changing client settings revokes its
+existing grants, so users must authorize again. Only Gitea's client opts out;
+other clients retain their PKCE requirement.
 
 The `dar` system user owns `/var/lib/dar` with mode 0700. A static user is deliberate:
 DynamicUser's private-state symlinks conflict with Dar's managed-path rules. Use

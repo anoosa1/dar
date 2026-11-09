@@ -21,7 +21,7 @@ export async function configureOidc(filename: string, store: IdentityProvider["s
     if (typeof id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(id) || ids.has(id)) throw new Error("OIDC client IDs must be unique URL-safe identifiers.");
     ids.add(id);
     if (p.enabled !== undefined && typeof p.enabled !== "boolean") throw new Error("Invalid OIDC client enabled setting.");
-    if (Object.keys(p).some(key => !["id", "name", "type", "redirectUris", "postLogoutRedirectUris", "scopes", "enabled", "secretFile"].includes(key))) throw new Error("Unknown OIDC client setting; use secretFile for secrets.");
+    if (Object.keys(p).some(key => !["id", "name", "type", "redirectUris", "postLogoutRedirectUris", "scopes", "enabled", "secretFile", "requirePkce"].includes(key))) throw new Error("Unknown OIDC client setting; use secretFile for secrets.");
     let secret: string | undefined;
     if (p.type === "confidential") {
       if (typeof p.secretFile !== "string" || !p.secretFile) throw new Error("Confidential OIDC clients require secretFile.");

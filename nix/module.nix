@@ -26,7 +26,8 @@ in {
       type = lib.types.attrsOf (lib.types.submodule {
         options = {
           name = lib.mkOption { type = lib.types.str; description = "Client display name."; };
-          type = lib.mkOption { type = lib.types.enum [ "public" "confidential" ]; default = "confidential"; description = "OIDC client authentication type. All clients require PKCE."; };
+          type = lib.mkOption { type = lib.types.enum [ "public" "confidential" ]; default = "confidential"; description = "OIDC client authentication type."; };
+          requirePkce = lib.mkOption { type = lib.types.bool; default = true; description = "Require S256 PKCE. May be disabled only for confidential clients that cannot send PKCE, such as Gitea."; };
           redirectUris = lib.mkOption { type = lib.types.listOf lib.types.str; description = "Exact HTTPS callback URLs."; };
           postLogoutRedirectUris = lib.mkOption { type = lib.types.listOf lib.types.str; default = []; description = "Exact HTTPS logout destinations."; };
           scopes = lib.mkOption { type = lib.types.listOf (lib.types.enum [ "openid" "profile" "email" "groups" "offline_access" ]); default = [ "openid" "profile" "email" ]; description = "Allowed scopes; must include openid."; };
@@ -51,9 +52,10 @@ in {
     ] ++ lib.mapAttrsToList (id: client: {
       assertion = builtins.match "[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}" id != null
         && client.name != "" && client.redirectUris != [] && builtins.elem "openid" client.scopes
+        && (client.type == "confidential" || client.requirePkce)
         && (if client.type == "confidential" then client.secretFile != null else client.secretFile == null)
         && (client.secretFile == null || (lib.hasPrefix "/" client.secretFile && !(lib.hasPrefix "/nix/store/" client.secretFile)));
-      message = "services.dar.oidc.clients.${id} requires a valid ID, name, redirectUris, openid scope, and a non-store absolute secretFile for confidential clients only.";
+      message = "services.dar.oidc.clients.${id} requires a valid ID, name, redirectUris, openid scope, PKCE for public clients, and a non-store absolute secretFile for confidential clients only.";
     }) cfg.oidc.clients;
     # DynamicUser state uses private-directory symlinks, which managed paths reject.
     users.groups.dar = {};

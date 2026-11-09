@@ -39,6 +39,13 @@ try{
   dialog=page.getByRole("dialog",{name:"Confirm your identity",exact:true});await dialog.getByLabel("Current password",{exact:true}).fill("a long isolated test password");await dialog.getByRole("button",{name:"Confirm identity",exact:true}).click();
   dialog=page.getByRole("dialog",{name:"Save your credential",exact:true});await dialog.waitFor();const clientId=await dialog.getByLabel("Identifier",{exact:true}).inputValue(),secret=await dialog.getByLabel("Secret",{exact:true}).inputValue();assert.ok(secret);await dialog.getByRole("button",{name:"I saved it",exact:true}).click();
   await page.waitForFunction(()=>document.activeElement?.textContent==="Register application");
+  const compatible=page.locator(".identity-card").filter({hasText:"Gitea compatible"});
+  await compatible.getByText("Confidential client · PKCE optional",{exact:true}).waitFor();
+  await compatible.getByRole("button",{name:"Edit application",exact:true}).click();
+  dialog=page.getByRole("dialog").last();await dialog.getByRole("button",{name:"Save",exact:true}).click();await dialog.waitFor({state:"hidden"});
+  const persistedPage=await context.newPage();await persistedPage.goto(`${base}/settings?section=applications`);
+  await persistedPage.locator(".identity-card").filter({hasText:"Gitea compatible"}).getByText("Confidential client · PKCE optional",{exact:true}).waitFor();
+  const preserved=await (await persistedPage.request.get(`${base}/api/v1/identity/clients/gitea-compatible-rp`)).json();assert.equal(preserved.requirePkce,false);await persistedPage.close();
   config=await oidc.discovery(new URL(`${base}/oidc`),clientId,secret,oidc.ClientSecretBasic(secret),{execute:[oidc.allowInsecureRequests]});
   await page.getByLabel("Search all apps",{exact:true}).fill(name);assert.ok(await page.locator(".identity-card").count()>=1);await page.keyboard.press("Escape");await page.screenshot({path:path.join(process.env.DAR_TEST_ROOT,"identity-settings-desktop.png"),fullPage:true});
   await page.getByRole("button",{name:"Directory",exact:true}).click();await page.getByRole("button",{name:"Edit profile",exact:true}).click();
