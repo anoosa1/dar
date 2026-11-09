@@ -17,7 +17,7 @@ const production = process.argv.includes("--production");
 const args = process.argv.slice(2).filter(value => value !== "--production");
 const restorePath = args[0] === "--restore" ? args[1] : undefined;
 if (args.length && (!restorePath || args.length !== 2)) throw new Error("Usage: dev.mjs [--production] [--restore <backup-directory>]");
-const root = await openRoot(process.env.DAR_ROOT ?? path.join(process.env.XDG_DATA_HOME ?? path.join(homedir(), ".local/share"), "dar-spacetime"));
+const root = await openRoot(process.env.DAR_ROOT ?? path.join(process.env.XDG_DATA_HOME ?? path.join(homedir(), ".local/share"), "dar"));
 const port = Number(process.env.DAR_PORT ?? 4311), databasePort = Number(process.env.DAR_DATABASE_PORT ?? 4310);
 const localOrigin = `http://127.0.0.1:${port}`, databaseUrl = `http://127.0.0.1:${databasePort}`;
 const origin = production ? process.env.DAR_ORIGIN : localOrigin;

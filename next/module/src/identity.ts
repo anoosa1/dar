@@ -108,6 +108,7 @@ function group(ctx:Ctx,id:string) {
   return {...JSON.parse(row.document),id,revision:row.revision,createdAt:row.createdAt,modifiedAt:row.modifiedAt,members:[...ctx.db.directoryMembers.groupId.filter(id)].map(m=>({value:m.userId,display:ctx.db.accounts.id.find(m.userId)?.displayName}))};
 }
 export function providerOperation(ctx:Ctx,operation:string,p:Record<string,unknown>) {
+  if(operation==="saveClient")return directoryOperation(ctx,operation,p,{id:"",scim:false});
   const id=String(p.id??"");
   if(operation==="client")return ctx.db.identityClients.id.find(id);
   if(operation==="account")return profile(ctx,id);

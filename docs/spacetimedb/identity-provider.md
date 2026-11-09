@@ -32,6 +32,10 @@ Using a certified library does not mean this Dar configuration is certified.
   post-logout URI allowlists, client authentication, allowed scopes, enable/disable,
   secret rotation and deletion. No open registration endpoint or wildcard URIs.
   Production clients use HTTPS; development exceptions are explicit loopback URIs.
+  Host operators can also configure clients through a JSON file or
+  `services.dar.oidc.clients`; see [deployment](../deployment.md#oidc-clients).
+  Startup uses the same encrypted storage, revision checks and grant revocation
+  as administration. Omitted clients are retained; explicit disabling revokes access.
 - Authorization code flow with required S256 PKCE. Support nonce, state passthrough,
   prompt/reauthentication, max_age, consent approval/denial and account switching.
   No password, implicit or hybrid grant. Persist codes and consume them atomically;

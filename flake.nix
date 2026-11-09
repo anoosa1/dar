@@ -22,7 +22,13 @@
       checks = eachSystem (system: let
         pkgs = pkgsFor system;
         evaluated = nixpkgs.lib.nixosSystem { inherit system; modules = [ self.nixosModules.default ({...}: {
-          services.dar = { enable = true; origin = "https://dar.example.test"; configureNginx = true; };
+          services.dar = {
+            enable = true; origin = "https://dar.example.test"; configureNginx = true;
+            oidc.clients = {
+              photos = { name = "Photos"; redirectUris = [ "https://photos.example.test/callback" ]; secretFile = "/run/secrets/dar-photos"; };
+              public = { name = "Public"; type = "public"; redirectUris = [ "https://public.example.test/callback" ]; };
+            };
+          };
           security.acme = { acceptTerms = true; defaults.email = "operator@example.test"; };
           system.stateVersion = "26.05";
         }) ]; };
@@ -31,9 +37,13 @@
       in { module-evaluation = assert service.serviceConfig.User == "dar";
         assert service.environment.DAR_ROOT == "/var/lib/dar";
         assert service.serviceConfig.ProtectSystem == "strict";
+        assert service.serviceConfig.LoadCredential == [ "oidc-photos:/run/secrets/dar-photos" ];
+        assert builtins.hasAttr "DAR_OIDC_FILE" service.environment;
         assert builtins.hasAttr "dar.example.test" evaluated.config.services.nginx.virtualHosts;
         assert builtins.elem "dar.example.test" evaluated.config.networking.hosts."127.0.0.1";
         pkgs.runCommand "dar-module-evaluation" {} ''
+          grep -F '/run/credentials/dar.service/oidc-photos' ${service.environment.DAR_OIDC_FILE}
+          if grep -F '/run/secrets/dar-photos' ${service.environment.DAR_OIDC_FILE}; then exit 1; fi
           grep -F '127.0.0.1:4311' ${nginxConfig}
           grep -F '127.0.0.1:4310/v1/database/dar/subscribe' ${nginxConfig}
           grep -F '127.0.0.1:4310/v1/identity/websocket-token' ${nginxConfig}

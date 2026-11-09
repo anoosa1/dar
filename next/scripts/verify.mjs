@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import net from "node:net";
@@ -14,6 +14,8 @@ const root = await mkdtemp(path.join(tmpdir(), "dar-acceptance-"));
 const appBuild=spawnSync(process.execPath,["sdk/build.mjs","../apps/prayer-times"],{cwd:project,stdio:"inherit"});
 if(appBuild.status!==0)throw new Error("Example app build failed.");
 await manageApps(root,"apps-install",path.resolve(project,"../apps/prayer-times/dist"));
+await writeFile(path.join(root, "oidc-secret"), "isolated-configured-secret-1234567890\n", { mode: 0o600 });
+await writeFile(path.join(root, "oidc.json"), JSON.stringify({ clients: [{ id: "configured-rp", name: "Configured RP", type: "confidential", redirectUris: ["http://127.0.0.1:49999/callback"], scopes: ["openid", "profile"], secretFile: "oidc-secret" }] }));
 async function freePort() {
   const server = net.createServer(); await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address(); await new Promise(resolve => server.close(resolve)); return port;
@@ -63,7 +65,7 @@ try {
   run(["test/themed-controls-browser.mjs"]);
   run(["test/app-launcher-browser.mjs"]);
   if(!workspaceOnly&&!pimOnly){
-  run(["--test", "--test-concurrency=1", "test/scim-model.test.ts", "test/identity.integration.test.ts", "test/identity-lifecycle.integration.test.ts"]);
+  run(["--test", "--test-concurrency=1", "test/scim-model.test.ts", "test/oidc-config.integration.test.ts", "test/identity.integration.test.ts", "test/identity-lifecycle.integration.test.ts"]);
   run(["--test", "test/identity-upgrade.integration.test.ts"]);
   run(["--test", "test/identity-proxy.integration.test.ts"]);
   run(["test/identity-browser.mjs"]);

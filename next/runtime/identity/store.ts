@@ -14,7 +14,7 @@ export async function providerStore(db:Database,directory:string){
     readonly name:string;
     constructor(name:string){this.name=name;}
     async upsert(id:string,payload:AdapterPayload,expiresIn?:number){
-      if(this.name==="Client")throw new Error("Clients must be registered by a native administrator.");
+      if(this.name==="Client")throw new Error("Clients must be registered through administration or host configuration.");
       const key=modelKey(this.name,id),old=await call<Stored|null>("find",{id:key});
       const context=providerContext.getStore();
       let nativeSessionId=(this.name==="Session"&&old?.nativeSessionId?old.nativeSessionId:context?.authenticatedSessionId??context?.nativeSessionId)??old?.nativeSessionId??"";

@@ -57,6 +57,36 @@ Options: `package`, `origin`, `port` (4311), `databasePort` (4310), `databaseNam
 `openFirewall` (defaults to the nginx choice). Keep the origin, database name and
 state directory stable across upgrades. No credentials belong in Nix expressions.
 
+### OIDC clients
+
+Register applications that use Dar for sign-in with `services.dar.oidc.clients`:
+
+```nix
+services.dar.oidc.clients.photos = {
+  name = "Photos";
+  redirectUris = [ "https://photos.example.com/oauth/callback" ];
+  scopes = [ "openid" "profile" "email" ];
+  secretFile = "/run/secrets/dar-photos";
+};
+```
+
+The attribute name is the stable client ID (`photos`); the issuer is
+`https://cloud.example.com/oidc`. Confidential clients are the default and need a
+random secret of at least 32 characters, shared with the relying party. Supply
+`secretFile` as a quoted absolute runtime path, never a Nix path literal or a
+store path. Systemd loads the file through `LoadCredential`, so its source can be
+root-only; only the credential copy is made available to Dar. Manage its contents
+with your preferred secret provisioning tool. Nix stores only public metadata.
+
+Public clients set `type = "public"` and omit `secretFile`. Optional settings are
+`postLogoutRedirectUris` (default `[]`) and `enabled` (default `true`). All clients
+require PKCE/S256. Changes apply on restart; restart after changing secret contents
+as well. Listed clients override UI edits; omitted clients are retained. To remove
+access, set `enabled = false` and restart, or delete the client in Administration.
+If no clients are declared, Dar reads the optional `/var/lib/dar/oidc.json` instead.
+See the [JSON configuration guide](../next/README.md#oidc-text-configuration)
+for validation, update and revocation behavior.
+
 The `dar` system user owns `/var/lib/dar` with mode 0700. A static user is deliberate:
 DynamicUser's private-state symlinks conflict with Dar's managed-path rules. Use
 real directories or bind mounts for the state directory and its managed contents.

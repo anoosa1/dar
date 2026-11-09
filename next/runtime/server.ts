@@ -28,6 +28,7 @@ import {loadApps} from "./apps/registry.ts";
 import {handleAppHttp} from "./apps/http.ts";
 import {activateApps} from "./apps/server.ts";
 import type {AppSettings,ManagedApp} from "../shared/app-settings.ts";
+import { configureOidc } from "./identity/config.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
@@ -35,6 +36,7 @@ export interface ServerConfig {
   databasePublicUrl?: string;
   development?: boolean;
   appsFile?:string;
+  oidcFile?: string;
 }
 function json(res: ServerResponse, value: unknown, status = 200) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
@@ -98,6 +100,7 @@ export async function startServer(config: ServerConfig) {
   const issuer = await createIssuer(path.join(root, "secrets"), `${config.origin}/auth/issuer`);
   const auth = await authService(db, issuer);
   const identity = await identityProvider(db,auth,path.join(root,"secrets"),config.origin,!!config.development);
+  await configureOidc(config.oidcFile ?? path.join(root, "oidc.json"), identity.store, !!config.development, !config.oidcFile);
   const bootstrap = (await readFile(config.bootstrapTokenFile, "utf8")).trim();
   if (bootstrap.length < 32) throw new Error("The operator bootstrap token must have at least 32 characters.");
   const ctx = new Context();
