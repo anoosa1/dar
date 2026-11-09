@@ -19,6 +19,7 @@ import "./theme.css";
 import "./calendar-layout.css";
 import "./contacts-layout.css";
 import "./app-launcher.css";
+import "./control-theme.css";
 import {useAppSettings} from "./app-availability.tsx";
 import {WorkspaceHeader} from "./shell.tsx";
 function OptionalWorkspace({kind,session,onSignedOut}:{kind:"notes"|"tasks";session:BrowserSession;onSignedOut:()=>void}){

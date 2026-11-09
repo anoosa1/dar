@@ -21,6 +21,8 @@ update this guide when a design decision changes.
   compatible; those identifiers no longer describe the displayed palette.
 - Keep one shared header, centered persistent search, themed app launcher and
   account menu across every app and settings. Keep the launcher usable in settings.
+  Header search results and menus stay above workspace details and editors,
+  including the Files text editor on desktop and phones.
 - The November 8 app-launcher refinement selects option A in
   [launcher mocks](spacetimedb/app-launcher-mocks.html): a Nextcloud-style vertical
   icon/name list, current-app marker and administrator-only Manage apps footer.
@@ -37,6 +39,10 @@ update this guide when a design decision changes.
 - Use shared buttons, menus, form controls, panes, dialogs, empty states and error
   states. A control's spacing, behavior and placement must not vary arbitrarily
   between apps. No inline product styles or browser prompt/confirm dialogs.
+- The November 8 control refinement selects Quiet Twilight (A): rounded neutral
+  scroll thumbs, outlined fields, square checkboxes and circular radios, with
+  accent checked states and themed file-upload buttons. Preserve native form and
+  keyboard behavior, mixed/disabled states and forced-colors accessibility.
 - The November 8 spacing refinement uses shared 20px desktop / 16px phone pane
   insets, 16px group and form-field gaps, 56px contact/prayer list rows and compact
   Files rows. Avoid stacking row padding with padded inner buttons. Keep headings

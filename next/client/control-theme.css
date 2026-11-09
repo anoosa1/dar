@@ -1,0 +1,39 @@
+/* Quiet Twilight: native semantics, shared surfaces and visible focus. */
+*{scrollbar-width:thin;scrollbar-color:var(--control-border) transparent}
+/* Chromium/WebKit allow rounded thumbs with a comfortable, transparent gutter. */
+@supports selector(::-webkit-scrollbar){
+  *{scrollbar-width:auto;scrollbar-color:auto}
+  ::-webkit-scrollbar{width:12px;height:12px}
+  ::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--control-border);border:3px solid transparent;background-clip:padding-box;border-radius:12px;min-height:32px;min-width:32px}
+  ::-webkit-scrollbar-thumb:hover{background-color:var(--muted)}
+  ::-webkit-scrollbar-thumb:active{background-color:var(--accent)}
+  ::-webkit-scrollbar-button{display:none}
+}
+::selection{background:var(--tonal);color:var(--on-tonal)}
+input,textarea,select{accent-color:var(--accent);caret-color:var(--accent)}
+input:is([type=checkbox],[type=radio]):not([role=switch]):not(.ui-switch input){
+  appearance:none;display:inline-grid;place-content:center;flex:none;vertical-align:middle;
+  width:18px;height:18px;min-width:18px;min-height:18px;padding:0;margin:0;
+  border:1px solid var(--control-border);border-radius:4px;background:var(--raised);color:var(--on-accent);cursor:pointer;
+}
+input[type=radio]:not([role=switch]):not(.ui-switch input){border-radius:50%}
+input:is([type=checkbox],[type=radio]):not([role=switch]):not(.ui-switch input)::before{content:"";display:none}
+input:is([type=checkbox],[type=radio]):not([role=switch]):not(.ui-switch input):is(:checked,:indeterminate){background:var(--accent);border-color:var(--accent)}
+input[type=checkbox]:not([role=switch]):not(.ui-switch input):checked::before{display:block;width:5px;height:9px;border:solid currentColor;border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
+input[type=checkbox]:not([role=switch]):not(.ui-switch input):indeterminate::before{display:block;width:9px;height:2px;background:currentColor;border:0;transform:none}
+input[type=radio]:not([role=switch]):not(.ui-switch input):checked::before{display:block;width:6px;height:6px;background:currentColor;border-radius:50%}
+input:is([type=checkbox],[type=radio]):not(:disabled):hover{border-color:var(--accent)}
+input:disabled,textarea:disabled,select:disabled{opacity:.55;cursor:not-allowed}
+input[type=file]{padding:6px;font-size:12px}
+input[type=file]::file-selector-button{font:inherit;font-weight:600;color:var(--text);background:var(--surface-soft);border:1px solid var(--control-border);border-radius:8px;padding:8px 12px;margin-right:12px;cursor:pointer}
+input[type=file]:not(:disabled)::file-selector-button:hover{background:var(--hover)}
+input:is([type=date],[type=time],[type=datetime-local])::-webkit-calendar-picker-indicator{padding:4px;border-radius:6px;cursor:pointer}
+input:is([type=date],[type=time],[type=datetime-local])::-webkit-calendar-picker-indicator:hover{background-color:var(--hover)}
+/* Let the platform draw high-contrast controls in forced-colors mode. */
+@media(forced-colors:active){
+  *{scrollbar-color:auto;scrollbar-width:auto}
+  input:is([type=checkbox],[type=radio]):not([role=switch]):not(.ui-switch input){appearance:auto}
+  input:is([type=checkbox],[type=radio]):not([role=switch]):not(.ui-switch input)::before{content:none}
+  ::-webkit-scrollbar-thumb{background:ButtonText;background-clip:padding-box}
+}
