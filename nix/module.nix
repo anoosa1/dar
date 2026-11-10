@@ -98,7 +98,9 @@ in {
         ProtectSystem = "strict"; ProtectHome = true;
         ProtectKernelTunables = true; ProtectKernelModules = true; ProtectControlGroups = true;
         RestrictSUIDSGID = true;
-        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
+        # Bubblewrap needs NETLINK_ROUTE to configure loopback inside its private
+        # network namespace. Codex still denies network access to workspace tools.
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ] ++ lib.optional cfg.agent.enable "AF_NETLINK";
         ReadWritePaths = [ "/var/lib/${cfg.stateDirectory}" ] ++ lib.optional cfg.agent.enable cfg.agent.home; LimitNOFILE = 65536;
         TasksMax = lib.mkIf cfg.agent.enable 256; MemoryMax = lib.mkIf cfg.agent.enable "2G";
       };

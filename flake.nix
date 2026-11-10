@@ -49,6 +49,8 @@
         assert evaluated.config.services.dar.oidc.clients.photos.requirePkce;
         assert evaluated.config.services.dar.oidc.clients.public.requirePkce;
         assert agentService.serviceConfig.ProtectHome;
+        assert !(builtins.elem "AF_NETLINK" service.serviceConfig.RestrictAddressFamilies);
+        assert builtins.elem "AF_NETLINK" agentService.serviceConfig.RestrictAddressFamilies;
         assert agentService.serviceConfig.MemoryMax == "2G";
         assert agentService.serviceConfig.TasksMax == 256;
         assert builtins.elem "/var/lib/dar-codex" agentService.serviceConfig.ReadWritePaths;

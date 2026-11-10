@@ -81,6 +81,18 @@ protects home directories and the wider filesystem. Its configured Codex home is
 writable for Codex token refresh. Named Linux permission profiles need working
 unprivileged sandbox support; the executor checks it before every model run.
 
+Agent-enabled units allow `AF_NETLINK` in `RestrictAddressFamilies`: bubblewrap
+needs a NETLINK_ROUTE socket to configure loopback in its private network namespace.
+Without it, the login succeeds but the isolation probe fails before inference.
+The module keeps the other service restrictions and Codex's network-disabled
+workspace policy. Update/rebuild the module and restart Dar if an older unit has
+only `AF_UNIX AF_INET AF_INET6`. Custom units need the same additional family.
+An optional real boundary check uses a temporary workspace, no login or model call:
+
+```sh
+nix develop -c node next/test/codex-sandbox-systemd.mjs /absolute/path/to/codex
+```
+
 Installing Codex in an SSH user's shell does not add it to systemd's PATH or
 share that user's login. The module adds `agent.package` to Dar's service PATH
 and writes an absolute executable path into its configuration. If discovery

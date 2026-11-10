@@ -56,7 +56,11 @@ export async function codexModels(config:CodexConfig,workspace:string,signal?:Ab
 
 export async function verifyCodexSandbox(config:CodexConfig,workspace:string,probe:string,signal?:AbortSignal){
   const result=await command(config,workspace,["sandbox","-P","dar","-C",workspace,...options(config,workspace),"--","/bin/sh","-c",'test -d "$1" && test ! -r "$2" && test ! -w "$2"',"dar-sandbox-check",workspace,probe],{signal});
-  if(result.code!==0)throw new AppError("sandboxUnavailable",503,"Codex could not establish workspace isolation. No model run was started.");
+  if(result.code!==0){
+    // Match known diagnostics without returning arbitrary CLI output or paths.
+    if(/NETLINK_ROUTE socket|loopback:.*Address family not supported/i.test(result.stderr))throw new AppError("sandboxAddressFamilyBlocked",503,"The Dar service blocks the socket family needed by Codex workspace isolation. On NixOS, update the Dar module; Agent needs AF_NETLINK in RestrictAddressFamilies. No model run was started.");
+    throw new AppError("sandboxUnavailable",503,"Codex could not establish workspace isolation. No model run was started.");
+  }
 }
 
 export async function runCodex(config:CodexConfig,workspace:string,model:string,prompt:string,signal:AbortSignal,onEvent:(event:ObjectValue)=>void){
