@@ -1,12 +1,25 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {mkdtemp,mkdir,readFile,writeFile,rm,symlink} from "node:fs/promises";
+import {mkdtemp,mkdir,readFile,writeFile,rm,symlink,lstat} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {randomUUID} from "node:crypto";
 import {createAgentRuntime} from "../runtime/agent/runtime.ts";
 import {codexSearchDirectories,findCodexExecutable} from "../runtime/agent/discovery.ts";
+import {prepareWorkspace,type Source} from "../runtime/agent/workspace.ts";
 import type {Database} from "../runtime/database.ts";
+
+test("cached workspaces repair a missing Codex deny root before sandbox startup",async()=>{
+  const root=await mkdtemp(path.join(tmpdir(),"dar-cached-workspace-")),owner=randomUUID(),thread=randomUUID(),directory=path.join(root,"agent-workspaces",owner,thread),workspace=path.join(directory,"work");
+  const source:Source={project:{id:randomUUID(),ownerId:owner,name:"Fixture",sourceType:"files",sourceRef:randomUUID(),createdAt:0},files:[]};
+  try{
+    await mkdir(workspace,{recursive:true});await writeFile(path.join(workspace,"keep.txt"),"Retain existing work");
+    await writeFile(path.join(directory,"baseline.json"),JSON.stringify({source,files:[]}));
+    await prepareWorkspace(root,owner,thread,source,{executable:"/unused",home:"/unused",userId:owner,gitHosts:[]},{} as Database,"fixture",new AbortController().signal);
+    assert.equal((await lstat(path.join(workspace,".codex"))).isDirectory(),true);
+    assert.equal(await readFile(path.join(workspace,"keep.txt"),"utf8"),"Retain existing work");
+  }finally{await rm(root,{recursive:true,force:true});}
+});
 
 test("Codex discovery includes NixOS profiles and skips unavailable or non-executable candidates",async()=>{
   const root=await mkdtemp(path.join(tmpdir(),"dar-codex-discovery-"));

@@ -59,6 +59,8 @@ export async function verifyCodexSandbox(config:CodexConfig,workspace:string,pro
   if(result.code!==0){
     // Match known diagnostics without returning arbitrary CLI output or paths.
     if(/NETLINK_ROUTE socket|loopback:.*Address family not supported/i.test(result.stderr))throw new AppError("sandboxAddressFamilyBlocked",503,"The Dar service blocks the socket family needed by Codex workspace isolation. On NixOS, update the Dar module; Agent needs AF_NETLINK in RestrictAddressFamilies. No model run was started.");
+    if(/bwrap: Can't mount proc on \/proc: (?:Operation not permitted|Permission denied)/i.test(result.stderr))throw new AppError("sandboxProcMountBlocked",503,"The service's protected /proc mounts prevent Codex from creating its sandbox. Update the Dar NixOS module; Agent requires ProtectKernelTunables=false while retaining ProtectSystem=strict and Codex's /proc and /sys restrictions. No model run was started.");
+    if(/bwrap: (?:Can't create file at [^\n]*\/\.codex: Is a directory|Destination is not a file [^\n]*\/\.codex(?:\r?\n|$))/i.test(result.stderr))throw new AppError("sandboxMetadataRootMissing",503,"This cached workspace is missing a sandbox metadata directory. Update Dar to repair it automatically, or start a new thread. No model run was started.");
     throw new AppError("sandboxUnavailable",503,"Codex could not establish workspace isolation. No model run was started.");
   }
 }

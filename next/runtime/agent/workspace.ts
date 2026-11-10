@@ -103,11 +103,12 @@ export async function prepareWorkspace(root:string,userId:string,threadId:string
       await git(workspace,["add","--all"],signal);
       await git(workspace,["-c","user.name=Dar","-c","user.email=agent@dar.invalid","commit","--allow-empty","-m","Dar workspace baseline"],signal);
     }
-    // Explicit deny roots must exist for the Codex 0.166 Linux namespace policy.
-    await directory(path.join(workspace,".codex"));
     baseline={source,files:[...await scan(workspace)].map(([name,data])=>({path:name,content:data.toString("base64")}))};
     await createDurableFile(baselinePath,JSON.stringify(baseline));
   }
+  // Cached workspaces from older Dar versions may predate this deny root.
+  // Both 0.163 and 0.166 need it to exist before bubblewrap masks the directory.
+  await directory(path.join(workspace,".codex"));
   return {workspace,async validate(){await scan(workspace);},async changes(){
     const after=await scan(workspace),before=new Map(baseline!.files.map(row=>[row.path,Buffer.from(row.content,"base64")])),changes:AgentChange[]=[];let remaining=180000,truncated=false;
     for(const name of new Set([...before.keys(),...after.keys()])){

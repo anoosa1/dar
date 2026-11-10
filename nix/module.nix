@@ -96,7 +96,10 @@ in {
         TimeoutStopSec = 30; KillMode = "mixed";
         NoNewPrivileges = true; PrivateTmp = true; PrivateDevices = true;
         ProtectSystem = "strict"; ProtectHome = true;
-        ProtectKernelTunables = true; ProtectKernelModules = true; ProtectControlGroups = true;
+        # Its locked /proc submounts prevent bubblewrap from mounting a fresh
+        # procfs in its user namespace. Codex itself denies /proc and /sys to tools.
+        ProtectKernelTunables = !cfg.agent.enable;
+        ProtectKernelModules = true; ProtectControlGroups = true;
         RestrictSUIDSGID = true;
         # Bubblewrap needs NETLINK_ROUTE to configure loopback inside its private
         # network namespace. Codex still denies network access to workspace tools.

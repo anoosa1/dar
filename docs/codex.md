@@ -8,7 +8,8 @@ service account. Use an existing login readable by the account running Dar.
 
 ## Development and other hosts
 
-Use Codex CLI 0.166.0 with named permission profiles. Newer versions need CLI flag,
+The Linux sandbox boundary has been checked with Codex CLI 0.163.0 and 0.166.0;
+live model execution was checked with 0.166.0. Other versions need CLI flag,
 JSONL event and isolation verification before deployment; unsupported behavior fails closed.
 In Agent settings, an administrator can use **Connect server Codex** to discover
 `codex` on the Dar service's PATH, standard system paths (including NixOS's
@@ -84,14 +85,31 @@ unprivileged sandbox support; the executor checks it before every model run.
 Agent-enabled units allow `AF_NETLINK` in `RestrictAddressFamilies`: bubblewrap
 needs a NETLINK_ROUTE socket to configure loopback in its private network namespace.
 Without it, the login succeeds but the isolation probe fails before inference.
-The module keeps the other service restrictions and Codex's network-disabled
-workspace policy. Update/rebuild the module and restart Dar if an older unit has
+Agent-enabled units also set `ProtectKernelTunables=false`: the locked `/proc`
+submounts it creates otherwise prevent bubblewrap from mounting procfs in its
+user namespace (`Can't mount proc on /proc: Operation not permitted`).
+This conflict was reproduced on 0.166.0; 0.163.0 passed with protected procfs.
+`ProtectSystem=strict`, `ProtectHome`, private devices and Codex's explicit
+`/proc` and `/sys` denies remain enabled. Units without Agent retain
+`ProtectKernelTunables=true`. Update/rebuild the module and restart Dar if an older unit has
 only `AF_UNIX AF_INET AF_INET6`. Custom units need the same additional family.
 An optional real boundary check uses a temporary workspace, no login or model call:
 
 ```sh
 nix develop -c node next/test/codex-sandbox-systemd.mjs /absolute/path/to/codex
 ```
+
+It reproduces the socket-family and missing metadata-directory failures, checks
+the installed CLI's protected-proc compatibility and verifies the corrected policy under all Dar
+service hardening settings, including PrivateTmp and ProtectSystem. It uses a
+user transient unit rather than accessing a live Dar instance or its data.
+
+Cached threads created by older Dar versions may also lack the `.codex` deny
+directory. Both tested CLI versions fail to mask this missing directory. Dar now
+ensures it exists on every workspace preparation, including reuse, without
+replacing source files or the baseline. Starting a new thread also provisions a
+fresh complete workspace. Known failures have distinct, sanitized messages;
+arbitrary CLI diagnostics and credentials are not sent to the browser.
 
 Installing Codex in an SSH user's shell does not add it to systemd's PATH or
 share that user's login. The module adds `agent.package` to Dar's service PATH
