@@ -7,18 +7,30 @@
 .agent-sidebar-heading{display:flex;align-items:center;justify-content:space-between;margin:0 8px 8px}
 .agent-sidebar-heading h2{font-size:12px;color:var(--muted);font-weight:600}
 .agent-sidebar-heading .icon-button{min-width:32px;min-height:32px;padding:6px}
-.agent-project-row,.agent-thread-list button,.agent-settings-entry{font:inherit;display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;background:transparent;color:inherit;border-radius:8px;padding:10px 8px;cursor:pointer;min-height:42px}
+.agent-thread-list button{font:inherit;display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;background:transparent;color:inherit;border-radius:8px;padding:10px 8px;cursor:pointer;min-height:42px}
 .agent-project-row{font-size:13px;font-weight:600}
 .agent-project-row span,.agent-thread-list span{min-width:0;overflow-wrap:anywhere}
 .agent-project-row .icon{color:var(--muted);flex:none;width:17px}
-.agent-thread-list{padding:0 0 12px 10px}
+.agent-thread-list{padding:0 0 12px}
 .agent-thread-list button{font-size:12px;align-items:flex-start;color:var(--muted);margin:3px 0}
 .agent-thread-list button .icon{width:14px;flex:none;margin-top:2px}
 .agent-thread-list small{display:block;font-size:10px;color:var(--muted);margin-top:5px}
 .agent-thread-list .selected{background:var(--tonal);color:var(--on-tonal)}
 .agent-thread-list p,.agent-sidebar-empty{font-size:12px;color:var(--muted);padding:8px}
-.agent-settings-entry{margin-top:auto;border-top:1px solid var(--border);border-radius:0;font-size:13px;color:var(--muted);padding-top:16px}
-.agent-settings-entry .icon{width:17px}
+.agent-thread-shelves{flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable}
+.agent-thread-shelves summary{display:flex;align-items:center;gap:8px;cursor:pointer;padding:12px 8px;font-size:12px;color:var(--muted)}
+.agent-thread-shelves summary::before{content:"›"}.agent-thread-shelves details[open]>summary::before{transform:rotate(90deg)}
+.agent-thread-shelves summary span{margin-left:auto}
+.agent-sidebar-footer{flex:none;margin-top:auto}
+.agent-sidebar .ui-app-settings-entry{border-top:1px solid var(--border);padding-top:12px}
+.agent-sidebar .ui-app-settings-entry:hover{background:var(--tonal);color:var(--text)}
+.agent-project-chooser{display:flex;flex-direction:column;gap:8px}
+.agent-project-chooser h3{font-size:16px}
+.agent-project-choice{display:flex;align-items:center;gap:12px;min-height:56px;padding:12px;border:1px solid var(--border);border-radius:10px;text-align:left;color:var(--text)}
+.agent-project-choice:hover{background:var(--tonal);color:var(--on-tonal)}
+.agent-project-choice span{min-width:0;flex:1;overflow-wrap:anywhere}.agent-project-choice strong,.agent-project-choice small{display:block}.agent-project-choice small{color:var(--muted);margin-top:4px;font-size:11px}
+.agent-project-choice .icon:last-child{width:14px}
+.agent-connection-actions{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .agent-center{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--panel)}
 .agent-thread-heading{min-height:56px;display:flex;align-items:center;gap:10px;padding:8px var(--pane-padding);border-bottom:1px solid var(--border);flex-shrink:0}
 .agent-thread-heading h2{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;margin:0}
@@ -74,7 +86,7 @@
 .agent-nav-hidden .agent-layout{grid-template-columns:minmax(0,1fr) 310px}
 .agent-nav-hidden .agent-sidebar{display:none}
 .agent-nav-hidden.agent-review-hidden .agent-layout{grid-template-columns:minmax(0,1fr)}
-.agent-shell :is(.agent-project-row,.agent-thread-list button,.agent-settings-entry):hover{background:var(--tonal);color:var(--on-tonal)}
+.agent-shell .agent-thread-list button:hover{background:var(--tonal);color:var(--on-tonal)}
 @media(min-width:1400px){.agent-layout{grid-template-columns:235px minmax(0,1fr) 360px}}
 @media(min-width:801px) and (max-width:1100px){.agent-layout{grid-template-columns:180px minmax(0,1fr) 245px}.agent-sidebar{padding-inline:8px}.agent-review-hidden .agent-layout{grid-template-columns:180px minmax(0,1fr)}.agent-nav-hidden .agent-layout{grid-template-columns:minmax(0,1fr) 245px}}
 @media(max-width:800px){
@@ -83,7 +95,7 @@
  .agent-mobile-views button[aria-current=page]{border-color:var(--accent);color:var(--accent)}
  .agent-shell .agent-layout{display:block;position:relative}
  .agent-shell .agent-sidebar,.agent-shell .agent-review,.agent-shell .agent-center{display:none;height:100%;border:0}
- .agent-view-projects .agent-sidebar,.agent-view-changes .agent-review{display:flex;flex-direction:column}
+ .agent-view-threads .agent-sidebar,.agent-view-changes .agent-review{display:flex;flex-direction:column}
  .agent-view-conversation .agent-center,.agent-view-terminal .agent-center{display:flex}
  .agent-view-conversation .agent-terminal,.agent-view-terminal .agent-conversation,.agent-view-terminal .agent-composer-area,.agent-desktop-toggle{display:none}
  .agent-view-terminal .agent-terminal{flex:1}

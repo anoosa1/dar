@@ -29,6 +29,15 @@ test("Agent sources, account isolation, atomic revisions, replay, pagination, di
   assert.equal((await fetch(base+"/api/v1/auth/users",{method:"POST",headers,body:JSON.stringify({username,displayName:"Agent isolation",password:"a long isolated test password"})})).status,201);
   const other=await login(base,username),otherProjects=await(await fetch(base+"/api/v1/agent/projects",{headers:other.headers})).json() as {items:AgentProject[]};assert.deepEqual(otherProjects.items,[]);
   assert.equal((await fetch(`${base}/api/v1/agent/folders?parentId=${folderId}`,{headers:other.headers})).status,404);
+  const picker=await(await fetch(`${base}/api/v1/files/picker?parentId=${folderId}`,{headers})).json() as {folder:{id:string};items:unknown[]};assert.equal(picker.folder.id,folderId);
+  assert.equal((await fetch(`${base}/api/v1/files/picker?parentId=${folderId}`,{headers:other.headers})).status,404);
+  assert.equal((await fetch(`${base}/api/v1/files/picker?kind=invalid`,{headers})).status,400);
+  const autoId=randomUUID();assert.equal((await post("/threads",{id:autoId,projectId:project.id})).status,201);
+  const auto=await post(`/threads/${autoId}/messages`,{id:randomUUID(),content:"Fix the project chooser\nKeep it keyboard accessible."},{"if-match":'"1"'});assert.equal(auto.status,201);assert.equal((await auto.json() as {thread:AgentThread}).thread.title,"Fix the project chooser Keep it keyboard accessible.".slice(0,50));
+  assert.equal((await post("/threads",{id:autoId,projectId:project.id})).status,201);
+  const unicodeId=randomUUID();assert.equal((await post("/threads",{id:unicodeId,projectId:project.id})).status,201);
+  const unicode=await post(`/threads/${unicodeId}/messages`,{id:randomUUID(),content:"🌸".repeat(80)},{"if-match":'"1"'});assert.equal(unicode.status,201);assert.equal(Buffer.byteLength((await unicode.json() as {thread:AgentThread}).thread.title),200);
+  const all=await(await fetch(base+"/api/v1/agent/threads",{headers:other.headers})).json() as {items:AgentThread[]};assert.deepEqual(all.items,[]);
   assert.equal((await fetch(base+"/api/v1/agent/projects",{method:"POST",headers:{...other.headers,"content-type":"application/json"},body:JSON.stringify({...filesProject,id:randomUUID()})})).status,404);
   const threadId=randomUUID(),threadResponse=await post("/threads",{id:threadId,projectId:project.id,title:"Revision proof"});assert.equal(threadResponse.status,201);let thread=await threadResponse.json() as AgentThread;
   assert.equal((await fetch(`${base}/api/v1/agent/threads?projectId=${project.id}`,{headers:other.headers})).status,404);

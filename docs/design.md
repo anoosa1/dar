@@ -185,6 +185,15 @@ update this guide when a design decision changes.
   Execution launches `codex exec --json` directly with the CLI's saved login;
   do not use an app-server RPC layer or replace it with an API-key integration.
   Do not present sample tool output or simulated assistant replies as real work.
+  The November 9 refinement selects B in
+  [interaction mocks](spacetimedb/agent-flow-refinement-mocks.html), superseding
+  the project tree: show active threads and Working/Settled shelves. New thread
+  opens a project chooser, then focuses the composer without a title form.
+  Derive an initial contextual title from the first message. Project names come
+  from their repository/folder. Adding a Files project uses the folder currently
+  open in the shared DarFilePicker, with one Add action. Use the same picker for
+  Files move/copy destinations; other apps can select files or folders by ID.
+  Agent uses the shared app-settings button and General/Keyboard shortcuts tabs.
 - Scheduling forms offer common repetition, priority and reminder choices.
   Exact imported values and custom rules remain available in advanced controls;
   summaries must not simplify schedules they do not understand.

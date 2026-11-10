@@ -217,6 +217,12 @@ export async function startServer(config: ServerConfig) {
           });appUpdate=update;return json(res,await update);
         }
         if(url.pathname==="/api/v1/apps"||url.pathname.startsWith("/api/v1/apps/"))return await handleAppHttp(req,res,url,appRegistry,db,authenticated.session.id,authenticated.user,appRuntime!.handlers,()=>body(req,80*1024));
+        if(url.pathname==="/api/v1/files/picker"&&method==="GET")return json(res,await db.call("service_file_picker",[authenticated.session.id,url.searchParams.get("parentId")??"",url.searchParams.get("cursor")??"",url.searchParams.get("kind")??"folder"]));
+        if(url.pathname==="/api/v1/agent/provider/connect"&&method==="POST"){
+          if(!authenticated.user.administrator)throw new AppError("forbidden",403);
+          await db.call("service_agent",[authenticated.session.id,"projects","{}"]);
+          return json(res,await agentRuntime!.connect(authenticated.user.id));
+        }
         if(/^\/api\/v1\/agent(\/|$)/.test(url.pathname))return await handleAgentHttp(req,res,url,db,authenticated.session.id,authenticated.user.id,agentRuntime!,()=>body(req,128*1024));
         const optionalApp=/^\/api\/v1\/(notes|tasks)(\/|$)/.exec(url.pathname);
         if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);

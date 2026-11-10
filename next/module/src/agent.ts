@@ -76,13 +76,13 @@ export function agentOperation(ctx:Ctx,userId:string,operation:string,p:Record<s
     ctx.db.agentProjects.insert(row);return row;
   }
   if(operation==="threads"){
-    keys(p,["projectId"]);const parent=project(p.projectId);
-    return {items:[...ctx.db.agentThreads.projectId.filter(parent.id)].sort((a,b)=>b.modifiedAt-a.modifiedAt||a.id.localeCompare(b.id))};
+    keys(p,["projectId"]);const rows=p.projectId?[...ctx.db.agentThreads.projectId.filter(project(p.projectId).id)]:[...ctx.db.agentThreads.ownerId.filter(userId)];
+    return {items:rows.sort((a,b)=>b.modifiedAt-a.modifiedAt||a.id.localeCompare(b.id)).map(row=>({...row,runStatus:[...ctx.db.agentRuns.threadId.filter(row.id)].sort((a,b)=>b.createdAt-a.createdAt)[0]?.status}))};
   }
   if(operation==="createThread"){
-    keys(p,["id","projectId","title"]);const parent=project(p.projectId),row={id:id(p.id),ownerId:userId,projectId:parent.id,title:text(p.title,200).trim(),revision:1,createdAt:now,modifiedAt:now};
+    keys(p,["id","projectId","title"]);const parent=project(p.projectId),row={id:id(p.id),ownerId:userId,projectId:parent.id,title:text(p.title??"New thread",200).trim(),revision:1,createdAt:now,modifiedAt:now};
     const old=ctx.db.agentThreads.id.find(row.id);
-    if(old){if(old.ownerId!==userId||old.projectId!==parent.id||old.title!==row.title)fail("conflict");return old;}
+    if(old){if(old.ownerId!==userId||old.projectId!==parent.id||p.title!==undefined&&old.title!==row.title)fail("conflict");return old;}
     if([...ctx.db.agentThreads.ownerId.filter(userId)].length>=agentLimits.threads)fail("quotaExceeded");
     ctx.db.agentThreads.insert(row);return row;
   }
@@ -113,7 +113,9 @@ export function agentOperation(ctx:Ctx,userId:string,operation:string,p:Record<s
     if([...ctx.db.agentRuns.threadId.filter(current.id)].some(row=>activeAgentRun(row.status)))fail("conflict");
     if(!Number.isInteger(p.revision)||p.revision!==current.revision)fail("conflict");
     if([...ctx.db.agentMessages.ownerId.filter(userId)].length>=agentLimits.messages)fail("quotaExceeded");
-    const updated={...current,revision:current.revision+1,modifiedAt:now};
+    // Fifty Unicode scalars fit the title's 200-byte storage/backup limit.
+    const title=current.revision===1&&current.title==="New thread"?[...content.trim().replace(/\s+/g," ")].slice(0,50).join(""):current.title;
+    const updated={...current,title,revision:current.revision+1,modifiedAt:now};
     const message={id:messageId,ownerId:userId,threadId:current.id,sequence:updated.revision,role:"user",content,createdAt:now};
     ctx.db.agentMessages.insert(message);ctx.db.agentThreads.id.update(updated);return {thread:updated,message};
   }

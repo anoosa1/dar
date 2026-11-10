@@ -26,10 +26,12 @@ export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, u
       const zone = timezone(field(get("timezone","UTC"), 100)), weekStart = get("weekStart",1);
       if (weekStart !== 0 && weekStart !== 1) invalid("Week starts on Sunday or Monday.");
       if (p.hiddenCalendars !== undefined && (!Array.isArray(p.hiddenCalendars) || p.hiddenCalendars.length > 200 || p.hiddenCalendars.some(v => typeof v !== "string"))) invalid("Invalid hidden calendar list.");
+      const settled=get("agentSettledThreads",[]);
+      if(!Array.isArray(settled)||settled.length>128||settled.some(row=>!row||typeof row!=="object"||typeof row.id!=="string"||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(row.id)||!Number.isSafeInteger(row.revision)||row.revision<1))invalid("Invalid settled thread list.");
       const choice=(key:string,allowed:string[],fallback:string)=>{const value=get(key,fallback);if(typeof value!=="string"||!allowed.includes(value))invalid(`Invalid ${key}.`);return value;};
       const flag=(key:string,fallback:boolean)=>{const value=get(key,fallback);if(typeof value!=="boolean")invalid(`Invalid ${key}.`);return value;};
       const value = JSON.stringify({calendarShowCancelled:flag("calendarShowCancelled",false),appearance:choice("appearance",["system","latte","mocha"],"system"),timezone:zone,weekStart,contactSort:choice("contactSort",["firstName","lastName"],"firstName"),hiddenCalendars:get("hiddenCalendars",[]),notesSort:choice("notesSort",["modified","title"],"modified"),tasksSort:choice("tasksSort",["modified","title","due"],"due"),filesView:choice("filesView",["list","grid"],"list"),filesShowHidden:flag("filesShowHidden",false),filesConfirmTrash:flag("filesConfirmTrash",false),filesDetailsTab:choice("filesDetailsTab",["details","versions","sharing"],"details"),notesEditorMode:choice("notesEditorMode",["write","preview"],"write"),tasksView:choice("tasksView",["all","inbox","today","upcoming","important","completed"],"today")});
-      const result = await service.call<{ revision: number }>("savePreferences", { revision: old.revision, value }); return json({ ...JSON.parse(value), revision: result.revision });
+      const result = await service.call<{ revision: number }>("savePreferences", { revision: old.revision, value:JSON.stringify({...JSON.parse(value),agentSettledThreads:settled}) }); return json({ ...JSON.parse(value),agentSettledThreads:settled, revision: result.revision });
     }
   }
   if (url.pathname === "/api/v1/pim/reminders" && method === "GET") return json({ items: await service.call("reminders") });

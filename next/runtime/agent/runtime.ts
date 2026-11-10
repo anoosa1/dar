@@ -1,42 +1,53 @@
-import {readFile,lstat,mkdir,writeFile} from "node:fs/promises";
+import {access,readFile,lstat,stat,mkdir,writeFile} from "node:fs/promises";
+import {constants} from "node:fs";
+import {homedir} from "node:os";
 import path from "node:path";
 import {randomUUID} from "node:crypto";
 import type {Database} from "../database.ts";
 import {AppError} from "../errors.ts";
+import {createDurableFile} from "../atomic.ts";
 import {codexAccount,codexModels,verifyCodexSandbox,runCodex,object,string,type CodexConfig} from "./codex.ts";
 import {prepareWorkspace,type Source} from "./workspace.ts";
 import type {AgentHistory,AgentRun,AgentRunDocument,AgentProvider} from "../../shared/agent.ts";
 
 async function configuration(filename:string):Promise<CodexConfig|undefined>{
+  try{await lstat(filename);}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return undefined;throw error;}
   try{
     const stat=await lstat(filename);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16384)throw Error();
     const value=object(JSON.parse(await readFile(filename,"utf8")));
     if(Object.keys(value).some(k=>!["executable","home","userId","gitHosts"].includes(k))||typeof value.executable!=="string"||!path.isAbsolute(value.executable)||typeof value.home!=="string"||!path.isAbsolute(value.home)||typeof value.userId!=="string"||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.userId)||!Array.isArray(value.gitHosts)||value.gitHosts.some(host=>typeof host!=="string"||!/^[A-Za-z0-9.-]+$/.test(host)))throw Error();
     const home=await lstat(value.home);if(!home.isDirectory()||home.isSymbolicLink())throw Error();
     return {...value,gitHosts:value.gitHosts.map(host=>String(host).toLowerCase())} as unknown as CodexConfig;
-  }catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return undefined;throw new AppError("codexConfigurationInvalid",503,"Codex configuration is invalid. Ask the administrator to check the configured paths and account.");}
+  }catch{throw new AppError("codexConfigurationInvalid",503,"Codex configuration is invalid. Ask the administrator to check the executable, Codex home and Dar account ID.");}
 }
 
 /** Owns all provider processes. A browser disconnect never becomes a run cancellation. */
 export async function createAgentRuntime(db:Database,root:string,filename:string){
-  let config:CodexConfig|undefined,configError=false,closing=false;
-  try{config=await configuration(filename);}catch{configError=true;}
+  let closing=false;
   await db.call("service_agent_worker",["","","startup",""]);
   const active=new Map<string,{controller:AbortController;promise:Promise<void>;sessionId:string}>();
-  let cache:{expires:number;value:Promise<AgentProvider>}|undefined;
   const operation=<T>(sessionId:string,name:string,value:object)=>db.call<T>("service_agent",[sessionId,name,JSON.stringify(value)]);
   const worker=<T>(id:string,lease:string,name:string,value:unknown={})=>db.call<T>("service_agent_worker",[id,lease,name,JSON.stringify(value)]);
   const blank=():AgentRunDocument=>({output:"",terminal:"",activity:[],changes:[],error:"",truncated:false});
-  const configuredFor=(userId:string)=>!!config&&config.userId===userId;
-  async function status(userId:string):Promise<AgentProvider>{
-    if(!configuredFor(userId))return {configured:false,connected:false,models:[],message:configError?"Codex configuration needs administrator attention.":"Codex has not been configured for this Dar account."};
-    if(!cache||cache.expires<Date.now())cache={expires:Date.now()+30000,value:(async()=>{
-      const workspace=path.join(root,"agent-workspaces","provider-status");await mkdir(workspace,{recursive:true,mode:0o700});if((await lstat(workspace)).isSymbolicLink())throw new AppError("unsafeWorkspace",409);
-      try{const connected=await codexAccount(config!,workspace);return {configured:true,connected,models:connected?await codexModels(config!,workspace):[],message:connected?"Connected with the existing Codex CLI ChatGPT login.":"Sign in to Codex on the server as the configured service user."};}
-      catch{return {configured:true,connected:false,models:[],message:"Codex is unavailable. Check the executable, permissions and existing login."};}
-    })()};return cache.value;
+  // Re-read the server binding and CLI login on each check. A refresh must not
+  // reuse a startup snapshot or a cached failure after an administrator fixes it.
+  async function connection(userId:string):Promise<{config?:CodexConfig;provider:AgentProvider}>{
+    let config:CodexConfig|undefined;
+    const unavailable=(message:string,configured=false)=>({config,provider:{configured,connected:false,models:[],message}});
+    try{config=await configuration(filename);}catch{return unavailable("Codex configuration is invalid. Ask the administrator to check the executable, Codex home and Dar account ID, then refresh.");}
+    if(!config)return unavailable("The server Codex login has not been linked to a Dar account. Configure services.dar.agent or codex.json with your Dar account ID, then refresh.");
+    if(config.userId!==userId)return unavailable("The server Codex login is linked to a different Dar account. Ask the administrator to check the account binding.");
+    const workspace=path.join(root,"agent-workspaces","provider-status");await mkdir(workspace,{recursive:true,mode:0o700});if((await lstat(workspace)).isSymbolicLink())throw new AppError("unsafeWorkspace",409);
+    try{
+      if(!await codexAccount(config,workspace))return unavailable("Codex is configured, but its ChatGPT login is unavailable to the Dar service. Sign in as the Linux account running Dar using the configured Codex home, then refresh.",true);
+    }catch{return unavailable("Dar could not run the configured Codex CLI. Check the executable and service permissions, then refresh.",true);}
+    try{
+      const models=await codexModels(config,workspace);
+      if(!models.length)return unavailable("Codex is signed in, but the CLI returned no available models. Check the installed Codex version, then refresh.",true);
+      return {config,provider:{configured:true,connected:true,models,message:"Connected with the existing Codex CLI ChatGPT login."}};
+    }catch{return unavailable("Codex is signed in, but Dar could not read its model catalog. Check the installed Codex version, then refresh.",true);}
   }
-  async function execute(id:string,sessionId:string,controller:AbortController){
+  async function execute(id:string,sessionId:string,controller:AbortController,config:CodexConfig){
     const lease=randomUUID(),data=blank();let timer:ReturnType<typeof setInterval>|undefined,checkpoint:Promise<void>|undefined,dirty=true;
     let workspaceCheck:(()=>Promise<void>)|undefined,lastWorkspaceCheck=0;
     const timeout=setTimeout(()=>controller.abort(),10*60000);
@@ -78,13 +89,37 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
     }finally{clearTimeout(timeout);if(timer)clearInterval(timer);active.delete(id);}
   }
   return {
-    status,
+    async status(userId:string){return (await connection(userId)).provider;},
+    /** Called only by the administrator-only native-session connection action.
+     * Discovery uses the service environment, never browser-supplied paths.
+     * Publishing is exclusive: an existing binding can never be taken over.
+     */
+    async connect(userId:string){
+      if(closing)throw new AppError("codexUnavailable",503);
+      const existing=await configuration(filename);
+      if(existing){if(existing.userId!==userId)throw new AppError("codexAlreadyLinked",409,"Codex is already linked to another Dar account. The administrator must update its server configuration.");return (await connection(userId)).provider;}
+      const home=process.env.CODEX_HOME??path.join(homedir(),".codex");
+      let executable:string|undefined;
+      for(const directory of (process.env.PATH??"").split(path.delimiter)){
+        if(!path.isAbsolute(directory))continue;
+        const candidate=path.join(directory,"codex");try{await access(candidate,constants.X_OK);if((await stat(candidate)).isFile()){executable=candidate;break;}}catch{}
+      }
+      if(!executable)throw new AppError("codexUnavailable",503,"Codex was not found on the Dar service PATH. Install Codex for that Linux account or configure services.dar.agent.");
+      try{const stat=await lstat(home);if(!path.isAbsolute(home)||!stat.isDirectory()||stat.isSymbolicLink())throw Error();}catch{throw new AppError("codexLoginRequired",409,"The Dar service has no accessible Codex home. Sign in to Codex as the Linux account running Dar, then connect again.");}
+      const discovered={executable,home,userId,gitHosts:["github.com"]},workspace=path.join(root,"agent-workspaces","provider-status");await mkdir(workspace,{recursive:true,mode:0o700});
+      if((await lstat(workspace)).isSymbolicLink())throw new AppError("unsafeWorkspace",409);
+      if(!await codexAccount(discovered,workspace))throw new AppError("codexLoginRequired",409,"No ChatGPT login is available to the Dar service. Run codex login as the Linux account running Dar, then connect again.");
+      try{await createDurableFile(filename,JSON.stringify(discovered));}catch(error){if((error as NodeJS.ErrnoException).code!=="EEXIST")throw new AppError("codexConfigurationReadOnly",409,"Dar cannot save the Codex binding. Configure services.dar.agent or make the private configuration directory writable by the Dar service.");}
+      return (await connection(userId)).provider;
+    },
     async start(sessionId:string,userId:string,p:Record<string,unknown>){
-      if(closing||!configuredFor(userId))throw new AppError("codexNotConfigured",409,"Codex is not configured for this Dar account.");
-      const provider=await status(userId);if(!provider.connected)throw new AppError("codexLoginRequired",409,provider.message);
+      if(closing)throw new AppError("codexUnavailable",503);
+      const {config,provider}=await connection(userId);
+      if(!config||!provider.configured)throw new AppError("codexNotConfigured",409,provider.message);
+      if(!provider.connected)throw new AppError("codexLoginRequired",409,provider.message);
       if(!provider.models.some(model=>model.id===p.model))throw new AppError("invalidModel",400,"Choose one of the available Codex models.");
       const run=await operation<AgentRun>(sessionId,"startRun",p);
-      if(run.status==="queued"&&!active.has(run.id)){const controller=new AbortController(),promise=execute(run.id,sessionId,controller);active.set(run.id,{controller,promise,sessionId});}
+      if(run.status==="queued"&&!active.has(run.id)){const controller=new AbortController(),promise=execute(run.id,sessionId,controller,config);active.set(run.id,{controller,promise,sessionId});}
       return run;
     },
     async cancel(sessionId:string,id:string){const result=await operation<AgentRun>(sessionId,"cancelRun",{id});active.get(id)?.controller.abort();return result;},

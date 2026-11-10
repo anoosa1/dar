@@ -27,7 +27,7 @@ export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url
   if(path==="/folders"&&method==="GET"){operation="folders";p={parentId:url.searchParams.get("parentId")??"",cursor:url.searchParams.get("cursor")??""};}
   else if(path==="/projects"&&method==="GET"){operation="projects";p={};}
   else if(path==="/projects"&&method==="POST"){operation="createProject";p=await body();status=201;}
-  else if(path==="/threads"&&method==="GET"){operation="threads";p={projectId:url.searchParams.get("projectId")};}
+  else if(path==="/threads"&&method==="GET"){operation="threads";p=url.searchParams.has("projectId")?{projectId:url.searchParams.get("projectId")}:{};}
   else if(path==="/threads"&&method==="POST"){operation="createThread";p=await body();status=201;}
   else{
     const match=/^\/threads\/([a-f0-9-]+)\/messages$/.exec(path);

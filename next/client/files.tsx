@@ -1,4 +1,5 @@
 import {TextEditor,editableText,writeTextFile} from "./text-editor.tsx";
+import {DarFilePicker,type DarFileSelection} from "./file-picker.tsx";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { DbConnection } from "./module_bindings/index.ts";
 import type { FileEntries as FileEntry, Usage as MyUsage } from "./module_bindings/types.ts";
@@ -65,9 +66,7 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   const {open:sidebar,setOpen:setSidebar,id:sidebarId,ref:sidebarRef}=useMobileNavigation();
   const [modal, setModal] = useState<Modal | null>(null), [busy, setBusy] = useState(false);
   const [targetPath, setTargetPath] = useState<{ id: string; name: string }[]>([]);
-  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
-  const [pickerQuery, setPickerQuery] = useState(""), [pickerCursor, setPickerCursor] = useState("");
-  const [pickerNext, setPickerNext] = useState(""), [pickerPrevious, setPickerPrevious] = useState<string[]>([]);
+  const [targetFolder,setTargetFolder]=useState<DarFileSelection>();
   const [transfers, setTransfers] = useState<Transfer[]>([]), [publicLink, setPublicLink] = useState("");
   const [preview, setPreview] = useState<FileEntry | null>(null), [textPreview, setTextPreview] = useState("");
   const uploadInput = useRef<HTMLInputElement>(null), replacementInput = useRef<HTMLInputElement>(null);
@@ -155,12 +154,6 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
     else if (!row) void showDetails(current.entry);
   }, [rows]);
   useEffect(() => {
-    if (modal?.type !== "move" && modal?.type !== "copy" || !connection) return;
-    let current = true;
-    void connection.procedures.folderChoices({ parentId: targetPath.at(-1)?.id ?? "", query: pickerQuery, cursor: pickerCursor }).then(value => { if (current) { const result = readProcedure<{ items: { id: string; name: string }[]; nextCursor: string }>(value); setFolders(result.items); setPickerNext(result.nextCursor); } }).catch(cause => { if (current) setError(failure(cause)); });
-    return () => { current = false; };
-  }, [modal, targetPath, connection, pickerQuery, pickerCursor]);
-  useEffect(() => {
     setTextPreview("");
     if (!preview || !/^(text\/|application\/json)/.test(preview.mediaType) || preview.size > 1024 * 1024) return;
     const abort = new AbortController();
@@ -202,18 +195,17 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   function toggle(entry: FileEntry) {
     setSelected(previous => { const next = new Set(previous); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; });
   }
-  function openModal(value: Modal) { setSidebar(false); setError(""); setModal(value); setTargetPath([]); setPickerQuery(""); setPickerCursor(""); setPickerPrevious([]); }
-  function pickPath(value: { id: string; name: string }[]) { setTargetPath(value); setPickerQuery(""); setPickerCursor(""); setPickerPrevious([]); }
+  function openModal(value: Modal) { setSidebar(false); setError(""); setModal(value); setTargetPath([]);setTargetFolder(undefined); }
   async function submitModal(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!modal) return;
+    event.preventDefault(); if (!modal||(modal.type==="move"||modal.type==="copy")&&!targetFolder) return;
     const p = Object.fromEntries(new FormData(event.currentTarget));
     const success = await perform(async () => {
       if (!connection) throw new Error("Wait for the connection to return.");
       if (modal.type === "folder") await connection.reducers.createFolder({ id: crypto.randomUUID(), parentId, name: String(p.name) });
       const entry = "entry" in modal ? modal.entry : undefined;
       if (entry && modal.type === "rename") await connection.reducers.renameEntry({ id: entry.id, name: String(p.name), expectedRevision: entry.revision });
-      if (entry && modal.type === "move") await connection.reducers.moveEntry({ id: entry.id, parentId: targetPath.at(-1)?.id ?? "", expectedRevision: entry.revision });
-      if (entry && modal.type === "copy") await connection.reducers.copyEntry({ id: entry.id, newId: crypto.randomUUID(), name: String(p.name), parentId: targetPath.at(-1)?.id ?? "", expectedRevision: entry.revision });
+      if (entry && modal.type === "move") await connection.reducers.moveEntry({ id: entry.id, parentId: targetFolder!.id, expectedRevision: entry.revision });
+      if (entry && modal.type === "copy") await connection.reducers.copyEntry({ id: entry.id, newId: crypto.randomUUID(), name: String(p.name), parentId: targetFolder!.id, expectedRevision: entry.revision });
       if (modal.type === "delete") {
         const targets = entry ? [entry] : visible.filter(item => selected.has(item.id));
         for (const item of targets) await connection.reducers.deleteEntry({ id: item.id, expectedRevision: item.revision });
@@ -326,9 +318,9 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
     {trashConfirmation&&<Dialog title="Move to deleted files?" onClose={()=>setTrashConfirmation(null)}><p>{trashConfirmation.length===1?trashConfirmation[0].name:`${trashConfirmation.length} selected items`} can be restored from Deleted files.</p><div className="dialog-actions"><button className="text-button" onClick={()=>setTrashConfirmation(null)}>Cancel</button><button className="primary-button" disabled={busy} onClick={()=>{void trashEntries(trashConfirmation).then(ok=>{if(ok)setTrashConfirmation(null);});}}>Move to deleted files</button></div></Dialog>}
     {modal && <FileOperationPane title={modal.type === "folder" ? "New folder" : modal.type === "rename" ? "Rename item" : modal.type === "move" ? "Move item" : modal.type === "copy" ? "Copy item" : modal.type === "delete" ? "Delete permanently?" : "Delete permanently?"} onClose={() => setModal(null)}><form onSubmit={submitModal}>
       {["folder", "rename", "copy"].includes(modal.type) && <label>Name<input name="name" required maxLength={255} defaultValue={"entry" in modal ? modal.type === "copy" ? `${modal.entry!.name} copy` : modal.entry?.name : ""} autoFocus /></label>}
-      {(modal.type === "move" || modal.type === "copy") && <div className="folder-picker"><label>Search folders<input type="search" value={pickerQuery} placeholder="Filename starts with…" onChange={event => { setPickerQuery(event.target.value); setPickerCursor(""); setPickerPrevious([]); }} onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }} /></label><div className="picker-path"><button type="button" className="text-button" onClick={() => pickPath([])}>All files</button>{targetPath.map((part, i) => <button key={part.id} type="button" className="text-button" onClick={() => pickPath(targetPath.slice(0, i + 1))}>/ {part.name}</button>)}</div>{folders.filter(folder => folder.id !== modal.entry?.id).map(folder => <button key={folder.id} type="button" className="picker-folder" onClick={() => pickPath([...targetPath, folder])}><Icon name="folder" />{folder.name}<Icon name="chevron" /></button>)}{!folders.length && <p className="muted">No matching folders here.</p>}{(pickerPrevious.length > 0 || pickerNext) && <div className="pagination"><button type="button" className="text-button" disabled={!pickerPrevious.length} onClick={() => { setPickerCursor(pickerPrevious.at(-1) ?? ""); setPickerPrevious(pickerPrevious.slice(0, -1)); }}>Previous</button><button type="button" className="text-button" disabled={!pickerNext} onClick={() => { setPickerPrevious([...pickerPrevious, pickerCursor]); setPickerCursor(pickerNext); }}>Next</button></div>}</div>}
+      {(modal.type === "move" || modal.type === "copy") && <DarFilePicker key={`${modal.type}:${modal.entry?.id}`} mode="folder" allowRoot initialFolderId={targetPath.at(-1)?.id??""} excludeIds={modal.entry?[modal.entry.id]:[]} disabled={busy} onChange={setTargetFolder}/>}
       {modal.type === "delete" && <p>This permanently removes {"entry" in modal && modal.entry ? `“${modal.entry.name}”` : `${selected.size} selected items`} and their versions. This cannot be undone.</p>}
-      {error && <p className="error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="text-button" onClick={() => setModal(null)}>Cancel</button><button className={modal.type === "delete" ? "danger-button" : "primary-button"} disabled={busy}>{busy ? "Saving…" : modal.type === "folder" ? "Create folder" : modal.type === "delete" ? "Delete permanently" : modal.type === "move" ? "Move here" : modal.type === "copy" ? "Copy here" : "Save"}</button></div>
+      {error && <p className="error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="text-button" onClick={() => setModal(null)}>Cancel</button><button className={modal.type === "delete" ? "danger-button" : "primary-button"} disabled={busy||(modal.type==="move"||modal.type==="copy")&&!targetFolder}>{busy ? "Saving…" : modal.type === "folder" ? "Create folder" : modal.type === "delete" ? "Delete permanently" : modal.type === "move" ? "Move here" : modal.type === "copy" ? "Copy here" : "Save"}</button></div>
     </form></FileOperationPane>}
     {preview && <Dialog title={preview.name} onClose={() => setPreview(null)}><div className="preview-content">{/^image\/(png|jpeg|gif|webp)$/.test(preview.mediaType) ? <img src={`/api/v1/files/${preview.id}/content?preview=1`} alt={preview.name} /> : /^(text\/|application\/json)/.test(preview.mediaType) && preview.size <= 1024 * 1024 ? <pre>{textPreview || "Loading preview…"}</pre> : <div className="empty-state"><Icon name="file" /><p>A browser preview isn’t available for this file.</p></div>}</div><a className="primary-button" href={`/api/v1/files/${preview.id}/content`}><Icon name="download" />Download</a></Dialog>}
   </div>;

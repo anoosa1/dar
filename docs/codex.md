@@ -10,7 +10,13 @@ service account. Use an existing login readable by the account running Dar.
 
 Use Codex CLI 0.166.0 with named permission profiles. Newer versions need CLI flag,
 JSONL event and isolation verification before deployment; unsupported behavior fails closed.
-Create `codex.json` in the private Dar root, or set `DAR_CODEX_FILE` to a regular
+In Agent settings, an administrator can use **Connect server Codex** to discover
+`codex` on the Dar service's PATH and its existing login in `CODEX_HOME` (or
+`~/.codex` for that Linux account). The action checks the login and creates a
+private binding to the current immutable Dar account ID. It never replaces an
+existing binding or copies credentials. Discovery initially permits public Git
+repositories on github.com. For other hosts or explicitly managed deployments,
+create `codex.json` in the private Dar root, or set `DAR_CODEX_FILE` to a regular
 JSON configuration file:
 
 ```json
@@ -26,14 +32,21 @@ Replace the example user ID with your account ID, shown in Agent settings. Bindi
 uses the immutable ID, so renaming a user cannot transfer access to another account.
 These are configuration paths and host names, not credentials. Never put tokens,
 passwords or credential-bearing repository URLs in this file. Keep the actual
-Codex home private. Restart Dar after changing the configuration. In Agent settings,
+Codex home private. Configuration changes take effect on the next check. In Agent settings,
 Refresh connection runs `codex login status` and reads the installed CLI's bundled
 model catalog through `codex debug models --bundled`. Model access is only
 proven when a turn succeeds. If login has expired, use the normal Codex login on the
-server as the account running Dar, then refresh the connection. Status is cached
-for up to 30 seconds.
+server as the account running Dar, then refresh the connection. Each refresh
+re-reads configuration and checks the CLI immediately. It distinguishes a missing
+binding, another account's binding, missing login, CLI failure and catalog failure.
+Active runs retain the configuration with which they started.
 
-Choose a Git repository or a folder in Dar Files, create a thread, select a model
+Use New thread to choose a project or add a Git repository/Dar Files folder.
+The composer opens immediately; the first message supplies its initial title.
+Working threads have their own shelf. Settle thread parks idle conversations;
+Restore thread or new conversation activity brings them back. Settlement is
+saved in account preferences with revision checks and included in backups.
+Select a model
 and use Run with Codex. Save only retains a message without invoking the model.
 Running sends that conversation and selected project contents to Codex. Stop ends
 the owned process tree; reconnecting shows the saved run status and output.

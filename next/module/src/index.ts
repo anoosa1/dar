@@ -3,6 +3,7 @@ import {appTables} from "./app-tables.ts";
 import {agentTables} from "./agent-tables.ts";
 import {agentOperation,agentSnapshot,restoreAgent} from "./agent.ts";
 import {agentWorker} from "./agent-runs.ts";
+import {filePicker} from "./file-picker.ts";
 import {appOperation,appSnapshot,restoreApps} from "./apps.ts";
 import {validAppId} from "../../shared/installed-apps.ts";
 import {globalSearch} from "./global-search.ts";
@@ -725,6 +726,10 @@ export const serviceAppSettings=db.procedure({sessionId:t.string(),appId:t.strin
 export const serviceAppData=db.procedure({sessionId:t.string(),appId:t.string(),operation:t.string(),key:t.string(),revision:t.u32(),schemaVersion:t.u32(),value:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
   return JSON.stringify(appOperation(tx,user.id,p.appId,p.operation,p.key,p.revision,p.schemaVersion,p.value));
+}));
+export const serviceFilePicker=db.procedure({sessionId:t.string(),parentId:t.string(),cursor:t.string(),kind:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+  return JSON.stringify(filePicker(tx,user.id,p.parentId,p.cursor,p.kind,row=>!!access(tx,row,user.id)));
 }));
 export const serviceAgent=db.procedure({sessionId:t.string(),operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");

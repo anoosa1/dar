@@ -51,7 +51,7 @@ try {
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
   if(agentOnly||!identityOnly&&!workspaceOnly&&!pimOnly){
-    run(["--test","--test-concurrency=1","test/agent.integration.test.ts","test/codex.integration.test.ts"]);
+    run(["--test","--test-concurrency=1","test/agent-connection.test.ts","test/agent.integration.test.ts","test/codex.integration.test.ts"]);
     run(["test/agent-browser.mjs"]);
   }
   if(!agentOnly){

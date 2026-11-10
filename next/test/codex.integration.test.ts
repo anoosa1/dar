@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {mkdtemp,mkdir,writeFile,readFile} from "node:fs/promises";
+import {mkdtemp,mkdir,writeFile,readFile,unlink} from "node:fs/promises";
 import path from "node:path";
 import {randomUUID} from "node:crypto";
 import {createServer} from "node:net";
@@ -15,15 +15,21 @@ test("direct Codex CLI preserves login, run state, cancellation, isolation and F
  const root=await mkdtemp("/tmp/dar-codex-acceptance-"),name="dar-codex-"+randomUUID().slice(0,8),listener=createServer();await new Promise<void>(r=>listener.listen(0,"127.0.0.1",r));const port=(listener.address() as import("node:net").AddressInfo).port;await new Promise<void>(r=>listener.close(()=>r()));const base=`http://127.0.0.1:${port}`;
  const published=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(published.status,0,published.stdout+published.stderr);
  const executable=path.join(root,"codex-fixture"),home=path.join(root,"codex-home");await mkdir(home,{mode:0o700});await writeFile(executable,await readFile(new URL("./fixtures/codex-fixture.mjs",import.meta.url)),{mode:0o700});
- const codexFile=path.join(root,"codex.json");await writeFile(codexFile,JSON.stringify({executable,home,userId:randomUUID(),gitHosts:[]}));
+ const codexFile=path.join(root,"codex.json");
  const config={host:"127.0.0.1",port,origin:base,root:path.join(root,"state"),databaseUrl:process.env.DAR_DATABASE_URL!,databaseName:name,serviceTokenFile:process.env.DAR_DATABASE_TOKEN_FILE!,bootstrapTokenFile:process.env.DAR_BOOTSTRAP_TOKEN_FILE!,development:true,codexFile};
  let runtime=await startServer(config);
  try{
   const setup=await fetch(base+"/api/v1/auth/setup",{method:"POST",headers:{origin:base,"content-type":"application/json"},body:JSON.stringify({username:"admin",displayName:"Codex fixture",password:"a long isolated test password",bootstrapToken:await readFile(process.env.DAR_BOOTSTRAP_TOKEN_FILE!,"utf8")})});assert.equal(setup.status,200);
-  const account=await setup.json() as {user:{id:string}};await writeFile(codexFile,JSON.stringify({executable,home,userId:account.user.id,gitHosts:[]}));await runtime.close();runtime=await startServer(config);
+  const account=await setup.json() as {user:{id:string}};
   const session=await login(base),headers={...session.headers,"content-type":"application/json"};
   const call=async<T>(route:string,value?:unknown,match?:number):Promise<T>=>{const response=await fetch(base+"/api/v1/agent"+route,{headers:{...headers,...match!==undefined?{"if-match":`"${match}"`}:{}},...value!==undefined?{method:"POST",body:JSON.stringify(value)}:{}});assert.ok(response.ok,await response.clone().text());return response.json() as Promise<T>;};
+  assert.equal((await call<AgentProvider>("/provider")).configured,false);
+  await writeFile(codexFile,JSON.stringify({executable,home,userId:account.user.id,gitHosts:[]}));
   const provider=await call<AgentProvider>("/provider");assert.equal(provider.connected,true);assert.equal(provider.models[0].id,"fixture-model");assert.ok(!JSON.stringify(provider).includes("fixture@example.test"));
+  await writeFile(path.join(home,"logged-out"),"");assert.equal((await call<AgentProvider>("/provider")).connected,false);
+  await unlink(path.join(home,"logged-out"));assert.equal((await call<AgentProvider>("/provider")).connected,true);
+  await writeFile(codexFile,"invalid JSON");assert.equal((await call<AgentProvider>("/provider")).configured,false);
+  await writeFile(codexFile,JSON.stringify({executable,home,userId:account.user.id,gitHosts:[]}));assert.equal((await call<AgentProvider>("/provider")).connected,true);
   const folderId=randomUUID(),connection=await connect(session);try{await connection.reducers.createFolder({id:folderId,parentId:"",name:"Source"});}finally{connection.disconnect();}
   const file=await upload(base,session,"greeting.txt","Original source.\n",folderId),projectId=randomUUID();await call("/projects",{id:projectId,name:"Files code",sourceType:"files",sourceRef:folderId});
   async function thread(title:string){const id=randomUUID();await call("/threads",{id,projectId,title});return id;}
@@ -47,6 +53,7 @@ test("direct Codex CLI preserves login, run state, cancellation, isolation and F
   const db=await database(process.env.DAR_DATABASE_URL!,name,process.env.DAR_DATABASE_TOKEN_FILE!);await assert.rejects(db.call("service_agent_worker",[run.id,randomUUID(),"finish",JSON.stringify({status:"completed",document:done.document})]),/conflict/);
   const username="other";assert.equal((await fetch(base+"/api/v1/auth/users",{method:"POST",headers,body:JSON.stringify({username,displayName:"Other",password:"a long isolated test password"})})).status,201);const other=await login(base,username);
   assert.equal((await fetch(`${base}/api/v1/agent/runs/${run.id}`,{headers:other.headers})).status,404);assert.equal((await(await fetch(base+"/api/v1/agent/provider",{headers:other.headers})).json() as AgentProvider).configured,false);
+  assert.equal((await fetch(base+"/api/v1/agent/provider/connect",{method:"POST",headers:other.headers})).status,403);
   const browser=await promisify(execFile)(process.execPath,["test/agent-codex-browser.mjs"],{cwd:path.resolve(import.meta.dirname,".."),env:{...process.env,DAR_INTEGRATION_ORIGIN:base,DAR_TEST_ROOT:root,DAR_CODEX_PROJECT:projectId},encoding:"utf8",timeout:45000});console.log(browser.stdout.trim());
  }finally{await runtime.close();}
 });

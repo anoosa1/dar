@@ -1,0 +1,11 @@
+.dar-file-picker{display:flex;flex-direction:column;gap:12px;border:1px solid var(--border);border-radius:12px;padding:12px;min-width:0}
+.dar-file-picker p,.dar-file-picker label{margin:0}
+.dar-picker-path{display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:12px;overflow-wrap:anywhere}
+.dar-picker-path .text-button{padding:6px;min-height:36px;font-size:12px;white-space:normal;text-align:left}
+.dar-file-picker ul{list-style:none;padding:0;margin:0;max-height:280px;overflow:auto;scrollbar-gutter:stable}
+.dar-picker-row{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;border-radius:8px;padding:10px 8px;text-align:left;color:var(--text);font-size:13px}
+.dar-picker-row span{min-width:0;overflow-wrap:anywhere;flex:1}
+.dar-picker-row .icon{width:18px;height:18px;color:var(--muted)}
+.dar-picker-row .icon:last-child{width:13px}
+.dar-picker-row:hover,.dar-picker-row[aria-pressed=true]{background:var(--tonal);color:var(--on-tonal)}
+.dar-picker-selection{color:var(--muted);font-size:12px;overflow-wrap:anywhere}

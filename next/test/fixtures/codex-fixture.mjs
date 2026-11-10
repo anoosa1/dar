@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // CLI fixture only. Real login/sandbox checks use the installed Codex binary separately.
 import assert from "node:assert/strict";
-import {readFile,writeFile} from "node:fs/promises";
+import {readFile,writeFile,access} from "node:fs/promises";
 import path from "node:path";
 const args=process.argv.slice(2),[command,subcommand]=args,send=value=>process.stdout.write(JSON.stringify(value)+"\n");
 assert.equal(process.env.OPENAI_API_KEY,undefined);assert.equal(process.env.CODEX_API_KEY,undefined);assert.equal(process.env.DAR_DATABASE_TOKEN_FILE,undefined);
 if(command==="login"&&subcommand==="status"){
- process.stderr.write("Logged in using ChatGPT\n");
+ const loggedOut=await access(path.join(process.env.CODEX_HOME,"logged-out")).then(()=>true,()=>false);
+ process.stderr.write(loggedOut?"Not logged in\n":"Logged in using ChatGPT\n");if(loggedOut)process.exitCode=1;
 }else if(command==="debug"&&subcommand==="models"){
  send({models:[{slug:"fixture-model",display_name:"Fixture model",visibility:"list",priority:1}]});
 }else if(command==="sandbox"){
