@@ -75,6 +75,7 @@ in {
     systemd.tmpfiles.rules = lib.optional cfg.agent.enable "d ${cfg.agent.home} 0700 dar dar -";
     systemd.services.dar = {
       description = "Dar personal cloud";
+      path = lib.optional cfg.agent.enable cfg.agent.package;
       wantedBy = [ "multi-user.target" ];
       wants = [ "network-online.target" ]; after = [ "network-online.target" ];
       environment = {

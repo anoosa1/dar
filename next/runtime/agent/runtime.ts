@@ -1,11 +1,11 @@
-import {access,readFile,lstat,stat,mkdir,writeFile} from "node:fs/promises";
-import {constants} from "node:fs";
+import {readFile,lstat,mkdir,writeFile} from "node:fs/promises";
 import {homedir} from "node:os";
 import path from "node:path";
 import {randomUUID} from "node:crypto";
 import type {Database} from "../database.ts";
 import {AppError} from "../errors.ts";
 import {createDurableFile} from "../atomic.ts";
+import {codexSearchDirectories,findCodexExecutable} from "./discovery.ts";
 import {codexAccount,codexModels,verifyCodexSandbox,runCodex,object,string,type CodexConfig} from "./codex.ts";
 import {prepareWorkspace,type Source} from "./workspace.ts";
 import type {AgentHistory,AgentRun,AgentRunDocument,AgentProvider} from "../../shared/agent.ts";
@@ -35,7 +35,7 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
     let config:CodexConfig|undefined;
     const unavailable=(message:string,configured=false)=>({config,provider:{configured,connected:false,models:[],message}});
     try{config=await configuration(filename);}catch{return unavailable("Codex configuration is invalid. Ask the administrator to check the executable, Codex home and Dar account ID, then refresh.");}
-    if(!config)return unavailable("The server Codex login has not been linked to a Dar account. Configure services.dar.agent or codex.json with your Dar account ID, then refresh.");
+    if(!config)return unavailable("No server Codex login is linked to this Dar account. An administrator can use Connect server Codex, or configure services.dar.agent.");
     if(config.userId!==userId)return unavailable("The server Codex login is linked to a different Dar account. Ask the administrator to check the account binding.");
     const workspace=path.join(root,"agent-workspaces","provider-status");await mkdir(workspace,{recursive:true,mode:0o700});if((await lstat(workspace)).isSymbolicLink())throw new AppError("unsafeWorkspace",409);
     try{
@@ -99,12 +99,8 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
       const existing=await configuration(filename);
       if(existing){if(existing.userId!==userId)throw new AppError("codexAlreadyLinked",409,"Codex is already linked to another Dar account. The administrator must update its server configuration.");return (await connection(userId)).provider;}
       const home=process.env.CODEX_HOME??path.join(homedir(),".codex");
-      let executable:string|undefined;
-      for(const directory of (process.env.PATH??"").split(path.delimiter)){
-        if(!path.isAbsolute(directory))continue;
-        const candidate=path.join(directory,"codex");try{await access(candidate,constants.X_OK);if((await stat(candidate)).isFile()){executable=candidate;break;}}catch{}
-      }
-      if(!executable)throw new AppError("codexUnavailable",503,"Codex was not found on the Dar service PATH. Install Codex for that Linux account or configure services.dar.agent.");
+      const executable=await findCodexExecutable(codexSearchDirectories(process.env.PATH??"",homedir()));
+      if(!executable)throw new AppError("codexUnavailable",503,"Dar could not access Codex on its service PATH or standard installation paths. A private SSH-user installation may be hidden from the service. Set services.dar.agent.package on NixOS, or set the absolute executable path in codex.json.");
       try{const stat=await lstat(home);if(!path.isAbsolute(home)||!stat.isDirectory()||stat.isSymbolicLink())throw Error();}catch{throw new AppError("codexLoginRequired",409,"The Dar service has no accessible Codex home. Sign in to Codex as the Linux account running Dar, then connect again.");}
       const discovered={executable,home,userId,gitHosts:["github.com"]},workspace=path.join(root,"agent-workspaces","provider-status");await mkdir(workspace,{recursive:true,mode:0o700});
       if((await lstat(workspace)).isSymbolicLink())throw new AppError("unsafeWorkspace",409);

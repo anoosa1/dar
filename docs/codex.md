@@ -11,7 +11,9 @@ service account. Use an existing login readable by the account running Dar.
 Use Codex CLI 0.166.0 with named permission profiles. Newer versions need CLI flag,
 JSONL event and isolation verification before deployment; unsupported behavior fails closed.
 In Agent settings, an administrator can use **Connect server Codex** to discover
-`codex` on the Dar service's PATH and its existing login in `CODEX_HOME` (or
+`codex` on the Dar service's PATH, standard system paths (including NixOS's
+`/run/current-system/sw/bin`), or the service user's `.nix-profile/bin` and
+`.local/bin`. It checks the existing login in `CODEX_HOME` (or
 `~/.codex` for that Linux account). The action checks the login and creates a
 private binding to the current immutable Dar account ID. It never replaces an
 existing binding or copies credentials. Discovery initially permits public Git
@@ -78,6 +80,14 @@ login credentials never enter Nix expressions or the store. The service still
 protects home directories and the wider filesystem. Its configured Codex home is
 writable for Codex token refresh. Named Linux permission profiles need working
 unprivileged sandbox support; the executor checks it before every model run.
+
+Installing Codex in an SSH user's shell does not add it to systemd's PATH or
+share that user's login. The module adds `agent.package` to Dar's service PATH
+and writes an absolute executable path into its configuration. If discovery
+still fails, use this explicit NixOS setup, or an absolute `executable` in
+`codex.json` on other hosts. Do not disable `ProtectHome` or copy a personal
+credential file to make discovery work. Sign in as the Linux service account
+using the configured `CODEX_HOME`; then use Refresh connection.
 
 The packaged runtime provides Git and Node. Additional project test tools can be
 provided through `systemd.services.dar.path`. Commands cannot access the network;

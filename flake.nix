@@ -53,6 +53,7 @@
         assert agentService.serviceConfig.TasksMax == 256;
         assert builtins.elem "/var/lib/dar-codex" agentService.serviceConfig.ReadWritePaths;
         assert builtins.hasAttr "DAR_CODEX_FILE" agentService.environment;
+        assert builtins.elem agentEnabled.config.services.dar.agent.package agentService.path;
         assert builtins.any (item: !item.assertion && nixpkgs.lib.hasPrefix "services.dar.oidc.clients.public " item.message) invalidPublic.config.assertions;
         assert builtins.hasAttr "DAR_OIDC_FILE" service.environment;
         assert builtins.hasAttr "dar.example.test" evaluated.config.services.nginx.virtualHosts;

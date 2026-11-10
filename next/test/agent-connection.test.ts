@@ -1,11 +1,26 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {mkdtemp,mkdir,readFile,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,mkdir,readFile,writeFile,rm,symlink} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {randomUUID} from "node:crypto";
 import {createAgentRuntime} from "../runtime/agent/runtime.ts";
+import {codexSearchDirectories,findCodexExecutable} from "../runtime/agent/discovery.ts";
 import type {Database} from "../runtime/database.ts";
+
+test("Codex discovery includes NixOS profiles and skips unavailable or non-executable candidates",async()=>{
+  const root=await mkdtemp(path.join(tmpdir(),"dar-codex-discovery-"));
+  try{
+    const directories=codexSearchDirectories("/service/bin:relative:/service/bin",root);
+    assert.equal(directories[0],"/service/bin");assert.equal(directories.filter(d=>d==="/service/bin").length,1);
+    assert.ok(directories.includes("/run/current-system/sw/bin"));assert.ok(directories.includes(path.join(root,".nix-profile/bin")));assert.ok(!directories.includes("relative"));
+    const blocked=path.join(root,"blocked"),profile=path.join(root,"profile"),target=path.join(root,"installed-codex");
+    await mkdir(blocked);await mkdir(profile);await writeFile(path.join(blocked,"codex"),"",{mode:0o600});
+    await writeFile(target,"#!/bin/sh\nexit 0\n",{mode:0o700});await symlink(target,path.join(profile,"codex"));
+    assert.equal(await findCodexExecutable([path.join(root,"missing"),blocked,profile]),path.join(profile,"codex"));
+    assert.equal(await findCodexExecutable([blocked]),undefined);
+  }finally{await rm(root,{recursive:true,force:true});}
+});
 
 test("connecting the discovered CLI binds its existing login without replacing an account binding",async()=>{
   const root=await mkdtemp(path.join(tmpdir(),"dar-agent-connection-")),home=path.join(root,"home"),bin=path.join(root,"bin"),filename=path.join(root,"codex.json");
