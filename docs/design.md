@@ -175,7 +175,18 @@ update this guide when a design decision changes.
 - Agent: the November 8 [workspace mock](spacetimedb/agent-workspace-mock.html)
   is approved. Follow the T3-style composition: projects and threads on the left,
   conversation/composer in the center, focused changes on the right and
-  collapsible output below. Keep Dar's shared header/search and Twilight themes.
+  collapsible output below. The November 9 follow-up selects A in
+  [T3 parity mocks](spacetimedb/agent-t3-parity-mocks.html), superseding the Agent
+  shared-header requirement: use compact T3 chrome with app access in the sidebar
+  and account/settings below. Ctrl/Cmd+K searches threads here. Keep Twilight themes;
+  other apps retain their shared header and cross-app search. Project identity
+  sits above thread titles in rows and beside the conversation title. Default to
+  conversation with a small contextual details card; open the wide review surface
+  on demand. Dock the composer with a circular send/stop action, put save-only in
+  its action menu, use Enter to send and Shift+Enter for a new line. Render safe
+  assistant Markdown, actual run summaries and selectable command output. Preserve
+  independent scroll positions and drafts. See the [parity ledger](spacetimedb/agent-t3-parity.md)
+  for runtime capabilities that a visual selection alone does not implement.
   Phone views show one panel at a time and preserve drafts. Projects select either
   a Git repository or a Dar Files folder; blob paths are never project paths.
   The implementation persists projects, threads, messages and Codex runs. Clearly

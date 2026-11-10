@@ -18,6 +18,8 @@ const paths = {
   trash: "M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7",
   share: "M8 11l8-5M8 13l8 5M8 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0M22 4a3 3 0 1 1-6 0 3 3 0 0 1 6 0M22 20a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
   upload: "M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5",
+  send: "M12 20V4m-6 6 6-6 6 6",
+  copy: "M9 8h12v13H9ZM15 5V2H3v13h3",
   download: "M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4",
   grid: "M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z",
   list: "M8 5h13M8 12h13M8 19h13M3 5h.01M3 12h.01M3 19h.01",

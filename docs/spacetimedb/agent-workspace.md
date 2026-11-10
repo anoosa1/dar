@@ -10,7 +10,9 @@ execution implemented. See explicit limits below and [setup](../codex.md).
   and Twilight themes. Do not explore alternative layout directions.
 - Projects/threads on the left, conversation/composer in the center, file changes
   and diffs on the right, collapsible terminal/output below the conversation.
-- Keep Dar's shared header, launcher, account menu and centered cross-app search.
+- The November 9 [parity option A](agent-t3-parity-mocks.html) supersedes the
+  original shared-header requirement for Agent: compact sidebar app/account
+  access and thread search replace the global header here. Other apps retain it.
 - Review one faithful static mock before implementing the workspace.
 - The maintainer approved that mock, then required both Git repository and Dar
   Files folder projects. Neither source is a host filesystem path.

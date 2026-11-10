@@ -9,6 +9,12 @@ import "./global-search.css";
 
 export function Avatar({name}:{name:string}){return <span className="avatar" aria-hidden="true">{name.split(/\s+/).filter(Boolean).map(word=>word[0]).join("").slice(0,2).toUpperCase()}</span>;}
 
+/** The same account actions are available in full and compact app chrome. */
+export function WorkspaceAccount({session,onSignedOut}:{session:BrowserSession;onSignedOut:()=>void}){
+  const [error,setError]=useState("");
+  return <div className="account-area"><ActionMenu label="Open account menu" className="ui-account" heading={<><strong>{session.user.displayName}</strong><small>@{session.user.username}</small></>} actions={[{label:"Settings",icon:"settings",href:"/settings"},{label:"Account security",icon:"lock",href:"/settings?section=security"},...(session.user.administrator?[{label:"Administration",icon:"share" as const,href:"/settings?section=directory"}]:[]),{label:"Sign out",icon:"back",separator:true,run:()=>{void request("/api/v1/auth/logout",{method:"POST"},session.csrfToken).then(onSignedOut).catch(e=>setError(e.message));}}]}><Avatar name={session.user.displayName}/><span className="sr-only">{session.user.displayName}</span></ActionMenu>{error&&<p role="alert" className="error">{error}</p>}</div>;
+}
+
 /** Phone navigation focuses its controls and returns to its opener on dismissal. */
 export function useMobileNavigation(){
   const [open,setOpen]=useState(false),id=useId(),ref=useRef<HTMLElement>(null),trigger=useRef<HTMLElement|null>(null),wasOpen=useRef(false);
@@ -24,6 +30,5 @@ export function useMobileNavigation(){
 }
 
 export function WorkspaceHeader({app,session,onSignedOut,query,onQuery,onNavigation,navigationOpen,navigationId,searchLabel,searchHint}:{app:AppId;session:BrowserSession;onSignedOut:()=>void;query:string;onQuery:(value:string)=>void;onNavigation?:()=>void;navigationOpen?:boolean;navigationId?:string;searchLabel?:string;searchHint?:string}){
-  const [error,setError]=useState("");
-  return <><header className="topbar"><div className="topbar-brand">{onNavigation&&<button type="button" className="icon-button mobile-menu" aria-label="Open navigation" aria-expanded={navigationOpen} aria-controls={navigationId} onClick={onNavigation}><Icon name="menu"/></button>}<a href="/" className="shell-brand" aria-label="Dar home"><Brand/></a><AppSwitcher active={app} administrator={session.user.administrator}/></div><GlobalSearch/><div className="account-area"><ActionMenu label="Open account menu" className="ui-account" heading={<><strong>{session.user.displayName}</strong><small>@{session.user.username}</small></>} actions={[{label:"Settings",icon:"settings",href:"/settings"},{label:"Account security",icon:"lock",href:"/settings?section=security"},...(session.user.administrator?[{label:"Administration",icon:"share" as const,href:"/settings?section=directory"}]:[]),{label:"Sign out",icon:"back",separator:true,run:()=>{void request("/api/v1/auth/logout",{method:"POST"},session.csrfToken).then(onSignedOut).catch(e=>setError(e.message));}}]}><Avatar name={session.user.displayName}/><span className="sr-only">{session.user.displayName}</span></ActionMenu></div></header>{error&&<p role="alert" className="error-banner">{error}</p>}</>;
+  return <><header className="topbar"><div className="topbar-brand">{onNavigation&&<button type="button" className="icon-button mobile-menu" aria-label="Open navigation" aria-expanded={navigationOpen} aria-controls={navigationId} onClick={onNavigation}><Icon name="menu"/></button>}<a href="/" className="shell-brand" aria-label="Dar home"><Brand/></a><AppSwitcher active={app} administrator={session.user.administrator}/></div><GlobalSearch/><WorkspaceAccount session={session} onSignedOut={onSignedOut}/></header></>;
 }

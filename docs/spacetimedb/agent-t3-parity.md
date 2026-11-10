@@ -1,0 +1,296 @@
+# T3 Code parity audit — November 9, 2026
+
+Status: option A selected. The compact frame and existing-data interactions are
+implemented; the reference requirements below also include capabilities
+that need separate data/runtime work. This is not a claim of complete T3 parity.
+
+The requested target is the T3 Code experience, including interactions and state,
+not merely a three-column layout. The previous workflow refinement implemented
+only a small subset. This ledger supersedes its implication of broad UX parity.
+
+## Evidence and limits
+
+Reference: the locally installed T3 Code 0.1.6 client, inspected through its bundled
+source maps. Reference names below are original client source paths, relative to
+`src/`. Extracted reference code is temporary and is not added to Dar. This is a
+behavioral specification for an original Dar implementation.
+
+The earlier isolated reference session and its screenshots are recorded in
+[the workflow audit](agent-workflow-audit.md). Its loopback service is no longer
+running (connection refused during this audit). This pass inspected source and
+existing fixture screenshots; it did not exercise every branch in a fresh live
+session. Source presence does not prove a feature is enabled by default or
+available to every provider. Diff behavior here is source-inspected, not a claim
+that the earlier non-Git fixture verified a populated diff.
+
+Dar inspected: `next/client/agent/workspace.tsx`, `workspace.css`,
+`next/shared/agent.ts`, and `next/runtime/agent/codex.ts`.
+
+Legend: **UI** can be built on existing data; **State** needs durable state or
+contract work; **Runtime** needs execution capabilities; **Shell** is shared Dar
+or desktop integration. These are implementation classifications, not completed
+work. The tables record the baseline before this change. The implementation
+record below identifies what has since changed; remaining rows are not implicitly
+complete because their surrounding panel has been redesigned.
+
+## Selected A implementation
+
+- Compact sidebar chrome with the shared application launcher and account actions;
+  no full-width global header on Agent. Other apps retain their header. Thread
+  search, Working/Settled shelves and project-over-title rows use real saved data.
+- Searchable project chooser in the shared dialog, then focused composer; source
+  creation still uses the shared Files picker and source-derived names.
+- Contextual project/connection card and on-demand wide review, with maximize and
+  close controls. Navigation, details, review and command-output visibility persist
+  per account in this browser. Phones expose details as a separate focused panel.
+- Right-aligned user bubbles, shared safe assistant Markdown and hover/focus copy
+  actions. HTML remains text and remote Markdown images are not fetched.
+- A work summary sits immediately after its initiating message, using the latest
+  run's actual activity. Live output appears once; completed replies come from saved
+  messages. Earlier run documents and a typed event timeline are still missing.
+- Scroll-follow releases while reading older messages; Jump to latest resumes it.
+  Thread switches retain viewport positions during the current workspace visit;
+  loading earlier messages preserves the visible anchor. Drafts retain the existing
+  session recovery and idempotent-send/conflict behavior.
+- Docked composer with circular send and real Stop, Enter to submit, Shift+Enter
+  for newline, and a Save only menu command. A draft can be prepared during a run;
+  this is not steering/queueing. Model choice is retained per thread in this tab.
+- Find in loaded messages, match navigation, copy message/response/thread link,
+  and row/heading settlement actions. Settlement remains revisioned account state.
+- Recorded unified diffs gain old/new line gutters, added/removed treatment,
+  line wrapping, collapse/expand, copy and download. Files writes still require
+  explicit review and the original expected revision. Source diffs are full-content
+  patches; this change does not claim minimal Git hunks, syntax highlighting or a
+  side-by-side comparison engine.
+- Command output remains explicitly read only. No attachment, slash-command,
+  reasoning-effort, approval, worktree, publishing or terminal input controls are
+  shown without working runtime support.
+
+The backend schema, APIs and direct `codex exec --json` execution are unchanged.
+The broader runtime parity work remains in sections 2–7 below.
+
+Verification: full `nix develop --command npm --prefix next run verify` passed,
+including shared shell behavior, persistence and crash/restart acceptance. The
+final `nix develop --command node next/scripts/verify.mjs --agent` also passed
+after the last Agent refinements. It covers reviewed Files writes, composer
+cancellation and retained drafts, Enter/Shift+Enter, settlement, uncertain-send
+replay, conflicts, thread search/find, scroll restoration, saved panel visibility
+and desktop/tablet/phone layouts in both themes. Phone navigation labels are
+checked for overlap at 320px. Desktop and phone screenshots were visually reviewed.
+All verification used isolated temporary roots/accounts; no live data was tested.
+
+## 1. Frame, hierarchy and density
+
+Reference: `components/AppSidebarLayout.tsx`, `components/ChatView.tsx`,
+`components/chat/PanelLayoutControls.tsx`, `components/threadSidebarWidth.ts`.
+
+| Aspect | T3 reference / parity target | Dar gap | Work |
+|---|---|---|---|
+| Overall frame | Compact application sidebar, thread title bar, conversation canvas | Shared global header plus permanently allocated review column | UI/Shell |
+| Title bar | Project identity, thread title, compact surface controls | Title and large lifecycle commands; project context elsewhere | UI |
+| Surface hierarchy | Thread details, terminal drawer and right panel are separately controlled | Changes sidebar conflates details and review | UI |
+| Panel widths | Resizable workspace regions | Fixed grid widths | UI/State |
+| Visibility | Independently open/close surfaces and maximize review | Two temporary booleans | UI/State |
+| Spacing | Dense chrome; generous readable conversation column | Uniform pane padding and generic controls | UI |
+| Typography | Distinct muted work log, body text, code and chrome | Most content rendered as plain paragraphs | UI |
+| Empty states | No-project, no-thread, new draft and unavailable environment differ | Repeated generic welcome | UI |
+| Theme | Consistent surfaces, selection, tooltips and focus treatment | Twilight contract must be reconciled with exact T3 chrome | Shell |
+| Independent scrolling | Sidebar, timeline, details, diff and terminal scroll independently | Broad structure exists; restoration and resizing absent | UI |
+
+## 2. Sidebar and lifecycle
+
+Reference: `components/Sidebar.tsx`, `components/sidebar/SidebarThreadRow.tsx`,
+`components/sidebar/SidebarThreadHeader.tsx`, `components/threadActionMenu.logic.ts`,
+`components/ThreadHoverCard.tsx`, `components/ThreadStatusIndicators.tsx`.
+
+| Aspect | T3 reference / parity target | Dar gap | Work |
+|---|---|---|---|
+| New thread | Draft/project selection flows into composing | Creates durable blank thread before composing | State/UI |
+| Row hierarchy | Project identity above contextual title; status affordances | Generic agent icon, title, tiny project subtitle | UI |
+| Working shelf | Live activity indicators and counts | Basic run-state text | UI |
+| Settled shelf | Explicit settlement; restoring returns to active | Revision preference exists; row action missing | UI |
+| Drafts | Distinct draft rows and discard behavior | Only per-thread session draft | State |
+| Thread search | Search/filter/navigation through threads | Global search is not thread search | UI/State |
+| Project filter | Filter from thread/project actions | No thread filter | UI |
+| Optional grouping | Project-folder mode is an option, not assumed default | No mode preference | State/UI |
+| Row actions | Hover/context actions without changing current selection | Only settle in heading | UI |
+| Pinning | Pin/unpin independently of running/settled state | Absent | State |
+| Snoozing | Presets, wake, timed return and notification | Absent | State/Runtime |
+| Auto-settle | Per-thread policy and global lifecycle preference | Absent | State |
+| Rename | Explicit rename plus generated-title regeneration | First-message truncation only | State/Runtime |
+| Read markers | Mark unread; completion/read indication | Absent | State |
+| Navigation affordances | Hover context, shortcuts and jump hints | Absent | UI |
+| Copy | Thread reference/ID, project path, branch when applicable | Absent | UI |
+| Archive | Archived threads remain discoverable/restorable | Absent | State |
+| Delete | Permission-aware destructive lifecycle action | Absent | State |
+| Undo | Lifecycle undo notice where supported | Absent | State/UI |
+| Sharing | Guest grant and explicit share action | No Agent sharing contract | State |
+| Branch continuation | New thread on current branch | No branch-aware thread creation | State/Runtime |
+
+## 3. Projects and initial flow
+
+Reference: `components/NoProjectsHero.tsx`, `components/NoActiveThreadState.tsx`,
+`components/CommandPaletteAddProject.tsx`, `components/BranchToolbar*.tsx`,
+`components/AddProjectToMachineDialog.tsx`, `routes/_chat.new.tsx`.
+
+| Aspect | Parity target | Dar gap | Work |
+|---|---|---|---|
+| Project chooser | Search existing projects; identity and source context | Plain right-pane list | UI |
+| Add project | Source-specific browsing/clone progress and recoverable failure | Files picker and repository URL only | UI/Runtime |
+| Naming | Name follows source; contextual generated thread title | Source name works; no generated title job | Runtime |
+| Local folder | Host folder is a first-class project source | Dar Files IDs intentionally replace host paths | Runtime |
+| No-project work | Explicit standalone work flow where supported | Every thread requires a project | State/Runtime |
+| Environment | Machine and execution environment visible | Only source type | State/Runtime |
+| Branch/worktree | Choose branch, local/worktree mode and preparation status | One isolated working copy; no branch controls | State/Runtime |
+| Open in editor | Editor picker and path-aware opening | Open folder in Files only | Shell |
+| Project scripts | Edit/run scripts with terminal association | Absent | Runtime/State |
+
+## 4. Composer
+
+Reference: `components/chat/ChatComposer.tsx`, `ComposerSurface.tsx`,
+`ComposerControlsBar.tsx`, `ComposerPrimaryActions.tsx`, `ComposerFooterControls.tsx`,
+`ComposerModelEffort.tsx`, `ProviderModelPicker.tsx`, `ComposerCommandMenu.tsx`,
+`components/ComposerPromptEditorTiptap.tsx` (all under `components/`).
+
+| Aspect | Parity target | Dar gap | Work |
+|---|---|---|---|
+| Resting surface | Quiet docked composer, compact controls and circular send | Large action labels, persistent notice and hint | UI |
+| Editor | Growing rich prompt editor with code blocks and plain-text fidelity | Resizable textarea | UI |
+| Submission keys | Match configured send/newline behavior; respect composition | Ctrl/Cmd Enter only | UI/State |
+| Model picker | Searchable model/provider picker with selected state | Flat model select | UI |
+| Reasoning | Effort options bound to model capabilities | Model catalog discards effort metadata | State/Runtime |
+| Speed/access | Capability-aware speed and permission controls | No such request fields; sandbox policy fixed | State/Runtime |
+| Plan mode | Plan selection and implement-plan follow-up | Absent | Runtime/State |
+| Attachments | Paste/drop/upload, preview, progress, remove and failure | Text only | State/Runtime |
+| References | File/terminal/context chips with inspect/remove behavior | Plain text context only | State/Runtime |
+| Mentions | File/context selection inside editor | Absent | UI/Runtime |
+| Slash commands | Searchable command layer with keyboard selection | Absent | UI/Runtime |
+| Prompt history | Restore previous prompts without losing current text | Absent | UI/State |
+| Draft retention | Drafts, attachment state and recovery survive navigation | Text retained in this browser tab only | State |
+| During a run | Steer/queue follow-up; alternate dispatch action | Sending blocked while running | State/Runtime |
+| Queue editing | Edit/cancel queued prompt with retained context | Absent | State/Runtime |
+| Stop | Stop beside send; clear stopping/error state | Stop in heading only | UI |
+| Resume | Continue stopped execution when provider supports it | Every run is ephemeral | Runtime |
+| Pending questions | Structured options, multiple questions and submission | No question/answer channel | State/Runtime |
+| Pending approval | Actual request details and explicit resolution | No interactive approval channel | State/Runtime |
+| Validation | Explain blocked send, preparation, limits and provider state | Mostly disabled button | UI |
+| Compact controls | Overflow based on measured available space | Wrapping controls only | UI |
+| Context meter | Real usage/window values and compaction state | No usage fields | State/Runtime |
+| Save-only | Keep truthful distinction between a saved message and execution | Exists; relocation must preserve it | UI |
+
+## 5. Conversation and activity
+
+Reference: `components/chat/ThreadTimeline.tsx`, `MessagesTimeline.tsx`,
+`TimelineUserMessageRow.tsx`, `TimelineAssistantRows.tsx`, `TimelineWorkGroupRows.tsx`,
+`TimelineWorkEntryRow.tsx`, `WorkLog.tsx`, `useTimelineFollow.ts`,
+`useTimelinePositionRestore.ts`, `components/ChatMarkdown.tsx`.
+
+| Aspect | Parity target | Dar gap | Work |
+|---|---|---|---|
+| User message | Right-aligned bounded bubble, subdued metadata/actions | Full-width labelled paragraph | UI |
+| Assistant message | Open document surface, rendered Markdown | Plain pre-wrapped text | UI |
+| Markdown | Headings, lists, tables, code copy, safe links and file references | No conversation Markdown renderer | UI |
+| Rich outputs | Images, attachments, citations, diagrams with safe boundaries | Plain text only | UI/State |
+| Message actions | Copy, prompt link and edit-from-here | Absent | UI/State |
+| Chronology | Messages, commentary, work and completion share ordered timeline | Saved messages plus latest-run block | State |
+| Tool rows | Typed file/command/tool entries with expand and result state | `activity: string[]` | State/Runtime |
+| Grouping | Collapsible work group and duration summary | One Tool activity disclosure | UI/State |
+| Streaming | Incremental assistant and tool updates in their timeline positions | Poll latest flattened output each second | State/Runtime |
+| Turn boundaries | Completed, failed, stopped and interrupted turns remain inspectable | Historical run documents not presented as timeline | State/UI |
+| Scroll following | Follow when at end; scrolling up stops automatic following | No explicit follow model | UI |
+| Jump to latest | Appears when reading older content | Absent | UI |
+| Position restore | Remember per-thread viewport and anchor across switches | Conversation remount loses position | UI |
+| Earlier history | Prepending preserves visible anchor | Fetch exists; no explicit anchor preservation | UI |
+| Long sessions | Bounded/virtualized rows and stable streaming layout | Renders all loaded paragraphs | UI |
+| Find/minimap | In-thread navigation and timeline overview | Absent | UI |
+| Recovery banners | Distinct provider, limit, environment and execution recovery | Generic alert/refresh | State/UI |
+| Background completion | Notifications/read-state without stealing focus | Poll sidebar state only | State/Shell |
+
+## 6. Details, review, source control and output
+
+Reference: `components/chat/threadDetailsItems.ts`, `ThreadDetailsControl.tsx`,
+`RightPanelSurfaceContent.tsx`, `components/DiffPanel.tsx`,
+`components/diffs/*`, `components/ThreadTerminalDrawer.tsx`.
+
+| Aspect | Parity target | Dar gap | Work |
+|---|---|---|---|
+| Details card | Environment, editor, scripts, branch/PR, Git actions, changes | Project-source block inside Changes | UI/Runtime |
+| Optional details | Servers, automations, lineage, side chats, usage/context | Absent | State/Runtime |
+| Details visibility | Select individual sections; restore defaults | Absent | State/UI |
+| Review opening | Changes opens a proper review surface | Always allocated narrow sidebar | UI |
+| Review scope | Turn/working-tree/base comparison and refresh | Latest run changes only | State/Runtime |
+| File navigation | Tree, status, counts, reveal and path copy | Flat list with kind | UI/State |
+| Diff rendering | Line numbers, add/remove gutters, syntax and hunk structure | One preformatted string | UI |
+| Review layout | Unified/stacked or side-by-side; wrap toggle | No controls | UI |
+| File expansion | Collapse individual/all files and preserve state | One selected file only | UI |
+| Large/binary diffs | Explicit loading, limits and unsupported content | Basic truncated flag | State/UI |
+| Review comments | Anchored line annotations, submit into agent context | Absent | State/Runtime |
+| Files write-back | Apply actual reviewed content with revision conflict recovery | Existing behavior must survive redesign | UI |
+| Git operations | Branch comparison, commits and publishing/PR flow | Publishing explicitly disabled | State/Runtime |
+| PR review | Linked PRs, review/activity and comparison surfaces | Absent | State/Runtime |
+| Terminal drawer | Resizable interactive terminal, tabs, splits and close rules | Read-only command-output disclosure | Runtime/State |
+| Command output | Per-command status and output linked to work entry | One concatenated output string | State |
+| Terminal context | Select output and attach as composer context | Absent | UI/State |
+| Right surfaces | Files, review and other surfaces selected explicitly | One Changes panel | UI/State |
+| Preview/browser | Browser surface and controls bound to thread | Absent | Runtime/Shell |
+
+## 7. Settings and secondary surfaces
+
+Source inventory: `routes/_chat.settings.*.tsx`; source inspection identifies
+these routes, not live verification of every setting within them:
+
+- General, Appearance, Chat, Threads, Keybindings, Diffs, Browser.
+- Projects, Worktrees, Source control, Archived threads.
+- Providers, Connections, Devices, Integrations, Access, Secrets.
+- Scheduled tasks, Storage, Maintenance, Diagnostics, Labs, Beta.
+- Snap Shot, About, Open-source licenses.
+- Separate usage and pull-request routes; command-palette project/thread actions.
+
+Dar currently has General (connection) and Keyboard shortcuts. It needs a
+setting-by-setting follow-up ledger before claiming settings parity. Reuse Dar's
+account/settings scope for persisted preferences; do not put inactive switches in
+the product. Service/device, scheduling, secret and provider management each need
+their actual backing capabilities. Desktop updater and OS title-bar integration
+are platform-specific and cannot be promised by a browser layout change.
+
+## 8. Cross-cutting acceptance
+
+- Check pointer, keyboard, focus-visible, Escape/outside dismissal and focus return
+  for each menu, popover, panel and dialog. Preserve IME composition and selection.
+- Match hover/action visibility without making actions inaccessible on touch.
+- Verify desktop, narrow desktop and phone; mobile panels retain draft, selected
+  thread/file, scroll and explicit back behavior. Check reduced motion and themes.
+- Persist lifecycle, model/control choices and layout settings at the intended
+  account/thread/device scope; verify after reload and reconnect.
+- Handle stale revisions, retry, uncertain sends, disconnect/restart, truncation,
+  provider absence and storage failure without duplicate turns or lost text.
+- Use isolated fixtures for real running, stopping, failed and completed turns.
+  Verify changed content and conflict handling, not screenshots alone.
+- Never depict fake tools, terminal interactivity, approval controls, usage or
+  publishing as working. Static examples must stay labelled as mock data.
+
+## Implementation order after selection
+
+1. Match chosen frame, sidebar row hierarchy, message layout, composer and details
+   placement. Add safe Markdown, real existing-data work presentation, Stop at
+   composer, local find/copy and scroll restoration. Preserve all current writes.
+2. Define minimal typed, ordered run events and historic-run access; preserve
+   replay, event IDs, status, timing and bounded output. Existing flattened data
+   needs an explicit compatibility story. Render true work groups and commands.
+3. Add model capabilities/effort, durable lifecycle and composer preferences,
+   attachments/context and diff navigation with focused persistence checks.
+4. Address interactive execution, branches/worktrees, source control, terminal,
+   scheduling, sharing and other providers as capability-backed vertical slices.
+   Preserve direct Codex CLI execution unless the maintainer explicitly revises
+   that standing requirement. An interactive app-server is not implied approval.
+5. Re-run this ledger against implemented behavior and list unresolved rows.
+
+## Selected direction
+
+See [static parity mocks](agent-t3-parity-mocks.html). The maintainer selected A:
+its compact chrome and contextual details replace the Agent
+page's global header. B retains Dar's shared header while copying the core T3
+workspace; C gives review a permanent wide split. These are deliberately distinct
+static proposals. All content is synthetic, and shown controls imply no new
+implemented capabilities. This selection authorizes the compact Agent UI exception
+to the shared-header contract; the other apps retain that contract.
