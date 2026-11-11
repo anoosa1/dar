@@ -79,6 +79,48 @@ and desktop/tablet/phone layouts in both themes. Phone navigation labels are
 checked for overlap at 320px. Desktop and phone screenshots were visually reviewed.
 All verification used isolated temporary roots/accounts; no live data was tested.
 
+## November 11 refinement
+
+A second pass compared the same reference client's sidebar, timeline, composer,
+draft and diff surfaces in detail and aligned Dar's measurements and interactions.
+Original Dar code and Twilight tokens only; reference sources were read from a
+temporary extraction that has been removed.
+
+- Sidebar: 256px column; one-line 36px rows with a deterministic project mark
+  (dimmed until hover, focus or selection), truncated title and relative age.
+  Settle/restore and the row menu replace the age on hover or keyboard focus.
+  Working rows show a live status. Working/Settled shelves sit below active rows.
+- Draft-first New thread: a centered "What should we build in <project>?" headline
+  above the composer; the project control opens the searchable chooser. The
+  thread is created with a stable ID only on submit, then the draft is saved or
+  run once its history loads. No projects opens Add project directly.
+- Conversation: 768px column with 48px gutters, 80% user bubbles, hover metadata
+  (time and copy) below messages, and 14px body text.
+- Work log: live "Working for …" timer, then "Worked for/Stopped after/Failed
+  after …"; expanded entries show recorded commands ("Ran …") and edits. Completed
+  runs with changes add a changed-files card with per-file counts and Review.
+- Composer: quiet 16px-radius surface without an accent focus ring; searchable,
+  keyboard-operable model menu; 32px circular send/stop; no persistent hint.
+- Review: stacked per-file sections with sticky headers, kind and +/− counts,
+  collapse per file or all, wrap, per-file copy and download. Whole-file recorded
+  patches are converted in the browser to minimal unified hunks with three context
+  lines (bounded; very large middles fall back to replacement). Apply still writes
+  the recorded full content with the original expected revision.
+
+Still not implemented (runtime/state work, unchanged from the tables below):
+attachments, mentions and slash commands, reasoning effort and access modes,
+steering/queueing, approvals and questions, pinning, snoozing, rename, archive,
+delete, typed streaming timeline events, earlier-run history, branches/worktrees,
+Git publishing, interactive terminal, resizable panels, command palette and the
+wider settings inventory.
+
+Verification: `nix develop --command node next/scripts/verify.mjs --agent` passed
+(Agent connection, integration, Codex fixture and browser acceptance) with the
+draft-first flow covered: no thread is created before submit, save-only and run
+from a draft, project change from the headline, review collapse/wrap/apply. Desktop,
+review, model menu and phone states were screenshot-reviewed in an isolated
+fixture in both themes.
+
 ## 1. Frame, hierarchy and density
 
 Reference: `components/AppSidebarLayout.tsx`, `components/ChatView.tsx`,

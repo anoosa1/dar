@@ -179,8 +179,11 @@ update this guide when a design decision changes.
   [T3 parity mocks](spacetimedb/agent-t3-parity-mocks.html), superseding the Agent
   shared-header requirement: use compact T3 chrome with app access in the sidebar
   and account/settings below. Ctrl/Cmd+K searches threads here. Keep Twilight themes;
-  other apps retain their shared header and cross-app search. Project identity
-  sits above thread titles in rows and beside the conversation title. Default to
+  other apps retain their shared header and cross-app search. Thread rows are one
+  36px line: a tinted project mark, title and relative age; settle/restore and the
+  row menu replace the age on hover or keyboard focus. Working and Settled shelves
+  sit below active threads. New thread opens a draft headline with a project
+  control; the thread is created only when the draft is saved or run. Default to
   conversation with a small contextual details card; open the wide review surface
   on demand. Dock the composer with a circular send/stop action, put save-only in
   its action menu, use Enter to send and Shift+Enter for a new line. Render safe
