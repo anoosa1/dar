@@ -27,7 +27,7 @@ const paths = {
   check: "m5 12 4 4L19 6", clock: "M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
   info: "M12 11v6M12 7h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
   terminal: "M4 6l6 6-6 6M12 19h8", pencil: "M4 20h4L20 8l-4-4L4 16ZM13 7l4 4",
-  undo: "M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4", panel: "M3 4h18v16H3ZM15 4v16", sidebar: "M3 4h18v16H3ZM9 4v16",
+  undo: "M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4", pin: "M9 3h6l-1 6 3 3H7l3-3ZM12 12v9", archive: "M3 4h18v4H3ZM5 8v12h14V8M10 12h4", panel: "M3 4h18v16H3ZM15 4v16", sidebar: "M3 4h18v16H3ZM9 4v16",
   lock: "M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3", refresh: "M20 7V2m0 5h-5M4 17v5m0-5h5M20 7A9 9 0 0 0 4 8M4 17a9 9 0 0 0 16-1",
 } as const;
 export type IconName = keyof typeof paths;

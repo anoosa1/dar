@@ -17,8 +17,8 @@ execution implemented. See explicit limits below and [setup](../codex.md).
 - The maintainer approved that mock, then required both Git repository and Dar
   Files folder projects. Neither source is a host filesystem path.
 - Codex with an existing login is the first selected model connection.
-- The maintainer requested direct Codex CLI execution. Invoke `codex exec --json`
-  with its saved login instead of using the app-server RPC interface.
+- The maintainer requested direct Codex CLI execution, revised on November 11 to
+  the CLI's `codex app-server` interface (still the saved login, no API key).
 
 The [workspace mock](agent-workspace-mock.html) uses illustrative data only.
 It is a structural interpretation of the requested layout, not a verified
@@ -109,8 +109,8 @@ checkout and diff; pushing is a separately authorized action.
 
 ## Codex execution
 
-Dar starts `codex exec --json --ephemeral` directly for each run, passing the
-chosen model and working directory as arguments and conversation context on stdin.
+Dar starts `codex app-server` for each run and resumes the saved Codex thread, so
+only messages Codex has not seen are sent; see [codex.md](../codex.md).
 The CLI owns its existing ChatGPT login and token refresh; Dar neither extracts
 tokens nor sends them to the browser. Configuration binds that login to one Dar
 account UUID, which is shown in Agent settings and survives username changes.

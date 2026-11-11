@@ -178,7 +178,8 @@ update this guide when a design decision changes.
   collapsible output below. The November 9 follow-up selects A in
   [T3 parity mocks](spacetimedb/agent-t3-parity-mocks.html), superseding the Agent
   shared-header requirement: use compact T3 chrome with app access in the sidebar
-  and account/settings below. Ctrl/Cmd+K searches threads here. Keep Twilight themes;
+  and account/settings below. Ctrl/Cmd+K opens the Agent command palette (actions,
+  threads, projects); the sidebar search filters threads. Keep Twilight themes;
   other apps retain their shared header and cross-app search. Thread rows are one
   36px line: a tinted project mark, title and relative age; settle/restore and the
   row menu replace the age on hover or keyboard focus. Working and Settled shelves
@@ -196,8 +197,9 @@ update this guide when a design decision changes.
   distinguish saving a message from running it. Use the existing-login Codex
   provider first, with model selection, live activity/output, Stop and persisted
   completion/error states. Review changes before applying text edits to Files.
-  Execution launches `codex exec --json` directly with the CLI's saved login;
-  do not use an app-server RPC layer or replace it with an API-key integration.
+  Execution launches `codex app-server` per turn with the CLI's saved login
+  (November 11 maintainer revision, superseding direct `codex exec`); do not
+  replace it with an API-key integration. Approval requests are always declined.
   Do not present sample tool output or simulated assistant replies as real work.
   The November 9 refinement selects B in
   [interaction mocks](spacetimedb/agent-flow-refinement-mocks.html), superseding

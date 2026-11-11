@@ -107,12 +107,67 @@ temporary extraction that has been removed.
   lines (bounded; very large middles fall back to replacement). Apply still writes
   the recorded full content with the original expected revision.
 
-Still not implemented (runtime/state work, unchanged from the tables below):
-attachments, mentions and slash commands, reasoning effort and access modes,
-steering/queueing, approvals and questions, pinning, snoozing, rename, archive,
-delete, typed streaming timeline events, earlier-run history, branches/worktrees,
-Git publishing, interactive terminal, resizable panels, command palette and the
-wider settings inventory.
+### Second November 11 pass: lifecycle, composer and typed runs
+
+Authorized by the maintainer ("continue till you get all the features"). Contract
+changes, all additive and backward compatible:
+
+- Account preferences: `agentPinnedThreads`, `agentArchivedThreads` (thread
+  IDs, max 128), `agentSendKey` (`enter`|`modEnter`), `agentNotify` and
+  `agentGrouping` (`recent`|`project`), validated in the preferences route.
+- `PATCH /api/v1/agent/threads/:id` renames (title only; message revisions are
+  unchanged). `DELETE` removes messages, runs and the private working copy;
+  refused while a run is active.
+- `GET /api/v1/agent/threads/:id/files?query=` returns up to 50 relative paths
+  from the thread working copy (symlinks never followed; .git, .codex and
+  node_modules skipped), else the Files project source.
+- Provider models carry `efforts`/`defaultEffort` from the CLI catalog's
+  `supported_reasoning_levels`. Runs accept an optional `effort`, validated
+  against that model and passed as `model_reasoning_effort`; it is stored in the
+  run document and part of idempotent retry comparison.
+- Run documents gain optional `steps` (command with exit code and 2 KB output
+  tail, edit with paths, reasoning, plan items, tool, search; max 100) and
+  `usage` (input, cached, output tokens). `activity` remains for older runs.
+
+Client: pinned group, archive (restorable in Settings → Archived threads), inline
+rename (menu, double-click, F2), delete confirmation, right-click row menu, unread
+markers (per browser), optional completion notifications, project grouping,
+Ctrl/Cmd+K command palette, Ctrl/Cmd+Shift+O new thread, Ctrl/Cmd+B sidebar,
+resizable sidebar/review (pointer, arrow keys, double-click reset), slash
+commands (/new /model /effort /review /terminal /find /rename /settle /settings),
+@ file mentions, prompt history (Up/Down), one queued follow-up while running
+(sent after a completed run; held with Send now otherwise), model + reasoning
+menu, typed work log with expandable command output, lazy earlier-turn logs,
+per-command output drawer, token usage and settings sections (General, Chat,
+Sidebar, Archived threads, Keyboard shortcuts).
+
+### Third November 11 pass: app-server runner
+
+The maintainer approved replacing `codex exec` with `codex app-server` ("do it the
+same"). Implemented and covered by integration and browser tests: resumed Codex
+threads, steering into a running turn (Enter while running; Queue remains), blocking
+questions with an answer card, plan mode, image attach/paste/drop with thumbnails,
+context meter, a sandboxed interactive terminal tab, and local Git status/branch/commit
+in the details card. Contract additions: run routes `steer` and `answer`, thread
+routes `attachments/:id` (PUT/GET), `terminal` (open/read/input/resize/close) and
+`git`; run documents gain mode, attachments, steered IDs, pending question, Codex
+thread, context revision and context usage. See [codex.md](../codex.md).
+
+Deliberate differences from T3 for multi-user server safety: approval prompts and
+access-mode switching are not offered (all escalations are declined; T3 is a
+single-user desktop app), and Git push/pull requests stay disabled (no network or
+credentials in workspaces). The terminal renderer handles shells and line programs;
+full-screen programs degrade to text. Not implemented: snoozing with timed wake-up,
+sharing, timeline minimap, thread fork/compact/review commands, rate-limit display
+and T3's device, secret and scheduling settings.
+
+Earlier list, now superseded where implemented above — previously missing because the
+direct `codex exec` runner had no channel or capability for them: image/file attachments, steering a running turn, approvals
+and structured questions, access-mode switching (the sandbox policy is fixed),
+plan mode, resume of a stopped turn, branches/worktrees, Git publishing and PRs,
+an interactive terminal, snoozing with timed wake-up, sharing, timeline minimap,
+and T3's provider/device/secret/scheduling settings. Each needs an interactive
+runtime or new services and should be decided separately.
 
 Verification: `nix develop --command node next/scripts/verify.mjs --agent` passed
 (Agent connection, integration, Codex fixture and browser acceptance) with the

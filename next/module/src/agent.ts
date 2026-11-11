@@ -1,8 +1,8 @@
 import {SenderError,Range} from "spacetimedb/server";
 import type {Ctx} from "./index.ts";
 import {appEnabled} from "./app-settings.ts";
-import {agentLimits,validRepositoryUrl,activeAgentRun} from "../../shared/agent.ts";
-import {emptyRunDocument,exposeRun,runSummary,validateRunDocument} from "./agent-runs.ts";
+import {agentLimits,validRepositoryUrl,activeAgentRun,agentEffort} from "../../shared/agent.ts";
+import {emptyRunDocument,exposeRun,runSummary,validateRunDocument,validAttachments} from "./agent-runs.ts";
 type FileEntry=NonNullable<ReturnType<Ctx["db"]["fileEntries"]["id"]["find"]>>;
 
 function fail(code:string):never{throw new SenderError(code);}
@@ -88,16 +88,42 @@ export function agentOperation(ctx:Ctx,userId:string,operation:string,p:Record<s
   }
   const current=thread(p.threadId);
   if(operation==="startRun"){
-    keys(p,["threadId","id","messageId","content","revision","model"]);const runId=id(p.id),messageId=id(p.messageId),content=text(p.content,agentLimits.messageBytes),model=text(p.model,120);
+    keys(p,["threadId","id","messageId","content","revision","model","effort","mode","attachments"]);
+    if(p.mode!==undefined&&p.mode!=="plan"&&p.mode!=="default")fail("invalidInput");if(p.attachments!==undefined&&!validAttachments(p.attachments))fail("invalidInput");
+    const extra={...p.mode==="plan"?{mode:"plan"}:{},...Array.isArray(p.attachments)&&p.attachments.length?{attachments:p.attachments}:{}};const runId=id(p.id),messageId=id(p.messageId),content=text(p.content,agentLimits.messageBytes),model=text(p.model,120);
+    if(p.effort!==undefined&&(typeof p.effort!=="string"||!agentEffort.test(p.effort)))fail("invalidInput");const effort=p.effort as string|undefined;
     const old=ctx.db.agentRuns.id.find(runId);
-    if(old){const message=ctx.db.agentMessages.id.find(old.messageId);if(old.ownerId!==userId||old.threadId!==current.id||old.messageId!==messageId||old.model!==model||message?.content!==content)fail("conflict");return exposeRun(old);}
+    if(old){const message=ctx.db.agentMessages.id.find(old.messageId);if(old.ownerId!==userId||old.threadId!==current.id||old.messageId!==messageId||old.model!==model||message?.content!==content||JSON.parse(old.document).effort!==effort||(JSON.parse(old.document).mode??"default")!==(p.mode??"default"))fail("conflict");return exposeRun(old);}
     const runs=[...ctx.db.agentRuns.ownerId.filter(userId)];if(runs.length>=100)fail("quotaExceeded");
     // One run per account bounds provider/process usage as well as per-thread concurrency.
     if(runs.some(row=>activeAgentRun(row.status)))fail("conflict");
     if([...ctx.db.agentMessages.ownerId.filter(userId)].length>=agentLimits.messages-1)fail("quotaExceeded");
     agentOperation(ctx,userId,"appendMessage",{threadId:current.id,id:messageId,content,revision:p.revision},canRead,sessionId);
-    const row={id:runId,threadId:current.id,ownerId:userId,sessionId,messageId,model,lease:"",status:"queued",document:JSON.stringify(emptyRunDocument()),createdAt:now,modifiedAt:now};
+    const row={id:runId,threadId:current.id,ownerId:userId,sessionId,messageId,model,lease:"",status:"queued",document:JSON.stringify({...emptyRunDocument(),...effort?{effort}:{},...extra}),createdAt:now,modifiedAt:now};
     ctx.db.agentRuns.insert(row);return exposeRun(row);
+  }
+  if(operation==="steerRun"){
+    // A follow-up delivered into the running turn is saved as an ordinary user message.
+    keys(p,["threadId","runId","id","content"]);const run=ctx.db.agentRuns.id.find(id(p.runId)),messageId=id(p.id),content=text(p.content,agentLimits.messageBytes);
+    if(!run||run.ownerId!==userId||run.threadId!==current.id)fail("notFound");
+    const old=ctx.db.agentMessages.id.find(messageId);
+    if(old){if(old.ownerId!==userId||old.threadId!==current.id||old.content!==content)fail("conflict");return {thread:current,message:old};}
+    if(!activeAgentRun(run.status))fail("conflict");
+    if([...ctx.db.agentMessages.ownerId.filter(userId)].length>=agentLimits.messages-1)fail("quotaExceeded");
+    const updated={...current,revision:current.revision+1,modifiedAt:now},message={id:messageId,ownerId:userId,threadId:current.id,sequence:updated.revision,role:"user",content,createdAt:now};
+    ctx.db.agentMessages.insert(message);ctx.db.agentThreads.id.update(updated);return {thread:updated,message};
+  }
+  if(operation==="renameThread"){
+    keys(p,["threadId","title"]);const title=text(p.title,200).trim();
+    // Titles are presentation only; message revisions and ordering stay unchanged.
+    const updated={...current,title};ctx.db.agentThreads.id.update(updated);return updated;
+  }
+  if(operation==="deleteThread"){
+    keys(p,["threadId"]);const runs=[...ctx.db.agentRuns.threadId.filter(current.id)];
+    if(runs.some(row=>activeAgentRun(row.status)))fail("conflict");
+    for(const row of runs)ctx.db.agentRuns.id.delete(row.id);
+    for(const row of [...ctx.db.agentMessages.threadId.filter(current.id)])ctx.db.agentMessages.id.delete(row.id);
+    ctx.db.agentThreads.id.delete(current.id);return {id:current.id,deleted:true};
   }
   if(operation==="history"){
     keys(p,["threadId","before"]);

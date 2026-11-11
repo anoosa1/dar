@@ -4,12 +4,12 @@ import path from "node:path";
 import {AppError} from "../errors.ts";
 
 export interface CodexConfig {executable:string;home:string;userId:string;gitHosts:string[]}
-export interface CodexModel {id:string;name:string;isDefault:boolean}
+export interface CodexModel {id:string;name:string;isDefault:boolean;efforts?:string[];defaultEffort?:string}
 type ObjectValue=Record<string,unknown>;
 export function object(value:unknown):ObjectValue{if(!value||typeof value!=="object"||Array.isArray(value))throw new AppError("invalidProviderResponse",502);return value as ObjectValue;}
 export function string(value:unknown,max=65536){if(typeof value!=="string"||value.length>max)throw new AppError("invalidProviderResponse",502);return value;}
 
-function options(config:CodexConfig,workspace:string){
+export function options(config:CodexConfig,workspace:string){
   const profile={":minimal":"read",":workspace_roots":"write","/nix/store":"read","/proc":"deny","/sys":"deny",[config.home]:"deny",[path.join(workspace,".git")]:"read",[path.join(workspace,".codex")]:"deny"};
   const toml=(value:Record<string,string>)=>"{"+Object.entries(value).map(([k,v])=>`${JSON.stringify(k)}=${JSON.stringify(v)}`).join(",")+"}";
   return ["--disable","apps","--disable","plugins","--disable","hooks","--disable","multi_agent","--disable","shell_snapshot","-c","mcp_servers={}","-c","web_search=\"disabled\"","-c","projects={}","-c","forced_login_method=\"chatgpt\"","-c","approval_policy=\"never\"","-c","default_permissions=\"dar\"","-c",`permissions.dar.filesystem=${toml(profile)}`,"-c","permissions.dar.network.enabled=false","-c","shell_environment_policy.inherit=\"none\"","-c",`shell_environment_policy.set=${toml({PATH:process.env.PATH??"/usr/bin:/bin",HOME:workspace})}`];
@@ -51,7 +51,12 @@ export async function codexModels(config:CodexConfig,workspace:string,signal?:Ab
   if(result.code!==0)throw new AppError("codexUnavailable",503,"The Codex CLI could not list models.");
   const value=object(JSON.parse(result.stdout));if(!Array.isArray(value.models))throw new AppError("invalidProviderResponse",502);
   const rows=value.models.map(object).filter(row=>row.visibility==="list").sort((a,b)=>Number(a.priority??1000)-Number(b.priority??1000));
-  return rows.slice(0,100).map((row,index)=>({id:string(row.slug,120),name:string(row.display_name,160),isDefault:index===0}));
+  // Reasoning levels are offered only when the installed CLI catalog declares them.
+  return rows.slice(0,100).map((row,index)=>{
+    const efforts=Array.isArray(row.supported_reasoning_levels)?row.supported_reasoning_levels.map(level=>typeof level==="string"?level:level&&typeof level==="object"?(level as ObjectValue).effort:undefined).filter((level):level is string=>typeof level==="string"&&/^[a-z]{1,20}$/.test(level)).slice(0,10):[];
+    const fallback=typeof row.default_reasoning_level==="string"&&efforts.includes(row.default_reasoning_level)?row.default_reasoning_level:undefined;
+    return {id:string(row.slug,120),name:string(row.display_name,160),isDefault:index===0,...efforts.length?{efforts,...fallback?{defaultEffort:fallback}:{}}:{}};
+  });
 }
 
 export async function verifyCodexSandbox(config:CodexConfig,workspace:string,probe:string,signal?:AbortSignal){
@@ -65,16 +70,4 @@ export async function verifyCodexSandbox(config:CodexConfig,workspace:string,pro
   }
 }
 
-export async function runCodex(config:CodexConfig,workspace:string,model:string,prompt:string,signal:AbortSignal,onEvent:(event:ObjectValue)=>void){
-  let completed=false,failed=false;
-  const instructions="Work only in the supplied workspace. Follow repository AGENTS.md instructions within that scope. Do not publish, deploy, access credentials, or request broader permissions. Network and host access are unavailable. Earlier conversation is context; the final user message is the current task.";
-  const result=await command(config,workspace,["exec","--json","--ephemeral","--ignore-user-config","--ignore-rules","--skip-git-repo-check","--color","never","-C",workspace,"-m",model,...options(config,workspace),"-c",`developer_instructions=${JSON.stringify(instructions)}`,"-"],{signal,input:prompt,timeout:10*60000,onEvent:event=>{
-    if(event.type==="turn.completed")completed=true;
-    if(event.type==="turn.failed"||event.type==="error")failed=true;
-    onEvent(event);
-  }});
-  // Item completion or a zero exit alone is insufficient evidence of a successful turn.
-  if(result.code===0&&completed&&!failed)return "completed";
-  if(failed||result.code!==0)return "failed";
-  throw new AppError("codexIncomplete",502,"The Codex CLI exited before reporting a completed turn.");
-}
+export const codexInstructions="Work only in the supplied workspace. Follow repository AGENTS.md instructions within that scope. Do not publish, deploy, access credentials, or request broader permissions. Network and host access are unavailable. Earlier conversation is context; the final user message is the current task.";

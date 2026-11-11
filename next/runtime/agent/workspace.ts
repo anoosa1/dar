@@ -17,7 +17,7 @@ async function directory(value:string){
   await mkdir(value,{recursive:true,mode:0o700});const stat=await lstat(value);if(!stat.isDirectory()||stat.isSymbolicLink())throw new AppError("unsafeWorkspace",409);
 }
 function safePath(relative:string){if(!relative||relative.length>2048||relative.split("/").some(p=>!p||p==="."||p===".."||p===".git"||p===".codex"||/[\x00-\x1f\\]/.test(p)))throw new AppError("unsafeWorkspace",409);return relative;}
-async function git(workspace:string,args:string[],signal:AbortSignal){
+export async function git(workspace:string,args:string[],signal:AbortSignal){
   signal.throwIfAborted();
   const child=spawn("git",["-c","core.hooksPath=/dev/null","-c","core.fsmonitor=false","-c","protocol.file.allow=never","-c","http.followRedirects=false",...args],{cwd:workspace,detached:true,stdio:["ignore","pipe","pipe"],env:{PATH:process.env.PATH,HOME:workspace,GIT_CONFIG_GLOBAL:"/dev/null",GIT_CONFIG_NOSYSTEM:"1",GIT_TERMINAL_PROMPT:"0"}});
   const output:Buffer[]=[];let bytes=0,stopped=false,reason:Error|undefined,checking:Promise<void>|undefined;

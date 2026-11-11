@@ -1,6 +1,6 @@
 import {SenderError} from "spacetimedb/server";
 import type {Ctx} from "./index.ts";
-import {activeAgentRun,agentLimits,type AgentRunDocument} from "../../shared/agent.ts";
+import {activeAgentRun,agentLimits,agentEffort,agentImageTypes,agentAttachmentLimits,type AgentRunDocument} from "../../shared/agent.ts";
 import {appEnabled} from "./app-settings.ts";
 type Run=NonNullable<ReturnType<Ctx["db"]["agentRuns"]["id"]["find"]>>;
 type FileEntry=NonNullable<ReturnType<Ctx["db"]["fileEntries"]["id"]["find"]>>;
@@ -8,10 +8,33 @@ function fail(code:string):never{throw new SenderError(code);}
 export function runSummary(row:Run){return {id:row.id,threadId:row.threadId,messageId:row.messageId,model:row.model,status:row.status,createdAt:row.createdAt,modifiedAt:row.modifiedAt};}
 export function exposeRun(row:Run){return {...runSummary(row),document:JSON.parse(row.document)};}
 export const emptyRunDocument=()=>({output:"",terminal:"",activity:[],changes:[],error:"",truncated:false});
+export function validAttachments(value:unknown){
+  return Array.isArray(value)&&value.length<=agentAttachmentLimits.count&&value.every((input:unknown)=>{const item=input as Record<string,unknown>;return !!item&&typeof item==="object"&&!Object.keys(item).some(key=>!["id","name","mediaType","size"].includes(key))&&typeof item.id==="string"&&/^[a-f0-9-]{36}$/.test(item.id)&&typeof item.name==="string"&&item.name.length>0&&item.name.length<=200&&!/[\x00-\x1f/\\]/.test(item.name)&&agentImageTypes.includes(item.mediaType as typeof agentImageTypes[number])&&Number.isSafeInteger(item.size)&&Number(item.size)>0&&Number(item.size)<=agentAttachmentLimits.bytes;});
+}
 export function validateRunDocument(value:unknown):AgentRunDocument{
   if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");
   const data=value as Record<string,unknown>;
-  if(Object.keys(data).some(key=>!["output","terminal","activity","changes","error","truncated"].includes(key))||typeof data.output!=="string"||data.output.length>65536||typeof data.terminal!=="string"||data.terminal.length>65536||!Array.isArray(data.activity)||data.activity.length>100||data.activity.some((s:unknown)=>typeof s!=="string"||s.length>500)||!Array.isArray(data.changes)||data.changes.length>200||typeof data.error!=="string"||data.error.length>2000||typeof data.truncated!=="boolean")fail("invalidInput");
+  if(Object.keys(data).some(key=>!["output","terminal","activity","changes","error","truncated","steps","usage","effort","mode","attachments","steered","pending","codexThread","contextRevision","contextWindow","contextUsed"].includes(key))||typeof data.output!=="string"||data.output.length>65536||typeof data.terminal!=="string"||data.terminal.length>65536||!Array.isArray(data.activity)||data.activity.length>100||data.activity.some((s:unknown)=>typeof s!=="string"||s.length>500)||!Array.isArray(data.changes)||data.changes.length>200||typeof data.error!=="string"||data.error.length>2000||typeof data.truncated!=="boolean")fail("invalidInput");
+  if(data.effort!==undefined&&(typeof data.effort!=="string"||!agentEffort.test(data.effort)))fail("invalidInput");
+  if(data.usage!==undefined){const usage=data.usage as Record<string,unknown>;if(!usage||typeof usage!=="object"||Object.keys(usage).some(key=>!["input","cached","output"].includes(key))||["input","cached","output"].some(key=>!Number.isSafeInteger(usage[key])||Number(usage[key])<0))fail("invalidInput");}
+  if(data.mode!==undefined&&data.mode!=="plan"&&data.mode!=="default")fail("invalidInput");
+  if(data.codexThread!==undefined&&(typeof data.codexThread!=="string"||!/^[A-Za-z0-9-]{1,100}$/.test(data.codexThread)))fail("invalidInput");
+  for(const key of ["contextRevision","contextWindow","contextUsed"])if(data[key]!==undefined&&(!Number.isSafeInteger(data[key])||Number(data[key])<0))fail("invalidInput");
+  if(data.steered!==undefined&&(!Array.isArray(data.steered)||data.steered.length>50||data.steered.some((value:unknown)=>typeof value!=="string"||!/^[a-f0-9-]{36}$/.test(value))))fail("invalidInput");
+  if(data.attachments!==undefined&&!validAttachments(data.attachments))fail("invalidInput");
+  if(data.pending!==undefined&&data.pending!==null){
+    const pending=data.pending as Record<string,unknown>,short=(value:unknown,max:number)=>typeof value==="string"&&value.length<=max;
+    if(typeof pending!=="object"||Object.keys(pending).some(key=>key!=="id"&&key!=="questions")||!short(pending.id,200)||!Array.isArray(pending.questions)||pending.questions.length>10||pending.questions.some((input:unknown)=>{const q=input as Record<string,unknown>;return !q||typeof q!=="object"||Object.keys(q).some(key=>!["id","header","question","options","other","secret"].includes(key))||!short(q.id,200)||!short(q.header,200)||!short(q.question,2000)||typeof q.other!=="boolean"||typeof q.secret!=="boolean"||!Array.isArray(q.options)||q.options.length>20||q.options.some((option:unknown)=>{const o=option as Record<string,unknown>;return !o||typeof o!=="object"||Object.keys(o).some(key=>key!=="label"&&key!=="description")||!short(o.label,200)||!short(o.description,1000);});}))fail("invalidInput");
+  }
+  if(data.steps!==undefined){
+    if(!Array.isArray(data.steps)||data.steps.length>100)fail("invalidInput");
+    for(const input of data.steps){
+      const step=input as Record<string,unknown>;
+      if(!step||typeof step!=="object"||Object.keys(step).some(key=>!["id","kind","label","status","exitCode","output","items"].includes(key))||typeof step.id!=="string"||step.id.length>200||!["command","edit","reasoning","plan","tool","search","question"].includes(String(step.kind))||typeof step.label!=="string"||step.label.length>2000||!["running","completed","failed"].includes(String(step.status)))fail("invalidInput");
+      if(step.exitCode!==undefined&&!Number.isSafeInteger(step.exitCode)||step.output!==undefined&&(typeof step.output!=="string"||step.output.length>2000))fail("invalidInput");
+      if(step.items!==undefined&&(!Array.isArray(step.items)||step.items.length>50||step.items.some((item:unknown)=>{const row=item as Record<string,unknown>;return !row||typeof row!=="object"||Object.keys(row).some(key=>key!=="text"&&key!=="done")||typeof row.text!=="string"||row.text.length>500||typeof row.done!=="boolean";})))fail("invalidInput");
+    }
+  }
   for(const input of data.changes){
     if(!input||typeof input!=="object"||Array.isArray(input))fail("invalidInput");const change=input as Record<string,unknown>;
     if(Object.keys(change).some(key=>!["path","kind","diff","content","fileId","expectedRevision","mediaType"].includes(key))||typeof change.path!=="string"||change.path.length>2048||change.path.split("/").some(p=>!p||p==="."||p===".."||/[\x00-\x1f\\]/.test(p))||!["added","modified","deleted"].includes(String(change.kind))||typeof change.diff!=="string"||change.diff.length>32768)fail("invalidInput");

@@ -1,7 +1,7 @@
 # Codex in Dar
 
-Dar Agent invokes `codex exec --json` directly with the CLI's existing ChatGPT
-login. There is no app-server connection, API client or API-key flow.
+Dar Agent runs the CLI's `codex app-server` with its existing ChatGPT login.
+There is no API client or API-key flow.
 The login stays in Codex's configured home on the server and is bound to exactly
 one immutable Dar account ID. A desktop user's login is not copied into a different Linux
 service account. Use an existing login readable by the account running Dar.
@@ -54,13 +54,36 @@ and use Run with Codex. Save only retains a message without invoking the model.
 Running sends that conversation and selected project contents to Codex. Stop ends
 the owned process tree; reconnecting shows the saved run status and output.
 
-Each run starts `codex exec --json --ephemeral` with its chosen model and isolated
-working directory. Dar sends conversation context through stdin and consumes the
-CLI's JSONL item/turn events from stdout. Normal CLI authentication and token refresh
-use the configured Codex home. `--ignore-user-config` and `--ignore-rules` keep
-execution policy under Dar's control while preserving that saved authentication.
-Success requires both a successful process exit and a completed-turn event;
-premature exits and failed turns never create a successful assistant reply.
+Each run starts one `codex app-server` process in the thread's isolated working
+directory and speaks newline-delimited JSON-RPC on stdio (`initialize` with the
+experimental API, `thread/resume` or `thread/start`, `turn/start`). The Codex
+thread ID and the last Dar message revision it has seen are stored on the run, so a
+later run resumes that thread and sends only unseen messages; if resume fails, a new
+thread receives the whole bounded transcript. Item, delta, plan and token-usage
+notifications become typed steps, live output and the context meter.
+
+- Steering: `turn/steer` delivers a follow-up into the running turn; Dar saves it
+  as a user message and records its ID on the run. Retries are idempotent.
+- Questions: `item/tool/requestUserInput` is stored as the run's pending question
+  and answered by its owner through the run's answer route.
+- Plan mode: `collaborationMode` `plan`. Reasoning: `effort` from the CLI catalog.
+- Images: uploaded per thread (PNG/JPEG/GIF/WebP, 8 MiB, four per turn) into the
+  thread's private store outside the working copy, passed as `localImage`.
+- Approvals: every approval request (sandbox escapes, extra writes, network) is
+  declined and shown as a declined step. `approval_policy` is `never`. Granting them
+  would run commands as the Dar service user with access to all accounts.
+- Terminal: a PTY through `command/exec` with the same permission profile (no
+  network, no Codex home, workspace writes only), read by offset with long polling,
+  closed after 15 idle minutes, on thread deletion and on shutdown.
+- Git: status, new branch and commit are run by Dar in the working copy (the sandbox
+  keeps `.git` read-only). Push and pull requests are disabled.
+
+app-server cannot ignore user configuration the way `exec` did. Dar therefore pins
+every policy setting it relies on with `-c` (permission profile, network, MCP
+servers, approvals, `notify=[]`, disabled hooks/plugins/apps) and refuses to run while
+the Dar Codex home contains a `rules` directory with files. Keep that home dedicated to
+Dar. Success requires a completed-turn notification; a process exit before it fails
+the run, and failed turns never create a successful assistant reply.
 
 ## NixOS
 
