@@ -75,6 +75,8 @@ notifications become typed steps, live output and the context meter.
 - Terminal: a PTY through `command/exec` with the same permission profile (no
   network, no Codex home, workspace writes only), read by offset with long polling,
   closed after 15 idle minutes, on thread deletion and on shutdown.
+- Review and compaction: `review/start` (uncommitted changes) and
+  `thread/compact/start` on the resumed thread. Usage limits: `account/rateLimits/read`.
 - Git: status, new branch and commit are run by Dar in the working copy (the sandbox
   keeps `.git` read-only). Push and pull requests are disabled.
 

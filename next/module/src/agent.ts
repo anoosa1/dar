@@ -60,6 +60,18 @@ export function agentOperation(ctx:Ctx,userId:string,operation:string,p:Record<s
     }
     return {folder:parent?{id:parent.id,name:parent.name,parentId:parent.parentId}:null,items,nextCursor};
   }
+  if(operation==="sharedThreads"){
+    keys(p,[]);
+    return {items:[...ctx.db.agentShares.granteeId.filter(userId)].flatMap(share=>{const row=ctx.db.agentThreads.id.find(share.threadId),owner=row&&ctx.db.accounts.id.find(row.ownerId);if(!row||!owner?.enabled||row.ownerId!==share.ownerId)return [];return [{shareId:share.id,thread:{id:row.id,title:row.title,revision:row.revision,modifiedAt:row.modifiedAt},owner:owner.displayName||owner.username,project:ctx.db.agentProjects.id.find(row.projectId)?.name??"Project"}];}).sort((a,b)=>b.thread.modifiedAt-a.thread.modifiedAt)};
+  }
+  if(operation==="sharedHistory"){
+    keys(p,["threadId","before"]);const threadId=id(p.threadId);
+    const share=[...ctx.db.agentShares.threadId.filter(threadId)].find(row=>row.granteeId===userId),row=ctx.db.agentThreads.id.find(threadId),owner=row&&ctx.db.accounts.id.find(row.ownerId);
+    if(!share||!row||row.ownerId!==share.ownerId||!owner?.enabled)fail("notFound");
+    const before=p.before??0xffffffff;if(typeof before!=="number"||!Number.isInteger(before)||before<1||before>0xffffffff)fail("invalidInput");
+    const rows=[...ctx.db.agentMessages.threadId.filter(row.id)].filter(item=>item.sequence<before).sort((a,b)=>b.sequence-a.sequence),items=rows.slice(0,agentLimits.page).reverse();
+    return {thread:{id:row.id,title:row.title,revision:row.revision,modifiedAt:row.modifiedAt},owner:owner.displayName||owner.username,project:ctx.db.agentProjects.id.find(row.projectId)?.name??"Project",items:items.map(({ownerId,...item})=>item),nextBefore:rows.length>agentLimits.page?items[0].sequence:null};
+  }
   if(operation==="projects"){
     keys(p,[]);return {items:[...ctx.db.agentProjects.ownerId.filter(userId)].sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id))};
   }
@@ -89,8 +101,8 @@ export function agentOperation(ctx:Ctx,userId:string,operation:string,p:Record<s
   const current=thread(p.threadId);
   if(operation==="startRun"){
     keys(p,["threadId","id","messageId","content","revision","model","effort","mode","attachments"]);
-    if(p.mode!==undefined&&p.mode!=="plan"&&p.mode!=="default")fail("invalidInput");if(p.attachments!==undefined&&!validAttachments(p.attachments))fail("invalidInput");
-    const extra={...p.mode==="plan"?{mode:"plan"}:{},...Array.isArray(p.attachments)&&p.attachments.length?{attachments:p.attachments}:{}};const runId=id(p.id),messageId=id(p.messageId),content=text(p.content,agentLimits.messageBytes),model=text(p.model,120);
+    if(p.mode!==undefined&&!["plan","default","review","compact"].includes(String(p.mode)))fail("invalidInput");if(p.attachments!==undefined&&!validAttachments(p.attachments))fail("invalidInput");
+    const extra={...p.mode&&p.mode!=="default"?{mode:p.mode}:{},...Array.isArray(p.attachments)&&p.attachments.length?{attachments:p.attachments}:{}};const runId=id(p.id),messageId=id(p.messageId),content=text(p.content,agentLimits.messageBytes),model=text(p.model,120);
     if(p.effort!==undefined&&(typeof p.effort!=="string"||!agentEffort.test(p.effort)))fail("invalidInput");const effort=p.effort as string|undefined;
     const old=ctx.db.agentRuns.id.find(runId);
     if(old){const message=ctx.db.agentMessages.id.find(old.messageId);if(old.ownerId!==userId||old.threadId!==current.id||old.messageId!==messageId||old.model!==model||message?.content!==content||JSON.parse(old.document).effort!==effort||(JSON.parse(old.document).mode??"default")!==(p.mode??"default"))fail("conflict");return exposeRun(old);}
@@ -113,6 +125,36 @@ export function agentOperation(ctx:Ctx,userId:string,operation:string,p:Record<s
     const updated={...current,revision:current.revision+1,modifiedAt:now},message={id:messageId,ownerId:userId,threadId:current.id,sequence:updated.revision,role:"user",content,createdAt:now};
     ctx.db.agentMessages.insert(message);ctx.db.agentThreads.id.update(updated);return {thread:updated,message};
   }
+  if(operation==="forkThread"){
+    // Copies messages up to a sequence into a new thread. Its first run starts a new Codex thread.
+    keys(p,["threadId","id","sequence"]);const forkId=id(p.id),sequence=p.sequence;
+    if(!Number.isInteger(sequence)||Number(sequence)<2||Number(sequence)>current.revision)fail("invalidInput");
+    const old=ctx.db.agentThreads.id.find(forkId);if(old){if(old.ownerId!==userId)fail("conflict");return old;}
+    const copied=[...ctx.db.agentMessages.threadId.filter(current.id)].filter(row=>row.sequence<=Number(sequence)).sort((a,b)=>a.sequence-b.sequence);
+    if([...ctx.db.agentThreads.ownerId.filter(userId)].length>=agentLimits.threads)fail("quotaExceeded");
+    if([...ctx.db.agentMessages.ownerId.filter(userId)].length+copied.length>agentLimits.messages)fail("quotaExceeded");
+    const title=[...`Fork: ${current.title}`].slice(0,60).join(""),row={id:forkId,ownerId:userId,projectId:current.projectId,title:text(title,200).trim(),revision:copied.length+1,createdAt:now,modifiedAt:now};
+    ctx.db.agentThreads.insert(row);
+    copied.forEach((message,index)=>{let messageId=ctx.newUuidV4().toString();while(ctx.db.agentMessages.id.find(messageId))messageId=ctx.newUuidV4().toString();ctx.db.agentMessages.insert({...message,id:messageId,threadId:forkId,sequence:index+2});});
+    return row;
+  }
+  if(operation==="threadShares"){
+    keys(p,["threadId"]);
+    return {items:[...ctx.db.agentShares.threadId.filter(current.id)].flatMap(share=>{const account=ctx.db.accounts.id.find(share.granteeId);return account?[{id:share.id,username:account.username,displayName:account.displayName,createdAt:share.createdAt}]:[];})};
+  }
+  if(operation==="shareThread"){
+    keys(p,["threadId","id","username"]);const shareId=id(p.id),username=text(p.username,100).trim().toLowerCase(),account=ctx.db.accounts.username.find(username);
+    if(!account||!account.enabled)fail("notFound");if(account.id===userId)fail("invalidInput");
+    const existing=[...ctx.db.agentShares.threadId.filter(current.id)];
+    const duplicate=existing.find(row=>row.granteeId===account.id);if(duplicate)return {id:duplicate.id,username:account.username,displayName:account.displayName,createdAt:duplicate.createdAt};
+    if(ctx.db.agentShares.id.find(shareId))fail("conflict");if(existing.length>=20)fail("quotaExceeded");
+    const row={id:shareId,threadId:current.id,ownerId:userId,granteeId:account.id,createdAt:now};ctx.db.agentShares.insert(row);
+    return {id:row.id,username:account.username,displayName:account.displayName,createdAt:now};
+  }
+  if(operation==="unshareThread"){
+    keys(p,["threadId","id"]);const share=ctx.db.agentShares.id.find(id(p.id));
+    if(!share||share.threadId!==current.id||share.ownerId!==userId)fail("notFound");ctx.db.agentShares.id.delete(share.id);return {id:share.id,deleted:true};
+  }
   if(operation==="renameThread"){
     keys(p,["threadId","title"]);const title=text(p.title,200).trim();
     // Titles are presentation only; message revisions and ordering stay unchanged.
@@ -122,6 +164,7 @@ export function agentOperation(ctx:Ctx,userId:string,operation:string,p:Record<s
     keys(p,["threadId"]);const runs=[...ctx.db.agentRuns.threadId.filter(current.id)];
     if(runs.some(row=>activeAgentRun(row.status)))fail("conflict");
     for(const row of runs)ctx.db.agentRuns.id.delete(row.id);
+    for(const share of [...ctx.db.agentShares.threadId.filter(current.id)])ctx.db.agentShares.id.delete(share.id);
     for(const row of [...ctx.db.agentMessages.threadId.filter(current.id)])ctx.db.agentMessages.id.delete(row.id);
     ctx.db.agentThreads.id.delete(current.id);return {id:current.id,deleted:true};
   }
@@ -148,7 +191,7 @@ export function agentOperation(ctx:Ctx,userId:string,operation:string,p:Record<s
   fail("invalidInput");
 }
 
-export function agentSnapshot(ctx:Ctx){return {projects:[...ctx.db.agentProjects.iter()],threads:[...ctx.db.agentThreads.iter()],messages:[...ctx.db.agentMessages.iter()],runs:[...ctx.db.agentRuns.iter()].map(({lease,sessionId,...row})=>row)};}
+export function agentSnapshot(ctx:Ctx){return {projects:[...ctx.db.agentProjects.iter()],threads:[...ctx.db.agentThreads.iter()],messages:[...ctx.db.agentMessages.iter()],runs:[...ctx.db.agentRuns.iter()].map(({lease,sessionId,...row})=>row),shares:[...ctx.db.agentShares.iter()]};}
 
 /** V1–V5 backups have no Agent data. V6 validates links and bounded account data. */
 export function restoreAgent(ctx:Ctx,value?:ReturnType<typeof agentSnapshot>){
@@ -177,5 +220,11 @@ export function restoreAgent(ctx:Ctx,value?:ReturnType<typeof agentSnapshot>){
     if(!parent||parent.ownerId!==row.ownerId||!message||message.threadId!==parent.id||message.role!=="user"||id(row.id)!==row.id||!["queued","running","cancelling","completed","failed","cancelled","interrupted"].includes(row.status)||row.document.length>512*1024||[...ctx.db.agentRuns.ownerId.filter(row.ownerId)].length>=100)fail("invalidInput");
     if(!Number.isFinite(row.createdAt)||!Number.isFinite(row.modifiedAt)||typeof row.model!=="string"||!row.model||row.model.length>120)fail("invalidInput");
     validateRunDocument(JSON.parse(row.document));ctx.db.agentRuns.insert({...row,status:activeAgentRun(row.status)?"interrupted":row.status,sessionId:"",lease:""});
+  }
+  // Older V6 backups have no shares; each grant must point at a restored thread and account.
+  for(const row of value.shares??[]){
+    const parent=ctx.db.agentThreads.id.find(row.threadId);
+    if(!parent||parent.ownerId!==row.ownerId||!ctx.db.accounts.id.find(row.granteeId)||row.granteeId===row.ownerId||id(row.id)!==row.id||!Number.isFinite(row.createdAt)||[...ctx.db.agentShares.threadId.filter(row.threadId)].length>=20)fail("invalidInput");
+    ctx.db.agentShares.insert(row);
   }
 }

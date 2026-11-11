@@ -161,6 +161,24 @@ full-screen programs degrade to text. Not implemented: snoozing with timed wake-
 sharing, timeline minimap, thread fork/compact/review commands, rate-limit display
 and T3's device, secret and scheduling settings.
 
+### Fourth November 11 pass: remaining lifecycle features
+
+Implemented and tested (integration plus browser): fork from any message
+(`POST /threads/:id/fork`, messages copied up to that sequence; the fork's first run
+starts a new Codex thread), Codex code review of uncommitted changes (`/review`,
+`review/start`; `/changes` now opens the panel), context compaction (`/compact`,
+`thread/compact/start`), usage limits from `account/rateLimits/read` in Settings and
+the details card, snooze with presets/custom time, a Snoozed shelf and a Woke badge
+(`agentSnoozed` preference; wake notifications use the existing setting), Markdown
+copy/export, a timeline minimap, and read-only sharing with other Dar accounts
+(`agentShares` table, owner `/threads/:id/shares`, grantee `/shared` routes; included
+in V6 backups, older backups restore without shares).
+
+Not implemented, pending a maintainer decision: scheduled tasks (unattended runs
+need an execution authority that does not depend on a live browser session), and
+T3's device pairing and secrets (Dar is itself the server, and workspaces have no
+network for secrets to be useful).
+
 Earlier list, now superseded where implemented above — previously missing because the
 direct `codex exec` runner had no channel or capability for them: image/file attachments, steering a running turn, approvals
 and structured questions, access-mode switching (the sandbox policy is fixed),

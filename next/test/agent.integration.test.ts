@@ -73,5 +73,5 @@ test("Agent sources, account isolation, atomic revisions, replay, pagination, di
   const restoredPin=randomUUID(),recovered=await restored.call<typeof snapshot>("service_backup",[restoredPin]);await restored.call("service_release_backup",[restoredPin]);assert.deepEqual(recovered.agent,snapshot.agent);
   const malformed=await publish();await assert.rejects(malformed.call("service_restore",[JSON.stringify({...snapshot,agent:{...snapshot.agent,messages:snapshot.agent.messages.map((row,i)=>i===0?{...row,ownerId:randomUUID()}:row)}})]),/invalidInput/);
   const legacy=await publish();const {agent:_,...old}=snapshot;await legacy.call("service_restore",[JSON.stringify({...old,format:"dar-backup-v5"})]);
-  const oldPin=randomUUID(),oldRecovered=await legacy.call<typeof snapshot>("service_backup",[oldPin]);await legacy.call("service_release_backup",[oldPin]);assert.deepEqual(oldRecovered.agent,{projects:[],threads:[],messages:[],runs:[]});
+  const oldPin=randomUUID(),oldRecovered=await legacy.call<typeof snapshot>("service_backup",[oldPin]);await legacy.call("service_release_backup",[oldPin]);assert.deepEqual(oldRecovered.agent,{projects:[],threads:[],messages:[],runs:[],shares:[]});
 });

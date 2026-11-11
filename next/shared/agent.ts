@@ -16,7 +16,10 @@ export interface AgentQuestion {id:string;header:string;question:string;options:
 /** A blocking question from the running turn. Approval requests are never exposed: Dar declines escalation. */
 export interface AgentPending {id:string;questions:AgentQuestion[]}
 export interface AgentRunDocument {output:string;terminal:string;activity:string[];changes:AgentChange[];error:string;truncated:boolean;steps?:AgentStep[];usage?:AgentUsage;effort?:string;
-  mode?:"plan"|"default";attachments?:AgentAttachment[];steered?:string[];pending?:AgentPending|null;codexThread?:string;contextRevision?:number;contextWindow?:number;contextUsed?:number}
+  mode?:"plan"|"default"|"review"|"compact";attachments?:AgentAttachment[];steered?:string[];pending?:AgentPending|null;codexThread?:string;contextRevision?:number;contextWindow?:number;contextUsed?:number}
+export interface AgentLimitWindow {label:string;usedPercent:number;windowMinutes:number|null;resetsAt:number|null}
+export interface AgentLimits {available:boolean;plan:string|null;windows:AgentLimitWindow[];message?:string}
+export const agentRunModes=["plan","review","compact"] as const;
 export const agentImageTypes=["image/png","image/jpeg","image/gif","image/webp"] as const;
 export const agentAttachmentLimits={count:4,bytes:8*1024*1024} as const;
 export interface AgentRunSummary {id:string;threadId:string;messageId:string;model:string;status:AgentRunStatus;createdAt:number;modifiedAt:number}

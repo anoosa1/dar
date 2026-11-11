@@ -63,6 +63,9 @@ if(command==="login"&&subcommand==="status"){
    else if(method==="turn/start"){assert.equal(params.approvalPolicy,"never");if(params.effort)assert.match(params.effort,/^(low|medium|high)$/);const turnId="turn-"+ ++turn;current=turnId;send({id,result:{turn:{id:turnId,status:"inProgress",items:[]}}});scenario(params,turnId).catch(error=>{process.stderr.write(String(error));process.exit(3);});}
    else if(method==="turn/steer"){assert.equal(params.expectedTurnId,current);send({id,result:{turnId:current}});steered?.(params.input.find(item=>item.type==="text")?.text??"");}
    else if(method==="turn/interrupt"){send({id,result:{}});interrupted?.();}
+   else if(method==="review/start"){assert.deepEqual(params.target,{type:"uncommittedChanges"});const turnId="review-"+ ++turn;current=turnId;send({id,result:{turn:{id:turnId,status:"inProgress",items:[]},reviewThreadId:params.threadId}});notify("turn/started",{threadId:params.threadId,turn:{id:turnId}});message(params.threadId,turnId,"review-1","Review: greeting.txt changed; no issues found.");complete(params.threadId,turnId);}
+   else if(method==="thread/compact/start"){send({id,result:{}});sessions[params.threadId].push("[compacted]");await save();notify("thread/compacted",{threadId:params.threadId,turnId:"compact"});}
+   else if(method==="account/rateLimits/read"){send({id,result:{ordinaryUsageAllowed:true,rateLimits:{limitId:"codex",limitName:null,primary:{usedPercent:42,windowDurationMins:300,resetsAt:1900000000},secondary:{usedPercent:7,windowDurationMins:10080,resetsAt:1900500000},planType:"pro"},rateLimitsByLimitId:null}});}
    else if(method==="command/exec"){
     // A tiny line shell over the PTY protocol: echo, pwd and exit.
     assert.equal(params.tty,true);assert.equal(params.sandboxPolicy,undefined);const processId=params.processId;let line="";

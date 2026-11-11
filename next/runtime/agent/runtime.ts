@@ -10,7 +10,7 @@ import {codexAccount,codexModels,verifyCodexSandbox,codexInstructions,object,str
 import {openAppServer,assertNoCodexRules,type AppServer} from "./app-server.ts";
 import {createTerminals} from "./terminal.ts";
 import {prepareWorkspace,git,type Source} from "./workspace.ts";
-import {activeAgentRun,agentImageTypes,agentAttachmentLimits,type AgentHistory,type AgentRun,type AgentRunDocument,type AgentProvider,type AgentStep,type AgentAttachment,type AgentMessage} from "../../shared/agent.ts";
+import {activeAgentRun,agentImageTypes,agentAttachmentLimits,type AgentLimits,type AgentLimitWindow,type AgentHistory,type AgentRun,type AgentRunDocument,type AgentProvider,type AgentStep,type AgentAttachment,type AgentMessage} from "../../shared/agent.ts";
 import {createWriteStream} from "node:fs";
 import {pipeline} from "node:stream/promises";
 import {Transform,type Readable} from "node:stream";
@@ -94,7 +94,7 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
       const attachments=(data.attachments??[]).map(item=>({type:"localImage" as const,path:path.join(root,"agent-workspaces",row.ownerId,row.threadId,"attachments",item.id)}));
       for(const item of attachments)if(!(await lstat(item.path)).isFile())throw new AppError("attachmentMissing",409,"An attached image is no longer available. Attach it again.");
       let completion:{resolve:(status:string)=>void;reject:(error:Error)=>void}|undefined;
-      const finished=new Promise<string>((resolve,reject)=>{completion={resolve,reject};});
+      const finished=new Promise<string>((resolve,reject)=>{completion={resolve,reject};});finished.catch(()=>{});// observed only when a turn starts
       const turnStatus=(item:Record<string,unknown>,done:boolean)=>done?item.status==="failed"||item.status==="declined"?"failed" as const:"completed" as const:"running" as const;
       const server=openAppServer(config!,prepared.workspace,{
         notify(method,params){
@@ -117,6 +117,8 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
             data.usage={input:count(total.inputTokens),cached:count(total.cachedInputTokens),output:count(total.outputTokens)};if(count(last.inputTokens))data.contextUsed=count(last.inputTokens)+count(last.outputTokens);
             if(Number.isSafeInteger(usage.modelContextWindow))data.contextWindow=Number(usage.modelContextWindow);dirty=true;
           }
+          else if(method==="thread/compacted"){record({id:"compacted",kind:"tool",label:"Compacted the conversation context",status:"completed"});if(data.mode==="compact")completion?.resolve("completed");}
+          else if(method==="turn/started"&&data.mode!=="default"){const turn=(params.turn??{}) as Record<string,unknown>,entry=active.get(id);if(entry&&typeof turn.id==="string")entry.turn=turn.id;}
           else if(method==="turn/completed"){const turn=(params.turn??{}) as Record<string,unknown>,error=turn.error as Record<string,unknown>|undefined;if(error&&typeof error.message==="string")data.error=limit(error.message,2000);completion?.resolve(turn.status==="completed"?"completed":turn.status==="interrupted"?"cancelled":"failed");}
           else if(method==="error"&&params.willRetry!==true){const error=params.error as Record<string,unknown>|undefined;if(error&&typeof error.message==="string")data.error=limit(error.message,2000);dirty=true;}
         },
@@ -146,7 +148,9 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
         if(!threadKey)threadKey=(await server.request<{thread:{id:string}}>("thread/start",{model:row.model,cwd:prepared.workspace,approvalPolicy:"never",developerInstructions:codexInstructions})).thread.id;
         if(typeof threadKey!=="string"||!/^[A-Za-z0-9-]{1,100}$/.test(threadKey))throw new AppError("invalidProviderResponse",502);
         data.codexThread=threadKey;data.contextRevision=history.thread.revision;dirty=true;
-        const turn=await server.request<{turn:{id:string}}>("turn/start",{threadId:threadKey,input:[{type:"text",text:input,text_elements:[]},...attachments],model:row.model,approvalPolicy:"never",...data.effort?{effort:data.effort}:{},...data.mode==="plan"?{collaborationMode:{mode:"plan",settings:{model:row.model,reasoning_effort:data.effort??null,developer_instructions:null}}}:{}});
+        if(data.mode==="compact"&&!previous?.codexThread)throw new AppError("nothingToCompact",409,"There is no Codex context to compact yet. Run a turn first.");
+        const turn=data.mode==="review"?await server.request<{turn:{id:string}}>("review/start",{threadId:threadKey,target:{type:"uncommittedChanges"}})
+          :data.mode==="compact"?await server.request("thread/compact/start",{threadId:threadKey}).then(()=>({turn:{id:"compact"}})):await server.request<{turn:{id:string}}>("turn/start",{threadId:threadKey,input:[{type:"text",text:input,text_elements:[]},...attachments],model:row.model,approvalPolicy:"never",...data.effort?{effort:data.effort}:{},...data.mode==="plan"?{collaborationMode:{mode:"plan",settings:{model:row.model,reasoning_effort:data.effort??null,developer_instructions:null}}}:{}});
         const entry=active.get(id);if(entry){entry.turn=turn.turn.id;entry.thread=threadKey;entry.server=server;entry.steer=messageId=>{data.steered=[...data.steered??[],messageId].slice(-50);dirty=true;};}
         result=await finished as "completed"|"failed"|"cancelled";
       }finally{controller.signal.removeEventListener("abort",abort);server.close();}
@@ -163,6 +167,23 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
   }
   return {
     async status(userId:string){return (await connection(userId)).provider;},
+    /** Account usage windows from the CLI's own rate-limit report; nothing is cached or estimated. */
+    async limits(userId:string):Promise<AgentLimits>{
+      const {config,provider}=await connection(userId);if(!config||!provider.connected)return {available:false,plan:null,windows:[],message:provider.message};
+      const workspace=path.join(root,"agent-workspaces","provider-status"),server=openAppServer(config,workspace,{notify(){},async request(){throw new AppError("declined",403);}},["-c",'approval_policy="never"']);
+      const timer=setTimeout(()=>server.close(),15000);
+      try{
+        await assertNoCodexRules(config);await server.request("initialize",{clientInfo:{name:"dar",title:"Dar",version:"1.0.0"},capabilities:{experimentalApi:true}});server.notify("initialized",{});
+        const value=await server.request<Record<string,unknown>>("account/rateLimits/read",{}),snapshots=value.rateLimitsByLimitId&&typeof value.rateLimitsByLimitId==="object"?Object.values(value.rateLimitsByLimitId as Record<string,Record<string,unknown>>):[value.rateLimits as Record<string,unknown>];
+        const windows:AgentLimitWindow[]=[],number=(input:unknown)=>typeof input==="number"&&Number.isFinite(input)?input:null;let plan:string|null=null;
+        for(const snapshot of snapshots.filter(Boolean).slice(0,6)){
+          plan??=typeof snapshot.planType==="string"?snapshot.planType:null;const name=typeof snapshot.limitName==="string"?snapshot.limitName:typeof snapshot.limitId==="string"?snapshot.limitId:"Codex";
+          for(const [key,label] of [["primary","Short window"],["secondary","Weekly window"]] as const){const window=snapshot[key] as Record<string,unknown>|null;const used=number(window?.usedPercent);if(window&&used!==null){const minutes=number(window.windowDurationMins),resets=number(window.resetsAt);windows.push({label:`${name} · ${minutes?minutes>=1440?`${Math.round(minutes/1440)} day`:`${Math.round(minutes/60)} hour`:label}`,usedPercent:Math.min(100,Math.max(0,used)),windowMinutes:minutes,resetsAt:resets===null?null:resets<1e12?resets*1000:resets});}}
+        }
+        return {available:true,plan,windows};
+      }catch(error){return {available:false,plan:null,windows:[],message:error instanceof AppError?error.message:"Usage limits are unavailable."};}
+      finally{clearTimeout(timer);server.close();}
+    },
     /** Called only by the administrator-only native-session connection action.
      * Discovery uses the service environment, never browser-supplied paths.
      * Publishing is exclusive: an existing binding can never be taken over.

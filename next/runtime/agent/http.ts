@@ -7,6 +7,19 @@ import type {AgentRuntime} from "./runtime.ts";
 export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url:URL,db:Database,sessionId:string,userId:string,runtime:AgentRuntime,body:()=>Promise<Record<string,unknown>>){
   const method=req.method??"GET",path=url.pathname.slice("/api/v1/agent".length);
   const send=(value:unknown,status=200)=>{res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(value));};
+  if(path==="/shared"&&method==="GET")return send(await db.call("service_agent",[sessionId,"sharedThreads","{}"]));
+  const sharedHistory=/^\/shared\/([a-f0-9-]+)\/messages$/.exec(path);
+  if(sharedHistory&&method==="GET"){const before=url.searchParams.get("before");if(before!==null&&!/^[1-9]\d{0,9}$/.test(before))throw new AppError("invalidInput");return send(await db.call("service_agent",[sessionId,"sharedHistory",JSON.stringify({threadId:sharedHistory[1],...before?{before:Number(before)}:{}})]));}
+  const shares=/^\/threads\/([a-f0-9-]+)\/shares(?:\/([a-f0-9-]+))?$/.exec(path);
+  if(shares){
+    if(method==="GET"&&!shares[2])return send(await db.call("service_agent",[sessionId,"threadShares",JSON.stringify({threadId:shares[1]})]));
+    if(method==="POST"&&!shares[2]){const input=await body();if(Object.keys(input).some(key=>key!=="id"&&key!=="username"))throw new AppError("invalidInput");return send(await db.call("service_agent",[sessionId,"shareThread",JSON.stringify({threadId:shares[1],...input})]),201);}
+    if(method==="DELETE"&&shares[2])return send(await db.call("service_agent",[sessionId,"unshareThread",JSON.stringify({threadId:shares[1],id:shares[2]})]));
+    throw new AppError("methodNotAllowed",405);
+  }
+  if(path==="/provider/limits"&&method==="GET"){await db.call("service_agent",[sessionId,"projects","{}"]);return send(await runtime.limits(userId));}
+  const fork=/^\/threads\/([a-f0-9-]+)\/fork$/.exec(path);
+  if(fork&&method==="POST"){const input=await body();if(Object.keys(input).some(key=>key!=="id"&&key!=="sequence"))throw new AppError("invalidInput");return send(await db.call("service_agent",[sessionId,"forkThread",JSON.stringify({threadId:fork[1],...input})]),201);}
   if(path==="/provider"&&method==="GET"){
     await db.call("service_agent",[sessionId,"projects","{}"]);return send(await runtime.status(userId));
   }

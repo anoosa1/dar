@@ -351,3 +351,23 @@ body:has(.agent-shell)>.editing-pane{top:48px}
 .agent-context-card>.agent-context-git{padding-right:4px}.agent-git-branch{font-family:ui-monospace,monospace;font-size:11px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agent-context-git>span:not(.agent-git-branch){margin-left:auto;white-space:nowrap}.agent-context-git .ui-menu-trigger{min-height:24px!important;padding:3px!important}
 .agent-git-form{display:flex;flex-direction:column;gap:12px}.agent-git-form label{display:flex;flex-direction:column;gap:6px;font-size:13px}.agent-git-form p{margin:0;line-height:1.6}
+/* Timeline minimap: marks and visible range positioned from measured custom properties. */
+.agent-minimap{position:absolute;top:12px;bottom:12px;right:6px;width:10px;cursor:pointer;z-index:3}
+.agent-minimap-mark{position:absolute;left:2px;right:2px;top:calc(var(--top,0)*100%);height:max(2px,calc(var(--height,0)*100%));border-radius:2px;background:color-mix(in srgb,var(--muted) 45%,transparent)}
+.agent-minimap-mark[data-role=user]{background:var(--accent);opacity:.7}
+.agent-minimap-view{position:absolute;left:0;right:0;top:calc(var(--view-top,0)*100%);height:calc(var(--view-height,1)*100%);border-radius:3px;background:color-mix(in srgb,var(--text) 8%,transparent);border:1px solid color-mix(in srgb,var(--text) 14%,transparent)}
+@media(max-width:1100px){.agent-minimap{display:none}}
+/* Snooze and usage. */
+.agent-snooze-time{display:inline-flex;align-items:center;gap:4px;color:var(--blue)}.agent-snooze-time .icon{width:11px;height:11px}
+.agent-woke{display:inline-flex;align-items:center;gap:4px;border:0;background:none;padding:0;font:inherit;font-size:11px;font-weight:600;color:var(--warning);cursor:pointer}.agent-woke:hover{text-decoration:underline}.agent-woke .icon{width:11px;height:11px}
+.agent-thread-row:has(.agent-woke) .agent-thread-meta{visibility:visible!important;position:relative;z-index:6}
+.agent-limits{list-style:none;padding:0;margin:0 0 16px;display:flex;flex-direction:column;gap:10px}
+.agent-limits li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;font-size:13px;align-items:center}.agent-limits meter{grid-column:1/-1;width:100%;height:6px}.agent-limits small{grid-column:1/-1;color:var(--muted);font-size:11px}
+/* Sharing. */
+.agent-share{display:flex;flex-direction:column;gap:12px;min-width:min(420px,80vw)}.agent-share p{margin:0;line-height:1.6}
+.agent-share form{display:flex;gap:8px}.agent-share form input{flex:1;min-width:0;min-height:36px}
+.agent-share ul{list-style:none;margin:0;padding:0}.agent-share li{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.agent-share li>span:nth-child(2){flex:1;min-width:0;display:flex;flex-direction:column}.agent-share li small{color:var(--muted);font-size:11px}
+.agent-shared-banner{display:flex;align-items:center;gap:8px;margin:12px max(48px,calc((100% - 768px)/2)) 0;padding:8px 12px;border-radius:10px;background:var(--surface-soft);color:var(--muted);font-size:12px;flex:none}
+.agent-shared-banner .icon{width:14px;height:14px}.agent-shared-banner strong{color:var(--text);font-weight:550}
+@media(max-width:800px){.agent-shared-banner{margin-inline:12px}}

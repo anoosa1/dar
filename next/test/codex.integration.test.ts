@@ -72,6 +72,29 @@ test("direct Codex CLI preserves login, run state, cancellation, isolation and F
   const served=await fetch(imageUrl,{headers:session.headers});assert.equal(served.headers.get("content-type"),"image/png");assert.equal(served.headers.get("x-content-type-options"),"nosniff");assert.deepEqual(Buffer.from(await served.arrayBuffer()),png);
   const pictured=await wait((await start(imageThread,"DESCRIBE_IMAGE",{attachments:[imageId]})).id,"completed");assert.equal(pictured.document.output,"Saw 1 image.");assert.equal(pictured.document.attachments![0].name,"pixel.png");
   assert.equal((await fetch(`${base}/api/v1/agent/threads/${imageThread}/runs`,{method:"POST",headers:{...headers,"if-match":`"${await revision(imageThread)}"`},body:JSON.stringify({id:randomUUID(),messageId:randomUUID(),model:"fixture-model",content:"Missing",attachments:[randomUUID()]})})).status,404);
+  // Fork copies history up to a message; review and compaction run through the resumed Codex thread.
+  const forkId=randomUUID(),forked=await fetch(`${base}/api/v1/agent/threads/${resumeThread}/fork`,{method:"POST",headers,body:JSON.stringify({id:forkId,sequence:3})});assert.equal(forked.status,201);
+  assert.deepEqual((await call<AgentHistory>(`/threads/${forkId}/messages`)).items.map(item=>[item.sequence,item.content]),[[2,"RESUME_CHECK first"],[3,"Turns: 1. Input: User: RESUME_CHECK first"]]);
+  assert.equal((await fetch(`${base}/api/v1/agent/threads/${resumeThread}/fork`,{method:"POST",headers,body:JSON.stringify({id:randomUUID(),sequence:999})})).status,400);
+  const reviewed=await wait((await start(resumeThread,"Review the uncommitted changes.",{mode:"review"})).id,"completed");assert.equal(reviewed.document.output,"Review: greeting.txt changed; no issues found.");
+  const compacted=await wait((await start(resumeThread,"Compact the conversation context.",{mode:"compact"})).id,"completed");assert.ok(compacted.document.steps!.some(step=>step.id==="compacted"));
+  assert.match((await wait((await start(await thread("Nothing to compact"),"Compact",{mode:"compact"})).id,"failed")).document.error,/nothing to compact|no Codex context/i);
+  const limits=await call<{available:boolean;plan:string;windows:{label:string;usedPercent:number;resetsAt:number}[]}>("/provider/limits");assert.equal(limits.available,true);assert.equal(limits.plan,"pro");assert.deepEqual(limits.windows.map(item=>item.usedPercent),[42,7]);assert.equal(limits.windows[0].resetsAt,1900000000000);
+  const preferences=await(await fetch(base+"/api/v1/pim/preferences",{headers})).json() as {revision:number};
+  assert.equal((await fetch(base+"/api/v1/pim/preferences",{method:"PUT",headers:{...headers,"if-match":`"preferences:${preferences.revision}"`},body:JSON.stringify({...preferences,agentSnoozed:[{id:"bad",until:1}]})})).status,400);
+  assert.equal((await fetch(base+"/api/v1/pim/preferences",{method:"PUT",headers:{...headers,"if-match":`"preferences:${preferences.revision}"`},body:JSON.stringify({...preferences,agentSnoozed:[{id:resumeThread,until:Date.now()+3600000}]})})).status,200);
+  // Sharing grants another account read-only history; grantees cannot use owner routes.
+  const friend="friend-"+randomUUID().slice(0,6);assert.equal((await fetch(base+"/api/v1/auth/users",{method:"POST",headers,body:JSON.stringify({username:friend,displayName:"Friend",password:"a long isolated test password"})})).status,201);
+  const grantee=await login(base,friend),otherHeaders={...grantee.headers,"content-type":"application/json"},shareUrl=`${base}/api/v1/agent/threads/${resumeThread}/shares`;
+  assert.equal((await fetch(shareUrl,{method:"POST",headers,body:JSON.stringify({id:randomUUID(),username:"admin"})})).status,400);
+  assert.equal((await fetch(shareUrl,{method:"POST",headers,body:JSON.stringify({id:randomUUID(),username:"nobody-"+randomUUID().slice(0,6)})})).status,404);
+  const granted=await(await fetch(shareUrl,{method:"POST",headers,body:JSON.stringify({id:randomUUID(),username:friend})})).json() as {id:string;username:string};assert.equal(granted.username,friend);
+  assert.deepEqual((await(await fetch(shareUrl,{headers})).json()).items.map((row:{username:string})=>row.username),[friend]);
+  const sharedList=await(await fetch(base+"/api/v1/agent/shared",{headers:otherHeaders})).json() as {items:{thread:{id:string};owner:string}[]};assert.deepEqual(sharedList.items.map(row=>[row.thread.id,row.owner]),[[resumeThread,"Codex fixture"]]);
+  const sharedMessages=await(await fetch(`${base}/api/v1/agent/shared/${resumeThread}/messages`,{headers:otherHeaders})).json() as {items:{content:string;ownerId?:string}[]};assert.equal(sharedMessages.items[0].content,"RESUME_CHECK first");assert.equal(sharedMessages.items[0].ownerId,undefined);
+  for(const [route,init] of [[`/threads/${resumeThread}/messages`,{}],[`/threads/${resumeThread}/shares`,{}],[`/threads/${resumeThread}/git`,{}],[`/threads/${resumeThread}/files`,{}]] as const)assert.equal((await fetch(base+"/api/v1/agent"+route,{headers:otherHeaders,...init})).status,404,route);
+  assert.equal((await fetch(`${shareUrl}/${granted.id}`,{method:"DELETE",headers})).status,200);
+  assert.deepEqual((await(await fetch(base+"/api/v1/agent/shared",{headers:otherHeaders})).json()).items,[]);assert.equal((await fetch(`${base}/api/v1/agent/shared/${resumeThread}/messages`,{headers:otherHeaders})).status,404);
   // Rule files in the Codex home would act outside Dar's control; runs refuse until removed.
   await mkdir(path.join(home,"rules"));await writeFile(path.join(home,"rules","default.rules"),"");
   const ruled=await start(await thread("Rules"),"RESUME_CHECK rules"),refused=await wait(ruled.id,"failed");assert.match(refused.document.error,/execution-policy rules/);
