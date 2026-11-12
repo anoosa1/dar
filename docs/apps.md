@@ -1,140 +1,74 @@
-# Installable Dar apps
+# Installed apps and optional apps
 
-Dar accepts trusted administrator-installed packages using SDK API v1. Prayer
-Times is the first example; it uses an original, dependency-free calculation
-library and the selected week-list/daily-pane layout B. External packages are
-separate from OIDC registered applications. Existing built-in apps keep their
-current routes and data models.
+Dar runs trusted, administrator-installed app packages built with SDK API v1
+([author guide](../next/sdk/README.md)). Prayer Times is the bundled example.
+Installed code runs in Dar's process and browser origin: it is trusted, not
+sandboxed. These packages are unrelated to OIDC "registered applications".
 
-## NixOS
+## Install
+
+NixOS:
 
 ```nix
-services.dar = {
-  enable = true;
-  origin = "https://cloud.example.com";
-  apps = [ dar.packages.${pkgs.stdenv.hostPlatform.system}.prayer-times ];
-};
+services.dar.apps = [ dar.packages.${pkgs.stdenv.hostPlatform.system}.prayer-times ];
 ```
 
-Build with `nix build .#dar .#prayer-times`. Each app output must be a complete
-prebuilt directory with a `dar-app.json`. The generated read-only registry is
-authoritative. Change `services.dar.apps` to install/remove apps, then rebuild
-and restart the service. No app is enabled by default.
+Build with `nix build .#dar .#prayer-times`, then rebuild and restart. The
+generated read-only registry is authoritative; no app is enabled by default.
 
-The runtime validates package IDs, API major, file inventory, size and digest,
-and rejects symlinks within packages. Assets are content-addressed local files.
-The SDK uses one shared React instance and Dar controls. Node hooks use owned
-Cordis effects and app-prefixed routes. They are trusted code, not OS-isolated.
-
-## Other hosts and development
-
-From the repository in `nix develop`:
+Other hosts, from `nix develop` with Dar stopped:
 
 ```sh
 node next/sdk/build.mjs apps/prayer-times
-# Stop the instance before changing its app configuration.
-DAR_ROOT=/path/to/private/root node next/scripts/operator.ts apps-install apps/prayer-times/dist
-DAR_ROOT=/path/to/private/root node next/scripts/operator.ts apps-list
+DAR_ROOT=/path/to/root node next/scripts/operator.ts apps-install apps/prayer-times/dist
 ```
 
-The operator copies validated artifacts into an immutable-by-convention package
-directory and atomically replaces the private `apps.json` registry. It holds the
-instance lock, so running the command while Dar is active fails. Restart to apply.
-Packaged installations use `dar-operator` with the same commands:
+Operator commands (`dar-operator` when packaged): `apps-install <dir>`,
+`apps-list`, `apps-enable|apps-disable|apps-uninstall <id>`. They update the
+private registry atomically and hold the instance lock, so restart afterwards.
+They do not change a host registry set with `DAR_APPS_FILE` (a JSON array of
+`{path, digest?, enabled?}`). `DAR_DISABLE_APPS=1` starts without installed apps.
 
-```text
-apps-install <built-package-directory>
-apps-list
-apps-disable <app-id>
-apps-enable <app-id>
-apps-uninstall <app-id>
-```
+Packages are validated (ID, API major, file inventory, size, digest, no symlinks)
+before any code runs. A broken package or failing Node hook is reported in
+Administration → Apps and leaves the rest of Dar working. There is no browser
+upload, marketplace, automatic update or hot reload.
 
-Set `DAR_APPS_FILE` to an explicit JSON array of `{path, digest?, enabled?}` for
-read-only host configuration. Absolute package roots may resolve through host
-aliases, including Nix paths, but managed package files may not be symlinks.
-`DAR_DISABLE_APPS=1` is recovery mode. Restart after changing either variable.
-An invalid individual package or failed Node hook leaves core apps usable and
-appears in Administration → Apps. A malformed registry starts without
-external apps; correct host configuration and restart.
+## Enable and disable
 
-These commands affect the default private registry only. When `DAR_APPS_FILE` is
-set (including NixOS), change that configured registry instead. No browser code
-upload, marketplace, automatic update, dependency resolver or hot reload is shipped.
+Administration → Apps (also in the account menu as Manage apps) enables or
+disables Notes, Tasks, Agent and host-enabled installed apps immediately for the
+whole instance. Files, Contacts and Calendar are always on. A disabled app leaves
+the app rail and search, its APIs stop and external hooks are disposed; its data
+is kept. Calendar's DAV routes, including tasks, stay available. This setting can
+only restrict what the host configuration enables.
 
-## Data, upgrades and restore
+## Data
 
-Administrators can also disable/enable Notes, Tasks and host-enabled external apps
-in Administration → Apps, or reach it through the launcher's Manage apps entry.
-Changes apply immediately and persist through restart and backup/restore. Files,
-Contacts and Calendar cannot be disabled. Disabled apps leave the launcher and
-global search; their app APIs are unavailable and external Node effects are
-disposed. Data is retained. Calendar's underlying standards routes remain available
-as part of the essential Calendar service, including task synchronization.
-Host configuration remains authoritative for installed packages: a package disabled
-or removed on the host cannot be enabled in the browser. This additional setting
-can only restrict host-enabled packages; installing/upgrading still needs a restart.
-
-Every record is scoped to a live account and app, with exact revision checks,
-64 KiB/record, 1 MiB/account/app and 128-record limits. Up to 50 records are returned
-per page. App passwords do not authenticate these APIs. No app can add tables
-to the core SpacetimeDB module through this SDK. Core/domain integrations beyond
-regional timezone reads are future explicit SDK additions.
-
-Back up before installing an app version that changes payload schemas. Test the
-upgrade against an isolated restore. Keep the old code package. Code rollback
-does not undo data migrations: use only a version that reads current data, or
-restore the corresponding full backup during maintenance.
-
-Disable and uninstall retain app data; reinstalling the same app ID reconnects
-that data. Uninstall retains old code copies as rollback artifacts. Automated
-code reclamation and per-app data purge/export commands are not shipped yet;
-there is no implicit destructive cleanup. Account deletion removes that account's
-app data while following Dar's existing account/domain retention policy.
-
-Backup format v6 contains all app records, including disabled/orphaned data, the
-active package inventory/digests and private Agent projects, threads, messages and runs.
-V1–v5 backups remain readable. Restore does
-not fetch or execute packages, and the restored active inventory is empty until
-the configured packages are reconciled at startup. Keep pinned packages/flake
-locks alongside backups; executable code is not included in backup contents.
+- Records are scoped to a live account and app with exact revision checks:
+  64 KiB per record, 1 MiB and 128 records per account/app, 50 per page.
+  App passwords do not authorize these APIs; apps cannot add database tables.
+- Disable and uninstall keep data; reinstalling the same ID reconnects it.
+  Deleting an account deletes its app data. Per-app purge/export is not shipped.
+- Backups (format v6) include all app records and the package inventory, not
+  code. Restore never runs packages; keep pinned packages with your backups.
+- Back up and test against an isolated restore before installing a version that
+  changes stored data. Code rollback does not undo data migrations.
 
 ## Agent
 
-Agent is an optional built-in app under `/agent`, with instance-wide enable/disable
-in Administration → Apps. Its native account-scoped storage is separate from the
-installed-app SDK's small settings/document quota. Disabling it retains data.
-
-Projects reference either a credential-free Git repository URL (HTTPS or
-`git@host:path`) or an authorized folder identity in Dar Files. A Files project
-does not expose physical blob paths or change how Files stores its content.
-Threads and messages use revision-checked appends and recovery drafts scoped to
-the account/thread in the current browser tab. Optional Codex execution reuses an
-existing server-side ChatGPT login, bound to one immutable Dar account ID. Models
-come from that Codex installation. Runs provide bounded live output, cancellation,
-persisted assistant messages and reviewable changes in isolated working copies.
-
-Git provisioning currently supports public, credential-free HTTPS repositories on
-configured hosts. Files projects copy authorized file versions, with revision
-checks before materialization. Modified text files up to 64 KiB can be reviewed
-and applied through the existing Files upload/version path. New files, deletions,
-SSH authentication, Git commits/pushes and deployment are not published by Agent.
-
-See [Codex setup](codex.md) and the [delivery contract](spacetimedb/agent-workspace.md).
-Unconfigured accounts can save messages without sending them to a model.
+Optional built-in app at `/agent` with its own account-scoped storage (not the SDK
+quota). Projects point at a credential-free Git URL or a Dar Files folder; runs use
+the server's existing Codex login. See [Codex setup](codex.md) and the
+[Agent workspace](spacetimedb/agent-workspace.md). Without Codex, messages can
+still be saved.
 
 ## Prayer Times
 
-First use requires an explicit location label, coordinates, IANA timezone and
-calculation method. Browser location is optional and requested only on a click;
-denial leaves manual entry available. No IP lookup or geocoder is used. The saved
-location remains private; changing the account's regional default does not move it.
-
-V1 supports MWL, ISNA, Egyptian and Karachi angle conventions, standard/Hanafi Asr,
-optional night-portion bounds and per-event minute offsets. It shows sunrise as a
-solar event. Missing polar events remain unavailable. Results are estimates, not
-mosque-specific prayer/iqamah announcements. There is no adhan audio, push delivery,
-Hijri-calendar inference or automatic Ramadan interval adjustment.
-
-See [calculation equations, limits and sources](../apps/prayer-times/CALCULATIONS.md),
-[SDK author guide](../next/sdk/README.md), and [architecture](spacetimedb/app-platform.md).
+First use asks for a location label, coordinates, IANA timezone and calculation
+method; browser location is requested only on a click. No IP lookup or geocoder.
+Methods: MWL, ISNA, Egyptian and Karachi; standard or Hanafi Asr; optional
+high-latitude rules and per-prayer offsets. Polar events stay unavailable.
+Results are estimates; there is no adhan audio, push alert or Hijri inference.
+See [calculations](../apps/prayer-times/CALCULATIONS.md) and the
+[app platform](spacetimedb/app-platform.md).

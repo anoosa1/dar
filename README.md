@@ -1,7 +1,8 @@
 # Dar
 
-A self-hosted personal cloud for Linux with Files, Contacts, Calendar, Notes and
-Tasks.
+A self-hosted personal cloud for Linux: Files, Contacts, Calendar, Notes, Tasks,
+an optional coding Agent, and installable apps such as Prayer Times. Dar also
+provides OIDC sign-in and SCIM provisioning for other applications.
 
 ## Screenshots
 
@@ -21,20 +22,15 @@ npm ci --prefix next
 npm --prefix next run dev
 ```
 
-Open <http://127.0.0.1:4311>. The launcher prints the path to the private setup key
-needed to create your first account.
+Open <http://127.0.0.1:4311>. The dev script prints the path to the private setup
+key used to create the first account.
 
 ## Deploy
 
-Build with `nix build .#dar`. For NixOS setup, upgrades and backups, see the
-[deployment guide](docs/deployment.md).
+`nix build .#dar` and the NixOS module; see the [deployment guide](docs/deployment.md).
 
-## Development
+## Develop
 
-The application lives in `next/`. Run checks with:
-
-```sh
-nix develop --command npm --prefix next run verify
-```
-
-See the [application guide](next/README.md) for configuration and supported features.
+The application is in `next/` ([guide](next/README.md)). Run all checks with
+`nix develop --command npm --prefix next run verify`. UI work follows the
+[design guide](docs/design.md).

@@ -1,54 +1,27 @@
-# SpacetimeDB application
+# Dar application
 
-Read ../docs/design.md before UI work. All apps follow the same interaction and
-layout rules; app-specific implementations must not drift from that contract.
+Read `../docs/design.md` before UI work. Every app follows the same frame and
+interaction rules; app-specific code must not drift from that contract.
 
-- Sign-in branding and app-password permissions use mock A in
-  ../docs/spacetimedb/signin-app-password-mocks.html, selected November 7.
+## Scope and authority
 
+- Stack: TypeScript, React, SpacetimeDB, Node 24, Cordis and immutable local blobs.
+  This architecture (November 5–6, 2026) replaces the earlier SQLite/ClojureScript
+  design for `next/`. See `../docs/spacetimedb/architecture.md`.
+- No SQLite, external identity provider, offline editing or end-to-end encryption.
+- Approved dependencies beyond the base stack: `ical.js`, `saxes`,
+  `oidc-provider@9.13.3` (with its internal Koa) and `@types/oidc-provider@9.13.1`;
+  `openid-client` for tests only.
+- Do not treat passing primitive tests as completion; verify end-to-end behavior.
 
-- The November 7 follow-up selects creation/appearance mock A, Focused pane.
-  Creation/editing uses right panes; Files adds a New menu and text/Markdown
-  editor. The November 8 Twilight mock supersedes Catppuccin: Afterglow (light) and
-  Nightfall (dark), with plum/violet surfaces and orchid/rose actions. Keep the
-  stored latte/mocha identifiers compatible with existing saved preferences.
-The maintainer authorized a fresh SpacetimeDB architecture and implementation of
-native auth and Files, extended to Contacts and Calendar on November 6, 2026.
-Read `../docs/spacetimedb/architecture.md` for the
-agreed scope and acceptance requirements. This explicitly supersedes the parent
-guide's SQLite, ClojureScript backend, external OIDC login, and authoritative
-portable-file requirements for this directory only. Do not alter existing work.
+## Selected designs
 
-- Use TypeScript, React, SpacetimeDB, Node 24, Cordis, and immutable local blobs.
-- No SQLite, external identity provider, unrelated app UI, offline editing, or E2EE.
-- Preserve the parent's security, accessibility, isolation, cleanup, and focused
-  verification rules where applicable.
-- Mock C, Focused explorer, is selected: compact Nextcloud-style Material 3,
-  centered persistent search, desktop details, and focused phone panels. Continue
-  that direction; review new static mocks only for a new visual direction.
-- Do not treat passing primitive tests as completion of auth or Files.
-- Contacts and Calendar mock A, Focused workspace, was selected on November 6:
-  Contacts list/details and Calendar time grid, with the existing centered search.
-- OIDC/SCIM provider dependencies `oidc-provider@9.13.3`, its internal Koa and
-  `@types/oidc-provider@9.13.1` are approved. Layout B, Account settings tabs,
-  is selected. See `../docs/spacetimedb/identity-provider.md` for scope.
-- Notes and Tasks were requested next. Scope and paired static mocks are in
-  `../docs/spacetimedb/notes-tasks.md` and `notes-tasks-mocks.html` beside it.
-  Layout A, Focused workspace, is selected for both apps. No additional
-  dependencies/workers are proposed.
-- The shared UX revision selects B, Material 3, in
-  `../docs/spacetimedb/ux-consistency-mocks.html`. Use one shared header, themed
-  launcher/account menu, controls, dialog motion, lower-sidebar app settings and
-  Personal/Administration global settings across all five apps and settings.
-  This supersedes earlier per-app shell/settings variations; no further mock
-  approval is needed for implementing the selected shared direction.
-- The November 11 unified look selects B in
-  `../docs/spacetimedb/unified-look-mock-b.html`: a shared app rail (bottom bar
-  on phones), top bar with centered search and app settings gear, and floating
-  sheets for every app including the Agent. It supersedes the shared header,
-  launcher and lower-sidebar app settings above; see ../docs/design.md.
-- Calendar's November 7 refinement uses Month by default, one date/today control
-  beside the period arrows, per-calendar action menus, and compact paged calendar
-  navigation. Import/export and cancelled-event visibility belong in Calendar
-  settings; timezone belongs in Personal → Regional settings. Files storage usage
-  stays directly above its sidebar settings entry.
+Current direction: unified look B (`../docs/spacetimedb/unified-look-mock-b.html`,
+November 11) with Twilight Afterglow/Nightfall. It supersedes the earlier shared
+header, app launcher and lower-sidebar settings. Earlier selections still define
+app content: Files Focused explorer (C), Contacts/Calendar and Notes/Tasks
+Focused workspace (A), identity Account settings tabs (B), creation/appearance
+Focused pane (A), sign-in/app-password mock A, Prayer Times layout B and the
+Agent T3 parity A. Details are in the design guide.
+
+Applying a selected pattern needs no new mock; a new visual direction does.

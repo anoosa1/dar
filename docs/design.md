@@ -1,292 +1,151 @@
 # Dar design guide
 
-This is the shared design contract for Files, Contacts, Calendar, Notes, Tasks,
-sign-in, personal settings and administration. Read it before building or changing
-UI. The same interaction must work the same way throughout the apps. Reuse the
-shared implementation instead of inventing an app-specific version.
+The shared design contract for every app, sign-in and settings. Read it before UI
+work. The same interaction must behave the same way everywhere; reuse the shared
+implementation instead of writing an app-specific version. Newer explicit
+maintainer decisions win; update this guide when they change.
 
-This guide consolidates the maintainer's instructions in the current conversation
-and the decisions recorded in the repository. It does not claim access to
-unrecorded conversations. New explicit maintainer instructions take precedence;
-update this guide when a design decision changes.
+## Frame (unified look B, November 11)
 
-## Shared visual direction
+Selected from [mock B](spacetimedb/unified-look-mock-b.html) over
+[mock A](spacetimedb/unified-look-mock-a.html). Built from `next/client/frame.css`,
+`AppRail` (`apps.tsx`) and `WorkspaceHeader` (`shell.tsx`).
 
-- The November 11 unified look selects B in
-  [unified look mock B](spacetimedb/unified-look-mock-b.html) over
-  [mock A](spacetimedb/unified-look-mock-a.html), superseding the shared header and
-  launcher decisions below wherever they differ. Every app, settings and the Agent
-  share one frame built from `client/frame.css`, `AppRail` and `WorkspaceHeader`:
-  - A persistent 72px app rail on the left: Dar mark, each enabled app as an icon
-    pill with its label (tonal when current), then global Settings and the account
-    menu at the bottom. Administrators reach Manage apps from the account menu.
-  - A 56px top bar: the app title aligned over the sidebar, the centered
-    cross-app search pill (Ctrl/Cmd+K) and the app's settings gear on the right.
-  - Content in floating sheets (16px radius, soft border) with an 8px gutter on the
-    soft background. The sidebar is transparent; its create action is a tonal
-    48px button with a 16px radius at the top, in the same place in every app.
-  - Navigation and list selection use a tonal pill; hover stays neutral. Sidebar
-    rows are 36px. The Agent keeps its rows, composer, context cards, drawer and
-    review surface inside this frame.
-  - Phones: the rail becomes a bottom bar with four apps and More (the current app
-    always keeps a slot), the search becomes a full-width pill with the avatar,
-    sidebar views and collections become a horizontal chip strip (app settings is
-    the last chip), the create action is a floating button above the bar, and
-    details, editors and Agent threads open full screen with Back.
+- **App rail** (72px, left): Dar mark, each enabled app as an icon pill with its
+  label (tonal when current), then Settings and the account menu at the bottom.
+  Administrators reach Manage apps from the account menu.
+- **Top bar** (56px): app title over the sidebar, centered cross-app search,
+  and the app's settings gear on the right.
+- **Sheets:** content and details sit in floating sheets (16px radius, soft
+  border, 8px gutter) on the soft background. The sidebar is transparent.
+- **Create:** one tonal 48px button (16px radius) at the top of every sidebar.
+  Files uses it as a New menu (Folder, File → Text/Markdown); the menu aligns with
+  the button and is at least as wide.
+- **Selection:** tonal pill for navigation and list rows; hover stays neutral.
+  Sidebar rows are 36px.
+- **Phones (≤800px):** the rail becomes a bottom bar with four apps and More (the
+  current app always keeps a slot). Search is a full-width pill with the avatar.
+  Sidebar views and collections become a horizontal chip strip, app settings is
+  the last chip, and create is a floating button above the bar. Details and
+  editors fill the screen below the search bar with their own close/Back control.
 
-- Use the selected compact Material 3 workspace with Twilight Afterglow (light)
-  and Twilight Nightfall (dark). Support the saved System appearance preference.
-  The [selected November 8 twilight mock](spacetimedb/twilight-mocks.html)
-  uses plum/violet structure, orchid/rose
-  actions and restrained warm accents. Keep text neutral, selection violet and
-  errors/success/warnings distinct. Stored `latte`/`mocha` preferences remain
-  compatible; those identifiers no longer describe the displayed palette.
-- Keep one shared header, centered persistent search, themed app launcher and
-  account menu across every app and settings. Keep the launcher usable in settings.
-  Header search results and menus stay above workspace details and editors,
-  including the Files text editor on desktop and phones.
-- The November 8 app-launcher refinement selects option A in
-  [launcher mocks](spacetimedb/app-launcher-mocks.html): a Nextcloud-style vertical
-  icon/name list, current-app marker and administrator-only Manage apps footer.
-  Administration → Apps enables/disables optional apps instance-wide, retaining
-  data. Files, Contacts and Calendar have no status label or toggle.
-- The header search searches across apps, rather than filtering only the current
-  app. Group results by app, keep authorization explicit, and provide keyboard
-  selection, loading, empty, partial-error and retry states. Do not add duplicate
-  tag/category search fields in Notes or Tasks.
-- Global search includes accessible file names, contacts, calendar resources,
-  Notes content, Tasks and enabled installed apps' own-user data. Never search
-  another account's records or disabled/uninstalled app data. Bound the scan and
-  the returned matches; make truncation explicit rather than implying completeness.
-- Use shared buttons, menus, form controls, panes, dialogs, empty states and error
-  states. A control's spacing, behavior and placement must not vary arbitrarily
-  between apps. No inline product styles or browser prompt/confirm dialogs.
-- The November 8 control refinement selects Quiet Twilight (A): rounded neutral
-  scroll thumbs, outlined fields, square checkboxes and circular radios, with
-  accent checked states and themed file-upload buttons. Preserve native form and
-  keyboard behavior, mixed/disabled states and forced-colors accessibility.
-- The November 8 spacing refinement uses shared 20px desktop / 16px phone pane
-  insets, 16px group and form-field gaps, 56px contact/prayer list rows and compact
-  Files rows. Avoid stacking row padding with padded inner buttons. Keep headings
-  at 24px desktop / 22px phone and align tools with their pane's content inset.
-  Preserve the existing header heights and independently scrolling panes. The
-  maintainer explicitly requested direct implementation without further mocks.
-- The follow-up navigation/settings refinement uses compact rounded navigation
-  rows, consistent collection headings and restrained app-launcher icon tiles.
-  Personal and Administration settings share a bounded content panel on the
-  workspace background, icon-labelled navigation and clearly separated security
-  sections. Appearance choices are comparable tiles; app-settings dialogs use
-  compact section tabs. Continue direct implementation under the maintainer's
-  standing request to skip mocks.
-- Keep primary creation actions in the same place. Files uses a New menu with
-  Folder and File, including Text/Markdown creation. Its menu matches the trigger
-  alignment and is at least as wide as the trigger. Creation buttons share the tonal
-  create action described above in both themes.
-- Avoid promotional app labels, subtitles and footer copy. Keep useful permission,
-  safety and recovery explanations.
+## Theme and controls
 
-## Workspace and scrolling
+- Twilight Afterglow (light) and Nightfall (dark), plus System. Plum/violet
+  structure, orchid/rose actions, neutral text, distinct error/success/warning.
+  Stored `latte`/`mocha` preference values stay compatible.
+- Quiet Twilight controls: outlined fields, square checkboxes, circular radios,
+  accent checked states, rounded neutral scroll thumbs, themed upload buttons.
+  Keep native keyboard behavior, mixed/disabled states and forced colors.
+- Use shared buttons, menus, selects, panes, dialogs and empty/error states. No
+  inline product styles, browser prompt/confirm dialogs or promotional copy.
+- Spacing: 20px desktop / 16px phone pane insets, 16px group and field gaps,
+  56px contact/prayer rows, 20px content headings.
 
-- The desktop workspace has left navigation, middle content and a focused right
-  details/editor pane. Creation and editing use the right pane.
-- Panes are independent. Scrolling the middle list must not move the header,
-  navigation or right pane. The right pane scrolls its own content.
-- In Contacts, only the middle contact list scrolls; the page and open contact on
-  the right must not move with it. Keep list controls outside that scrolling list.
-- Fit the workspace to the available viewport. Use bounded layout regions with
-  internal overflow, rather than letting content make the document taller.
-- Keep detail tabs in a stable frame with a stable scroll gutter. Switching tabs
-  must not resize the entire pane.
-- On phones, use the same complete forms at full width, accessible navigation and
-  explicit return/close controls. Avoid horizontal overflow or compressed desktop
-  panes. Preserve unsaved changes and offer explicit discard.
+## Workspace
 
-## Collection navigation and action menus
+- Left navigation, middle content, focused right details/editor pane. Creation
+  and editing use the right pane.
+- Panes scroll independently and fit the viewport; the document never grows.
+  In Contacts only the middle list scrolls. Detail tabs keep a stable frame.
+- Search results and menus stay above details and editors, including the Files
+  text editor, on desktop and phones. On phones, menus also stay above the bar.
+- Phones use the same complete forms at full width, move focus into opened
+  details and return it to the originating row on close.
 
-- Address books, calendars, notebooks and task lists follow the same collection
-  interaction pattern wherever their operations apply.
-- Each collection row has a three-dot action menu. Selecting the row and opening
-  its menu are separate actions.
-- Put Edit, Share and Delete in that collection's menu, with permission-aware
-  availability. The menu targets the row that opened it, even if another collection
-  is currently selected.
-- Do not display a permanent row of Edit/Share/Delete/Import/Export buttons under
-  an address book. Contacts must follow Calendar's existing collection menu.
-- Import and export belong in app settings, with an explicit collection target.
-  Contacts owns vCard transfers there; Calendar owns ICS transfers there.
-- Destructive actions use the shared confirmation UI and describe their actual
-  target and consequences. Read-only collections do not offer write operations.
-- Menus fit within the viewport, open in an appropriate direction and scroll
-  internally when needed. Use shared keyboard, Escape, outside-click and focus
-  restoration behavior.
-- App settings open from the top-bar gear on desktop and the last sidebar chip on
-  phones. Contacts and Calendar use compact, paged collection lists on desktop and
-  show every collection as a chip on phones. Files storage usage stays at the
-  bottom of its sidebar.
+## Search
 
-## App settings and global settings
+- The top-bar search covers all apps: accessible file names, contacts, calendar
+  resources, Notes content, Tasks, Agent projects/threads and enabled installed
+  apps' own-user data. Never another account's or a disabled app's data.
+- Group results by app with keyboard selection and loading, empty, partial-error
+  and retry states. Bound scans and say when results are truncated.
+- Ctrl/Cmd+K focuses it outside open editors/dialogs; Escape clears it. Apps do
+  not add their own duplicate search or tag/category filter fields.
 
-- All apps use the common app-settings presentation, with General and Keyboard
-  shortcuts where applicable. App preferences persist per user.
-- App settings open in the shared modal pop-up, including Prayer Times. Do not
-  use an editing pane for app preferences. Preserve unsaved form changes on
-  dismissal with the shared explicit discard decision.
-- Keep account-wide preferences in Personal settings and instance-wide controls
-  in Administration. Do not scatter the same preference across apps.
-- Personal settings include Profile, Appearance, Security, Regional settings and
-  Connected applications. Administration includes Appearance, registered
-  Applications, Directory, SCIM and Signing keys as permissions allow.
-- Personal Appearance selects System/Twilight Afterglow/Twilight Nightfall. Administration Appearance
-  customizes the public sign-in logo, with preview and reset to the Dar logo.
-- App passwords use a compact app/Read/Write matrix. Users may select multiple
-  apps and Read, Write or both for each. Display the saved grants clearly.
-  Keep old passwords' existing permissions. Most synchronization clients need
-  both permissions; write-only must not expose resource contents.
-- Save preferences with explicit account scope and revision checks. Preserve
-  other apps' preferences when saving one setting. Every visible setting must
-  actually persist and restore after reload.
+## Collections and menus
 
-## App-specific decisions
+- Address books, calendars, notebooks and task lists share one pattern: select
+  the row; a separate three-dot menu offers permission-aware Edit, Share and
+  Delete for that row, even when another collection is selected.
+- Collection lists page on desktop and show every collection as a chip on phones.
+- Import/export lives in app settings with an explicit target collection
+  (vCard in Contacts, ICS in Calendar, notebooks/task lists in Notes/Tasks).
+- Destructive actions use the shared confirmation, naming the target and effect.
+- Menus fit the viewport, open in the right direction, scroll internally and use
+  shared keyboard, Escape, outside-click and focus-return behavior.
 
-- Files: keep item actions in three-dot menus; Details is a separate menu action.
-  Do not duplicate Rename/Move/Copy/Delete in Details. Preserve permission-aware
-  preview/download, versions, favorites, trash/restore and revision-safe editing.
-- Contacts: use a contact list and independent right details/editor pane. Address
-  books use the shared collection menu. Put name sorting and vCard import/export
-  in Contacts settings.
-- Calendar: default to Month. Place one date/Today control beside period arrows;
-  activating it opens a themed month-grid popover with day selection and an
-  explicit Go to today action. Use Dar controls, keyboard navigation and focus
-  return; no separate Go to date field or native HTML date picker for navigation.
-  Day/week/agenda scroll internally. Month uses six bounded rows with a link to
-  a day when events overflow. Put week start, cancelled-event visibility and ICS
-  transfers in Calendar settings. Put the user's timezone in Personal → Regional
-  settings; retain per-event/task timezone fields.
-- Calendar shows inclusive all-day ending dates in forms and details, translating
-  them to the existing exclusive end in stored/exported calendar data.
-- Notes: preserve exact Markdown, safe preview, autosave/manual save, private
-  recovery drafts and explicit conflict handling.
-- Notes editing should read like a clean document: readable text, a quiet title,
-  compact formatting controls and a small saved/error status. Keep metadata out
-  of the main writing surface. The November 8 refinement options are in
-  [workspace refinement mocks](spacetimedb/workspace-refinement-mocks.html).
-  Layout A, Compact document, is selected: retain the middle note list, use a
-  readable document surface and compact toolbar, and put metadata in a note menu.
-- Notes and Files share source-preserving Markdown formatting controls. Writing
-  uses the normal text color; accent colors identify actions and selection.
-- Block formatting applies at line boundaries. Closing an unsaved note offers
-  save/retry, keep a private recovery draft and close, or explicit discard.
-  Switching notes, views or notebooks uses that same decision and resumes the
-  requested destination only after it succeeds. Keep editing cancels navigation;
-  unavailable draft storage keeps the editor open. Dialog actions wrap to fit.
-  Cancelling departure invalidates an in-flight save's close action. Transient
-  refresh failures retain the editor and offer retry; confirmed access loss closes it.
-  Selected-item recovery actions belong in the visible details pane on phones.
-- Notes and Tasks use the same paged collection rows and owner action menus as
-  Contacts and Calendar. Their collection import/export lives in app settings,
-  with an explicit notebook or task-list target.
-- Notes and Tasks put item commands in row action menus. Task details show
-  readable status, priority, dates and repetition, with a specific Complete or
-  Reopen command. Contact email, phone and supported website values are links.
-- Tasks: preserve the shared list/details pattern, hierarchy, completion,
-  recurrence-slot editing and date/timezone behavior.
-- Prayer Times: layout B was selected November 8. Use a week list and
-  focused right daily timetable; app settings use the shared modal pop-up. Phones open
-  a full-width day with an explicit return to the week and restored row focus.
-  See [the app platform](spacetimedb/app-platform.md). Calculations use Dar's own
-  dependency-free library with explicit method/high-latitude settings and labelled
-  unavailable solar events. It ships as a separate trusted app package.
-- Agent: the November 8 [workspace mock](spacetimedb/agent-workspace-mock.html)
-  is approved. Follow the T3-style composition: projects and threads on the left,
-  conversation/composer in the center, focused changes on the right and
-  collapsible output below. The November 9 follow-up selects A in
-  [T3 parity mocks](spacetimedb/agent-t3-parity-mocks.html) for the Agent's
-  content. The November 11 unified look B returns the Agent to the shared rail and
-  top bar: New thread is the sidebar create button, Agent settings is the top-bar
-  gear, Ctrl/Cmd+K is the shared cross-app search and Ctrl/Cmd+P opens the Agent
-  command palette (actions, threads, projects). The sidebar field filters threads.
-  On phones the thread list is the Agent's home screen with the bottom bar; a
-  thread opens full screen with Back and Conversation/Details/Changes/Terminal
-  tabs. Thread rows are one
-  36px line: a tinted project mark, title and relative age; settle/restore and the
-  row menu replace the age on hover or keyboard focus. Working and Settled shelves
-  sit below active threads. New thread opens a draft headline with a project
-  control; the thread is created only when the draft is saved or run. Default to
-  conversation with a small contextual details card; open the wide review surface
-  on demand. Dock the composer with a circular send/stop action, put save-only in
-  its action menu, use Enter to send and Shift+Enter for a new line. Render safe
-  assistant Markdown, actual run summaries and selectable command output. Preserve
-  independent scroll positions and drafts. See the [parity ledger](spacetimedb/agent-t3-parity.md)
-  for runtime capabilities that a visual selection alone does not implement.
-  Phone views show one panel at a time and preserve drafts. Projects select either
-  a Git repository or a Dar Files folder; blob paths are never project paths.
-  The implementation persists projects, threads, messages and Codex runs. Clearly
-  distinguish saving a message from running it. Use the existing-login Codex
-  provider first, with model selection, live activity/output, Stop and persisted
-  completion/error states. Review changes before applying text edits to Files.
-  Execution launches `codex app-server` per turn with the CLI's saved login
-  (November 11 maintainer revision, superseding direct `codex exec`); do not
-  replace it with an API-key integration. Approval requests are always declined.
-  Do not present sample tool output or simulated assistant replies as real work.
-  The November 9 refinement selects B in
-  [interaction mocks](spacetimedb/agent-flow-refinement-mocks.html), superseding
-  the project tree: show active threads and Working/Settled shelves. New thread
-  opens a project chooser, then focuses the composer without a title form.
-  Derive an initial contextual title from the first message. Project names come
-  from their repository/folder. Adding a Files project uses the folder currently
-  open in the shared DarFilePicker, with one Add action. Use the same picker for
-  Files move/copy destinations; other apps can select files or folders by ID.
-  Agent uses the shared app-settings button and General/Keyboard shortcuts tabs.
-- Scheduling forms offer common repetition, priority and reminder choices.
-  Exact imported values and custom rules remain available in advanced controls;
-  summaries must not simplify schedules they do not understand.
-- Sign-in: show the Dar logo by default and use the saved instance logo when
-  configured. Fall back to Dar when the custom image cannot load.
+## Settings
 
-## Accessibility, state and verification
+- App settings open from the top-bar gear (last chip on phones) in the shared
+  modal with section tabs: General, Keyboard shortcuts, and Import and export
+  where relevant. Unsaved changes require an explicit discard.
+- Personal: Profile, Appearance, Security, Regional settings (timezone) and
+  Connected applications. Administration: Appearance (sign-in logo), Apps,
+  Applications (OIDC clients), Directory, SCIM and Signing keys.
+- Administration → Apps enables/disables Notes, Tasks, Agent and installed apps
+  instance-wide, retaining data. Files, Contacts and Calendar have no toggle.
+- App passwords use an app × Read/Write matrix. Keep old grants; write-only never
+  exposes contents. Show the Files DAV address when issuing a Files password.
+- Preferences save with account scope and revision checks, preserve other apps'
+  values, and must restore after reload.
 
-- Preserve keyboard use, visible focus, accessible names and responsive layouts.
-  Respect reduced motion. Reuse the shared dialog/menu/pane motion behavior.
-- Ctrl/Cmd+K focuses the shared cross-app search outside open editors/dialogs;
-  Escape clears that search. Ctrl/Cmd+S saves the active Notes or Files editor.
-- Phone details move focus into the opened panel and return it to the originating
-  row on close, with a visible fallback if removed. Navigation exposes expanded
-  state, focuses its controls, and restores its opener when dismissed with Escape.
-- Include loading, empty, error, retry, read-only and unsaved/conflict states.
-  Do not silently overwrite another revision or discard a draft.
-- Verify actual persistence, permissions and resulting data, not just a click or
-  screenshot. Browser tests use isolated roots, users and browser contexts.
-- Check desktop and phone layouts, independent scroll regions, action targets,
-  keyboard/focus behavior, overflow and console errors.
-- New visual directions require distinct static mocks and maintainer selection.
-  Fixing an app to follow an already selected shared pattern does not require a
-  new direction. Do not invent a new design merely because adding a feature.
+## Apps
 
-## DAV setup and error guidance
+- **Files:** item actions in three-dot menus; Details is its own action and does
+  not repeat Rename/Move/Copy/Delete. Preview/download, versions, favorites,
+  trash/restore and revision-safe text/Markdown editing. Storage usage sits at
+  the bottom of the sidebar.
+- **Contacts:** list plus right details/editor. Name sort and vCard transfers in
+  settings. Email, phone and website values are links.
+- **Calendar:** Month by default. One date/Today control beside the period arrows
+  opens a themed month-grid popover with Go to today. Day/week/agenda scroll
+  internally; Month has six bounded rows with a link to overflowing days. Week
+  start, cancelled events and ICS in settings; timezone in Regional settings,
+  with per-event timezone fields. Forms show inclusive all-day end dates.
+- **Notes:** clean document surface with a quiet title, compact formatting bar and
+  small saved/error status; metadata in a note menu. Exact Markdown, safe preview,
+  autosave, private recovery drafts and explicit conflicts. Leaving an unsaved
+  note offers save/retry, keep draft and close, or discard, then resumes the
+  requested navigation only after success.
+- **Tasks:** list plus details with readable status, priority, dates and
+  repetition, and a specific Complete/Reopen command. Hierarchy, recurrence
+  scope and timezone behavior are preserved.
+- **Scheduling forms:** common repetition, priority and reminder choices, with
+  advanced controls for exact imported values. Never simplify an unknown rule.
+- **Prayer Times:** week list with a right daily timetable; phones open a
+  full-width day with Back to week and restored focus. Settings in the shared
+  modal. See [app platform](spacetimedb/app-platform.md).
+- **Agent:** threads on the left, conversation and docked composer in the center,
+  review on the right and collapsible output below, inside the shared frame.
+  New thread is the create button; Ctrl/Cmd+P opens the command palette. Thread
+  rows are one 36px line (project mark, title, age; actions on hover/focus) with
+  Working and Settled shelves. On phones the thread list is home and a thread
+  opens full screen with Back and Conversation/Details/Changes/Terminal tabs.
+  Saving a message is distinct from running it; never show simulated output.
+  See [Agent workspace](spacetimedb/agent-workspace.md) and [Codex](codex.md).
+- **Sign-in:** Dar logo by default, the saved instance logo when configured, with
+  a fallback to Dar if it cannot load.
 
-The maintainer reported an empty Files view at `/dav/`, and “no DAV at this URL”
-at `/dav/files/anas`. The source lacked the Files `DAV` response header and the
-generic discovery root did not expose Files. Advertise `DAV: 1` on Files
-responses, including OPTIONS. The root lists a Files home only when that
-credential has Files Read access. Show the explicit per-user Files address when
-issuing a mixed-app password; do not make users guess the path.
+## Accessibility and verification
 
-DAVx⁵ Files mounts are separate from Contacts/Calendar synchronization. Document
-the mount workflow and required grants in [DAV setup](davx5.md). Do not assume
-Contacts/Calendar synchronization proves Files support, or claim Android-device
-verification from server tests alone.
+- Keyboard use, visible focus, accessible names, reduced motion and responsive
+  layouts. Ctrl/Cmd+S saves the active Notes or Files editor.
+- Loading, empty, error, retry, read-only and unsaved/conflict states. Never
+  silently overwrite another revision or discard a draft.
+- Verify real persistence and permissions in a real browser at desktop and phone
+  sizes, with isolated roots, users and browser contexts.
+- A new visual direction needs static mocks and maintainer selection. Applying an
+  already-selected pattern does not.
 
 ## Decision sources
 
-- Root and [application agent guidance](../next/AGENTS.md).
-- [Shared UX decisions and follow-ups](spacetimedb/ux-consistency-audit.md),
-  selected [Material 3 mocks](spacetimedb/ux-consistency-mocks.html) and
-  [reference interaction ledger](spacetimedb/nextcloud-reference/interactions.md).
-- [Calendar refinement](spacetimedb/calendar-workspace.md).
-- Selected [creation/appearance mocks](spacetimedb/creation-appearance-mocks.html)
-  and [sign-in/app-password mock A](spacetimedb/signin-app-password-mocks.html).
-- [Contacts/Calendar scope](spacetimedb/contacts-calendar.md) and
-  [Notes/Tasks scope](spacetimedb/notes-tasks.md).
-- Current maintainer instructions: consistent behavior across apps, Contacts
-  three-dot address-book menus, vCard transfers in settings and independent
-  middle/right scrolling. These refine older documents where they disagree.
+Selected mocks live in `docs/spacetimedb/*-mocks.html` (unified look, Twilight,
+controls, launcher, creation/appearance, sign-in, Contacts/Calendar, Notes/Tasks,
+workspace refinements, Prayer Times, Agent). Scope and limits per area:
+[architecture](spacetimedb/architecture.md),
+[Contacts and Calendar](spacetimedb/contacts-calendar.md),
+[Notes and Tasks](spacetimedb/notes-tasks.md),
+[identity](spacetimedb/identity-provider.md),
+[app platform](spacetimedb/app-platform.md) and the
+[Nextcloud reference](spacetimedb/nextcloud-reference/README.md).

@@ -4,15 +4,17 @@ Installed apps are trusted administrator-approved code. Node hooks and same-orig
 browser code are not sandboxed. Never put secrets in a browser bundle or manifest.
 The SDK is experimental v1; manifests use `apiVersion: 1` and exact package versions.
 
-The host header always searches across apps. The `AppWorkspace` query/onQuery and
-searchLabel props remain accepted for existing app builds, but do not scope the
-global search. Saved own-user records from enabled apps with ownUserData:read are
-searched without exposing record contents in the result snippet. App settings
-use the shared `Dialog` with the `ui-settings-dialog` presentation, not EditorPane.
-Pass `onSettings` to `AppWorkspace` to show the app's settings button in the
-shared top bar; keep a sidebar `nav-item ui-app-settings-entry` button too, as
-phones show it as the last navigation chip.
-Pass `dirty` to Dialog to preserve edits on Escape/close with explicit discard.
+## Host integration
+
+- `AppWorkspace` renders your sidebar, content and optional details inside Dar's
+  shared frame (app rail, top bar, sheets). The top-bar search always covers all
+  apps; `query`, `onQuery` and `searchLabel` are accepted for older builds but do
+  not scope it. Enabled apps' own-user records are searched with
+  `ownUserData:read`, without showing record contents.
+- Pass `onSettings` to show the app's settings gear in the top bar, and keep a
+  sidebar `nav-item ui-app-settings-entry` button too: phones show it as the last
+  chip. Settings use the shared `Dialog` with `ui-settings-dialog`, not EditorPane;
+  pass `dirty` to protect unsaved edits.
 
 ## Build an app outside Dar
 

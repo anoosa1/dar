@@ -1,10 +1,9 @@
 # Dar application
 
-Dar’s Files, Contacts, Calendar, Notes and Tasks app.
+Files, Contacts, Calendar, Notes, Tasks, Agent and installed apps, with a native
+identity provider. Architecture: [docs/spacetimedb/architecture.md](../docs/spacetimedb/architecture.md).
 
 ## Run locally
-
-From the repository root:
 
 ```sh
 nix develop
@@ -12,21 +11,36 @@ npm ci --prefix next
 npm --prefix next run dev
 ```
 
-Open <http://127.0.0.1:4311>. Use the setup key at the path printed by the launcher
-to create your first account.
+Open <http://127.0.0.1:4311> and use the setup key at the printed path to create
+the first account. Data lives in `~/.local/share/dar` (or `$XDG_DATA_HOME/dar`);
+set `DAR_ROOT` for a separate instance. Older `~/.local/share/dar-spacetime` roots
+are not moved automatically: stop Dar and move the directory, or point `DAR_ROOT`
+at it. NixOS uses `/var/lib/dar`.
 
-Data is stored in `~/.local/share/dar` by default (or under
-`XDG_DATA_HOME`). Set `DAR_ROOT` to a fresh directory for a separate instance.
-Existing installations using `~/.local/share/dar-spacetime` should stop Dar and
-move that directory to `~/.local/share/dar` before restarting (only if the new
-destination does not exist), or keep `DAR_ROOT` pointing to the old directory.
-Use the equivalent paths under `XDG_DATA_HOME` if set. The storage format is
-unchanged; no data is moved automatically. NixOS already uses `/var/lib/dar`.
+## Operator commands
 
-## OIDC text configuration
+`npm --prefix next run operator -- <command>` (`dar-operator` in the package), with
+`DAR_ROOT`, `DAR_DATABASE_URL`, `DAR_DATABASE_NAME` and `DAR_DATABASE_TOKEN_FILE`:
 
-Dar provides OIDC sign-in to other applications. Put a JSON file at
-`$DAR_ROOT/oidc.json`, or set `DAR_OIDC_FILE` to an explicit filename:
+| Command | Effect |
+| --- | --- |
+| `backup <dir>` | Consistent backup (format v6) of the database and referenced blobs; pins retained content |
+| `restore <dir>` | Restore into an empty root and database only, never over a live instance |
+| `release-backup <id>` | Release a backup's retention pins so cleanup can reclaim content |
+| `export-files <username> <dir>` | Export one account's files as plain files |
+| `enable-user` / `disable-user <username>` | Change account status; disabling revokes access |
+| `recover-password <username> <file>` | Set a password from a file and revoke sessions |
+| `apps-install`, `apps-list`, `apps-enable`, `apps-disable`, `apps-uninstall` | Manage installed apps; see [docs/apps.md](../docs/apps.md) |
+
+Backups contain credential verifiers and encryption keys: protect them like
+secrets. Restore invalidates sessions, OIDC grants and SCIM credentials. Back up
+before upgrading; a code rollback does not undo schema migrations.
+
+## OIDC clients from JSON
+
+Dar is an OIDC provider (issuer `<origin>/oidc`). Besides Administration and
+`services.dar.oidc.clients` ([deployment](../docs/deployment.md#oidc-clients)),
+clients can be listed in `$DAR_ROOT/oidc.json` or a file named by `DAR_OIDC_FILE`:
 
 ```json
 {
@@ -43,39 +57,26 @@ Dar provides OIDC sign-in to other applications. Put a JSON file at
 }
 ```
 
-Generate a random secret of at least 32 characters, store it in the protected
-`secretFile` readable by Dar, and configure the relying party with the same
-secret and client ID. A trailing newline is removed; relative secret paths resolve
-beside the JSON file. Secrets are encrypted in the database and excluded from
-public client metadata. Public clients use `"type": "public"` and omit
-`secretFile`. PKCE/S256 is required by default and always required for public
-clients. A confidential client that cannot send PKCE (such as Gitea) may set
-`"requirePkce": false`; client-secret authentication remains required. The issuer
-is `<DAR_ORIGIN>/oidc`. See the [Gitea Nix example](../docs/deployment.md#oidc-clients).
-Redirect URLs must be exact HTTPS URLs; development permits loopback HTTP.
-
-Restart Dar to apply changes. Listed IDs are created or updated, including IDs
-originally created through Administration. Unchanged clients retain their grants.
-Changed clients revoke existing grants; omitted clients remain unchanged. Set
-`enabled` to false to disable a client and revoke its grants, or delete it through
-Administration. UI edits to listed clients are overwritten on the next restart.
-The entire file is validated before updates begin; database failures can still
-leave earlier updates applied, and restarting retries safely. A missing default
-file is allowed; an explicit missing file or invalid configuration stops startup.
-See [NixOS configuration](../docs/deployment.md) for declarative client options.
+- `secretFile` holds a random secret of at least 32 characters (trailing newline
+  removed; relative paths resolve beside the JSON file). Secrets are stored
+  encrypted. Public clients use `"type": "public"` and no secret.
+- S256 PKCE is required, always for public clients. A confidential client that
+  cannot send PKCE (such as Gitea) may set `"requirePkce": false`.
+- Redirect URLs must be exact HTTPS URLs; development allows loopback HTTP.
+- Applied on restart. Listed clients are created or updated and override UI
+  edits; changed clients lose existing grants; omitted clients are kept.
+  `"enabled": false` disables a client and revokes its grants.
+- The whole file is validated first. A missing default file is fine; an explicit
+  missing file or invalid configuration stops startup.
 
 ## Verify
 
-```sh
-nix develop --command npm --prefix next run verify
-```
-
-Checks use isolated test data.
+`nix develop --command npm --prefix next run verify` runs typechecks, integration
+tests, real-browser journeys and restart checks against isolated temporary data.
+`node next/scripts/verify.mjs --agent|--identity|--pim|--workspace` runs a subset.
 
 ## Guides
 
-- [Deployment and backups](../docs/deployment.md)
-- [Architecture](../docs/spacetimedb/architecture.md)
-- [DAV sync](../docs/davx5.md)
-- [Notes and Tasks](../docs/spacetimedb/notes-tasks.md)
-- [Identity and provisioning](../docs/spacetimedb/identity-provider.md)
+[Design](../docs/design.md) · [Deployment](../docs/deployment.md) ·
+[DAV sync](../docs/davx5.md) · [Installed apps](../docs/apps.md) ·
+[Codex/Agent](../docs/codex.md) · [Identity](../docs/spacetimedb/identity-provider.md)
