@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar settings revamp — A: Settings hub</title>
+<style>
+/* Page chrome. */
+:root{font-family:var(--font-sans,system-ui,sans-serif);color:var(--foreground,#2b1f2d)}
+body{margin:0}.doc{max-width:1280px;margin:0 auto;padding:4px 0 24px}
+.intro h1{font-size:20px;margin:0 0 6px}.intro p,.frame>p{font-size:13px;line-height:1.6;color:var(--muted-foreground,#6d5f6d);margin:0 0 10px;max-width:900px}
+.frame{margin:0 0 40px}.frame>h2{font-size:15px;margin:0 0 4px}
+.rules{font-size:12px;line-height:1.65;color:var(--muted-foreground,#6d5f6d);columns:2;column-gap:28px;margin:12px 0 0;padding-left:18px}.rules b{color:var(--foreground,#2b1f2d);font-weight:600}
+.fit{width:100%;overflow-x:auto}.board{width:1280px}
+
+/* Twilight tokens (Afterglow / Nightfall), unchanged from theme.css and mock B. */
+.light{color-scheme:light}.dark{color-scheme:dark}
+.screen,.phone{--text:light-dark(#352138,#faeaf3);--muted:light-dark(#755d74,#cfb4ca);--panel:light-dark(#fffafb,#301c2b);--soft:light-dark(#fbf4f6,#26111f);--raised:light-dark(#ffffff,#3a2536);--border:light-dark(#e3d3e0,#553f50);--control:light-dark(#94788f,#a3839c);--accent:light-dark(#73396f,#f2a2a9);--on-accent:light-dark(#fff7fc,#26111f);--tonal:light-dark(#ede3f5,#4d3c73);--on-tonal:light-dark(#4d3c73,#f3eafd);--hover:light-dark(#f3e7ee,#412b3f);--danger:light-dark(#a32745,#ffb2c6);--error-soft:light-dark(#fbe9ee,#4e2436);--success:light-dark(#276045,#b2dec4);--success-soft:light-dark(#e3f0e9,#284136);--warning:light-dark(#854913,#ffc493);--warning-soft:light-dark(#fbe9d8,#4b3429);--rose:light-dark(#a94a76,#d889af);--scrim:light-dark(#26111f55,#100810a0);
+ font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--text);background:var(--soft);-webkit-font-smoothing:antialiased}
+.screen *,.phone *{box-sizing:border-box}
+svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.muted{color:var(--muted)}.num{font-variant-numeric:tabular-nums}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+kbd{font:11px/18px ui-monospace,monospace;color:var(--muted);border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;padding:0 6px;background:var(--panel);white-space:nowrap}
+
+/* Unified look B frame: rail, top bar, sheets. */
+.screen{position:relative;height:760px;border:1px solid var(--border);border-radius:12px;overflow:hidden;display:grid;grid-template-columns:72px minmax(0,1fr);grid-template-rows:56px minmax(0,1fr)}
+.rail{grid-row:1/3;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 0 12px}
+.rail .logo{width:36px;height:36px;border-radius:11px;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-weight:750;font-size:16px;margin:0 0 14px}
+.rail .app{display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;padding:2px 0 6px;font-size:10px;font-weight:550;color:var(--muted)}
+.rail .app i{display:grid;place-items:center;width:52px;height:30px;border-radius:15px}.rail .app i svg{width:18px;height:18px}
+.rail .app.on{color:var(--text)}.rail .app.on i{background:var(--tonal);color:var(--on-tonal)}
+.rail .end{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:10px}
+.avatar{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--tonal);color:var(--on-tonal);font-size:11px;font-weight:650;flex:none}
+.top{display:flex;align-items:center;gap:8px;padding:0 12px 0 4px;min-width:0}
+.top h1{font-size:18px;font-weight:600;margin:0;width:232px;flex:none;padding-left:12px}
+.gsearch{flex:0 1 600px;margin:0 auto;display:flex;align-items:center;gap:10px;height:40px;padding:0 8px 0 14px;border-radius:20px;background:var(--panel);border:1px solid var(--border);color:var(--muted);font-size:13px}
+.gsearch>svg{width:17px;height:17px}.gsearch kbd{margin-left:auto}
+.top .tr{display:flex;align-items:center;gap:2px;flex:none;width:80px;justify-content:flex-end}
+.ib{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:18px;color:var(--muted);flex:none}.ib.on{background:var(--tonal);color:var(--on-tonal)}.ib.sm{width:30px;height:30px}
+.wrk{display:grid;grid-template-columns:240px minmax(0,1fr) 380px;gap:8px;padding:0 8px 8px 0;min-height:0;min-width:0}
+.wrk.two{grid-template-columns:240px minmax(0,1fr)}
+.side{display:flex;flex-direction:column;min-height:0;padding:0 4px 0 0}
+.fab{display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 18px 0 14px;margin:2px 0 14px 4px;border-radius:16px;background:var(--tonal);color:var(--on-tonal);font-size:14px;font-weight:600;width:max-content;box-shadow:0 1px 3px #0000001f,0 2px 6px #00000014}.fab svg{width:20px;height:20px}
+.row{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px;border-radius:18px;white-space:nowrap;min-width:0}
+.row>svg{color:var(--muted)}.row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.row .m{margin-left:auto;font-size:11px;color:var(--muted)}
+.row.sel{background:var(--tonal);color:var(--on-tonal);font-weight:550}.row.sel>svg{color:var(--on-tonal)}
+.grp{display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;font-size:12px;font-weight:550;color:var(--muted)}
+.sh{background:var(--panel);border:1px solid var(--border);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;min-height:0;min-width:0}
+.head{display:flex;align-items:center;gap:6px;height:56px;padding:0 12px 0 20px;flex:none}.head h2{margin:0;font-size:16px;font-weight:600}.head.line{border-bottom:1px solid var(--border)}
+.body{padding:20px;overflow:hidden;min-height:0;flex:1}
+
+/* Controls (Quiet Twilight). */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border-radius:18px;font-size:13px;font-weight:550;white-space:nowrap;color:var(--accent);flex:none}
+.btn.pri{background:var(--accent);color:var(--on-accent)}.btn.out{border:1px solid var(--control);color:var(--text)}.btn.ton{background:var(--tonal);color:var(--on-tonal)}.btn.dng{color:var(--danger)}.btn.sm{height:30px;padding:0 12px;font-size:12px}
+.btn.dis{opacity:.45}
+.fld{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:550;color:var(--muted)}
+.in{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid var(--control);border-radius:10px;background:var(--panel);color:var(--text);font-size:13px;font-weight:400}
+.in.foc{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}.in.bad{border-color:var(--danger);box-shadow:0 0 0 1px var(--danger)}
+.in .cv{margin-left:auto;color:var(--muted)}.in small{margin-left:auto;color:var(--muted);font-size:12px}
+.hint{font-size:12px;font-weight:400;color:var(--muted);line-height:1.5}.hint.bad{color:var(--danger)}
+.tg{width:40px;height:24px;border-radius:12px;background:var(--accent);position:relative;flex:none}.tg::before{content:"";position:absolute;right:3px;top:3px;width:18px;height:18px;border-radius:50%;background:var(--on-accent)}
+.tg.off{background:var(--soft);border:1px solid var(--control)}.tg.off::before{left:3px;right:auto;top:2px;background:var(--control)}
+.radio{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--control);flex:none}.radio.on{border:5px solid var(--accent)}
+.cb{width:18px;height:18px;border-radius:4px;border:1.5px solid var(--control);flex:none;display:grid;place-items:center}.cb.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.cb.on::before{content:"";width:4px;height:8px;border:solid currentColor;border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
+.seg{display:inline-flex;border:1px solid var(--control);border-radius:18px;padding:2px;gap:2px;flex:none}.seg span{height:30px;padding:0 14px;border-radius:15px;display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);font-weight:500}.seg span.on{background:var(--tonal);color:var(--on-tonal);font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:12px;background:var(--hover);color:var(--muted);font-size:11px;font-weight:550;white-space:nowrap}.chip.ac{background:var(--tonal);color:var(--on-tonal)}.chip.ok{background:var(--success-soft);color:var(--success)}.chip.warn{background:var(--warning-soft);color:var(--warning)}
+.step{display:inline-flex;align-items:center;border:1px solid var(--control);border-radius:10px;height:36px;overflow:hidden}.step i{display:grid;place-items:center;width:30px;height:100%;color:var(--muted)}.step b{min-width:34px;text-align:center;font-weight:550;font-variant-numeric:tabular-nums}
+.focusring{outline:2px solid var(--accent);outline-offset:2px}
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:5}
+.toast{display:flex;align-items:center;gap:12px;padding:8px 8px 8px 16px;border-radius:12px;background:var(--text);color:var(--panel);font-size:13px;box-shadow:0 8px 24px #0003}.toast .btn{color:inherit;height:30px;text-decoration:underline}
+.err{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--error-soft);color:var(--danger);font-size:12px;line-height:1.5}.err b{display:block}.err .btn{margin-left:auto}
+.note{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--soft);color:var(--muted);font-size:12px;line-height:1.5}
+
+/* Phones. */
+.phones{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+.phone{position:relative;width:360px;height:760px;border:1px solid var(--border);border-radius:28px;overflow:hidden;display:flex;flex-direction:column;background:var(--soft)}
+.phone .status{height:28px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:12px;font-weight:600}
+.cap{font-size:12px;color:var(--muted-foreground,#6d5f6d);margin:8px 0 0;max-width:360px;line-height:1.5}
+.bnav{display:flex;justify-content:space-around;height:72px;padding:10px 4px 14px;border-top:1px solid var(--border);background:var(--soft);flex:none;margin-top:auto}
+.bnav span{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--muted);font-weight:550}.bnav i{display:grid;place-items:center;width:56px;height:30px;border-radius:15px}.bnav i svg{width:20px;height:20px}.bnav span.on{color:var(--text)}.bnav span.on i{background:var(--tonal);color:var(--on-tonal)}
+
+/* A: one larger shared settings modal with grouped rows and a save bar. */
+.modal{position:absolute;z-index:6;left:calc(50% + 36px);top:50%;transform:translate(-50%,-50%);width:820px;height:600px;background:var(--panel);border:1px solid var(--border);border-radius:24px;box-shadow:0 24px 64px #00000050;display:grid;grid-template-columns:212px minmax(0,1fr);grid-template-rows:76px minmax(0,1fr) auto;overflow:hidden}
+.modal.wide{width:1040px;height:660px;grid-template-columns:200px minmax(0,1fr) 300px}
+.mhead{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:0 16px 0 24px;border-bottom:1px solid var(--border)}
+.mhead .tile{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--tonal);color:var(--on-tonal)}.mhead .tile svg{width:20px;height:20px}
+.mhead h2{margin:0;font-size:18px;font-weight:600}.mhead p{margin:2px 0 0;font-size:12px;color:var(--muted)}.mhead .ib{margin-left:auto}
+.mnav{padding:12px 8px 12px 12px;display:flex;flex-direction:column;gap:2px;border-right:1px solid var(--border);background:var(--soft)}
+.mnav .foot{margin-top:auto;padding:10px 12px;font-size:11px;color:var(--muted);line-height:1.5}
+.mbody{padding:20px 28px 24px;overflow:hidden;min-height:0;display:flex;flex-direction:column;gap:20px}
+.mbody h3{margin:0;font-size:20px;font-weight:600}.mbody h3+p{margin:-14px 0 0;color:var(--muted);font-size:13px}
+.group>h4{margin:0 0 8px 4px;font-size:12px;font-weight:600;color:var(--muted)}
+.card{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--panel)}
+.set{position:relative;display:flex;align-items:center;gap:16px;min-height:64px;padding:12px 16px;border-top:1px solid var(--border)}.set:first-child{border-top:0}
+.set .lbl{flex:1;min-width:0}.set .lbl b{display:block;font-size:14px;font-weight:550}.set .lbl small{display:block;color:var(--muted);font-size:12px;margin-top:2px;line-height:1.45}
+.set.dirty::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+.set.stack{flex-direction:column;align-items:stretch;gap:12px}
+.savebar{grid-column:2/-1;display:flex;align-items:center;gap:8px;padding:12px 20px 12px 28px;border-top:1px solid var(--border);background:var(--panel)}
+.savebar .st{display:flex;align-items:center;gap:8px;margin-right:auto;font-size:13px}.savebar .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.savebar.clean .st{color:var(--muted)}
+.preview{grid-row:2/4;grid-column:3;background:var(--soft);border-left:1px solid var(--border);padding:20px;display:flex;flex-direction:column;gap:12px}
+.preview h4{margin:0;font-size:14px;font-weight:600}.preview>p{margin:-8px 0 0;font-size:12px;color:var(--muted)}
+.pv{display:flex;align-items:center;gap:10px;height:44px;padding:0 12px;border-radius:12px;background:var(--panel);font-size:13px}.pv time{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:550}.pv s{color:var(--muted);font-size:11px;text-decoration:line-through;margin-left:8px;font-weight:400}.pv.ch{box-shadow:inset 3px 0 var(--accent)}.pv.ch time{color:var(--accent)}.pv.sr{color:var(--muted)}
+.method{display:flex;align-items:center;gap:12px;padding:11px 14px;border-top:1px solid var(--border)}.method:first-child{border-top:0}.method b{font-weight:550;font-size:13px}.method small{margin-left:auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.method.on{background:var(--tonal);color:var(--on-tonal)}.method.on small{color:inherit;opacity:.8}
+.offs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 16px}.offs .fld{font-weight:500;color:var(--text);font-size:13px;flex-direction:row;align-items:center;justify-content:space-between}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+/* Background apps under the scrim (simplified). */
+.month{display:grid;grid-template-columns:repeat(7,1fr);grid-template-rows:28px repeat(6,1fr);flex:1;border-top:1px solid var(--border)}
+.month span{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px 8px;font-size:12px;color:var(--muted)}.month span.h{border-bottom:0;font-weight:600;font-size:11px}
+.month em{display:block;margin-top:4px;padding:2px 6px;border-radius:6px;background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text);font-style:normal;font-size:11px}
+.calrow{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px;font-size:13px}.calrow i{width:12px;height:12px;border-radius:4px;background:var(--accent)}
+/* Settings page. */
+.page{padding:24px 28px;display:flex;flex-direction:column;gap:20px;overflow:hidden}
+.page>h3{margin:0;font-size:20px;font-weight:600}.page>h3+p{margin:-14px 0 0;color:var(--muted)}
+.chead{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)}.chead b{font-size:14px;font-weight:600}.chead .btn{margin-left:auto}
+.pw{display:flex;align-items:center;gap:14px;min-height:64px;padding:10px 16px;border-top:1px solid var(--border)}.pw:first-of-type{border-top:0}
+.pw .ico{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--hover);color:var(--muted)}
+.pw .lbl{flex:1;min-width:0}.pw .lbl b{display:block;font-size:14px;font-weight:550}.pw .lbl .chips{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+.matrix{width:100%;border-collapse:collapse;font-size:13px}.matrix th{font-size:12px;font-weight:550;color:var(--muted);text-align:center;padding:8px;border-bottom:1px solid var(--border)}.matrix th:first-child{text-align:left}
+.matrix td{padding:0 8px;height:48px;border-bottom:1px solid var(--border)}.matrix td:not(:first-child){text-align:center}.matrix td .cb{margin:0 auto}.matrix td:first-child{display:flex;align-items:center;gap:10px;height:48px}
+/* Prayer Times A. */
+.tt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.tt th{height:36px;font-size:12px;font-weight:550;color:var(--muted);text-align:right;padding:0 14px;border-bottom:1px solid var(--border)}.tt th:first-child{text-align:left}
+.tt td{height:56px;padding:0 14px;text-align:right;font-variant-numeric:tabular-nums;border-bottom:1px solid var(--border)}.tt td:first-child{text-align:left}
+.tt td:first-child b{display:block;font-weight:550;font-size:14px}.tt td:first-child small{color:var(--muted);font-size:11px}
+.tt .sr{color:var(--muted)}.tt tr.today td{background:var(--tonal);color:var(--on-tonal);border-bottom-color:transparent}.tt tr.today td:first-child{border-radius:14px 0 0 14px}.tt tr.today td:last-child{border-radius:0 14px 14px 0}.tt tr.today small{color:inherit;opacity:.8}
+.tt td .nx{display:inline-block;padding:4px 10px;margin-right:-10px;border-radius:12px;background:var(--accent);color:var(--on-accent);font-weight:600}
+.tt tr.past td{color:var(--muted)}
+.hero{border-radius:16px;background:var(--tonal);color:var(--on-tonal);padding:16px 18px}
+.hero small{font-size:12px;font-weight:550;opacity:.85}.hero .big{display:flex;align-items:baseline;gap:10px;margin:4px 0 12px}.hero .big b{font-size:28px;font-weight:650;font-variant-numeric:tabular-nums}.hero .big span{font-size:15px;font-weight:600}
+.bar{height:6px;border-radius:3px;background:color-mix(in srgb,var(--on-tonal) 18%,transparent);overflow:hidden}.bar i{display:block;height:100%;width:62%;border-radius:3px;background:var(--accent)}
+.hero .ends{display:flex;justify-content:space-between;font-size:11px;margin-top:6px;opacity:.85;font-variant-numeric:tabular-nums}
+.prow{display:flex;align-items:center;gap:12px;height:56px;padding:0 14px;border-bottom:1px solid var(--border);font-size:14px}.prow time{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:550}.prow small{display:block;font-size:11px;color:var(--muted)}
+.prow.past{color:var(--muted)}.prow.past time{font-weight:400}.prow.nxt{background:var(--tonal);color:var(--on-tonal);border-radius:14px;border-bottom-color:transparent}.prow.nxt small{color:inherit;opacity:.8}
+.prow .ck{display:grid;place-items:center;width:28px;height:28px;border-radius:14px;background:var(--hover);color:var(--muted)}.prow.nxt .ck{background:var(--accent);color:var(--on-accent)}
+.loc{margin:auto 4px 0;border:1px solid var(--border);border-radius:16px;padding:14px;background:var(--panel);font-size:12px;line-height:1.6}.loc b{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px}.loc .btn{margin:8px 0 0 -12px}
+/* Phones A. */
+.pfull{flex:1;display:flex;flex-direction:column;background:var(--panel);min-height:0}
+.phead{display:flex;align-items:center;gap:8px;height:56px;padding:0 8px 0 4px;flex:none;border-bottom:1px solid var(--border)}.phead .ib{width:44px;height:44px;border-radius:22px}.phead h2{margin:0;font-size:17px;font-weight:600}
+.pchips{display:flex;gap:8px;padding:12px 16px 4px;flex:none;overflow:hidden}.pchips span{height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--border);display:inline-flex;align-items:center;font-size:13px;white-space:nowrap}.pchips span.on{background:var(--tonal);color:var(--on-tonal);border-color:transparent;font-weight:600}
+.pscroll{flex:1;padding:12px 16px;display:flex;flex-direction:column;gap:16px;overflow:hidden}
+.pbar{display:flex;gap:8px;align-items:center;padding:12px 16px 20px;border-top:1px solid var(--border);flex:none}.pbar .btn{flex:1}
+.list .set{min-height:56px}.list .set>svg:last-child{color:var(--muted)}
+.list .set .ico{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:var(--hover);color:var(--muted)}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+<symbol id="image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="star" viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+<symbol id="users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></symbol>
+<symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+<symbol id="cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></symbol>
+<symbol id="contact" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+<symbol id="note" viewBox="0 0 24 24"><path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M8 13h8M8 17h5"/></symbol>
+<symbol id="check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+<symbol id="task" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 12l3 3 5-6"/></symbol>
+<symbol id="agent" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+<symbol id="moon" viewBox="0 0 24 24"><path d="M20 13.5A8 8 0 1 1 10.5 4a6.5 6.5 0 0 0 9.5 9.5z"/></symbol>
+<symbol id="gear" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+<symbol id="chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+<symbol id="chevd" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+<symbol id="dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
+<symbol id="pl" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+<symbol id="pr" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+<symbol id="up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+<symbol id="down" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+<symbol id="link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+<symbol id="grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+<symbol id="list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></symbol>
+<symbol id="mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
+<symbol id="phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></symbol>
+<symbol id="pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></symbol>
+<symbol id="bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+<symbol id="repeat" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/></symbol>
+<symbol id="shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+<symbol id="key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="5"/><path d="M11.5 11.5L21 2M16 7l3 3"/></symbol>
+<symbol id="home" viewBox="0 0 24 24"><path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+<symbol id="flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4s1.5-1 4-1 4 2 6.5 2S19 4 19 4v10s-1.5 1-3.5 1S12 13 9.5 13 5 14 5 14"/></symbol>
+<symbol id="tag" viewBox="0 0 24 24"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="8" cy="8" r="1.3"/></symbol>
+<symbol id="edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+<symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="cloud" viewBox="0 0 24 24"><path d="M18 10h-1.3A7 7 0 1 0 9 19h9a4.5 4.5 0 0 0 0-9z"/></symbol>
+<symbol id="alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></symbol>
+<symbol id="sort" viewBox="0 0 24 24"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></symbol>
+<symbol id="inbox" viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6z"/></symbol>
+<symbol id="minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+<symbol id="dl" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
+<symbol id="ul" viewBox="0 0 24 24"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></symbol>
+<symbol id="refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
+<symbol id="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+<symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+<symbol id="keyb" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></symbol>
+<symbol id="apps" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></symbol>
+<symbol id="sunrise" viewBox="0 0 24 24"><path d="M4 18h16M7 14a5 5 0 0 1 10 0M12 4v3M5 8l1.5 1.5M19 8l-1.5 1.5"/></symbol>
+</defs></svg>
+
+<div class="doc">
+<div class="intro">
+<h1>Settings revamp — A: Settings hub</h1>
+<p>A keeps today's model and makes it calmer. App settings stay a centered modal, but it gets bigger, with vertical sections on the left and settings shown as rows grouped into cards. Each row puts the label and a one-line explanation on the left and the control on the right. Nothing saves until you press Save. A save bar at the bottom counts unsaved changes, and a small accent mark shows which rows changed. The Dar settings page uses the same rows and cards, and editing happens in the right pane. In Prayer Times, the week becomes a timetable grid, and its settings get a live preview of today's times.</p>
+<ul class="rules">
+<li><b>One modal for every app.</b> 820×600 on desktop with sections on the left: General, Import and export, Keyboard shortcuts. App icon and "Saved for your account" in the header.</li>
+<li><b>Rows, not stacked fields.</b> A label plus a short explanation on the left, the control on the right. Two or three choices use a segmented control, on/off uses a switch, and longer lists use the shared select.</li>
+<li><b>Explicit save stays.</b> The save bar shows "N unsaved changes" with Discard and Save. Closing while dirty uses the shared discard confirmation. After saving, the bar reads "All changes saved".</li>
+<li><b>Cross-links, not duplicates.</b> Calendar shows the account timezone read-only with a link to Regional settings instead of a second timezone control.</li>
+<li><b>Dar settings page.</b> The same cards and rows, grouped under Personal and Administration. Creating and editing (app passwords, OIDC clients, people) opens in the right pane.</li>
+<li><b>Prayer Times.</b> The week becomes a 7×6 timetable with today and the next prayer highlighted. The day pane gets a countdown card. Settings get a preview column showing the new times before you save.</li>
+</ul>
+</div>
+
+<!-- A1 -->
+<section class="frame"><h2>A1 · Calendar settings — light, one unsaved change</h2>
+<p>The modal sits over the frame. Week begins was changed from Monday to Sunday, so it shows the accent mark and the bar counts it. The timezone row is read-only and links to Regional settings, where it is actually edited.</p>
+<div class="fit"><div class="board"><div class="screen light">
+<nav class="rail"><span class="logo">D</span><span class="app"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app"><i><svg class="i"><use href="#contact"/></svg></i>Contacts</span><span class="app on"><i><svg class="i"><use href="#cal"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app"><i><svg class="i"><use href="#moon"/></svg></i>Prayer</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="app" style="padding:0"><i><svg class="i"><use href="#gear"/></svg></i></span><span class="avatar">AR</span></div></nav>
+<div class="top"><h1>Calendar</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search Dar<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib on"><svg class="i"><use href="#gear"/></svg></span></div></div>
+<div class="wrk two">
+ <aside class="side"><span class="fab"><svg class="i"><use href="#plus"/></svg>New event</span><div class="grp">Calendars</div><div class="calrow"><i></i>Personal</div><div class="calrow"><i style="background:var(--rose)"></i>Family</div><div class="calrow"><i style="background:var(--success)"></i>Work</div></aside>
+ <main class="sh"><div class="head"><h2>November 2026</h2></div><div class="month">
+  <span class="h">Mon</span><span class="h">Tue</span><span class="h">Wed</span><span class="h">Thu</span><span class="h">Fri</span><span class="h">Sat</span><span class="h">Sun</span>
+  <span>26</span><span>27</span><span>28</span><span>29</span><span>30</span><span>31</span><span>1</span><span>2</span><span>3<em>Dentist</em></span><span>4</span><span>5</span><span>6<em>Dinner</em></span><span>7</span><span>8</span><span>9</span><span>10</span><span>11<em>Design review</em></span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>19<em>Flight</em></span><span>20</span><span>21</span><span>22</span><span>23</span><span>24</span><span>25</span><span>26</span><span>27</span><span>28</span><span>29</span><span>30</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span></div></main>
+</div>
+<div class="scrim"></div>
+<div class="modal" role="dialog" aria-label="Calendar settings">
+ <div class="mhead"><span class="tile"><svg class="i"><use href="#cal"/></svg></span><div><h2>Calendar settings</h2><p>Saved for your account on this instance</p></div><span class="ib"><svg class="i"><use href="#x"/></svg></span></div>
+ <nav class="mnav"><div class="row sel"><svg class="i"><use href="#gear"/></svg><span class="t">General</span></div><div class="row"><svg class="i"><use href="#dl"/></svg><span class="t">Import and export</span></div><div class="row"><svg class="i"><use href="#keyb"/></svg><span class="t">Keyboard shortcuts</span></div><div class="foot">Timezone and language live in Dar settings → Regional settings.</div></nav>
+ <div class="mbody">
+  <h3>General</h3><p>How Calendar shows your events.</p>
+  <div class="group"><h4>Display</h4><div class="card">
+   <div class="set dirty"><div class="lbl"><b>Week begins</b><small>Used by Month and Week views and the date picker</small></div><span class="seg"><span>Monday</span><span class="on">Sunday</span></span></div>
+   <div class="set"><div class="lbl"><b>Show cancelled events</b><small>Cancelled events appear struck through instead of hidden</small></div><span class="tg off"></span></div>
+  </div></div>
+  <div class="group"><h4>Time</h4><div class="card">
+   <div class="set"><div class="lbl"><b>Timezone</b><small>America/Toronto · events with their own timezone keep it</small></div><span class="btn out sm">Regional settings<svg class="i"><use href="#chev"/></svg></span></div>
+  </div></div>
+ </div>
+ <div class="savebar"><span class="st"><span class="dot"></span>1 unsaved change</span><span class="btn">Discard</span><span class="btn pri">Save settings</span></div>
+</div>
+</div></div></div></section>
+
+<!-- A2 -->
+<section class="frame"><h2>A2 · Dar settings → Security — dark, creating an app password in the right pane</h2>
+<p>The Dar settings page uses the same cards. Each app password shows its access as chips, and a write-only grant says it can't read contents. The Create button opens the app × Read/Write matrix in the right pane, and the Files DAV address appears once Files is checked.</p>
+<div class="fit"><div class="board"><div class="screen dark">
+<nav class="rail"><span class="logo">D</span><span class="app"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app"><i><svg class="i"><use href="#contact"/></svg></i>Contacts</span><span class="app"><i><svg class="i"><use href="#cal"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app"><i><svg class="i"><use href="#moon"/></svg></i>Prayer</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="app on" style="padding:0"><i><svg class="i"><use href="#gear"/></svg></i></span><span class="avatar">AR</span></div></nav>
+<div class="top"><h1>Settings</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search Dar<kbd>Ctrl K</kbd></div><div class="tr"></div></div>
+<div class="wrk">
+ <aside class="side">
+  <div class="grp">Personal</div>
+  <div class="row"><svg class="i"><use href="#contact"/></svg><span class="t">Profile</span></div><div class="row"><svg class="i"><use href="#sun"/></svg><span class="t">Appearance</span></div><div class="row sel"><svg class="i"><use href="#shield"/></svg><span class="t">Security</span><span class="m">3</span></div><div class="row"><svg class="i"><use href="#globe"/></svg><span class="t">Regional settings</span></div><div class="row"><svg class="i"><use href="#link"/></svg><span class="t">Connected applications</span></div>
+  <div class="grp" style="margin-top:12px">Administration</div>
+  <div class="row"><svg class="i"><use href="#image"/></svg><span class="t">Appearance</span></div><div class="row"><svg class="i"><use href="#apps"/></svg><span class="t">Apps</span></div><div class="row"><svg class="i"><use href="#key"/></svg><span class="t">Applications</span></div><div class="row"><svg class="i"><use href="#users"/></svg><span class="t">Directory</span></div><div class="row"><svg class="i"><use href="#refresh"/></svg><span class="t">SCIM</span></div><div class="row"><svg class="i"><use href="#lock"/></svg><span class="t">Signing keys</span></div>
+ </aside>
+ <main class="sh"><div class="page">
+  <h3>Security</h3><p>Your password and the app passwords that sync with Dar.</p>
+  <div class="card"><div class="set"><div class="lbl"><b>Password</b><small>Used to sign in to Dar in a browser</small></div><span class="btn out sm">Change password</span></div></div>
+  <div class="card">
+   <div class="chead"><b>App passwords</b><span class="chip">3</span><span class="btn ton sm"><svg class="i"><use href="#plus"/></svg>New app password</span></div>
+   <div class="pw"><span class="ico"><svg class="i"><use href="#phone"/></svg></span><div class="lbl"><b>DAVx⁵ on phone</b><div class="chips"><span class="chip ac">Contacts · Read, Write</span><span class="chip ac">Calendar · Read, Write</span><span class="chip ac">Tasks · Read, Write</span></div></div><span class="muted small" style="font-size:12px">Created 2 Oct</span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+   <div class="pw"><span class="ico"><svg class="i"><use href="#mail"/></svg></span><div class="lbl"><b>Thunderbird</b><div class="chips"><span class="chip ac">Contacts · Read</span><span class="chip ac">Calendar · Read, Write</span></div></div><span class="muted" style="font-size:12px">Created 14 Sep</span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+   <div class="pw"><span class="ico"><svg class="i"><use href="#cloud"/></svg></span><div class="lbl"><b>Backup script</b><div class="chips"><span class="chip ac">Files · Write</span><span class="chip warn">Write-only · can't read contents</span></div></div><span class="muted" style="font-size:12px">Created 1 Aug</span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+  </div>
+ </div></main>
+ <aside class="sh"><div class="head line"><h2>New app password</h2><span class="ib" style="margin-left:auto"><svg class="i"><use href="#x"/></svg></span></div>
+  <div class="body" style="display:flex;flex-direction:column;gap:16px">
+   <label class="fld">Name<span class="in foc">Work laptop</span></label>
+   <div class="fld">Access<table class="matrix"><thead><tr><th>App</th><th>Read</th><th>Write</th></tr></thead><tbody>
+    <tr><td><svg class="i"><use href="#folder"/></svg>Files</td><td><span class="cb on"></span></td><td><span class="cb on"></span></td></tr>
+    <tr><td><svg class="i"><use href="#contact"/></svg>Contacts</td><td><span class="cb on"></span></td><td><span class="cb"></span></td></tr>
+    <tr><td><svg class="i"><use href="#cal"/></svg>Calendar</td><td><span class="cb on"></span></td><td><span class="cb on"></span></td></tr>
+    <tr><td><svg class="i"><use href="#task"/></svg>Tasks</td><td><span class="cb"></span></td><td><span class="cb"></span></td></tr></tbody></table></div>
+   <div class="note"><svg class="i"><use href="#info"/></svg><span>Files DAV address<br><span class="mono" style="color:var(--text)">https://dar.example/dav/files/alex/</span></span></div>
+   <label class="fld">Expires in days<span class="in">90<small>optional</small></span></label>
+  </div>
+  <div class="savebar" style="grid-column:auto;padding-left:20px"><span class="st"></span><span class="btn">Cancel</span><span class="btn pri">Create password</span></div>
+ </aside>
+</div>
+</div></div></div></section>
+
+<!-- A3 -->
+<section class="frame"><h2>A3 · Prayer Times — light, week timetable and today's day pane</h2>
+<p>The week is one table instead of seven rows that each need opening. Today's row is tonal, the next prayer is an accent pill, and Sunrise is muted because it's a solar event, not a prayer. The day pane opens with a countdown card and a progress bar from the last prayer to the next. The location summary moves to the bottom of the sidebar with an Edit link to settings.</p>
+<div class="fit"><div class="board"><div class="screen light">
+<nav class="rail"><span class="logo">D</span><span class="app"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app"><i><svg class="i"><use href="#contact"/></svg></i>Contacts</span><span class="app"><i><svg class="i"><use href="#cal"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app on"><i><svg class="i"><use href="#moon"/></svg></i>Prayer</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="app" style="padding:0"><i><svg class="i"><use href="#gear"/></svg></i></span><span class="avatar">AR</span></div></nav>
+<div class="top"><h1>Prayer Times</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search Dar<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib"><svg class="i"><use href="#gear"/></svg></span></div></div>
+<div class="wrk">
+ <aside class="side"><div class="row"><svg class="i"><use href="#sun"/></svg><span class="t">Today</span></div><div class="row sel"><svg class="i"><use href="#cal"/></svg><span class="t">This week</span></div>
+  <div class="loc"><b><svg class="i"><use href="#pin"/></svg>Toronto</b><span class="muted">43.653, −79.383<br>America/Toronto<br>ISNA · Standard Asr</span><br><span class="btn sm">Edit location and method</span></div></aside>
+ <main class="sh"><div class="head"><div><small class="muted" style="font-size:12px">Toronto</small><h2>9 – 15 November 2026</h2></div><span style="margin-left:auto;display:flex;gap:4px;align-items:center"><span class="ib"><svg class="i"><use href="#back"/></svg></span><span class="btn out sm">Today</span><span class="ib"><svg class="i"><use href="#chev"/></svg></span></span></div>
+  <div style="padding:4px 12px 0;flex:1"><table class="tt"><thead><tr><th>Day</th><th>Fajr</th><th>Sunrise</th><th>Dhuhr</th><th>Asr</th><th>Maghrib</th><th>Isha</th></tr></thead><tbody>
+   <tr class="past"><td><b>Monday</b><small>9 Nov</small></td><td>5:50</td><td class="sr">7:05</td><td>12:10</td><td>2:39</td><td>4:58</td><td>6:13</td></tr>
+   <tr class="past"><td><b>Tuesday</b><small>10 Nov</small></td><td>5:51</td><td class="sr">7:07</td><td>12:10</td><td>2:38</td><td>4:57</td><td>6:12</td></tr>
+   <tr class="today"><td><b>Wednesday</b><small>Today</small></td><td>5:52</td><td class="sr">7:08</td><td>12:10</td><td><span class="nx">2:37</span></td><td>4:56</td><td>6:11</td></tr>
+   <tr><td><b>Thursday</b><small>12 Nov</small></td><td>5:53</td><td class="sr">7:09</td><td>12:10</td><td>2:36</td><td>4:54</td><td>6:10</td></tr>
+   <tr><td><b>Friday</b><small>13 Nov</small></td><td>5:55</td><td class="sr">7:11</td><td>12:10</td><td>2:35</td><td>4:53</td><td>6:09</td></tr>
+   <tr><td><b>Saturday</b><small>14 Nov</small></td><td>5:56</td><td class="sr">7:12</td><td>12:11</td><td>2:35</td><td>4:52</td><td>6:08</td></tr>
+   <tr><td><b>Sunday</b><small>15 Nov</small></td><td>5:57</td><td class="sr">7:13</td><td>12:11</td><td>2:34</td><td>4:51</td><td>6:08</td></tr></tbody></table>
+  <p class="muted" style="font-size:12px;margin:16px 14px">Calculated estimates. Check your local mosque's timetable.</p></div></main>
+ <aside class="sh"><div class="head line"><h2>Wednesday, 11 November</h2><span class="ib" style="margin-left:auto"><svg class="i"><use href="#x"/></svg></span></div>
+  <div class="body" style="display:flex;flex-direction:column;gap:12px">
+   <div class="hero"><small>Next prayer</small><div class="big"><span>Asr</span><b>2:37 PM</b></div><div class="bar"><i></i></div><div class="ends"><span>Dhuhr 12:10</span><span>in 54 min</span><span>Asr 2:37</span></div></div>
+   <div>
+    <div class="prow past"><span class="ck"><svg class="i"><use href="#check"/></svg></span>Fajr<time>5:52</time></div>
+    <div class="prow past"><span class="ck"><svg class="i"><use href="#sunrise"/></svg></span><span>Sunrise<small>Solar event</small></span><time>7:08</time></div>
+    <div class="prow past"><span class="ck"><svg class="i"><use href="#check"/></svg></span>Dhuhr<time>12:10</time></div>
+    <div class="prow nxt"><span class="ck"><svg class="i"><use href="#bell"/></svg></span><span>Asr<small>Next · in 54 min</small></span><time>2:37</time></div>
+    <div class="prow"><span class="ck"><svg class="i"><use href="#moon"/></svg></span>Maghrib<time>4:56</time></div>
+    <div class="prow"><span class="ck"><svg class="i"><use href="#moon"/></svg></span>Isha<time>6:11</time></div>
+   </div>
+   <p class="muted" style="font-size:12px;margin:0">ISNA (Fajr 15°, Isha 15°) · Standard Asr · no high-latitude adjustment</p>
+  </div></aside>
+</div>
+</div></div></div></section>
+
+<!-- A4 -->
+<section class="frame"><h2>A4 · Prayer Times settings — dark, editing with a live preview</h2>
+<p>This is the same modal with a third column. The preview recalculates today's times from the unsaved form, and changed times show the old value struck through, so the effect of a method or offset is clear before saving. The method is a radio list showing its Fajr/Isha angles, Asr is a two-choice segmented control, and offsets are steppers.</p>
+<div class="fit"><div class="board"><div class="screen dark">
+<nav class="rail"><span class="logo">D</span><span class="app"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app"><i><svg class="i"><use href="#contact"/></svg></i>Contacts</span><span class="app"><i><svg class="i"><use href="#cal"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app on"><i><svg class="i"><use href="#moon"/></svg></i>Prayer</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="app" style="padding:0"><i><svg class="i"><use href="#gear"/></svg></i></span><span class="avatar">AR</span></div></nav>
+<div class="top"><h1>Prayer Times</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search Dar<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib on"><svg class="i"><use href="#gear"/></svg></span></div></div>
+<div class="wrk two"><aside class="side"><div class="row"><svg class="i"><use href="#sun"/></svg><span class="t">Today</span></div><div class="row sel"><svg class="i"><use href="#cal"/></svg><span class="t">This week</span></div></aside><main class="sh"></main></div>
+<div class="scrim"></div>
+<div class="modal wide" role="dialog" aria-label="Prayer Times settings">
+ <div class="mhead"><span class="tile"><svg class="i"><use href="#moon"/></svg></span><div><h2>Prayer Times settings</h2><p>Saved for your account on this instance</p></div><span class="ib"><svg class="i"><use href="#x"/></svg></span></div>
+ <nav class="mnav"><div class="row sel"><svg class="i"><use href="#gear"/></svg><span class="t">General</span></div><div class="row"><svg class="i"><use href="#keyb"/></svg><span class="t">Keyboard shortcuts</span></div></nav>
+ <div class="mbody" style="gap:16px">
+  <div class="group"><h4>Location</h4><div class="card"><div class="set stack">
+   <div style="display:flex;gap:12px;align-items:flex-end"><label class="fld" style="flex:1">Location name<span class="in">Toronto</span></label><span class="btn ton"><svg class="i"><use href="#locate"/></svg>Use my location</span></div>
+   <div class="grid2"><label class="fld">Latitude<span class="in num">43.653</span></label><label class="fld">Longitude<span class="in num">−79.383</span></label></div>
+   <label class="fld">Timezone<span class="in">America/Toronto<svg class="i cv"><use href="#chevd"/></svg></span><span class="hint">The timezone of this location, including daylight saving.</span></label>
+  </div></div></div>
+  <div class="group"><h4>Calculation</h4><div class="card">
+   <div class="method"><span class="radio"></span><b>Muslim World League</b><small>Fajr 18° · Isha 17°</small></div>
+   <div class="method on"><span class="radio on"></span><b>ISNA</b><small>Fajr 15° · Isha 15°</small></div>
+   <div class="method"><span class="radio"></span><b>Egyptian General Authority</b><small>19.5° · 17.5°</small></div>
+   <div class="method"><span class="radio"></span><b>University of Islamic Sciences, Karachi</b><small>18° · 18°</small></div>
+  </div></div>
+  <div class="card"><div class="set dirty"><div class="lbl"><b>Asr convention</b><small>Hanafi waits for two shadow lengths</small></div><span class="seg"><span>Standard</span><span class="on">Hanafi</span></span></div></div>
+  <div class="group"><h4>Adjustments</h4><div class="card"><div class="set"><div class="lbl"><b>High-latitude rule</b><small>For places where twilight never fully ends</small></div><span class="in" style="width:200px">No adjustment<svg class="i cv"><use href="#chevd"/></svg></span></div><div class="set dirty stack"><div class="lbl"><b>Minute offsets</b><small>Applied after calculation, −120 to 120</small></div><div class="offs"><span class="fld">Fajr<span class="step"><i>−</i><b>0</b><i>+</i></span></span><span class="fld">Dhuhr<span class="step"><i>−</i><b>0</b><i>+</i></span></span><span class="fld">Asr<span class="step"><i>−</i><b>0</b><i>+</i></span></span><span class="fld">Sunrise<span class="step"><i>−</i><b>0</b><i>+</i></span></span><span class="fld">Maghrib<span class="step"><i>−</i><b>0</b><i>+</i></span></span><span class="fld">Isha<span class="step"><i>−</i><b>+2</b><i>+</i></span></span></div></div></div></div>
+ </div>
+ <aside class="preview"><h4>Today in Toronto</h4><p>Preview of unsaved changes</p>
+  <div class="pv">Fajr<time>5:52</time></div><div class="pv sr">Sunrise<time>7:08</time></div><div class="pv">Dhuhr<time>12:10</time></div><div class="pv ch">Asr<time>3:12<s>2:37</s></time></div><div class="pv">Maghrib<time>4:56</time></div><div class="pv ch">Isha<time>6:13<s>6:11</s></time></div>
+  <div class="note" style="background:var(--panel);margin-top:auto"><svg class="i"><use href="#info"/></svg>Isha includes a +2 min offset.</div></aside>
+ <div class="savebar" style="grid-column:2/3"><span class="st"><span class="dot"></span>2 unsaved changes</span><span class="btn">Discard</span><span class="btn pri">Save prayer settings</span></div>
+</div>
+</div></div></div></section>
+
+<!-- A5 -->
+<section class="frame"><h2>A5 · Phones — full-screen settings with chips and a docked save bar</h2>
+<p>On phones the modal fills the screen. Sections become the chip strip and the save bar sticks to the bottom. The Dar settings page becomes a grouped list that opens each section full screen with Back. Prayer Times leads with the countdown card, and the week list keeps the day's times visible.</p>
+<div class="phones">
+<div><div class="phone light"><div class="status"><span>9:41</span><span>●●●</span></div><div class="pfull">
+ <div class="phead"><span class="ib"><svg class="i"><use href="#x"/></svg></span><h2>Calendar settings</h2></div>
+ <div class="pchips"><span class="on">General</span><span>Import and export</span><span>Shortcuts</span></div>
+ <div class="pscroll"><div class="group"><h4>Display</h4><div class="card"><div class="set dirty stack"><div class="lbl"><b>Week begins</b><small>Month and Week views, date picker</small></div><span class="seg" style="align-self:flex-start"><span>Monday</span><span class="on">Sunday</span></span></div><div class="set"><div class="lbl"><b>Show cancelled events</b><small>Struck through instead of hidden</small></div><span class="tg off"></span></div></div></div>
+ <div class="group"><h4>Time</h4><div class="card"><div class="set"><div class="lbl"><b>Timezone</b><small>America/Toronto</small></div><svg class="i muted"><use href="#chev"/></svg></div></div></div></div>
+ <div class="pbar"><span class="btn out">Discard</span><span class="btn pri">Save · 1 change</span></div>
+</div></div><p class="cap">App settings: chips for sections, save bar docked above the safe area.</p></div>
+<div><div class="phone dark"><div class="status"><span>9:41</span><span>●●●</span></div><div class="pfull" style="background:var(--soft)">
+ <div class="phead" style="border:0;padding-left:16px"><h2 style="font-size:20px">Settings</h2><span class="avatar" style="margin-left:auto">AR</span></div>
+ <div class="pscroll list"><div class="group"><h4>Personal</h4><div class="card">
+  <div class="set"><span class="ico"><svg class="i"><use href="#contact"/></svg></span><div class="lbl"><b>Profile</b><small>Alex Rahman</small></div><svg class="i"><use href="#chev"/></svg></div>
+  <div class="set"><span class="ico"><svg class="i"><use href="#sun"/></svg></span><div class="lbl"><b>Appearance</b><small>Match system</small></div><svg class="i"><use href="#chev"/></svg></div>
+  <div class="set"><span class="ico"><svg class="i"><use href="#shield"/></svg></span><div class="lbl"><b>Security</b><small>3 app passwords</small></div><svg class="i"><use href="#chev"/></svg></div>
+  <div class="set"><span class="ico"><svg class="i"><use href="#globe"/></svg></span><div class="lbl"><b>Regional settings</b><small>America/Toronto</small></div><svg class="i"><use href="#chev"/></svg></div>
+  <div class="set"><span class="ico"><svg class="i"><use href="#link"/></svg></span><div class="lbl"><b>Connected applications</b><small>2 applications</small></div><svg class="i"><use href="#chev"/></svg></div></div></div>
+  <div class="group"><h4>Administration</h4><div class="card">
+  <div class="set"><span class="ico"><svg class="i"><use href="#apps"/></svg></span><div class="lbl"><b>Apps</b><small>6 of 7 enabled</small></div><svg class="i"><use href="#chev"/></svg></div>
+  <div class="set"><span class="ico"><svg class="i"><use href="#users"/></svg></span><div class="lbl"><b>Directory</b><small>4 people · 2 groups</small></div><svg class="i"><use href="#chev"/></svg></div></div></div></div>
+ <div class="bnav"><span><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span><i><svg class="i"><use href="#cal"/></svg></i>Calendar</span><span><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="on"><i><svg class="i"><use href="#gear"/></svg></i>Settings</span><span><i><svg class="i"><use href="#menu"/></svg></i>More</span></div>
+</div></div><p class="cap">Dar settings: each row shows its current value and opens the section full screen.</p></div>
+<div><div class="phone light"><div class="status"><span>9:41</span><span>●●●</span></div><div class="pfull" style="background:var(--soft)">
+ <div class="phead" style="border:0;padding-left:16px"><div><small class="muted" style="font-size:12px">Toronto</small><h2 style="font-size:20px">Prayer Times</h2></div><span class="ib" style="margin-left:auto"><svg class="i"><use href="#gear"/></svg></span></div>
+ <div class="pscroll" style="gap:12px"><div class="hero"><small>Next prayer</small><div class="big"><span>Asr</span><b>2:37 PM</b></div><div class="bar"><i></i></div><div class="ends"><span>Dhuhr 12:10</span><span>in 54 min</span></div></div>
+  <div class="card">
+  <div class="set" style="background:var(--tonal);color:var(--on-tonal)"><div class="lbl"><b>Today</b><small style="color:inherit;opacity:.8">5:52 · 12:10 · <u>2:37</u> · 4:56 · 6:11</small></div><svg class="i"><use href="#chev"/></svg></div>
+  <div class="set"><div class="lbl"><b>Thursday</b><small>5:53 · 12:10 · 2:36 · 4:54 · 6:10</small></div><svg class="i muted"><use href="#chev"/></svg></div>
+  <div class="set"><div class="lbl"><b>Friday</b><small>5:55 · 12:10 · 2:35 · 4:53 · 6:09</small></div><svg class="i muted"><use href="#chev"/></svg></div>
+  <div class="set"><div class="lbl"><b>Saturday</b><small>5:56 · 12:11 · 2:35 · 4:52 · 6:08</small></div><svg class="i muted"><use href="#chev"/></svg></div></div></div>
+ <div class="bnav"><span><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span><i><svg class="i"><use href="#cal"/></svg></i>Calendar</span><span><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="on"><i><svg class="i"><use href="#moon"/></svg></i>Prayer</span><span><i><svg class="i"><use href="#menu"/></svg></i>More</span></div>
+</div></div><p class="cap">Prayer Times: countdown first, and each day row lists its five prayer times.</p></div>
+</div></section>
+</div></body></html>

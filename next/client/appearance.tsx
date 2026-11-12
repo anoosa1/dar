@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import {request,type BrowserSession} from "./api.ts";
-import {savePreferences} from "./app-settings.tsx";
+import {usePreferenceSaver,SaveProblems} from "./app-settings.tsx";
 import type {Preferences} from "../shared/preferences.ts";
 export type Appearance="system"|"latte"|"mocha";
 export function useAppearance(session:BrowserSession|null){
@@ -12,7 +12,6 @@ export function useAppearance(session:BrowserSession|null){
   },[session?.user.id]);
 }
 export function AppearanceSettings({session}:{session:BrowserSession}){
-  const [preferences,setPreferences]=useState<Preferences>(),[value,setValue]=useState<Appearance>("system"),[error,setError]=useState(""),[busy,setBusy]=useState(false),[saved,setSaved]=useState(false);
-  useEffect(()=>{const abort=new AbortController();void request<Preferences>("/api/v1/pim/preferences",{signal:abort.signal}).then(p=>{setPreferences(p);setValue(p.appearance??"system");}).catch(e=>{if(!abort.signal.aborted)setError(e.message);});return()=>abort.abort();},[]);
-  return <><h1>Appearance</h1>{error&&<p className="error" role="alert">{error}</p>}{!preferences?<p role="status">Loading appearance…</p>:<form onSubmit={event=>{event.preventDefault();setBusy(true);setError("");void savePreferences({...preferences,appearance:value},session).then(p=>{setPreferences(p);setSaved(true);}).catch(e=>setError(e.message)).finally(()=>setBusy(false));}}><fieldset className="appearance-options"><legend>Color theme</legend>{([['system','Follow system'],['latte','Light — Twilight Afterglow'],['mocha','Dark — Twilight Nightfall']] as const).map(([id,label])=><label key={id} className="appearance-option"><input type="radio" name="appearance" value={id} checked={value===id} onChange={()=>{setValue(id);setSaved(false);}}/><span>{label}</span><span className={`theme-swatch swatch-${id}`} aria-hidden="true"/></label>)}</fieldset><p className="field-hint">Applies to every app and is saved for your account.</p><button className="primary-button" disabled={busy}>{busy?"Saving…":"Save appearance"}</button>{saved&&<p role="status">Appearance saved</p>}</form>}</>;
+  const saver=usePreferenceSaver(session),preferences=saver.preferences,value=preferences?.appearance??"system",state=saver.states.appearance;
+  return <><h1>Appearance</h1><SaveProblems error={saver.error} conflict={saver.conflict} onReload={()=>{void saver.reload();}}/>{!preferences?<p role="status">Loading appearance…</p>:<><fieldset className="appearance-options"><legend>Color theme</legend>{([["system","Follow system"],["latte","Light — Twilight Afterglow"],["mocha","Dark — Twilight Nightfall"]] as const).map(([id,label])=><label key={id} className="appearance-option"><input type="radio" name="appearance" value={id} checked={value===id} onChange={()=>saver.change("appearance",id,"Appearance saved",false)}/><span>{label}</span><span className={`theme-swatch swatch-${id}`} aria-hidden="true"/></label>)}</fieldset><p className="field-hint">Applies to every app and saves for your account as you choose.</p><p role="status" className="settings-inline-status">{state==="saving"?"Saving…":state==="saved"?"Appearance saved":""}</p></>}</>;
 }

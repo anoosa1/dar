@@ -13,8 +13,9 @@ The SDK is experimental v1; manifests use `apiVersion: 1` and exact package vers
   `ownUserData:read`, without showing record contents.
 - Pass `onSettings` to show the app's settings gear in the top bar, and keep a
   sidebar `nav-item ui-app-settings-entry` button too: phones show it as the last
-  chip. Settings use the shared `Dialog` with `ui-settings-dialog`, not EditorPane;
-  pass `dirty` to protect unsaved edits.
+  chip. Settings use the shared `SettingsSheet` (tabs, Saved status and Undo)
+  with `SettingRow`, `SettingSwitch` and `Segmented` rows; save each valid
+  change and never save invalid text.
 
 ## Build an app outside Dar
 

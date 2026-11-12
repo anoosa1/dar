@@ -1,4 +1,82 @@
-.prayer-sidebar-location{font-size:11px;color:var(--muted);line-height:1.7;padding:16px;overflow-wrap:anywhere}
-.prayer-week-heading{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.prayer-week-heading h1{font-size:var(--content-heading-size);margin:0}.prayer-week-heading p{margin-bottom:8px}.prayer-week-controls{display:flex;align-items:center;gap:4px}.prayer-range{font-size:14px;color:var(--muted);margin:var(--section-gap) 0}
-.prayer-day{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:var(--list-row-height);text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text)}.prayer-day strong{font-size:14px}.prayer-day small{display:block;color:var(--muted);font-size:11px;margin-top:4px}.prayer-day:hover{background:var(--tonal);border-radius:12px}.prayer-day.selected{background:var(--tonal);color:var(--accent);border-radius:12px}
-.prayer-next{border-radius:12px;background:var(--tonal);color:var(--accent);padding:14px;font-size:13px;line-height:1.6}.prayer-time-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px;border-bottom:1px solid var(--border);font-size:14px}.prayer-time-row strong{font-weight:550}.prayer-time-row small{display:block;font-size:10px;color:var(--muted);margin-top:5px}.prayer-time-row time{font-variant-numeric:tabular-nums;white-space:nowrap}.prayer-time-row.is-next{background:var(--tonal);color:var(--accent);border-radius:12px}.prayer-explanation{font-size:11px;line-height:1.7;color:var(--muted);margin:var(--section-gap) 0}.prayer-empty{padding:50px 10px;text-align:center;color:var(--muted)}.prayer-empty h2{font-size:20px}.prayer-empty p{line-height:1.7}.prayer-coordinate-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 var(--section-gap)}.extension-details h2{font-size:22px}.extension-shell .editing-pane{color:var(--text)}
+/* Prayer Times, settings sheet B: a today band and timeline above a compact week. */
+.prayer-sidebar-location{display:flex;flex-direction:column;gap:2px;margin:12px 0 0;padding:12px;color:var(--muted);font-size:12px;line-height:1.6;overflow-wrap:anywhere}.prayer-sidebar-location strong{color:var(--text);font-size:13px}
+
+.prayer-today{display:flex;flex-direction:column;gap:10px;margin:0 0 8px;padding:0 0 12px;border-bottom:1px solid var(--border)}
+.prayer-today-summary{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 16px}
+.prayer-today-summary p{margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:550}
+.prayer-today-summary h1{margin:0;font-size:28px;font-weight:650;letter-spacing:-.01em;line-height:1.15;font-variant-numeric:tabular-nums}
+.prayer-countdown{display:flex;flex-direction:column;align-items:flex-end;margin:0}.prayer-countdown small{color:var(--muted);font-size:12px;font-weight:550}.prayer-countdown strong{color:var(--accent);font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}
+.prayer-timeline{display:block;overflow:visible;font-size:11px;font-variant-numeric:tabular-nums}
+.prayer-timeline-track{stroke:var(--tonal);stroke-width:8;stroke-linecap:round}
+.prayer-timeline-daylight{stroke:color-mix(in srgb,var(--warning) 35%,var(--panel));stroke-width:8}
+.prayer-timeline-now{stroke:var(--danger);stroke-width:2;stroke-linecap:round}
+.prayer-timeline-point circle{fill:var(--panel);stroke:var(--control-border);stroke-width:2}
+.prayer-timeline-point.is-past circle{fill:var(--control-border)}
+.prayer-timeline-point.is-solar circle{stroke-dasharray:3 2}
+.prayer-timeline-point.is-next circle{fill:var(--accent);stroke:color-mix(in srgb,var(--accent) 30%,transparent);stroke-width:8;paint-order:stroke}
+.prayer-timeline-point text{fill:var(--text);font-weight:600}
+.prayer-timeline-point .prayer-timeline-time{fill:var(--muted);font-weight:400}
+.prayer-timeline-point.is-next text{fill:var(--accent)}
+.prayer-timeline-initial{display:none}
+
+.prayer-week-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:8px 0}
+.prayer-week-heading h2{margin:0;font-size:15px;font-weight:600}
+.prayer-week-controls{display:flex;align-items:center;gap:4px}
+.prayer-week{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;font-variant-numeric:tabular-nums}
+.prayer-week thead th{height:32px;padding:0 10px;color:var(--muted);font-size:11px;font-weight:600;text-align:right}
+.prayer-week thead th:first-child{text-align:left}
+.prayer-week td{height:var(--list-row-height,56px);padding:0 10px;text-align:right;white-space:nowrap}
+.prayer-week tbody th{padding:0 4px;text-align:left;font-weight:400}
+.prayer-week tbody tr{cursor:pointer}
+.prayer-week tbody tr>*{border-bottom:1px solid var(--border)}
+.prayer-week tbody tr:hover>*{background:var(--hover)}
+.prayer-week tbody tr.is-past{color:var(--muted)}
+.prayer-week tbody tr:is(.is-today,.is-selected)>*{background:var(--tonal);color:var(--on-tonal);border-bottom-color:transparent}
+.prayer-week tbody tr>:first-child{border-radius:14px 0 0 14px}.prayer-week tbody tr>:last-child{border-radius:0 14px 14px 0}
+.prayer-week .is-solar{color:var(--muted)}
+.prayer-week tr:is(.is-today,.is-selected) .is-solar{color:inherit;opacity:.8}
+.prayer-week td.is-next time{display:inline-block;margin-right:-8px;padding:3px 8px;border-radius:12px;background:var(--accent);color:var(--on-accent);font-weight:650}
+.prayer-week td.is-changed time::after{content:"";display:inline-block;width:6px;height:6px;margin:0 0 2px 5px;border-radius:50%;background:var(--accent);vertical-align:middle}
+.prayer-day{display:flex;flex-direction:column;align-items:flex-start;width:100%;min-height:44px;padding:6px 8px;border:0;border-radius:10px;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.prayer-day strong{font-size:14px;font-weight:550}.prayer-day small{color:var(--muted);font-size:11px}
+.prayer-week tr:is(.is-today,.is-selected) .prayer-day small{color:inherit;opacity:.8}
+.prayer-day:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+.prayer-next{border-radius:12px;background:var(--tonal);color:var(--on-tonal);padding:14px;font-size:13px;line-height:1.6}
+.prayer-time-row{display:flex;justify-content:space-between;align-items:center;gap:14px;min-height:var(--list-row-height,56px);padding:0 12px;border-bottom:1px solid var(--border);font-size:14px}
+.prayer-time-row strong{font-weight:550}.prayer-time-row small{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+.prayer-time-row time{font-variant-numeric:tabular-nums;font-weight:550;white-space:nowrap}
+.prayer-time-row.is-past{color:var(--muted)}.prayer-time-row.is-past time{font-weight:400}
+.prayer-time-row.is-next{background:var(--tonal);color:var(--on-tonal);border-radius:14px;border-bottom-color:transparent}.prayer-time-row.is-next small{color:inherit}
+.prayer-explanation{font-size:12px;line-height:1.7;color:var(--muted);margin:var(--section-gap) 0}
+.prayer-empty{padding:50px 10px;text-align:center;color:var(--muted)}.prayer-empty h1{font-size:var(--content-heading-size);color:var(--text)}.prayer-empty p{line-height:1.7}
+.extension-details h2{font-size:22px}.extension-shell .editing-pane{color:var(--text)}
+
+/* Settings sheet contents. */
+.prayer-coordinate-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.prayer-locate{display:inline-flex;align-items:center;align-self:flex-start;gap:8px}.prayer-locate .icon{width:16px;height:16px}
+.prayer-methods{display:flex;flex-direction:column;gap:8px}
+.prayer-methods label{position:relative;display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:0;padding:11px 14px;border:1px solid var(--control-border);border-radius:14px;color:var(--text);font-size:13px;font-weight:550;cursor:pointer}
+.prayer-methods label span{flex:1}.prayer-methods label small{color:var(--muted);font-size:12px;font-weight:400;font-variant-numeric:tabular-nums}
+.prayer-methods label:hover{background:var(--hover)}
+.prayer-methods label.is-checked{padding:10px 13px;border:2px solid var(--accent);background:var(--tonal);color:var(--on-tonal)}.prayer-methods label.is-checked small{color:inherit}
+.prayer-methods input{flex:none;margin:0}
+.prayer-stepper{display:inline-flex;align-items:center;gap:2px}
+.prayer-stepper input{width:64px;min-height:36px;text-align:center;font-variant-numeric:tabular-nums}
+.prayer-stepper .icon-button{min-width:36px;min-height:36px;font-size:18px}
+.prayer-stepper small{margin-left:4px;color:var(--muted);font-size:12px}
+
+@media(max-width:800px){
+  .prayer-today-summary h1{font-size:22px}.prayer-countdown strong{font-size:18px}
+  .prayer-timeline-name,.prayer-timeline-time{display:none}.prayer-timeline-initial{display:inline}
+  .prayer-week thead{display:none}
+  .prayer-week,.prayer-week tbody{display:block}
+  .prayer-week tbody tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 6px;padding:4px 8px 8px;border:1px solid var(--border);border-radius:14px}
+  .prayer-week tbody tr>*{border:0;border-radius:0!important;background:transparent!important}
+  .prayer-week tbody tr:is(.is-today,.is-selected){background:var(--tonal);border-color:transparent}
+  .prayer-week tbody th{grid-column:1/-1;padding:0}
+  .prayer-week td{height:auto;padding:4px;text-align:left;font-size:12px}
+  .prayer-week td::before{content:attr(data-label);display:block;color:var(--muted);font-size:10px;font-weight:600}
+  .prayer-week tr:is(.is-today,.is-selected) td::before{color:inherit;opacity:.8}
+  .prayer-week td.is-next time{margin:0}
+}

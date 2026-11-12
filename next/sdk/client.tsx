@@ -9,6 +9,8 @@ export {createRoot} from "react-dom/client";
 export {Select,ActionMenu} from "../client/controls.tsx";
 export {EditorPane} from "../client/pane.tsx";
 export {Dialog} from "../client/dialog.tsx";
+export {SettingsSheet,SettingRow,SettingSwitch,Segmented,SaveStatus} from "../client/settings-sheet.tsx";
+export type {SaveState,SettingsNotice} from "../client/settings-sheet.tsx";
 export {Icon} from "../client/icons.tsx";
 export type {AppRecord};
 export interface AppHost {

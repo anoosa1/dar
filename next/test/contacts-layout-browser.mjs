@@ -59,14 +59,14 @@ try{
   assert.equal(await actions.evaluate(el=>el===document.activeElement),true);
   await page.getByRole("button",{name:"Contacts settings",exact:true}).click();
   const settings=page.getByRole("dialog",{name:"Contacts settings",exact:true});
-  await settings.getByRole("button",{name:"Import and export",exact:true}).click();
+  await settings.getByRole("tab",{name:"Import and export",exact:true}).click();
   await choose(settings.getByRole("combobox",{name:"Address book for import or export",exact:true}),{label:fixture.a.name});
   const download=page.waitForEvent("download");await settings.getByRole("link",{name:"Export vCard",exact:true}).click();
   assert.match(await readFile(await(await download).path(),"utf8"),/Scroll person 00/);
   await settings.getByLabel("Or paste content",{exact:true}).fill("BEGIN:VCARD\r\nVERSION:3.0\r\nUID:"+randomUUID()+"\r\nFN:Settings vCard proof\r\nEND:VCARD\r\n");
   await settings.getByRole("button",{name:"Import vCard",exact:true}).click();
   await settings.getByText("1 imported; 0 failed.",{exact:true}).waitFor();
-  await settings.getByRole("button",{name:"Close dialog",exact:true}).click();
+  await settings.getByRole("button",{name:"Close settings",exact:true}).click();
   await page.reload();
   await page.getByRole("button",{name:/Settings vCard proof/}).waitFor();
   for(const viewport of [{width:1000,height:700},{width:390,height:844}]){

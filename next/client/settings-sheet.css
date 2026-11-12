@@ -1,0 +1,110 @@
+/* Settings sheet B (docs/spacetimedb/settings-revamp-mock-b.html), selected November 12.
+   App settings are a right sheet in place of the details pane (a bottom sheet on phones);
+   rows put the label on the left and the control on the right, and each control saves itself. */
+.settings-sheet{z-index:30;padding:0}
+.settings-sheet-handle{display:none}
+.settings-sheet-heading{display:flex;align-items:center;gap:10px;flex:none;min-height:60px;padding:8px 8px 8px 20px}
+.settings-sheet-heading h2{flex:1;min-width:0;margin:0;font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.settings-sheet-icon{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:10px;background:var(--tonal);color:var(--on-tonal)}
+.settings-sheet-icon .icon{width:18px;height:18px}
+.settings-tabs{display:flex;flex:none;gap:2px;padding:0 12px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.settings-tabs [role=tab]{position:relative;flex:none;min-height:44px;padding:0 12px;border:0;border-radius:8px 8px 0 0;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:550;cursor:pointer}
+.settings-tabs [role=tab]:hover{background:var(--hover);color:var(--text)}
+.settings-tabs [role=tab][aria-selected=true]{color:var(--text)}
+.settings-tabs [role=tab][aria-selected=true]::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:3px;border-radius:3px 3px 0 0;background:var(--accent)}
+.settings-tabs [role=tab]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.settings-sheet-content{position:relative;flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable;padding:4px 20px 72px}
+.settings-sheet-footer{flex:none;padding:12px 20px;border-top:1px solid var(--border);color:var(--muted);font-size:12px;line-height:1.5}
+.settings-toast-region{position:absolute;left:16px;right:16px;bottom:60px;z-index:2;display:flex;justify-content:center;pointer-events:none}
+.settings-toast{display:flex;align-items:center;gap:8px;max-width:100%;padding:4px 4px 4px 16px;border-radius:12px;background:var(--text);color:var(--panel);font-size:13px;box-shadow:0 8px 24px var(--shadow);pointer-events:auto}
+.settings-toast .text-button{min-height:36px;padding:0 12px;color:inherit;text-decoration:underline}
+.settings-toast .text-button:focus-visible{outline:2px solid var(--panel);outline-offset:-2px}
+
+/* Groups and rows. */
+.settings-group{display:flex;flex-direction:column;gap:14px;padding:16px 0;border-top:1px solid var(--border)}
+.settings-sheet-content>.settings-group:first-of-type,.settings-sheet-content>.settings-problem+.settings-group{border-top:0}
+.settings-group>h3{display:flex;align-items:center;gap:8px;margin:0;color:var(--muted);font-size:12px;font-weight:600}
+.settings-group>.field-hint{margin:-6px 0 0}
+.settings-row{display:flex;align-items:center;gap:10px 14px;min-height:44px;margin:0}
+label.settings-row{flex-direction:row;margin:0;font-size:inherit;font-weight:400;cursor:pointer}
+.settings-row.is-stacked{flex-wrap:wrap}
+.settings-row.is-stacked>.settings-row-control{flex:1 0 100%}
+.settings-row-text{display:flex;flex:1;flex-direction:column;gap:2px;min-width:0}
+.settings-row-label{color:var(--text);font-size:14px;font-weight:550}
+.settings-row-text small{color:var(--muted);font-size:12px;line-height:1.45}
+.settings-row-control{display:flex;flex:none;justify-content:flex-end;max-width:100%}
+.settings-row-control .ui-select{min-width:200px}
+.settings-row.is-stacked>.settings-row-control{justify-content:flex-start}
+.settings-row.is-stacked>.settings-row-control .ui-select{width:100%}
+.settings-save-state{display:inline-flex;flex:none;align-items:center;gap:4px;color:var(--muted);font-size:11px;font-weight:600}
+.settings-save-state.is-saved{color:var(--success)}.settings-save-state.is-error{color:var(--danger)}
+.settings-save-state .icon{width:13px;height:13px}
+.settings-spinner{width:12px;height:12px;border:2px solid var(--hover);border-top-color:var(--accent);border-radius:50%;animation:settings-spin .8s linear infinite}
+@keyframes settings-spin{to{transform:rotate(360deg)}}
+.settings-field{display:flex;flex-direction:column;gap:4px;margin:0}
+.settings-field>label{margin:0}
+.settings-field .field-hint{margin:0}
+.field-error{color:var(--danger);font-size:12px;font-weight:500}
+.settings-problem{margin:12px 0 0}
+.settings-conflict{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:12px;background:var(--error-soft);color:var(--danger);font-size:12px;line-height:1.5}
+.settings-conflict p{flex:1;margin:0}.settings-conflict strong{display:block}
+.settings-conflict .text-button{flex:none;color:var(--danger)}
+.settings-setup-hint{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:var(--surface-soft);color:var(--muted);font-size:12px;line-height:1.5}
+.settings-inline-status{min-height:20px;margin:8px 0 0;color:var(--success);font-size:12px}
+.settings-sheet .ui-shortcuts{margin-top:16px}
+
+/* Segmented choices: native radios, so arrow keys and forms behave normally. */
+.ui-segmented{display:inline-flex;flex-wrap:wrap;gap:2px;max-width:100%;padding:2px;border:1px solid var(--control-border);border-radius:18px}
+.ui-segmented label{position:relative;display:inline-flex;flex-direction:row;align-items:center;min-height:32px;margin:0;padding:0 14px;border-radius:15px;color:var(--muted);font-size:13px;font-weight:500;white-space:nowrap;cursor:pointer}
+.ui-segmented label:hover{background:var(--hover);color:var(--text)}
+.ui-segmented label.is-checked{background:var(--tonal);color:var(--on-tonal);font-weight:600}
+.ui-segmented input[type=radio]{position:absolute;inset:0;width:100%!important;height:100%!important;min-height:0!important;margin:0;border:0;border-radius:inherit;opacity:0;appearance:none;cursor:pointer}
+.ui-segmented label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:1px}
+.ui-segmented label:has(input:disabled){opacity:.5;cursor:default}
+@media(forced-colors:active){.ui-segmented label.is-checked{outline:2px solid CanvasText}}
+
+/* The sheet takes the details column beside workspaces, including installed apps. */
+body:has(.settings-sheet) .extension-workspace{padding-right:calc(420px + 2 * var(--sheet-gap))}
+body:has(.settings-sheet) .extension-shell.has-extension-details .extension-workspace{grid-template-columns:230px minmax(0,1fr)}
+body:has(.settings-sheet) .extension-details{display:none}
+@media(max-width:1000px) and (min-width:801px){body:has(.settings-sheet) .extension-workspace{padding-right:calc(390px + 2 * var(--sheet-gap))}}
+@media(max-width:900px) and (min-width:801px){body:has(.settings-sheet) .extension-shell.has-extension-details .extension-workspace{grid-template-columns:200px minmax(0,1fr)}}
+
+/* Phones: a bottom sheet over the app, below the search bar, covering the bottom bar. */
+@media(max-width:800px){
+  .settings-sheet{inset:96px 0 0;width:auto;border:1px solid var(--sheet-border);border-bottom:0;border-radius:24px 24px 0 0;box-shadow:0 -8px 32px var(--shadow);z-index:126}
+  .settings-sheet-handle{display:block;flex:none;width:36px;height:4px;margin:8px auto 0;border-radius:2px;background:var(--control-border)}
+  .settings-sheet-heading{min-height:52px}
+  .settings-sheet-content{padding:4px var(--pane-padding) 72px}
+  .settings-sheet-footer{padding:12px var(--pane-padding) calc(12px + env(safe-area-inset-bottom))}
+  body:has(.settings-sheet) .extension-workspace{padding-right:0}
+  .settings-row-control .ui-select{min-width:0}
+}
+@keyframes settings-sheet-up{from{transform:translateY(32px);opacity:0}to{transform:none;opacity:1}}
+@media(max-width:800px) and (prefers-reduced-motion:no-preference){.settings-sheet{animation-name:settings-sheet-up}}
+@media(prefers-reduced-motion:reduce){.settings-spinner{animation:none}}
+
+/* Dar settings overview: current values at a glance. */
+.settings-overview{display:flex;flex-direction:column;gap:16px;max-width:980px}
+.settings-overview-me{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px}
+.settings-overview-me .avatar{width:56px;height:56px;min-width:56px;font-size:18px}
+.settings-overview-me h2,.settings-content .settings-overview-me h2{margin:0;font-size:20px;font-weight:600}
+.settings-overview-me p{margin:2px 0 0}
+.settings-overview-me>.secondary-button{margin-left:auto}
+.settings-overview-heading,.settings-content .settings-overview-heading{margin:8px 0 0;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:0}
+.settings-overview-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.settings-overview-card{position:relative;display:flex;flex-direction:column;gap:8px;min-height:104px;padding:14px;border:1px solid var(--sheet-border);border-radius:16px;background:var(--panel)}
+.settings-overview-card:hover{background:var(--hover)}
+.settings-overview-card:has(.settings-overview-open:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.settings-overview-open{display:flex;align-items:center;gap:10px;min-height:0;padding:0;border:0;background:transparent;color:var(--text);font:inherit;font-size:14px;font-weight:600;text-align:left;cursor:pointer}
+.settings-overview-open::after{content:"";position:absolute;inset:0;border-radius:inherit}
+.settings-overview-open:focus-visible{outline:none}
+.settings-overview-open span{flex:1}
+.settings-overview-open .icon{flex:none;width:18px;height:18px;color:var(--muted)}
+.settings-overview-card p{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.settings-overview-themes{position:relative;z-index:1;display:flex;gap:8px;margin-top:auto}
+.settings-overview-themes .theme-swatch{grid-column:auto;grid-row:auto;width:44px;max-width:none;height:28px;min-height:0;padding:0;border-radius:8px;cursor:pointer}
+.settings-overview-themes .theme-swatch[aria-checked=true]{outline:2px solid var(--accent);outline-offset:2px}
+.settings-overview-themes .theme-swatch:focus-visible{outline:2px solid var(--text);outline-offset:3px}
+@media(max-width:800px){.settings-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.settings-overview-me>.secondary-button{margin-left:0}}
+@media(max-width:380px){.settings-overview-grid{grid-template-columns:minmax(0,1fr)}}

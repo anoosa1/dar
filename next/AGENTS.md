@@ -22,6 +22,9 @@ header, app launcher and lower-sidebar settings. Earlier selections still define
 app content: Files Focused explorer (C), Contacts/Calendar and Notes/Tasks
 Focused workspace (A), identity Account settings tabs (B), creation/appearance
 Focused pane (A), sign-in/app-password mock A, Prayer Times layout B and the
-Agent T3 parity A. Details are in the design guide.
+Agent T3 parity A. App settings, Dar settings and Prayer Times follow settings
+sheet B (`../docs/spacetimedb/settings-revamp-mock-b.html`, November 12), which
+supersedes the settings modal and explicit settings save. Details are in the
+design guide.
 
 Applying a selected pattern needs no new mock; a new visual direction does.

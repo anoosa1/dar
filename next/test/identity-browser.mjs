@@ -71,7 +71,7 @@ try{
   // form_post uses a self-hosted script and a registered form destination, without inline code.
   await page.goto(`${rpOrigin}/start?mode=form_post`);await page.getByRole("heading",{name:"Review requested access",exact:true}).waitFor();await page.getByRole("button",{name:"Allow access",exact:true}).click();await page.getByText(/^Signed in as /).waitFor();assert.equal(lastClaims.sub,person.id);
   const logout=oidc.buildEndSessionUrl(config,{id_token_hint:lastTokens.id_token,post_logout_redirect_uri:`${rpOrigin}/signed-out`,state:"browser-logout"});
-  await page.goto(logout.href);await page.getByRole("link",{name:"Cancel",exact:true}).click();await page.getByRole("heading",{name:"Profile",exact:true}).waitFor();assert.equal((await oidc.fetchUserInfo(config,lastTokens.access_token,person.id)).sub,person.id);
+  await page.goto(logout.href);await page.getByRole("link",{name:"Cancel",exact:true}).click();await page.getByRole("heading",{name:"Overview",exact:true}).waitFor();assert.equal((await oidc.fetchUserInfo(config,lastTokens.access_token,person.id)).sub,person.id);
   await page.goto(logout.href);await page.getByRole("button",{name:"Sign out",exact:true}).click();await page.getByText("Signed out of RP",{exact:true}).waitFor();await assert.rejects(oidc.fetchUserInfo(config,lastTokens.access_token,person.id));assert.equal((await page.request.get(`${base}/api/v1/auth/session`)).status(),200);assert.ok(adminTokens.id_token);
   assert.deepEqual(failures,[]);console.info("PASS identity settings, reauthentication, one-time credentials, directory/groups, cross-site consent, account switching, scope claims, revoke, form_post and RP logout; desktop and phone.");
   await context.close();

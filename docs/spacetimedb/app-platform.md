@@ -66,11 +66,12 @@ a marketplace, hot reload and process isolation are not provided.
 
 ## Prayer Times
 
-A week list with a right daily timetable (phones: full-width day, Back to week).
+A today band (next prayer, countdown, day timeline) above a compact week whose
+rows list every time, with a right daily timetable (phones: full-width day, Back
+to week). Settings use the shared settings sheet and save each valid change.
 Settings: location label, coordinates, IANA timezone, method (MWL, ISNA, Egyptian,
 Karachi), Asr rule, high-latitude rule and per-prayer offsets, stored under one
-`settings` record. Browser location only on request; no geocoding. The next
-prayer is highlighted with a countdown; unavailable polar events are labelled.
+`settings` record. Browser location only on request; no geocoding. Unavailable polar events are labelled.
 Calculations use Dar's own library ([details](../../apps/prayer-times/CALCULATIONS.md)).
 Not included: adhan audio, push alerts, iqamah times, Qibla, Hijri dates or
 Calendar events.

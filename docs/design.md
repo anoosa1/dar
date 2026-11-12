@@ -75,11 +75,25 @@ Selected from [mock B](spacetimedb/unified-look-mock-b.html) over
 - Menus fit the viewport, open in the right direction, scroll internally and use
   shared keyboard, Escape, outside-click and focus-return behavior.
 
-## Settings
+## Settings (settings sheet B, November 12)
 
-- App settings open from the top-bar gear (last chip on phones) in the shared
-  modal with section tabs: General, Keyboard shortcuts, and Import and export
-  where relevant. Unsaved changes require an explicit discard.
+Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
+[mock A](spacetimedb/settings-revamp-mock-a.html). Built from `SettingsSheet`,
+`SettingRow`, `SettingSwitch` and `Segmented` (`settings-sheet.tsx`).
+
+- App settings open from the top-bar gear (last chip on phones) as a right sheet
+  in place of the details pane, with tabs: General, Import and export where
+  relevant, and Keyboard shortcuts. Phones show it as a bottom sheet.
+- Rows put the label and a short explanation on the left and the control on the
+  right: a segmented control for two or three choices, a switch for on/off and
+  the shared select for longer lists.
+- Each control saves when changed (text fields on blur or Enter, only when
+  valid) and shows Saving… then Saved. The last change offers Undo. Invalid values
+  keep their error and are never saved. A change to the same value elsewhere is a
+  conflict with Reload; changes to other values are merged.
+- Dar settings opens on Overview: the profile header and one card per section
+  showing its current value. Cards open their section; Appearance switches theme
+  from its card. Appearance and Regional settings save as you go.
 - Personal: Profile, Appearance, Security, Regional settings (timezone) and
   Connected applications. Administration: Appearance (sign-in logo), Apps,
   Applications (OIDC clients), Directory, SCIM and Signing keys.
@@ -113,9 +127,11 @@ Selected from [mock B](spacetimedb/unified-look-mock-b.html) over
   scope and timezone behavior are preserved.
 - **Scheduling forms:** common repetition, priority and reminder choices, with
   advanced controls for exact imported values. Never simplify an unknown rule.
-- **Prayer Times:** week list with a right daily timetable; phones open a
-  full-width day with Back to week and restored focus. Settings in the shared
-  modal. See [app platform](spacetimedb/app-platform.md).
+- **Prayer Times:** a today band (next prayer, countdown and a timeline of the
+  day with a now marker) above a compact week where every row lists its times;
+  a day opens the right daily timetable, phones open it full width with Back to
+  week and restored focus. Settings use the settings sheet and mark the times a
+  change affected. See [app platform](spacetimedb/app-platform.md).
 - **Agent:** threads on the left, conversation and docked composer in the center,
   review on the right and collapsible output below, inside the shared frame.
   New thread is the create button; Ctrl/Cmd+P opens the command palette. Thread
@@ -142,7 +158,7 @@ Selected from [mock B](spacetimedb/unified-look-mock-b.html) over
 
 Selected mocks live in `docs/spacetimedb/*-mocks.html` (unified look, Twilight,
 controls, launcher, creation/appearance, sign-in, Contacts/Calendar, Notes/Tasks,
-workspace refinements, Prayer Times, Agent). Scope and limits per area:
+workspace refinements, Prayer Times, Agent) and `settings-revamp-mock-*.html`. Scope and limits per area:
 [architecture](spacetimedb/architecture.md),
 [Contacts and Calendar](spacetimedb/contacts-calendar.md),
 [Notes and Tasks](spacetimedb/notes-tasks.md),
