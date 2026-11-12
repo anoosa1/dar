@@ -9,7 +9,7 @@ export interface AppHost {
  data:{get:<T>(key:string)=>Promise<AppRecord<T>|null>;put:<T>(key:string,value:T,revision:number,schemaVersion?:number)=>Promise<AppRecord<T>>;delete:(key:string,revision:number)=>Promise<void>;list:(cursor?:string)=>Promise<{items:AppRecord[];cursor:string|null}>};
  regional:()=>Promise<{timezone?:string}>;
 }
-export function AppWorkspace(props:{host:AppHost;query:string;onQuery:(value:string)=>void;sidebar:ReactNode;children:ReactNode;details?:ReactNode;searchLabel?:string}):ReactNode;
+export function AppWorkspace(props:{host:AppHost;query:string;onQuery:(value:string)=>void;sidebar:ReactNode;children:ReactNode;details?:ReactNode;searchLabel?:string;onSettings?:()=>void}):ReactNode;
 export function EditorPane(props:{title:string;onClose:()=>void;dirty?:boolean;children:ReactNode}):ReactNode;
 export function Dialog(props:{title:string;onClose:()=>void;dirty?:boolean;children:ReactNode}):ReactNode;
 export function Select(props:import("react").SelectHTMLAttributes<HTMLSelectElement>):ReactNode;

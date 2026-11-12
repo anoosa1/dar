@@ -18,11 +18,11 @@ export interface AppHost {
 }
 export interface AppModule {mount:(element:HTMLElement,host:AppHost)=>()=>void}
 /** External apps reuse Dar's shell and bounded panes, including phone focus return. */
-export function AppWorkspace({host,query,onQuery,sidebar,children,details,searchLabel="Search app"}:{host:AppHost;query:string;onQuery:(value:string)=>void;sidebar:ReactNode;children:ReactNode;details?:ReactNode;searchLabel?:string}){
+export function AppWorkspace({host,query,onQuery,sidebar,children,details,searchLabel="Search app",onSettings}:{host:AppHost;query:string;onQuery:(value:string)=>void;sidebar:ReactNode;children:ReactNode;details?:ReactNode;searchLabel?:string;onSettings?:()=>void}){
   const nav=useMobileNavigation(),panel=useRef<HTMLElement>(null),origin=useRef<HTMLElement|null>(null),wasOpen=useRef(false);
   useEffect(()=>{if(details&&!wasOpen.current&&matchMedia("(max-width:800px)").matches)(panel.current?.querySelector<HTMLElement>("button")??panel.current)?.focus();if(!details&&wasOpen.current)origin.current?.focus();wasOpen.current=!!details;},[!!details]);
   return <div className={`app-shell extension-shell ${details?"has-extension-details":""}`}>
-    <WorkspaceHeader app={`app:${host.id}`} session={host.session} onSignedOut={()=>location.assign("/")} query={query} onQuery={onQuery} searchLabel={searchLabel} onNavigation={()=>nav.setOpen(!nav.open)} navigationOpen={nav.open} navigationId={nav.id}/>
+    <WorkspaceHeader app={`app:${host.id}`} session={host.session} onSignedOut={()=>location.assign("/")} query={query} onQuery={onQuery} searchLabel={searchLabel} onNavigation={()=>nav.setOpen(!nav.open)} navigationOpen={nav.open} navigationId={nav.id} onSettings={onSettings}/>
     <div className="extension-workspace">{nav.open&&<button className="nav-scrim" aria-label="Close navigation" onClick={()=>nav.setOpen(false)}/>}
       <aside id={nav.id} ref={nav.ref} className={`sidebar ${nav.open?"is-open":""}`} onClick={event=>{if((event.target as HTMLElement).closest("button"))nav.setOpen(false);}}>{sidebar}</aside>
       <main tabIndex={-1} onClickCapture={event=>{origin.current=(event.target as HTMLElement).closest<HTMLElement>("button")??origin.current;}}>{children}</main>

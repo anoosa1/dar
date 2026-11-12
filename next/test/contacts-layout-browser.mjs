@@ -71,11 +71,9 @@ try{
   await page.getByRole("button",{name:/Settings vCard proof/}).waitFor();
   for(const viewport of [{width:1000,height:700},{width:390,height:844}]){
     await page.setViewportSize(viewport);
-    if(viewport.width<=800)await page.getByRole("button",{name:"Open navigation",exact:true}).click();
     const footer=await page.getByRole("button",{name:"Contacts settings",exact:true}).boundingBox();
     assert.ok(footer&&footer.y+footer.height<=viewport.height);
     assert.equal(await page.locator(".sidebar").evaluate(el=>el.scrollHeight>el.clientHeight+1),false);
-    if(viewport.width<=800)await page.getByRole("button",{name:"Open navigation",exact:true}).click();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight+1),false);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:process.env.DAR_TEST_ROOT+"/contacts-independent-panes-"+viewport.width+".png"});

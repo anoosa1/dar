@@ -23,6 +23,8 @@ import "./control-theme.css";
 import {useAppSettings} from "./app-availability.tsx";
 import {WorkspaceHeader} from "./shell.tsx";
 import {AgentWorkspace} from "./agent/workspace.tsx";
+// The shared frame is last so it supersedes the earlier per-surface frame rules.
+import "./frame.css";
 function OptionalWorkspace({kind,session,onSignedOut}:{kind:"notes"|"tasks"|"agent";session:BrowserSession;onSignedOut:()=>void}){
   const {settings,error}=useAppSettings();
   if(settings&&!settings.disabled.includes(kind))return kind==="agent"?<AgentWorkspace session={session} onSignedOut={onSignedOut}/>:<Workspace kind={kind} session={session} onSignedOut={onSignedOut}/>;

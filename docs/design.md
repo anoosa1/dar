@@ -12,6 +12,28 @@ update this guide when a design decision changes.
 
 ## Shared visual direction
 
+- The November 11 unified look selects B in
+  [unified look mock B](spacetimedb/unified-look-mock-b.html) over
+  [mock A](spacetimedb/unified-look-mock-a.html), superseding the shared header and
+  launcher decisions below wherever they differ. Every app, settings and the Agent
+  share one frame built from `client/frame.css`, `AppRail` and `WorkspaceHeader`:
+  - A persistent 72px app rail on the left: Dar mark, each enabled app as an icon
+    pill with its label (tonal when current), then global Settings and the account
+    menu at the bottom. Administrators reach Manage apps from the account menu.
+  - A 56px top bar: the app title aligned over the sidebar, the centered
+    cross-app search pill (Ctrl/Cmd+K) and the app's settings gear on the right.
+  - Content in floating sheets (16px radius, soft border) with an 8px gutter on the
+    soft background. The sidebar is transparent; its create action is a tonal
+    48px button with a 16px radius at the top, in the same place in every app.
+  - Navigation and list selection use a tonal pill; hover stays neutral. Sidebar
+    rows are 36px. The Agent keeps its rows, composer, context cards, drawer and
+    review surface inside this frame.
+  - Phones: the rail becomes a bottom bar with four apps and More (the current app
+    always keeps a slot), the search becomes a full-width pill with the avatar,
+    sidebar views and collections become a horizontal chip strip (app settings is
+    the last chip), the create action is a floating button above the bar, and
+    details, editors and Agent threads open full screen with Back.
+
 - Use the selected compact Material 3 workspace with Twilight Afterglow (light)
   and Twilight Nightfall (dark). Support the saved System appearance preference.
   The [selected November 8 twilight mock](spacetimedb/twilight-mocks.html)
@@ -58,7 +80,8 @@ update this guide when a design decision changes.
   standing request to skip mocks.
 - Keep primary creation actions in the same place. Files uses a New menu with
   Folder and File, including Text/Markdown creation. Its menu matches the trigger
-  width and alignment. Creation buttons share a filled primary action in both themes.
+  alignment and is at least as wide as the trigger. Creation buttons share the tonal
+  create action described above in both themes.
 - Avoid promotional app labels, subtitles and footer copy. Keep useful permission,
   safety and recovery explanations.
 
@@ -96,9 +119,10 @@ update this guide when a design decision changes.
 - Menus fit within the viewport, open in an appropriate direction and scroll
   internally when needed. Use shared keyboard, Escape, outside-click and focus
   restoration behavior.
-- Keep app settings at the bottom of the left sidebar. Contacts and Calendar use
-  compact, paged collection lists so their settings footers stay accessible. Files storage usage
-  sits immediately above Files settings.
+- App settings open from the top-bar gear on desktop and the last sidebar chip on
+  phones. Contacts and Calendar use compact, paged collection lists on desktop and
+  show every collection as a chip on phones. Files storage usage stays at the
+  bottom of its sidebar.
 
 ## App settings and global settings
 
@@ -176,11 +200,14 @@ update this guide when a design decision changes.
   is approved. Follow the T3-style composition: projects and threads on the left,
   conversation/composer in the center, focused changes on the right and
   collapsible output below. The November 9 follow-up selects A in
-  [T3 parity mocks](spacetimedb/agent-t3-parity-mocks.html), superseding the Agent
-  shared-header requirement: use compact T3 chrome with app access in the sidebar
-  and account/settings below. Ctrl/Cmd+K opens the Agent command palette (actions,
-  threads, projects); the sidebar search filters threads. Keep Twilight themes;
-  other apps retain their shared header and cross-app search. Thread rows are one
+  [T3 parity mocks](spacetimedb/agent-t3-parity-mocks.html) for the Agent's
+  content. The November 11 unified look B returns the Agent to the shared rail and
+  top bar: New thread is the sidebar create button, Agent settings is the top-bar
+  gear, Ctrl/Cmd+K is the shared cross-app search and Ctrl/Cmd+P opens the Agent
+  command palette (actions, threads, projects). The sidebar field filters threads.
+  On phones the thread list is the Agent's home screen with the bottom bar; a
+  thread opens full screen with Back and Conversation/Details/Changes/Terminal
+  tabs. Thread rows are one
   36px line: a tinted project mark, title and relative age; settle/restore and the
   row menu replace the age on hover or keyboard focus. Working and Settled shelves
   sit below active threads. New thread opens a draft headline with a project

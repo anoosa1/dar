@@ -24,7 +24,7 @@ export function Contacts({ session, onSignedOut }: { session: BrowserSession; on
   const [actionBook,setActionBook]=useState<PimCollection>();
   const actionSequence=useRef(0),bookList=useRef<HTMLDivElement>(null);
   const [bookPage,setBookPage]=useState(0),[pageSize,setPageSize]=useState(1);
-  useEffect(()=>{const node=bookList.current;if(!node)return;const resize=()=>setPageSize(Math.max(1,Math.min(8,Math.floor(node.clientHeight/42))));const observer=new ResizeObserver(resize);observer.observe(node);resize();return()=>observer.disconnect();},[]);
+  useEffect(()=>{const node=bookList.current;if(!node)return;const resize=()=>setPageSize(innerWidth<=800?1000:Math.max(1,Math.min(8,Math.floor(node.clientHeight/42))));const observer=new ResizeObserver(resize);observer.observe(node);resize();return()=>observer.disconnect();},[]);
   useEffect(()=>{const index=books.findIndex(row=>row.id===book);if(index>=0)setBookPage(Math.floor(index/pageSize));},[book,pageSize,books.map(row=>row.id).join(",")]);
   useEffect(()=>setBookPage(page=>Math.min(page,Math.max(0,Math.ceil(books.length/pageSize)-1))),[books.length,pageSize]);
   const writable = detailBook && detailBook.role !== "read";

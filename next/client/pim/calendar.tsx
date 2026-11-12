@@ -73,7 +73,7 @@ export function Calendar({ session, onSignedOut }: { session: BrowserSession; on
     const sequence=++actionSequence.current;setActionId(calendar.id);setError("");setModal(kind);
     if(kind==="deleteCalendar"){setDeleteCount(null);void request<{count:number}>(`${base}/${calendar.id}`).then(result=>{if(sequence===actionSequence.current)setDeleteCount(result.count);}).catch(cause=>setError(cause.message));}
   }
-  useEffect(()=>{const resize=()=>setPageSize(Math.max(1,Math.min(8,Math.floor((innerHeight-(innerWidth<=800?116:78)-300)/42))));resize();globalThis.addEventListener("resize",resize);return()=>globalThis.removeEventListener("resize",resize);},[]);
+  useEffect(()=>{const resize=()=>setPageSize(innerWidth<=800?1000:Math.max(1,Math.min(8,Math.floor((innerHeight-56-300)/42))));resize();globalThis.addEventListener("resize",resize);return()=>globalThis.removeEventListener("resize",resize);},[]);
   useEffect(()=>{const index=calendars.findIndex(row=>row.id===managed);if(index>=0)setCalendarPage(Math.floor(index/pageSize));},[managed,pageSize,calendars.map(row=>row.id).join(",")]);
   useEffect(()=>setCalendarPage(page=>Math.min(page,Math.max(0,Math.ceil(calendars.length/pageSize)-1))),[calendars.length,pageSize]);
   useEffect(()=>{const node=monthGrid.current;if(!node)return;const resize=()=>setMonthLimit(Math.max(0,Math.min(3,Math.floor(((node.clientHeight-28)/6-48)/22))));const observer=new ResizeObserver(resize);observer.observe(node);resize();return()=>observer.disconnect();},[view,loading,calendars.length]);

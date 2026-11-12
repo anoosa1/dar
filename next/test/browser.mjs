@@ -81,7 +81,7 @@ try {
   const phone = await mobile.newPage();
   phone.on("pageerror", error => failures.push(error.message));
   await phone.goto(origin);
-  await phone.getByRole("button", { name: "Open navigation", exact: true }).waitFor();
+  await phone.getByRole("navigation", { name: "Applications", exact: true }).waitFor();
   await phone.waitForFunction(() => !document.body.textContent.includes("Connecting…"));
   await phone.getByRole("button", { name: folder, exact: true }).click();
   await phone.getByRole("button", { name: "A little hello.txt", exact: true }).waitFor();

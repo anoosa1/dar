@@ -42,6 +42,11 @@ portable-file requirements for this directory only. Do not alter existing work.
   Personal/Administration global settings across all five apps and settings.
   This supersedes earlier per-app shell/settings variations; no further mock
   approval is needed for implementing the selected shared direction.
+- The November 11 unified look selects B in
+  `../docs/spacetimedb/unified-look-mock-b.html`: a shared app rail (bottom bar
+  on phones), top bar with centered search and app settings gear, and floating
+  sheets for every app including the Agent. It supersedes the shared header,
+  launcher and lower-sidebar app settings above; see ../docs/design.md.
 - Calendar's November 7 refinement uses Month by default, one date/today control
   beside the period arrows, per-calendar action menus, and compact paged calendar
   navigation. Import/export and cancelled-event visibility belong in Calendar

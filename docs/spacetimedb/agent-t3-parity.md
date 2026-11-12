@@ -35,8 +35,9 @@ complete because their surrounding panel has been redesigned.
 
 ## Selected A implementation
 
-- Compact sidebar chrome with the shared application launcher and account actions;
-  no full-width global header on Agent. Other apps retain their header. Thread
+- Superseded November 11: the Agent now uses the shared unified-look B frame (app
+  rail, top bar with cross-app search and settings gear, floating sheets) like
+  every other app; New thread is the sidebar create button. Thread
   search, Working/Settled shelves and project-over-title rows use real saved data.
 - Searchable project chooser in the shared dialog, then focused composer; source
   creation still uses the shared Files picker and source-derived names.
@@ -132,7 +133,7 @@ changes, all additive and backward compatible:
 Client: pinned group, archive (restorable in Settings → Archived threads), inline
 rename (menu, double-click, F2), delete confirmation, right-click row menu, unread
 markers (per browser), optional completion notifications, project grouping,
-Ctrl/Cmd+K command palette, Ctrl/Cmd+Shift+O new thread, Ctrl/Cmd+B sidebar,
+Ctrl/Cmd+P command palette (Ctrl/Cmd+K is the shared cross-app search since November 11), Ctrl/Cmd+Shift+O new thread, Ctrl/Cmd+B sidebar,
 resizable sidebar/review (pointer, arrow keys, double-click reset), slash
 commands (/new /model /effort /review /terminal /find /rename /settle /settings),
 @ file mentions, prompt history (Up/Down), one queued follow-up while running

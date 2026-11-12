@@ -1,8 +1,9 @@
 /** Operate the visible themed choices rather than a hidden form field. */
 export async function choose(control,value){const id=await control.getAttribute("aria-controls");await control.click();const list=control.page().locator(`[id=${JSON.stringify(id)}]`);if(typeof value==="object")await list.getByRole("option",{name:value.label,exact:true}).click();else await list.locator(`[role=option][data-value=${JSON.stringify(String(value))}]`).click();}
 export async function switchApp(page,id){
-  await page.getByRole("button",{name:"Open applications",exact:true}).click();
-  await page.getByRole("menuitem",{name:({files:"Files",contacts:"Contacts",calendar:"Calendar",notes:"Notes",tasks:"Tasks"})[id],exact:true}).click();
+  // The app rail lists every app on desktop; phones put the rest under More.
+  const name=({files:"Files",contacts:"Contacts",calendar:"Calendar",notes:"Notes",tasks:"Tasks"})[id],link=page.getByRole("navigation",{name:"Applications",exact:true}).getByRole("link",{name,exact:true});
+  if(await link.isVisible())await link.click();else{await page.getByRole("button",{name:"More apps",exact:true}).click();await page.getByRole("menu",{name:"More apps",exact:true}).getByRole("menuitem",{name,exact:true}).click();}
   await page.waitForURL(url=>url.pathname===(id==="files"?"/":"/"+id));
   // Optional apps briefly render a loading header before mounting the workspace.
   await page.locator(({files:".files-main",contacts:".contacts-main",calendar:".calendar-main",notes:".notes-list",tasks:".workspace-list"})[id]).waitFor();

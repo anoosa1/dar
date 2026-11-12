@@ -9,6 +9,9 @@ searchLabel props remain accepted for existing app builds, but do not scope the
 global search. Saved own-user records from enabled apps with ownUserData:read are
 searched without exposing record contents in the result snippet. App settings
 use the shared `Dialog` with the `ui-settings-dialog` presentation, not EditorPane.
+Pass `onSettings` to `AppWorkspace` to show the app's settings button in the
+shared top bar; keep a sidebar `nav-item ui-app-settings-entry` button too, as
+phones show it as the last navigation chip.
 Pass `dirty` to Dialog to preserve edits on Escape/close with explicit discard.
 
 ## Build an app outside Dar

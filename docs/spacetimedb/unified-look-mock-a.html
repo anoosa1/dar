@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar unified look — A: Agent frame everywhere</title>
+<style>
+/* Page chrome (uses host theme variables when rendered inline, plain defaults standalone). */
+:root{font-family:var(--font-sans,system-ui,sans-serif);color:var(--foreground,#2b1f2d)}
+body{margin:0}.doc{max-width:1280px;margin:0 auto;padding:4px 0 24px}
+.intro h1{font-size:20px;margin:0 0 6px}.intro p,.frame>p{font-size:13px;line-height:1.6;color:var(--muted-foreground,#6d5f6d);margin:0 0 10px}
+.frame{margin:0 0 36px}.frame>h2{font-size:15px;margin:0 0 4px}
+.rules{font-size:12px;line-height:1.65;color:var(--muted-foreground,#6d5f6d);columns:2;column-gap:28px;margin:12px 0 0;padding-left:18px}.rules b{color:var(--foreground,#2b1f2d);font-weight:600}
+.fit{width:100%}.board{width:1280px}
+
+/* Twilight tokens: Afterglow (light) / Nightfall (dark), unchanged from theme.css. */
+.light{color-scheme:light}.dark{color-scheme:dark}
+.screen,.sheet{--text:light-dark(#352138,#faeaf3);--muted:light-dark(#755d74,#cfb4ca);--panel:light-dark(#fffafb,#301c2b);--soft:light-dark(#fbf4f6,#26111f);--raised:light-dark(#ffffff,#3a2536);--border:light-dark(#e3d3e0,#553f50);--control:light-dark(#94788f,#a3839c);--accent:light-dark(#73396f,#f2a2a9);--on-accent:light-dark(#fff7fc,#26111f);--tonal:light-dark(#ede3f5,#4d3c73);--on-tonal:light-dark(#4d3c73,#f3eafd);--hover:light-dark(#f3e7ee,#412b3f);--danger:light-dark(#a32745,#ffb2c6);--error-soft:light-dark(#fbe9ee,#4e2436);--success:light-dark(#276045,#b2dec4);--success-soft:light-dark(#e3f0e9,#284136);--warning:light-dark(#854913,#ffc493);--warning-soft:light-dark(#fbe9d8,#4b3429);--rose:light-dark(#a94a76,#d889af);--violet:light-dark(#5b4b8a,#c4b5f5);--sel:color-mix(in srgb,var(--text) 9%,transparent);
+ font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--text);background:var(--panel);-webkit-font-smoothing:antialiased}
+.screen{position:relative;height:760px;border:1px solid var(--border);border-radius:12px;overflow:hidden;display:grid;grid-template-columns:256px minmax(0,1fr) 380px}
+.screen.two{grid-template-columns:256px minmax(0,1fr)}
+.screen *{box-sizing:border-box}
+svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.muted{color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.num{font-variant-numeric:tabular-nums}
+
+/* Sidebar: the Agent sidebar, verbatim measurements. */
+.side{display:flex;flex-direction:column;min-height:0;padding:8px;background:var(--soft);border-right:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:8px;height:40px;margin-bottom:4px;padding:0 4px 0 8px;font-size:14px;font-weight:650}
+.brand>svg{width:18px;height:18px;color:var(--accent)}
+.launch{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 7px;border-radius:6px;font-size:12px;font-weight:500;color:var(--muted)}
+.launch svg{width:12px;height:12px}
+.srow{display:flex;align-items:center;gap:2px;margin-bottom:8px}
+.sfield{flex:1;display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;border-radius:6px;color:var(--muted);font-weight:500}
+kbd{margin-left:auto;font:10px/16px ui-monospace,monospace;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:0 4px;background:var(--panel)}
+.ib{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:6px;color:var(--muted);flex:none}.ib.sm{width:26px;height:26px}.ib.on{background:var(--hover);color:var(--text)}
+.nav{display:flex;flex-direction:column;gap:1px}
+.row{position:relative;display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:6px;white-space:nowrap;min-width:0}
+.row>svg{color:var(--muted)}.row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.row .m{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.row.sel{background:var(--sel)}.row.hov{background:var(--hover)}.row.dim .t{color:var(--muted)}
+.row.focus{outline:2px solid var(--accent);outline-offset:-2px}
+.row.indent{padding-left:28px}
+.row .acts{margin-left:auto;display:flex;gap:0;color:var(--muted)}
+.mark{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:4px;flex:none;font-size:9px;font-weight:700;color:var(--panel);background:var(--accent)}
+.mark.r{background:var(--rose)}.mark.g{background:var(--success)}.mark.y{background:var(--warning)}.mark.v{background:var(--violet)}
+.mark.quiet{opacity:.45;filter:grayscale(1)}
+.grp{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;font-size:12px;font-weight:550;color:var(--muted)}
+.grp>svg{width:11px;height:11px}.grp span{font-weight:400}
+.grp .ib{margin-left:auto}
+.shelf{margin-top:auto;padding-top:8px}
+.foot{display:flex;align-items:center;gap:8px;padding:10px 4px 0;flex:none;margin-top:auto}.shelf+.foot{margin-top:0}
+.foot .set{flex:1;display:flex;align-items:center;gap:8px;height:34px;padding:0 6px;border-radius:6px;font-size:12px;color:var(--muted)}
+.avatar{display:inline-grid;place-items:center;width:25px;height:25px;border-radius:50%;background:var(--tonal);color:var(--on-tonal);font-size:10px;font-weight:650;flex:none}
+.meter{height:4px;border-radius:4px;background:var(--hover);overflow:hidden}.meter>i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none}.dot.g{background:var(--success)}.dot.m{background:var(--muted);opacity:.6}
+
+/* Center. */
+.center{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--panel)}
+.head{display:flex;align-items:center;gap:6px;height:48px;padding:0 12px;flex:none;min-width:0}
+.head.line{border-bottom:1px solid var(--border)}
+.head h2{margin:0;font-size:12px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);white-space:nowrap}.crumb svg{width:11px;height:11px}
+.tools{margin-left:auto;display:flex;align-items:center;gap:2px}
+.btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;font-size:12px;font-weight:550;white-space:nowrap;border:0}
+.btn svg{width:14px;height:14px}
+.btn.fill{background:var(--accent);color:var(--on-accent)}.btn.ton{background:var(--tonal);color:var(--on-tonal)}
+.btn.out{border:1px solid var(--border);background:var(--panel);color:var(--text)}.btn.txt{color:var(--accent);padding:0 8px}
+.btn.dng{background:var(--danger);color:var(--panel)}
+.send{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--on-accent);flex:none}.send svg{width:17px;height:17px;stroke-width:2.2}
+.seg{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--hover)}.seg>span{padding:3px 10px;border-radius:6px;font-size:12px;color:var(--muted)}.seg>span.on{background:var(--raised);color:var(--text);box-shadow:0 1px 2px #0002}
+.scroll{flex:1;min-height:0;overflow:hidden}
+.col{padding:24px max(48px,calc((100% - 768px)/2)) 32px}
+.thead,.trow{display:grid;grid-template-columns:24px minmax(0,1fr) 130px 80px 30px;align-items:center;gap:10px;padding:0 16px 0 20px}
+.thead{height:32px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border)}
+.trow{height:36px;border-radius:6px;margin:1px 8px;padding:0 8px 0 12px}
+.trow .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.trow .d{font-size:12px;color:var(--muted)}.trow svg.fo{color:var(--rose);fill:var(--tonal)}
+.trow.sel{background:var(--sel)}.trow.hov{background:var(--hover)}
+.drawer{flex:none;border-top:1px solid var(--border);background:var(--soft)}
+.dtabs{display:flex;align-items:center;gap:12px;padding:4px 12px 4px 16px;font-size:11px}
+.dtabs .tab{padding:5px 9px;border-radius:6px;color:var(--muted);font-size:12px}.dtabs .tab.on{background:var(--hover);color:var(--text)}
+.xfer{padding:2px 16px 12px;font-size:12px;display:flex;flex-direction:column;gap:6px}
+.xfer>div{display:grid;grid-template-columns:16px minmax(0,1fr) 180px 48px;gap:10px;align-items:center}
+.composer{border:1px solid color-mix(in srgb,var(--text) 10%,transparent);border-radius:16px;padding:12px 12px 8px 14px;background:var(--raised);box-shadow:0 4px 18px #00000012,0 1px 2px #0000000a}
+.composer .ph{color:var(--muted);min-height:34px;font-size:14px}
+.ctrls{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 9px;border-radius:8px;font-size:12px;font-weight:500;color:var(--muted)}.chip svg{width:13px;height:13px}.chip.on{background:var(--hover);color:var(--text)}
+.tag{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:999px;background:var(--hover);color:var(--muted);font-size:11px}
+
+/* Right focused pane. */
+.right{display:flex;flex-direction:column;min-width:0;min-height:0;border-left:1px solid var(--border);background:var(--panel)}
+.right .head{border-bottom:1px solid var(--border)}
+.pane{flex:1;min-height:0;overflow:hidden;padding:16px;display:flex;flex-direction:column;gap:16px}
+.card{border:1px solid var(--border);border-radius:9px;background:var(--raised);overflow:hidden;font-size:12px;color:var(--muted)}
+.card>div{display:flex;align-items:center;gap:8px;min-height:37px;padding:9px 10px;border-bottom:1px solid var(--border)}.card>div:last-child{border-bottom:0}
+.card strong{color:var(--text);font-weight:550}.card .v{margin-left:auto;color:var(--text);font-variant-numeric:tabular-nums}.card svg{width:14px;height:14px}
+.ptitle{font-size:20px;font-weight:600;letter-spacing:-.01em;margin:0}
+.preview{height:150px;border-radius:9px;border:1px solid var(--border);background:var(--soft);padding:14px;font:11px/1.7 ui-monospace,monospace;color:var(--muted);overflow:hidden}
+.preview b{color:var(--text)}
+.field{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)}
+.input{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border:1px solid var(--control);border-radius:8px;background:var(--panel);color:var(--text);font-size:13px}
+.input.focus{border:2px solid var(--accent);padding:0 9px}.input svg{color:var(--muted)}
+.input.area{height:72px;align-items:flex-start;padding-top:8px;color:var(--muted)}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pfoot{display:flex;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--border);flex:none}.pfoot .btn.fill{margin-left:auto}
+.unsaved{font-size:11px;color:var(--warning);display:flex;align-items:center;gap:6px}
+
+/* Calendar. */
+.mini{padding:4px 6px 10px;font-size:11px}.mini .mh{display:flex;align-items:center;height:28px;padding:0 4px;font-weight:550;font-size:12px}.mini .mh span{margin-left:auto;display:flex;color:var(--muted)}
+.mini .g{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;row-gap:2px}.mini .g>span{height:26px;line-height:26px;border-radius:50%;font-variant-numeric:tabular-nums}
+.mini .g .w{color:var(--muted);font-size:10px}.mini .g .o{color:var(--muted);opacity:.55}.mini .g .wk{background:var(--sel);border-radius:0}.mini .g .wk.s{border-radius:13px 0 0 13px}.mini .g .wk.e{border-radius:0 13px 13px 0}.mini .g .today{background:var(--accent);color:var(--on-accent);border-radius:50%}
+.cb{width:14px;height:14px;border-radius:3px;flex:none;border:1.5px solid var(--control)}.cb.c{border:0;background:var(--accent);position:relative}.cb.c::after{content:"";position:absolute;left:4.5px;top:1.5px;width:4px;height:8px;border:solid var(--on-accent);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.cb.c.r{background:var(--rose)}.cb.c.g{background:var(--success)}.cb.c.y{background:var(--warning)}.cb.c.v{background:var(--violet)}
+.week{flex:1;min-height:0;display:grid;grid-template-columns:52px repeat(7,minmax(0,1fr));grid-template-rows:52px 26px repeat(10,60px);position:relative;overflow:hidden;border-top:1px solid var(--border)}
+.week .dh{border-bottom:1px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--muted);gap:1px}.week .dh b{font-size:18px;font-weight:500;color:var(--text);line-height:1.1}
+.week .dh.today b{background:var(--accent);color:var(--on-accent);border-radius:50%;width:30px;height:30px;display:grid;place-items:center;font-size:15px}
+.week .ad{border-bottom:1px solid var(--border);font-size:10px;color:var(--muted);display:flex;align-items:center;justify-content:flex-end;padding-right:6px}
+.week .hr{font-size:10px;color:var(--muted);text-align:right;padding:0 6px;transform:translateY(-6px)}
+.week .cell{border-left:1px solid var(--border);border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent)}
+.ev{position:absolute;border-radius:6px;padding:4px 7px;font-size:11px;line-height:1.35;overflow:hidden;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}
+.ev small{display:block;color:var(--muted);font-size:10px}.ev.r{border-color:var(--rose);background:color-mix(in srgb,var(--rose) 16%,var(--panel))}.ev.g{border-color:var(--success);background:color-mix(in srgb,var(--success) 14%,var(--panel))}.ev.y{border-color:var(--warning);background:color-mix(in srgb,var(--warning) 14%,var(--panel))}.ev.v{border-color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,var(--panel))}
+.ev.sel{outline:2px solid var(--accent);outline-offset:1px}
+.ev.all{height:20px;padding:2px 7px}
+.now{position:absolute;height:2px;background:var(--danger)}.now::before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--danger)}
+
+/* Contacts / tasks / notes. */
+.av{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:50%;font-size:12px;font-weight:600;flex:none;background:var(--tonal);color:var(--on-tonal)}
+.av.r{background:color-mix(in srgb,var(--rose) 22%,var(--panel));color:var(--rose)}.av.g{background:var(--success-soft);color:var(--success)}.av.y{background:var(--warning-soft);color:var(--warning)}
+.crow{display:flex;align-items:center;gap:12px;height:56px;padding:0 12px;margin:1px 8px;border-radius:8px}.crow.sel{background:var(--sel)}.crow .t{display:flex;flex-direction:column;min-width:0}.crow small{font-size:12px;color:var(--muted)}
+.letter{padding:12px 20px 4px;font-size:11px;font-weight:600;color:var(--muted)}
+.hero{display:flex;flex-direction:column;align-items:center;gap:10px;padding:8px 0 4px;text-align:center}.hero .av{width:72px;height:72px;font-size:24px}.hero h3{margin:0;font-size:20px;font-weight:600}.hero p{margin:0;font-size:12px;color:var(--muted)}
+.qa{display:flex;gap:8px;justify-content:center}.qa .ib{width:38px;height:38px;border-radius:50%;background:var(--hover);color:var(--text)}
+.card a{color:var(--accent);text-decoration:none}
+.task{display:flex;align-items:flex-start;gap:12px;padding:9px 12px;margin:1px 8px;border-radius:8px}.task.sel{background:var(--sel)}
+.task .ck{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--control);flex:none;margin-top:1px}.task .ck.done{border:0;background:var(--accent);display:grid;place-items:center;color:var(--on-accent)}.task .ck.done svg{width:12px;height:12px;stroke-width:2.6}
+.task .ck.p1{border-color:var(--danger)}.task .ck.p2{border-color:var(--warning)}
+.task .b{flex:1;min-width:0}.task .b>div{font-size:13px}.task .b>small{display:flex;gap:10px;font-size:11px;color:var(--muted);margin-top:2px;align-items:center}.task .b>small svg{width:11px;height:11px}
+.task.done .b>div{color:var(--muted);text-decoration:line-through}
+.task .sub{margin-left:30px}
+.due{color:var(--danger)!important}
+.md h1{font-size:26px;font-weight:600;letter-spacing:-.015em;margin:0 0 6px}.md h3{font-size:15px;margin:22px 0 8px}.md p{font-size:14px;line-height:1.75;margin:0 0 12px}.md ul{padding-left:22px;margin:0 0 12px;font-size:14px;line-height:1.75}
+.md code{background:var(--hover);border-radius:4px;padding:1px 5px;font-size:12px}.md pre{background:var(--soft);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font:12px/1.7 ui-monospace,monospace;margin:0 0 12px}
+.md .meta{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:22px}
+.fmt{display:flex;align-items:center;gap:2px;margin:0 auto;padding:4px;border:1px solid color-mix(in srgb,var(--text) 10%,transparent);border-radius:12px;background:var(--raised);box-shadow:0 4px 18px #00000012;width:max-content}
+.fmt .ib{width:30px;height:30px;font-weight:650;font-size:13px}.fmt i.sep{width:1px;height:18px;background:var(--border);margin:0 4px}
+.ctx{position:absolute;right:16px;top:64px;width:208px}
+
+/* Palette overlay. */
+.scrim{position:absolute;inset:0;background:light-dark(#26111f55,#10081099);display:flex;justify-content:center;align-items:flex-start;padding-top:80px}
+.palette{width:640px;border:1px solid var(--border);border-radius:14px;background:var(--raised);box-shadow:0 24px 64px #00000040;overflow:hidden}
+.palette .pin{display:flex;align-items:center;gap:10px;height:52px;padding:0 16px;border-bottom:1px solid var(--border);font-size:15px}.palette .pin svg{width:18px;height:18px;color:var(--muted)}
+.palette .scope{display:flex;gap:6px;padding:10px 12px 2px}.palette .scope .tag.on{background:var(--tonal);color:var(--on-tonal)}
+.palette .grp{height:28px;margin-top:6px;padding:0 16px;font-size:11px}
+.palette .opt{display:flex;align-items:center;gap:10px;height:36px;margin:0 6px;padding:0 10px;border-radius:7px;font-size:13px}.palette .opt.act{background:var(--hover)}.palette .opt>svg{color:var(--muted)}.palette .opt small{margin-left:auto;font-size:11px;color:var(--muted)}
+.palette mark{background:none;color:var(--accent);font-weight:650}
+.palette .pfoot2{display:flex;gap:16px;padding:9px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);margin-top:6px}.palette .pfoot2 kbd{margin:0 4px 0 0}
+.partial{margin:4px 12px 0;padding:7px 10px;border-radius:8px;background:var(--warning-soft);color:var(--warning);font-size:12px;display:flex;align-items:center;gap:8px}.partial span{margin-left:auto;font-weight:600}
+
+/* Settings. */
+.settings{flex:1;min-height:0;overflow:hidden;padding:28px 48px;background:var(--soft)}
+.spanel{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.spanel h1{font-size:24px;font-weight:600;margin:0}
+.ssec{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:20px}.ssec h3{margin:0 0 4px;font-size:15px}.ssec>p{margin:0 0 16px;font-size:12px;color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.tile{border:1px solid var(--border);border-radius:12px;padding:10px;font-size:12px;display:flex;flex-direction:column;gap:8px}.tile.on{border:2px solid var(--accent);padding:9px;background:var(--tonal);color:var(--on-tonal)}
+.sw{height:58px;border-radius:8px;border:1px solid var(--border);display:grid;grid-template-columns:28% 1fr}.sw i{display:block}
+.sline{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--border);font-size:13px}.sline small{display:block;color:var(--muted);font-size:12px}.sline .btn{margin-left:auto}
+.toggle{width:36px;height:20px;border-radius:10px;background:var(--accent);position:relative;margin-left:auto;flex:none}.toggle::after{content:"";position:absolute;right:3px;top:3px;width:14px;height:14px;border-radius:50%;background:var(--on-accent)}.toggle.off{background:var(--hover);border:1.5px solid var(--control)}.toggle.off::after{left:3px;right:auto;top:1.5px;background:var(--control)}
+
+/* Phones. */
+.phones{display:flex;gap:40px;justify-content:center}
+.phone{width:360px;height:740px;border-radius:28px;border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column;position:relative}
+.phone *{box-sizing:border-box}
+.ph-head{display:flex;align-items:center;gap:4px;height:48px;padding:0 6px;flex:none}.ph-head h2{font-size:15px;font-weight:600;margin:0 0 0 4px;flex:1}
+.ph-head .ib{width:40px;height:40px}.ph-head .ib svg{width:20px;height:20px}
+.ph-tabs{display:flex;border-bottom:1px solid var(--border);padding:0 6px;flex:none}.ph-tabs span{flex:1;text-align:center;font-size:12px;padding:12px 4px;color:var(--muted);border-bottom:2px solid transparent}.ph-tabs span.on{color:var(--accent);border-color:var(--accent);font-weight:550}
+.ph-body{flex:1;min-height:0;overflow:hidden}
+.phone .row{height:48px;font-size:14px}.phone .trow{grid-template-columns:24px minmax(0,1fr) 30px;height:52px}
+.phone .trow .n small{display:block;font-size:11px;color:var(--muted)}
+.drawerSheet{position:absolute;inset:0;background:light-dark(#26111f55,#10081099)}
+.drawerSheet .side{position:absolute;left:0;top:0;bottom:0;width:300px;border-radius:0 18px 18px 0;padding:12px}
+
+/* Components board. */
+.sheet{border:1px solid var(--border);border-radius:12px;padding:24px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;font-size:13px}
+.sheet *{box-sizing:border-box}
+.sheet h4{margin:0 0 10px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.stack{display:flex;flex-direction:column;gap:8px}.line{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.menu{width:220px;border:1px solid var(--border);border-radius:10px;background:var(--raised);box-shadow:0 12px 32px #00000030;padding:4px}.menu .opt{display:flex;align-items:center;gap:10px;height:32px;padding:0 8px;border-radius:6px;font-size:13px}.menu .opt.act{background:var(--hover)}.menu .opt small{margin-left:auto;color:var(--muted);font-size:11px}.menu hr{border:0;border-top:1px solid var(--border);margin:4px 0}.menu .opt.d{color:var(--danger)}.menu .opt>svg{color:var(--muted)}.menu .opt.d>svg{color:var(--danger)}
+.dialog{border:1px solid var(--border);border-radius:14px;background:var(--raised);box-shadow:0 12px 32px #00000030;padding:18px}.dialog h5{margin:0 0 8px;font-size:15px}.dialog p{margin:0 0 16px;font-size:13px;color:var(--muted);line-height:1.6}.dialog .line{justify-content:flex-end}
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:22px;border:1px dashed var(--border);border-radius:10px;color:var(--muted);font-size:12px}.empty svg{width:22px;height:22px}.empty b{color:var(--text);font-size:13px}
+.err{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:10px;background:var(--error-soft);color:var(--danger);font-size:12px;line-height:1.5}.err b{display:block}.err .btn{margin-left:auto;flex:none}
+.toast{display:flex;align-items:center;gap:10px;padding:8px 8px 8px 14px;border-radius:12px;background:var(--text);color:var(--panel);font-size:12px;box-shadow:0 8px 24px #0003}.toast .btn{color:inherit;background:none;margin-left:auto;text-decoration:underline}
+.radio{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--control);flex:none}.radio.on{border:5px solid var(--accent)}
+.lab{display:flex;align-items:center;gap:10px;font-size:13px}
+.skel{height:10px;border-radius:5px;background:var(--hover)}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--hover);border-top-color:var(--accent)}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+<symbol id="image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="star" viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+<symbol id="users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></symbol>
+<symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+<symbol id="cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></symbol>
+<symbol id="contact" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+<symbol id="note" viewBox="0 0 24 24"><path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M8 13h8M8 17h5"/></symbol>
+<symbol id="check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+<symbol id="task" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 12l3 3 5-6"/></symbol>
+<symbol id="agent" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+<symbol id="moon" viewBox="0 0 24 24"><path d="M20 13.5A8 8 0 1 1 10.5 4a6.5 6.5 0 0 0 9.5 9.5z"/></symbol>
+<symbol id="gear" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+<symbol id="chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+<symbol id="chevd" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+<symbol id="dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
+<symbol id="pl" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+<symbol id="pr" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+<symbol id="up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+<symbol id="down" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+<symbol id="link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+<symbol id="grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+<symbol id="list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></symbol>
+<symbol id="mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
+<symbol id="phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></symbol>
+<symbol id="pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></symbol>
+<symbol id="bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+<symbol id="repeat" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/></symbol>
+<symbol id="shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+<symbol id="key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="5"/><path d="M11.5 11.5L21 2M16 7l3 3"/></symbol>
+<symbol id="home" viewBox="0 0 24 24"><path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+<symbol id="flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4s1.5-1 4-1 4 2 6.5 2S19 4 19 4v10s-1.5 1-3.5 1S12 13 9.5 13 5 14 5 14"/></symbol>
+<symbol id="tag" viewBox="0 0 24 24"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="8" cy="8" r="1.3"/></symbol>
+<symbol id="edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+<symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="cloud" viewBox="0 0 24 24"><path d="M18 10h-1.3A7 7 0 1 0 9 19h9a4.5 4.5 0 0 0 0-9z"/></symbol>
+<symbol id="alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></symbol>
+<symbol id="sort" viewBox="0 0 24 24"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></symbol>
+<symbol id="inbox" viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6z"/></symbol>
+</defs></svg>
+
+<div class="doc">
+<header class="intro">
+<h1>A — The Agent frame, everywhere</h1>
+<p>Every app adopts the Agent's chrome exactly. The shared top header goes away: the 256px sidebar carries the app name and launcher at the top, a search row (Ctrl/Cmd+K opens cross-app search as a palette) and the account/settings footer. The center column has a quiet 48px heading, and creation/editing opens the focused right pane. Neutral surfaces, neutral selection; violet/rose accent is kept for primary actions, focus, today and live state. Twilight Afterglow/Nightfall tokens are unchanged.</p>
+</header>
+
+<!-- A1 FILES -->
+<section class="frame"><h2>A1 · Files — dark, file selected, upload drawer open</h2>
+<p>Places and collections are sidebar rows. The list is a compact 36px table in the center, and the selected file opens in the right pane. Transfers use the Agent's collapsible bottom drawer instead of toasts.</p>
+<div class="fit"><div class="board">
+<div class="screen dark">
+ <aside class="side">
+  <div class="brand"><svg class="i"><use href="#folder"/></svg>Files<span class="launch">Apps<svg class="i"><use href="#chevd"/></svg></span></div>
+  <div class="srow"><div class="sfield"><svg class="i"><use href="#search"/></svg>Search Dar<kbd>Ctrl K</kbd></div><span class="ib sm"><svg class="i"><use href="#plus"/></svg></span></div>
+  <div class="nav">
+   <div class="row sel"><svg class="i"><use href="#home"/></svg><span class="t">All files</span></div>
+   <div class="row"><svg class="i"><use href="#clock"/></svg><span class="t">Recent</span></div>
+   <div class="row"><svg class="i"><use href="#star"/></svg><span class="t">Favorites</span><span class="m">6</span></div>
+   <div class="row"><svg class="i"><use href="#users"/></svg><span class="t">Shared with me</span><span class="m">2</span></div>
+   <div class="row"><svg class="i"><use href="#image"/></svg><span class="t">Photos</span></div>
+  </div>
+  <div class="grp" style="margin-top:12px"><svg class="i"><use href="#chevd"/></svg>Pinned folders</div>
+  <div class="nav">
+   <div class="row"><svg class="i" style="color:var(--rose)"><use href="#folder"/></svg><span class="t">Projects</span></div>
+   <div class="row"><svg class="i" style="color:var(--rose)"><use href="#folder"/></svg><span class="t">Documents</span></div>
+   <div class="row"><svg class="i" style="color:var(--rose)"><use href="#folder"/></svg><span class="t">Receipts 2026</span></div>
+  </div>
+  <div class="shelf">
+   <div class="grp"><svg class="i"><use href="#chev"/></svg>Trash <span>14</span></div>
+   <div style="padding:8px 10px 6px;font-size:11px;color:var(--muted)"><div style="display:flex;margin-bottom:6px"><span>Storage</span><span style="margin-left:auto" class="num">41.2 of 200 GB</span></div><div class="meter"><i style="width:21%"></i></div></div>
+  </div>
+  <div class="foot"><span class="set"><svg class="i"><use href="#gear"/></svg>Files settings</span><span class="avatar">AN</span></div>
+ </aside>
+ <main class="center">
+  <div class="head"><span class="crumb">All files<svg class="i"><use href="#chev"/></svg>Projects<svg class="i"><use href="#chev"/></svg></span><h2>Dar</h2>
+   <div class="tools"><span class="ib"><svg class="i"><use href="#sort"/></svg></span><span class="ib on"><svg class="i"><use href="#list"/></svg></span><span class="ib"><svg class="i"><use href="#grid"/></svg></span><span class="ib"><svg class="i"><use href="#up"/></svg></span><span class="btn fill" style="margin-left:6px"><svg class="i"><use href="#plus"/></svg>New<svg class="i"><use href="#chevd"/></svg></span><span class="ib"><svg class="i"><use href="#pr"/></svg></span></div></div>
+  <div class="thead"><span></span><span>Name</span><span>Modified</span><span style="text-align:right">Size</span><span></span></div>
+  <div class="scroll" style="padding-top:4px">
+   <div class="trow"><svg class="i fo"><use href="#folder"/></svg><span class="n">assets</span><span class="d">Yesterday</span><span class="d num" style="text-align:right">—</span><span></span></div>
+   <div class="trow"><svg class="i fo"><use href="#folder"/></svg><span class="n">docs</span><span class="d">Nov 9</span><span class="d num" style="text-align:right">—</span><span></span></div>
+   <div class="trow hov"><svg class="i fo"><use href="#folder"/></svg><span class="n">next</span><span class="d">Nov 9</span><span class="d num" style="text-align:right">—</span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+   <div class="trow"><svg class="i fo"><use href="#folder"/></svg><span class="n">nix</span><span class="d">Oct 30</span><span class="d num" style="text-align:right">—</span><span></span></div>
+   <div class="trow sel"><svg class="i"><use href="#note"/></svg><span class="n">design-notes.md</span><span class="d">12 min ago</span><span class="d num" style="text-align:right">8.4 KB</span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+   <div class="trow"><svg class="i"><use href="#file"/></svg><span class="n">flake.lock</span><span class="d">Nov 2</span><span class="d num" style="text-align:right">4.1 KB</span><span></span></div>
+   <div class="trow"><svg class="i"><use href="#file"/></svg><span class="n">flake.nix</span><span class="d">Nov 2</span><span class="d num" style="text-align:right">2.7 KB</span><span></span></div>
+   <div class="trow"><svg class="i"><use href="#image"/></svg><span class="n">header-sketch.png</span><span class="d">Oct 28</span><span class="d num" style="text-align:right">1.3 MB</span><span></span></div>
+   <div class="trow"><svg class="i"><use href="#image"/></svg><span class="n">launcher-option-a.png</span><span class="d">Oct 28</span><span class="d num" style="text-align:right">880 KB</span><span></span></div>
+   <div class="trow"><svg class="i"><use href="#note"/></svg><span class="n">README.md</span><span class="d">Oct 21</span><span class="d num" style="text-align:right">3.0 KB</span><span></span></div>
+   <div class="trow"><svg class="i"><use href="#file"/></svg><span class="n">LICENSE</span><span class="d">Sep 3</span><span class="d num" style="text-align:right">1.1 KB</span><span></span></div>
+  </div>
+  <div class="drawer">
+   <div class="dtabs"><span class="tab on">Transfers</span><span class="tab">Activity</span><span class="muted">2 of 3 uploaded</span><span class="ib sm" style="margin-left:auto"><svg class="i"><use href="#chevd"/></svg></span></div>
+   <div class="xfer">
+    <div><svg class="i" style="color:var(--success)"><use href="#check"/></svg><span>scan-0412.pdf</span><span class="meter"><i style="width:100%;background:var(--success)"></i></span><span class="muted num" style="text-align:right">Done</span></div>
+    <div><svg class="i" style="color:var(--success)"><use href="#check"/></svg><span>scan-0413.pdf</span><span class="meter"><i style="width:100%;background:var(--success)"></i></span><span class="muted num" style="text-align:right">Done</span></div>
+    <div><span class="dot" style="margin:0 5px"></span><span>holiday-2026.mov</span><span class="meter"><i style="width:64%"></i></span><span class="muted num" style="text-align:right">64%</span></div>
+   </div>
+  </div>
+ </main>
+ <aside class="right">
+  <div class="head"><svg class="i muted"><use href="#note"/></svg><h2>design-notes.md</h2><div class="tools"><span class="ib"><svg class="i"><use href="#edit"/></svg></span><span class="ib"><svg class="i"><use href="#dots"/></svg></span><span class="ib"><svg class="i"><use href="#x"/></svg></span></div></div>
+  <div class="pane">
+   <div class="preview"><b># Design notes</b><br><br>Shared chrome follows the Agent.<br>- 256px sidebar, 36px rows<br>- 48px pane headings<br>- focused right pane for editing<br><br><b>## Open questions</b><br>- rail or no rail?</div>
+   <div class="card">
+    <div><svg class="i"><use href="#folder"/></svg>Location<span class="v">Projects / Dar</span></div>
+    <div><svg class="i"><use href="#clock"/></svg>Modified<span class="v">Today, 14:02</span></div>
+    <div><svg class="i"><use href="#file"/></svg>Size<span class="v">8.4 KB · Markdown</span></div>
+    <div><svg class="i"><use href="#users"/></svg>Shared<span class="v">Sara (view)</span></div>
+    <div><svg class="i"><use href="#repeat"/></svg>Revision<span class="v mono" style="font-size:11px">r41 · a3f9</span></div>
+   </div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="btn ton"><svg class="i"><use href="#edit"/></svg>Open in editor</span><span class="btn out"><svg class="i"><use href="#down"/></svg>Download</span><span class="btn out"><svg class="i"><use href="#link"/></svg>Share</span></div>
+  </div>
+ </aside>
+</div></div></div>
+<ul class="rules">
+<li><b>Sidebar</b> 256px, soft surface, resizable; app name + Apps launcher at top, search row, nav rows, collapsible shelves at bottom, settings/avatar footer.</li>
+<li><b>Rows</b> are one 36px line: icon, title, right-aligned meta (count or age). Row actions replace the meta on hover/focus.</li>
+<li><b>Selection</b> is a neutral 9% text tint, not violet. Accent only for primary action, focus ring, live dot.</li>
+<li><b>Center heading</b> 48px: muted breadcrumb, 12px title, tool icons, one filled pill for the primary create action, pane toggle.</li>
+<li><b>Right pane</b> has a bordered 48px heading. Details use the Agent context card: bordered rows, 37px each.</li>
+<li><b>Drawer</b>: long-running work (uploads, imports, sync) uses a collapsible bottom drawer with tabs, like Agent output.</li>
+</ul>
+</section>
+
+<!-- A2 CALENDAR -->
+<section class="frame"><h2>A2 · Calendar — light, editing an event in the right pane</h2>
+<p>The mini month and calendar list live in the sidebar. Calendar color marks reuse the Agent's tinted project marks. The week grid fills the center. The event editor uses the shared outlined fields with a docked save footer.</p>
+<div class="fit"><div class="board">
+<div class="screen light">
+ <aside class="side">
+  <div class="brand"><svg class="i"><use href="#cal"/></svg>Calendar<span class="launch">Apps<svg class="i"><use href="#chevd"/></svg></span></div>
+  <div class="srow"><div class="sfield"><svg class="i"><use href="#search"/></svg>Search Dar<kbd>Ctrl K</kbd></div><span class="ib sm"><svg class="i"><use href="#plus"/></svg></span></div>
+  <div class="mini"><div class="mh">November 2026<span><svg class="i" style="width:14px"><use href="#back"/></svg><svg class="i" style="width:14px"><use href="#chev"/></svg></span></div>
+   <div class="g"><span class="w">M</span><span class="w">T</span><span class="w">W</span><span class="w">T</span><span class="w">F</span><span class="w">S</span><span class="w">S</span>
+   <span class="o">26</span><span class="o">27</span><span class="o">28</span><span class="o">29</span><span class="o">30</span><span class="o">31</span><span>1</span>
+   <span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>
+   <span class="wk s">9</span><span class="wk">10</span><span class="today">11</span><span class="wk">12</span><span class="wk">13</span><span class="wk">14</span><span class="wk e">15</span>
+   <span>16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span><span>22</span>
+   <span>23</span><span>24</span><span>25</span><span>26</span><span>27</span><span>28</span><span>29</span></div></div>
+  <div class="grp"><svg class="i"><use href="#chevd"/></svg>My calendars<span class="ib sm"><svg class="i"><use href="#plus"/></svg></span></div>
+  <div class="nav">
+   <div class="row"><span class="cb c"></span><span class="t">Personal</span></div>
+   <div class="row"><span class="cb c r"></span><span class="t">Family</span></div>
+   <div class="row hov"><span class="cb c g"></span><span class="t">Work</span><span class="acts"><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></span></div>
+   <div class="row"><span class="cb c y"></span><span class="t">Prayer times</span></div>
+  </div>
+  <div class="grp"><svg class="i"><use href="#chevd"/></svg>Shared with me</div>
+  <div class="nav"><div class="row dim"><span class="cb"></span><span class="t">Sara's calendar</span><span class="m">read-only</span></div></div>
+  <div class="foot"><span class="set"><svg class="i"><use href="#gear"/></svg>Calendar settings</span><span class="avatar">AN</span></div>
+ </aside>
+ <main class="center">
+  <div class="head"><h2 style="font-size:14px;flex:none">November 2026</h2><span class="crumb" style="margin-left:4px">Week 46</span>
+   <div class="tools"><span class="ib"><svg class="i"><use href="#back"/></svg></span><span class="btn out" style="height:28px">Today</span><span class="ib"><svg class="i"><use href="#chev"/></svg></span><span class="seg" style="margin:0 6px"><span>Day</span><span class="on">Week</span><span>Month</span></span><span class="btn fill"><svg class="i"><use href="#plus"/></svg>Event</span><span class="ib on"><svg class="i"><use href="#pr"/></svg></span></div></div>
+  <div class="week">
+   <span></span><span class="dh">Mon<b>9</b></span><span class="dh">Tue<b>10</b></span><span class="dh today">Wed<b>11</b></span><span class="dh">Thu<b>12</b></span><span class="dh">Fri<b>13</b></span><span class="dh">Sat<b>14</b></span><span class="dh">Sun<b>15</b></span>
+   <span class="ad">all-day</span><span class="cell" style="border-bottom:1px solid var(--border)"></span><span class="cell" style="border-bottom:1px solid var(--border)"></span><span class="cell" style="border-bottom:1px solid var(--border)"></span><span class="cell" style="border-bottom:1px solid var(--border)"></span><span class="cell" style="border-bottom:1px solid var(--border)"></span><span class="cell" style="border-bottom:1px solid var(--border)"></span><span class="cell" style="border-bottom:1px solid var(--border)"></span>
+   <span class="hr">08:00</span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+   <span class="hr">09:00</span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+   <span class="hr">10:00</span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+   <span class="hr">11:00</span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+   <span class="hr">12:00</span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+   <span class="hr">13:00</span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+   <span class="hr">14:00</span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+   <span class="hr">15:00</span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+   <span class="hr">16:00</span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+   <span class="hr">17:00</span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+   <!-- events: column width = (644-52)/7 ≈ 84.6 -->
+   <div class="ev r all" style="left:226px;top:56px;width:250px">Sara's birthday</div>
+   <div class="ev g" style="left:56px;top:138px;width:80px;height:50px">Standup<small>09:00</small></div>
+   <div class="ev g" style="left:141px;top:138px;width:80px;height:50px">Standup<small>09:00</small></div>
+   <div class="ev g" style="left:310px;top:138px;width:80px;height:50px">Standup<small>09:00</small></div>
+   <div class="ev sel" style="left:226px;top:198px;width:80px;height:118px">Design review<small>10:00–12:00 · Studio</small></div>
+   <div class="ev y" style="left:56px;top:328px;width:80px;height:22px">Dhuhr<small></small></div>
+   <div class="ev y" style="left:141px;top:328px;width:80px;height:22px">Dhuhr</div>
+   <div class="ev y" style="left:226px;top:328px;width:80px;height:22px">Dhuhr</div>
+   <div class="ev y" style="left:310px;top:328px;width:80px;height:22px">Dhuhr</div>
+   <div class="ev y" style="left:395px;top:328px;width:80px;height:22px">Dhuhr</div>
+   <div class="ev" style="left:395px;top:438px;width:80px;height:118px">Dentist<small>14:00–16:00</small></div>
+   <div class="ev r" style="left:480px;top:258px;width:160px;height:178px">Family lunch<small>11:00–14:00 · Mum's</small></div>
+   <div class="ev g" style="left:141px;top:498px;width:80px;height:50px">1:1 Omar<small>15:00</small></div>
+   <div class="now" style="left:222px;top:408px;width:84px"></div>
+  </div>
+ </main>
+ <aside class="right">
+  <div class="head"><h2>Edit event</h2><div class="tools"><span class="ib"><svg class="i"><use href="#dots"/></svg></span><span class="ib"><svg class="i"><use href="#x"/></svg></span></div></div>
+  <div class="pane">
+   <div class="field">Title<div class="input focus">Design review</div></div>
+   <div class="frow"><div class="field">Starts<div class="input"><svg class="i"><use href="#cal"/></svg>Nov 11, 10:00</div></div><div class="field">Ends<div class="input">12:00</div></div></div>
+   <label class="lab" style="font-size:12px"><span class="cb"></span>All day</label>
+   <div class="field">Calendar<div class="input"><span class="mark"></span>Personal<svg class="i" style="margin-left:auto"><use href="#chevd"/></svg></div></div>
+   <div class="field">Location<div class="input"><svg class="i"><use href="#pin"/></svg>Studio</div></div>
+   <div class="frow"><div class="field">Repeat<div class="input"><svg class="i"><use href="#repeat"/></svg>Does not repeat</div></div><div class="field">Reminder<div class="input"><svg class="i"><use href="#bell"/></svg>15 min before</div></div></div>
+   <div class="field">Notes<div class="input area">Bring launcher sketches.</div></div>
+  </div>
+  <div class="pfoot"><span class="unsaved"><span class="dot" style="background:var(--warning)"></span>Unsaved changes</span><span class="btn txt" style="margin-left:auto">Cancel</span><span class="btn fill" style="margin-left:0">Save</span></div>
+ </aside>
+</div></div></div>
+<ul class="rules">
+<li><b>Calendar marks</b> = Agent project marks (16px, 4px radius) and checkbox swatches; one tint set across apps.</li>
+<li><b>Segmented control</b> for views uses the Agent reasoning-effort style (raised thumb in a hover-tinted track).</li>
+<li><b>Editors</b> in the right pane: outlined 36px fields, 16px gaps, docked footer with unsaved state, Cancel, filled Save.</li>
+<li><b>Today</b> uses the accent fill. The now-line uses the error color, so it reads as time rather than selection.</li>
+</ul>
+</section>
+
+<!-- A3 CONTACTS + PALETTE -->
+<section class="frame"><h2>A3 · Contacts + Ctrl/Cmd+K search — dark, palette open over the app</h2>
+<p>Without a header, cross-app search becomes the Agent-style command palette: grouped by app, scope chips, keyboard hints, partial-error state, then actions. The sidebar search row opens it and also shows the shortcut.</p>
+<div class="fit"><div class="board">
+<div class="screen dark">
+ <aside class="side">
+  <div class="brand"><svg class="i"><use href="#contact"/></svg>Contacts<span class="launch">Apps<svg class="i"><use href="#chevd"/></svg></span></div>
+  <div class="srow"><div class="sfield" style="background:var(--hover);color:var(--text)"><svg class="i"><use href="#search"/></svg>Search Dar<kbd>Ctrl K</kbd></div><span class="ib sm"><svg class="i"><use href="#plus"/></svg></span></div>
+  <div class="nav"><div class="row sel"><svg class="i"><use href="#users"/></svg><span class="t">All contacts</span><span class="m">214</span></div><div class="row"><svg class="i"><use href="#star"/></svg><span class="t">Favorites</span><span class="m">12</span></div><div class="row"><svg class="i"><use href="#clock"/></svg><span class="t">Recently added</span></div></div>
+  <div class="grp" style="margin-top:12px"><svg class="i"><use href="#chevd"/></svg>Address books</div>
+  <div class="nav"><div class="row"><span class="mark">P</span><span class="t">Personal</span><span class="m">168</span></div><div class="row"><span class="mark g">W</span><span class="t">Work</span><span class="m">46</span></div></div>
+  <div class="grp"><svg class="i"><use href="#chevd"/></svg>Groups</div>
+  <div class="nav"><div class="row"><svg class="i"><use href="#tag"/></svg><span class="t">Family</span><span class="m">18</span></div><div class="row"><svg class="i"><use href="#tag"/></svg><span class="t">Masjid</span><span class="m">31</span></div></div>
+  <div class="foot"><span class="set"><svg class="i"><use href="#gear"/></svg>Contacts settings</span><span class="avatar">AN</span></div>
+ </aside>
+ <main class="center">
+  <div class="head"><h2>All contacts</h2><span class="crumb">214</span><div class="tools"><span class="ib"><svg class="i"><use href="#sort"/></svg></span><span class="btn fill"><svg class="i"><use href="#plus"/></svg>Contact</span></div></div>
+  <div class="letter">A</div>
+  <div class="crow"><span class="av">AH</span><span class="t">Aisha Hamdan<small>aisha@hamdan.family</small></span></div>
+  <div class="crow"><span class="av g">AM</span><span class="t">Amir Malik<small>+44 7700 900123</small></span></div>
+  <div class="letter">O</div>
+  <div class="crow"><span class="av y">OK</span><span class="t">Omar Khalid<small>Work · omar@studio.example</small></span></div>
+  <div class="letter">S</div>
+  <div class="crow sel"><span class="av r">SN</span><span class="t">Sara Nasser<small>sara@nasser.example</small></span></div>
+  <div class="crow"><span class="av">SY</span><span class="t">Sami Yousef<small>+44 7700 900456</small></span></div>
+ </main>
+ <aside class="right">
+  <div class="head"><h2>Sara Nasser</h2><div class="tools"><span class="ib"><svg class="i"><use href="#edit"/></svg></span><span class="ib"><svg class="i"><use href="#dots"/></svg></span><span class="ib"><svg class="i"><use href="#x"/></svg></span></div></div>
+  <div class="pane"><div class="hero"><span class="av r">SN</span><h3>Sara Nasser</h3><p>Architect · Studio North</p></div>
+   <div class="qa"><span class="ib"><svg class="i"><use href="#mail"/></svg></span><span class="ib"><svg class="i"><use href="#phone"/></svg></span><span class="ib"><svg class="i"><use href="#cal"/></svg></span></div>
+   <div class="card"><div><svg class="i"><use href="#mail"/></svg><a>sara@nasser.example</a><span class="v muted">home</span></div><div><svg class="i"><use href="#phone"/></svg><a>+44 7700 900789</a><span class="v muted">mobile</span></div><div><svg class="i"><use href="#pin"/></svg>12 Garden Row, Leeds</div><div><svg class="i"><use href="#cal"/></svg>Birthday<span class="v">Nov 11</span></div></div></div>
+ </aside>
+ <div class="scrim"><div class="palette">
+  <div class="pin"><svg class="i"><use href="#search"/></svg><span>sara</span><span style="width:1px;height:20px;background:var(--accent)"></span><kbd>Esc</kbd></div>
+  <div class="scope"><span class="tag on">All apps</span><span class="tag">Files</span><span class="tag">Contacts</span><span class="tag">Calendar</span><span class="tag">Notes</span><span class="tag">Tasks</span><span class="tag">Agent</span></div>
+  <div class="grp">Contacts</div>
+  <div class="opt act"><span class="av r" style="width:20px;height:20px;font-size:9px">SN</span><span><mark>Sara</mark> Nasser</span><small>Personal</small></div>
+  <div class="grp">Calendar</div>
+  <div class="opt"><svg class="i"><use href="#cal"/></svg><span><mark>Sara</mark>'s birthday</span><small>Today · Family</small></div>
+  <div class="opt"><svg class="i"><use href="#cal"/></svg><span>Site visit with <mark>Sara</mark></span><small>Nov 19 · Work</small></div>
+  <div class="grp">Files</div>
+  <div class="opt"><svg class="i"><use href="#file"/></svg><span><mark>sara</mark>-floorplan-v3.pdf</span><small>Documents / House</small></div>
+  <div class="grp">Notes</div>
+  <div class="opt"><svg class="i"><use href="#note"/></svg><span>Gift ideas for <mark>Sara</mark></span><small>Personal notebook</small></div>
+  <div class="partial"><svg class="i"><use href="#alert"/></svg>Tasks didn't respond. Results may be incomplete.<span>Retry</span></div>
+  <div class="grp">Actions</div>
+  <div class="opt"><svg class="i"><use href="#plus"/></svg><span>New contact “sara”</span><small>Contacts</small></div>
+  <div class="pfoot2"><span><kbd>↑↓</kbd>Move</span><span><kbd>Enter</kbd>Open</span><span><kbd>Tab</kbd>Scope</span><span style="margin-left:auto">Showing first 5 per app</span></div>
+ </div></div>
+</div></div></div>
+<ul class="rules">
+<li><b>Contact rows</b> stay 56px with avatar and secondary line. Letter dividers are 11px muted labels.</li>
+<li><b>Palette</b> 640px at 80px from top, 52px input, scope chips, 36px options, grouped by app, explicit truncation.</li>
+<li><b>Partial errors</b> appear inline in the palette as a warning strip with Retry, keeping the results that did load.</li>
+<li><b>Detail hero</b>: 72px avatar, round quick actions, then the context card for fields. Values are links.</li>
+</ul>
+</section>
+
+<!-- A4 NOTES -->
+<section class="frame"><h2>A4 · Notes — light, reading column with floating format bar and context card</h2>
+<p>Notes is the closest match to the Agent conversation: a centered 768px column, a floating raised toolbar shaped like the composer, and a small details card at the right instead of a full pane. Notebooks are collapsible project groups, and notes are thread rows.</p>
+<div class="fit"><div class="board">
+<div class="screen light two">
+ <aside class="side">
+  <div class="brand"><svg class="i"><use href="#note"/></svg>Notes<span class="launch">Apps<svg class="i"><use href="#chevd"/></svg></span></div>
+  <div class="srow"><div class="sfield"><svg class="i"><use href="#search"/></svg>Filter notes</div><span class="ib sm"><svg class="i"><use href="#edit"/></svg></span></div>
+  <div class="grp"><svg class="i"><use href="#chevd"/></svg>Pinned</div>
+  <div class="nav"><div class="row"><span class="mark quiet">P</span><span class="t">Packing list — Istanbul</span><span class="m">2d</span></div></div>
+  <div class="grp"><svg class="i"><use href="#chevd"/></svg>Personal<span class="ib sm"><svg class="i"><use href="#plus"/></svg></span></div>
+  <div class="nav">
+   <div class="row indent sel"><span class="t">Shared look for Dar</span><span class="m">now</span></div>
+   <div class="row indent"><span class="t">Gift ideas for Sara</span><span class="m">3d</span></div>
+   <div class="row indent hov"><span class="t">Recipes to try</span><span class="acts"><span class="ib sm"><svg class="i"><use href="#star"/></svg></span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></span></div>
+   <div class="row indent"><span class="t">Reading list 2026</span><span class="m">1w</span></div>
+  </div>
+  <div class="grp"><svg class="i"><use href="#chev"/></svg>Work <span>23</span></div>
+  <div class="grp"><svg class="i"><use href="#chev"/></svg>Masjid committee <span>9</span></div>
+  <div class="shelf"><div class="grp"><svg class="i"><use href="#chev"/></svg>Archived <span>41</span></div></div>
+  <div class="foot"><span class="set"><svg class="i"><use href="#gear"/></svg>Notes settings</span><span class="avatar">AN</span></div>
+ </aside>
+ <main class="center" style="position:relative">
+  <div class="head"><span class="crumb"><span class="mark" style="width:14px;height:14px"></span>Personal</span><h2>Shared look for Dar</h2><div class="tools"><span class="crumb" style="margin-right:8px"><svg class="i" style="color:var(--success);width:13px;height:13px"><use href="#check"/></svg>Saved</span><span class="ib"><svg class="i"><use href="#search"/></svg></span><span class="ib"><svg class="i"><use href="#dots"/></svg></span><span class="ib on"><svg class="i"><use href="#pr"/></svg></span></div></div>
+  <div class="scroll"><div class="col md" style="padding-right:max(260px,calc((100% - 768px)/2))">
+   <h1>Shared look for Dar</h1>
+   <div class="meta"><span>Edited 2 min ago</span><span>·</span><span class="tag">design</span><span class="tag">dar</span></div>
+   <p>The Agent workspace finally feels right: quiet chrome, one accent, and everything in reach from the sidebar. Every app should feel like that.</p>
+   <h3>What carries over</h3>
+   <ul><li>Sidebar with app name, search and an account footer</li><li>36px rows with age or count on the right</li><li>Focused right pane, opened only when needed</li><li>Composer-shaped floating surfaces</li></ul>
+   <h3>Tokens</h3>
+   <pre>--sidebar: 256px;  --row: 36px;  --heading: 48px;
+--reading: 768px;  --radius-row: 6px;  --radius-card: 9px;</pre>
+   <p>Twilight colors stay. Selection becomes <code>text 9%</code> rather than violet.</p>
+  </div></div>
+  <div class="card ctx"><div style="padding-right:4px"><span class="mark" style="width:14px;height:14px"></span><strong>Personal</strong><span class="v muted" style="font-size:10px">notebook</span></div><div><svg class="i"><use href="#tag"/></svg>design, dar</div><div><svg class="i"><use href="#note"/></svg>Words<span class="v">142</span></div><div><svg class="i"><use href="#repeat"/></svg>Revision<span class="v mono" style="font-size:10px">r12</span></div><div><svg class="i"><use href="#users"/></svg>Not shared</div></div>
+  <div style="padding:0 0 16px;flex:none"><div class="fmt"><span class="ib">H</span><span class="ib" style="font-weight:800">B</span><span class="ib" style="font-style:italic">I</span><i class="sep"></i><span class="ib"><svg class="i"><use href="#list"/></svg></span><span class="ib"><svg class="i"><use href="#task"/></svg></span><span class="ib"><svg class="i"><use href="#link"/></svg></span><span class="ib mono" style="font-size:11px">&lt;/&gt;</span><i class="sep"></i><span class="chip on">Edit</span><span class="chip">Preview</span></div></div>
+ </main>
+</div></div></div>
+<ul class="rules">
+<li><b>Reading column</b> 768px centered with 48px minimum gutters, 14px/1.75 body, 26px title.</li>
+<li><b>Floating toolbar</b> shares the composer surface: raised, 12–16px radius, soft shadow, one row.</li>
+<li><b>Context card</b> (Agent details card) replaces the right pane for read-mostly metadata.</li>
+<li><b>Save state</b> sits quietly in the heading. Unsaved or conflict states move to a warning tone there.</li>
+</ul>
+</section>
+
+<!-- A5 TASKS -->
+<section class="frame"><h2>A5 · Tasks — dark, quick-add composer docked under the list</h2>
+<p>Tasks borrows the Agent composer: Enter adds the task, chips set due date, list and priority, and the circular accent button submits. The selected task opens in the right pane with subtasks and repetition.</p>
+<div class="fit"><div class="board">
+<div class="screen dark">
+ <aside class="side">
+  <div class="brand"><svg class="i"><use href="#task"/></svg>Tasks<span class="launch">Apps<svg class="i"><use href="#chevd"/></svg></span></div>
+  <div class="srow"><div class="sfield"><svg class="i"><use href="#search"/></svg>Search Dar<kbd>Ctrl K</kbd></div><span class="ib sm"><svg class="i"><use href="#plus"/></svg></span></div>
+  <div class="nav"><div class="row"><svg class="i"><use href="#inbox"/></svg><span class="t">Inbox</span><span class="m">4</span></div><div class="row sel"><svg class="i"><use href="#sun"/></svg><span class="t">Today</span><span class="m">6</span></div><div class="row"><svg class="i"><use href="#cal"/></svg><span class="t">Upcoming</span><span class="m">11</span></div><div class="row"><svg class="i"><use href="#flag"/></svg><span class="t">Flagged</span><span class="m">2</span></div></div>
+  <div class="grp" style="margin-top:12px"><svg class="i"><use href="#chevd"/></svg>Lists<span class="ib sm"><svg class="i"><use href="#plus"/></svg></span></div>
+  <div class="nav"><div class="row"><span class="mark">H</span><span class="t">Home</span><span class="m">9</span></div><div class="row"><span class="mark g">W</span><span class="t">Work</span><span class="m">14</span></div><div class="row"><span class="mark r">S</span><span class="t">Shopping</span><span class="m">5</span></div><div class="row"><span class="mark y">M</span><span class="t">Masjid</span><span class="m">3</span></div></div>
+  <div class="shelf"><div class="grp"><svg class="i"><use href="#chev"/></svg>Completed <span>128</span></div></div>
+  <div class="foot"><span class="set"><svg class="i"><use href="#gear"/></svg>Tasks settings</span><span class="avatar">AN</span></div>
+ </aside>
+ <main class="center">
+  <div class="head"><h2 style="font-size:14px">Today</h2><span class="crumb">Wed, Nov 11</span><div class="tools"><span class="ib"><svg class="i"><use href="#sort"/></svg></span><span class="ib"><svg class="i"><use href="#dots"/></svg></span><span class="ib on"><svg class="i"><use href="#pr"/></svg></span></div></div>
+  <div class="scroll"><div style="padding:4px 0">
+   <div class="grp" style="padding-left:20px;color:var(--danger)">Overdue <span>1</span></div>
+   <div class="task"><span class="ck p1"></span><div class="b"><div>Renew car insurance</div><small><span class="due">Yesterday</span><span><span class="mark" style="width:10px;height:10px;display:inline-block;vertical-align:-1px"></span> Home</span></small></div></div>
+   <div class="grp" style="padding-left:20px">Today <span>5</span></div>
+   <div class="task sel"><span class="ck p2"></span><div class="b"><div>Prepare design review slides</div><small><span>10:00</span><span><svg class="i"><use href="#task"/></svg>1/3</span><span><svg class="i"><use href="#repeat"/></svg>Weekly</span><span><span class="mark g" style="width:10px;height:10px;display:inline-block;vertical-align:-1px"></span> Work</span></small></div></div>
+   <div class="task"><span class="ck"></span><div class="b"><div>Call Mum about Friday lunch</div><small><span><span class="mark" style="width:10px;height:10px;display:inline-block;vertical-align:-1px"></span> Home</span></small></div></div>
+   <div class="task"><span class="ck"></span><div class="b"><div>Buy dates and milk</div><small><span><span class="mark r" style="width:10px;height:10px;display:inline-block;vertical-align:-1px"></span> Shopping</span></small></div></div>
+   <div class="task"><span class="ck"></span><div class="b"><div>Send Sara her birthday gift link</div><small><span>18:00</span><span><svg class="i"><use href="#bell"/></svg>Reminder</span></small></div></div>
+   <div class="task done"><span class="ck done"><svg class="i"><use href="#check"/></svg></span><div class="b"><div>Back up photos</div><small><span>Done 08:12</span></small></div></div>
+  </div></div>
+  <div style="padding:0 max(32px,calc((100% - 768px)/2)) 16px;flex:none"><div class="composer"><div class="ph">Add a task to Today… <span style="opacity:.7">e.g. “Pick up keys tomorrow 9am”</span></div><div class="ctrls"><span class="chip on"><svg class="i"><use href="#sun"/></svg>Today</span><span class="chip"><span class="mark" style="width:12px;height:12px"></span>Home</span><span class="chip"><svg class="i"><use href="#flag"/></svg>Priority</span><span class="chip"><svg class="i"><use href="#bell"/></svg></span><span style="margin-left:auto;margin-right:8px">Enter to add · Shift+Enter for notes</span><span class="send"><svg class="i"><use href="#up"/></svg></span></div></div></div>
+ </main>
+ <aside class="right">
+  <div class="head"><span class="ck" style="width:16px;height:16px;border-radius:50%;border:1.5px solid var(--warning)"></span><h2>Prepare design review slides</h2><div class="tools"><span class="ib"><svg class="i"><use href="#dots"/></svg></span><span class="ib"><svg class="i"><use href="#x"/></svg></span></div></div>
+  <div class="pane">
+   <div class="card"><div><svg class="i"><use href="#cal"/></svg>Due<span class="v">Today, 10:00</span></div><div><svg class="i"><use href="#repeat"/></svg>Repeats<span class="v">Every Wednesday</span></div><div><svg class="i"><use href="#flag"/></svg>Priority<span class="v" style="color:var(--warning)">Medium</span></div><div><span class="mark g" style="width:14px;height:14px"></span>List<span class="v">Work</span></div></div>
+   <div><div class="grp" style="padding:0 2px">Subtasks <span>1 of 3</span></div>
+    <div class="task" style="margin:0;padding:6px 2px"><span class="ck done" style="width:16px;height:16px"><svg class="i"><use href="#check"/></svg></span><div class="b"><div style="color:var(--muted);text-decoration:line-through">Collect screenshots</div></div></div>
+    <div class="task" style="margin:0;padding:6px 2px"><span class="ck" style="width:16px;height:16px"></span><div class="b"><div>Write the comparison</div></div></div>
+    <div class="task" style="margin:0;padding:6px 2px"><span class="ck" style="width:16px;height:16px"></span><div class="b"><div>Rehearse</div></div></div>
+    <div class="row" style="color:var(--muted);padding-left:2px;height:32px"><svg class="i"><use href="#plus"/></svg>Add subtask</div></div>
+   <div class="field">Notes<div class="input area">Compare option A and option B, then decide on the rail.</div></div>
+  </div>
+  <div class="pfoot"><span class="btn out">Snooze</span><span class="btn fill"><svg class="i"><use href="#check"/></svg>Complete</span></div>
+ </aside>
+</div></div></div>
+<ul class="rules">
+<li><b>Quick add</b> = Agent composer: raised 16px card, chips row, circular accent submit, Enter/Shift+Enter.</li>
+<li><b>Priority</b> is shown by the check ring color (danger, warning). No badges.</li>
+<li><b>Sections</b> (Overdue/Today) use shelf headings; Completed is a collapsed shelf at the bottom.</li>
+<li><b>Specific command</b>: Complete/Reopen in the pane footer, with Snooze beside it.</li>
+</ul>
+</section>
+
+<!-- A6 SETTINGS -->
+<section class="frame"><h2>A6 · Personal settings — light, sidebar becomes settings navigation</h2>
+<p>Settings uses the same frame. The sidebar shows a Back-to-app row and icon-labelled sections, and the content is a bounded 720px panel of bordered cards on the soft background.</p>
+<div class="fit"><div class="board">
+<div class="screen light two">
+ <aside class="side">
+  <div class="brand"><svg class="i"><use href="#gear"/></svg>Settings<span class="launch">Apps<svg class="i"><use href="#chevd"/></svg></span></div>
+  <div class="row" style="color:var(--muted);margin-bottom:8px"><svg class="i"><use href="#back"/></svg><span class="t">Back to Files</span></div>
+  <div class="grp">Personal</div>
+  <div class="nav"><div class="row"><svg class="i"><use href="#contact"/></svg><span class="t">Profile</span></div><div class="row sel"><svg class="i"><use href="#sun"/></svg><span class="t">Appearance</span></div><div class="row"><svg class="i"><use href="#clock"/></svg><span class="t">Language &amp; region</span></div><div class="row"><svg class="i"><use href="#shield"/></svg><span class="t">Security</span></div><div class="row"><svg class="i"><use href="#key"/></svg><span class="t">App passwords</span><span class="m">3</span></div><div class="row"><svg class="i"><use href="#cloud"/></svg><span class="t">Sync (DAV)</span></div></div>
+  <div class="grp" style="margin-top:12px">Administration</div>
+  <div class="nav"><div class="row"><svg class="i"><use href="#users"/></svg><span class="t">Users</span></div><div class="row"><svg class="i"><use href="#grid"/></svg><span class="t">Apps</span></div><div class="row"><svg class="i"><use href="#image"/></svg><span class="t">Branding</span></div></div>
+  <div class="foot"><span class="set"><span class="dot g"></span>Connected</span><span class="avatar">AN</span></div>
+ </aside>
+ <main class="center"><div class="settings"><div class="spanel">
+  <h1>Appearance</h1>
+  <div class="ssec"><h3>Theme</h3><p>Applies to every app on this account.</p>
+   <div class="tiles"><div class="tile"><div class="sw" style="background:#fffafb"><i style="background:#fbf4f6;border-right:1px solid #e3d3e0"></i><i></i></div><span style="display:flex;gap:8px;align-items:center"><span class="radio"></span>Afterglow</span></div>
+   <div class="tile"><div class="sw" style="background:#301c2b"><i style="background:#26111f;border-right:1px solid #553f50"></i><i></i></div><span style="display:flex;gap:8px;align-items:center"><span class="radio"></span>Nightfall</span></div>
+   <div class="tile on"><div class="sw" style="background:linear-gradient(90deg,#fffafb 50%,#301c2b 50%)"><i style="background:linear-gradient(90deg,#fbf4f6 50%,#26111f 50%)"></i><i></i></div><span style="display:flex;gap:8px;align-items:center"><span class="radio on"></span>Match system</span></div></div></div>
+  <div class="ssec"><h3>Layout</h3><p>Panels remember their width per app.</p>
+   <div class="sline"><span>Compact density<small>36px rows across lists and sidebars</small></span><span class="toggle"></span></div>
+   <div class="sline"><span>Open details pane automatically<small>Selecting an item opens the right pane</small></span><span class="toggle off"></span></div>
+   <div class="sline"><span>Reduce motion<small>Follows your system setting unless set here</small></span><span class="btn out">System</span></div>
+  </div>
+ </div></div></main>
+</div></div></div>
+</section>
+
+<!-- A7 PHONES -->
+<section class="frame"><h2>A7 · Phones — one panel at a time, with Agent-style view tabs</h2>
+<p>Phones show one panel at a time, as the Agent does. The header holds the sidebar toggle, title and search, and underlined view tabs switch panels. The sidebar opens as a sheet that keeps the launcher and account. Drafts survive switching.</p>
+<div class="fit"><div class="board"><div class="phones">
+ <div class="phone screen dark" style="display:flex">
+  <div class="ph-head"><span class="ib"><svg class="i"><use href="#menu"/></svg></span><h2>Projects / Dar</h2><span class="ib"><svg class="i"><use href="#search"/></svg></span><span class="ib"><svg class="i"><use href="#plus"/></svg></span></div>
+  <div class="ph-tabs"><span>Places</span><span class="on">Files</span><span>Details</span><span>Transfers</span></div>
+  <div class="ph-body" style="padding-top:6px">
+   <div class="trow"><svg class="i fo"><use href="#folder"/></svg><span class="n">assets<small>Yesterday</small></span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+   <div class="trow"><svg class="i fo"><use href="#folder"/></svg><span class="n">docs<small>Nov 9</small></span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+   <div class="trow"><svg class="i fo"><use href="#folder"/></svg><span class="n">next<small>Nov 9</small></span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+   <div class="trow sel"><svg class="i"><use href="#note"/></svg><span class="n">design-notes.md<small>12 min ago · 8.4 KB</small></span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+   <div class="trow"><svg class="i"><use href="#file"/></svg><span class="n">flake.nix<small>Nov 2 · 2.7 KB</small></span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+   <div class="trow"><svg class="i"><use href="#image"/></svg><span class="n">header-sketch.png<small>Oct 28 · 1.3 MB</small></span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+   <div class="trow"><svg class="i"><use href="#note"/></svg><span class="n">README.md<small>Oct 21 · 3.0 KB</small></span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></div>
+  </div>
+ </div>
+ <div class="phone screen light" style="display:flex">
+  <div class="ph-head"><span class="ib"><svg class="i"><use href="#back"/></svg></span><h2>Sara Nasser</h2><span class="ib"><svg class="i"><use href="#edit"/></svg></span><span class="ib"><svg class="i"><use href="#dots"/></svg></span></div>
+  <div class="ph-tabs"><span>Contacts</span><span class="on">Details</span></div>
+  <div class="ph-body pane" style="padding:20px 16px"><div class="hero"><span class="av r">SN</span><h3>Sara Nasser</h3><p>Architect · Studio North</p></div><div class="qa"><span class="ib"><svg class="i"><use href="#mail"/></svg></span><span class="ib"><svg class="i"><use href="#phone"/></svg></span><span class="ib"><svg class="i"><use href="#cal"/></svg></span></div>
+  <div class="card" style="font-size:13px"><div style="min-height:48px"><svg class="i"><use href="#mail"/></svg><a>sara@nasser.example</a></div><div style="min-height:48px"><svg class="i"><use href="#phone"/></svg><a>+44 7700 900789</a></div><div style="min-height:48px"><svg class="i"><use href="#pin"/></svg>12 Garden Row, Leeds</div></div></div>
+ </div>
+ <div class="phone screen dark" style="display:flex">
+  <div class="ph-head"><span class="ib"><svg class="i"><use href="#menu"/></svg></span><h2>Today</h2><span class="ib"><svg class="i"><use href="#search"/></svg></span></div>
+  <div class="ph-tabs"><span>Lists</span><span class="on">Tasks</span><span>Details</span></div>
+  <div class="ph-body"><div class="drawerSheet"><aside class="side">
+   <div class="brand"><svg class="i"><use href="#task"/></svg>Tasks<span class="launch">Apps<svg class="i"><use href="#chevd"/></svg></span></div>
+   <div class="nav"><div class="row"><svg class="i"><use href="#inbox"/></svg><span class="t">Inbox</span><span class="m">4</span></div><div class="row sel"><svg class="i"><use href="#sun"/></svg><span class="t">Today</span><span class="m">6</span></div><div class="row"><svg class="i"><use href="#cal"/></svg><span class="t">Upcoming</span><span class="m">11</span></div></div>
+   <div class="grp" style="margin-top:8px"><svg class="i"><use href="#chevd"/></svg>Lists</div>
+   <div class="nav"><div class="row"><span class="mark">H</span><span class="t">Home</span></div><div class="row"><span class="mark g">W</span><span class="t">Work</span></div><div class="row"><span class="mark r">S</span><span class="t">Shopping</span></div></div>
+   <div class="foot" style="margin-top:auto"><span class="set"><svg class="i"><use href="#gear"/></svg>Settings</span><span class="avatar">AN</span></div>
+  </aside></div></div>
+ </div>
+</div></div></div>
+<ul class="rules">
+<li><b>Phone header</b> 48px with 40px targets. View tabs are underlined in the accent color and are at least 44px tall.</li>
+<li><b>Rows</b> grow to 48–52px on phones, with secondary info stacked under the title.</li>
+<li><b>Sidebar sheet</b> slides from the left with a scrim and keeps the launcher and account footer.</li>
+<li><b>Back</b> returns to the list with the originating row focused.</li>
+</ul>
+</section>
+
+<!-- A8 COMPONENTS -->
+<section class="frame"><h2>A8 · Shared components — Afterglow and Nightfall</h2>
+<p>One component set for every app, taken from the Agent implementation.</p>
+<div class="fit"><div class="board" style="display:flex;flex-direction:column;gap:16px">
+<div class="sheet light" style="background:var(--panel)">
+ <div class="stack"><h4>Buttons</h4><div class="line"><span class="btn fill"><svg class="i"><use href="#plus"/></svg>New</span><span class="btn ton">Tonal</span><span class="btn out">Outlined</span><span class="btn txt">Text</span></div><div class="line"><span class="send"><svg class="i"><use href="#up"/></svg></span><span class="send" style="background:var(--danger)"><span style="width:10px;height:10px;border-radius:2px;background:var(--panel)"></span></span><span class="send" style="background:color-mix(in srgb,var(--text) 12%,transparent);color:var(--muted)"><svg class="i"><use href="#up"/></svg></span><span class="ib"><svg class="i"><use href="#dots"/></svg></span><span class="ib on"><svg class="i"><use href="#pr"/></svg></span><span class="btn dng">Delete</span></div>
+  <h4 style="margin-top:12px">Rows</h4><div class="nav" style="background:var(--soft);padding:6px;border-radius:8px"><div class="row"><span class="mark quiet">D</span><span class="t">Default row</span><span class="m">3h</span></div><div class="row hov"><span class="mark">D</span><span class="t">Hover shows actions</span><span class="acts"><span class="ib sm"><svg class="i"><use href="#star"/></svg></span><span class="ib sm"><svg class="i"><use href="#dots"/></svg></span></span></div><div class="row sel"><span class="mark r">D</span><span class="t">Selected</span><span class="m">now</span></div><div class="row focus"><span class="mark g">D</span><span class="t">Keyboard focus</span><span class="m">2d</span></div><div class="row"><span class="dot"></span><span class="t" style="font-weight:600">Unread / live</span><span class="m" style="color:var(--accent)">Working</span></div></div></div>
+ <div class="stack"><h4>Fields</h4><div class="field">Label<div class="input">Value</div></div><div class="field">Focused<div class="input focus">Typing…</div></div><div class="field" style="color:var(--danger)">Invalid<div class="input" style="border-color:var(--danger)">not-an-email</div><span style="font-size:11px">Enter a valid email address.</span></div>
+  <div class="line" style="gap:16px"><span class="lab"><span class="cb c"></span>Checked</span><span class="lab"><span class="cb"></span>Off</span><span class="lab"><span class="radio on"></span>Radio</span><span class="toggle"></span></div><div class="line"><span class="seg"><span>Day</span><span class="on">Week</span><span>Month</span></span><span class="chip on"><svg class="i"><use href="#sun"/></svg>Today</span><span class="tag">tag</span></div></div>
+ <div class="stack"><h4>Menu &amp; dialog</h4><div class="menu"><div class="opt"><svg class="i"><use href="#edit"/></svg>Rename<small>F2</small></div><div class="opt act"><svg class="i"><use href="#star"/></svg>Add to favorites</div><div class="opt"><svg class="i"><use href="#link"/></svg>Share…</div><hr><div class="opt d"><svg class="i"><use href="#trash"/></svg>Move to trash<small style="color:inherit">Del</small></div></div>
+  <div class="dialog"><h5>Delete “Recipes to try”?</h5><p>The note moves to Trash for 30 days. Shared copies stop updating.</p><div class="line"><span class="btn txt">Cancel</span><span class="btn dng">Delete</span></div></div></div>
+</div>
+<div class="sheet dark" style="background:var(--panel)">
+ <div class="stack"><h4>Empty &amp; loading</h4><div class="empty"><svg class="i"><use href="#inbox"/></svg><b>No tasks for today</b>Add one below or pick a list.<span class="btn ton" style="margin-top:6px"><svg class="i"><use href="#plus"/></svg>Add task</span></div><div class="stack" style="gap:10px;padding:6px 4px"><div class="line"><span class="spin"></span><span class="muted" style="font-size:12px">Loading contacts…</span></div><div class="skel" style="width:80%"></div><div class="skel" style="width:60%"></div></div></div>
+ <div class="stack"><h4>Errors &amp; recovery</h4><div class="err"><svg class="i"><use href="#alert"/></svg><span><b>Couldn't save</b>Someone else changed this note. Your draft is kept.</span><span class="btn out" style="height:28px">Compare</span></div><div class="partial" style="margin:0"><svg class="i"><use href="#alert"/></svg>Offline: changes will sync when you reconnect.</div><div class="toast">Moved 3 files to Trash<span class="btn">Undo</span></div></div>
+ <div class="stack"><h4>Composer surface</h4><div class="composer"><div class="ph">Ask, add or write…</div><div class="ctrls"><span class="chip"><svg class="i"><use href="#plus"/></svg></span><span class="chip on">Option</span><span style="margin-left:auto"></span><span class="send"><svg class="i"><use href="#up"/></svg></span></div></div>
+  <h4 style="margin-top:8px">Context card</h4><div class="card"><div><span class="dot g"></span>Synced<span class="v">just now</span></div><div><svg class="i"><use href="#users"/></svg>Shared with<span class="v">2 people</span></div></div></div>
+</div>
+</div></div>
+<ul class="rules">
+<li><b>Radii</b>: rows 6px, menus/cards 9–10px, dialogs/palette 14px, composer 16px, buttons pill.</li>
+<li><b>Type</b>: 13px body, 12px controls, 11px meta, 12px/550 pane titles, 20–26px page titles only inside content.</li>
+<li><b>Motion</b>: 120–150ms fades/scales; pulse for live state; all disabled under reduced motion.</li>
+<li><b>Errors</b> keep drafts and offer a specific recovery (Compare, Retry, Undo). No browser dialogs.</li>
+</ul>
+</section>
+</div>
+<script>
+(function(){function fit(){document.querySelectorAll('.fit').forEach(function(f){var b=f.firstElementChild;b.style.zoom=Math.min(1,f.clientWidth/1280)})}fit();addEventListener('resize',fit)})();
+</script>
+</body></html>

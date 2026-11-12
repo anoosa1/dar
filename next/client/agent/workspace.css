@@ -1,10 +1,9 @@
-/* Selected T3 frame. Other apps retain their shared header.
+/* Agent content inside the shared unified-look frame (client/frame.css).
    Measurements follow the reference workspace: 256px sidebar, 36px rows, 768px reading column. */
 .agent-layout{display:grid;grid-template-columns:256px minmax(0,1fr) minmax(360px,40%);flex:1;min-height:0;overflow:hidden}
 .agent-review-hidden .agent-layout{grid-template-columns:256px minmax(0,1fr)}
 .agent-nav-hidden .agent-layout{grid-template-columns:minmax(0,1fr) minmax(360px,42%)}
 .agent-sidebar{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;padding:8px;background:var(--surface-soft);border-right:1px solid var(--border)}
-.agent-brand{display:flex;gap:8px;align-items:center;height:40px;margin-bottom:4px;padding:0 6px 0 8px}
 .agent-search-row{display:flex;gap:2px;align-items:center;margin:0 0 8px}
 .agent-thread-search{display:flex;flex-direction:row;align-items:center;gap:8px;min-width:0;flex:1;height:32px;padding:0 8px;margin:0;border-radius:6px;color:var(--muted)}
 .agent-thread-search:hover,.agent-thread-search:focus-within{background:var(--hover);color:var(--text)}
@@ -42,19 +41,10 @@
 .agent-shell{height:100dvh;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:var(--panel)}
 .agent-nav-hidden.agent-review-hidden .agent-layout{grid-template-columns:minmax(0,1fr)}
 .agent-nav-hidden .agent-sidebar,.agent-review-hidden .agent-review{display:none}
-.agent-brand>a{display:flex;align-items:center;gap:8px;color:var(--text);font-size:14px;font-weight:650;text-decoration:none}
-.agent-brand>a .icon{width:18px;height:18px;color:var(--accent)}
-.agent-brand .ui-app-launcher{margin-left:auto}
-.agent-shell .ui-app-launcher .ui-menu-trigger{padding:5px 7px;font-size:12px;min-height:32px;gap:6px}
-.agent-shell .ui-app-launcher .ui-menu-trigger>.icon:first-child{display:none}
-.agent-shell .ui-menu-trigger{min-height:30px;padding:5px;color:var(--muted);border-radius:6px}
-.agent-shell .ui-menu-trigger:hover{color:var(--text);background:var(--hover)}
+.agent-layout .ui-menu-trigger{min-height:30px;padding:5px;color:var(--muted);border-radius:6px}
+.agent-layout .ui-menu-trigger:hover{color:var(--text);background:var(--hover)}
 .agent-thread-shelves>p{padding:8px;line-height:1.7}
-.agent-sidebar-footer{display:flex;align-items:center;gap:8px;padding:10px 4px 0;flex:none}
-.agent-sidebar-footer .ui-app-settings-entry{border:0;margin:0;padding:6px;min-height:34px;font-size:11px;flex:1}
-.agent-sidebar-footer .account-area{flex:none}.agent-shell .avatar{height:25px;width:25px;font-size:10px}
 .agent-sidebar .ui-menu-panel{min-width:180px;max-width:210px}
-.agent-sidebar .ui-account>.ui-menu-panel{position:fixed;left:12px;bottom:58px;top:auto;right:auto;max-width:calc(100vw - 24px);width:240px}
 .agent-center{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--panel)}
 .agent-thread-heading,.agent-review-heading{height:48px;min-height:48px;display:flex;align-items:center;gap:6px;padding:0 12px;flex:none}
 .agent-thread-heading h2{font-size:12px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;margin:0}
@@ -63,7 +53,6 @@
 .agent-shell .icon-button{min-width:30px;min-height:30px;width:30px;height:30px;padding:6px;flex:none}
 .agent-shell .icon-button>.icon,.agent-shell .ui-menu-trigger>.icon{width:16px;height:16px}
 .agent-panel-controls{margin-left:auto;display:flex;align-items:center;gap:2px}
-.agent-collapsed-controls{display:none;align-items:center;gap:3px}.agent-nav-hidden .agent-collapsed-controls{display:flex}
 .agent-stage{flex:1;display:flex;min-height:0;min-width:0;overflow:hidden}
 .agent-chat{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .agent-timeline-wrap{position:relative;flex:1;min-height:0}
@@ -98,15 +87,14 @@
 .agent-project-form{display:flex;flex-direction:column;gap:16px}.agent-project-form label{display:flex;flex-direction:column;gap:8px;font-size:13px}.agent-project-form input{width:100%}.agent-project-form p{margin:0;line-height:1.7}
 .agent-project-chooser{display:flex;flex-direction:column;gap:8px;max-height:60dvh;overflow:auto}.agent-project-chooser h3{font-size:12px;color:var(--muted);margin:8px 0}.agent-project-choice{display:flex;align-items:center;gap:12px;min-height:50px;padding:10px;border:0;border-radius:7px;text-align:left;color:var(--text);background:transparent}.agent-project-choice:hover{background:var(--tonal);color:var(--on-tonal)}.agent-project-choice span{min-width:0;flex:1;overflow-wrap:anywhere}.agent-project-choice strong,.agent-project-choice small{display:block}.agent-project-choice strong{font-size:13px;font-weight:550}.agent-project-choice small{color:var(--muted);margin-top:3px;font-size:10px}.agent-project-choice .icon:last-child{width:12px}
 .agent-connection-actions{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}.agent-settings-account{overflow-wrap:anywhere;user-select:all}.agent-mobile-views{display:none}
-body:has(.agent-shell)>.editing-pane{top:48px}
 @media(min-width:801px) and (max-width:1100px){.agent-layout{grid-template-columns:200px minmax(0,1fr) 340px}.agent-review-hidden .agent-layout{grid-template-columns:200px minmax(0,1fr)}.agent-context{width:185px;padding-right:10px}.agent-conversation{padding-inline:18px}.agent-composer-area{padding-inline:18px}}
 @media(hover:none){.agent-thread-row>.ui-menu>.ui-menu-trigger,.agent-message-meta{opacity:1}}
 @media(prefers-reduced-motion:reduce){.agent-run-state summary>.icon:last-child{transition:none}}
 @media(max-width:800px){
  .agent-mobile-views{display:flex;flex:none;padding:0 6px;border-bottom:1px solid var(--border);background:var(--panel)}.agent-mobile-views button{flex:1 1 auto;min-width:0;min-height:44px;font:inherit;font-size:11px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);padding:10px 4px;cursor:pointer}.agent-mobile-views button[aria-current=page]{border-color:var(--accent);color:var(--accent)}
  .agent-shell .agent-layout{display:block;position:relative}.agent-shell .agent-sidebar,.agent-shell .agent-review,.agent-shell .agent-center{display:none;height:100%;border:0}.agent-view-threads .agent-sidebar,.agent-view-changes .agent-review,.agent-view-conversation .agent-center,.agent-view-terminal .agent-center{display:flex;flex-direction:column}
- .agent-context,.agent-desktop-toggle,.agent-view-conversation .agent-terminal,.agent-view-terminal .agent-stage{display:none!important}.agent-view-terminal .agent-terminal{display:flex;flex-direction:column;flex:1;max-height:none}.agent-shell .agent-collapsed-controls{display:none}
- .agent-thread-heading{padding-inline:10px;height:42px;min-height:42px}.agent-thread-heading h2{font-size:11px;flex:1}.agent-heading-project{max-width:27%;font-size:10px}.agent-brand{margin-bottom:10px}.agent-sidebar{padding:12px}
+ .agent-context,.agent-desktop-toggle,.agent-view-conversation .agent-terminal,.agent-view-terminal .agent-stage{display:none!important}.agent-view-terminal .agent-terminal{display:flex;flex-direction:column;flex:1;max-height:none}
+ .agent-thread-heading{padding-inline:10px;height:42px;min-height:42px}.agent-thread-heading h2{font-size:11px;flex:1}.agent-heading-project{max-width:27%;font-size:10px}.agent-sidebar{padding:12px}
  .agent-shell .icon-button{min-width:34px;min-height:34px;width:34px;height:34px}.agent-message-meta{opacity:1}
  .agent-conversation{padding:18px 16px}.agent-composer-area{padding:8px 12px 12px}.agent-composer{padding:10px;border-radius:14px}.agent-composer textarea{min-height:46px;max-height:120px;font-size:16px}.agent-composer-controls .ui-select{max-width:190px}
  .agent-empty h2{font-size:22px}.agent-message-user .agent-message-body{max-width:95%}.agent-find{padding-inline:10px;gap:3px}.agent-find>span{font-size:9px}body:has(.agent-shell)>.editing-pane{top:44px}

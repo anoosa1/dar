@@ -1,6 +1,5 @@
 import {useEffect,useId,useRef,useState} from "react";
-import {Brand} from "./auth.tsx";
-import {AppSwitcher,type AppId} from "./apps.tsx";
+import {AppRail,appLabel,useAppList,type AppId} from "./apps.tsx";
 import {ActionMenu} from "./controls.tsx";
 import {Icon} from "./icons.tsx";
 import {request,type BrowserSession} from "./api.ts";
@@ -9,10 +8,10 @@ import "./global-search.css";
 
 export function Avatar({name}:{name:string}){return <span className="avatar" aria-hidden="true">{name.split(/\s+/).filter(Boolean).map(word=>word[0]).join("").slice(0,2).toUpperCase()}</span>;}
 
-/** The same account actions are available in full and compact app chrome. */
-export function WorkspaceAccount({session,onSignedOut}:{session:BrowserSession;onSignedOut:()=>void}){
+/** The same account actions are available from the rail and the phone search bar. */
+export function WorkspaceAccount({session,onSignedOut,className=""}:{session:BrowserSession;onSignedOut:()=>void;className?:string}){
   const [error,setError]=useState("");
-  return <div className="account-area"><ActionMenu label="Open account menu" className="ui-account" heading={<><strong>{session.user.displayName}</strong><small>@{session.user.username}</small></>} actions={[{label:"Settings",icon:"settings",href:"/settings"},{label:"Account security",icon:"lock",href:"/settings?section=security"},...(session.user.administrator?[{label:"Administration",icon:"share" as const,href:"/settings?section=directory"}]:[]),{label:"Sign out",icon:"back",separator:true,run:()=>{void request("/api/v1/auth/logout",{method:"POST"},session.csrfToken).then(onSignedOut).catch(e=>setError(e.message));}}]}><Avatar name={session.user.displayName}/><span className="sr-only">{session.user.displayName}</span></ActionMenu>{error&&<p role="alert" className="error">{error}</p>}</div>;
+  return <div className={`account-area ${className}`}><ActionMenu label="Open account menu" className="ui-account" heading={<><strong>{session.user.displayName}</strong><small>@{session.user.username}</small></>} actions={[{label:"Settings",icon:"settings",href:"/settings"},{label:"Account security",icon:"lock",href:"/settings?section=security"},...(session.user.administrator?[{label:"Administration",icon:"share" as const,href:"/settings?section=directory"},{label:"Manage apps",icon:"grid" as const,href:"/settings?section=installedApps"}]:[]),{label:"Sign out",icon:"back",separator:true,run:()=>{void request("/api/v1/auth/logout",{method:"POST"},session.csrfToken).then(onSignedOut).catch(e=>setError(e.message));}}]}><Avatar name={session.user.displayName}/><span className="sr-only">{session.user.displayName}</span></ActionMenu>{error&&<p role="alert" className="error">{error}</p>}</div>;
 }
 
 /** Phone navigation focuses its controls and returns to its opener on dismissal. */
@@ -29,6 +28,15 @@ export function useMobileNavigation(){
   return {open,setOpen,id,ref};
 }
 
-export function WorkspaceHeader({app,session,onSignedOut,query,onQuery,onNavigation,navigationOpen,navigationId,searchLabel,searchHint}:{app:AppId;session:BrowserSession;onSignedOut:()=>void;query:string;onQuery:(value:string)=>void;onNavigation?:()=>void;navigationOpen?:boolean;navigationId?:string;searchLabel?:string;searchHint?:string}){
-  return <><header className="topbar"><div className="topbar-brand">{onNavigation&&<button type="button" className="icon-button mobile-menu" aria-label="Open navigation" aria-expanded={navigationOpen} aria-controls={navigationId} onClick={onNavigation}><Icon name="menu"/></button>}<a href="/" className="shell-brand" aria-label="Dar home"><Brand/></a><AppSwitcher active={app} administrator={session.user.administrator}/></div><GlobalSearch/><WorkspaceAccount session={session} onSignedOut={onSignedOut}/></header></>;
+/**
+ * Shared app chrome: the app rail (a bottom bar on phones) and a top bar with the
+ * app title, centered cross-app search and app-level tools. Phone collections and
+ * views are chips in each app's sidebar, so the former navigation props are unused.
+ */
+export function WorkspaceHeader({app,session,onSignedOut,onSettings}:{app:AppId;session:BrowserSession;onSignedOut:()=>void;query?:string;onQuery?:(value:string)=>void;onNavigation?:()=>void;navigationOpen?:boolean;navigationId?:string;searchLabel?:string;searchHint?:string;onSettings?:()=>void}){
+  const list=useAppList(),label=appLabel(app,list);
+  return <>
+    <AppRail active={app} administrator={session.user.administrator} account={<WorkspaceAccount session={session} onSignedOut={onSignedOut} className="rail-account"/>}/>
+    <header className="topbar"><span className="topbar-title">{label}</span><GlobalSearch/><div className="topbar-tools">{onSettings&&<button type="button" className="icon-button" aria-label={`${label} settings`} title={`${label} settings`} onClick={onSettings}><Icon name="settings"/></button>}</div><WorkspaceAccount session={session} onSignedOut={onSignedOut} className="topbar-account"/></header>
+  </>;
 }

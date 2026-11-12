@@ -1,0 +1,186 @@
+/* Unified look B, selected November 11 (docs/spacetimedb/unified-look-mock-b.html).
+   Every app shares a persistent app rail, a top bar with the centered cross-app
+   search, and content in floating sheets on the soft background. Phones turn the
+   rail into a bottom navigation bar, sidebar navigation into chips and details
+   into full-screen panels. Imported last so it supersedes earlier frame rules. */
+:root{--rail-width:72px;--topbar-height:56px;--sheet-gap:8px;--sheet-radius:16px;--bottom-bar-height:72px;--sheet-border:color-mix(in srgb,var(--border) 55%,var(--surface-soft));--content-heading-size:20px}
+
+/* Frame: rail spans the left edge; the top bar and workspace fill the rest. */
+:is(.app-shell,.identity-settings,.identity-consent-page){display:grid;grid-template-columns:var(--rail-width) minmax(0,1fr);grid-template-rows:var(--topbar-height) minmax(0,1fr);height:100dvh;min-height:0;overflow:hidden;background:var(--surface-soft);color:var(--text)}
+:is(.app-shell,.identity-settings,.identity-consent-page)>*{grid-column:2;grid-row:2;min-width:0;min-height:0}
+:is(.app-shell,.identity-settings,.identity-consent-page)>.app-rail{grid-column:1;grid-row:1/-1}
+:is(.app-shell,.identity-settings,.identity-consent-page)>.topbar{grid-column:2;grid-row:1}
+:is(.app-shell,.identity-consent-page)>:is(.startup-state,.identity-consent){margin:0 var(--sheet-gap) var(--sheet-gap) 0;background:var(--panel);border:1px solid var(--sheet-border);border-radius:var(--sheet-radius);overflow-y:auto}
+
+/* App rail. */
+.app-rail{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 0 12px;min-height:0;overflow:hidden auto;scrollbar-width:none;position:relative;z-index:101}
+.app-rail-brand{display:grid;place-items:center;flex:none;width:36px;height:36px;margin:0 0 14px;border-radius:11px;background:var(--accent);color:var(--on-accent);font-size:16px;font-weight:750;text-decoration:none}
+.app-rail-apps{display:flex;flex-direction:column;align-items:center;gap:2px}
+:is(.app-rail-item,.app-rail-more>.ui-menu-trigger){display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;min-height:0;padding:2px 0 6px;border-radius:12px;background:transparent;color:var(--muted);font-size:11px;font-weight:550;line-height:1.3;text-decoration:none}
+.app-rail-more>.ui-menu-trigger:hover{background:transparent}
+.app-rail-icon{display:grid;place-items:center;width:52px;height:30px;border-radius:15px;transition:background-color .15s}
+.app-rail-icon .icon{width:19px;height:19px}
+:is(.app-rail-item,.app-rail-more>.ui-menu-trigger):hover .app-rail-icon{background:var(--hover)}
+:is(.app-rail-item[aria-current=page],.app-rail-more.is-current>.ui-menu-trigger){color:var(--text)}
+:is(.app-rail-item[aria-current=page],.app-rail-more.is-current>.ui-menu-trigger) .app-rail-icon{background:var(--tonal);color:var(--on-tonal)}
+:is(.app-rail-item,.app-rail-more>.ui-menu-trigger,.app-rail-brand):focus-visible{outline:none}
+:is(.app-rail-item,.app-rail-more>.ui-menu-trigger):focus-visible .app-rail-icon,.app-rail-brand:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.app-rail-label{max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app-rail-more{display:none}
+.app-rail-end{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:auto;padding-top:12px}
+.app-rail-settings{padding:0}
+.rail-account .avatar{width:32px;height:32px;min-width:32px;font-size:11px}
+.rail-account>.ui-menu>.ui-menu-panel{position:fixed;left:calc(var(--rail-width) + 4px);right:auto;top:auto;bottom:12px}
+.topbar-account{display:none}
+
+/* Top bar. */
+.topbar{display:flex;align-items:center;gap:8px;height:var(--topbar-height);min-height:0;padding:0 12px 0 4px;background:transparent;border:0;position:relative;top:auto;z-index:100}
+.topbar-title{flex:none;width:226px;padding-left:12px;overflow:hidden;color:var(--text);font-size:18px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;text-overflow:ellipsis}
+.topbar .global-search-wrap{flex:0 1 600px;width:auto;margin:0 auto}
+.topbar .global-search{height:40px;border:1px solid var(--sheet-border);border-radius:20px;background:var(--panel);padding:0 8px 0 14px}
+.topbar .global-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.topbar .global-search>.icon{width:18px}
+.topbar-tools{display:flex;flex:none;align-items:center;justify-content:flex-end;gap:2px;min-width:40px}
+.topbar-tools .icon-button{min-width:40px;min-height:40px;color:var(--muted)}
+.topbar-tools .icon-button:hover{background:var(--hover);color:var(--text)}
+.topbar-tools .icon{width:20px;height:20px}
+
+/* Workspaces: transparent sidebar beside floating sheets. */
+:is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout){gap:var(--sheet-gap);height:100%;min-height:0;padding:0 var(--sheet-gap) var(--sheet-gap) 0;overflow:hidden;background:transparent}
+.pim-workspace,.pim-workspace:is(:has(.calendar-main),:has(.contacts-main),:has(.workspace-list)){height:100%;min-height:0}
+:is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout)>.sidebar{position:relative;top:auto;height:100%;min-height:0;padding:2px 4px 4px;overflow-y:auto;background:transparent;border:0;box-shadow:none}
+:is(.workspace>.files-main,.pim-workspace>.pim-main,.extension-workspace>main,.ui-settings-layout>.identity-main,.details-panel,.pim-details,.extension-details){height:100%;min-height:0;background:var(--panel);border:1px solid var(--sheet-border);border-radius:var(--sheet-radius)}
+:is(.workspace>.files-main,.pim-workspace>.pim-main:not(.calendar-main,.contacts-main),.extension-workspace>main,.ui-settings-layout>.identity-main){overflow-y:auto;scrollbar-gutter:stable}
+:is(.details-panel,.pim-details,.extension-details){position:relative;top:auto}
+.pim-workspace>.pim-details{overflow-y:auto}
+.ui-settings-layout>.identity-main{padding:28px}
+
+/* Sidebar contents: tonal create button, pill rows, quiet headings. */
+.sidebar>.new-button,.sidebar .ui-new,.files-new-menu>.ui-menu-trigger{display:inline-flex;align-items:center;align-self:flex-start;gap:10px;width:auto;height:48px;min-height:48px;margin:2px 0 14px 2px;padding:0 20px 0 16px!important;border:0;border-radius:16px!important;background:var(--tonal);color:var(--on-tonal);font-size:14px!important;font-weight:600;box-shadow:0 1px 3px #0000001f,0 2px 6px #00000014}
+.sidebar .ui-new:hover,.files-new-menu>.ui-menu-trigger:hover,.files-new-menu>.ui-menu-trigger[aria-expanded=true]{background:color-mix(in srgb,var(--tonal) 86%,var(--on-tonal))}
+.sidebar .ui-new .icon,.files-new-menu>.ui-menu-trigger>.icon:first-child{width:20px;height:20px}
+.files-new-menu{display:inline-flex;align-self:flex-start;margin:0}
+.files-new-menu>.ui-menu-panel{left:2px;right:auto;width:220px;max-width:calc(100vw - 30px)}
+.sidebar .nav-item{min-height:36px;margin:0 0 1px;padding:7px 12px;border-radius:18px;font-size:13px}
+.sidebar .nav-item .icon{width:18px;height:18px}
+:is(.sidebar .nav-item,.ui-settings-nav nav button):hover{background:var(--hover);color:var(--text)}
+:is(.sidebar .nav-item,.ui-settings-nav nav button):is(.active,[aria-current=page],[aria-pressed=true]){background:var(--tonal);color:var(--on-tonal);font-weight:600}
+.ui-settings-nav nav button{min-height:36px;border-radius:18px}
+/* The top bar gear replaces the sidebar settings entry; phones show the entry as the last chip. */
+.app-shell:has(.topbar-tools .icon-button) .sidebar .ui-app-settings-entry{display:none}
+:is(.sidebar .nav-item,.ui-settings-nav nav button):is(.active,[aria-current=page],[aria-pressed=true]):hover{background:color-mix(in srgb,var(--tonal) 88%,var(--on-tonal))}
+
+/* Content: compact headings and pill selection in lists. */
+.page-heading h1,.pim-main h1{font-size:var(--content-heading-size);font-weight:600;letter-spacing:-.01em}
+.file-table td{height:44px;border-bottom:0}
+.file-table tbody tr:hover{background:var(--hover)}
+.file-table tr.is-selected{background:var(--tonal);color:var(--on-tonal);box-shadow:none}
+.file-table tbody tr>td:first-child{border-radius:22px 0 0 22px}.file-table tbody tr>td:last-child{border-radius:0 22px 22px 0}
+.file-table tr.is-selected .name-button{color:var(--on-tonal)}
+
+/* Fixed editors become sheets beside the workspace. */
+.editing-pane{top:var(--topbar-height);right:var(--sheet-gap);bottom:var(--sheet-gap);overflow:hidden;border:1px solid var(--sheet-border);border-radius:var(--sheet-radius);box-shadow:0 8px 28px var(--shadow)}
+body:has(.agent-shell)>.editing-pane{top:var(--topbar-height)}
+body:has(.editing-pane) :is(.workspace,.pim-workspace){padding-right:calc(420px + 2 * var(--sheet-gap))}
+.file-text-editor{top:var(--topbar-height);left:calc(var(--rail-width) + 230px + var(--sheet-gap));right:var(--sheet-gap);bottom:var(--sheet-gap);overflow:hidden;border:1px solid var(--sheet-border);border-radius:var(--sheet-radius)}
+@media(max-width:1150px) and (min-width:801px){.file-text-editor{left:calc(var(--rail-width) + 195px + var(--sheet-gap))}.topbar-title{width:191px}}
+@media(max-width:1000px) and (min-width:801px){body:has(.editing-pane) :is(.workspace,.pim-workspace){padding-right:calc(390px + 2 * var(--sheet-gap))}}
+@media(max-width:900px) and (min-width:801px){.file-text-editor{left:calc(var(--rail-width) + 180px + var(--sheet-gap))}.topbar-title{width:176px}.details-panel{position:fixed;top:var(--topbar-height);right:var(--sheet-gap);bottom:var(--sheet-gap);height:auto;z-index:22;box-shadow:0 8px 28px var(--shadow)}}
+
+/* Phones: search bar on top, chips for navigation, bottom app bar, full-screen details. */
+@media(max-width:800px){
+  :is(.app-shell,.identity-settings,.identity-consent-page){grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);padding-bottom:calc(var(--bottom-bar-height) + env(safe-area-inset-bottom))}
+  :is(.app-shell,.identity-settings,.identity-consent-page)>*{grid-column:1;grid-row:2}
+  :is(.app-shell,.identity-settings,.identity-consent-page)>.topbar{grid-column:1;grid-row:1}
+  :is(.app-shell,.identity-consent-page)>:is(.startup-state,.identity-consent){margin:0 var(--sheet-gap);border-radius:var(--sheet-radius) var(--sheet-radius) 0 0;border-bottom:0}
+  :is(.app-shell,.identity-settings,.identity-consent-page)>.app-rail{position:fixed;left:0;right:0;bottom:0;height:calc(var(--bottom-bar-height) + env(safe-area-inset-bottom));flex-direction:row;padding:8px 4px calc(10px + env(safe-area-inset-bottom));overflow:visible;border-top:1px solid var(--sheet-border);background:var(--surface-soft);z-index:110}
+  .app-rail-brand,.app-rail-end,.app-rail-overflow{display:none}
+  .app-rail-apps{flex-direction:row;justify-content:space-around;width:100%}
+  .app-rail-more{display:flex;flex:1}
+  :is(.app-rail-item,.app-rail-more>.ui-menu-trigger){flex:1;width:auto;min-width:0;gap:4px;padding:0}
+  .app-rail-more>.ui-menu-trigger{width:100%}
+  .app-rail-icon{width:56px;height:30px}
+  .app-rail-icon .icon{width:20px;height:20px}
+  .app-rail-label{max-width:100%}
+  .app-rail-more>.ui-menu-panel,.app-rail-more[data-side=up]>.ui-menu-panel{position:fixed;left:12px;right:12px;top:auto;bottom:calc(var(--bottom-bar-height) + 8px);width:auto;max-width:none;max-height:calc(100dvh - var(--bottom-bar-height) - 80px)}
+  .topbar{height:auto;margin:8px 12px 4px;padding:0 4px 0 0;gap:4px;border-radius:24px;background:var(--hover)}
+  .topbar-title,.topbar-tools{display:none}
+  .topbar .global-search-wrap{flex:1;margin:0}
+  .topbar .global-search,.topbar .global-search:focus-within{height:48px;padding:0 4px 0 14px;border:0;background:transparent;box-shadow:none}
+  .topbar .global-search input{min-height:44px;font-size:16px}
+  .topbar-account{display:block}
+  .topbar-account .avatar{width:36px;height:36px;min-width:36px;font-size:11px}
+  .topbar-account>.ui-menu>.ui-menu-panel{position:fixed;top:64px;right:12px;left:auto}
+  .global-search-results{position:fixed;top:64px;left:12px;right:12px;max-height:calc(100dvh - 64px - var(--bottom-bar-height) - 16px)}
+
+  /* Workspace: chip strip above one content sheet. */
+  :is(.workspace,.pim-workspace,.pim-shell.has-pim-details .pim-workspace,.extension-workspace,.ui-settings-layout){display:flex!important;flex-direction:column;gap:0;padding:0}
+  :is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout)>.sidebar,.ui-settings-layout>.ui-settings-nav{display:flex!important;flex:none;flex-direction:row;align-items:center;gap:8px;position:static!important;width:auto!important;height:auto!important;min-height:0;margin:0;padding:4px 12px 10px!important;overflow:auto hidden;transform:none!important;box-shadow:none!important;background:transparent;color:var(--muted);font-size:12px;font-weight:550;white-space:nowrap;scrollbar-width:none;z-index:auto}
+  .sidebar :is(nav,.contacts-books,.calendar-list,.workspace-collections,.pim-sidebar-heading,.sidebar-heading){display:contents}
+  .sidebar :is(.pim-sidebar-heading,.sidebar-heading,nav>h2){padding-left:4px}
+  .ui-settings-nav nav>h2{display:block;flex:none;margin:0 0 0 6px;color:var(--muted);font-size:12px}
+  .sidebar :is(.nav-item,.ui-app-settings-entry),.ui-settings-nav nav button{display:inline-flex;flex:none;align-items:center;gap:6px;width:auto;height:36px;min-height:36px;margin:0;padding:0 14px;border:1px solid var(--sheet-border);border-radius:8px;background:transparent;color:var(--text);font-size:13px;font-weight:500;white-space:nowrap}
+  .sidebar .ui-app-settings-entry,.app-shell:has(.topbar-tools .icon-button) .sidebar .ui-app-settings-entry{display:inline-flex;margin:0!important}
+  .sidebar :is(.nav-item,.ui-app-settings-entry) .icon,.ui-settings-nav nav button .icon{width:16px;height:16px}
+  :is(.sidebar .nav-item,.ui-settings-nav nav button):is(.active,[aria-current=page],[aria-pressed=true]){border-color:transparent;background:var(--tonal);color:var(--on-tonal)}
+  .sidebar :is(.contacts-book-row,.calendar-nav-row){display:inline-flex;flex:none;align-items:center;gap:2px}
+  .sidebar :is(.contacts-book-row,.calendar-nav-row) .ui-menu-trigger{min-width:32px;min-height:36px;padding:6px}
+  .sidebar :is(.pim-sidebar-heading,.sidebar-heading) :is(.icon-button,.text-button){min-width:36px;min-height:36px;border:1px dashed var(--sheet-border);border-radius:8px}
+  .sidebar :is(.storage,.contacts-book-pages,.calendar-list-pages,.sidebar-footer){display:none!important}
+  .sidebar>.new-button,.sidebar>.files-new-menu{position:fixed;right:16px;bottom:calc(var(--bottom-bar-height) + 16px + env(safe-area-inset-bottom));z-index:105;margin:0}
+  .sidebar>.new-button,.files-new-menu>.ui-menu-trigger{justify-content:center;width:56px;height:56px;min-height:56px;margin:0;padding:0!important;font-size:0!important;box-shadow:0 3px 8px #0003}
+  .sidebar>.new-button .icon,.files-new-menu>.ui-menu-trigger>.icon:first-child{width:24px;height:24px}
+  .files-new-menu>.ui-menu-trigger>:not(.icon:first-child){display:none}
+  .files-new-menu>.ui-menu-panel,.files-new-menu[data-side=up]>.ui-menu-panel{position:fixed;left:auto;right:16px;top:auto;bottom:calc(var(--bottom-bar-height) + 80px);width:240px}
+  :is(.workspace>.files-main,.pim-workspace>.pim-main,.extension-workspace>main,.ui-settings-layout>.identity-main){flex:1;height:auto;min-height:0;margin:0 var(--sheet-gap);padding-bottom:88px;border-bottom:0;border-radius:var(--sheet-radius) var(--sheet-radius) 0 0}
+  .pim-workspace>.pim-main:is(.calendar-main,.contacts-main){padding-bottom:var(--pane-padding)}
+  .ui-settings-layout>.identity-main{padding:var(--pane-padding) var(--pane-padding) 88px}
+
+  /* Details and editors fill the screen below the search bar, covering the bottom bar;
+     the search bar and its results stay above them. */
+  .topbar{z-index:130}
+  :is(.details-panel,.pim-details,.extension-details){position:fixed!important;inset:var(--topbar-height) 0 0;width:auto!important;height:auto!important;min-height:0!important;margin:0;border:0;border-radius:0;z-index:120;overflow-y:auto}
+  .editing-pane{inset:var(--topbar-height) 0 0;width:auto;border:0;border-radius:0;z-index:125}
+  .file-text-editor{inset:var(--topbar-height) 0 0;border:0;border-radius:0;z-index:124}
+  .transfer-panel{bottom:calc(var(--bottom-bar-height) + 12px);z-index:106}
+  /* Menus and choices from the content stay above the bottom bar. */
+  .ui-menu-panel,.ui-select-options{z-index:115}
+  .ui-file-actions>.ui-menu-panel,.ui-file-actions[data-side=up]>.ui-menu-panel{bottom:calc(var(--bottom-bar-height) + 8px + env(safe-area-inset-bottom));max-height:calc(100dvh - var(--bottom-bar-height) - 80px)}
+}
+@media(prefers-reduced-motion:reduce){.app-rail-icon{transition:none}}
+
+/* Agent: same rail, top bar and sheets; threads stay in the transparent sidebar. */
+.agent-shell .agent-layout{gap:var(--sheet-gap);padding:0 var(--sheet-gap) var(--sheet-gap) 0;background:transparent}
+.agent-shell .agent-sidebar{padding:2px 4px 4px;background:transparent;border-right:0}
+.agent-shell :is(.agent-center,.agent-review){overflow:hidden;background:var(--panel);border:1px solid var(--sheet-border);border-radius:var(--sheet-radius)}
+.agent-sidebar>.agent-new-thread{display:inline-flex;align-items:center;align-self:flex-start;gap:10px;width:auto;height:48px;min-height:48px;margin:2px 0 14px 2px;padding:0 20px 0 16px!important;border:0;border-radius:16px!important;background:var(--tonal);color:var(--on-tonal);font-size:14px!important;font-weight:600;box-shadow:0 1px 3px #0000001f,0 2px 6px #00000014}
+.agent-sidebar>.agent-new-thread:hover{background:color-mix(in srgb,var(--tonal) 86%,var(--on-tonal))}
+.agent-sidebar>.agent-new-thread .icon{width:20px;height:20px}
+.agent-mobile-back{display:none}
+/* Agent settings uses the top-bar gear; phones show the sidebar entry below the threads. */
+.agent-sidebar>.ui-app-settings-entry{display:none}
+.agent-mobile-views .agent-mobile-back{flex:none;min-width:44px;padding:8px;border-bottom:0}
+/* Phones keep only four app slots; the rest are under More. */
+.app-rail .app-rail-overflow{display:flex}
+@media(max-width:800px){
+  .app-rail .app-rail-overflow{display:none}
+  /* The thread list is the Agent's home screen; a thread opens full screen with Back and view tabs. */
+  .agent-shell{grid-template-rows:auto auto minmax(0,1fr)}
+  .agent-shell>.agent-mobile-views{grid-row:2}
+  .agent-shell>.agent-layout{grid-row:3;padding:0;gap:0}
+  .agent-shell.agent-view-threads>.agent-mobile-views{display:none}
+  .agent-shell:not(.agent-view-threads){grid-template-rows:0 auto minmax(0,1fr);padding-bottom:0}
+  .agent-shell:not(.agent-view-threads)>:is(.topbar,.app-rail){display:none}
+  .agent-shell .agent-mobile-views{align-items:center;gap:2px;padding:0 4px;border-bottom:1px solid var(--sheet-border);background:var(--panel)}
+  .agent-mobile-back{display:inline-flex;flex:none;min-width:44px;min-height:44px}
+  .agent-shell .agent-view-threads .agent-sidebar,.agent-shell.agent-view-threads .agent-sidebar{margin:0 var(--sheet-gap);padding:12px 12px 88px;background:var(--panel);border:1px solid var(--sheet-border);border-bottom:0;border-radius:var(--sheet-radius) var(--sheet-radius) 0 0}
+  .agent-sidebar>.agent-new-thread{position:fixed;right:16px;bottom:calc(var(--bottom-bar-height) + 16px + env(safe-area-inset-bottom));z-index:105;justify-content:center;width:56px;height:56px;margin:0;padding:0!important;font-size:0!important;box-shadow:0 3px 8px #0003}
+  .agent-sidebar>.agent-new-thread .icon{width:24px;height:24px}
+  .agent-shell :is(.agent-center,.agent-review){border:0;border-radius:0}
+  .agent-sidebar>.ui-app-settings-entry{display:flex;flex:none;margin-top:8px!important;border-radius:18px}
+}
+/* Contact rows use the same tonal pill selection as every list. */
+.contact-list .contact-row{border-bottom:0;border-radius:14px;margin:1px 0}
+.contact-list .contact-row.selected{background:var(--tonal);color:var(--on-tonal);box-shadow:none}
+/* Settings navigation uses the same pill rows as app sidebars. */
+.ui-settings-layout .ui-settings-nav nav button{min-height:36px;margin:1px 0;padding:7px 12px;border-radius:18px}

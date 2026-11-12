@@ -58,7 +58,7 @@ async function capture(name){
   if(issues.overflow||issues.verticalOverflow||issues.contrast.length)failures.push({filename,...issues});
 }
 async function navigate(url,ready){await page.goto(base+url);await ready().waitFor();await page.waitForLoadState("networkidle");}
-async function openSettings(app){if(width<801)await page.getByRole("button",{name:"Open navigation",exact:true}).click();await page.getByRole("button",{name:app+" settings",exact:true}).click();await page.getByRole("dialog",{name:app+" settings",exact:true}).waitFor();}
+async function openSettings(app){await page.getByRole("button",{name:app+" settings",exact:true}).click();await page.getByRole("dialog",{name:app+" settings",exact:true}).waitFor();}
 async function closeDialog(){await page.getByRole("button",{name:"Close dialog",exact:true}).click();}
 try{
   const context=await browser.newContext({viewport:{width:1440,height:950}});page=await context.newPage();page.setDefaultTimeout(10000);
@@ -68,18 +68,18 @@ try{
     for(width of [1440,390]){
       await page.setViewportSize({width,height:width===390?844:950});
       await context.clearCookies();await navigate("/",()=>page.getByLabel("Username",{exact:true}));await capture("signin");
-      await page.getByLabel("Username",{exact:true}).fill("admin");await page.getByLabel("Password",{exact:true}).fill("a long isolated test password");await page.getByRole("button",{name:"Sign in",exact:true}).click();await page.getByRole("button",{name:"Open applications",exact:true}).waitFor();
+      await page.getByLabel("Username",{exact:true}).fill("admin");await page.getByLabel("Password",{exact:true}).fill("a long isolated test password");await page.getByRole("button",{name:"Sign in",exact:true}).click();await page.getByRole("navigation",{name:"Applications",exact:true}).waitFor();
       await navigate("/settings?section=appearance",()=>page.getByRole("radio",{name:"Follow system",exact:true}));
       await page.getByRole("radio",{name:theme==="latte"?"Light — Twilight Afterglow":"Dark — Twilight Nightfall",exact:true}).check();await page.getByRole("button",{name:"Save appearance",exact:true}).click();await page.getByText("Appearance saved",{exact:true}).waitFor();await page.reload();await page.waitForFunction(t=>document.documentElement.dataset.theme===t,theme);await page.getByRole("radio",{name:"Follow system",exact:true}).waitFor();await capture("appearance");
       await navigate("/",()=>page.getByRole("button",{name:"Actions for "+marker+".md",exact:true}));await capture("files");
       const fileScroll=await page.locator(".files-main").evaluate(el=>{el.scrollTop=0;const before=el.scrollTop;el.scrollTop=el.scrollHeight;return {before,after:el.scrollTop,height:el.clientHeight,total:el.scrollHeight};});
       assert.ok(fileScroll.total>fileScroll.height&&fileScroll.after>fileScroll.before,JSON.stringify(fileScroll));
       assert.equal(await page.locator(".file-table tbody tr").last().evaluate(el=>{const row=el.getBoundingClientRect(),pane=el.closest(".files-main").getBoundingClientRect();return row.top>=pane.top&&row.bottom<=pane.bottom+1;}),true);
-      assert.equal(await page.locator(".topbar").evaluate(el=>el.getBoundingClientRect().top),0);
-      if(width>800)assert.equal(await page.locator(".sidebar").evaluate(el=>el.getBoundingClientRect().top),78);
+      assert.equal(await page.locator(".topbar").evaluate(el=>el.getBoundingClientRect().top),width>800?0:8);
+      if(width>800)assert.equal(await page.locator(".sidebar").evaluate(el=>el.getBoundingClientRect().top),56);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight+1),false);
       await page.locator(".files-main").evaluate(el=>{el.scrollTop=0;});
-      await page.getByRole("button",{name:"Open applications",exact:true}).click();await capture("launcher");await page.keyboard.press("Escape");
+      if(width<801){await page.getByRole("button",{name:"More apps",exact:true}).click();await capture("launcher");await page.keyboard.press("Escape");}else await capture("launcher");
       await page.getByRole("button",{name:"Open account menu",exact:true}).click();await capture("account-menu");await page.keyboard.press("Escape");
       await page.getByRole("button",{name:"Actions for "+marker+".md",exact:true}).click();await capture("file-actions");await page.getByRole("menuitem",{name:"Rename",exact:true}).click();await page.getByLabel("Name",{exact:true}).waitFor();await capture("file-rename");await page.getByRole("button",{name:"Cancel",exact:true}).click();
       await fileDetails(page,marker+".md");
@@ -94,20 +94,20 @@ try{
       }
       await capture("file-details");await page.getByRole("button",{name:"Close details",exact:true}).click();
       await openSettings("Files");await capture("files-settings");await closeDialog();
-      if(width<801)await page.getByRole("button",{name:"Open navigation",exact:true}).click();await page.getByRole("button",{name:"New",exact:true}).click();await capture("files-new-menu");await page.getByRole("menuitem",{name:"Folder",exact:true}).click();await page.getByLabel("Name",{exact:true}).waitFor();await capture("new-folder");await page.getByRole("button",{name:"Cancel",exact:true}).click();
+      await page.getByRole("button",{name:"New",exact:true}).click();await capture("files-new-menu");await page.getByRole("menuitem",{name:"Folder",exact:true}).click();await page.getByLabel("Name",{exact:true}).waitFor();await capture("new-folder");await page.getByRole("button",{name:"Cancel",exact:true}).click();
       await navigate("/contacts",()=>page.getByRole("heading",{name:"All contacts",exact:true}));await capture("contacts");await navigate(`/contacts?book=${addressbook.id}&contact=${encodeURIComponent(contact.href)}`,()=>page.getByRole("button",{name:"Edit contact",exact:true}));await capture("contact-details");await page.getByRole("button",{name:"Edit contact",exact:true}).click();await page.getByLabel("First name",{exact:true}).waitFor();await capture("contact-editor");await page.getByRole("button",{name:"Cancel",exact:true}).click();await page.getByRole("button",{name:"Delete contact",exact:true}).click();await capture("contact-delete");await page.getByRole("button",{name:"Cancel",exact:true}).click();await page.getByRole("button",{name:"Close contact details",exact:true}).click();await openSettings("Contacts");await capture("contacts-settings");await closeDialog();
-      if(width<801)await page.getByRole("button",{name:"Open navigation",exact:true}).click();await page.getByRole("button",{name:"New address book",exact:true}).click();await page.getByLabel("Name",{exact:true}).waitFor();await capture("new-address-book");await page.getByRole("button",{name:"Cancel",exact:true}).click();
+      await page.getByRole("button",{name:"New address book",exact:true}).click();await page.getByLabel("Name",{exact:true}).waitFor();await capture("new-address-book");await page.getByRole("button",{name:"Cancel",exact:true}).click();
       await navigate("/calendar",()=>page.getByRole("button",{name:"Choose date",exact:true}));await calendarDate(page,"2026-11-08");await capture("calendar");await page.getByRole("button",{name:"Choose date",exact:true}).click();await capture("calendar-date");await page.keyboard.press("Escape");await openSettings("Calendar");await capture("calendar-settings");await closeDialog();
-      if(width<801)await page.getByRole("button",{name:"Open navigation",exact:true}).click();await page.getByRole("button",{name:"New event",exact:true}).click();await page.getByLabel("Title",{exact:true}).waitFor();await capture("new-event");await page.getByRole("button",{name:"Cancel",exact:true}).click();
+      await page.getByRole("button",{name:"New event",exact:true}).click();await page.getByLabel("Title",{exact:true}).waitFor();await capture("new-event");await page.getByRole("button",{name:"Cancel",exact:true}).click();
       await navigate(`/notes?item=${note.id}`,()=>page.getByLabel("Note title",{exact:true}));await capture("notes-write");await noteDetails(page);await capture("notes-details");await closeDialog();await page.getByRole("button",{name:"Preview",exact:true}).click();await capture("notes-preview");
       await navigate("/notes",()=>page.getByRole("heading",{name:"All notes",exact:true}));await openSettings("Notes");await capture("notes-settings");await closeDialog();
       await navigate(`/tasks?item=${task.id}`,()=>page.getByRole("heading",{name:marker,exact:true}));await capture("task-details");
       await navigate("/tasks",()=>page.getByRole("heading",{name:"Today",exact:true}));await openSettings("Tasks");await capture("tasks-settings");await closeDialog();
-      if(width<801)await page.getByRole("button",{name:"Open navigation",exact:true}).click();await page.getByRole("button",{name:"New task",exact:true}).click();await page.getByLabel("Title",{exact:true}).waitFor();await capture("new-task");await page.getByRole("button",{name:"Cancel",exact:true}).click();
+      await page.getByRole("button",{name:"New task",exact:true}).click();await page.getByLabel("Title",{exact:true}).waitFor();await capture("new-task");await page.getByRole("button",{name:"Cancel",exact:true}).click();
       for(const [url,noun,name,menu,label] of [["notes","notebook",longNotebookName,"Delete notebook","Delete notebook"],["tasks","task list",longTaskListName,"Delete task list","Delete task list"]]){
-        await navigate("/"+url,()=>page.getByRole("button",{name:"Open applications",exact:true}));
-        if(width<801)await page.getByRole("button",{name:"Open navigation",exact:true}).click();
-        // Drawer sizing determines collection pagination after its first layout.
+        await navigate("/"+url,()=>page.getByRole("navigation",{name:"Applications",exact:true}));
+        
+        // Sidebar sizing determines collection pagination after its first layout.
         await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
         const targetAction=page.getByRole("button",{name:`Actions for ${noun} ${name}`,exact:true});
         for(let i=0;!await targetAction.isVisible()&&i<100;i++){const nextPage=page.getByRole("button",{name:`Next ${noun}s`,exact:true});assert.ok(await nextPage.isEnabled());await nextPage.click();}

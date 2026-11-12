@@ -272,7 +272,7 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   const owner = details?.role === "owner", canWrite = owner || details?.role === "write";
 
   return <div className="app-shell" onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); if (section === "files") void upload(event.dataTransfer.files); } }}>
-    <WorkspaceHeader app="files" session={session} onSignedOut={onSignedOut} query={query} onQuery={value=>{setQuery(value);setCursor("");setPrevious([]);}} onNavigation={()=>setSidebar(!sidebar)} navigationOpen={sidebar} navigationId={sidebarId} searchLabel="Search filenames starting with" searchHint="Current folder · prefix"/>
+    <WorkspaceHeader app="files" session={session} onSignedOut={onSignedOut} query={query} onQuery={value=>{setQuery(value);setCursor("");setPrevious([]);}} onNavigation={()=>setSidebar(!sidebar)} navigationOpen={sidebar} navigationId={sidebarId} searchLabel="Search filenames starting with" searchHint="Current folder · prefix" onSettings={()=>setSettings(true)}/>
 
 
 
