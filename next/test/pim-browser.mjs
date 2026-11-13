@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {calendarDate,calendarView,choose,switchApp} from "./ui-helpers.mjs";
+import {calendarDate,calendarView,choose,closeSearch,openSearch,switchApp} from "./ui-helpers.mjs";
 import { chromium } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -37,7 +37,7 @@ try{
   await page.waitForFunction(()=>document.activeElement?.getAttribute("aria-label")==="Edit contact");
   const exported=page.waitForEvent("download");await page.getByRole("link",{name:"Export contact",exact:true}).click();const download=await exported;assert.match(await readFile(await download.path(),"utf8"),/FN:Amira Browser/);
   await page.getByRole("button",{name:"Close contact details",exact:true}).click();await page.getByRole("button",{name:"Favorites",exact:true}).click();await page.getByRole("button",{name:/Amira Browser/}).waitFor();
-  await page.getByRole("button",{name:/Amira Browser/}).click();await page.getByRole("button",{name:"Close contact details",exact:true}).click();await page.getByLabel("Search all apps",{exact:true}).fill("no contact has this name");await page.getByText("No matches across your apps.",{exact:true}).waitFor();await page.getByRole("button",{name:"Clear search",exact:true}).click();
+  await page.getByRole("button",{name:/Amira Browser/}).click();await page.getByRole("button",{name:"Close contact details",exact:true}).click();await (await openSearch(page)).fill("no contact has this name");await page.getByText("No matches across your apps.",{exact:true}).waitFor();await page.getByRole("button",{name:"Clear search",exact:true}).click();await closeSearch(page);
   await switchApp(page,"calendar");await page.getByRole("heading",{name:/2026/}).waitFor();
   await page.getByRole("button",{name:"New calendar",exact:true}).click();const calendar="Browser time "+randomUUID().slice(0,6);await page.locator("dialog,[data-editor-pane]").getByLabel("Name",{exact:true}).fill(calendar);await page.locator("dialog,[data-editor-pane]").getByRole("button",{name:"Save",exact:true}).click();await page.getByRole("button",{name:calendar,exact:true}).waitFor();
   assert.equal(await page.getByRole("radio",{name:"Month",exact:true}).getAttribute("aria-checked"),"true");await page.getByRole("button",{name:"Choose date",exact:true}).click();await page.getByRole("button",{name:"Go to today",exact:true}).click();const today=await page.getByRole("button",{name:"Choose date",exact:true}).getAttribute("data-date");assert.equal((await page.getByRole("button",{name:"Choose date",exact:true}).textContent()).trim(),"Today");assert.equal(await page.locator(".sidebar").getByRole("button",{name:"Today",exact:true}).count(),0);

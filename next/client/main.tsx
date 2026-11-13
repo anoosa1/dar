@@ -24,14 +24,15 @@ import {useAppSettings} from "./app-availability.tsx";
 import {WorkspaceHeader} from "./shell.tsx";
 import {AgentWorkspace} from "./agent/workspace.tsx";
 import {NewsWorkspace} from "./news/workspace.tsx";
+import {PhotosWorkspace} from "./photos/workspace.tsx";
 // The shared frame is last so it supersedes the earlier per-surface frame rules.
 import "./frame.css";
 import "./settings-sheet.css";
 // The apps revamp layer sits on top of the frame and settings sheet.
 import "./apps.css";
-function OptionalWorkspace({kind,session,onSignedOut}:{kind:"notes"|"tasks"|"agent"|"news";session:BrowserSession;onSignedOut:()=>void}){
+function OptionalWorkspace({kind,session,onSignedOut}:{kind:"notes"|"tasks"|"agent"|"news"|"photos";session:BrowserSession;onSignedOut:()=>void}){
   const {settings,error}=useAppSettings();
-  if(settings&&!settings.disabled.includes(kind))return kind==="agent"?<AgentWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="news"?<NewsWorkspace session={session} onSignedOut={onSignedOut}/>:<Workspace kind={kind} session={session} onSignedOut={onSignedOut}/>;
+  if(settings&&!settings.disabled.includes(kind))return kind==="agent"?<AgentWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="news"?<NewsWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="photos"?<PhotosWorkspace session={session} onSignedOut={onSignedOut}/>:<Workspace kind={kind} session={session} onSignedOut={onSignedOut}/>;
   return <div className="app-shell"><WorkspaceHeader app={kind} session={session} onSignedOut={onSignedOut} query="" onQuery={()=>{}}/><main className="startup-state">{error?<><h1>Unable to load apps</h1><p role="alert">{error}</p><button className="primary-button" onClick={()=>location.reload()}>Try again</button></>:settings?<><h1>App disabled</h1><p>This app has been disabled by an administrator.</p></>:<p role="status">Opening app…</p>}<a href="/">Return to Files</a></main></div>;
 }
 function App() {
@@ -59,6 +60,7 @@ function App() {
   if(session&&location.pathname.startsWith("/apps/"))return <InstalledAppPage id={location.pathname.split("/")[2]} session={session} onSignedOut={signedOut}/>;
   if(session&&["/identity","/settings"].includes(location.pathname))return <IdentitySettings session={session} onSignedOut={signedOut}/>;
   if(session&&location.pathname==="/news")return <OptionalWorkspace kind="news" session={session} onSignedOut={signedOut}/>;
+  if(session&&location.pathname==="/photos")return <OptionalWorkspace kind="photos" session={session} onSignedOut={signedOut}/>;
   if(session&&location.pathname==="/agent")return <OptionalWorkspace kind="agent" session={session} onSignedOut={signedOut}/>;
   if(session&&["/notes","/tasks"].includes(location.pathname))return <OptionalWorkspace kind={location.pathname==="/notes"?"notes":"tasks"} session={session} onSignedOut={signedOut}/>;
   return session ? location.pathname === "/contacts" ? <Contacts session={session} onSignedOut={signedOut} /> : location.pathname === "/calendar" ? <Calendar session={session} onSignedOut={signedOut} /> : <Files session={session} onSignedOut={signedOut} /> : <Auth initialized={status.initialized} onLogin={setSession} />;

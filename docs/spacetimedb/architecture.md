@@ -74,7 +74,7 @@ disconnection is shown honestly and reconnects refetch safely.
 
 ## Backups and upgrades
 
-Backups (format v7, reading v1–v6) snapshot database state and referenced blobs
+Backups (format v8 with Photos metadata, reading v1–v7) snapshot database state and referenced blobs
 with pins; restore needs an empty root and invalidates sessions and bearer
 credentials. Schema changes are additive numbered migrations tested against
 older databases. Verification: `npm --prefix next run verify` (typechecks,

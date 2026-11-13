@@ -12,6 +12,7 @@ const workspaceOnly=process.argv.includes("--workspace");
 const pimOnly=process.argv.includes("--pim");
 const agentOnly=process.argv.includes("--agent");
 const newsOnly=process.argv.includes("--news");
+const photosOnly=process.argv.includes("--photos");
 const root = await mkdtemp(path.join(tmpdir(), "dar-acceptance-"));
 const appBuild=spawnSync(process.execPath,["sdk/build.mjs","../apps/prayer-times"],{cwd:project,stdio:"inherit"});
 if(appBuild.status!==0)throw new Error("Example app build failed.");
@@ -51,14 +52,15 @@ try {
   run(["node_modules/typescript/bin/tsc", "-p", "module/tsconfig.json"]);
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
-  if(newsOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly){
+  if(!photosOnly&&(newsOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly)){
     run(["--test","--test-concurrency=1","test/news.test.ts","test/news.integration.test.ts"],300_000);
   }
-  if(!newsOnly&&(agentOnly||!identityOnly&&!workspaceOnly&&!pimOnly)){
+  if(photosOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly&&!newsOnly)run(["--test","test/photos.integration.test.ts"],300_000);
+  if(!newsOnly&&!photosOnly&&(agentOnly||!identityOnly&&!workspaceOnly&&!pimOnly)){
     run(["--test","--test-concurrency=1","test/agent-connection.test.ts","test/agent.integration.test.ts","test/codex.integration.test.ts","test/claude.integration.test.ts"]);
     run(["test/agent-browser.mjs"]);
   }
-  if(!agentOnly&&!newsOnly){
+  if(!agentOnly&&!newsOnly&&!photosOnly){
   run(["--test","../apps/prayer-times/test/calculations.test.ts","test/app-packages.test.ts","test/apps.integration.test.ts"]);
   run(["test/prayer-times-browser.mjs"]);
   if(!identityOnly&&!workspaceOnly&&!pimOnly){
@@ -104,7 +106,7 @@ try {
   await memory(pids.database);
   console.info(`PASS all acceptance checks. Database process-tree RSS for this fixture: ${Math.round(rss / 1024)} MiB; this is not an archive-capacity guarantee.`);
   console.info(`Isolated artifacts: ${root}`);
-  }else console.info(`PASS ${newsOnly?"News":"Agent"} acceptance. Isolated artifacts: ${root}`);
+  }else console.info(`PASS ${photosOnly?"Photos":newsOnly?"News":"Agent"} acceptance. Isolated artifacts: ${root}`);
 } finally {
   if (child.exitCode === null && child.signalCode === null) await new Promise(resolve => {
     const timer = setTimeout(() => child.kill("SIGKILL"), 15_000);

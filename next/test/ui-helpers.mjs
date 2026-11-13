@@ -14,3 +14,7 @@ export async function calendarDate(page,date){await page.getByRole("button",{nam
 export async function noteDetails(page){await page.getByRole("button",{name:"Note options",exact:true}).click();await page.getByRole("menuitem",{name:"Note details",exact:true}).click();return page.getByRole("dialog",{name:"Note details",exact:true});}
 /** Calendar views are a segmented radio group (Day, Week, Month, Agenda). */
 export async function calendarView(page,view){await page.getByRole("radiogroup",{name:"Calendar view",exact:true}).locator(`[role=radio][data-value=${JSON.stringify(view)}]`).click();}
+/** Opens the spotlight search from the top bar (if needed) and returns its field. */
+export async function openSearch(page){const field=page.getByRole("combobox",{name:"Search all apps",exact:true});if(!await field.isVisible())await page.getByRole("button",{name:"Open search",exact:true}).click();await field.waitFor();return field;}
+/** Escape clears the query, then closes the palette. */
+export async function closeSearch(page){const palette=page.locator("dialog.spotlight[open]");for(let i=0;i<2&&await palette.count();i++)await page.keyboard.press("Escape");await palette.waitFor({state:"detached"});}

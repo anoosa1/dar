@@ -1,4 +1,4 @@
-{ lib, buildNpmPackage, makeWrapper, runtime, git }:
+{ lib, buildNpmPackage, makeWrapper, runtime, git, exiftool, vips, ffmpeg-headless }:
 buildNpmPackage {
   pname = "dar";
   version = "0.1.0";
@@ -30,7 +30,7 @@ buildNpmPackage {
     makeWrapper ${runtime.node}/bin/node $out/bin/dar \
       --add-flags "$out/lib/dar/scripts/serve.mjs" \
       --set DAR_PREBUILT 1 \
-      --prefix PATH : ${lib.makeBinPath [ git runtime.node ]} \
+      --prefix PATH : ${lib.makeBinPath [ git runtime.node exiftool vips ffmpeg-headless ]} \
       --set DAR_SPACETIME_BIN ${runtime.spacetime}/bin/spacetime
     makeWrapper ${runtime.node}/bin/node $out/bin/dar-operator \
       --add-flags "$out/lib/dar/scripts/operator.ts"

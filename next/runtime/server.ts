@@ -33,6 +33,8 @@ import {handleAgentHttp} from "./agent/http.ts";
 import {createAgentRuntime,type AgentRuntime} from "./agent/runtime.ts";
 import {createNewsRuntime,type NewsRuntime} from "./news/runtime.ts";
 import {handleNewsHttp} from "./news/http.ts";
+import {createPhotosRuntime,type PhotosRuntime} from "./photos/runtime.ts";
+import {handlePhotosHttp} from "./photos/http.ts";
 import {handleNextcloudNews,nextcloudBase} from "./news/nextcloud.ts";
 
 export interface ServerConfig {
@@ -88,6 +90,7 @@ export async function startServer(config: ServerConfig) {
   let appRuntime:Awaited<ReturnType<typeof activateApps>>|undefined;
   let agentRuntime:AgentRuntime|undefined;
   let newsRuntime:NewsRuntime|undefined;
+  let photosRuntime:PhotosRuntime|undefined;
   try {
   const db = await database(config.databaseUrl, config.databaseName, config.serviceTokenFile);
   await db.call("service_startup", [`${config.origin}/auth/issuer`]);
@@ -104,7 +107,7 @@ export async function startServer(config: ServerConfig) {
   // Keep revisioned writes and hook disposal/activation in the same order.
   let appUpdate:Promise<unknown>=Promise.resolve();
   const managedApps=(settings:AppSettings):ManagedApp[]=>[
-    ...["files","contacts","calendar","notes","tasks","news","agent"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","news","agent"].includes(id)})),
+    ...["files","photos","contacts","calendar","notes","tasks","news","agent"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","news","photos","agent"].includes(id)})),
     ...appRegistry.inventory.map(item=>({...item,enabled:appRegistry.apps.has(item.id)&&!settings.disabled.includes(item.id),canToggle:hostEnabledApps.has(item.id)})),
   ];
   const databasePublicUrl = `${(config.databasePublicUrl ?? (config.development ? config.databaseUrl : `${config.origin}/spacetime`)).replace(/\/$/, "")}/`;
@@ -123,6 +126,7 @@ export async function startServer(config: ServerConfig) {
   agentRuntime=await createAgentRuntime(db,root,config.codexFile??path.join(root,"codex.json"),config.claudeFile??path.join(root,"claude.json"));
   newsRuntime=createNewsRuntime(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
   const blobs = blobStore(root);
+  photosRuntime=await createPhotosRuntime(db,root);
   await blobs.recover();
   const attempts = new Map<string, { count: number; until: number }>();
   const cookieName = config.development ? "dar_session" : "__Host-dar_session";
@@ -237,9 +241,10 @@ export async function startServer(config: ServerConfig) {
           return json(res,await agentRuntime!.connect(authenticated.user.id,input.provider==="claude"?"claude":"codex"));
         }
         if(/^\/api\/v1\/agent(\/|$)/.test(url.pathname))return await handleAgentHttp(req,res,url,db,authenticated.session.id,authenticated.user.id,agentRuntime!,()=>body(req,128*1024));
-        const optionalApp=/^\/api\/v1\/(notes|tasks|news)(\/|$)/.exec(url.pathname);
+        const optionalApp=/^\/api\/v1\/(notes|tasks|news|photos)(\/|$)/.exec(url.pathname);
         if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);
         if(/^\/api\/v1\/news(\/|$)/.test(url.pathname))return await handleNewsHttp(req,res,url,db,authenticated.session.id,authenticated.user.username,newsRuntime!,()=>body(req,3*1024*1024));
+        if(/^\/api\/v1\/photos(\/|$)/.test(url.pathname))return await handlePhotosHttp(req,res,url,db,authenticated.session.id,photosRuntime!,entry=>blobs.download(req,res,entry,true),()=>body(req,128*1024));
         if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
         if(url.pathname==="/api/v1/account/profile"){
           const profile=await db.call<{id:string;revision:number}>("service_profile",[authenticated.session.id,"read","{}"]),etag=`"${profile.id}:${profile.revision}"`;
@@ -365,9 +370,9 @@ export async function startServer(config: ServerConfig) {
       await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
       await Promise.allSettled([...inflight]);
       await maintenance;
-    } finally { attempts.clear();await newsRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
+    } finally { attempts.clear();await newsRuntime?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
   };
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(config.port, config.host, resolve); });
   return { server, ctx, close: () => ctx.fiber.dispose() };
-  } catch (error) {await newsRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
+  } catch (error) {await newsRuntime?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
 }

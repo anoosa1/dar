@@ -26,6 +26,9 @@ enabling ACME. Options: `package`, `origin`, `port` (4311), `databasePort` (4310
 `openFirewall` (defaults to the nginx choice), `apps` ([installed apps](apps.md)),
 `agent.*` ([Codex](codex.md), [Claude Code](claude-code.md)), `news.allowPrivateNetworks` ([News](news.md)) and `oidc.clients` (below). Keep origin, database
 name and state directory stable across upgrades. No credentials go in Nix.
+The package puts exiftool, libvips and ffmpeg on the service PATH for
+[Photos](photos.md); its regenerable thumbnails live in `photo-cache/` under the
+state directory.
 
 ### Proxy
 

@@ -4,9 +4,9 @@ import {useInstalledApps} from "./installed-apps.tsx";
 import {useAppSettings} from "./app-availability.tsx";
 import type {MenuAction} from "./controls.tsx";
 import type {ReactNode} from "react";
-export type AppId="files"|"contacts"|"calendar"|"notes"|"tasks"|"news"|"agent"|"settings"|`app:${string}`;
+export type AppId="files"|"photos"|"contacts"|"calendar"|"notes"|"tasks"|"news"|"agent"|"settings"|`app:${string}`;
 export interface AppEntry {id:AppId;label:string;icon:IconName;href:string}
-const apps:AppEntry[]=[{id:"files",label:"Files",icon:"folder",href:"/"},{id:"contacts",label:"Contacts",icon:"contacts",href:"/contacts"},{id:"calendar",label:"Calendar",icon:"calendar",href:"/calendar"},{id:"notes",label:"Notes",icon:"file",href:"/notes"},{id:"tasks",label:"Tasks",icon:"check",href:"/tasks"},{id:"news",label:"News",icon:"rss",href:"/news"},{id:"agent",label:"Agent",icon:"agent",href:"/agent"}];
+const apps:AppEntry[]=[{id:"files",label:"Files",icon:"folder",href:"/"},{id:"photos",label:"Photos",icon:"image",href:"/photos"},{id:"contacts",label:"Contacts",icon:"contacts",href:"/contacts"},{id:"calendar",label:"Calendar",icon:"calendar",href:"/calendar"},{id:"notes",label:"Notes",icon:"file",href:"/notes"},{id:"tasks",label:"Tasks",icon:"check",href:"/tasks"},{id:"news",label:"News",icon:"rss",href:"/news"},{id:"agent",label:"Agent",icon:"agent",href:"/agent"}];
 /** Built-in apps the administrator has not disabled, followed by enabled installed apps. */
 export function useAppList(){
   const installed=useInstalledApps(),{settings}=useAppSettings();

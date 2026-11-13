@@ -1,5 +1,6 @@
 import { SenderError, Range } from "spacetimedb/server";
 import {deleteNewsAccount} from "./news.ts";
+import {deletePhotosAccount} from "./photos.ts";
 import type { Ctx } from "./index.ts";
 
 function fail(code: string): never { throw new SenderError(code); }
@@ -68,6 +69,7 @@ export function directoryOperation(ctx: Ctx, operation: string,p:Record<string,u
     for(const row of ctx.db.agentThreads.ownerId.filter(a.id))ctx.db.agentThreads.id.delete(row.id);
     for(const row of ctx.db.agentProjects.ownerId.filter(a.id))ctx.db.agentProjects.id.delete(row.id);
     deleteNewsAccount(ctx,a.id);
+    deletePhotosAccount(ctx,a.id);
     const row={userId:a.id,document:old?.document??"{}",revision:(old?.revision??1)+1,modifiedAt:now(ctx),deleted:true};
     if(old)ctx.db.directoryProfiles.userId.update(row);else ctx.db.directoryProfiles.insert(row);
     for(const member of ctx.db.directoryMembers.userId.filter(a.id)){ctx.db.directoryMembers.id.delete(member.id);const g=ctx.db.directoryGroups.id.find(member.groupId)!;ctx.db.directoryGroups.id.update({...g,revision:g.revision+1,modifiedAt:now(ctx)});}

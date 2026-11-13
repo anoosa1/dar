@@ -15,7 +15,7 @@
       });
       apps = eachSystem (system: { default = { type = "app"; program = "${self.packages.${system}.dar}/bin/dar"; }; });
       devShells = eachSystem (system: let pkgs = pkgsFor system; runtime = runtimeFor system; in {
-        default = pkgs.mkShell { packages = [ runtime.node runtime.npm runtime.spacetime pkgs.chromium pkgs.curl pkgs.git pkgs.vdirsyncer ]; };
+        default = pkgs.mkShell { packages = [ runtime.node runtime.npm runtime.spacetime pkgs.chromium pkgs.curl pkgs.git pkgs.vdirsyncer pkgs.exiftool pkgs.vips pkgs.ffmpeg-headless ]; };
       });
       nixosModules.default = import ./nix/module.nix { inherit self; };
       nixosModules.dar = self.nixosModules.default;

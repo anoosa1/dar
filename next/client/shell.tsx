@@ -37,6 +37,6 @@ export function WorkspaceHeader({app,session,onSignedOut,onSettings}:{app:AppId;
   const list=useAppList(),label=appLabel(app,list);
   return <>
     <AppRail active={app} administrator={session.user.administrator} account={<WorkspaceAccount session={session} onSignedOut={onSignedOut} className="rail-account"/>}/>
-    <header className="topbar"><span className="topbar-title">{label}</span><GlobalSearch/><div className="topbar-tools">{onSettings&&<button type="button" className="icon-button" aria-label={`${label} settings`} title={`${label} settings`} onClick={onSettings}><Icon name="settings"/></button>}</div><WorkspaceAccount session={session} onSignedOut={onSignedOut} className="topbar-account"/></header>
+    <header className="topbar"><span className="topbar-title">{label}</span><GlobalSearch account={session.user.id}/><div className="topbar-tools">{onSettings&&<button type="button" className="icon-button" aria-label={`${label} settings`} title={`${label} settings`} onClick={onSettings}><Icon name="settings"/></button>}</div><WorkspaceAccount session={session} onSignedOut={onSignedOut} className="topbar-account"/></header>
   </>;
 }

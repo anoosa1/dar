@@ -53,16 +53,27 @@ Selected from [mock B](spacetimedb/unified-look-mock-b.html) over
 - Phones use the same complete forms at full width, move focus into opened
   details and return it to the originating row on close.
 
-## Search
+## Search (spotlight, November 13)
 
-- The top-bar search covers all apps: accessible file names, contacts, calendar
+Selected [search mock A](spacetimedb/search-palette-mocks.html) (spotlight) over B
+(floating island). Built in `global-search.tsx`.
+
+- The top bar keeps a centered pill that only opens the palette. Ctrl/Cmd+K or a
+  click opens a centered modal (760px, 96px from the top, blurred scrim): query
+  field, app filter chips with counts (Tab/Shift+Tab cycle them), grouped results
+  and a preview of the active row with Open and New tab. Phones show it full screen.
+- Empty query: recent searches and recently opened results (this device, per
+  account, with Clear) and actions. `>` lists commands (go to an app or settings
+  section); matching commands also lead normal results.
+- Escape clears the query, then closes and returns focus to the opener.
+- The search covers all apps: accessible file names, contacts, calendar
   resources, Notes content, Tasks, Agent projects/threads and enabled installed
   apps' own-user data. Never another account's or a disabled app's data.
 - Group results by app (with a count) with keyboard selection and loading, empty,
   partial-error and retry states. Rows use the app's glyph (initials for contacts,
   file-type tiles) and highlight the match. Bound scans and say when truncated.
-- Ctrl/Cmd+K focuses it outside open editors/dialogs; Escape clears it. Apps do
-  not add their own duplicate search or tag/category filter fields.
+- Ctrl/Cmd+K works outside open editors/dialogs. Apps do not add their own
+  duplicate search or tag/category filter fields.
 
 ## Collections and menus
 
@@ -181,6 +192,14 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   and share. Read rows fade in place instead of disappearing. Subscribe and Edit
   feed use the right editing pane; News settings is the settings sheet. Phones show
   views and folders as chips and the article full screen with Back. See [News](news.md).
+- **Photos:** selected [mock B](spacetimedb/photos-mock-b.html) over
+  [mock A](spacetimedb/photos-mock-a.html) (November 13). Sidebar views (Library,
+  Favorites, Videos, Archive) then albums as collections with three-dot menus; the
+  sheet header has the title, count and a zoom slider for the square, month-grouped
+  grid, and turns into a tonal selection bar. A photo opens in the middle sheet with
+  a filmstrip; details sit in the right sheet (phones: Info opens them full screen
+  with Back). People/Places/Explore tabs, Shared with me, Duplicates, Locked folder
+  and Trash arrive with later phases. See [Photos](photos.md).
 - **Agent:** threads on the left, conversation and docked composer in the center,
   review on the right and collapsible output below, inside the shared frame.
   New thread is the create button; Ctrl/Cmd+P opens the command palette. Thread

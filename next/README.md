@@ -79,4 +79,4 @@ tests, real-browser journeys and restart checks against isolated temporary data.
 
 [Design](../docs/design.md) · [Deployment](../docs/deployment.md) ·
 [DAV sync](../docs/davx5.md) · [Installed apps](../docs/apps.md) ·
-[Codex/Agent](../docs/codex.md) · [Claude Code](../docs/claude-code.md) · [News](../docs/news.md) · [Identity](../docs/spacetimedb/identity-provider.md)
+[Codex/Agent](../docs/codex.md) · [Claude Code](../docs/claude-code.md) · [News](../docs/news.md) · [Photos](../docs/photos.md) · [Identity](../docs/spacetimedb/identity-provider.md)

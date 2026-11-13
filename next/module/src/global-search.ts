@@ -2,6 +2,7 @@ import {Range} from "spacetimedb/server";
 import {pimOperation} from "./pim.ts";
 import {appEnabled} from "./app-settings.ts";
 import {newsSearch} from "./news.ts";
+import {photosSearch} from "./photos.ts";
 import type {Ctx} from "./index.ts";
 import type {SearchGroup,SearchResult,SearchResults} from "../../shared/search.ts";
 type FileEntry=NonNullable<ReturnType<Ctx["db"]["fileEntries"]["id"]["find"]>>;
@@ -43,6 +44,7 @@ export function globalSearch(ctx:Ctx,userId:string,query:string,canRead:(entry:F
     for(const row of ctx.db.agentThreads.ownerId.filter(userId)){if(!visit())break;if(matches(row.title))add({id:row.id,group:"Applications",title:row.title,detail:"Agent thread",href:`/agent?project=${row.projectId}&thread=${row.id}`});}
   }
   if(appEnabled(ctx,"news"))newsSearch(ctx,userId,matches,visit,result=>add({...result,group:"News"}));
-  for(const [name,href]of [["Files","/"],["Contacts","/contacts"],["Calendar","/calendar"],["Notes","/notes"],["Tasks","/tasks"],["Agent","/agent"],["News","/news"],["Settings","/settings"]])if(appEnabled(ctx,name.toLowerCase())&&matches(name))add({id:href,group:"Applications",title:name,detail:"Open app",href});
+  if(appEnabled(ctx,"photos"))photosSearch(ctx,userId,matches,visit,result=>add({...result,group:"Photos",thumbnail:result.thumbnail||undefined}));
+  for(const [name,href]of [["Files","/"],["Contacts","/contacts"],["Calendar","/calendar"],["Notes","/notes"],["Tasks","/tasks"],["Agent","/agent"],["News","/news"],["Photos","/photos"],["Settings","/settings"]])if(appEnabled(ctx,name.toLowerCase())&&matches(name))add({id:href,group:"Applications",title:name,detail:"Open app",href});
   return {items:[...groups.values()].flat(),truncated};
 }

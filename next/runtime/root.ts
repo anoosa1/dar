@@ -23,7 +23,7 @@ export async function openRoot(root: string) {
     if ((await readdir(root)).length) throw new Error("Refusing an unknown non-empty storage root.");
     await createDurableFile(marker, JSON.stringify({ format: "dar-spacetime-v1" }));
   }
-  for (const name of ["secrets", "blobs", "uploads", "agent-workspaces"]) {
+  for (const name of ["secrets", "blobs", "uploads", "agent-workspaces", "photo-cache"]) {
     const directory = path.join(root, name);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const stat = await lstat(directory);

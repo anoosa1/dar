@@ -70,6 +70,13 @@ Optional built-in feed reader at `/news` with account-scoped storage, OPML
 import/export and Nextcloud News API sync for mobile clients at `/dav/news`. See
 [News](news.md).
 
+## Photos
+
+Optional built-in gallery at `/photos` for the pictures and videos you keep in
+Files: month-grouped library, favorites, videos, archive, albums, a viewer with
+camera details and uploads into `Photos/YYYY/MM`. Thumbnails use the media tools in
+the Dar package. See [Photos](photos.md).
+
 ## Prayer Times
 
 First use asks for a location label, coordinates, IANA timezone and calculation

@@ -45,6 +45,13 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   await source.call("service_news_worker",["store",JSON.stringify({feedId:backupFeed.id,items:[{guid,guidHash:md5(guid),url:"https://backup.example/kept",title:"Kept through restore",author:"",pubDate:Date.now(),updatedDate:Date.now(),body:"<p>Kept</p>",enclosureMime:"",enclosureLink:"",mediaThumbnail:"",mediaDescription:"",rtl:false,fingerprint:md5("f"+guid),contentHash:md5("c"+guid),excerpt:"Kept"}]})]);
   const newsItem=(await (await fetch(`${base}/api/v1/news/items?type=feed&id=${backupFeed.id}`,{headers:session.headers})).json() as {items:{id:number}[]}).items[0];
   assert.equal((await fetch(`${base}/api/v1/news/items/state`,{method:"POST",headers:noteHeaders,body:JSON.stringify({ids:[newsItem.id],starred:true})})).status,200);
+  // Photos: a picture's favorite, description and album survive the restore (derived thumbnails are regenerated).
+  const picture=await upload(base,session,`backup-${randomUUID()}.jpg`,"image bytes for backup"),photoHeaders={...session.headers,"content-type":"application/json"};
+  assert.deepEqual(await(await fetch(`${base}/api/v1/photos/assets/${picture.fileId}/index`,{method:"POST",headers:photoHeaders})).json(),{indexed:true});
+  assert.equal((await fetch(`${base}/api/v1/photos/assets`,{method:"PATCH",headers:photoHeaders,body:JSON.stringify({ids:[picture.fileId],favorite:true})})).status,200);
+  const photoRevision=(await(await fetch(`${base}/api/v1/photos/assets/${picture.fileId}`,{headers:photoHeaders})).json() as {revision:number}).revision;
+  assert.equal((await fetch(`${base}/api/v1/photos/assets/${picture.fileId}/description`,{method:"PUT",headers:photoHeaders,body:JSON.stringify({description:"Kept by backup",revision:photoRevision})})).status,200);
+  const photoAlbum=await(await fetch(`${base}/api/v1/photos/albums`,{method:"POST",headers:photoHeaders,body:JSON.stringify({name:`Backup album ${randomUUID().slice(0,6)}`,ids:[picture.fileId]})})).json() as {id:string;name:string};
   const temporary = await mkdtemp(path.join(tmpdir(), "dar-backup-proof-")), directory = path.join(temporary, "backup");
   const appSettings=await(await fetch(base+"/api/v1/appSettings",{headers:session.headers})).json() as {revision:number};
   async function setTasks(enabled:boolean,revision:number){const r=await fetch(base+"/api/v1/admin/installedApps",{method:"PUT",headers:{...session.headers,"content-type":"application/json","if-match":`"apps:${revision}"`},body:JSON.stringify({id:"tasks",enabled,revision})});assert.equal(r.status,200);return r.json() as Promise<{revision:number}>;}
@@ -57,7 +64,7 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   assert.equal(await readFile(path.join(exported, manifest.files.find(item => item.id === file.fileId)!.contentFile!), "utf8"), "This content must survive a full restore.");
   assert.doesNotMatch(JSON.stringify(manifest), /verifier|csrfDigest|signing-key/);
   const saved = await readFile(path.join(directory, "snapshot.json"), "utf8");
-  assert.match(saved, /dar-backup-v7/);
+  assert.match(saved, /dar-backup-v8/);
   assert.doesNotMatch(saved,/"providerModels"|"provisioningTokens"|"identityProofs"/);
   const listener = createServer(); await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
   const port = (listener.address() as import("node:net").AddressInfo).port;
@@ -78,6 +85,8 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
     assert.equal((await fetch(`${newOrigin}/api/v1/auth/session`, { headers: session.headers })).status, 401);
     const recovered = await login(newOrigin);
     assert.ok((await(await fetch(newOrigin+"/api/v1/appSettings",{headers:recovered.headers})).json() as {disabled:string[]}).disabled.includes("tasks"));
+    const restoredPhoto=await(await fetch(`${newOrigin}/api/v1/photos/assets/${picture.fileId}`,{headers:recovered.headers})).json() as {favorite:boolean;description:string;albums:{id:string;name:string}[]};
+    assert.deepEqual([restoredPhoto.favorite,restoredPhoto.description,restoredPhoto.albums],[true,"Kept by backup",[{id:photoAlbum.id,name:photoAlbum.name}]]);
     assert.equal((await fetch(newOrigin+"/api/v1/tasks/items",{headers:recovered.headers})).status,404);
     if(noteProof){const after=await (await fetch(`${newOrigin}/api/v1/notes/items/${noteProof.id}`,{headers:recovered.headers})).json() as {content:string};assert.equal(after.content,noteProof.content);}
     const restoredTrash=await (await fetch(`${newOrigin}/api/v1/notes/trash`,{headers:recovered.headers})).json() as typeof trash;assert.deepEqual(restoredTrash.items.map(r=>r.id).sort(),trash.items.map(r=>r.id).sort());

@@ -3,7 +3,7 @@ import {chromium} from "@playwright/test";
 import {randomUUID} from "node:crypto";
 import path from "node:path";
 import {login,upload} from "./integration-helpers.ts";
-import {choose,switchApp} from "./ui-helpers.mjs";
+import {choose,closeSearch,switchApp} from "./ui-helpers.mjs";
 const base=process.env.DAR_INTEGRATION_ORIGIN;if(!base)throw Error("Use an isolated instance.");
 const admin=await login(base),username=`browser-ux-${randomUUID().slice(0,6)}`,password="a long isolated test password";
 const created=await fetch(base+"/api/v1/auth/users",{method:"POST",headers:{...admin.headers,"content-type":"application/json"},body:JSON.stringify({username,displayName:"Shared UI tester",password})});assert.equal(created.status,201);
@@ -21,7 +21,7 @@ try{
     await page.screenshot({animations:"disabled",path:path.join(process.env.DAR_TEST_ROOT,`login-${viewport.width}.png`),fullPage:true});
   }
   await page.setViewportSize({width:1440,height:1000});await page.getByLabel("Username",{exact:true}).fill(username);await page.getByLabel("Password",{exact:true}).fill(password);await page.getByRole("button",{name:"Sign in",exact:true}).click();await page.getByRole("button",{name:"Actions for UX source.txt",exact:true}).waitFor();
-  await page.keyboard.press("Control+k");assert.equal(await page.getByLabel("Search all apps",{exact:true}).evaluate(el=>el===document.activeElement),true);await page.getByLabel("Search all apps",{exact:true}).fill("UX source");await page.keyboard.press("Escape");assert.equal(await page.getByLabel("Search all apps",{exact:true}).inputValue(),"");
+  await page.keyboard.press("Control+k");assert.equal(await page.getByLabel("Search all apps",{exact:true}).evaluate(el=>el===document.activeElement),true);await page.getByLabel("Search all apps",{exact:true}).fill("UX source");await page.keyboard.press("Escape");assert.equal(await page.getByLabel("Search all apps",{exact:true}).inputValue(),"");await closeSearch(page);
   const storageBox=await page.locator(".storage").boundingBox(),settingsBox=await page.getByRole("button",{name:"Files settings",exact:true}).boundingBox();assert.ok(settingsBox.y+settingsBox.height<=56&&storageBox.y+storageBox.height>800,JSON.stringify({storageBox,settingsBox}));
   assert.equal(await page.getByText("Your files. Your place.",{exact:true}).count(),0);assert.equal(await page.getByRole("button",{name:"Actions for .hidden-ui.txt",exact:true}).count(),0);
   await page.getByRole("button",{name:"Actions for UX source.txt",exact:true}).click();await page.getByRole("menuitem",{name:"Rename",exact:true}).waitFor();assert.equal(await page.getByRole("complementary",{name:"File details",exact:true}).count(),0);
