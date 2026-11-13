@@ -41,6 +41,11 @@
           userId = "00000000-0000-0000-0000-000000000000"; gitHosts = [ "github.com" ];
         }; } ]; };
         agentService = agentEnabled.config.systemd.services.dar;
+        claudeOnly = evaluated.extendModules { modules = [ { services.dar.agent = {
+          enable = true; claude.package = pkgs.writeShellScriptBin "claude" "exit 1";
+          userId = "00000000-0000-0000-0000-000000000000";
+        }; } ]; };
+        claudeService = claudeOnly.config.systemd.services.dar;
       in { module-evaluation = assert service.serviceConfig.User == "dar";
         assert service.environment.DAR_ROOT == "/var/lib/dar";
         assert service.serviceConfig.ProtectSystem == "strict";
@@ -59,6 +64,11 @@
         assert builtins.elem "/var/lib/dar-codex" agentService.serviceConfig.ReadWritePaths;
         assert builtins.hasAttr "DAR_CODEX_FILE" agentService.environment;
         assert builtins.elem agentEnabled.config.services.dar.agent.package agentService.path;
+        assert !(builtins.hasAttr "DAR_CLAUDE_FILE" agentService.environment);
+        assert builtins.hasAttr "DAR_CLAUDE_FILE" claudeService.environment && !(builtins.hasAttr "DAR_CODEX_FILE" claudeService.environment);
+        assert builtins.elem "/var/lib/dar-claude" claudeService.serviceConfig.ReadWritePaths && !(builtins.elem "/var/lib/dar-codex" claudeService.serviceConfig.ReadWritePaths);
+        assert builtins.elem pkgs.bubblewrap claudeService.path && builtins.elem pkgs.socat claudeService.path;
+        assert builtins.elem "AF_NETLINK" claudeService.serviceConfig.RestrictAddressFamilies;
         assert builtins.any (item: !item.assertion && nixpkgs.lib.hasPrefix "services.dar.oidc.clients.public " item.message) invalidPublic.config.assertions;
         assert builtins.hasAttr "DAR_OIDC_FILE" service.environment;
         assert builtins.hasAttr "dar.example.test" evaluated.config.services.nginx.virtualHosts;

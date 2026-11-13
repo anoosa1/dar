@@ -32,7 +32,7 @@ test("installed apps isolate users/apps, require revisions, enforce quotas and r
     await assert.rejects(db.call("service_app_data",[sid,second.id,"put",key,0,1,"{}"]),/forbidden/);
     await db.call("service_installed_apps",["[]"]);assert.equal((await fetch(endpoint+key,{headers:admin.headers})).status,404);
   }finally{await db.call("service_installed_apps",[JSON.stringify(installed.items)]);}
-  const pin=randomUUID(),snapshot=await db.call<any>("service_backup",[pin]);await db.call("service_release_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v6");assert.ok(snapshot.apps.data.some((r:{key:string})=>r.key===key));
+  const pin=randomUUID(),snapshot=await db.call<any>("service_backup",[pin]);await db.call("service_release_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v7");assert.ok(snapshot.apps.data.some((r:{key:string})=>r.key===key));
   const name=`dar-app-restore-${randomUUID().slice(0,8)}`,project=path.resolve(import.meta.dirname,".."),result=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(result.status,0,result.stderr);
   const restored=await database(process.env.DAR_DATABASE_URL!,name,process.env.DAR_DATABASE_TOKEN_FILE!);await restored.call("service_restore",[JSON.stringify(snapshot)]);
   const recovered=await restored.call<any>("service_backup",[randomUUID()]);assert.deepEqual(recovered.apps.data,snapshot.apps.data);assert.deepEqual(recovered.apps.inventory,[]);

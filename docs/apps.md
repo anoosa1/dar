@@ -59,9 +59,16 @@ only restrict what the host configuration enables.
 
 Optional built-in app at `/agent` with its own account-scoped storage (not the SDK
 quota). Projects point at a credential-free Git URL or a Dar Files folder; runs use
-the server's existing Codex login. See [Codex setup](codex.md) and the
-[Agent workspace](spacetimedb/agent-workspace.md). Without Codex, messages can
-still be saved.
+the server's existing Codex or Claude Code login. See [Codex setup](codex.md),
+[Claude Code setup](claude-code.md) and the
+[Agent workspace](spacetimedb/agent-workspace.md). Without a connected agent,
+messages can still be saved.
+
+## News
+
+Optional built-in feed reader at `/news` with account-scoped storage, OPML
+import/export and Nextcloud News API sync for mobile clients at `/dav/news`. See
+[News](news.md).
 
 ## Prayer Times
 

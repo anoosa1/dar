@@ -8,14 +8,16 @@ import {createDurableFile} from "../atomic.ts";
 import {codexSearchDirectories,findCodexExecutable} from "./discovery.ts";
 import {codexAccount,codexModels,verifyCodexSandbox,codexInstructions,object,string,type CodexConfig} from "./codex.ts";
 import {openAppServer,assertNoCodexRules,type AppServer} from "./app-server.ts";
+import {claudeAccount,claudeArgs,claudeCommandsAvailable,claudeLimits,claudeModels,openClaude,type ClaudeConfig} from "./claude.ts";
 import {createTerminals} from "./terminal.ts";
 import {prepareWorkspace,git,type Source} from "./workspace.ts";
-import {activeAgentRun,agentImageTypes,agentAttachmentLimits,type AgentLimits,type AgentLimitWindow,type AgentHistory,type AgentRun,type AgentRunDocument,type AgentProvider,type AgentStep,type AgentAttachment,type AgentMessage} from "../../shared/agent.ts";
+import {activeAgentRun,agentImageTypes,agentAttachmentLimits,type AgentLimits,type AgentLimitWindow,type AgentHistory,type AgentRun,type AgentRunDocument,type AgentProvider,type AgentStep,type AgentAttachment,type AgentMessage,type AgentModel,type AgentProviderId,type AgentProviderStatus,type AgentQuestion,agentProviderNames,agentProviderOf} from "../../shared/agent.ts";
 import {createWriteStream} from "node:fs";
 import {pipeline} from "node:stream/promises";
 import {Transform,type Readable} from "node:stream";
 
-async function configuration(filename:string):Promise<CodexConfig|undefined>{
+/** Codex and Claude Code bindings share one shape: paths, account ID and Git hosts, never tokens. */
+async function configuration(filename:string,name="Codex"):Promise<CodexConfig|undefined>{
   try{await lstat(filename);}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return undefined;throw error;}
   try{
     const stat=await lstat(filename);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16384)throw Error();
@@ -23,42 +25,67 @@ async function configuration(filename:string):Promise<CodexConfig|undefined>{
     if(Object.keys(value).some(k=>!["executable","home","userId","gitHosts"].includes(k))||typeof value.executable!=="string"||!path.isAbsolute(value.executable)||typeof value.home!=="string"||!path.isAbsolute(value.home)||typeof value.userId!=="string"||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.userId)||!Array.isArray(value.gitHosts)||value.gitHosts.some(host=>typeof host!=="string"||!/^[A-Za-z0-9.-]+$/.test(host)))throw Error();
     const home=await lstat(value.home);if(!home.isDirectory()||home.isSymbolicLink())throw Error();
     return {...value,gitHosts:value.gitHosts.map(host=>String(host).toLowerCase())} as unknown as CodexConfig;
-  }catch{throw new AppError("codexConfigurationInvalid",503,"Codex configuration is invalid. Ask the administrator to check the executable, Codex home and Dar account ID.");}
+  }catch{throw new AppError("codexConfigurationInvalid",503,`${name} configuration is invalid. Ask the administrator to check the executable, ${name} home and Dar account ID.`);}
 }
 
 /** Owns all provider processes. A browser disconnect never becomes a run cancellation. */
-export async function createAgentRuntime(db:Database,root:string,filename:string){
+export async function createAgentRuntime(db:Database,root:string,filename:string,claudeFilename=path.join(path.dirname(filename),"claude.json")){
   let closing=false;
   await db.call("service_agent_worker",["","","startup",""]);
   const terminals=createTerminals(root);
-  const active=new Map<string,{controller:AbortController;promise:Promise<void>;sessionId:string;turn?:string;thread?:string;server?:AppServer;answer?:{id:string;resolve:(answers:Record<string,string[]>)=>void};steered:Set<string>;steer?:(id:string)=>void}>();
+  const active=new Map<string,{controller:AbortController;promise:Promise<void>;sessionId:string;turn?:string;thread?:string;server?:AppServer;answer?:{id:string;resolve:(answers:Record<string,string[]>)=>void};steered:Set<string>;steer?:(id:string)=>void;deliver?:(content:string)=>Promise<void>}>();
   const operation=<T>(sessionId:string,name:string,value:object)=>db.call<T>("service_agent",[sessionId,name,JSON.stringify(value)]);
   const worker=<T>(id:string,lease:string,name:string,value:unknown={})=>db.call<T>("service_agent_worker",[id,lease,name,JSON.stringify(value)]);
   const blank=():AgentRunDocument=>({output:"",terminal:"",activity:[],changes:[],error:"",truncated:false});
   // Re-read the server binding and CLI login on each check. A refresh must not
   // reuse a startup snapshot or a cached failure after an administrator fixes it.
-  async function connection(userId:string):Promise<{config?:CodexConfig;provider:AgentProvider}>{
+  type Checked<C>={config?:C;status:AgentProviderStatus;models:AgentModel[]};
+  async function statusWorkspace(){const workspace=path.join(root,"agent-workspaces","provider-status");await mkdir(workspace,{recursive:true,mode:0o700});if((await lstat(workspace)).isSymbolicLink())throw new AppError("unsafeWorkspace",409);return workspace;}
+  async function codexConnection(userId:string):Promise<Checked<CodexConfig>>{
     let config:CodexConfig|undefined;
-    const unavailable=(message:string,configured=false)=>({config,provider:{configured,connected:false,models:[],message}});
+    const unavailable=(message:string,configured=false)=>({config,status:{id:"codex" as const,name:"Codex",configured,connected:false,message},models:[]});
     try{config=await configuration(filename);}catch{return unavailable("Codex configuration is invalid. Ask the administrator to check the executable, Codex home and Dar account ID, then refresh.");}
     if(!config)return unavailable("No server Codex login is linked to this Dar account. An administrator can use Connect server Codex, or configure services.dar.agent.");
     if(config.userId!==userId)return unavailable("The server Codex login is linked to a different Dar account. Ask the administrator to check the account binding.");
-    const workspace=path.join(root,"agent-workspaces","provider-status");await mkdir(workspace,{recursive:true,mode:0o700});if((await lstat(workspace)).isSymbolicLink())throw new AppError("unsafeWorkspace",409);
+    const workspace=await statusWorkspace();
     try{
       if(!await codexAccount(config,workspace))return unavailable("Codex is configured, but its ChatGPT login is unavailable to the Dar service. Sign in as the Linux account running Dar using the configured Codex home, then refresh.",true);
     }catch{return unavailable("Dar could not run the configured Codex CLI. Check the executable and service permissions, then refresh.",true);}
     try{
       const models=await codexModels(config,workspace);
       if(!models.length)return unavailable("Codex is signed in, but the CLI returned no available models. Check the installed Codex version, then refresh.",true);
-      return {config,provider:{configured:true,connected:true,models,message:"Connected with the existing Codex CLI ChatGPT login."}};
+      return {config,status:{id:"codex",name:"Codex",configured:true,connected:true,commands:true,message:"Connected with the existing Codex CLI ChatGPT login."},models:models.map(model=>({...model,provider:"codex" as const}))};
     }catch{return unavailable("Codex is signed in, but Dar could not read its model catalog. Check the installed Codex version, then refresh.",true);}
+  }
+  async function claudeConnection(userId:string):Promise<Checked<ClaudeConfig>>{
+    let config:ClaudeConfig|undefined;
+    const unavailable=(message:string,configured=false)=>({config,status:{id:"claude" as const,name:"Claude Code",configured,connected:false,message},models:[]});
+    try{config=await configuration(claudeFilename,"Claude Code");}catch{return unavailable("Claude Code configuration is invalid. Ask the administrator to check the executable, Claude home and Dar account ID, then refresh.");}
+    if(!config)return unavailable("No server Claude Code login is linked to this Dar account. An administrator can use Connect server Claude Code, or configure services.dar.agent.claude.");
+    if(config.userId!==userId)return unavailable("The server Claude Code login is linked to a different Dar account. Ask the administrator to check the account binding.");
+    const workspace=await statusWorkspace();let account:{plan:string}|undefined;
+    try{account=await claudeAccount(config,workspace);}catch{return unavailable("Dar could not run the configured Claude Code CLI. Check the executable and service permissions, then refresh.",true);}
+    if(!account)return unavailable("Claude Code is configured, but its Claude login is unavailable to the Dar service. Sign in with claude as the Linux account running Dar using the configured Claude home, then refresh.",true);
+    try{
+      const models=await claudeModels(config,workspace),commands=await claudeCommandsAvailable();
+      if(!models.length)return unavailable("Claude Code is signed in, but the CLI returned no available models. Check the installed version, then refresh.",true);
+      return {config,status:{id:"claude",name:"Claude Code",configured:true,connected:true,commands,message:`Connected with the existing Claude Code login${account.plan?` (${account.plan})`:""}.${commands?"":" Commands are off until bubblewrap and socat are on the service PATH; Claude can still read and edit files."}`},models};
+    }catch{return unavailable("Claude Code is signed in, but Dar could not read its model catalog. Check the installed version, then refresh.",true);}
+  }
+  // Re-read both bindings and logins on each check; see codexConnection.
+  async function connection(userId:string){
+    const [codex,claude]=await Promise.all([codexConnection(userId),claudeConnection(userId)]),all=[codex,claude];
+    const usable=all.filter(item=>item.status.connected),configured=all.filter(item=>item.status.configured);
+    const message=usable.length?usable.map(item=>item.status.message).join(" "):configured.length?configured.map(item=>item.status.message).join(" "):"No server Codex or Claude Code login is linked to this Dar account. An administrator can connect one in Agent settings, or configure services.dar.agent.";
+    const provider:AgentProvider={configured:!!configured.length,connected:!!usable.length,models:usable.flatMap(item=>item.models),message,providers:all.map(item=>item.status)};
+    return {codex,claude,provider};
   }
   async function attachmentInfo(userId:string,threadId:string,attachmentId:string):Promise<AgentAttachment>{
     if(!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(attachmentId))throw new AppError("invalidInput");
     try{const info=JSON.parse(await readFile(path.join(root,"agent-workspaces",userId,threadId,"attachments",attachmentId+".json"),"utf8")) as AgentAttachment;if(info.id!==attachmentId)throw Error();return info;}
     catch{throw new AppError("notFound",404,"That attachment is not available.");}
   }
-  async function execute(id:string,sessionId:string,controller:AbortController,config:CodexConfig){
+  async function execute(id:string,sessionId:string,controller:AbortController,config:CodexConfig|ClaudeConfig,provider:AgentProviderId){
     const lease=randomUUID(),data=blank();let timer:ReturnType<typeof setInterval>|undefined,checkpoint:Promise<void>|undefined,dirty=true;
     let workspaceCheck:(()=>Promise<void>)|undefined,lastWorkspaceCheck=0;
     const timeout=setTimeout(()=>controller.abort(),10*60000);
@@ -74,25 +101,125 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
       if(history.nextBefore)throw new AppError("contextTooLarge",413,"This thread has more than 50 messages. Start a new thread to provide bounded context.");
       const context=history.items.map(message=>`${message.role=== "user"?"User":"Assistant"}:\n${message.content}`).join("\n\n");
       if(Buffer.byteLength(context)>128*1024)throw new AppError("contextTooLarge",413,"The conversation is too large for this run. Start a new thread with a shorter task.");
-      const prepared=await prepareWorkspace(root,row.ownerId,row.threadId,source,config!,db,sessionId,controller.signal);controller.signal.throwIfAborted();
+      const prepared=await prepareWorkspace(root,row.ownerId,row.threadId,source,config,db,sessionId,controller.signal);controller.signal.throwIfAborted();
       workspaceCheck=prepared.validate;
-      const probe=path.join(root,"agent-workspaces","isolation-probe");
-      try{await writeFile(probe,"Dar isolation check\n",{mode:0o600,flag:"wx"});}catch(error){if((error as NodeJS.ErrnoException).code!=="EEXIST")throw error;if(!(await lstat(probe)).isFile()||(await lstat(probe)).isSymbolicLink())throw new AppError("unsafeWorkspace",409);}
-      if(!await codexAccount(config!,prepared.workspace,controller.signal))throw new AppError("codexLoginRequired",409,"The configured Codex CLI ChatGPT login is no longer available.");
-      await verifyCodexSandbox(config!,prepared.workspace,probe,controller.signal);await assertNoCodexRules(config!);
       const messages=new Map<string,string>(),outputs=new Map<string,string>();
       const limit=(value:string,max:number)=>{if(value.length>max)data.truncated=true;return value.slice(0,max).replace(/[\uD800-\uDBFF]$/,"");};
       const remember=(items:Map<string,string>,id:string,value:string)=>{if(items.size>=100&&!items.has(id)){data.truncated=true;return;}items.set(id,limit(value,65536));};
       const steps=new Map<string,AgentStep>(),text=(value:unknown,max:number)=>typeof value==="string"?limit(value,max):"";
       const record=(step:AgentStep)=>{if(!steps.has(step.id)&&steps.size>=100){data.truncated=true;return;}steps.set(step.id,step);data.steps=[...steps.values()];dirty=true;};
+      const count=(value:unknown)=>Number.isSafeInteger(value)&&Number(value)>=0?Number(value):0;
+      /** Shows an answer card and waits for the run owner's reply (or cancellation). */
+      async function ask(questions:AgentQuestion[]){
+        const key=randomUUID();data.pending={id:key,questions};dirty=true;
+        const answers=await new Promise<Record<string,string[]>>((resolve,reject)=>{const entry=active.get(id);if(!entry)return reject(new AppError("runStopped",409));entry.answer={id:key,resolve};controller.signal.addEventListener("abort",()=>reject(new AppError("runStopped",409)),{once:true});});
+        data.pending=null;for(const question of questions)record({id:`question-${key}-${question.id}`,kind:"question",label:question.question||question.header||"Question",status:"completed",items:(question.secret?["Answered"]:answers[question.id]??[]).slice(0,50).map(answer=>({text:limit(answer,500),done:true}))});
+        return answers;
+      }
       const output=()=>{data.output=limit([...messages.values()].filter(Boolean).join("\n\n"),65536);data.terminal=limit([...outputs.values()].join("\n"),65536);dirty=true;};
       // Continue the saved Codex thread when possible; only messages it has not seen are sent.
       let previous:AgentRunDocument|undefined;
-      for(const summary of history.runs){if(summary.id===id||activeAgentRun(summary.status))continue;const earlier=await operation<AgentRun>(sessionId,"run",{id:summary.id}).catch(()=>undefined);if(earlier?.document.codexThread&&earlier.document.contextRevision!==undefined){previous=earlier.document;}break;}
+      for(const summary of history.runs){if(summary.id===id||activeAgentRun(summary.status))continue;const earlier=await operation<AgentRun>(sessionId,"run",{id:summary.id}).catch(()=>undefined);if((provider==="claude"?earlier?.document.claudeSession:earlier?.document.codexThread)&&earlier!.document.contextRevision!==undefined){previous=earlier!.document;}break;}
       const unseen=previous?history.items.filter(message=>message.sequence>previous!.contextRevision!):history.items;
       const format=(items:typeof history.items)=>items.map(message=>`${message.role==="user"?"User":"Assistant"}:\n${message.content}`).join("\n\n");
       const attachments=(data.attachments??[]).map(item=>({type:"localImage" as const,path:path.join(root,"agent-workspaces",row.ownerId,row.threadId,"attachments",item.id)}));
       for(const item of attachments)if(!(await lstat(item.path)).isFile())throw new AppError("attachmentMissing",409,"An attached image is no longer available. Attach it again.");
+      /** One Claude Code turn over stream-json. Resumes the saved session when the last finished run used Claude. */
+      async function claudeTurn(claudeConfig:ClaudeConfig):Promise<"completed"|"failed"|"cancelled">{
+        if(!await claudeAccount(claudeConfig,prepared.workspace,controller.signal))throw new AppError("claudeLoginRequired",409,"The configured Claude Code login is no longer available.");
+        const commands=await claudeCommandsAvailable(),model=row!.model.slice("claude/".length);
+        // Commands may read the host filesystem except these roots; the working copy is re-allowed inside them.
+        const deny:string[]=[];for(const candidate of new Set(["/home","/root","/var/lib","/srv","/mnt","/media","/run/secrets","/run/credentials","/run/keys",root,claudeConfig.home,homedir()]))if(await lstat(candidate).then(()=>true,()=>false))deny.push(candidate);
+        const images=await Promise.all((data.attachments??[]).map(async item=>({type:"image",source:{type:"base64",media_type:item.mediaType,data:(await readFile(path.join(root,"agent-workspaces",row!.ownerId,row!.threadId,"attachments",item.id))).toString("base64")}})));
+        let input=format(previous?.claudeSession?unseen:history.items);
+        if(data.mode==="review"){const current=await prepared.changes(),diff=current.changes.map(change=>change.diff).join("\n\n");input=`Review the uncommitted changes in this working copy against its starting point. Report bugs, risks and missing tests by file, most severe first. Do not edit files.\n\n${diff.slice(0,96*1024)||"No files have changed."}`;}
+        const user=(content:unknown[])=>({type:"user",message:{role:"user",content},parent_tool_use_id:null,session_id:""});
+        const relative=(value:unknown)=>{const full=text(value,2000);return full.startsWith(prepared.workspace+"/")?full.slice(prepared.workspace.length+1):full;};
+        async function attempt(resume?:string){
+          let initialized=false,status:"completed"|"failed"|undefined,current="",live="";const started=new Map<string,number>(),seen=new Map<string,number>();
+          const claude=openClaude(claudeConfig,prepared.workspace,claudeArgs({workspace:prepared.workspace,model,effort:data.effort,plan:data.mode==="plan"||data.mode==="review",resume,commands,deny}),{
+            message(m){
+              if(m.parent_tool_use_id)return;
+              if(m.type==="system"){
+                if(m.subtype==="init"&&typeof m.session_id==="string"&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(m.session_id)){initialized=true;data.claudeSession=m.session_id;data.contextRevision=history.thread.revision;dirty=true;}
+                else if(m.subtype==="compact_boundary")record({id:"compacted-"+randomUUID(),kind:"tool",label:"Compacted the conversation context",status:"completed"});
+              }else if(m.type==="stream_event"){
+                // Live text only; the complete assistant message replaces it below.
+                const event=(m.event??{}) as Record<string,unknown>,block=(event.content_block??{}) as Record<string,unknown>,delta=(event.delta??{}) as Record<string,unknown>;
+                if(event.type==="message_start")current=text(((event.message??{}) as Record<string,unknown>).id,200);
+                else if(event.type==="content_block_start"&&block.type==="text"&&current){const n=started.get(current)??0;started.set(current,n+1);live=`${current}:${n}`;}
+                else if(event.type==="content_block_delta"&&delta.type==="text_delta"&&live&&typeof delta.text==="string"){remember(messages,live,(messages.get(live)??"")+delta.text);output();}
+                else if(event.type==="content_block_stop")live="";
+              }else if(m.type==="assistant"){
+                const message=(m.message??{}) as Record<string,unknown>,messageId=text(message.id,200)||randomUUID(),usage=(message.usage??{}) as Record<string,unknown>;
+                const used=count(usage.input_tokens)+count(usage.cache_read_input_tokens)+count(usage.cache_creation_input_tokens)+count(usage.output_tokens);if(used){data.contextUsed=used;dirty=true;}
+                for(const block of (Array.isArray(message.content)?message.content:[]).map(value=>(value??{}) as Record<string,unknown>)){
+                  if(block.type==="text"&&typeof block.text==="string"){const n=seen.get(messageId)??0;seen.set(messageId,n+1);remember(messages,`${messageId}:${n}`,block.text);output();}
+                  else if(block.type==="thinking"&&typeof block.thinking==="string"&&block.thinking.trim())record({id:`thinking-${messageId}-${steps.size}`,kind:"reasoning",label:limit(block.thinking.trim(),2000),status:"completed"});
+                  else if(block.type==="tool_use"&&typeof block.id==="string"){
+                    const name=text(block.name,100),input=(block.input??{}) as Record<string,unknown>,stepId=limit(block.id,200);
+                    if(name==="Bash"){record({id:stepId,kind:"command",label:text(input.command,2000)||"Command",status:"running"});data.activity=[...data.activity,limit(text(input.command,500)||"Running command",500)].slice(-100);}
+                    else if(["Edit","Write","MultiEdit","NotebookEdit"].includes(name)){record({id:stepId,kind:"edit",label:relative(input.file_path??input.notebook_path)||"Workspace files",status:"running"});data.activity=[...data.activity,"Editing workspace files"].slice(-100);}
+                    else if(name==="TodoWrite"&&Array.isArray(input.todos))record({id:"plan-todos",kind:"plan",label:"Plan",status:"running",items:input.todos.slice(0,50).map(entry=>{const todo=(entry??{}) as Record<string,unknown>;return {text:text(todo.content,500)||"Step",done:todo.status==="completed"};})});
+                    else if(name==="Grep"||name==="Glob")record({id:stepId,kind:"search",label:limit(`${name} ${text(input.pattern,1000)}`,2000),status:"running"});
+                    else if(name==="Read")record({id:stepId,kind:"tool",label:limit(`Read ${relative(input.file_path)}`,2000),status:"running"});
+                    else if(name!=="AskUserQuestion"&&name!=="ExitPlanMode")record({id:stepId,kind:"tool",label:name||"Tool call",status:"running"});
+                  }
+                }
+              }else if(m.type==="user"){
+                const content=((m.message??{}) as Record<string,unknown>).content;
+                for(const block of (Array.isArray(content)?content:[]).map(value=>(value??{}) as Record<string,unknown>)){
+                  if(block.type!=="tool_result"||typeof block.tool_use_id!=="string")continue;const step=steps.get(block.tool_use_id);if(!step)continue;
+                  const body=typeof block.content==="string"?block.content:Array.isArray(block.content)?block.content.map(part=>part&&typeof part==="object"&&(part as Record<string,unknown>).type==="text"?String((part as Record<string,unknown>).text??""):"").join("\n"):"",failed=block.is_error===true;
+                  if(step.kind==="command"){const code=/^Exit code (\d+)/.exec(body);remember(outputs,step.id,body);record({...step,status:failed?"failed":"completed",exitCode:code?Number(code[1]):failed?1:0,output:body.slice(-2000)});output();}
+                  else record({...step,status:failed?"failed":"completed"});
+                }
+              }else if(m.type==="result"){
+                const usage=(m.usage??{}) as Record<string,unknown>;
+                data.usage={input:count(usage.input_tokens)+count(usage.cache_read_input_tokens)+count(usage.cache_creation_input_tokens),cached:count(usage.cache_read_input_tokens),output:count(usage.output_tokens)};
+                for(const value of m.modelUsage&&typeof m.modelUsage==="object"?Object.values(m.modelUsage as Record<string,unknown>):[]){const window=((value??{}) as Record<string,unknown>).contextWindow;if(Number.isSafeInteger(window)){data.contextWindow=Number(window);break;}}
+                status=m.subtype==="success"&&m.is_error!==true?"completed":"failed";
+                if(status==="failed"){const detail=typeof m.result==="string"?m.result:Array.isArray(m.errors)?m.errors.filter(item=>typeof item==="string").join("\n"):"";if(detail)data.error=limit(detail,2000);}
+                // Steering sent before this result is still processed before the CLI exits.
+                dirty=true;claude.end();
+              }
+            },
+            async request(subtype,request){
+              if(subtype!=="can_use_tool")throw new AppError("declined",403,"Dar does not support this request.");
+              const tool=text(request.tool_name,100),input=(request.input??{}) as Record<string,unknown>;
+              if(tool==="AskUserQuestion"&&Array.isArray(input.questions)){
+                const raw=input.questions.slice(0,10).map(value=>(value??{}) as Record<string,unknown>);
+                const answers=await ask(raw.map((q,index)=>({id:String(index),header:text(q.header,200),question:text(q.question,2000),options:(Array.isArray(q.options)?q.options:[]).slice(0,20).map(option=>{const o=(option??{}) as Record<string,unknown>;return {label:text(o.label,200),description:text(o.description,1000)};}),other:true,secret:false})));
+                return {behavior:"allow",updatedInput:{...input,answers:Object.fromEntries(raw.map((q,index)=>[String(q.question??""),(answers[String(index)]??[]).join(", ")]))}};
+              }
+              // Plans are shown for review; Dar never switches a plan or review turn into editing.
+              if(tool==="ExitPlanMode"){const plan=text(input.plan,60000);if(plan){remember(messages,"plan-"+randomUUID(),plan);output();}return {behavior:"deny",message:"Dar saved this plan for the user to review. Stop now without making changes."};}
+              // Escalations (network, paths outside the working copy, configuration writes) are never granted.
+              record({id:"declined-"+randomUUID(),kind:"tool",label:limit(`Declined: ${tool==="SandboxNetworkAccess"?`network access to ${text(input.host,200)}`:text(input.command,1500)||relative(input.file_path)||tool||"request outside Dar's sandbox"}`,2000),status:"failed"});
+              return {behavior:"deny",message:"Dar declines requests outside its sandbox."};
+            },
+          });
+          const abort=()=>{void claude.control("interrupt").catch(()=>{});setTimeout(()=>claude.close(),1500);};
+          controller.signal.addEventListener("abort",abort,{once:true});
+          const entry=active.get(id);
+          if(entry){entry.steer=messageId=>{data.steered=[...data.steered??[],messageId].slice(-50);dirty=true;};entry.deliver=async content=>{if(status)throw new AppError("turnUnavailable",409,"This turn is not running. Send the message as a new turn.");claude.send(user([{type:"text",text:content}]));};}
+          try{claude.send(user([{type:"text",text:input},...images]));await claude.exited;}
+          finally{controller.signal.removeEventListener("abort",abort);claude.close();if(entry)entry.deliver=undefined;}
+          return {initialized,status,diagnostics:claude.diagnostics()};
+        }
+        let outcome=await attempt(previous?.claudeSession);
+        // A missing saved session (for example a replaced Claude home) starts over with the bounded transcript.
+        if(!outcome.initialized&&previous?.claudeSession&&!controller.signal.aborted){if(data.mode!=="review")input=format(history.items);outcome=await attempt();}
+        controller.signal.throwIfAborted();
+        if(outcome.status)return outcome.status;
+        if(/refusing to start without a working sandbox/i.test(outcome.diagnostics))throw new AppError("sandboxUnavailable",503,"Claude Code could not establish its command sandbox (bubblewrap, socat and unprivileged user namespaces are required). No model run was started.");
+        throw new AppError("claudeIncomplete",502,"Claude Code exited before completing the turn.");
+      }
+      if(provider==="claude")result=await claudeTurn(config);else{
+      const probe=path.join(root,"agent-workspaces","isolation-probe");
+      try{await writeFile(probe,"Dar isolation check\n",{mode:0o600,flag:"wx"});}catch(error){if((error as NodeJS.ErrnoException).code!=="EEXIST")throw error;if(!(await lstat(probe)).isFile()||(await lstat(probe)).isSymbolicLink())throw new AppError("unsafeWorkspace",409);}
+      if(!await codexAccount(config,prepared.workspace,controller.signal))throw new AppError("codexLoginRequired",409,"The configured Codex CLI ChatGPT login is no longer available.");
+      await verifyCodexSandbox(config,prepared.workspace,probe,controller.signal);await assertNoCodexRules(config);
       let completion:{resolve:(status:string)=>void;reject:(error:Error)=>void}|undefined;
       const finished=new Promise<string>((resolve,reject)=>{completion={resolve,reject};});finished.catch(()=>{});// observed only when a turn starts
       const turnStatus=(item:Record<string,unknown>,done:boolean)=>done?item.status==="failed"||item.status==="declined"?"failed" as const:"completed" as const:"running" as const;
@@ -112,7 +239,7 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
           else if(method==="item/commandExecution/outputDelta"&&typeof params.itemId==="string"&&typeof params.delta==="string"){const all=(outputs.get(params.itemId)??"")+params.delta;remember(outputs,params.itemId,all);const step=steps.get(params.itemId);if(step)record({...step,output:all.slice(-2000)});output();}
           else if(method==="turn/plan/updated"&&Array.isArray(params.plan))record({id:"plan-"+text(params.turnId,100),kind:"plan",label:text(params.explanation,2000)||"Plan",status:"running",items:params.plan.slice(0,50).map(entry=>{const row=entry&&typeof entry==="object"?entry as Record<string,unknown>:{};return {text:text(row.step,500)||"Step",done:row.status==="completed"};})});
           else if(method==="thread/tokenUsage/updated"&&params.tokenUsage&&typeof params.tokenUsage==="object"){
-            const usage=params.tokenUsage as Record<string,unknown>,last=(usage.last??{}) as Record<string,unknown>,total=(usage.total??{}) as Record<string,unknown>,count=(value:unknown)=>Number.isSafeInteger(value)&&Number(value)>=0?Number(value):0;
+            const usage=params.tokenUsage as Record<string,unknown>,last=(usage.last??{}) as Record<string,unknown>,total=(usage.total??{}) as Record<string,unknown>;
             // Context use is the latest request's input; billed totals are summed across the turn.
             data.usage={input:count(total.inputTokens),cached:count(total.cachedInputTokens),output:count(total.outputTokens)};if(count(last.inputTokens))data.contextUsed=count(last.inputTokens)+count(last.outputTokens);
             if(Number.isSafeInteger(usage.modelContextWindow))data.contextWindow=Number(usage.modelContextWindow);dirty=true;
@@ -124,10 +251,8 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
         },
         async request(method,params){
           if(method==="item/tool/requestUserInput"){
-            const key=randomUUID(),questions=(Array.isArray(params.questions)?params.questions:[]).slice(0,10).map(input=>{const q=(input??{}) as Record<string,unknown>;return {id:text(q.id,200)||randomUUID(),header:text(q.header,200),question:text(q.question,2000),options:(Array.isArray(q.options)?q.options:[]).slice(0,20).map(option=>{const o=(option??{}) as Record<string,unknown>;return {label:text(o.label,200),description:text(o.description,1000)};}),other:q.isOther===true,secret:q.isSecret===true};});
-            data.pending={id:key,questions};dirty=true;
-            const answers=await new Promise<Record<string,string[]>>((resolve,reject)=>{const entry=active.get(id);if(!entry)return reject(new AppError("runStopped",409));entry.answer={id:key,resolve};controller.signal.addEventListener("abort",()=>reject(new AppError("runStopped",409)),{once:true});});
-            data.pending=null;for(const question of questions)record({id:`question-${key}-${question.id}`,kind:"question",label:question.question||question.header||"Question",status:"completed",items:(question.secret?["Answered"]:answers[question.id]??[]).slice(0,50).map(answer=>({text:limit(answer,500),done:true}))});
+            const questions=(Array.isArray(params.questions)?params.questions:[]).slice(0,10).map(input=>{const q=(input??{}) as Record<string,unknown>;return {id:text(q.id,200)||randomUUID(),header:text(q.header,200),question:text(q.question,2000),options:(Array.isArray(q.options)?q.options:[]).slice(0,20).map(option=>{const o=(option??{}) as Record<string,unknown>;return {label:text(o.label,200),description:text(o.description,1000)};}),other:q.isOther===true,secret:q.isSecret===true};});
+            const answers=await ask(questions);
             return {answers:Object.fromEntries(Object.entries(answers).map(([key,value])=>[key,{answers:value}]))};
           }
           // Approval requests ask to escape Dar's sandbox, widen writes or reach the network. Never granted.
@@ -151,13 +276,15 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
         if(data.mode==="compact"&&!previous?.codexThread)throw new AppError("nothingToCompact",409,"There is no Codex context to compact yet. Run a turn first.");
         const turn=data.mode==="review"?await server.request<{turn:{id:string}}>("review/start",{threadId:threadKey,target:{type:"uncommittedChanges"}})
           :data.mode==="compact"?await server.request("thread/compact/start",{threadId:threadKey}).then(()=>({turn:{id:"compact"}})):await server.request<{turn:{id:string}}>("turn/start",{threadId:threadKey,input:[{type:"text",text:input,text_elements:[]},...attachments],model:row.model,approvalPolicy:"never",...data.effort?{effort:data.effort}:{},...data.mode==="plan"?{collaborationMode:{mode:"plan",settings:{model:row.model,reasoning_effort:data.effort??null,developer_instructions:null}}}:{}});
-        const entry=active.get(id);if(entry){entry.turn=turn.turn.id;entry.thread=threadKey;entry.server=server;entry.steer=messageId=>{data.steered=[...data.steered??[],messageId].slice(-50);dirty=true;};}
+        const entry=active.get(id);if(entry){const turnId=turn.turn.id;entry.turn=turnId;entry.thread=threadKey;entry.server=server;entry.steer=messageId=>{data.steered=[...data.steered??[],messageId].slice(-50);dirty=true;};
+          entry.deliver=async content=>{await server.request("turn/steer",{threadId:threadKey,expectedTurnId:turnId,input:[{type:"text",text:content,text_elements:[]}]});};}
         result=await finished as "completed"|"failed"|"cancelled";
-      }finally{controller.signal.removeEventListener("abort",abort);server.close();}
+      }finally{controller.signal.removeEventListener("abort",abort);server.close();const entry=active.get(id);if(entry)entry.deliver=undefined;}
+      }
       const final=await operation<AgentHistory>(sessionId,"history",{threadId:row.threadId});data.contextRevision=final.thread.revision+(result==="completed"&&data.output?1:0);
       clearInterval(timer);timer=undefined;await checkpoint;controller.signal.throwIfAborted();
       const changes=await prepared.changes();data.changes=changes.changes;data.truncated||=changes.truncated;
-      if(result!=="completed")data.error="The Codex CLI could not complete the turn. Inspect its saved output before retrying.";
+      if(result!=="completed")data.error=provider==="claude"?limit([data.error,"Claude Code could not complete the turn. Inspect its saved output before retrying."].filter(Boolean).join("\n\n"),2400):"The Codex CLI could not complete the turn. Inspect its saved output before retrying.";
       await worker(id,lease,"finish",{status:result,document:data});
     }catch(error){
       if(timer)clearInterval(timer);await checkpoint;
@@ -165,12 +292,8 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
       else await worker(id,lease,"interrupt").catch(()=>{});
     }finally{clearTimeout(timeout);if(timer)clearInterval(timer);active.delete(id);}
   }
-  return {
-    async status(userId:string){return (await connection(userId)).provider;},
-    /** Account usage windows from the CLI's own rate-limit report; nothing is cached or estimated. */
-    async limits(userId:string):Promise<AgentLimits>{
-      const {config,provider}=await connection(userId);if(!config||!provider.connected)return {available:false,plan:null,windows:[],message:provider.message};
-      const workspace=path.join(root,"agent-workspaces","provider-status"),server=openAppServer(config,workspace,{notify(){},async request(){throw new AppError("declined",403);}},["-c",'approval_policy="never"']);
+  async function codexLimits(config:CodexConfig):Promise<AgentLimits>{
+      const workspace=await statusWorkspace(),server=openAppServer(config,workspace,{notify(){},async request(){throw new AppError("declined",403);}},["-c",'approval_policy="never"']);
       const timer=setTimeout(()=>server.close(),15000);
       try{
         await assertNoCodexRules(config);await server.request("initialize",{clientInfo:{name:"dar",title:"Dar",version:"1.0.0"},capabilities:{experimentalApi:true}});server.notify("initialized",{});
@@ -183,13 +306,8 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
         return {available:true,plan,windows};
       }catch(error){return {available:false,plan:null,windows:[],message:error instanceof AppError?error.message:"Usage limits are unavailable."};}
       finally{clearTimeout(timer);server.close();}
-    },
-    /** Called only by the administrator-only native-session connection action.
-     * Discovery uses the service environment, never browser-supplied paths.
-     * Publishing is exclusive: an existing binding can never be taken over.
-     */
-    async connect(userId:string){
-      if(closing)throw new AppError("codexUnavailable",503);
+  }
+  async function connectCodex(userId:string){
       const existing=await configuration(filename);
       if(existing){if(existing.userId!==userId)throw new AppError("codexAlreadyLinked",409,"Codex is already linked to another Dar account. The administrator must update its server configuration.");return (await connection(userId)).provider;}
       const home=process.env.CODEX_HOME??path.join(homedir(),".codex");
@@ -201,13 +319,48 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
       if(!await codexAccount(discovered,workspace))throw new AppError("codexLoginRequired",409,"No ChatGPT login is available to the Dar service. Run codex login as the Linux account running Dar, then connect again.");
       try{await createDurableFile(filename,JSON.stringify(discovered));}catch(error){if((error as NodeJS.ErrnoException).code!=="EEXIST")throw new AppError("codexConfigurationReadOnly",409,"Dar cannot save the Codex binding. Configure services.dar.agent or make the private configuration directory writable by the Dar service.");}
       return (await connection(userId)).provider;
+  }
+  async function connectClaude(userId:string){
+    const existing=await configuration(claudeFilename,"Claude Code");
+    if(existing){if(existing.userId!==userId)throw new AppError("claudeAlreadyLinked",409,"Claude Code is already linked to another Dar account. The administrator must update its server configuration.");return (await connection(userId)).provider;}
+    const home=process.env.CLAUDE_CONFIG_DIR??path.join(homedir(),".claude");
+    const executable=await findCodexExecutable(codexSearchDirectories(process.env.PATH??"",homedir()),"claude");
+    if(!executable)throw new AppError("claudeUnavailable",503,"Dar could not access Claude Code on its service PATH or standard installation paths. A private SSH-user installation may be hidden from the service. Set services.dar.agent.claude.package on NixOS, or set the absolute executable path in claude.json.");
+    try{const stat=await lstat(home);if(!path.isAbsolute(home)||!stat.isDirectory()||stat.isSymbolicLink())throw Error();}catch{throw new AppError("claudeLoginRequired",409,"The Dar service has no accessible Claude home. Sign in to Claude Code as the Linux account running Dar, then connect again.");}
+    const discovered={executable,home,userId,gitHosts:["github.com"]};
+    if(!await claudeAccount(discovered,await statusWorkspace()))throw new AppError("claudeLoginRequired",409,"No Claude login is available to the Dar service. Run claude and sign in as the Linux account running Dar, then connect again.");
+    try{await createDurableFile(claudeFilename,JSON.stringify(discovered));}catch(error){if((error as NodeJS.ErrnoException).code!=="EEXIST")throw new AppError("claudeConfigurationReadOnly",409,"Dar cannot save the Claude Code binding. Configure services.dar.agent.claude or make the private configuration directory writable by the Dar service.");}
+    return (await connection(userId)).provider;
+  }
+  return {
+    async status(userId:string){return (await connection(userId)).provider;},
+    /** Account usage windows from the CLI's own rate-limit report; nothing is cached or estimated. */
+    async limits(userId:string):Promise<AgentLimits>{
+      const {codex,claude,provider}=await connection(userId);if(!provider.connected)return {available:false,plan:null,windows:[],message:provider.message};
+      const unavailable=(error:unknown)=>({available:false,plan:null,windows:[],message:error instanceof AppError?error.message:"Usage limits are unavailable."}) as AgentLimits;
+      const parts:[AgentProviderId,AgentLimits][]=[];
+      if(codex.config&&codex.status.connected)parts.push(["codex",await codexLimits(codex.config)]);
+      if(claude.config&&claude.status.connected)parts.push(["claude",await claudeLimits(claude.config,await statusWorkspace()).catch(unavailable)]);
+      const ready=parts.filter(([,part])=>part.available),plans=ready.filter(([,part])=>part.plan);
+      if(!ready.length)return {available:false,plan:null,windows:[],message:parts.map(([,part])=>part.message).filter(Boolean).join(" ")||"Usage limits are unavailable."};
+      return {available:true,plan:plans.length>1?plans.map(([name,part])=>`${agentProviderNames[name]} ${part.plan}`).join(" · "):plans[0]?.[1].plan??null,windows:ready.flatMap(([,part])=>part.windows)};
+    },
+    /** Called only by the administrator-only native-session connection action.
+     * Discovery uses the service environment, never browser-supplied paths.
+     * Publishing is exclusive: an existing binding can never be taken over.
+     */
+    async connect(userId:string,which:AgentProviderId="codex"){
+      if(closing)throw new AppError("codexUnavailable",503);
+      if(which==="claude")return connectClaude(userId);
+      return connectCodex(userId);
     },
     async start(sessionId:string,userId:string,p:Record<string,unknown>){
       if(closing)throw new AppError("codexUnavailable",503);
-      const {config,provider}=await connection(userId);
-      if(!config||!provider.configured)throw new AppError("codexNotConfigured",409,provider.message);
-      if(!provider.connected)throw new AppError("codexLoginRequired",409,provider.message);
-      const model=provider.models.find(item=>item.id===p.model);if(!model)throw new AppError("invalidModel",400,"Choose one of the available Codex models.");
+      const which=agentProviderOf(typeof p.model==="string"?p.model:""),checked=await connection(userId),chosen=which==="claude"?checked.claude:checked.codex,config=chosen.config;
+      if(!config||!chosen.status.configured)throw new AppError(`${which}NotConfigured`,409,chosen.status.message);
+      if(!chosen.status.connected)throw new AppError(`${which}LoginRequired`,409,chosen.status.message);
+      const model=chosen.models.find(item=>item.id===p.model);if(!model)throw new AppError("invalidModel",400,`Choose one of the available ${agentProviderNames[which]} models.`);
+      if(which==="claude"&&p.mode==="compact")throw new AppError("compactUnavailable",409,"Claude Code compacts its context automatically when it is needed.");
       if(p.effort!==undefined&&!model.efforts?.includes(String(p.effort)))throw new AppError("invalidEffort",400,"Choose a reasoning level this model supports.");
       // Attachments are referenced by ID; metadata is read from this account's private store.
       if(p.attachments!==undefined){
@@ -215,7 +368,7 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
         p={...p,attachments:await Promise.all(p.attachments.map(value=>attachmentInfo(userId,String(p.threadId),String(value))))};
       }
       const run=await operation<AgentRun>(sessionId,"startRun",p);
-      if(run.status==="queued"&&!active.has(run.id)){const controller=new AbortController(),promise=execute(run.id,sessionId,controller,config);active.set(run.id,{controller,promise,sessionId,steered:new Set()});}
+      if(run.status==="queued"&&!active.has(run.id)){const controller=new AbortController(),promise=execute(run.id,sessionId,controller,config,which);active.set(run.id,{controller,promise,sessionId,steered:new Set()});}
       return run;
     },
     /** Delivers a follow-up into the running turn, then records it as a user message. Retries are idempotent. */
@@ -223,8 +376,8 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
       const run=await operation<AgentRun>(sessionId,"run",{id:runId}),entry=active.get(runId);
       if(Object.keys(p).some(key=>key!=="id"&&key!=="content")||typeof p.id!=="string"||typeof p.content!=="string"||!p.content.trim())throw new AppError("invalidInput");
       // A retry after the turn ended still returns the saved message; new text is refused by the module.
-      if(!entry?.server||!entry.turn||!entry.thread)return operation(sessionId,"steerRun",{threadId:run.threadId,runId,id:p.id,content:p.content}).catch(error=>{throw error instanceof AppError&&error.status===409?new AppError("turnUnavailable",409,"This turn is not running. Send the message as a new turn."):error;});
-      if(!entry.steered.has(p.id)){await entry.server.request("turn/steer",{threadId:entry.thread,expectedTurnId:entry.turn,input:[{type:"text",text:p.content,text_elements:[]}]});entry.steered.add(p.id);}
+      if(!entry?.deliver)return operation(sessionId,"steerRun",{threadId:run.threadId,runId,id:p.id,content:p.content}).catch(error=>{throw error instanceof AppError&&error.status===409?new AppError("turnUnavailable",409,"This turn is not running. Send the message as a new turn."):error;});
+      if(!entry.steered.has(p.id)){await entry.deliver(p.content);entry.steered.add(p.id);}
       const saved=await operation<{thread:unknown;message:AgentMessage}>(sessionId,"steerRun",{threadId:run.threadId,runId,id:p.id,content:p.content});
       entry.steer?.(p.id);return saved;
     },
@@ -261,7 +414,7 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
       const history=await operation<AgentHistory>(sessionId,"history",{threadId}),work=path.join(root,"agent-workspaces",userId,threadId,"work");
       try{if(!(await lstat(path.join(work,".git"))).isDirectory())throw Error();}catch{return {available:false};}
       const signal=AbortSignal.timeout(30000),run=(args:string[])=>git(work,args,signal).then(value=>String((value as {stdout?:string}).stdout??value).trim());
-      if(p.action!=="status"&&history.runs.some(item=>activeAgentRun(item.status)))throw new AppError("runActive",409,"Wait for Codex to finish before changing branches or committing.");
+      if(p.action!=="status"&&history.runs.some(item=>activeAgentRun(item.status)))throw new AppError("runActive",409,"Wait for the agent to finish before changing branches or committing.");
       if(p.action==="branch"){
         const name=typeof p.name==="string"?p.name.trim():"";
         if(!/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,99}$/.test(name)||name.includes("..")||name.endsWith(".lock")||name.endsWith("/"))throw new AppError("invalidInput",400,"Use letters, numbers, dots, dashes, underscores and slashes for branch names.");
@@ -277,7 +430,7 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
     async terminal(sessionId:string,userId:string,threadId:string,action:string,p:Record<string,unknown>,signal:AbortSignal){
       await operation<AgentHistory>(sessionId,"history",{threadId});
       const size={rows:Number(p.rows),cols:Number(p.cols)};
-      if(action==="open"){const {config,provider}=await connection(userId);if(!config||!provider.connected)throw new AppError("codexLoginRequired",409,provider.message);await assertNoCodexRules(config);return terminals.open(config,userId,threadId,size);}
+      if(action==="open"){const codex=await codexConnection(userId);if(!codex.config||!codex.status.connected)throw new AppError("codexLoginRequired",409,`The terminal runs through the server Codex CLI. ${codex.status.message}`);await assertNoCodexRules(codex.config);return terminals.open(codex.config,userId,threadId,size);}
       if(action==="read"){const after=Number(p.after??0);if(!Number.isSafeInteger(after)||after<0)throw new AppError("invalidInput");return terminals.read(userId,threadId,after,signal);}
       if(action==="input"){if(typeof p.data!=="string")throw new AppError("invalidInput");return terminals.write(userId,threadId,p.data);}
       if(action==="resize")return terminals.resize(userId,threadId,size);

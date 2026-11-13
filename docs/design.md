@@ -97,7 +97,7 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
 - Personal: Profile, Appearance, Security, Regional settings (timezone) and
   Connected applications. Administration: Appearance (sign-in logo), Apps,
   Applications (OIDC clients), Directory, SCIM and Signing keys.
-- Administration → Apps enables/disables Notes, Tasks, Agent and installed apps
+- Administration → Apps enables/disables Notes, Tasks, News, Agent and installed apps
   instance-wide, retaining data. Files, Contacts and Calendar have no toggle.
 - App passwords use an app × Read/Write matrix. Keep old grants; write-only never
   exposes contents. Show the Files DAV address when issuing a Files password.
@@ -132,6 +132,14 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   a day opens the right daily timetable, phones open it full width with Back to
   week and restored focus. Settings use the settings sheet and mark the times a
   change affected. See [app platform](spacetimedb/app-platform.md).
+- **News:** selected [mock A](spacetimedb/news-reader-mock-a.html) over
+  [mock B](spacetimedb/news-reader-mock-b.html) (November 12). Sidebar views
+  (Unread, Starred, All) then folders with nested feeds and unread counts, feed and
+  folder three-dot menus, a day-grouped list (unread dot, feed mark, title, excerpt,
+  time) and the article in the right sheet with star, keep unread, open original
+  and share. Read rows fade in place instead of disappearing. Subscribe and Edit
+  feed use the right editing pane; News settings is the settings sheet. Phones show
+  views and folders as chips and the article full screen with Back. See [News](news.md).
 - **Agent:** threads on the left, conversation and docked composer in the center,
   review on the right and collapsible output below, inside the shared frame.
   New thread is the create button; Ctrl/Cmd+P opens the command palette. Thread
@@ -139,7 +147,9 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   Working and Settled shelves. On phones the thread list is home and a thread
   opens full screen with Back and Conversation/Details/Changes/Terminal tabs.
   Saving a message is distinct from running it; never show simulated output.
-  See [Agent workspace](spacetimedb/agent-workspace.md) and [Codex](codex.md).
+  See [Agent workspace](spacetimedb/agent-workspace.md), [Codex](codex.md) and
+  [Claude Code](claude-code.md). With both connected, the model menu groups models
+  by provider and labels follow the selected model's provider.
 - **Sign-in:** Dar logo by default, the saved instance logo when configured, with
   a fallback to Dar if it cannot load.
 

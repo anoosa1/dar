@@ -24,7 +24,7 @@ test("Identity v3 module upgrades and v3 backups restore with Notes/Tasks schema
   const pin=randomUUID(),snapshot=await db.call<any>("service_backup",[pin]);await db.call("service_release_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v3");
   run(["publish",name,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",url,"--yes","--no-config"]);await db.call("service_startup",[issuer]);
   const users=await db.call<any[]>("service_identity",[sid,"","","users","{}"]);assert.equal(users[0].id,id);assert.equal(users[0].userName,"old-directory");assert.equal(users[0].revision,1);
-  const upgraded=await db.call<any>("service_backup",[randomUUID()]);assert.equal(upgraded.format,"dar-backup-v6");assert.equal(upgraded.pim.collections[0].id,collectionId);
+  const upgraded=await db.call<any>("service_backup",[randomUUID()]);assert.equal(upgraded.format,"dar-backup-v7");assert.equal(upgraded.pim.collections[0].id,collectionId);
   const restoredName=`dar-v3-restore-${randomUUID().slice(0,8)}`;run(["publish",restoredName,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",url,"--yes","--no-config"]);
   const restored=await database(url,restoredName,process.env.DAR_DATABASE_TOKEN_FILE!);await restored.call("service_restore",[JSON.stringify(snapshot)]);
   const recovered=await restored.call<any>("service_backup",[randomUUID()]);assert.equal(recovered.accounts[0].id,id);assert.equal(recovered.pim.collections[0].id,collectionId);assert.equal(recovered.identity.clients.length,0);

@@ -1,7 +1,7 @@
-export const passwordApps = ["files", "contacts", "calendar"] as const;
+export const passwordApps = ["files", "contacts", "calendar", "news"] as const;
 export type PasswordApp = typeof passwordApps[number];
 export type Permission = "read" | "write";
-export const appLabels: Record<PasswordApp, string> = {files:"Files", contacts:"Contacts", calendar:"Calendar"};
+export const appLabels: Record<PasswordApp, string> = {files:"Files", contacts:"Contacts", calendar:"Calendar", news:"News"};
 
 /** Legacy write scopes included read access. New space-separated grants are independent. */
 export function passwordGrants(scope: string): string[] {
@@ -15,7 +15,7 @@ export function passwordGrants(scope: string): string[] {
 }
 export function validPasswordScope(scope: string): boolean {
   const grants = passwordGrants(scope);
-  return grants.length > 0 && grants.length <= 6 && new Set(grants).size === grants.length &&
+  return grants.length > 0 && grants.length <= 8 && new Set(grants).size === grants.length &&
     grants.every(g => passwordApps.some(app => g === app+":read" || g === app+":write"));
 }
 export function passwordAllows(scope: string, app: string, permission: Permission): boolean {

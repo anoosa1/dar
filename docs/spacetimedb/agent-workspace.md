@@ -1,9 +1,9 @@
 # Agent workspace
 
 Optional built-in app at `/agent` for coding work on a Git repository or a Dar
-Files folder, using Codex. Layout follows the approved T3 Code–style composition
+Files folder, using Codex or Claude Code. Layout follows the approved T3 Code–style composition
 (November 8–9, 2026) inside Dar's shared frame (November 11). Server setup, the
-run protocol and limits are in [Codex](../codex.md); UI rules are in the
+run protocol and limits are in [Codex](../codex.md) and [Claude Code](../claude-code.md); UI rules are in the
 [design guide](../design.md).
 
 ## Features

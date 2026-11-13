@@ -6,6 +6,11 @@ let
     executable = if cfg.agent.package == null then "" else "${cfg.agent.package}/bin/codex";
     inherit (cfg.agent) home userId gitHosts;
   });
+  claude = cfg.agent.claude;
+  claudeFile = pkgs.writeText "dar-claude.json" (builtins.toJSON {
+    executable = if claude.package == null then "" else "${claude.package}/bin/claude";
+    inherit (claude) home; inherit (cfg.agent) userId gitHosts;
+  });
   appsFile = pkgs.writeText "dar-apps.json" (builtins.toJSON (map (package: { path = toString package; }) cfg.apps));
   oidcFile = pkgs.writeText "dar-oidc.json" (builtins.toJSON {
     clients = lib.mapAttrsToList (id: client:
@@ -24,12 +29,18 @@ in {
   options.services.dar = {
     enable = lib.mkEnableOption "Dar personal cloud";
     agent = {
-      enable = lib.mkEnableOption "Codex execution for one Dar account using an existing service-user ChatGPT login";
-      package = lib.mkOption { type = lib.types.nullOr lib.types.package; default = null; description = "Codex CLI with named permission-profile support. Tested with 0.166.0. No automatic download."; };
+      enable = lib.mkEnableOption "Agent execution for one Dar account using existing service-user Codex and/or Claude Code logins";
+      package = lib.mkOption { type = lib.types.nullOr lib.types.package; default = null; description = "Codex CLI with named permission-profile support. Tested with 0.166.0. No automatic download. Leave null to offer only Claude Code."; };
+      claude = {
+        package = lib.mkOption { type = lib.types.nullOr lib.types.package; default = null; description = "Claude Code CLI (for example pkgs.claude-code). Runs use the service user's existing Claude login, so they count as Claude Code usage. Tested with 2.1.322. No automatic download."; };
+        home = lib.mkOption { type = lib.types.strMatching "/var/lib/[a-zA-Z0-9_/-]+"; default = "/var/lib/dar-claude"; description = "Private Claude Code home (CLAUDE_CONFIG_DIR) for the dar service user. Login tokens never enter the Nix store."; };
+        commands = lib.mkOption { type = lib.types.bool; default = true; description = "Put bubblewrap and socat on the service PATH so Claude Code can run commands inside its sandbox (no network, workspace-only writes). Without them Claude only reads and edits files."; };
+      };
       home = lib.mkOption { type = lib.types.strMatching "/var/lib/[a-zA-Z0-9_/-]+"; default = "/var/lib/dar-codex"; description = "Private Codex home for the dar service user. Login tokens never enter the Nix store."; };
       userId = lib.mkOption { type = lib.types.str; default = ""; description = "Immutable Dar account UUID permitted to use this Codex login. Shown in Agent settings."; };
       gitHosts = lib.mkOption { type = lib.types.listOf (lib.types.strMatching "[A-Za-z0-9][A-Za-z0-9.-]*"); default = []; description = "Allowed HTTPS repository hosts. Redirects and credential-bearing URLs are rejected."; };
     };
+    news.allowPrivateNetworks = lib.mkOption { type = lib.types.bool; default = false; description = "Let News fetch feeds and images from private, loopback and link-local addresses (for feeds on your own network). Off by default to prevent server-side request forgery."; };
     apps = lib.mkOption { type = lib.types.listOf lib.types.package; default = []; description = "Trusted prebuilt Dar app packages. Changes activate on service restart."; };
     oidc.clients = lib.mkOption {
       default = {};
@@ -60,7 +71,7 @@ in {
     assertions = [
       { assertion = hostMatch != null; message = "services.dar.origin must be HTTPS without a path/trailing slash."; }
       { assertion = cfg.port != cfg.databasePort; message = "Dar HTTP and database ports must differ."; }
-      { assertion = !cfg.agent.enable || cfg.agent.package != null && builtins.match "[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}" cfg.agent.userId != null && !(lib.hasInfix "/../" cfg.agent.home) && !(lib.hasInfix "/./" cfg.agent.home) && cfg.agent.home != "/var/lib/"; message = "Dar Agent needs an explicit Codex package, Dar account UUID and private /var/lib Codex home."; }
+      { assertion = !cfg.agent.enable || (cfg.agent.package != null || claude.package != null) && !(lib.hasInfix "/../" claude.home) && claude.home != "/var/lib/" && claude.home != cfg.agent.home && builtins.match "[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}" cfg.agent.userId != null && !(lib.hasInfix "/../" cfg.agent.home) && !(lib.hasInfix "/./" cfg.agent.home) && cfg.agent.home != "/var/lib/"; message = "Dar Agent needs an explicit Codex and/or Claude Code package, a Dar account UUID and separate private /var/lib homes."; }
     ] ++ lib.mapAttrsToList (id: client: {
       assertion = builtins.match "[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}" id != null
         && client.name != "" && client.redirectUris != [] && builtins.elem "openid" client.scopes
@@ -72,10 +83,12 @@ in {
     # DynamicUser state uses private-directory symlinks, which managed paths reject.
     users.groups.dar = {};
     users.users.dar = { isSystemUser = true; group = "dar"; home = "/var/lib/${cfg.stateDirectory}"; };
-    systemd.tmpfiles.rules = lib.optional cfg.agent.enable "d ${cfg.agent.home} 0700 dar dar -";
+    systemd.tmpfiles.rules = lib.optional (cfg.agent.enable && cfg.agent.package != null) "d ${cfg.agent.home} 0700 dar dar -"
+      ++ lib.optional (cfg.agent.enable && claude.package != null) "d ${claude.home} 0700 dar dar -";
     systemd.services.dar = {
       description = "Dar personal cloud";
-      path = lib.optional cfg.agent.enable cfg.agent.package;
+      path = lib.optionals cfg.agent.enable (lib.optional (cfg.agent.package != null) cfg.agent.package
+        ++ lib.optionals (claude.package != null) ([ claude.package ] ++ lib.optionals claude.commands [ pkgs.bubblewrap pkgs.socat ]));
       wantedBy = [ "multi-user.target" ];
       wants = [ "network-online.target" ]; after = [ "network-online.target" ];
       environment = {
@@ -83,8 +96,9 @@ in {
         DAR_PORT = toString cfg.port; DAR_DATABASE_PORT = toString cfg.databasePort;
         DAR_DATABASE_NAME = cfg.databaseName;
         DAR_APPS_FILE = toString appsFile;
-      } // lib.optionalAttrs (cfg.oidc.clients != {}) { DAR_OIDC_FILE = toString oidcFile; }
-        // lib.optionalAttrs cfg.agent.enable { DAR_CODEX_FILE = toString codexFile; };
+      } // lib.optionalAttrs cfg.news.allowPrivateNetworks { DAR_NEWS_ALLOW_PRIVATE_NETWORKS = "1"; } // lib.optionalAttrs (cfg.oidc.clients != {}) { DAR_OIDC_FILE = toString oidcFile; }
+        // lib.optionalAttrs (cfg.agent.enable && cfg.agent.package != null) { DAR_CODEX_FILE = toString codexFile; }
+        // lib.optionalAttrs (cfg.agent.enable && claude.package != null) { DAR_CLAUDE_FILE = toString claudeFile; };
       serviceConfig = {
         Type = "simple"; ExecStart = "${cfg.package}/bin/dar";
         User = "dar"; Group = "dar";
@@ -104,7 +118,8 @@ in {
         # Bubblewrap needs NETLINK_ROUTE to configure loopback inside its private
         # network namespace. Codex still denies network access to workspace tools.
         RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ] ++ lib.optional cfg.agent.enable "AF_NETLINK";
-        ReadWritePaths = [ "/var/lib/${cfg.stateDirectory}" ] ++ lib.optional cfg.agent.enable cfg.agent.home; LimitNOFILE = 65536;
+        ReadWritePaths = [ "/var/lib/${cfg.stateDirectory}" ] ++ lib.optional (cfg.agent.enable && cfg.agent.package != null) cfg.agent.home
+          ++ lib.optional (cfg.agent.enable && claude.package != null) claude.home; LimitNOFILE = 65536;
         TasksMax = lib.mkIf cfg.agent.enable 256; MemoryMax = lib.mkIf cfg.agent.enable "2G";
       };
     };

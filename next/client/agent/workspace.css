@@ -154,6 +154,7 @@
 .agent-model-popover ul{list-style:none;margin:0;padding:0;max-height:280px;overflow:auto}.agent-model-popover ul:focus-visible{outline:0}
 .agent-model-popover li{display:flex;align-items:center;gap:8px;min-height:32px;padding:4px 8px;border-radius:6px;font-size:13px;color:var(--text);cursor:pointer}
 .agent-model-popover li[data-active]{background:var(--hover)}.agent-model-popover li>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.agent-model-popover li small{color:var(--muted);font-size:11px}.agent-model-popover li .icon{width:14px;height:14px;color:var(--accent)}
+.agent-model-popover li.agent-model-group{min-height:24px;padding:8px 8px 2px;font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--muted);cursor:default}.agent-model-popover li.agent-model-group:hover{background:none}
 @keyframes agent-pop{from{opacity:0;transform:translateY(4px)}}
 /* New-thread draft: headline centered above the composer. */
 .agent-draft{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0;padding-bottom:12vh}
@@ -278,6 +279,7 @@
 /* Settings. */
 .agent-settings-choice{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}.agent-settings-choice label,.agent-settings-toggle{display:flex;align-items:center;gap:10px;font-size:13px;min-height:32px}
 .agent-settings-toggle{margin-bottom:8px}
+.agent-settings-provider+.agent-settings-provider{margin-top:4px;padding-top:4px;border-top:1px solid var(--border)}
 .agent-settings-models{list-style:none;padding:0;margin:0 0 16px}.agent-settings-models li{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}.agent-settings-models small{font-size:11px;color:var(--accent)}.agent-settings-models span{flex-basis:100%;font-size:12px;color:var(--muted)}
 .agent-archived{list-style:none;padding:0;margin:0}.agent-archived li{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}.agent-archived li>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agent-delete p{line-height:1.6;margin:0 0 16px}.primary-button.danger{background:var(--danger);color:var(--on-danger)}.text-button.danger{color:var(--danger)}

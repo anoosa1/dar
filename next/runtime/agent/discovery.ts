@@ -15,10 +15,10 @@ export function codexSearchDirectories(environmentPath:string,serviceHome:string
 }
 
 /** Executable profile symlinks are normal on NixOS; their targets must be files. */
-export async function findCodexExecutable(directories:string[]){
+export async function findCodexExecutable(directories:string[],name="codex"){
   for(const directory of directories){
     if(!path.isAbsolute(directory))continue;
-    const candidate=path.join(directory,"codex");
+    const candidate=path.join(directory,name);
     try{await access(candidate,constants.X_OK);if((await stat(candidate)).isFile())return candidate;}catch{}
   }
   return undefined;

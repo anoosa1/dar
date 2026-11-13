@@ -31,6 +31,9 @@ import type {AppSettings,ManagedApp} from "../shared/app-settings.ts";
 import { configureOidc } from "./identity/config.ts";
 import {handleAgentHttp} from "./agent/http.ts";
 import {createAgentRuntime,type AgentRuntime} from "./agent/runtime.ts";
+import {createNewsRuntime,type NewsRuntime} from "./news/runtime.ts";
+import {handleNewsHttp} from "./news/http.ts";
+import {handleNextcloudNews,nextcloudBase} from "./news/nextcloud.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
@@ -40,6 +43,9 @@ export interface ServerConfig {
   appsFile?:string;
   oidcFile?: string;
   codexFile?:string;
+  claudeFile?:string;
+  /** Operator choice: let News fetch feeds on private/loopback networks (off by default). */
+  newsAllowPrivateNetworks?:boolean;
 }
 function json(res: ServerResponse, value: unknown, status = 200) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
@@ -81,6 +87,7 @@ export async function startServer(config: ServerConfig) {
   let ownedContext: Context | undefined;
   let appRuntime:Awaited<ReturnType<typeof activateApps>>|undefined;
   let agentRuntime:AgentRuntime|undefined;
+  let newsRuntime:NewsRuntime|undefined;
   try {
   const db = await database(config.databaseUrl, config.databaseName, config.serviceTokenFile);
   await db.call("service_startup", [`${config.origin}/auth/issuer`]);
@@ -97,7 +104,7 @@ export async function startServer(config: ServerConfig) {
   // Keep revisioned writes and hook disposal/activation in the same order.
   let appUpdate:Promise<unknown>=Promise.resolve();
   const managedApps=(settings:AppSettings):ManagedApp[]=>[
-    ...["files","contacts","calendar","notes","tasks","agent"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","agent"].includes(id)})),
+    ...["files","contacts","calendar","notes","tasks","news","agent"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","news","agent"].includes(id)})),
     ...appRegistry.inventory.map(item=>({...item,enabled:appRegistry.apps.has(item.id)&&!settings.disabled.includes(item.id),canToggle:hostEnabledApps.has(item.id)})),
   ];
   const databasePublicUrl = `${(config.databasePublicUrl ?? (config.development ? config.databaseUrl : `${config.origin}/spacetime`)).replace(/\/$/, "")}/`;
@@ -113,7 +120,8 @@ export async function startServer(config: ServerConfig) {
   // Independent Cordis effects can dispose concurrently. One ordered disposer
   // keeps the storage lock held until HTTP handlers and maintenance have drained.
   ctx.effect(() => () => disposeResources(), "runtime-resources");
-  agentRuntime=await createAgentRuntime(db,root,config.codexFile??path.join(root,"codex.json"));
+  agentRuntime=await createAgentRuntime(db,root,config.codexFile??path.join(root,"codex.json"),config.claudeFile??path.join(root,"claude.json"));
+  newsRuntime=createNewsRuntime(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
   const blobs = blobStore(root);
   await blobs.recover();
   const attempts = new Map<string, { count: number; until: number }>();
@@ -133,7 +141,7 @@ export async function startServer(config: ServerConfig) {
     const databaseOrigin = new URL(databasePublicUrl).origin;
     // The pinned SDK generates binary codecs with Function(). Keep inline
     // scripts forbidden and document this SDK-specific CSP limitation.
-    res.setHeader("content-security-policy", `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' blob:; connect-src 'self' ${databaseOrigin} ${databaseOrigin.replace(/^http/, "ws")}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
+    res.setHeader("content-security-policy", `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' blob:; media-src 'self' https:; connect-src 'self' ${databaseOrigin} ${databaseOrigin.replace(/^http/, "ws")}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
     try {
       const url = new URL(req.url ?? "/", config.origin);
       const method = req.method ?? "GET";
@@ -152,6 +160,10 @@ export async function startServer(config: ServerConfig) {
       }
       if(url.pathname==="/scim/v2"||url.pathname.startsWith("/scim/v2/"))return await handleScim(req,res,url,db,auth,config.origin);
       if (["/dav", "/.well-known/carddav", "/.well-known/caldav"].includes(url.pathname)) { res.writeHead(308, { location: "/dav/" }); res.end(); return; }
+      if (url.pathname === nextcloudBase || url.pathname.startsWith(nextcloudBase + "/")) {
+        if ((await readAppSettings()).disabled.includes("news")) throw new AppError("notFound", 404);
+        return await handleNextcloudNews(req, res, url, db, newsRuntime!, config.origin);
+      }
       if (url.pathname.startsWith("/dav/") && !url.pathname.startsWith("/dav/files/")) return await handlePimDav(req, res, db, config.origin);
       if (url.pathname.startsWith("/dav/")) return await handleDav(req, res, db, blobs, config.origin);
       if (url.pathname === "/auth/issuer/.well-known/openid-configuration") return json(res, { issuer: issuer.issuer, jwks_uri: `${issuer.issuer}/jwks`, id_token_signing_alg_values_supported: ["ES256"], subject_types_supported: ["public"] });
@@ -221,11 +233,13 @@ export async function startServer(config: ServerConfig) {
         if(url.pathname==="/api/v1/agent/provider/connect"&&method==="POST"){
           if(!authenticated.user.administrator)throw new AppError("forbidden",403);
           await db.call("service_agent",[authenticated.session.id,"projects","{}"]);
-          return json(res,await agentRuntime!.connect(authenticated.user.id));
+          const input=Number(req.headers["content-length"]??0)>0?await body(req):{};if(Object.keys(input).some(key=>key!=="provider")||input.provider!==undefined&&input.provider!=="codex"&&input.provider!=="claude")throw new AppError("invalidInput");
+          return json(res,await agentRuntime!.connect(authenticated.user.id,input.provider==="claude"?"claude":"codex"));
         }
         if(/^\/api\/v1\/agent(\/|$)/.test(url.pathname))return await handleAgentHttp(req,res,url,db,authenticated.session.id,authenticated.user.id,agentRuntime!,()=>body(req,128*1024));
-        const optionalApp=/^\/api\/v1\/(notes|tasks)(\/|$)/.exec(url.pathname);
+        const optionalApp=/^\/api\/v1\/(notes|tasks|news)(\/|$)/.exec(url.pathname);
         if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);
+        if(/^\/api\/v1\/news(\/|$)/.test(url.pathname))return await handleNewsHttp(req,res,url,db,authenticated.session.id,authenticated.user.username,newsRuntime!,()=>body(req,3*1024*1024));
         if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
         if(url.pathname==="/api/v1/account/profile"){
           const profile=await db.call<{id:string;revision:number}>("service_profile",[authenticated.session.id,"read","{}"]),etag=`"${profile.id}:${profile.revision}"`;
@@ -273,7 +287,7 @@ export async function startServer(config: ServerConfig) {
           const p = await body(req), token = createOpaqueToken(), id = randomUUID();
           const scope = string(p.scope, 120), apps=passwordApps.filter(app=>passwordGrants(scope).some(g=>g.startsWith(app+":"))), app = apps[0] === "contacts" ? "addressbooks" : apps[0] === "calendar" ? "calendars" : "files";
           await db.call("service_create_app_password", [authenticated.session.id, id, token.digest, string(p.label, 100), scope]);
-          return json(res, { id, secret: token.secret, filesDavUrl:apps.includes("files")?`${config.origin}/dav/files/${encodeURIComponent(authenticated.user.username)}/`:undefined, davUrl: apps.length>1?`${config.origin}/dav/`:`${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
+          return json(res, { id, secret: token.secret, filesDavUrl:apps.includes("files")?`${config.origin}/dav/files/${encodeURIComponent(authenticated.user.username)}/`:undefined, newsUrl:apps.includes("news")?`${config.origin}${nextcloudBase}`:undefined, davUrl: apps.length>1?`${config.origin}/dav/`:`${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
         }
         const passwordRoute = /^\/api\/v1\/auth\/app-passwords\/([^/]+)$/.exec(url.pathname);
         if (passwordRoute && method === "DELETE") { await db.call("service_revoke_app_password", [authenticated.session.id, passwordRoute[1]]); return json(res, { ok: true }); }
@@ -351,9 +365,9 @@ export async function startServer(config: ServerConfig) {
       await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
       await Promise.allSettled([...inflight]);
       await maintenance;
-    } finally { attempts.clear();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
+    } finally { attempts.clear();await newsRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
   };
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(config.port, config.host, resolve); });
   return { server, ctx, close: () => ctx.fiber.dispose() };
-  } catch (error) {await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
+  } catch (error) {await newsRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
 }

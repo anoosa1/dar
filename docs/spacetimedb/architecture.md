@@ -18,7 +18,7 @@ flowchart LR
 - **SpacetimeDB** owns structured state, identity/directory records,
   authorization, transactional domain changes and bounded subscriptions.
 - **Node 24 / Cordis** owns login, credential checks, token issuance, blob
-  transfers, DAV, OIDC/SCIM, reminders, backups and Agent runs. Every effect is
+  transfers, DAV, OIDC/SCIM, reminders, backups, News feed fetching and Agent runs. Every effect is
   owned by a Cordis context and disposed deterministically.
 - **Local disk** holds immutable opaque-keyed blobs, temporary uploads and
   protected keys. No SQLite, search server, ORM, broker or object store.
@@ -74,7 +74,7 @@ disconnection is shown honestly and reconnects refetch safely.
 
 ## Backups and upgrades
 
-Backups (format v6, reading v1–v5) snapshot database state and referenced blobs
+Backups (format v7, reading v1–v6) snapshot database state and referenced blobs
 with pins; restore needs an empty root and invalidates sessions and bearer
 credentials. Schema changes are additive numbered migrations tested against
 older databases. Verification: `npm --prefix next run verify` (typechecks,

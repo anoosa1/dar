@@ -4,5 +4,6 @@ export interface Preferences {
   revision:number;calendarShowCancelled?:boolean;appearance?:"system"|"latte"|"mocha";timezone?:string;weekStart?:0|1;contactSort?:string;hiddenCalendars?:string[];
   notesSort?:string;tasksSort?:string;filesView?:"list"|"grid";filesShowHidden?:boolean;
   filesConfirmTrash?:boolean;filesDetailsTab?:"details"|"versions"|"sharing";
+  newsMarkRead?:"open"|"scroll";newsOrder?:"newest"|"oldest";newsShowRead?:boolean;newsImages?:"proxy"|"block";newsRefresh?:number;newsKeepDays?:number;
   notesEditorMode?:"write"|"preview";tasksView?:"all"|"inbox"|"today"|"upcoming"|"important"|"completed";
 }

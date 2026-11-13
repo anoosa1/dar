@@ -14,7 +14,7 @@ export async function database(url: string, name: string, tokenFile: string) {
       });
       if (!response.ok) {
         const detail = await response.text();
-        for (const [code, status] of [["conflict", 409], ["notFound", 404], ["forbidden", 403], ["unauthenticated", 401], ["invalidInput", 400], ["invalidName", 400], ["quotaExceeded", 507], ["operationTooLarge", 413], ["contentUnavailable", 503]] as const) {
+        for (const [code, status] of [["conflict", 409], ["alreadyExists", 409], ["notFound", 404], ["forbidden", 403], ["unauthenticated", 401], ["invalidInput", 400], ["invalidName", 400], ["quotaExceeded", 507], ["operationTooLarge", 413], ["contentUnavailable", 503]] as const) {
           if (detail.includes(code)) throw new AppError(code, status);
         }
         throw new AppError("databaseUnavailable", 503, "The database request could not be completed.");

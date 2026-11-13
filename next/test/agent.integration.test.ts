@@ -65,7 +65,7 @@ test("Agent sources, account isolation, atomic revisions, replay, pagination, di
     assert.equal((await fetch(base+"/api/v1/agent/projects",{headers})).status,404);
     const search=await(await fetch(base+"/api/v1/search?q="+encodeURIComponent(project.name),{headers})).json() as {items:{id:string}[]};assert.ok(!search.items.some(r=>r.id===project.id));
   }finally{await db.call("service_app_settings",[sid,"agent",true,disabled.revision]);}
-  const pin=randomUUID(),snapshot=await db.call<{format:string;agent:{projects:AgentProject[];threads:AgentThread[];messages:AgentMessage[]};accounts:{id:string;username:string;verifier:string}[]}>("service_backup",[pin]);await db.call("service_release_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v6");
+  const pin=randomUUID(),snapshot=await db.call<{format:string;agent:{projects:AgentProject[];threads:AgentThread[];messages:AgentMessage[]};accounts:{id:string;username:string;verifier:string}[]}>("service_backup",[pin]);await db.call("service_release_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v7");
   const publish=async()=>{
     const name="dar-agent-restore-"+randomUUID().slice(0,8),result=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(result.status,0,result.stdout+result.stderr);return database(process.env.DAR_DATABASE_URL!,name,process.env.DAR_DATABASE_TOKEN_FILE!);
   };

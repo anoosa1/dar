@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp, readFile, writeFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { database } from "../runtime/database.ts";
@@ -37,6 +37,14 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
     if (rows.items[0]) { const event = await (await fetch(`${base}/api/v1/calendar/calendars/${calendar.id}/items/${rows.items[0].href}`, { headers: session.headers })).json() as { content: string }; eventProof = { collectionId: calendar.id, href: rows.items[0].href, content: event.content }; break; }
   }
   const source = await database(process.env.DAR_DATABASE_URL!, process.env.DAR_DATABASE_NAME!, process.env.DAR_DATABASE_TOKEN_FILE!);
+  // News: a folder, an OPML-imported feed (a loopback address the fetcher refuses, so no network) and a stored, starred article.
+  const newsFolder=await (await fetch(`${base}/api/v1/news/folders`,{method:"POST",headers:noteHeaders,body:JSON.stringify({name:`Backup ${randomUUID().slice(0,6)}`})})).json() as {id:number;name:string};
+  assert.equal((await fetch(`${base}/api/v1/news/opml`,{method:"POST",headers:noteHeaders,body:JSON.stringify({text:`<opml version="2.0"><body><outline text="${newsFolder.name}"><outline text="Backup feed" xmlUrl="http://127.0.0.1:9/backup-${randomUUID()}.xml"/></outline></body></opml>`})})).status,200);
+  const newsBefore=await (await fetch(`${base}/api/v1/news/overview`,{headers:session.headers})).json() as {feeds:{id:number;url:string;title:string;folderId:number}[]};
+  const backupFeed=newsBefore.feeds.find(row=>row.folderId===newsFolder.id)!,md5=(value:string)=>createHash("md5").update(value).digest("hex"),guid=randomUUID();
+  await source.call("service_news_worker",["store",JSON.stringify({feedId:backupFeed.id,items:[{guid,guidHash:md5(guid),url:"https://backup.example/kept",title:"Kept through restore",author:"",pubDate:Date.now(),updatedDate:Date.now(),body:"<p>Kept</p>",enclosureMime:"",enclosureLink:"",mediaThumbnail:"",mediaDescription:"",rtl:false,fingerprint:md5("f"+guid),contentHash:md5("c"+guid),excerpt:"Kept"}]})]);
+  const newsItem=(await (await fetch(`${base}/api/v1/news/items?type=feed&id=${backupFeed.id}`,{headers:session.headers})).json() as {items:{id:number}[]}).items[0];
+  assert.equal((await fetch(`${base}/api/v1/news/items/state`,{method:"POST",headers:noteHeaders,body:JSON.stringify({ids:[newsItem.id],starred:true})})).status,200);
   const temporary = await mkdtemp(path.join(tmpdir(), "dar-backup-proof-")), directory = path.join(temporary, "backup");
   const appSettings=await(await fetch(base+"/api/v1/appSettings",{headers:session.headers})).json() as {revision:number};
   async function setTasks(enabled:boolean,revision:number){const r=await fetch(base+"/api/v1/admin/installedApps",{method:"PUT",headers:{...session.headers,"content-type":"application/json","if-match":`"apps:${revision}"`},body:JSON.stringify({id:"tasks",enabled,revision})});assert.equal(r.status,200);return r.json() as Promise<{revision:number}>;}
@@ -49,7 +57,7 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   assert.equal(await readFile(path.join(exported, manifest.files.find(item => item.id === file.fileId)!.contentFile!), "utf8"), "This content must survive a full restore.");
   assert.doesNotMatch(JSON.stringify(manifest), /verifier|csrfDigest|signing-key/);
   const saved = await readFile(path.join(directory, "snapshot.json"), "utf8");
-  assert.match(saved, /dar-backup-v6/);
+  assert.match(saved, /dar-backup-v7/);
   assert.doesNotMatch(saved,/"providerModels"|"provisioningTokens"|"identityProofs"/);
   const listener = createServer(); await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
   const port = (listener.address() as import("node:net").AddressInfo).port;
@@ -84,6 +92,10 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
     assert.deepEqual(afterPim.items.map(row => row.id).sort(), beforePim.items.map(row => row.id).sort());
     if (sampleBook) assert.equal(await (await fetch(`${newOrigin}/api/v1/contacts/books/${sampleBook.id}/export`, { headers: recovered.headers })).text(), beforeCards);
     if (eventProof) { const event = await (await fetch(`${newOrigin}/api/v1/calendar/calendars/${eventProof.collectionId}/items/${eventProof.href}`, { headers: recovered.headers })).json() as { content: string }; assert.equal(event.content, eventProof.content); }
+    const newsAfter=await (await fetch(`${newOrigin}/api/v1/news/overview`,{headers:recovered.headers})).json() as typeof newsBefore&{folders:{id:number;name:string}[];starredCount:number};
+    assert.equal(newsAfter.folders.find(row=>row.id===newsFolder.id)?.name,newsFolder.name);assert.equal(newsAfter.feeds.find(row=>row.id===backupFeed.id)?.url,backupFeed.url);assert.ok(newsAfter.starredCount>=1);
+    const keptItem=await (await fetch(`${newOrigin}/api/v1/news/items/${newsItem.id}`,{headers:recovered.headers})).json() as {body:string;starred:boolean;title:string};assert.deepEqual([keptItem.title,keptItem.body,keptItem.starred],["Kept through restore","<p>Kept</p>",true]);
+    const laterFolder=await (await fetch(`${newOrigin}/api/v1/news/folders`,{method:"POST",headers:{...recovered.headers,"content-type":"application/json"},body:JSON.stringify({name:`After ${randomUUID().slice(0,6)}`})})).json() as {id:number};assert.ok(laterFolder.id>newsFolder.id);
     await assert.rejects(restore(target, directory, root), /Another runtime/);
   } finally { await runtime.close(); }
   await assert.rejects(access(path.join(root, "runtime.lock")));

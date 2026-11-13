@@ -37,5 +37,5 @@ test("auth/Files module upgrades in place; old backup imports and unknown format
   await assert.rejects(restored.call("service_restore",[JSON.stringify({...snapshot,format:"dar-backup-v999"})]));
   await restored.call("service_restore",[JSON.stringify(snapshot)]);
   const account=await restored.call<{id:string;verifier:string}>("service_account",["upgrade-user"]);assert.equal(account.id,userId);assert.equal(account.verifier,verifier);
-  const recovered=await restored.call<{format:string;files:{id:string}[];pim:{collections:unknown[]}}>("service_backup",[randomUUID()]);assert.equal(recovered.format,"dar-backup-v6");assert.ok(recovered.files.some(row=>row.id===fileId));assert.equal(recovered.pim.collections.length,0);
+  const recovered=await restored.call<{format:string;files:{id:string}[];pim:{collections:unknown[]}}>("service_backup",[randomUUID()]);assert.equal(recovered.format,"dar-backup-v7");assert.ok(recovered.files.some(row=>row.id===fileId));assert.equal(recovered.pim.collections.length,0);
 });

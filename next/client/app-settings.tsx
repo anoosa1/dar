@@ -58,7 +58,7 @@ export function SaveProblems({error,conflict,onReload}:{error:string;conflict:bo
 
 const appIcons:Record<string,IconName>={files:"folder",contacts:"contacts",calendar:"calendar",notes:"file",tasks:"check"};
 const sorting={modified:"Recently edited",title:"Title",due:"Due date"} as const;
-type SettingsApp=Exclude<AppId,"settings"|"agent"|`app:${string}`>;
+type SettingsApp=Exclude<AppId,"settings"|"agent"|"news"|`app:${string}`>;
 export function AppSettings({app,session,onClose,onChanged}:{app:SettingsApp;session:BrowserSession;onClose:()=>void;onChanged?:()=>void}){
   const saver=usePreferenceSaver(session),[section,setSection]=useState("General"),p=saver.preferences,state=saver.states;
   const name=app[0].toUpperCase()+app.slice(1),sections=["General",...(app!=="files"?["Import and export"]:[]),"Keyboard shortcuts"];

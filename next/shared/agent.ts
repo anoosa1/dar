@@ -16,7 +16,7 @@ export interface AgentQuestion {id:string;header:string;question:string;options:
 /** A blocking question from the running turn. Approval requests are never exposed: Dar declines escalation. */
 export interface AgentPending {id:string;questions:AgentQuestion[]}
 export interface AgentRunDocument {output:string;terminal:string;activity:string[];changes:AgentChange[];error:string;truncated:boolean;steps?:AgentStep[];usage?:AgentUsage;effort?:string;
-  mode?:"plan"|"default"|"review"|"compact";attachments?:AgentAttachment[];steered?:string[];pending?:AgentPending|null;codexThread?:string;contextRevision?:number;contextWindow?:number;contextUsed?:number}
+  mode?:"plan"|"default"|"review"|"compact";attachments?:AgentAttachment[];steered?:string[];pending?:AgentPending|null;codexThread?:string;claudeSession?:string;contextRevision?:number;contextWindow?:number;contextUsed?:number}
 export interface AgentLimitWindow {label:string;usedPercent:number;windowMinutes:number|null;resetsAt:number|null}
 export interface AgentLimits {available:boolean;plan:string|null;windows:AgentLimitWindow[];message?:string}
 export const agentRunModes=["plan","review","compact"] as const;
@@ -24,7 +24,13 @@ export const agentImageTypes=["image/png","image/jpeg","image/gif","image/webp"]
 export const agentAttachmentLimits={count:4,bytes:8*1024*1024} as const;
 export interface AgentRunSummary {id:string;threadId:string;messageId:string;model:string;status:AgentRunStatus;createdAt:number;modifiedAt:number}
 export interface AgentRun extends AgentRunSummary {document:AgentRunDocument}
-export interface AgentModel {id:string;name:string;isDefault:boolean;efforts?:string[];defaultEffort?:string}
-export interface AgentProvider {configured:boolean;connected:boolean;models:AgentModel[];message:string}
+/** Codex and Claude Code run through their own CLIs and server-side logins. Claude model IDs carry a `claude/` prefix. */
+export type AgentProviderId="codex"|"claude";
+export const agentProviderNames:Record<AgentProviderId,string>={codex:"Codex",claude:"Claude Code"};
+export const agentProviderOf=(model:string):AgentProviderId=>model.startsWith("claude/")?"claude":"codex";
+export interface AgentModel {id:string;name:string;isDefault:boolean;efforts?:string[];defaultEffort?:string;provider?:AgentProviderId}
+export interface AgentProviderStatus {id:AgentProviderId;name:string;configured:boolean;connected:boolean;message:string;commands?:boolean}
+/** Combined status: top-level flags are true when any provider is; `providers` has each one. */
+export interface AgentProvider {configured:boolean;connected:boolean;models:AgentModel[];message:string;providers?:AgentProviderStatus[]}
 export const agentEffort=/^[a-z]{1,20}$/;
 export const activeAgentRun=(status:string)=>["queued","running","cancelling"].includes(status);
