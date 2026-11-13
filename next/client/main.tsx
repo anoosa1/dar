@@ -27,6 +27,8 @@ import {NewsWorkspace} from "./news/workspace.tsx";
 // The shared frame is last so it supersedes the earlier per-surface frame rules.
 import "./frame.css";
 import "./settings-sheet.css";
+// The apps revamp layer sits on top of the frame and settings sheet.
+import "./apps.css";
 function OptionalWorkspace({kind,session,onSignedOut}:{kind:"notes"|"tasks"|"agent"|"news";session:BrowserSession;onSignedOut:()=>void}){
   const {settings,error}=useAppSettings();
   if(settings&&!settings.disabled.includes(kind))return kind==="agent"?<AgentWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="news"?<NewsWorkspace session={session} onSignedOut={onSignedOut}/>:<Workspace kind={kind} session={session} onSignedOut={onSignedOut}/>;

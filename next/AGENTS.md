@@ -25,7 +25,9 @@ Focused pane (A), sign-in/app-password mock A, Prayer Times layout B and the
 Agent T3 parity A, and News mock A (`../docs/spacetimedb/news-reader-mock-a.html`,
 November 12). App settings, Dar settings and Prayer Times follow settings
 sheet B (`../docs/spacetimedb/settings-revamp-mock-b.html`, November 12), which
-supersedes the settings modal and explicit settings save. Details are in the
+supersedes the settings modal and explicit settings save. Files, Contacts,
+Calendar, Notes, Tasks and shared menus follow the apps revamp
+(`../docs/spacetimedb/apps-revamp-mock.html`, November 12). Details are in the
 design guide.
 
 Applying a selected pattern needs no new mock; a new visual direction does.

@@ -58,8 +58,9 @@ Selected from [mock B](spacetimedb/unified-look-mock-b.html) over
 - The top-bar search covers all apps: accessible file names, contacts, calendar
   resources, Notes content, Tasks, Agent projects/threads and enabled installed
   apps' own-user data. Never another account's or a disabled app's data.
-- Group results by app with keyboard selection and loading, empty, partial-error
-  and retry states. Bound scans and say when results are truncated.
+- Group results by app (with a count) with keyboard selection and loading, empty,
+  partial-error and retry states. Rows use the app's glyph (initials for contacts,
+  file-type tiles) and highlight the match. Bound scans and say when truncated.
 - Ctrl/Cmd+K focuses it outside open editors/dialogs; Escape clears it. Apps do
   not add their own duplicate search or tag/category filter fields.
 
@@ -73,7 +74,28 @@ Selected from [mock B](spacetimedb/unified-look-mock-b.html) over
   (vCard in Contacts, ICS in Calendar, notebooks/task lists in Notes/Tasks).
 - Destructive actions use the shared confirmation, naming the target and effect.
 - Menus fit the viewport, open in the right direction, scroll internally and use
-  shared keyboard, Escape, outside-click and focus-return behavior.
+  shared keyboard, Escape, outside-click and focus-return behavior. Items are
+  34px with an icon, grouped by separators or a small section label, with
+  right-aligned shortcut hints, a chevron for submenus (Back row on the second
+  page), a check on the current choice and the destructive item last.
+
+## Content sheets (apps revamp, November 12)
+
+Requested by the maintainer from the [apps revamp mock](spacetimedb/apps-revamp-mock.html);
+applied in `apps.css` over the frame. Shared pieces: `FileTile` (`file-types.tsx`),
+`CollectionDot`/`avatarHue` (`pim/common.tsx`) and `MiniMonth` (`date-popover.tsx`).
+
+- Sheet headers put the title (or breadcrumb) left and view controls right: a
+  segmented control for views/modes and a compact sort menu that names the sort.
+- Details sheets lead with the object (tile, avatar or colored title), then
+  44px quick actions, then property cards (icon, value, small label). Secondary
+  actions sit in the header (Edit, Delete, More) or a footer (Export).
+- Color comes from data: collection colors through SVG fill (CSP has no inline
+  styles), file types and contact avatars through fixed class palettes. Color is
+  never the only signal.
+- Editing panes group fields into sections with icon headings, pair related
+  fields, keep rarely used fields behind a disclosure that opens when they have
+  values, and pin Cancel/Save at the bottom.
 
 ## Settings (settings sheet B, November 12)
 
@@ -106,25 +128,38 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
 
 ## Apps
 
-- **Files:** item actions in three-dot menus; Details is its own action and does
-  not repeat Rename/Move/Copy/Delete. Preview/download, versions, favorites,
-  trash/restore and revision-safe text/Markdown editing. Storage usage sits at
-  the bottom of the sidebar.
-- **Contacts:** list plus right details/editor. Name sort and vCard transfers in
-  settings. Email, phone and website values are links.
-- **Calendar:** Month by default. One date/Today control beside the period arrows
-  opens a themed month-grid popover with Go to today. Day/week/agenda scroll
-  internally; Month has six bounded rows with a link to overflowing days. Week
-  start, cancelled events and ICS in settings; timezone in Regional settings,
-  with per-event timezone fields. Forms show inclusive all-day end dates.
-- **Notes:** clean document surface with a quiet title, compact formatting bar and
-  small saved/error status; metadata in a note menu. Exact Markdown, safe preview,
+- **Files:** the breadcrumb is the title, with Upload and the list/grid switch
+  beside it. Rows show a type tile, relative modified date and size; selection
+  turns the toolbar into a tonal bar. Item actions in three-dot menus (Open,
+  Organize, Clipboard, Delete sections); Details is its own action and does not
+  repeat Rename/Move/Copy/Delete. Details: preview, Preview/Download/Favorite/
+  Share quick actions, then Details/Versions/Sharing tabs. Moving to deleted files
+  shows a toast with Undo. Storage is a meter card at the bottom of the sidebar.
+- **Contacts:** letter-grouped list under the name sort, with hued avatars, title ·
+  organization and the address-book dot. Groups are sidebar rows. The card offers
+  Email, Call, Favorite and Edit; values are links. The editor uses sections and
+  opens prefix/middle/suffix/display name only when needed. vCard in settings.
+- **Calendar:** Month by default; Day/Week/Month/Agenda is a segmented control. A
+  sidebar mini month follows the anchor and highlights the visible range; one
+  date/Today popover beside the period arrows has Go to today. Visibility boxes
+  and events use the calendar color (dot for timed, tint for all-day). Week and
+  Day draw duration-sized blocks in lanes with a now line; Month has six bounded
+  rows with a link to overflowing days and hides times in narrow cells. Event
+  cards show a readable date line; forms split date and time and show inclusive
+  all-day end dates. Week start, cancelled events and ICS in settings; timezone in
+  Regional settings, with per-event timezone fields.
+- **Notes:** list rows show title, a plain-text excerpt, edit time and notebook.
+  The note bar has Close, notebook, save status, Write/Preview, favorite and the
+  note menu (details, Export Markdown); the document is a centered column with a
+  quiet title and an icon formatting bar. Exact Markdown, safe preview,
   autosave, private recovery drafts and explicit conflicts. Leaving an unsaved
   note offers save/retry, keep draft and close, or discard, then resumes the
   requested navigation only after success.
-- **Tasks:** list plus details with readable status, priority, dates and
-  repetition, and a specific Complete/Reopen command. Hierarchy, recurrence
-  scope and timezone behavior are preserved.
+- **Tasks:** quick add (title only) above the list; due-date sort groups Overdue,
+  Today, Tomorrow, Upcoming, No date and Completed. Rows show a priority-colored
+  check, due, repetition, list and tags. The card leads with Complete/Reopen and
+  Add subtask, then properties and subtasks; Reminders and the timezone sit at the
+  bottom of the sidebar. Hierarchy, recurrence scope and timezone are preserved.
 - **Scheduling forms:** common repetition, priority and reminder choices, with
   advanced controls for exact imported values. Never simplify an unknown rule.
 - **Prayer Times:** a today band (next prayer, countdown and a timeline of the
@@ -168,7 +203,7 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
 
 Selected mocks live in `docs/spacetimedb/*-mocks.html` (unified look, Twilight,
 controls, launcher, creation/appearance, sign-in, Contacts/Calendar, Notes/Tasks,
-workspace refinements, Prayer Times, Agent) and `settings-revamp-mock-*.html`. Scope and limits per area:
+workspace refinements, Prayer Times, Agent), `settings-revamp-mock-*.html` and `apps-revamp-mock.html`. Scope and limits per area:
 [architecture](spacetimedb/architecture.md),
 [Contacts and Calendar](spacetimedb/contacts-calendar.md),
 [Notes and Tasks](spacetimedb/notes-tasks.md),

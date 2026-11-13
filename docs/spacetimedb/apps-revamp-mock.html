@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar apps revamp — Files, Contacts, Calendar, Notes, Tasks and shared menus</title>
+<style>
+/* Page chrome. */
+:root{font-family:system-ui,sans-serif;color:#2b1f2d}
+body{margin:0;background:#f6f0f3}.page{max-width:1280px;margin:0 auto;padding:24px 0 40px}
+.intro h1{font-size:22px;margin:0 0 8px}.intro p,.frame>p{font-size:13px;line-height:1.6;color:#6d5f6d;margin:0 0 10px;max-width:940px}
+.frame{margin:0 0 44px}.frame>h2{font-size:15px;margin:0 0 4px}
+.rules{font-size:12px;line-height:1.65;color:#6d5f6d;columns:2;column-gap:28px;margin:12px 0 0;padding-left:18px}.rules b{color:#2b1f2d;font-weight:600}
+.fit{width:100%;overflow-x:auto}.board{width:1280px}
+
+/* Twilight tokens (Afterglow / Nightfall), from theme.css. */
+.light{color-scheme:light}.dark{color-scheme:dark}
+.screen,.phone,.chip-board{--text:light-dark(#352138,#faeaf3);--muted:light-dark(#755d74,#cfb4ca);--panel:light-dark(#fffafb,#301c2b);--soft:light-dark(#fbf4f6,#26111f);--raised:light-dark(#ffffff,#3a2536);--border:light-dark(#e3d3e0,#553f50);--control:light-dark(#94788f,#a3839c);--accent:light-dark(#73396f,#f2a2a9);--on-accent:light-dark(#fff7fc,#26111f);--tonal:light-dark(#ede3f5,#4d3c73);--on-tonal:light-dark(#4d3c73,#f3eafd);--hover:light-dark(#f3e7ee,#412b3f);--danger:light-dark(#a32745,#ffb2c6);--error-soft:light-dark(#fbe9ee,#4e2436);--success:light-dark(#276045,#b2dec4);--success-soft:light-dark(#e3f0e9,#284136);--warning:light-dark(#854913,#ffc493);--warning-soft:light-dark(#fbe9d8,#4b3429);--rose:light-dark(#a94a76,#d889af);--shadow:light-dark(#26111f24,#10081090);
+ /* File type and avatar palettes: tinted tiles, never the only signal. */
+ --t-folder:light-dark(#73396f,#f2a2a9);--t-doc:light-dark(#3b5bb5,#a9bdf5);--t-sheet:light-dark(#2f7a52,#9fd8b6);--t-image:light-dark(#b04a7a,#f2a6c9);--t-pdf:light-dark(#b23a3a,#f5a9a9);--t-code:light-dark(#6a49b8,#c6b2f5);--t-archive:light-dark(#8a5a12,#f0c48a);--t-media:light-dark(#127b80,#97dcdf);
+ font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--text);background:var(--soft);-webkit-font-smoothing:antialiased}
+.screen *,.phone *,.chip-board *{box-sizing:border-box}
+svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.muted{color:var(--muted)}.num{font-variant-numeric:tabular-nums}.sm{font-size:12px}.xs{font-size:11px}
+kbd{font:11px/18px ui-monospace,monospace;color:var(--muted);border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;padding:0 5px;background:var(--panel);white-space:nowrap}
+
+/* Unified look B frame. */
+.screen{position:relative;height:780px;border:1px solid var(--border);border-radius:12px;overflow:hidden;display:grid;grid-template-columns:72px minmax(0,1fr);grid-template-rows:56px minmax(0,1fr)}
+.rail{grid-row:1/3;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 0 12px}
+.rail .logo{width:36px;height:36px;border-radius:11px;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-weight:750;font-size:16px;margin:0 0 14px}
+.rail .app{display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;padding:2px 0 6px;font-size:10.5px;font-weight:550;color:var(--muted)}
+.rail .app i{display:grid;place-items:center;width:52px;height:30px;border-radius:15px}.rail .app i svg{width:18px;height:18px}
+.rail .app.on{color:var(--text)}.rail .app.on i{background:var(--tonal);color:var(--on-tonal)}
+.rail .end{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:10px}
+.avatar{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--tonal);color:var(--on-tonal);font-size:11px;font-weight:650;flex:none}
+.top{display:flex;align-items:center;gap:8px;padding:0 12px 0 4px;min-width:0}
+.top h1{font-size:18px;font-weight:600;margin:0;width:236px;flex:none;padding-left:12px}
+.gsearch{flex:0 1 600px;margin:0 auto;display:flex;align-items:center;gap:10px;height:40px;padding:0 8px 0 14px;border-radius:20px;background:var(--panel);border:1px solid var(--border);color:var(--muted);font-size:13px}
+.gsearch>svg{width:17px;height:17px}.gsearch kbd{margin-left:auto}
+.gsearch.focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);color:var(--text)}
+.top .tr{display:flex;align-items:center;gap:2px;flex:none;width:80px;justify-content:flex-end}
+.ib{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:18px;color:var(--muted);flex:none}.ib.on{background:var(--tonal);color:var(--on-tonal)}.ib.s{width:32px;height:32px}.ib.xs{width:28px;height:28px}.ib.xs svg{width:15px;height:15px}
+.wrk{display:grid;grid-template-columns:240px minmax(0,1fr) 380px;gap:8px;padding:0 8px 8px 0;min-height:0;min-width:0}
+.wrk.two{grid-template-columns:240px minmax(0,1fr)}
+.wrk.notes{grid-template-columns:240px 330px minmax(0,1fr)}
+.side{display:flex;flex-direction:column;min-height:0;padding:0 4px 0 0}
+.fab{display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 18px 0 14px;margin:2px 0 14px 4px;border-radius:16px;background:var(--tonal);color:var(--on-tonal);font-size:14px;font-weight:600;width:max-content;box-shadow:0 1px 3px #0000001f,0 2px 6px #00000014}.fab svg{width:20px;height:20px}
+.row{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px 0 12px;border-radius:18px;white-space:nowrap;min-width:0}
+.row.on{background:var(--tonal);color:var(--on-tonal);font-weight:600}.row .n{margin-left:auto;font-size:11.5px;color:var(--muted);font-weight:500}.row.on .n{color:inherit}
+.row .dots{margin-left:auto;color:var(--muted);opacity:.0}.row:hover .dots,.row.hov .dots{opacity:1}
+.sh{display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px;padding:0 6px 0 12px;font-size:12px;font-weight:600;color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.sheet{background:var(--panel);border:1px solid var(--border);border-radius:16px;min-height:0;min-width:0;overflow:hidden;display:flex;flex-direction:column}
+.sheet.float{box-shadow:0 8px 28px var(--shadow)}
+.c-violet{background:#8b5cf6}.c-red{background:#e11d48}.c-teal{background:#0d9488}.c-amber{background:#d97706}.c-blue{background:#2563eb}
+
+/* Buttons. */
+.btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border-radius:18px;font-weight:600;font-size:13px;white-space:nowrap;border:1px solid transparent}
+.btn.primary{background:var(--accent);color:var(--on-accent)}.btn.tonal{background:var(--tonal);color:var(--on-tonal)}.btn.outline{border-color:var(--border);color:var(--text)}.btn.ghost{color:var(--accent)}.btn.danger{color:var(--danger)}.btn.dangerfill{background:var(--danger);color:var(--on-accent)}
+.btn.s{height:32px;padding:0 12px;font-size:12.5px}
+.seg{display:inline-flex;padding:3px;border-radius:19px;background:var(--hover);gap:2px}.seg span{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:15px;font-size:12.5px;font-weight:550;color:var(--muted)}.seg span.on{background:var(--panel);color:var(--text);box-shadow:0 1px 2px var(--shadow)}
+.seg.icon span{padding:0 9px}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:11px;background:var(--hover);color:var(--muted);font-size:11.5px;font-weight:550;white-space:nowrap}
+.chip.danger{background:var(--error-soft);color:var(--danger)}.chip.warn{background:var(--warning-soft);color:var(--warning)}.chip.ok{background:var(--success-soft);color:var(--success)}.chip.tonal{background:var(--tonal);color:var(--on-tonal)}
+
+/* Sheet header used by every content sheet. */
+.head{display:flex;align-items:center;gap:8px;padding:16px 16px 10px 20px;flex:none}
+.head{flex-wrap:wrap;row-gap:8px}.head h2{font-size:20px;font-weight:600;margin:0;letter-spacing:-.01em;white-space:nowrap}
+.head .sp{flex:1}
+.crumbs{display:flex;align-items:center;gap:4px;font-size:20px;font-weight:600;letter-spacing:-.01em;min-width:0}
+.crumbs .c{color:var(--muted);font-weight:500}.crumbs svg{width:16px;height:16px;color:var(--muted)}
+.bar{display:flex;align-items:center;gap:8px;padding:0 16px 8px 20px;flex:none;min-height:40px}
+.bar.sel{margin:0 12px 8px;padding:0 6px 0 4px;height:44px;border-radius:22px;background:var(--tonal);color:var(--on-tonal)}
+.bar.sel .ib{color:var(--on-tonal)}
+.scroll{overflow:hidden;flex:1;min-height:0}
+
+/* Files list. */
+.ft{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.ft th{height:34px;text-align:left;font-size:11.5px;font-weight:600;color:var(--muted);padding:0 8px;border-bottom:1px solid var(--border)}
+.ft td{height:46px;padding:0 8px}
+.ft tr td:first-child{padding-left:14px;border-radius:23px 0 0 23px}.ft tr td:last-child{border-radius:0 23px 23px 0;padding-right:10px}
+.ft th:first-child{padding-left:14px}
+.ft tr.on td{background:var(--tonal);color:var(--on-tonal)}.ft tr.hov td{background:var(--hover)}
+.ft .name{display:flex;align-items:center;gap:12px;font-weight:550}
+.ft .meta{color:var(--muted);font-size:12.5px}.ft tr.on .meta{color:inherit;opacity:.8}
+.ft td.act{width:44px;text-align:right}
+.ft .shared{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px}
+.cb{width:18px;height:18px;border:1.6px solid var(--control);border-radius:4px;display:inline-grid;place-items:center;flex:none}
+.cb.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.cb.on svg{width:13px;height:13px;stroke-width:2.6}
+.ft td.ck{width:40px}
+.tile{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:9px;flex:none;position:relative;overflow:hidden}
+.tile::before{content:"";position:absolute;inset:0;background:currentColor;opacity:.13}
+.tile svg{width:17px;height:17px;position:relative}
+.tile.folder{color:var(--t-folder)}.tile.doc{color:var(--t-doc)}.tile.sheet{color:var(--t-sheet)}.tile.image{color:var(--t-image)}.tile.pdf{color:var(--t-pdf)}.tile.code{color:var(--t-code)}.tile.archive{color:var(--t-archive)}.tile.media{color:var(--t-media)}
+.tile.folder svg{fill:currentColor;fill-opacity:.25}
+.tile.lg{width:64px;height:64px;border-radius:18px}.tile.lg svg{width:30px;height:30px}
+.storage{margin-top:auto;padding:12px;border-radius:14px;background:var(--panel);border:1px solid var(--border);display:grid;gap:8px;margin-bottom:4px}
+.storage b{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+.meter{height:6px;border-radius:3px;background:var(--hover);overflow:hidden}.meter i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+
+/* Details / right sheets. */
+.dhead{display:flex;align-items:center;gap:2px;padding:10px 10px 0 16px;flex:none}
+.dhead .t{font-size:12px;font-weight:600;color:var(--muted);margin-right:auto}
+.hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:6px 20px 14px}
+.hero h3{font-size:19px;font-weight:600;margin:6px 0 0;letter-spacing:-.01em}
+.hero p{margin:0;color:var(--muted)}
+.qa{display:flex;justify-content:center;gap:14px;padding:4px 16px 16px}
+.qa span{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11.5px;font-weight:550;color:var(--muted);width:58px}
+.qa i{display:grid;place-items:center;width:44px;height:44px;border-radius:22px;background:var(--tonal);color:var(--on-tonal)}.qa i svg{width:18px;height:18px}
+.qa i.on{background:var(--accent);color:var(--on-accent)}
+.tabs{display:flex;gap:4px;padding:0 16px;border-bottom:1px solid var(--border);flex:none}
+.tabs span{padding:10px 10px 9px;font-size:13px;font-weight:550;color:var(--muted);border-bottom:2px solid transparent}.tabs span.on{color:var(--text);border-color:var(--accent)}
+.group{margin:12px 16px 0;border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.group .gt{padding:10px 14px 2px;font-size:11.5px;font-weight:650;color:var(--muted);letter-spacing:.02em}
+.prop{display:flex;align-items:flex-start;gap:12px;padding:9px 14px;min-height:44px}
+.prop+.prop{border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent)}
+.prop>svg{margin-top:2px;color:var(--muted);width:17px;height:17px}
+.prop div{display:flex;flex-direction:column;min-width:0;flex:1}
+.prop a{color:var(--accent);text-decoration:none;font-weight:550}.prop small{color:var(--muted);font-size:11.5px}
+.prop .k{color:var(--muted);width:84px;flex:none}
+.kv{display:grid;grid-template-columns:96px 1fr;gap:9px 12px;padding:14px 20px;font-size:12.5px}.kv dt{color:var(--muted)}.kv dd{margin:0}
+.foot{margin-top:auto;display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid var(--border);flex:none}
+
+/* Contacts. */
+.letter{padding:12px 20px 4px;font-size:12px;font-weight:700;color:var(--accent)}
+.crow{display:flex;align-items:center;gap:14px;height:56px;padding:0 14px;margin:0 8px;border-radius:28px}
+.crow.on{background:var(--tonal);color:var(--on-tonal)}.crow.hov{background:var(--hover)}
+.crow .nm{display:flex;flex-direction:column;min-width:0;flex:1}.crow .nm b{font-weight:600;font-size:13.5px}.crow .nm small{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crow.on .nm small{color:inherit;opacity:.8}
+.crow .tools{display:flex;gap:2px;color:var(--muted)}
+.av{display:inline-grid;place-items:center;width:40px;height:40px;border-radius:50%;font-weight:650;font-size:14px;flex:none}
+.av.lg{width:84px;height:84px;font-size:30px}
+.h0{background:light-dark(#ede3f5,#4d3c73);color:light-dark(#4d3c73,#f3eafd)}.h1{background:light-dark(#fde2e7,#5a2433);color:light-dark(#8f1d3b,#ffc2cf)}.h2{background:light-dark(#dcefe6,#1f4433);color:light-dark(#1f5c40,#b4e6cb)}.h3{background:light-dark(#fdebd3,#4f3418);color:light-dark(#7c4a0e,#ffd0a0)}.h4{background:light-dark(#dde7fb,#22345e);color:light-dark(#22408a,#bcd0ff)}.h5{background:light-dark(#d9f0f1,#183f42);color:light-dark(#145e63,#a8e3e6)}
+.star{color:var(--warning)}.star svg{fill:currentColor}
+
+/* Forms in editing panes. */
+.form{padding:4px 20px 20px;display:grid;gap:14px;overflow:hidden}
+.sec{display:grid;gap:10px}.sec>h4{margin:6px 0 0;font-size:12px;font-weight:650;color:var(--muted);display:flex;align-items:center;gap:8px}
+.f{display:grid;gap:5px}.f label{font-size:12px;font-weight:550;color:var(--muted)}
+.in{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid var(--control);border-radius:10px;background:var(--panel);color:var(--text);min-width:0}
+.in.ph{color:var(--muted)}.in.focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}.in.big{height:46px;font-size:17px;font-weight:550}
+.in .end{margin-left:auto;color:var(--muted)}.in.area{height:72px;align-items:flex-start;padding-top:10px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.g3{display:grid;grid-template-columns:1.3fr 1fr 32px;gap:8px;align-items:center}
+.dt{display:grid;grid-template-columns:1fr 104px;gap:8px}
+.add{display:inline-flex;align-items:center;gap:6px;color:var(--accent);font-weight:600;font-size:12.5px}
+.disc{display:flex;align-items:center;gap:6px;color:var(--accent);font-weight:600;font-size:12.5px}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px}
+.switch{width:36px;height:20px;border-radius:10px;background:var(--control);position:relative;flex:none}.switch::after{content:"";position:absolute;width:14px;height:14px;border-radius:50%;background:var(--panel);top:3px;left:3px}
+.switch.on{background:var(--accent)}.switch.on::after{left:19px;background:var(--on-accent)}
+.ehead{display:flex;align-items:center;gap:8px;padding:14px 12px 10px 20px;border-bottom:1px solid var(--border);flex:none}.ehead h3{margin:0;font-size:16px;font-weight:600;flex:1}
+
+/* Calendar. */
+.mini{padding:4px 6px 4px 8px}.mini .mh{display:flex;align-items:center;justify-content:space-between;padding:0 4px 4px 6px;font-weight:600;font-size:12.5px}
+.mini .mg{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:11px;row-gap:1px}
+.mini .mg span{height:26px;display:grid;place-items:center;border-radius:13px}.mini .mg .w{color:var(--muted);font-weight:600;font-size:10.5px;height:22px}
+.mini .mg .o{color:var(--muted);opacity:.55}.mini .mg .t{background:var(--accent);color:var(--on-accent);font-weight:700}.mini .mg .wk{background:var(--hover)}
+.mini .mg .wk.first{border-radius:13px 0 0 13px}.mini .mg .wk.last{border-radius:0 13px 13px 0}.mini .mg .wk.mid{border-radius:0}
+.calrow{display:flex;align-items:center;gap:10px;height:34px;padding:0 6px 0 12px;border-radius:17px}
+.ccb{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;color:#fff;flex:none}.ccb svg{width:12px;height:12px;stroke-width:2.8}
+.ccb.off{background:transparent!important;border:2px solid var(--control)}
+.month{display:grid;grid-template-columns:repeat(7,1fr);grid-template-rows:28px repeat(5,1fr);flex:1;min-height:0;margin:0 12px 12px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.month .wd{display:grid;place-items:center;font-size:11px;font-weight:650;color:var(--muted);border-bottom:1px solid var(--border)}
+.month .d{border-right:1px solid color-mix(in srgb,var(--border) 70%,transparent);border-bottom:1px solid color-mix(in srgb,var(--border) 70%,transparent);padding:4px 4px 0;display:flex;flex-direction:column;gap:2px;min-width:0;overflow:hidden}
+.month .d:nth-child(7n){border-right:0}
+.month .d .dn{width:24px;height:24px;display:grid;place-items:center;border-radius:12px;font-size:12px;font-weight:550;margin:0 0 1px 2px}
+.month .d.o .dn{color:var(--muted);opacity:.6}.month .d.t .dn{background:var(--accent);color:var(--on-accent);font-weight:700}
+.ev{display:flex;align-items:center;gap:6px;height:20px;padding:0 6px;border-radius:6px;font-size:11.5px;white-space:nowrap;overflow:hidden;min-width:0}
+.month .d{container-type:inline-size}.ev b{flex:1;min-width:0;white-space:nowrap}.ev .tm{flex:none;margin-left:auto;padding-left:4px;color:var(--muted);font-variant-numeric:tabular-nums;font-size:11px}.ev b{font-weight:550;overflow:hidden;text-overflow:ellipsis}
+.ev.sel{background:var(--hover);outline:1.5px solid var(--accent)}
+.ev.ad{position:relative;color:var(--text);font-weight:600}.ev.ad::before{content:"";position:absolute;inset:0;background:var(--c);opacity:.2}.ev.ad::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c)}.ev.ad b{position:relative;padding-left:2px}
+.ev.ad.cont{border-radius:0 6px 6px 0;margin-left:-5px}.ev.ad.start{border-radius:6px 0 0 6px;margin-right:-5px}
+@container (max-width:130px){.ev .tm{display:none}}
+.more{font-size:11px;font-weight:600;color:var(--muted);padding:0 6px}
+.v-red{--c:#e11d48}.v-violet{--c:#8b5cf6}.v-teal{--c:#0d9488}
+/* Week grid. */
+.week{display:grid;grid-template-columns:52px repeat(7,1fr);flex:1;min-height:0;margin:0 12px 12px;border:1px solid var(--border);border-radius:12px;overflow:hidden;position:relative}
+.week .wh{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:52px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);font-weight:600}
+.week .wh b{font-size:18px;font-weight:550;color:var(--text);width:32px;height:32px;display:grid;place-items:center;border-radius:16px}.week .wh.t b{background:var(--accent);color:var(--on-accent)}
+.week .ad{height:26px;border-bottom:1px solid var(--border);padding:2px;position:relative}
+.week .hr{font-size:10.5px;color:var(--muted);text-align:right;padding:0 6px;transform:translateY(-7px)}
+.week .col{position:relative;border-left:1px solid color-mix(in srgb,var(--border) 70%,transparent)}
+.lines{position:absolute;inset:78px 0 0 52px;background:repeating-linear-gradient(to bottom,transparent 0 47px,color-mix(in srgb,var(--border) 60%,transparent) 47px 48px);pointer-events:none}
+.blk{position:absolute;left:3px;right:4px;border-radius:7px;padding:4px 7px;font-size:11.5px;overflow:hidden;color:var(--text)}
+.blk::before{content:"";position:absolute;inset:0;background:var(--c);opacity:.22}.blk::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c)}
+.blk b,.blk span{position:relative;display:block;font-weight:600}.blk span{font-weight:450;color:var(--muted);font-size:11px}
+.now{position:absolute;left:52px;right:0;height:2px;background:var(--danger)}.now::before{content:"";position:absolute;left:-5px;top:-4px;width:10px;height:10px;border-radius:5px;background:var(--danger)}
+
+/* Notes. */
+.nrow{padding:11px 14px;margin:0 8px;border-radius:14px;display:grid;gap:3px}
+.nrow.on{background:var(--tonal);color:var(--on-tonal)}.nrow b{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:6px}.nrow b .star{margin-left:auto}
+.nrow p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.nrow.on p{color:inherit;opacity:.85}
+.nrow .nm{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted)}.nrow.on .nm{color:inherit;opacity:.8}
+.nrow .nm .dot{width:8px;height:8px}
+.ntop{display:flex;align-items:center;gap:6px;padding:10px 12px 8px 14px;flex:none}
+.ntop .nb{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;font-weight:550}
+.doc-col{max-width:680px;width:100%;margin:0 auto;padding:6px 32px 0}
+.ntitle{font-size:28px;font-weight:650;letter-spacing:-.02em;margin:6px 0 4px}
+.nmeta{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;margin-bottom:14px}
+.fmt{display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;background:var(--hover);width:max-content;margin-bottom:16px}
+.fmt span{display:grid;place-items:center;width:30px;height:28px;border-radius:7px;color:var(--muted);font-weight:700;font-size:13px}.fmt span.on{background:var(--panel);color:var(--text)}
+.fmt i{width:1px;height:16px;background:var(--border);margin:0 4px}
+.src{font:14.5px/1.75 ui-serif,Georgia,serif;color:var(--text);white-space:pre-wrap}
+.src .mk{color:var(--muted)}
+.status{display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:12px;margin-right:4px}.status svg{width:14px;height:14px;color:var(--success)}
+
+/* Tasks. */
+.qadd{display:flex;align-items:center;gap:12px;height:46px;margin:0 16px 6px;padding:0 8px 0 14px;border-radius:23px;border:1px dashed var(--control);color:var(--muted)}
+.qadd svg{color:var(--accent)}.qadd kbd{margin-left:auto}
+.tsec{display:flex;align-items:center;gap:8px;padding:12px 22px 4px;font-size:12px;font-weight:700}
+.tsec .n{color:var(--muted);font-weight:550}.tsec.over{color:var(--danger)}
+.trow{display:flex;align-items:center;gap:12px;min-height:52px;padding:6px 10px 6px 14px;margin:0 8px;border-radius:26px}
+.trow.on{background:var(--tonal);color:var(--on-tonal)}
+.tc{width:20px;height:20px;border-radius:50%;border:2px solid var(--control);display:grid;place-items:center;flex:none}
+.tc.p1{border-color:var(--danger)}.tc.p5{border-color:var(--warning)}
+.tc.done{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.tc.done svg{width:12px;height:12px;stroke-width:3}
+.tc.lg{width:26px;height:26px}
+.trow .tt{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.trow .tt b{font-weight:550;font-size:13.5px}.trow.done .tt b{color:var(--muted);text-decoration:line-through}
+.tm2{display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
+.tm2 span{display:inline-flex;align-items:center;gap:4px}.tm2 svg{width:13px;height:13px}.tm2 .od{color:var(--danger);font-weight:600}
+.tm2 .dot{width:7px;height:7px}
+.prog{height:6px;border-radius:3px;background:var(--hover);overflow:hidden;width:120px}.prog i{display:block;height:100%;width:40%;background:var(--accent)}
+.sub{display:flex;align-items:center;gap:10px;height:36px;padding:0 14px}
+
+/* Menus, selects, search results, dialogs. */
+.menu{color:var(--text);position:absolute;z-index:5;min-width:236px;padding:6px;border-radius:14px;background:var(--raised);border:1px solid var(--border);box-shadow:0 10px 32px var(--shadow),0 2px 6px var(--shadow)}
+.mi{display:flex;align-items:center;gap:12px;height:34px;padding:0 10px;border-radius:9px;font-size:13px;white-space:nowrap}
+.mi svg{color:var(--muted);width:17px;height:17px}.mi kbd{margin-left:auto;border:0;background:none;padding:0;font-family:system-ui;font-size:11.5px}
+.mi .chev{margin-left:auto}.mi.f{background:var(--hover)}.mi.dg,.mi.dg svg{color:var(--danger)}.mi.dis{opacity:.45}.mi.cur{font-weight:600}.mi.cur .ck{margin-left:auto;color:var(--accent)}
+.mhd{display:flex;align-items:center;gap:10px;padding:8px 10px 10px}.mhd div{display:flex;flex-direction:column}.mhd small{color:var(--muted)}
+.mlabel{padding:8px 10px 4px;font-size:11px;font-weight:650;color:var(--muted)}
+.msep{height:1px;background:var(--border);margin:5px 4px}
+.res{color:var(--text);position:absolute;z-index:5;padding:6px;border-radius:16px;background:var(--raised);border:1px solid var(--border);box-shadow:0 10px 32px var(--shadow)}
+.res .gh{display:flex;align-items:center;justify-content:space-between;padding:8px 10px 4px;font-size:11px;font-weight:650;color:var(--muted)}
+.rr{display:flex;align-items:center;gap:12px;height:46px;padding:0 10px;border-radius:10px}.rr.f{background:var(--hover)}
+.rr div{display:flex;flex-direction:column;min-width:0}.rr small{color:var(--muted);font-size:11.5px}.rr mark{background:none;color:var(--accent);font-weight:700}
+.rr .go{margin-left:auto;color:var(--muted);font-size:11px}
+.dlg{color:var(--text);position:absolute;z-index:6;width:420px;padding:22px 22px 16px;border-radius:20px;background:var(--raised);box-shadow:0 18px 50px var(--shadow)}
+.dlg h3{margin:0 0 8px;font-size:18px;font-weight:600}.dlg p{margin:0 0 18px;color:var(--muted);line-height:1.55}.dlg .acts{display:flex;justify-content:flex-end;gap:8px}
+.scrim{position:absolute;inset:0;background:light-dark(#26111f40,#100810a0);z-index:4}
+.toast{position:absolute;z-index:6;display:flex;align-items:center;gap:12px;height:48px;padding:0 8px 0 16px;border-radius:14px;background:light-dark(#352138,#faeaf3);color:light-dark(#faeaf3,#352138);box-shadow:0 8px 24px var(--shadow);font-size:13px}
+.toast .btn{color:light-dark(#f2a2a9,#73396f);height:34px}
+.lb{color:var(--text);position:absolute;z-index:5;padding:6px;border-radius:12px;background:var(--raised);border:1px solid var(--border);box-shadow:0 10px 28px var(--shadow);min-width:200px}
+
+/* Phones. */
+.phones{display:flex;gap:22px;flex-wrap:wrap}
+.phone{width:300px;height:640px;border-radius:30px;border:1px solid var(--border);overflow:hidden;position:relative;display:flex;flex-direction:column}
+.phone .ps{display:flex;align-items:center;gap:10px;margin:10px 10px 4px;height:44px;padding:0 4px 0 14px;border-radius:22px;background:var(--hover);color:var(--muted);flex:none}.phone .ps .avatar{margin-left:auto;width:32px;height:32px}
+.phone .chips{display:flex;gap:6px;padding:4px 10px 8px;overflow:hidden;flex:none}
+.phone .chips span{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--border);font-size:12px;font-weight:550;white-space:nowrap}.phone .chips span.on{background:var(--tonal);color:var(--on-tonal);border-color:transparent}
+.phone .pm{flex:1;margin:0 6px;border-radius:16px 16px 0 0;background:var(--panel);border:1px solid var(--border);border-bottom:0;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.phone .pb{height:64px;display:flex;justify-content:space-around;align-items:center;border-top:1px solid var(--border);flex:none;padding-bottom:4px}
+.phone .pb span{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;color:var(--muted);font-weight:550}.phone .pb i{display:grid;place-items:center;width:48px;height:28px;border-radius:14px}.phone .pb .on{color:var(--text)}.phone .pb .on i{background:var(--tonal);color:var(--on-tonal)}
+.phone .pfab{position:absolute;right:14px;bottom:78px;width:52px;height:52px;border-radius:16px;background:var(--tonal);color:var(--on-tonal);display:grid;place-items:center;box-shadow:0 3px 8px #0003}
+.phone .full{position:absolute;inset:58px 0 0;background:var(--panel);display:flex;flex-direction:column}
+.pmini{display:grid;grid-template-columns:repeat(7,1fr);font-size:11px;text-align:center;padding:0 8px}
+.pmini span{height:46px;display:flex;flex-direction:column;align-items:center;gap:3px;padding-top:4px;border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent)}
+.pmini span.w{height:22px;border:0;color:var(--muted);font-weight:650;font-size:10px;padding:0}
+.pmini span i{display:flex;gap:2px}.pmini span i b{width:5px;height:5px;border-radius:50%}
+.pmini span.t>em{font-style:normal;background:var(--accent);color:var(--on-accent);border-radius:10px;width:20px;height:20px;display:grid;place-items:center;font-weight:700}
+.pmini span.s>em{font-style:normal;outline:1.5px solid var(--accent);border-radius:10px;width:20px;height:20px;display:grid;place-items:center}
+.pmini span.o{color:var(--muted);opacity:.5}
+.agrow{display:flex;gap:10px;padding:8px 14px;align-items:flex-start}.agrow .bar2{width:4px;align-self:stretch;border-radius:2px}
+.agrow div{display:flex;flex-direction:column}.agrow small{color:var(--muted)}
+
+.chip-board{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:330px 400px;gap:20px;padding:20px;border:1px solid var(--border);border-radius:12px;position:relative}
+.cell{color:var(--text);position:relative;height:100%;border-radius:12px;background:var(--soft);border:1px dashed var(--border)}
+.cell>.cap{position:absolute;left:12px;top:10px;font-size:11px;font-weight:650;color:var(--muted)}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+<symbol id="file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6ZM14 3v5h4M9 12h6M9 16h6"/></symbol>
+<symbol id="sheet" viewBox="0 0 24 24"><path d="M5 3h14v18H5ZM5 9h14M5 15h14M11 9v12"/></symbol>
+<symbol id="image" viewBox="0 0 24 24"><path d="M4 4h16v16H4Z"/><circle cx="9" cy="9" r="1.6"/><path d="m4 17 5-5 4 4 2-2 5 5"/></symbol>
+<symbol id="pdf" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6ZM14 3v5h4M9 13h1.5a1.5 1.5 0 0 1 0 3H9v-3ZM9 16v2"/></symbol>
+<symbol id="code" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/></symbol>
+<symbol id="zip" viewBox="0 0 24 24"><path d="M6 3h12v18H6ZM11 3v2h2v2h-2v2h2v2h-2M11 14h2v3h-2Z"/></symbol>
+<symbol id="media" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
+<symbol id="star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></symbol>
+<symbol id="share" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="m8.3 10.8 7.4-3.6M8.3 13.2l7.4 3.6"/></symbol>
+<symbol id="people" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.9"/></symbol>
+<symbol id="trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></symbol>
+<symbol id="upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4"/></symbol>
+<symbol id="download" viewBox="0 0 24 24"><path d="M12 4v12m-5-5 5 5 5-5M4 17v3h16v-3"/></symbol>
+<symbol id="grid" viewBox="0 0 24 24"><path d="M4 4h6v6H4ZM14 4h6v6h-6ZM4 14h6v6H4ZM14 14h6v6h-6Z"/></symbol>
+<symbol id="list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></symbol>
+<symbol id="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+<symbol id="chevd" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="back" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+<symbol id="close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+<symbol id="more" viewBox="0 0 24 24"><path d="M12 5h.01M12 12h.01M12 19h.01" stroke-width="3"/></symbol>
+<symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></symbol>
+<symbol id="settings" viewBox="0 0 24 24"><path d="M10 3h4l.6 3 2 .9 2.7-1 2 3.4-2.2 2v2.4l2.2 2-2 3.4-2.7-1-2 .9-.6 3h-4l-.6-3-2-.9-2.7 1-2-3.4 2.2-2v-2.4l-2.2-2 2-3.4 2.7 1 2-.9Z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="calendar" viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2"/></symbol>
+<symbol id="note" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6ZM14 3v5h4M9 12h6M9 16h4"/></symbol>
+<symbol id="task" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></symbol>
+<symbol id="rss" viewBox="0 0 24 24"><path d="M5 11a8 8 0 0 1 8 8M5 5a14 14 0 0 1 14 14"/><circle cx="6" cy="18" r="1.4"/></symbol>
+<symbol id="agent" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></symbol>
+<symbol id="mail" viewBox="0 0 24 24"><path d="M3 5h18v14H3Z"/><path d="m3 7 9 6 9-6"/></symbol>
+<symbol id="phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></symbol>
+<symbol id="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/></symbol>
+<symbol id="pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
+<symbol id="repeat" viewBox="0 0 24 24"><path d="M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4"/></symbol>
+<symbol id="bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8M10.3 20a2 2 0 0 0 3.4 0"/></symbol>
+<symbol id="tag" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8Z"/><circle cx="7.5" cy="8.5" r="1.3"/></symbol>
+<symbol id="pencil" viewBox="0 0 24 24"><path d="M4 20h4L20 8l-4-4L4 16ZM13.5 6.5l4 4"/></symbol>
+<symbol id="scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.1 8.1 20 20M8.1 15.9 20 4"/></symbol>
+<symbol id="copy" viewBox="0 0 24 24"><path d="M9 9h11v11H9Z"/><path d="M5 15H4V4h11v1"/></symbol>
+<symbol id="move" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M10 13h6m-2-2 2 2-2 2"/></symbol>
+<symbol id="logout" viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/></symbol>
+<symbol id="shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6Z"/></symbol>
+<symbol id="lock" viewBox="0 0 24 24"><path d="M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+<symbol id="bullets" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" stroke-width="2.2"/></symbol>
+<symbol id="checklist" viewBox="0 0 24 24"><path d="M3 5h4v4H3ZM3 15h4v4H3ZM11 7h10M11 17h10"/><path d="m3.6 16.8 1.2 1.2 2-2.4"/></symbol>
+<symbol id="quote" viewBox="0 0 24 24"><path d="M5 5v14M10 8h10M10 12h10M10 16h6"/></symbol>
+<symbol id="braces" viewBox="0 0 24 24"><path d="M8 4H7a2 2 0 0 0-2 2v4l-2 2 2 2v4a2 2 0 0 0 2 2h1M16 4h1a2 2 0 0 1 2 2v4l2 2-2 2v4a2 2 0 0 1-2 2h-1"/></symbol>
+<symbol id="cake" viewBox="0 0 24 24"><path d="M4 21h16v-8H4ZM4 16c2 1 3 1 4 0s2-1 4 0 3 1 4 0 3-1 4 0M12 13V9M12 6.5V6"/></symbol>
+<symbol id="building" viewBox="0 0 24 24"><path d="M4 21V5h10v16M14 9h6v12M2 21h20M7 9h1M10 9h1M7 13h1M10 13h1M7 17h1M10 17h1"/></symbol>
+<symbol id="eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="flag" viewBox="0 0 24 24"><path d="M5 21V4h11l-2 4 2 4H5"/></symbol>
+<symbol id="sort" viewBox="0 0 24 24"><path d="M7 4v16m-3-3 3 3 3-3M14 6h7M14 12h5M14 18h3"/></symbol>
+<symbol id="refresh" viewBox="0 0 24 24"><path d="M20 7V3m0 4h-4M4 17v4m0-4h4M19.5 9A8 8 0 0 0 5 7.5M4.5 15A8 8 0 0 0 19 16.5"/></symbol>
+<symbol id="sub" viewBox="0 0 24 24"><path d="M6 4v10a3 3 0 0 0 3 3h10m-4-4 4 4-4 4"/></symbol>
+<symbol id="progress" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor"/></symbol>
+<symbol id="history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></symbol>
+</defs></svg>
+
+<div class="page">
+<div class="intro">
+<h1>Apps revamp — Files, Contacts, Calendar, Notes, Tasks and the little things</h1>
+<p>Applies unified look B and settings sheet B more deeply inside every content app. The frame, rail, top bar and sheets stay exactly as selected; what changes is the content: one sheet header pattern (title or breadcrumb on the left, view controls on the right), a details sheet that leads with the object and a row of quick actions instead of stacked buttons, color that comes from the data (calendar and collection colors, file types, contact initials), and grouped, scannable lists. Menus get sections, correct icons and shortcut hints. Nothing here removes a capability: every existing action, permission rule, conflict state and keyboard path is still reachable.</p>
+<p>Collection colors are drawn with SVG fill (as the collection dots already are) and file types/avatars use fixed class palettes, so the CSP stays <code>style-src 'self'</code> and there are no inline styles.</p>
+</div>
+
+<!-- ============ 1. FILES LIST ============ -->
+<section class="frame"><h2>1 · Files — list with type tiles, breadcrumb title and the details sheet (light)</h2>
+<p>The breadcrumb is the title; Upload and the list/grid switch move into the header. Rows carry a tinted type tile, modified date, size and a shared marker. Details lead with a large tile, name and four quick actions; Rename/Move/Copy/Delete stay in the item menu as the guide requires.</p>
+<div class="fit"><div class="board"><div class="screen light">
+ <nav class="rail"><div class="logo">D</div><span class="app on"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app"><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span class="app"><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app"><i><svg class="i"><use href="#rss"/></svg></i>News</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="ib s"><svg class="i"><use href="#settings"/></svg></span><span class="avatar">LH</span></div></nav>
+ <header class="top"><h1>Files</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search all apps…<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib"><svg class="i"><use href="#settings"/></svg></span></div></header>
+ <div class="wrk">
+  <aside class="side"><span class="fab"><svg class="i"><use href="#plus"/></svg>New<svg class="i"><use href="#chevd"/></svg></span>
+   <span class="row on"><svg class="i"><use href="#folder"/></svg>All files</span><span class="row"><svg class="i"><use href="#star"/></svg>Favorites</span><span class="row"><svg class="i"><use href="#share"/></svg>Shared with you</span><span class="row"><svg class="i"><use href="#trash"/></svg>Deleted files</span>
+   <div class="storage"><b><svg class="i"><use href="#folder"/></svg>Storage</b><div class="meter"><i style="width:34%"></i></div><span class="sm muted">3.4 GB of 10 GB used</span></div></aside>
+  <section class="sheet">
+   <div class="head"><div class="crumbs"><span class="c">All files</span><svg class="i"><use href="#chev"/></svg><span class="c">Projects</span><svg class="i"><use href="#chev"/></svg><span>Launch</span></div><span class="sp"></span><span class="btn outline s"><svg class="i"><use href="#upload"/></svg>Upload</span><span class="seg icon"><span class="on"><svg class="i"><use href="#list"/></svg></span><span><svg class="i"><use href="#grid"/></svg></span></span></div>
+   <div class="bar"><span class="sm muted">9 items</span><span class="sp" style="flex:1"></span><span class="sm muted" style="display:flex;align-items:center;gap:6px"><svg class="i"><use href="#sort"/></svg>Name</span></div>
+   <div class="scroll" style="padding:0 8px"><table class="ft"><thead><tr><th class="ck"><span class="cb"></span></th><th>Name</th><th>Modified</th><th>Size</th><th></th><th></th></tr></thead><tbody>
+    <tr><td class="ck"><span class="cb"></span></td><td><span class="name"><span class="tile folder"><svg class="i"><use href="#folder"/></svg></span>Assets</span></td><td class="meta">Nov 10</td><td class="meta">—</td><td><span class="shared"><svg class="i"><use href="#share"/></svg>2</span></td><td class="act"><span class="ib xs"><svg class="i"><use href="#more"/></svg></span></td></tr>
+    <tr><td class="ck"><span class="cb"></span></td><td><span class="name"><span class="tile folder"><svg class="i"><use href="#folder"/></svg></span>Press kit</span></td><td class="meta">Nov 4</td><td class="meta">—</td><td></td><td class="act"></td></tr>
+    <tr class="on"><td class="ck"><span class="cb on"><svg class="i"><use href="#check"/></svg></span></td><td><span class="name"><span class="tile doc"><svg class="i"><use href="#file"/></svg></span>Launch plan.md <svg class="i star" style="width:14px;height:14px"><use href="#star"/></svg></span></td><td class="meta">Today, 9:41</td><td class="meta">4.2 KB</td><td></td><td class="act"><span class="ib xs"><svg class="i"><use href="#more"/></svg></span></td></tr>
+    <tr class="hov"><td class="ck"><span class="cb"></span></td><td><span class="name"><span class="tile sheet"><svg class="i"><use href="#sheet"/></svg></span>Budget 2026.csv</span></td><td class="meta">Yesterday</td><td class="meta">22 KB</td><td><span class="shared"><svg class="i"><use href="#share"/></svg>1</span></td><td class="act"><span class="ib xs"><svg class="i"><use href="#more"/></svg></span></td></tr>
+    <tr><td class="ck"><span class="cb"></span></td><td><span class="name"><span class="tile image"><svg class="i"><use href="#image"/></svg></span>Hero banner.png</span></td><td class="meta">Nov 9</td><td class="meta">1.8 MB</td><td></td><td class="act"></td></tr>
+    <tr><td class="ck"><span class="cb"></span></td><td><span class="name"><span class="tile pdf"><svg class="i"><use href="#pdf"/></svg></span>Contract draft.pdf</span></td><td class="meta">Nov 8</td><td class="meta">312 KB</td><td></td><td class="act"></td></tr>
+    <tr><td class="ck"><span class="cb"></span></td><td><span class="name"><span class="tile code"><svg class="i"><use href="#code"/></svg></span>config.json</span></td><td class="meta">Nov 2</td><td class="meta">2 KB</td><td></td><td class="act"></td></tr>
+    <tr><td class="ck"><span class="cb"></span></td><td><span class="name"><span class="tile archive"><svg class="i"><use href="#zip"/></svg></span>Fonts.zip</span></td><td class="meta">Oct 28</td><td class="meta">4.1 MB</td><td></td><td class="act"></td></tr>
+    <tr><td class="ck"><span class="cb"></span></td><td><span class="name"><span class="tile media"><svg class="i"><use href="#media"/></svg></span>Teaser audio.mp3</span></td><td class="meta">Oct 21</td><td class="meta">6.3 MB</td><td></td><td class="act"></td></tr>
+   </tbody></table></div>
+  </section>
+  <aside class="sheet">
+   <div class="dhead"><span class="t">File details</span><span class="ib s"><svg class="i"><use href="#more"/></svg></span><span class="ib s"><svg class="i"><use href="#close"/></svg></span></div>
+   <div class="hero"><span class="tile doc lg"><svg class="i"><use href="#file"/></svg></span><h3>Launch plan.md</h3><p class="sm">Markdown · 4.2 KB · Edited today, 9:41</p></div>
+   <div class="qa"><span><i><svg class="i"><use href="#pencil"/></svg></i>Open</span><span><i><svg class="i"><use href="#download"/></svg></i>Download</span><span><i class="on"><svg class="i"><use href="#star"/></svg></i>Favorite</span><span><i><svg class="i"><use href="#share"/></svg></i>Share</span></div>
+   <div class="tabs"><span class="on">Details</span><span>Versions · 3</span><span>Sharing</span></div>
+   <div class="group" style="margin-top:14px"><div class="prop"><svg class="i"><use href="#folder"/></svg><div><span>All files › Projects › Launch</span><small>Location</small></div></div><div class="prop"><svg class="i"><use href="#clock"/></svg><div><span>Thursday, Nov 12, 2026, 9:41 AM</span><small>Modified</small></div></div><div class="prop"><svg class="i"><use href="#lock"/></svg><div><span>You own this item</span><small>Access · revision 7</small></div></div></div>
+   <div class="group"><div class="prop"><svg class="i"><use href="#history"/></svg><div><span class="add">Upload new version</span><small>Keeps the current content in Versions</small></div></div></div>
+  </aside>
+ </div></div></div></div>
+<ul class="rules"><li><b>Header:</b> breadcrumb as the 20px title (ancestors muted and clickable), Upload as an outlined button and the list/grid switch as a segmented icon control. Sort shows what it is sorted by.</li><li><b>Type tiles</b> are derived from the media type and extension (folder, document, sheet, image, PDF, code, archive, audio/video). Color is never the only signal; the glyph differs too.</li><li><b>Shared marker</b> shows the number of people with access; favorites keep the star after the name.</li><li><b>Details:</b> the object first, then Open/Preview, Download, Favorite and Share (which opens the Sharing tab). Metadata is a property card with icons; Upload new version is its own card.</li><li><b>Storage</b> becomes a card with a meter at the bottom of the sidebar.</li><li><b>Rows</b> are 46px pills; the selected row is tonal and the checkbox stays visible for multi-select.</li></ul>
+</section>
+
+<!-- ============ 2. FILES GRID + MENU (dark) ============ -->
+<section class="frame"><h2>2 · Files — grid, multi-select bar and the sectioned item menu (dark)</h2>
+<p>Selecting items turns the toolbar into a tonal selection bar. The item menu is split into Open, Organize, Clipboard and Delete sections with shortcut hints, the right icons (scissors for Cut, folder-arrow for Move) and the destructive item last.</p>
+<div class="fit"><div class="board"><div class="screen dark">
+ <nav class="rail"><div class="logo">D</div><span class="app on"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app"><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span class="app"><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app"><i><svg class="i"><use href="#rss"/></svg></i>News</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="ib s"><svg class="i"><use href="#settings"/></svg></span><span class="avatar">LH</span></div></nav>
+ <header class="top"><h1>Files</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search all apps…<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib"><svg class="i"><use href="#settings"/></svg></span></div></header>
+ <div class="wrk two">
+  <aside class="side"><span class="fab"><svg class="i"><use href="#plus"/></svg>New<svg class="i"><use href="#chevd"/></svg></span>
+   <span class="row on"><svg class="i"><use href="#folder"/></svg>All files</span><span class="row"><svg class="i"><use href="#star"/></svg>Favorites</span><span class="row"><svg class="i"><use href="#share"/></svg>Shared with you</span><span class="row"><svg class="i"><use href="#trash"/></svg>Deleted files</span>
+   <div class="storage"><b><svg class="i"><use href="#folder"/></svg>Storage</b><div class="meter"><i style="width:34%"></i></div><span class="sm muted">3.4 GB of 10 GB used</span></div></aside>
+  <section class="sheet" style="position:relative">
+   <div class="head"><div class="crumbs"><span class="c">All files</span><svg class="i"><use href="#chev"/></svg><span>Projects</span></div><span class="sp"></span><span class="btn outline s"><svg class="i"><use href="#upload"/></svg>Upload</span><span class="seg icon"><span><svg class="i"><use href="#list"/></svg></span><span class="on"><svg class="i"><use href="#grid"/></svg></span></span></div>
+   <div class="bar sel"><span class="ib s"><svg class="i"><use href="#close"/></svg></span><b>2 selected</b><span style="flex:1"></span><span class="btn s" style="color:inherit"><svg class="i"><use href="#trash"/></svg>Move to deleted files</span></div>
+   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:4px 20px">
+    <div style="border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--tonal);color:var(--on-tonal)"><div style="height:104px;display:grid;place-items:center;background:color-mix(in srgb,var(--t-folder) 10%,transparent)"><span class="tile folder lg"><svg class="i"><use href="#folder"/></svg></span></div><div style="display:flex;align-items:center;gap:8px;padding:9px 6px 9px 10px"><span class="cb on"><svg class="i"><use href="#check"/></svg></span><b style="font-weight:600;flex:1">Launch</b><span class="ib xs"><svg class="i"><use href="#more"/></svg></span></div></div>
+    <div style="border:1px solid var(--border);border-radius:14px;overflow:hidden"><div style="height:104px;display:grid;place-items:center;background:color-mix(in srgb,var(--t-folder) 10%,transparent)"><span class="tile folder lg"><svg class="i"><use href="#folder"/></svg></span></div><div style="display:flex;align-items:center;gap:8px;padding:9px 6px 9px 10px"><span class="cb"></span><b style="font-weight:600;flex:1">Research</b></div></div>
+    <div style="border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--tonal);color:var(--on-tonal)"><div style="height:104px;display:grid;place-items:center;background:color-mix(in srgb,var(--t-image) 14%,transparent)"><span class="tile image lg"><svg class="i"><use href="#image"/></svg></span></div><div style="display:flex;align-items:center;gap:8px;padding:9px 6px 9px 10px"><span class="cb on"><svg class="i"><use href="#check"/></svg></span><b style="font-weight:600;flex:1">Moodboard.png</b><span class="ib xs on"><svg class="i"><use href="#more"/></svg></span></div></div>
+    <div style="border:1px solid var(--border);border-radius:14px;overflow:hidden"><div style="height:104px;display:grid;place-items:center;background:color-mix(in srgb,var(--t-sheet) 12%,transparent)"><span class="tile sheet lg"><svg class="i"><use href="#sheet"/></svg></span></div><div style="display:flex;align-items:center;gap:8px;padding:9px 6px 9px 10px"><span class="cb"></span><b style="font-weight:600;flex:1">Roadmap.csv</b></div></div>
+    <div style="border:1px solid var(--border);border-radius:14px;overflow:hidden"><div style="height:104px;display:grid;place-items:center;background:color-mix(in srgb,var(--t-doc) 12%,transparent)"><span class="tile doc lg"><svg class="i"><use href="#file"/></svg></span></div><div style="display:flex;align-items:center;gap:8px;padding:9px 6px 9px 10px"><span class="cb"></span><b style="font-weight:600;flex:1">Brief.md</b></div></div>
+   </div>
+   <div class="menu" style="left:532px;top:258px;width:250px">
+    <div class="mi f"><svg class="i"><use href="#eye"/></svg>Preview<kbd>Space</kbd></div><div class="mi"><svg class="i"><use href="#download"/></svg>Download</div><div class="mi"><svg class="i"><use href="#info"/></svg>Details</div>
+    <div class="msep"></div><div class="mi"><svg class="i"><use href="#star"/></svg>Add to favorites</div><div class="mi"><svg class="i"><use href="#pencil"/></svg>Rename<kbd>F2</kbd></div><div class="mi"><svg class="i"><use href="#move"/></svg>Move to…</div><div class="mi"><svg class="i"><use href="#copy"/></svg>Copy to…</div>
+    <div class="msep"></div><div class="mi"><svg class="i"><use href="#copy"/></svg>Copy<kbd>Ctrl C</kbd></div><div class="mi"><svg class="i"><use href="#scissors"/></svg>Cut<kbd>Ctrl X</kbd></div>
+    <div class="msep"></div><div class="mi dg"><svg class="i"><use href="#trash"/></svg>Move to deleted files</div></div>
+  </section>
+ </div></div></div></div>
+<ul class="rules"><li><b>Grid cards</b> use a tinted preview band with the type tile (image files show the real preview when available) and the same checkbox + name + menu caption.</li><li><b>Selection bar</b> replaces the count row: clear (×), the count, and bulk actions on the right. Escape clears the selection.</li><li><b>Menus</b> group commands with separators, show keyboard hints right-aligned in muted text, and keep the destructive item last in danger color.</li><li><b>34px items</b>, 14px radius panel, raised surface and a two-layer shadow; focus/hover use the neutral hover tone.</li></ul>
+</section>
+
+<!-- ============ 3. CONTACTS ============ -->
+<section class="frame"><h2>3 · Contacts — letter-grouped list, groups in the sidebar, contact card (light)</h2>
+<p>The list is grouped by the first letter of the sort key. Groups move out of the bottom select into sidebar rows with counts. The contact card leads with a colored avatar and quick actions (Email, Call, Favorite, Edit); values sit in a property card with icons and are links.</p>
+<div class="fit"><div class="board"><div class="screen light">
+ <nav class="rail"><div class="logo">D</div><span class="app"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app on"><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span class="app"><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app"><i><svg class="i"><use href="#rss"/></svg></i>News</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="ib s"><svg class="i"><use href="#settings"/></svg></span><span class="avatar">LH</span></div></nav>
+ <header class="top"><h1>Contacts</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search all apps…<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib"><svg class="i"><use href="#settings"/></svg></span></div></header>
+ <div class="wrk">
+  <aside class="side"><span class="fab"><svg class="i"><use href="#plus"/></svg>New contact</span>
+   <span class="row on"><svg class="i"><use href="#people"/></svg>All contacts<span class="n">12</span></span><span class="row"><svg class="i"><use href="#star"/></svg>Favorites<span class="n">3</span></span>
+   <div class="sh">Address books<span class="ib xs"><svg class="i"><use href="#plus"/></svg></span></div>
+   <span class="row"><span class="dot c-violet"></span>Personal<span class="n">8</span></span><span class="row hov"><span class="dot c-red"></span>Work<span class="dots"><svg class="i"><use href="#more"/></svg></span></span>
+   <div class="sh">Groups</div>
+   <span class="row"><svg class="i"><use href="#tag"/></svg>Design team<span class="n">3</span></span><span class="row"><svg class="i"><use href="#tag"/></svg>Engineering<span class="n">2</span></span><span class="row"><svg class="i"><use href="#tag"/></svg>Family<span class="n">2</span></span><span class="row"><svg class="i"><use href="#tag"/></svg>Friends<span class="n">3</span></span>
+  </aside>
+  <section class="sheet">
+   <div class="head"><h2>All contacts</h2><span class="muted sm" style="margin-left:6px">12</span><span class="sp"></span><span class="ib s"><svg class="i"><use href="#refresh"/></svg></span></div>
+   <div class="scroll">
+    <div class="letter">A</div>
+    <div class="crow on"><span class="av h0">AL</span><span class="nm"><b>Amira Lee</b><small>Design lead · Northwind</small></span><span class="star"><svg class="i"><use href="#star"/></svg></span><span class="dot c-violet"></span></div>
+    <div class="letter">B</div>
+    <div class="crow hov"><span class="av h4">BR</span><span class="nm"><b>Bilal Rahman</b><small>CTO · Atlas Labs</small></span><span class="tools"><span class="ib xs"><svg class="i"><use href="#mail"/></svg></span><span class="ib xs"><svg class="i"><use href="#phone"/></svg></span></span><span class="dot c-red"></span></div>
+    <div class="letter">C</div>
+    <div class="crow"><span class="av h1">CD</span><span class="nm"><b>Chloé Dubois</b><small>Photographer · Studio Lumen</small></span><span class="dot c-violet"></span></div>
+    <div class="letter">D</div>
+    <div class="crow"><span class="av h2">DK</span><span class="nm"><b>Daniel Kim</b><small>Product manager · Northwind</small></span><span class="dot c-violet"></span></div>
+    <div class="letter">E</div>
+    <div class="crow"><span class="av h3">EB</span><span class="nm"><b>Ethan Brooks</b><small>ethan.brooks@example.com</small></span><span class="dot c-violet"></span></div>
+    <div class="letter">G</div>
+    <div class="crow"><span class="av h5">GO</span><span class="nm"><b>Grace Okafor</b><small>Physician · Cedar Health</small></span><span class="dot c-red"></span></div>
+    <div class="letter">H</div>
+    <div class="crow"><span class="av h0">HY</span><span class="nm"><b>Hana Yusuf</b><small>hana@example.org</small></span><span class="dot c-violet"></span></div>
+   </div>
+  </section>
+  <aside class="sheet">
+   <div class="dhead"><span class="t">Contact</span><span class="ib s"><svg class="i"><use href="#more"/></svg></span><span class="ib s"><svg class="i"><use href="#close"/></svg></span></div>
+   <div class="hero"><span class="av lg h0">AL</span><h3>Amira Lee</h3><p class="sm">Design lead · Northwind</p></div>
+   <div class="qa"><span><i><svg class="i"><use href="#mail"/></svg></i>Email</span><span><i><svg class="i"><use href="#phone"/></svg></i>Call</span><span><i class="on"><svg class="i"><use href="#star"/></svg></i>Favorite</span><span><i><svg class="i"><use href="#pencil"/></svg></i>Edit</span></div>
+   <div class="group" style="margin-top:2px"><div class="prop"><svg class="i"><use href="#mail"/></svg><div><a>amira@northwind.example</a><small>Work</small></div></div><div class="prop"><svg class="i"><use href="#phone"/></svg><div><a>+1 415 555 0134</a><small>Mobile</small></div></div><div class="prop"><svg class="i"><use href="#pin"/></svg><div><span>221 Market St<br>San Francisco, CA 94105, USA</span><small>Home</small></div></div><div class="prop"><svg class="i"><use href="#cake"/></svg><div><span>April 12, 1990</span><small>Birthday</small></div></div></div>
+   <div class="group"><div class="prop"><svg class="i"><use href="#tag"/></svg><div><span style="display:flex;gap:6px"><span class="chip tonal">Design team</span></span></div></div><div class="prop"><svg class="i"><use href="#note"/></svg><div><span>Met at the design systems summit.</span></div></div></div>
+   <div class="foot sm muted"><span class="dot c-violet"></span>Personal</div>
+  </aside>
+ </div></div></div></div>
+<ul class="rules"><li><b>Letter headers</b> follow the selected sort (first or last name) and sit inside the page the server returned, so pagination is unchanged.</li><li><b>Groups</b> are sidebar rows (tag icon, count) instead of the bottom select; choosing one filters the list and keeps the address book scope.</li><li><b>Rows</b> are 56px pills with a deterministic avatar color, “Title · Organization” (or the first email), a favorite star and the address-book dot. Email/Call icons appear on hover/focus.</li><li><b>Card:</b> quick actions are real links (mailto:, tel:) or buttons; the header menu holds Export and Delete. Empty sections are omitted rather than shown as “None”.</li></ul>
+</section>
+
+<!-- ============ 4. CONTACT EDITOR (dark) ============ -->
+<section class="frame"><h2>4 · Contacts — editor with sections and progressive name fields (dark)</h2>
+<p>The editor groups fields into Name, Work, Contact info, Address and More. Prefix, middle name, suffix and the display-name override stay one click away. Repeating values are rows of value + label with a remove button.</p>
+<div class="fit"><div class="board"><div class="screen dark">
+ <nav class="rail"><div class="logo">D</div><span class="app"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app on"><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span class="app"><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app"><i><svg class="i"><use href="#rss"/></svg></i>News</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="ib s"><svg class="i"><use href="#settings"/></svg></span><span class="avatar">LH</span></div></nav>
+ <header class="top"><h1>Contacts</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search all apps…<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib"><svg class="i"><use href="#settings"/></svg></span></div></header>
+ <div class="wrk" style="grid-template-columns:240px minmax(0,1fr) 420px">
+  <aside class="side"><span class="fab"><svg class="i"><use href="#plus"/></svg>New contact</span>
+   <span class="row on"><svg class="i"><use href="#people"/></svg>All contacts<span class="n">12</span></span><span class="row"><svg class="i"><use href="#star"/></svg>Favorites<span class="n">3</span></span>
+   <div class="sh">Address books<span class="ib xs"><svg class="i"><use href="#plus"/></svg></span></div><span class="row"><span class="dot c-violet"></span>Personal</span><span class="row"><span class="dot c-red"></span>Work</span>
+   <div class="sh">Groups</div><span class="row"><svg class="i"><use href="#tag"/></svg>Design team<span class="n">3</span></span><span class="row"><svg class="i"><use href="#tag"/></svg>Engineering<span class="n">2</span></span></aside>
+  <section class="sheet"><div class="head"><h2>All contacts</h2><span class="muted sm" style="margin-left:6px">12</span></div><div class="scroll"><div class="letter">A</div><div class="crow on"><span class="av h0">AL</span><span class="nm"><b>Amira Lee</b><small>Design lead · Northwind</small></span><span class="dot c-violet"></span></div><div class="letter">B</div><div class="crow"><span class="av h4">BR</span><span class="nm"><b>Bilal Rahman</b><small>CTO · Atlas Labs</small></span><span class="dot c-red"></span></div><div class="letter">C</div><div class="crow"><span class="av h1">CD</span><span class="nm"><b>Chloé Dubois</b><small>Photographer · Studio Lumen</small></span><span class="dot c-violet"></span></div></div></section>
+  <aside class="sheet float">
+   <div class="ehead"><h3>Edit contact</h3><span class="ib s"><svg class="i"><use href="#close"/></svg></span></div>
+   <div class="form" style="overflow:hidden">
+    <div class="sec"><h4><svg class="i"><use href="#people"/></svg>Name</h4><div class="g2"><div class="f"><label>First name</label><div class="in focus">Amira</div></div><div class="f"><label>Last name</label><div class="in">Lee</div></div></div><span class="disc"><svg class="i"><use href="#chevd"/></svg>Prefix, middle name, suffix and display name</span></div>
+    <div class="sec"><h4><svg class="i"><use href="#building"/></svg>Work</h4><div class="g2"><div class="f"><label>Organization</label><div class="in">Northwind</div></div><div class="f"><label>Job title</label><div class="in">Design lead</div></div></div></div>
+    <div class="sec"><h4><svg class="i"><use href="#mail"/></svg>Email</h4><div class="g3"><div class="in">amira@northwind.example</div><div class="in">work<span class="end"><svg class="i"><use href="#chevd"/></svg></span></div><span class="ib xs"><svg class="i"><use href="#close"/></svg></span></div><span class="add"><svg class="i"><use href="#plus"/></svg>Add email</span></div>
+    <div class="sec"><h4><svg class="i"><use href="#phone"/></svg>Phone</h4><div class="g3"><div class="in">+1 415 555 0134</div><div class="in">mobile<span class="end"><svg class="i"><use href="#chevd"/></svg></span></div><span class="ib xs"><svg class="i"><use href="#close"/></svg></span></div><span class="add"><svg class="i"><use href="#plus"/></svg>Add phone</span></div>
+    <div class="sec"><h4><svg class="i"><use href="#globe"/></svg>Website · <svg class="i"><use href="#pin"/></svg>Address</h4><div style="display:flex;gap:18px"><span class="add"><svg class="i"><use href="#plus"/></svg>Add website</span><span class="add"><svg class="i"><use href="#plus"/></svg>Add address</span></div></div>
+    <div class="sec"><h4><svg class="i"><use href="#info"/></svg>More</h4><div class="g2"><div class="f"><label>Birthday</label><div class="in">1990-04-12</div></div><div class="f"><label>Groups</label><div class="in"><span class="chip tonal">Design team</span></div></div></div><div class="sw"><span>Favorite</span><span class="switch on"></span></div></div>
+   </div>
+   <div class="foot" style="justify-content:flex-end"><span class="btn ghost">Cancel</span><span class="btn primary">Save contact</span></div>
+  </aside>
+ </div></div></div></div>
+<ul class="rules"><li><b>Sections</b> with small icon headings; fields pair up two-per-row where they belong together (first/last, organization/title, birthday/groups).</li><li><b>Progressive name fields:</b> the disclosure opens automatically if any hidden field already has a value, so nothing imported is hidden.</li><li><b>Value rows:</b> value, label (free text with common suggestions) and a remove button named “Remove Email 1”.</li><li><b>Footer</b> stays pinned at the bottom of the pane; the unsaved-change guard is unchanged.</li></ul>
+</section>
+
+<!-- ============ 5. CALENDAR MONTH ============ -->
+<section class="frame"><h2>5 · Calendar — mini month, colored calendars and the event card (light)</h2>
+<p>A mini month sits above the calendar list (week of the anchor highlighted). Calendar checkboxes are drawn in the calendar's own color. Timed events show a color dot, title and (when there is room) the start time; all-day events are tinted bars. The view switch is a segmented control and the date button keeps the existing month popover.</p>
+<div class="fit"><div class="board"><div class="screen light">
+ <nav class="rail"><div class="logo">D</div><span class="app"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app"><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span class="app on"><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app"><i><svg class="i"><use href="#rss"/></svg></i>News</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="ib s"><svg class="i"><use href="#settings"/></svg></span><span class="avatar">LH</span></div></nav>
+ <header class="top"><h1>Calendar</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search all apps…<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib"><svg class="i"><use href="#settings"/></svg></span></div></header>
+ <div class="wrk" style="grid-template-columns:240px minmax(0,1fr) 360px">
+  <aside class="side"><span class="fab"><svg class="i"><use href="#plus"/></svg>New event</span>
+   <div class="mini"><div class="mh">November 2026<span style="display:flex"><span class="ib xs"><svg class="i"><use href="#back"/></svg></span><span class="ib xs"><svg class="i"><use href="#chev"/></svg></span></span></div><div class="mg">
+    <span class="w">M</span><span class="w">T</span><span class="w">W</span><span class="w">T</span><span class="w">F</span><span class="w">S</span><span class="w">S</span>
+    <span class="o">26</span><span class="o">27</span><span class="o">28</span><span class="o">29</span><span class="o">30</span><span class="o">31</span><span>1</span>
+    <span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>
+    <span class="wk first">9</span><span class="wk mid">10</span><span class="wk mid">11</span><span class="t">12</span><span class="wk mid">13</span><span class="wk mid">14</span><span class="wk last">15</span>
+    <span>16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span><span>22</span>
+    <span>23</span><span>24</span><span>25</span><span>26</span><span>27</span><span>28</span><span>29</span>
+    <span>30</span><span class="o">1</span><span class="o">2</span><span class="o">3</span><span class="o">4</span><span class="o">5</span><span class="o">6</span></div></div>
+   <div class="sh">Calendars<span class="ib xs"><svg class="i"><use href="#plus"/></svg></span></div>
+   <span class="calrow"><span class="ccb c-violet"><svg class="i"><use href="#check"/></svg></span>Personal</span><span class="calrow on" style="background:var(--tonal);color:var(--on-tonal);font-weight:600"><span class="ccb c-red"><svg class="i"><use href="#check"/></svg></span>Work<span style="margin-left:auto" class="ib xs"><svg class="i"><use href="#more"/></svg></span></span><span class="calrow"><span class="ccb c-teal"><svg class="i"><use href="#check"/></svg></span>Family</span><span class="calrow"><span class="ccb off"></span>Holidays</span>
+   <span class="row" style="margin-top:10px"><svg class="i"><use href="#bell"/></svg>Reminders<span class="n chip danger" style="height:20px">2</span></span>
+  </aside>
+  <section class="sheet">
+   <div class="head"><h2>November 2026</h2><span class="sp"></span><span class="btn outline s">Today</span><span class="ib s"><svg class="i"><use href="#back"/></svg></span><span class="ib s"><svg class="i"><use href="#chev"/></svg></span><span class="seg"><span>Day</span><span>Week</span><span class="on">Month</span><span>Agenda</span></span></div>
+   <div class="month">
+    <span class="wd">Mon</span><span class="wd">Tue</span><span class="wd">Wed</span><span class="wd">Thu</span><span class="wd">Fri</span><span class="wd">Sat</span><span class="wd">Sun</span>
+    <div class="d o"><span class="dn">26</span></div><div class="d o"><span class="dn">27</span></div><div class="d o"><span class="dn">28</span></div><div class="d o"><span class="dn">29</span></div><div class="d o"><span class="dn">30</span></div><div class="d o"><span class="dn">31</span></div><div class="d"><span class="dn">1</span></div>
+    <div class="d"><span class="dn">2</span></div><div class="d"><span class="dn">3</span></div><div class="d"><span class="dn">4</span></div><div class="d"><span class="dn">5</span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>Board sync</b><span class="tm">16:00</span></span></div><div class="d"><span class="dn">6</span></div><div class="d"><span class="dn">7</span></div><div class="d"><span class="dn">8</span></div>
+    <div class="d"><span class="dn">9</span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>Workshop</b><span class="tm">13:00</span></span></div><div class="d"><span class="dn">10</span><span class="ev"><span class="dot c-violet" style="width:8px;height:8px"></span><b>Coffee with Hana</b><span class="tm">11:00</span></span></div><div class="d"><span class="dn">11</span></div><div class="d t"><span class="dn">12</span><span class="ev sel"><span class="dot c-red" style="width:8px;height:8px"></span><b>Design review</b><span class="tm">10:00</span></span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>1:1 with Daniel</b><span class="tm">14:00</span></span><span class="more">1 more</span></div><div class="d"><span class="dn">13</span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>Standup</b><span class="tm">09:00</span></span></div><div class="d"><span class="dn">14</span><span class="ev"><span class="dot c-teal" style="width:8px;height:8px"></span><b>Dinner with parents</b><span class="tm">19:00</span></span></div><div class="d"><span class="dn">15</span></div>
+    <div class="d"><span class="dn">16</span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>Standup</b><span class="tm">09:00</span></span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>Sprint planning</b><span class="tm">09:30</span></span></div><div class="d"><span class="dn">17</span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>Standup</b><span class="tm">09:00</span></span></div><div class="d"><span class="dn">18</span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>Standup</b><span class="tm">09:00</span></span><span class="ev"><span class="dot c-violet" style="width:8px;height:8px"></span><b>Dentist</b><span class="tm">08:30</span></span></div><div class="d"><span class="dn">19</span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>Standup</b><span class="tm">09:00</span></span></div><div class="d"><span class="dn">20</span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>Launch retro</b><span class="tm">15:00</span></span></div><div class="d"><span class="dn">21</span></div><div class="d"><span class="dn">22</span><span class="ev"><span class="dot c-teal" style="width:8px;height:8px"></span><b>Sofia's recital</b><span class="tm">17:00</span></span></div>
+    <div class="d"><span class="dn">23</span></div><div class="d"><span class="dn">24</span></div><div class="d"><span class="dn">25</span><span class="ev"><span class="dot c-violet" style="width:8px;height:8px"></span><b>Book club</b><span class="tm">19:30</span></span></div><div class="d"><span class="dn">26</span><span class="ev"><span class="dot c-red" style="width:8px;height:8px"></span><b>Quarterly planning</b><span class="tm">10:00</span></span></div><div class="d"><span class="dn">27</span><span class="ev ad v-violet start"><b>Weekend trip · Lisbon</b></span></div><div class="d"><span class="dn">28</span><span class="ev ad v-violet cont"><b>&nbsp;</b></span></div><div class="d"><span class="dn">29</span><span class="ev ad v-violet cont"><b>&nbsp;</b></span></div>
+   </div>
+  </section>
+  <aside class="sheet">
+   <div class="dhead"><span class="t">Event</span><span class="ib s"><svg class="i"><use href="#pencil"/></svg></span><span class="ib s"><svg class="i"><use href="#trash"/></svg></span><span class="ib s"><svg class="i"><use href="#more"/></svg></span><span class="ib s"><svg class="i"><use href="#close"/></svg></span></div>
+   <div style="display:flex;gap:14px;padding:10px 20px 6px"><span style="width:16px;height:16px;border-radius:5px;margin-top:7px;flex:none" class="c-red"></span><div><h3 style="margin:0;font-size:21px;font-weight:600;letter-spacing:-.01em">Design review</h3><p style="margin:4px 0 0">Thursday, November 12</p><p class="muted sm" style="margin:2px 0 0">10:00 – 11:00 · America/Toronto</p></div></div>
+   <div class="group" style="margin-top:14px"><div class="prop"><svg class="i"><use href="#pin"/></svg><div><span>Room 4B</span></div></div><div class="prop"><svg class="i"><use href="#repeat"/></svg><div><span>Does not repeat</span></div></div><div class="prop"><svg class="i"><use href="#bell"/></svg><div><span>10 minutes before</span></div></div><div class="prop"><svg class="i"><use href="#calendar"/></svg><div><span style="display:flex;align-items:center;gap:8px"><span class="dot c-red"></span>Work</span></div></div></div>
+   <div class="group"><div class="prop"><svg class="i"><use href="#people"/></svg><div><span>amira@northwind.example</span><span>dkim@northwind.example</span><small>Saved with the event; invitations are not sent.</small></div></div><div class="prop"><svg class="i"><use href="#note"/></svg><div><span>Walk through the revamp mocks and pick a direction for Files.</span></div></div></div>
+  </aside>
+ </div></div></div></div>
+<ul class="rules"><li><b>Event color</b> comes from its calendar: a dot for timed events, a tinted bar with a 3px edge for all-day and multi-day events (continuing across days). Cancelled events stay struck through.</li><li><b>Today</b> is a filled accent circle in both the grid and the mini month; the mini month highlights the anchor's week and navigates on click.</li><li><b>Header:</b> Today, period arrows, the date/Today popover, then Day · Week · Month · Agenda as a segmented control (still keyboard-reachable radio buttons named “Calendar view”).</li><li><b>Event card:</b> colored square, title, a readable date line (“Thursday, November 12”, “10:00 – 11:00 · zone”); Edit, Delete and More (Export) are header icons; status shows only when not Confirmed.</li><li><b>Calendar rows</b> draw their checkbox in the calendar color; unchecked is an outlined box.</li></ul>
+</section>
+
+<!-- ============ 6. CALENDAR WEEK + EDITOR (dark) ============ -->
+<section class="frame"><h2>6 · Calendar — week with colored blocks and the event editor (dark)</h2>
+<p>Week and Day draw events as tinted blocks in their calendar color with a now line. The editor separates date and time, shows the calendar with its color, uses switches for All day and keeps attendees and status under More options.</p>
+<div class="fit"><div class="board"><div class="screen dark">
+ <nav class="rail"><div class="logo">D</div><span class="app"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app"><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span class="app on"><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app"><i><svg class="i"><use href="#rss"/></svg></i>News</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="ib s"><svg class="i"><use href="#settings"/></svg></span><span class="avatar">LH</span></div></nav>
+ <header class="top"><h1>Calendar</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search all apps…<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib"><svg class="i"><use href="#settings"/></svg></span></div></header>
+ <div class="wrk" style="grid-template-columns:240px minmax(0,1fr) 400px">
+  <aside class="side"><span class="fab"><svg class="i"><use href="#plus"/></svg>New event</span>
+   <div class="mini"><div class="mh">November 2026<span style="display:flex"><span class="ib xs"><svg class="i"><use href="#back"/></svg></span><span class="ib xs"><svg class="i"><use href="#chev"/></svg></span></span></div><div class="mg"><span class="w">M</span><span class="w">T</span><span class="w">W</span><span class="w">T</span><span class="w">F</span><span class="w">S</span><span class="w">S</span><span class="o">26</span><span class="o">27</span><span class="o">28</span><span class="o">29</span><span class="o">30</span><span class="o">31</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span class="wk first">9</span><span class="wk mid">10</span><span class="wk mid">11</span><span class="t">12</span><span class="wk mid">13</span><span class="wk mid">14</span><span class="wk last">15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span><span>22</span><span>23</span><span>24</span><span>25</span><span>26</span><span>27</span><span>28</span><span>29</span><span>30</span><span class="o">1</span><span class="o">2</span><span class="o">3</span><span class="o">4</span><span class="o">5</span><span class="o">6</span></div></div>
+   <div class="sh">Calendars<span class="ib xs"><svg class="i"><use href="#plus"/></svg></span></div><span class="calrow"><span class="ccb c-violet"><svg class="i"><use href="#check"/></svg></span>Personal</span><span class="calrow"><span class="ccb c-red"><svg class="i"><use href="#check"/></svg></span>Work</span><span class="calrow"><span class="ccb c-teal"><svg class="i"><use href="#check"/></svg></span>Family</span></aside>
+  <section class="sheet">
+   <div class="head"><h2>Nov 9 – 15, 2026</h2><span class="sp"></span><span class="btn outline s">Today</span><span class="ib s"><svg class="i"><use href="#back"/></svg></span><span class="ib s"><svg class="i"><use href="#chev"/></svg></span><span class="seg"><span>Day</span><span class="on">Week</span><span>Month</span><span>Agenda</span></span></div>
+   <div class="week">
+    <span></span><span class="wh">MON<b>9</b></span><span class="wh">TUE<b>10</b></span><span class="wh">WED<b>11</b></span><span class="wh t">THU<b>12</b></span><span class="wh">FRI<b>13</b></span><span class="wh">SAT<b>14</b></span><span class="wh">SUN<b>15</b></span>
+    <span class="hr" style="transform:none;padding-top:6px;font-size:10px">all-day</span><span class="ad"></span><span class="ad"></span><span class="ad"></span><span class="ad"></span><span class="ad"></span><span class="ad"></span><span class="ad"></span>
+    <div style="grid-column:1;display:grid;grid-auto-rows:48px"><span class="hr"></span><span class="hr">09:00</span><span class="hr">10:00</span><span class="hr">11:00</span><span class="hr">12:00</span><span class="hr">13:00</span><span class="hr">14:00</span><span class="hr">15:00</span><span class="hr">16:00</span><span class="hr">17:00</span><span class="hr">18:00</span></div>
+    <div class="col"><span class="blk v-red" style="top:240px;height:190px"><b>Workshop</b><span>13:00 – 17:00</span></span></div>
+    <div class="col"><span class="blk v-violet" style="top:144px;height:46px"><b>Coffee with Hana</b><span>11:00</span></span></div>
+    <div class="col"></div>
+    <div class="col"><span class="blk v-red" style="top:96px;height:46px;outline:2px solid var(--accent)"><b>Design review</b><span>10:00 – 11:00</span></span><span class="blk v-red" style="top:288px;height:22px"><b>1:1 with Daniel</b></span><span class="blk v-violet" style="top:480px;height:46px"><b>Gym</b><span>18:00</span></span></div>
+    <div class="col"><span class="blk v-red" style="top:48px;height:14px;padding:0 7px;font-size:10.5px"><b>Standup</b></span></div>
+    <div class="col"></div><div class="col"></div>
+    <div class="now" style="top:410px"></div>
+   </div>
+  </section>
+  <aside class="sheet float">
+   <div class="ehead"><h3>New event</h3><span class="ib s"><svg class="i"><use href="#close"/></svg></span></div>
+   <div class="form">
+    <div class="in big focus ph">Add title</div>
+    <div class="f"><label>Calendar</label><div class="in"><span class="dot c-red"></span>Work<span class="end"><svg class="i"><use href="#chevd"/></svg></span></div></div>
+    <div class="sw"><span>All day</span><span class="switch"></span></div>
+    <div class="f"><label>Starts</label><div class="dt"><div class="in"><svg class="i muted"><use href="#calendar"/></svg>Thu, Nov 12, 2026</div><div class="in num">15:00</div></div></div>
+    <div class="f"><label>Ends</label><div class="dt"><div class="in"><svg class="i muted"><use href="#calendar"/></svg>Thu, Nov 12, 2026</div><div class="in num">16:00</div></div><small class="muted xs">1 hour · America/Toronto <span class="add" style="font-size:11.5px">Change timezone</span></small></div>
+    <div class="g2"><div class="f"><label>Repeat</label><div class="in">Does not repeat<span class="end"><svg class="i"><use href="#chevd"/></svg></span></div></div><div class="f"><label>Reminder</label><div class="in">10 minutes before<span class="end"><svg class="i"><use href="#chevd"/></svg></span></div></div></div>
+    <div class="f"><label>Location</label><div class="in ph"><svg class="i"><use href="#pin"/></svg>Add location</div></div>
+    <div class="f"><label>Description</label><div class="in area ph">Add notes</div></div>
+    <span class="disc"><svg class="i"><use href="#chevd"/></svg>Attendees and status</span>
+   </div>
+   <div class="foot" style="justify-content:flex-end"><span class="btn ghost">Cancel</span><span class="btn primary">Save event</span></div>
+  </aside>
+ </div></div></div></div>
+<ul class="rules"><li><b>Blocks</b> are sized by duration with a tinted fill and 3px edge in the calendar color; the selected event gets an accent outline. The now line marks the current time on today's column.</li><li><b>Date and time</b> are separate native inputs (date + time) so the browser picker and keyboard entry still work; all-day hides the times and keeps inclusive end dates.</li><li><b>Timezone</b> is summarized under Ends and expands to the existing field (with floating) on demand.</li><li><b>Attendees and status</b> live under a disclosure that opens when they already have values.</li></ul>
+</section>
+
+<!-- ============ 7. NOTES ============ -->
+<section class="frame"><h2>7 · Notes — clean list and a document editor (light)</h2>
+<p>The note list shows a plain-text excerpt (Markdown syntax stripped), the edit date, the notebook dot and tags. The editor is a centered document column: notebook and status above, a large quiet title, an icon formatting bar, then the Markdown source in a readable serif. Write/Preview is a segmented control; favorite, details, export and trash sit in the note menu.</p>
+<div class="fit"><div class="board"><div class="screen light">
+ <nav class="rail"><div class="logo">D</div><span class="app"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app"><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span class="app"><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span class="app on"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app"><i><svg class="i"><use href="#rss"/></svg></i>News</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="ib s"><svg class="i"><use href="#settings"/></svg></span><span class="avatar">LH</span></div></nav>
+ <header class="top"><h1>Notes</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search all apps…<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib"><svg class="i"><use href="#settings"/></svg></span></div></header>
+ <div class="wrk notes">
+  <aside class="side"><span class="fab"><svg class="i"><use href="#plus"/></svg>New note</span>
+   <span class="row on"><svg class="i"><use href="#list"/></svg>All notes</span><span class="row"><svg class="i"><use href="#star"/></svg>Favorites</span><span class="row"><svg class="i"><use href="#trash"/></svg>Trash</span>
+   <div class="sh">Notebooks<span class="ib xs"><svg class="i"><use href="#plus"/></svg></span></div><span class="row"><span class="dot c-violet"></span>Personal</span><span class="row"><span class="dot c-red"></span>Work</span><span class="row"><span class="dot c-amber"></span>Recipes</span></aside>
+  <section class="sheet">
+   <div class="head"><h2>All notes</h2><span class="muted sm" style="margin-left:6px">7</span><span class="sp"></span><span class="btn s" style="color:var(--muted);padding:0 8px"><svg class="i"><use href="#sort"/></svg>Edited</span></div>
+   <div class="scroll" style="display:grid;align-content:start;gap:2px">
+    <div class="nrow on"><b>Q4 launch plan<span class="star"><svg class="i" style="width:14px;height:14px"><use href="#star"/></svg></span></b><p>Goals: ship the unified frame to every app, cut onboarding time in half, zero data-loss incidents.</p><span class="nm">Today<span class="dot c-red"></span>Work<span>#launch</span><span>#planning</span></span></div>
+    <div class="nrow"><b>Meeting notes — design review</b><p>Attendees: Amira, Daniel, Julia. Contacts list density approved; Calendar needs a mini month.</p><span class="nm">Today<span class="dot c-red"></span>Work<span>#meetings</span></span></div>
+    <div class="nrow"><b>Lentil soup</b><p>Red lentils, carrot, onion, cumin, lemon.</p><span class="nm">Yesterday<span class="dot c-amber"></span>Recipes<span>#dinner</span></span></div>
+    <div class="nrow"><b>Gift ideas</b><p>Sofia: sheet music binder. Ibrahim: espresso grinder.</p><span class="nm">Nov 9<span class="dot c-violet"></span>Personal<span>#family</span></span></div>
+    <div class="nrow"><b>Shakshuka<span class="star"><svg class="i" style="width:14px;height:14px"><use href="#star"/></svg></span></b><p>Olive oil, onion, peppers, garlic, cumin, paprika, tomatoes, eggs, feta, parsley.</p><span class="nm">Nov 6<span class="dot c-amber"></span>Recipes</span></div>
+    <div class="nrow"><b>Reading list</b><p>The Design of Everyday Things · A Pattern Language · Thinking in Systems</p><span class="nm">Nov 2<span class="dot c-violet"></span>Personal<span>#books</span></span></div>
+   </div>
+  </section>
+  <section class="sheet">
+   <div class="ntop"><span class="ib s"><svg class="i"><use href="#close"/></svg></span><span class="nb"><span class="dot c-red"></span>Work</span><span style="flex:1"></span><span class="status"><svg class="i"><use href="#check"/></svg>Saved</span><span class="seg"><span class="on">Write</span><span>Preview</span></span><span class="ib s" style="color:var(--warning)"><svg class="i" style="fill:currentColor"><use href="#star"/></svg></span><span class="ib s"><svg class="i"><use href="#more"/></svg></span></div>
+   <div class="doc-col">
+    <div class="ntitle">Q4 launch plan</div>
+    <div class="nmeta"><span>Edited today, 9:41</span><span>·</span><span class="chip">#launch</span><span class="chip">#planning</span></div>
+    <div class="fmt"><span>H</span><span>B</span><span style="font-style:italic;font-family:serif">I</span><i></i><span><svg class="i"><use href="#link"/></svg></span><span><svg class="i"><use href="#bullets"/></svg></span><span><svg class="i"><use href="#checklist"/></svg></span><span><svg class="i"><use href="#quote"/></svg></span><span><svg class="i"><use href="#braces"/></svg></span></div>
+    <div class="src"><span class="mk">## </span>Goals
+
+<span class="mk">- </span>Ship the unified frame to every app
+<span class="mk">- </span>Cut onboarding time in half
+<span class="mk">- **</span>Zero<span class="mk">**</span> data-loss incidents
+
+<span class="mk">## </span>Timeline
+
+<span class="mk">1. </span>Freeze scope — Nov 16
+<span class="mk">2. </span>Beta to design partners — Nov 23
+<span class="mk">3. </span>General availability — Dec 7
+
+<span class="mk">&gt; </span>Keep the release notes short and specific.</div>
+   </div>
+  </section>
+ </div></div></div></div>
+<ul class="rules"><li><b>Excerpts</b> strip Markdown markers (headings, list bullets, emphasis, links, checkboxes) and skip a leading heading that repeats the title.</li><li><b>Top bar of the note:</b> Close, notebook, save status (Saving…, Saved, Not saved + Retry), Write/Preview segmented, favorite toggle and the note menu (Details and tags, Move to…, Copy to…, Export Markdown, Move to trash).</li><li><b>Formatting bar:</b> icon buttons in a quiet pill with tooltips and shortcuts; it hides in Preview and read-only notes.</li><li><b>Document column</b> is 680px max, centered, so long lines stay readable on wide screens; phones use full width.</li><li>Recovery drafts, conflicts and the leave-note dialog are unchanged and appear as banners under the note bar.</li></ul>
+</section>
+
+<!-- ============ 8. TASKS ============ -->
+<section class="frame"><h2>8 · Tasks — sections, quick add and a task card (dark)</h2>
+<p>Lists are split into Overdue, Today, Upcoming, No date and Completed when sorted by due date. Quick add creates a task in the current list (or the first writable list) on Enter. Rows show a priority-colored check ring, title, due chip, list dot, repeat and tags. The card leads with Complete and the title; properties are a card, subtasks a checklist.</p>
+<div class="fit"><div class="board"><div class="screen dark">
+ <nav class="rail"><div class="logo">D</div><span class="app"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span class="app"><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span class="app"><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span class="app"><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span class="app on"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span class="app"><i><svg class="i"><use href="#rss"/></svg></i>News</span><span class="app"><i><svg class="i"><use href="#agent"/></svg></i>Agent</span><div class="end"><span class="ib s"><svg class="i"><use href="#settings"/></svg></span><span class="avatar">LH</span></div></nav>
+ <header class="top"><h1>Tasks</h1><div class="gsearch"><svg class="i"><use href="#search"/></svg>Search all apps…<kbd>Ctrl K</kbd></div><div class="tr"><span class="ib"><svg class="i"><use href="#settings"/></svg></span></div></header>
+ <div class="wrk">
+  <aside class="side"><span class="fab"><svg class="i"><use href="#plus"/></svg>New task</span>
+   <span class="row on"><svg class="i"><use href="#list"/></svg>All tasks<span class="n">11</span></span><span class="row"><svg class="i"><use href="#folder"/></svg>Inbox</span><span class="row"><svg class="i"><use href="#calendar"/></svg>Today<span class="n">3</span></span><span class="row"><svg class="i"><use href="#clock"/></svg>Upcoming</span><span class="row"><svg class="i"><use href="#flag"/></svg>Important</span><span class="row"><svg class="i"><use href="#check"/></svg>Completed</span>
+   <div class="sh">Task lists<span class="ib xs"><svg class="i"><use href="#plus"/></svg></span></div><span class="row"><span class="dot c-violet"></span>Personal</span><span class="row"><span class="dot c-red"></span>Work</span><span class="row"><span class="dot c-teal"></span>Groceries</span>
+   <span class="row" style="margin-top:auto"><svg class="i"><use href="#bell"/></svg>Reminders<span class="n">America/Toronto</span></span></aside>
+  <section class="sheet">
+   <div class="head"><h2>All tasks</h2><span class="sp"></span><span class="btn s" style="color:var(--muted);padding:0 8px"><svg class="i"><use href="#sort"/></svg>Due date</span></div>
+   <div class="qadd"><svg class="i"><use href="#plus"/></svg>Add a task to Work<kbd>Enter</kbd></div>
+   <div class="scroll">
+    <div class="tsec over">Overdue <span class="n">1</span></div>
+    <div class="trow"><span class="tc p5"></span><div class="tt"><b>Call the plumber</b><div class="tm2"><span class="od"><svg class="i"><use href="#calendar"/></svg>Yesterday</span><span><span class="dot c-violet"></span>Personal</span><span>#home</span></div></div></div>
+    <div class="tsec">Today <span class="n">2</span></div>
+    <div class="trow on"><span class="tc p1"></span><div class="tt"><b>Finalize Q4 launch checklist</b><div class="tm2"><span><svg class="i"><use href="#clock"/></svg>17:00</span><span><svg class="i"><use href="#progress"/></svg>40%</span><span><span class="dot c-red"></span>Work</span><span><svg class="i"><use href="#sub"/></svg>1/3</span><span>#launch</span></div></div></div>
+    <div class="trow"><span class="tc"></span><div class="tt"><b>Water the plants</b><div class="tm2"><span><svg class="i"><use href="#calendar"/></svg>Today</span><span><svg class="i"><use href="#repeat"/></svg>Weekly</span><span><span class="dot c-violet"></span>Personal</span></div></div></div>
+    <div class="tsec">Upcoming <span class="n">4</span></div>
+    <div class="trow"><span class="tc p5"></span><div class="tt"><b>Review Files grid mock</b><div class="tm2"><span><svg class="i"><use href="#calendar"/></svg>Tomorrow, 12:00</span><span><span class="dot c-red"></span>Work</span></div></div></div>
+    <div class="trow"><span class="tc p5"></span><div class="tt"><b>Write release notes</b><div class="tm2"><span><svg class="i"><use href="#calendar"/></svg>Wed, Nov 18</span><span><span class="dot c-red"></span>Work</span><span>#launch</span></div></div></div>
+    <div class="trow"><span class="tc p1"></span><div class="tt"><b>Renew passport</b><div class="tm2"><span><svg class="i"><use href="#calendar"/></svg>Fri, Nov 20</span><span><span class="dot c-violet"></span>Personal</span></div></div></div>
+    <div class="tsec">No date <span class="n">2</span></div>
+    <div class="trow"><span class="tc"></span><div class="tt"><b>Olive oil</b><div class="tm2"><span><span class="dot c-teal"></span>Groceries</span></div></div></div>
+   </div>
+  </section>
+  <aside class="sheet">
+   <div class="dhead"><span class="t">Task</span><span class="ib s"><svg class="i"><use href="#pencil"/></svg></span><span class="ib s"><svg class="i"><use href="#more"/></svg></span><span class="ib s"><svg class="i"><use href="#close"/></svg></span></div>
+   <div style="display:flex;gap:12px;padding:10px 20px 4px;align-items:flex-start"><span class="tc lg p1" style="margin-top:2px"></span><div><h3 style="margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em;line-height:1.3">Finalize Q4 launch checklist</h3><p class="muted" style="margin:6px 0 0">Confirm owners for each launch item and get sign-off from design.</p></div></div>
+   <div style="display:flex;gap:8px;padding:12px 20px 0"><span class="btn primary s"><svg class="i"><use href="#check"/></svg>Complete task</span><span class="btn outline s"><svg class="i"><use href="#sub"/></svg>Add subtask</span></div>
+   <div class="group" style="margin-top:14px">
+    <div class="prop"><svg class="i"><use href="#calendar"/></svg><span class="k">Due</span><span>Today, 17:00</span></div>
+    <div class="prop"><svg class="i"><use href="#flag"/></svg><span class="k">Priority</span><span class="chip danger">High</span></div>
+    <div class="prop"><svg class="i"><use href="#progress"/></svg><span class="k">Status</span><span style="display:flex;align-items:center;gap:10px">In progress<span class="prog"><i></i></span>40%</span></div>
+    <div class="prop"><svg class="i"><use href="#repeat"/></svg><span class="k">Repeats</span><span>Does not repeat</span></div>
+    <div class="prop"><svg class="i"><use href="#list"/></svg><span class="k">List</span><span style="display:flex;align-items:center;gap:8px"><span class="dot c-red"></span>Work</span></div>
+    <div class="prop"><svg class="i"><use href="#tag"/></svg><span class="k">Tags</span><span class="chip">#launch</span></div></div>
+   <div class="group"><div class="gt">SUBTASKS · 1 OF 3</div><div class="sub"><span class="tc done" style="width:18px;height:18px"><svg class="i"><use href="#check"/></svg></span><span class="muted" style="text-decoration:line-through">Owners confirmed</span></div><div class="sub"><span class="tc" style="width:18px;height:18px"></span>Design sign-off</div><div class="sub"><span class="tc" style="width:18px;height:18px"></span>Release notes draft</div></div>
+  </aside>
+ </div></div></div></div>
+<ul class="rules"><li><b>Sections</b> come from the due dates already returned by the server in the viewer's timezone; other sorts show a flat list. Completed tasks in mixed views sit under a collapsed Completed section.</li><li><b>Check ring</b> color shows priority (high = danger, medium = warning); it fills on completion with a short, reduced-motion-aware transition.</li><li><b>Quick add</b> only sets the title; everything else is in the full editor (New task). It is disabled with a hint when no writable list exists.</li><li><b>Reminders · timezone</b> moves from the list header into the sidebar footer row.</li><li><b>Card:</b> Complete/Reopen is the primary action; Edit is a header icon; More has Move to…, Copy to…, Export task and Delete task. Recurring tasks keep the occurrence chooser.</li></ul>
+</section>
+
+<!-- ============ 9. MENUS AND LITTLE THINGS ============ -->
+<section class="frame"><h2>9 · Menus, selects, search results, dialogs and toasts</h2>
+<p>The small shared pieces every app uses. Left column light, right column dark.</p>
+<div class="fit"><div class="board"><div class="chip-board light" style="background:#f3edf0">
+ <div class="cell light"><span class="cap">ACCOUNT MENU (rail)</span>
+  <div class="menu" style="left:24px;top:36px;width:260px"><div class="mhd"><span class="avatar" style="width:36px;height:36px">LH</span><div><b>Layla Haddad</b><small>@admin</small></div></div><div class="msep"></div><div class="mi f"><svg class="i"><use href="#settings"/></svg>Settings</div><div class="mi"><svg class="i"><use href="#lock"/></svg>Account security</div><div class="mlabel">Administration</div><div class="mi"><svg class="i"><use href="#shield"/></svg>Users and directory</div><div class="mi"><svg class="i"><use href="#grid"/></svg>Manage apps</div><div class="msep"></div><div class="mi"><svg class="i"><use href="#logout"/></svg>Sign out</div></div>
+  <div class="menu" style="left:300px;top:36px;width:220px"><div class="mi"><svg class="i"><use href="#folder"/></svg>Folder</div><div class="mi f"><svg class="i"><use href="#file"/></svg>File<svg class="i chev"><use href="#chev"/></svg></div><div class="msep"></div><div class="mi"><svg class="i"><use href="#upload"/></svg>Upload files</div></div>
+  <div class="menu" style="left:300px;top:168px;width:220px"><div class="mi"><svg class="i"><use href="#back"/></svg>File</div><div class="msep"></div><div class="mi f"><svg class="i"><use href="#file"/></svg>Text file</div><div class="mi"><svg class="i"><use href="#note"/></svg>Markdown file</div></div>
+ </div>
+ <div class="cell dark" style="background:#26111f"><span class="cap">COLLECTION MENU · SELECT</span>
+  <div class="menu dark" style="left:24px;top:36px;width:240px"><div class="mi f"><svg class="i"><use href="#pencil"/></svg>Edit calendar</div><div class="mi"><svg class="i"><use href="#share"/></svg>Share calendar</div><div class="mi"><svg class="i"><use href="#download"/></svg>Export ICS</div><div class="msep"></div><div class="mi dg"><svg class="i"><use href="#trash"/></svg>Delete calendar…</div></div>
+  <div class="in" style="position:absolute;left:290px;top:36px;width:220px;border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)">Recently edited<span class="end"><svg class="i"><use href="#chevd"/></svg></span></div>
+  <div class="lb" style="left:290px;top:82px;width:220px"><div class="mi cur f">Recently edited<svg class="i ck"><use href="#check"/></svg></div><div class="mi">Title</div><div class="mi">Due date</div></div>
+ </div>
+ <div class="cell light"><span class="cap">SEARCH RESULTS</span>
+  <div class="gsearch focus" style="position:absolute;left:24px;right:24px;top:34px;margin:0"><svg class="i"><use href="#search"/></svg>am<span style="margin-left:auto" class="ib xs"><svg class="i"><use href="#close"/></svg></span></div>
+  <div class="res" style="left:24px;right:24px;top:82px"><div class="gh">CONTACTS<span>3</span></div><div class="rr f"><span class="av h0" style="width:30px;height:30px;font-size:11px">AL</span><div><b><mark>Am</mark>ira Lee</b><small>Personal · Design lead</small></div><span class="go">Enter</span></div><div class="rr"><span class="av h4" style="width:30px;height:30px;font-size:11px">IS</span><div><b>Ibrahim Saleh</b><small>ibrahim@ex<mark>am</mark>ple.net</small></div></div><div class="gh">CALENDAR</div><div class="rr"><span class="tile" style="width:30px;height:30px;color:#e11d48"><svg class="i"><use href="#calendar"/></svg></span><div><b>Te<mark>am</mark> offsite</b><small>Work · Fri, Nov 27</small></div></div><div class="gh">NOTES</div><div class="rr"><span class="tile doc" style="width:30px;height:30px"><svg class="i"><use href="#note"/></svg></span><div><b>Meeting notes — design review</b><small>…Attendees: <mark>Am</mark>ira, Daniel…</small></div></div></div>
+ </div>
+ <div class="cell dark" style="background:#26111f"><span class="cap">CONFIRMATION · TOAST · EMPTY STATE</span>
+  <div class="dlg dark" style="left:24px;top:40px;width:340px;background:var(--raised)"><h3>Delete “Work” calendar?</h3><p>This permanently removes Work and its 24 events and tasks, including recurring occurrences. Export it first if you need a copy.</p><div class="acts"><span class="btn ghost">Cancel</span><span class="btn dangerfill">Delete calendar</span></div></div>
+  <div class="toast" style="left:24px;bottom:22px"><svg class="i"><use href="#check"/></svg>2 items moved to deleted files<span class="btn">Undo</span><span class="ib xs" style="color:inherit"><svg class="i"><use href="#close"/></svg></span></div>
+  <div style="position:absolute;right:20px;top:40px;width:170px;text-align:center;color:var(--muted);display:grid;justify-items:center;gap:6px"><span class="tile folder lg"><svg class="i"><use href="#folder"/></svg></span><b style="color:var(--text)">This folder is empty</b><span class="sm">Drop files here or use New.</span><span class="btn tonal s"><svg class="i"><use href="#upload"/></svg>Upload</span></div>
+ </div>
+</div></div></div>
+<ul class="rules"><li><b>Account menu:</b> profile header with avatar, correct icons (lock, shield, grid, sign-out arrow), administration under a small label. Sign out is last, separated.</li><li><b>Submenus</b> show a trailing chevron; the second page starts with a Back row using the back icon, then a separator.</li><li><b>Collection menus</b> gain icons for every item (Edit is a pencil) and end with the destructive item; Delete names the target in its confirmation.</li><li><b>Selects</b> show a check on the current option and the focused option in the hover tone; the trigger keeps the accent focus ring.</li><li><b>Search results</b> use the app's own glyph (avatar for contacts, calendar color, note/file tiles, check for tasks), highlight the match and show a count per group.</li><li><b>Notices</b> become bottom toasts with Undo where the action is reversible (move to deleted files, complete task); errors keep their inline banners with Retry.</li></ul>
+</section>
+
+<!-- ============ 10. PHONES ============ -->
+<section class="frame"><h2>10 · Phones — Files, contact card, calendar month and tasks</h2>
+<p>Same patterns at full width: chips for navigation, the create button above the bottom bar, details full screen with Back. The phone month shows colored dots per day and the selected day's agenda below.</p>
+<div class="phones">
+ <div class="phone light"><div class="ps"><svg class="i"><use href="#search"/></svg>Search all apps…<span class="avatar">LH</span></div><div class="chips"><span class="on"><svg class="i"><use href="#folder"/></svg>All files</span><span><svg class="i"><use href="#star"/></svg>Favorites</span><span><svg class="i"><use href="#share"/></svg>Shared</span></div>
+  <div class="pm"><div class="head" style="padding:14px 10px 6px 16px"><div class="crumbs" style="font-size:17px"><span class="c">All files</span><svg class="i"><use href="#chev"/></svg><span>Launch</span></div><span class="sp"></span><span class="ib s"><svg class="i"><use href="#upload"/></svg></span></div>
+   <table class="ft" style="margin:0 4px;width:calc(100% - 8px)"><tbody><tr><td><span class="name"><span class="tile folder"><svg class="i"><use href="#folder"/></svg></span><span style="display:flex;flex-direction:column">Assets<small class="meta">Nov 10</small></span></span></td><td class="act"><span class="ib xs"><svg class="i"><use href="#more"/></svg></span></td></tr><tr class="on"><td><span class="name"><span class="tile doc"><svg class="i"><use href="#file"/></svg></span><span style="display:flex;flex-direction:column">Launch plan.md<small class="meta">Today · 4.2 KB</small></span></span></td><td class="act"><span class="ib xs"><svg class="i"><use href="#more"/></svg></span></td></tr><tr><td><span class="name"><span class="tile sheet"><svg class="i"><use href="#sheet"/></svg></span><span style="display:flex;flex-direction:column">Budget 2026.csv<small class="meta">Yesterday · 22 KB</small></span></span></td><td class="act"><span class="ib xs"><svg class="i"><use href="#more"/></svg></span></td></tr><tr><td><span class="name"><span class="tile image"><svg class="i"><use href="#image"/></svg></span><span style="display:flex;flex-direction:column">Hero banner.png<small class="meta">Nov 9 · 1.8 MB</small></span></span></td><td class="act"><span class="ib xs"><svg class="i"><use href="#more"/></svg></span></td></tr><tr><td><span class="name"><span class="tile pdf"><svg class="i"><use href="#pdf"/></svg></span><span style="display:flex;flex-direction:column">Contract draft.pdf<small class="meta">Nov 8 · 312 KB</small></span></span></td><td class="act"><span class="ib xs"><svg class="i"><use href="#more"/></svg></span></td></tr></tbody></table></div>
+  <span class="pfab"><svg class="i" style="width:22px;height:22px"><use href="#plus"/></svg></span>
+  <div class="pb"><span class="on"><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span><i><svg class="i"><use href="#grid"/></svg></i>More</span></div></div>
+
+ <div class="phone dark"><div class="ps"><svg class="i"><use href="#search"/></svg>Search all apps…<span class="avatar">LH</span></div>
+  <div class="full"><div class="dhead" style="padding:8px 8px 0 4px"><span class="ib s"><svg class="i"><use href="#back"/></svg></span><span class="t">Contacts</span><span class="ib s"><svg class="i"><use href="#more"/></svg></span></div>
+   <div class="hero"><span class="av lg h0">AL</span><h3>Amira Lee</h3><p class="sm">Design lead · Northwind</p></div>
+   <div class="qa" style="gap:8px"><span><i><svg class="i"><use href="#mail"/></svg></i>Email</span><span><i><svg class="i"><use href="#phone"/></svg></i>Call</span><span><i class="on"><svg class="i"><use href="#star"/></svg></i>Favorite</span><span><i><svg class="i"><use href="#pencil"/></svg></i>Edit</span></div>
+   <div class="group" style="margin:0 12px"><div class="prop"><svg class="i"><use href="#mail"/></svg><div><a>amira@northwind.example</a><small>Work</small></div></div><div class="prop"><svg class="i"><use href="#phone"/></svg><div><a>+1 415 555 0134</a><small>Mobile</small></div></div><div class="prop"><svg class="i"><use href="#cake"/></svg><div><span>April 12, 1990</span><small>Birthday</small></div></div></div></div></div>
+
+ <div class="phone light"><div class="ps"><svg class="i"><use href="#search"/></svg>Search all apps…<span class="avatar">LH</span></div><div class="chips"><span class="on"><span class="ccb c-violet" style="width:14px;height:14px"><svg class="i"><use href="#check"/></svg></span>Personal</span><span class="on"><span class="ccb c-red" style="width:14px;height:14px"><svg class="i"><use href="#check"/></svg></span>Work</span><span class="on"><span class="ccb c-teal" style="width:14px;height:14px"><svg class="i"><use href="#check"/></svg></span>Family</span></div>
+  <div class="pm"><div class="head" style="padding:12px 8px 6px 14px"><h2 style="font-size:17px">November</h2><span class="sp"></span><span class="ib xs"><svg class="i"><use href="#back"/></svg></span><span class="ib xs"><svg class="i"><use href="#chev"/></svg></span><span class="btn outline s" style="height:28px;padding:0 10px">Month<svg class="i"><use href="#chevd"/></svg></span></div>
+   <div class="pmini"><span class="w">M</span><span class="w">T</span><span class="w">W</span><span class="w">T</span><span class="w">F</span><span class="w">S</span><span class="w">S</span><span>9<i><b class="c-red"></b></i></span><span>10<i><b class="c-violet"></b></i></span><span>11</span><span class="t"><em>12</em><i><b class="c-red"></b><b class="c-red"></b><b class="c-violet"></b></i></span><span>13<i><b class="c-red"></b></i></span><span>14<i><b class="c-teal"></b></i></span><span>15</span><span>16<i><b class="c-red"></b><b class="c-red"></b></i></span><span>17<i><b class="c-red"></b></i></span><span>18<i><b class="c-red"></b><b class="c-violet"></b></i></span><span>19<i><b class="c-red"></b></i></span><span>20<i><b class="c-red"></b></i></span><span>21</span><span>22<i><b class="c-teal"></b></i></span></div>
+   <div style="padding:10px 14px 4px;font-weight:650;font-size:12px;color:var(--muted)">THURSDAY, NOV 12</div>
+   <div class="agrow"><span class="bar2 c-red"></span><div><b>Design review</b><small>10:00 – 11:00 · Room 4B</small></div></div><div class="agrow"><span class="bar2 c-red"></span><div><b>1:1 with Daniel</b><small>14:00 – 14:30</small></div></div><div class="agrow"><span class="bar2 c-violet"></span><div><b>Gym</b><small>18:00 – 19:00</small></div></div></div>
+  <span class="pfab"><svg class="i" style="width:22px;height:22px"><use href="#plus"/></svg></span>
+  <div class="pb"><span><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span class="on"><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span><i><svg class="i"><use href="#note"/></svg></i>Notes</span><span><i><svg class="i"><use href="#grid"/></svg></i>More</span></div></div>
+
+ <div class="phone dark"><div class="ps"><svg class="i"><use href="#search"/></svg>Search all apps…<span class="avatar">LH</span></div><div class="chips"><span class="on"><svg class="i"><use href="#list"/></svg>All tasks</span><span><svg class="i"><use href="#calendar"/></svg>Today</span><span><svg class="i"><use href="#clock"/></svg>Upcoming</span></div>
+  <div class="pm"><div class="head" style="padding:12px 10px 6px 16px"><h2 style="font-size:17px">All tasks</h2></div><div class="qadd" style="margin:0 10px 4px;height:40px"><svg class="i"><use href="#plus"/></svg>Add a task</div>
+   <div class="tsec over" style="padding-left:16px">Overdue <span class="n">1</span></div><div class="trow" style="margin:0 4px"><span class="tc p5"></span><div class="tt"><b>Call the plumber</b><div class="tm2"><span class="od">Yesterday</span><span><span class="dot c-violet"></span>Personal</span></div></div></div>
+   <div class="tsec" style="padding-left:16px">Today <span class="n">2</span></div><div class="trow" style="margin:0 4px"><span class="tc p1"></span><div class="tt"><b>Finalize Q4 launch checklist</b><div class="tm2"><span>17:00</span><span><span class="dot c-red"></span>Work</span></div></div></div><div class="trow" style="margin:0 4px"><span class="tc"></span><div class="tt"><b>Water the plants</b><div class="tm2"><span><svg class="i"><use href="#repeat"/></svg>Weekly</span></div></div></div>
+   <div class="tsec" style="padding-left:16px">Upcoming <span class="n">4</span></div><div class="trow" style="margin:0 4px"><span class="tc p5"></span><div class="tt"><b>Review Files grid mock</b><div class="tm2"><span>Tomorrow</span></div></div></div></div>
+  <span class="pfab"><svg class="i" style="width:22px;height:22px"><use href="#plus"/></svg></span>
+  <div class="pb"><span><i><svg class="i"><use href="#folder"/></svg></i>Files</span><span><i><svg class="i"><use href="#people"/></svg></i>Contacts</span><span><i><svg class="i"><use href="#calendar"/></svg></i>Calendar</span><span class="on"><i><svg class="i"><use href="#task"/></svg></i>Tasks</span><span><i><svg class="i"><use href="#grid"/></svg></i>More</span></div></div>
+</div>
+<ul class="rules"><li><b>Phone calendar</b>: chips toggle calendar visibility in their color; Month shows up to three dots per day and the selected day's agenda underneath. Week/Day keep the time grid.</li><li><b>Contact card</b> opens full screen with Back; quick actions are 44px targets.</li><li><b>Files</b> rows put modified · size under the name; the header keeps Upload as an icon.</li><li><b>Tasks</b> keep sections and quick add; the create button opens the full editor.</li></ul>
+</section>
+</div>
+</body></html>
