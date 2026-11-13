@@ -23,13 +23,24 @@
 .ui-account-heading>span:last-child{display:flex;flex-direction:column;min-width:0}
 .ui-account-heading .avatar{width:36px;height:36px;min-width:36px;font-size:12px}
 .ui-account-heading small{margin-top:2px}
-.ui-select-options{padding:6px;border-radius:12px;background:var(--raised);box-shadow:0 10px 28px var(--shadow)}
-.ui-select-options button{min-height:34px;border-radius:9px}
+/* Every dropdown shares the menu surface and 34px rows: action menus, selects,
+   search results, the date picker and the Agent model and suggestion lists. */
+:is(.ui-menu-panel,.ui-select-options,.global-search-results,.date-popover,.agent-model-popover,.agent-suggestions){border:1px solid var(--border);border-radius:14px;background:var(--raised);color:var(--text);box-shadow:0 10px 32px var(--shadow),0 2px 6px color-mix(in srgb,var(--shadow) 60%,transparent)}
+:is(.ui-menu-panel,.ui-select-options,.global-search-results,.agent-model-popover,.agent-suggestions){padding:6px}
+:is(.ui-select-options button,.agent-model-popover li,.agent-suggestions [role=option]){min-height:34px;padding:7px 10px;gap:12px;border-radius:9px;font-size:13px}
+.ui-select-options button:focus{background:var(--hover)}
+.ui-select-options button[aria-selected=true]{background:transparent;color:var(--text)}
+.ui-select-options button[aria-selected=true]:is(:hover,:focus){background:var(--hover)}
+.ui-select-options button .icon{width:16px;height:16px;color:var(--accent)}
+.agent-model-popover li.agent-model-group,.agent-suggestions-heading{min-height:0;padding:8px 10px 4px;font-size:11px;font-weight:650;letter-spacing:0;color:var(--muted)}
 
 /* Search results: app glyphs, match highlight and per-group counts. */
 .global-search-results h2{display:flex;justify-content:space-between;align-items:center}
 .global-search-results h2>span{font-weight:550}
-.global-search-result{gap:12px}
+.global-search-results h2{margin:0;padding:8px 10px 4px;font-size:11px;font-weight:650;text-transform:none;letter-spacing:0}
+.global-search-result{gap:12px;min-height:34px;padding:7px 10px;border-radius:9px}
+.global-search-result:is([aria-selected=true],:hover){background:var(--hover)}
+.global-search-results>[role=status],.global-search-results>.error{padding:6px 10px}
 .global-search-glyph{display:inline-grid;place-items:center;flex:none;width:30px;height:30px;border-radius:9px;position:relative;overflow:hidden;color:var(--accent);font-size:11px;font-weight:650}
 .global-search-glyph::before{content:"";position:absolute;inset:0;background:currentColor;opacity:.13}
 .global-search-glyph .icon{position:relative;width:16px;height:16px}
@@ -412,9 +423,9 @@ button.task-check:hover{border-color:var(--accent)!important;background:color-mi
 .property-card .task-subtask .task-check .icon{width:11px;height:11px}
 .property-card .task-subtask span{color:var(--text);font-weight:500}
 
-/* Note editor: a compact bar and a centered document column. */
-.workspace-note-editor{display:flex;flex-direction:column;padding:0!important}
-.workspace-note-editor .workspace-editor-top{display:flex;align-items:center;gap:6px;flex:none;padding:10px 12px 8px 10px;font-size:12.5px}
+/* Notes and Files editors: a compact bar and a centered document column. */
+.document-editor{display:flex;flex-direction:column;padding:0!important}
+.document-editor .workspace-editor-top{display:flex;align-items:center;gap:6px;flex:none;padding:10px 12px 8px 10px;font-size:12.5px}
 .note-notebook{display:inline-flex;align-items:center;gap:6px;min-width:0;color:var(--muted);font-weight:550;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .note-notebook .collection-dot{width:12px;height:12px}
 .note-status{display:inline-flex;align-items:center;gap:5px;margin-left:auto;color:var(--muted);font-size:12px;white-space:nowrap}
@@ -424,25 +435,25 @@ button.task-check:hover{border-color:var(--accent)!important;background:color-mi
 .workspace-editor-top .segmented{margin-left:6px}
 .note-favorite[aria-pressed=true]{color:var(--warning)}.note-favorite[aria-pressed=true] .icon{fill:currentColor}
 .note-document{display:flex;flex-direction:column;flex:1;min-height:0;width:100%;max-width:740px;margin:0 auto;padding:0 32px 20px}
-.workspace-note-editor .note-title{flex:none;min-height:0;margin:4px 0 0;padding:6px 0;border:0;background:none;font-size:28px;font-weight:650;letter-spacing:-.02em;line-height:1.25}
-.workspace-note-editor .note-title:focus-visible{outline:none;box-shadow:inset 0 -2px var(--accent)}
+.document-editor .note-title{flex:none;min-height:0;margin:4px 0 0;padding:6px 0;border:0;background:none;font-size:28px;font-weight:650;letter-spacing:-.02em;line-height:1.25}
+.document-editor .note-title:focus-visible{outline:none;box-shadow:inset 0 -2px var(--accent)}
 .note-meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin:2px 0 12px;color:var(--muted);font-size:12px}
-.workspace-note-editor .text-formatting{display:inline-flex;align-self:flex-start;flex-wrap:wrap;gap:2px;margin:0 0 6px;padding:4px;border:0!important;border-radius:12px;background:var(--hover)}
-.workspace-note-editor .text-formatting .text-button,.workspace-note-editor .text-formatting .ui-menu-trigger{display:grid;place-items:center;min-width:32px!important;min-height:30px!important;padding:0!important;border-radius:8px;color:var(--muted)}
-.workspace-note-editor .text-formatting .text-button:hover,.workspace-note-editor .text-formatting .ui-menu-trigger:hover{background:var(--panel);color:var(--text)}
-.workspace-note-editor .text-formatting .icon{width:16px;height:16px}
-.workspace-note-editor .text-formatting .starts-group{margin-left:9px;position:relative}
-.workspace-note-editor .text-formatting .starts-group::before{content:"";position:absolute;left:-6px;top:7px;bottom:7px;width:1px;background:var(--border)}
-.workspace-note-editor .note-source{flex:1;min-height:200px;padding:10px 0;border:0;resize:none;background:transparent;font:15px/1.75 ui-serif,Georgia,"Times New Roman",serif}
-.workspace-note-editor .note-source:focus-visible{outline:none}
+.document-editor .text-formatting{display:inline-flex;align-self:flex-start;flex-wrap:wrap;gap:2px;margin:0 0 6px;padding:4px;border:0!important;border-radius:12px;background:var(--hover)}
+.document-editor .text-formatting .text-button,.document-editor .text-formatting .ui-menu-trigger{display:grid;place-items:center;min-width:32px!important;min-height:30px!important;padding:0!important;border-radius:8px;color:var(--muted)}
+.document-editor .text-formatting .text-button:hover,.document-editor .text-formatting .ui-menu-trigger:hover{background:var(--panel);color:var(--text)}
+.document-editor .text-formatting .icon{width:16px;height:16px}
+.document-editor .text-formatting .starts-group{margin-left:9px;position:relative}
+.document-editor .text-formatting .starts-group::before{content:"";position:absolute;left:-6px;top:7px;bottom:7px;width:1px;background:var(--border)}
+.document-editor .note-source{flex:1;min-height:200px;padding:10px 0;border:0;resize:none;background:transparent;font:15px/1.75 ui-serif,Georgia,"Times New Roman",serif}
+.document-editor .note-source:focus-visible{outline:none}
 .note-document>.markdown-preview{flex:1;min-height:120px;overflow:auto;padding:10px 0;line-height:1.75;font-size:15px}
-.workspace-note-editor>.draft-banner{margin:0 12px 8px;border-radius:12px}
-.workspace-note-editor>[role=alert]{margin:0 16px 12px}
-@media(max-width:800px){.note-document{padding:0 var(--pane-padding) 16px}.workspace-note-editor .note-title{font-size:24px}.workspace-editor-top .note-notebook{display:none}}
-/* The Files text editor shares the icon formatting bar. */
-.file-text-editor .text-formatting .text-button,.file-text-editor .text-formatting .ui-menu-trigger{display:grid;place-items:center;min-width:32px;min-height:30px;padding:0;border-radius:8px;color:var(--muted)}
-.file-text-editor .text-formatting .icon{width:16px;height:16px}
-.file-text-editor .text-formatting{gap:2px;align-items:center}
+.document-editor>.draft-banner{margin:0 12px 8px;border-radius:12px}
+.document-editor>[role=alert]{margin:0 16px 12px}
+@media(max-width:800px){.note-document{padding:0 var(--pane-padding) 16px}.document-editor .note-title{font-size:24px}.workspace-editor-top .note-notebook{display:none}}
+.document-editor :is(.note-title,.note-source){color:var(--text)}
+.document-editor .workspace-editor-top>div{display:flex;align-items:center}
+.note-notebook .file-tile{width:20px;height:20px;border-radius:6px}.note-notebook .file-tile .icon{width:13px;height:13px}
+.document-editor.is-plain-text .note-source{font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace}
 .has-pim-details .notes-list .workspace-sort>.ui-menu-trigger>span{display:none}
 .has-pim-details .notes-list .workspace-sort>.ui-menu-trigger{padding:0 8px}
 .workspace-task-details .property-value:has(progress){flex-wrap:nowrap}
@@ -456,10 +467,10 @@ button.task-check:hover{border-color:var(--accent)!important;background:color-mi
   .calendar-main .calendar-month-day .calendar-event .calendar-event-edge{display:block}
   .calendar-main .calendar-month-day .calendar-event strong{padding-left:2px;font-size:10.5px}
   .calendar-heading .calendar-controls{width:100%;justify-content:space-between}
-  .workspace-note-editor .text-formatting{gap:0}
-  .workspace-note-editor .text-formatting :is(.text-button,.ui-menu-trigger){min-width:30px!important}
-  .workspace-note-editor .text-formatting .starts-group{margin-left:5px}
-  .workspace-note-editor .text-formatting .starts-group::before{left:-3px}
+  .document-editor .text-formatting{gap:0}
+  .document-editor .text-formatting :is(.text-button,.ui-menu-trigger){min-width:30px!important}
+  .document-editor .text-formatting .starts-group{margin-left:5px}
+  .document-editor .text-formatting .starts-group::before{left:-3px}
 }
 
 /* Files notices float as a toast; Undo appears when the action is reversible. */

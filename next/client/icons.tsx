@@ -27,7 +27,7 @@ const paths = {
   check: "m5 12 4 4L19 6", clock: "M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
   info: "M12 11v6M12 7h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
   terminal: "M4 6l6 6-6 6M12 19h8", pencil: "M4 20h4L20 8l-4-4L4 16ZM13 7l4 4",
-  undo: "M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4", pin: "M9 3h6l-1 6 3 3H7l3-3ZM12 12v9", archive: "M3 4h18v4H3ZM5 8v12h14V8M10 12h4", panel: "M3 4h18v16H3ZM15 4v16", sidebar: "M3 4h18v16H3ZM9 4v16",
+  undo: "M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4", redo: "m15 14 5-5-5-5M20 9H9a5 5 0 0 0 0 10h4", pin: "M9 3h6l-1 6 3 3H7l3-3ZM12 12v9", archive: "M3 4h18v4H3ZM5 8v12h14V8M10 12h4", panel: "M3 4h18v16H3ZM15 4v16", sidebar: "M3 4h18v16H3ZM9 4v16",
   rss: "M5 11a8 8 0 0 1 8 8M5 5a14 14 0 0 1 14 14M6 19.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3", external: "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
   unread: "M3 3l18 18M10.6 6.1A10 10 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-2.8 3.4M6.6 6.6A17 17 0 0 0 2.5 12S6 18 12 18a9 9 0 0 0 4.4-1.1", checks: "M2 12l5 5L18 6M12 16l1 1 9-11",
   pause: "M9 5v14M15 5v14", alert: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 8v5M12 16h.01",

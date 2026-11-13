@@ -26,3 +26,5 @@ export function recurrenceLabel(rule:string,recurring=false){
   if(parts.UNTIL&&!until)return "Custom schedule";
   return base+(parts.COUNT?` · ${parts.COUNT} occurrences`:until?` · Until ${taskDate(`${until[1]}-${until[2]}-${until[3]}`,true)}`:"");
 }
+/** A short edit time: the time today, Yesterday, then the date. */
+export function edited(value:string|number){const date=new Date(value),now=new Date(),start=(d:Date)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime(),days=Math.round((start(now)-start(date))/86400000);if(days===0)return date.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});if(days===1)return "Yesterday";return date.toLocaleDateString(undefined,{month:"short",day:"numeric",...(date.getFullYear()!==now.getFullYear()?{year:"numeric"}:{})});}

@@ -77,7 +77,10 @@ Selected from [mock B](spacetimedb/unified-look-mock-b.html) over
   shared keyboard, Escape, outside-click and focus-return behavior. Items are
   34px with an icon, grouped by separators or a small section label, with
   right-aligned shortcut hints, a chevron for submenus (Back row on the second
-  page), a check on the current choice and the destructive item last.
+  page), a check on the current choice and the destructive item last. Every
+  dropdown (menus, selects, search results, the date picker, Agent pickers) uses
+  the same surface (14px radius, raised, one shadow) and rows; a select marks its
+  choice with the menu check, not a tonal fill.
 
 ## Content sheets (apps revamp, November 12)
 
@@ -135,6 +138,9 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   repeat Rename/Move/Copy/Delete. Details: preview, Preview/Download/Favorite/
   Share quick actions, then Details/Versions/Sharing tabs. Moving to deleted files
   shows a toast with Undo. Storage is a meter card at the bottom of the sidebar.
+  Text and Markdown files open in the Notes editor layout (type, save status,
+  Write/Preview, file menu; centered column with the name as title, edit time
+  and the formatting bar); plain text uses a monospace font.
 - **Contacts:** letter-grouped list under the name sort, with hued avatars, title ·
   organization and the address-book dot. Groups are sidebar rows. The card offers
   Email, Call, Favorite and Edit; values are links. The editor uses sections and
