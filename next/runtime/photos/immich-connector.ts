@@ -7,32 +7,38 @@ import path from "node:path";
 import {lookup} from "node:dns/promises";
 import {BlockList,isIP} from "node:net";
 import type {Database} from "../database.ts";
-import {blobPath,type blobStore} from "../files/blobs.ts";
-import {photoKind} from "../../shared/photos.ts";
+import type {blobStore} from "../files/blobs.ts";
+import {photoKind,type PhotoImmichProgress} from "../../shared/photos.ts";
 import type {PhotosRuntime,PhotoJob} from "./runtime.ts";
 
-interface Connection {userId:string;url:string;sealedKey:string;direction:"import"|"twoWay"}
+interface Connection {userId:string;url:string;sealedKey:string}
 interface RemoteAsset {id:string;checksum:string;originalFileName:string;originalMimeType?:string;fileCreatedAt:string;fileModifiedAt:string;isFavorite:boolean;visibility:string;isTrashed:boolean;type:string;exifInfo?:{description?:string|null}}
-interface Local {fileId:string;sha1:string;name:string;mediaType:string;takenAt:number;modifiedAt:number;blobId:string;size:number}
+interface Local {fileId:string;sha1:string}
 /** Per run, so a large library arrives over several runs without starving the server. */
 const budget={files:300,bytes:4*1024**3};
+/** While Immich has more to import, the next run starts this soon instead of waiting for the interval. */
+const backlogDelay=30_000;
 
 /**
- * Dar's connector to an Immich server (API key, x-api-key). Import copies originals that
- * Dar does not have (by SHA-1) into the owner's Photos folder with favorite, archive and
- * description, then mirrors album membership; two-way also uploads Dar photos Immich does
- * not have. One run at a time; each run is bounded and resumes where it left off.
+ * Dar's import from an Immich server (API key, x-api-key). Originals Dar does not have
+ * (by SHA-1) are copied into the owner's Photos folder with favorite, archive and
+ * description, then album membership is mirrored. One run at a time; each is bounded,
+ * reports live progress, and the next continues where it stopped.
  */
 export function createImmichConnector(db:Database,root:string,blobs:ReturnType<typeof blobStore>,photos:PhotosRuntime,options:{allowLoopback:boolean}){
   let closing=false,running:Promise<void>|undefined,timer:NodeJS.Timeout|undefined;const controller=new AbortController();
   const worker=<T=unknown>(operation:string,value:object)=>db.call<T>("service_immich_worker",[operation,JSON.stringify(value)]);
+  const progress=new Map<string,PhotoImmichProgress>(),backlog=new Set<string>();
   async function runOne(c:Connection){
-    const key=photos.openImmichKey(c.sealedKey),summary={remote:0,imported:0,albums:0,exported:0,skipped:0};let error="";
+    const key=photos.openImmichKey(c.sealedKey),summary={remote:0,imported:0,albums:0,skipped:0};let error="";
+    const state:PhotoImmichProgress={phase:"connecting",done:0,total:0,imported:0,file:"",startedAt:Date.now()};progress.set(c.userId,state);
+    const phase=(name:PhotoImmichProgress["phase"],total=0)=>{state.phase=name;state.done=0;state.total=total;state.file="";};
     try{
       if(!key)throw new Error("The API key cannot be read on this installation. Enter it again.");
       const client=immichClient(c.url,key,controller.signal,options.allowLoopback);
       await client.json("/users/me");
-      // What Dar already has.
+      // What Dar already has: imported Immich IDs, and the SHA-1 of the owner's photos.
+      phase("comparing");
       const mapped=new Map<string,string>(),local=new Map<string,Local>();let after="";
       for(let page=0;page<1000;page++){
         const known=await worker<{remote:{remoteId:string;fileId:string}[];local:Local[];next:string}>("known",{userId:c.userId,after,limit:2000});
@@ -41,23 +47,26 @@ export function createImmichConnector(db:Database,root:string,blobs:ReturnType<t
       }
       const map=(remoteId:string,fileId:string,checksum:string)=>{mapped.set(remoteId,fileId);return worker("map",{userId:c.userId,remoteId,fileId,checksum});};
       // Import: page through Immich's library.
-      const remoteChecksums=new Set<string>();let files=0,bytes=0;
+      phase("importing");let files=0,bytes=0;
       for(let page=1;page<10_000&&!closing;page++){
-        const result=await client.json<{assets:{items:RemoteAsset[];nextPage:string|null}}>("/search/metadata",{method:"POST",body:{page,size:500,withExif:true,withDeleted:false}});
+        const result=await client.json<{assets:{items:RemoteAsset[];nextPage:string|null;total?:number}}>("/search/metadata",{method:"POST",body:{page,size:500,withExif:true,withDeleted:false}});
+        if(result.assets.total)state.total=result.assets.total;
         for(const asset of result.assets.items){
-          summary.remote++;if(asset.checksum)remoteChecksums.add(asset.checksum);
+          summary.remote++;state.done++;if(state.total<state.done)state.total=state.done;
           if(asset.isTrashed||asset.visibility==="locked"||mapped.has(asset.id))continue;
           const existing=local.get(asset.checksum);if(existing){await map(asset.id,existing.fileId,asset.checksum);continue;}
           if(files>=budget.files||bytes>=budget.bytes){summary.skipped++;continue;}
+          state.file=asset.originalFileName;
           const imported=await importAsset(c,client,asset);if(!imported){summary.skipped++;continue;}
-          files++;bytes+=imported.size;summary.imported++;await map(asset.id,imported.fileId,asset.checksum);
+          files++;bytes+=imported.size;summary.imported++;state.imported++;await map(asset.id,imported.fileId,asset.checksum);
         }
         if(!result.assets.nextPage)break;
       }
       // Albums: membership of imported photos, by Immich album.
       const albums=await client.json<{id:string;albumName:string;description:string}[]>("/albums");
+      phase("albums",albums.length);
       for(const album of albums){
-        if(closing)break;const fileIds:string[]=[];
+        if(closing)break;state.done++;state.file=album.albumName;const fileIds:string[]=[];
         for(let page=1;page<1000;page++){
           const result=await client.json<{assets:{items:RemoteAsset[];nextPage:string|null}}>("/search/metadata",{method:"POST",body:{page,size:1000,albumIds:[album.id]}});
           for(const a of result.assets.items){const fileId=mapped.get(a.id)??local.get(a.checksum)?.fileId;if(fileId)fileIds.push(fileId);}
@@ -65,12 +74,9 @@ export function createImmichConnector(db:Database,root:string,blobs:ReturnType<t
         }
         const {albumId}=await worker<{albumId:string}>("album",{userId:c.userId,remoteId:album.id,name:album.albumName,description:album.description??"",fileIds});if(albumId)summary.albums++;
       }
-      // Two-way: Dar photos Immich lacks go up, original bytes and dates.
-      if(c.direction==="twoWay")for(const item of local.values()){
-        if(closing||files>=budget.files||bytes>=budget.bytes)break;if(remoteChecksums.has(item.sha1)||[...mapped.values()].includes(item.fileId))continue;
-        const uploaded=await client.upload(item,blobPath(root,item.blobId));files++;bytes+=item.size;summary.exported++;await map(uploaded,item.fileId,item.sha1);
-      }
     }catch(cause){error=(cause as Error).name==="AbortError"?"Stopped.":(cause as Error).message.slice(0,300);}
+    progress.delete(c.userId);
+    if(!error&&summary.skipped>0)backlog.add(c.userId);else backlog.delete(c.userId);
     await worker("report",{userId:c.userId,error,summary}).catch(()=>undefined);
   }
   async function importAsset(c:Connection,client:ReturnType<typeof immichClient>,asset:RemoteAsset){
@@ -96,12 +102,16 @@ export function createImmichConnector(db:Database,root:string,blobs:ReturnType<t
     running=(async()=>{const {connections}=await worker<{connections:Connection[]}>("due",{userId});for(const c of connections){if(closing)break;await runOne(c);}})()
       .catch(error=>{if(!closing)console.warn("Immich connector:",(error as Error).message);}).finally(()=>{running=undefined;});
     await running;
+    // A library larger than one run keeps going, an account at a time, until it is all in.
+    const next=[...backlog][0];if(next&&!closing)setTimeout(()=>{void tick(next);},backlogDelay).unref();
   }
   function schedule(){if(closing)return;timer=setTimeout(()=>{void tick().finally(schedule);},5*60_000);}
   schedule();
   return {
     /** Runs one account's connection now (Sync now). */
     syncNow(userId:string){void tick(userId);},
+    /** Where a running import is, for the Photos status bars; undefined when idle. */
+    progress(userId:string):PhotoImmichProgress|undefined{const value=progress.get(userId);return value?{...value}:backlog.has(userId)?{phase:"waiting",done:0,total:0,imported:0,file:"",startedAt:0}:undefined;},
     /** Checks an Immich server and key before they are saved. */
     async test(url:string,key:string){const client=immichClient(url,key,AbortSignal.timeout(15_000),options.allowLoopback);await client.json("/server/ping");return await client.json<{name:string;email:string}>("/users/me");},
     async close(){closing=true;clearTimeout(timer);controller.abort();await running;},
@@ -131,21 +141,6 @@ function immichClient(url:string,key:string,signal:AbortSignal,allowLoopback=fal
   return {
     raw,
     async json<T=unknown>(route:string,init:{method?:string;body?:unknown}={}){return await (await raw(route,init)).json() as T;},
-    /** Multipart upload of a Dar original; Immich answers created or duplicate with its asset ID. */
-    async upload(item:Local,file:string){
-      const boundary=`dar-${crypto.randomUUID()}`,field=(name:string,value:string)=>`--${boundary}\r\ncontent-disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`;
-      const head=Buffer.from(field("deviceAssetId",item.fileId)+field("deviceId","dar")+field("fileCreatedAt",new Date(item.takenAt).toISOString())+field("fileModifiedAt",new Date(item.modifiedAt).toISOString())+field("filename",item.name)
-        +`--${boundary}\r\ncontent-disposition: form-data; name="assetData"; filename="${item.name.replace(/"/g,"_")}"\r\ncontent-type: ${item.mediaType}\r\n\r\n`),tail=Buffer.from(`\r\n--${boundary}--\r\n`);
-      const body=Readable.from((async function*(){yield head;for await (const chunk of createReadStream(file))yield chunk;yield tail;})());
-      await allowedHost(base,allowLoopback);
-      let response:Response;
-      try{
-        response=await fetch(base+"/assets",{method:"POST",headers:{"x-api-key":key,"x-immich-checksum":item.sha1,"content-type":`multipart/form-data; boundary=${boundary}`,"content-length":String(head.length+item.size+tail.length)},
-          body:Readable.toWeb(body) as unknown as BodyInit,duplex:"half",signal,redirect:"manual"} as RequestInit);
-      }catch(error){throw new Error(networkMessage(error,base+"/assets"));}
-      if(!response.ok)throw new Error(`Immich answered ${response.status} to an upload.`);
-      return (await response.json() as {id:string}).id;
-    },
   };
 }
 
@@ -161,7 +156,7 @@ for(const [net,bits] of [["::",128],["::1",128],["fe80::",10],["ff00::",8]] as c
 async function allowedHost(base:string,allowLoopback:boolean){
   const url=new URL(base);if(!["http:","https:"].includes(url.protocol)||url.username||url.password)throw new Error("Use an http or https address without credentials.");
   const host=url.hostname.replace(/^\[|\]$/g,""),addresses=isIP(host)?[{address:host,family:isIP(host)}]:await lookup(host,{all:true}).catch(()=>{throw new Error("The Immich server's name could not be resolved.");});
-  for(const {address,family} of addresses){if(allowLoopback&&(/^127\.|^::1$|^::ffff:127\./.test(address)))continue;const mapped=/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];if(mapped?blocked.check(mapped,"ipv4"):blocked.check(address,family===6?"ipv6":"ipv4"))throw new Error("That address points to this server or a reserved network. For Immich on the same machine, the administrator can set services.dar.photos.immichAllowLocalHost and you can use http://127.0.0.1:2283.");}
+  for(const {address,family} of addresses){if(allowLoopback&&(/^127\.|^::1$|^::ffff:127\./.test(address)))continue;const mapped=/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];if(mapped?blocked.check(mapped,"ipv4"):blocked.check(address,family===6?"ipv6":"ipv4"))throw new Error("That address points to this server or a reserved network. For Immich on the same machine, the administrator can set services.dar.photos.immichAllowLocalHost and you can use http://localhost:2283 (or http://[::1]:2283 if Immich listens on IPv6 only).");}
 }
 
 /**

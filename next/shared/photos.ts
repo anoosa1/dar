@@ -33,7 +33,9 @@ export interface PhotoStack {id:string;primaryId:string;items:PhotoAsset[]}
 export interface PhotoDuplicateGroup {key:string;identical:boolean;items:(PhotoAsset&{path:string})[]}
 export interface PhotoDuplicatePage {groups:PhotoDuplicateGroup[];cursor:string}
 export interface PhotoCounts {library:number;favorites:number;videos:number;archive:number;trash:number;duplicates:number;shared:number}
-export interface PhotoOverview {albums:PhotoAlbum[];sharedAlbums:PhotoAlbum[];counts:PhotoCounts;indexing:boolean;uploadFolder:string}
+export interface PhotoOverview {albums:PhotoAlbum[];sharedAlbums:PhotoAlbum[];counts:PhotoCounts;indexing:boolean;uploadFolder:string;
+  /** An Immich import in progress for this account, if any. */
+  immich?:PhotoImmichProgress|null}
 /** Undo information for photos moved into the Locked folder. */
 export interface PhotoMoved {id:string;parentId:string}
 /** Facts the runtime extracts from a blob with exiftool/ffprobe and the thumbnail. */
@@ -85,3 +87,5 @@ export interface PhotoPublicDetail {id:string;name:string;kind:"image"|"video";w
 export const photoLinkLimits={links:200,members:100,passwordDays:0.5,expiryDays:3650};
 /** Shared-link passwords: 4–200 characters (account passwords keep their own rules). */
 export const validLinkPassword=(value:string)=>[...value].length>=4&&value.length<=200;
+/** A running Immich import (waiting: more to import, the next run starts shortly). */
+export interface PhotoImmichProgress {phase:"connecting"|"comparing"|"importing"|"albums"|"waiting";done:number;total:number;imported:number;file:string;startedAt:number}

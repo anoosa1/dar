@@ -150,12 +150,12 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     // The connector: Immich has one new photo (a favorite) and one Dar already has, in an album.
     const remoteId=randomUUID(),sameId=randomUUID();
     fake=await fakeImmich([{id:remoteId,bytes:remoteBytes,name:"remote.jpg",type:"image/jpeg",favorite:true,createdAt:"2023-08-01T12:00:00.000Z"},{id:sameId,bytes:beach,name:"beach.jpg",type:"image/jpeg",favorite:false,createdAt:"2024-03-05T10:00:00.000Z"}],[{id:randomUUID(),albumName:"Remote trip",assetIds:[remoteId,sameId]}]);
-    const connect2=(apiKey:string,address=fake!.url+"/old")=>fetch(base+"/api/v1/photos/immich/connection",{method:"PUT",headers,body:JSON.stringify({url:address,apiKey,direction:"twoWay",intervalMinutes:60,enabled:true,revision:0})});
+    const connect2=(apiKey:string,address=fake!.url+"/old")=>fetch(base+"/api/v1/photos/immich/connection",{method:"PUT",headers,body:JSON.stringify({url:address,apiKey,intervalMinutes:60,enabled:true,revision:0})});
     const refusedConnection=await connect2("good-key",`http://127.0.0.1:${await freePort()}`);assert.equal(refusedConnection.status,400);assert.match((await refusedConnection.json() as {error:{message:string}}).error.message,/Nothing accepted the connection/);
     const rejected=await connect2("bad-key");assert.equal(rejected.status,400);assert.match((await rejected.json() as {error:{message:string}}).error.message,/rejected the API key/);
     assert.equal((await connect2("good-key")).status,200);
     assert.equal((await fetch(base+"/api/v1/photos/immich/connection",{method:"PUT",headers,body:JSON.stringify({url:"http://169.254.169.254",apiKey:"good-key",direction:"import",intervalMinutes:60,enabled:true,revision:1})})).status,400);
-    const state=async()=>(await (await fetch(base+"/api/v1/photos/immich",{headers})).json() as {connection:{lastRunAt:number;lastError:string;summary:{imported:number;exported:number;albums:number}}}).connection;
+    const state=async()=>(await (await fetch(base+"/api/v1/photos/immich",{headers})).json() as {connection:{lastRunAt:number;lastError:string;summary:{imported:number;albums:number}};progress:unknown}).connection;
     assert.equal((await fetch(base+"/api/v1/photos/immich/connection/sync",{method:"POST",headers})).status,202);
     let status=await state();for(let i=0;i<120&&!status.lastRunAt;i++){await new Promise(r=>setTimeout(r,500));status=await state();}
     assert.equal(status.lastError,"");assert.deepEqual([status.summary.imported,status.summary.albums],[1,1]);
@@ -164,11 +164,12 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     assert.equal(importedDetail.favorite,true);assert.equal(importedDetail.description,"from immich");assert.equal(new Date(importedDetail.takenAt).getUTCFullYear(),2023);
     const overview=await (await fetch(base+"/api/v1/photos/overview",{headers})).json() as PhotoOverview;
     assert.equal(overview.albums.find(a=>a.name==="Remote trip")?.count,2);
-    // Two-way sends what Immich lacks (solo.jpg); a second run imports and sends nothing new.
-    assert.equal(status.summary.exported,1);assert.deepEqual(fake!.received.map(r=>[r.name,r.checksum]),[["solo.jpg",sha1(solo)]]);
+    // Import only: nothing goes to Immich (solo.jpg exists only in Dar); once done there is no progress left.
+    assert.deepEqual(fake!.received,[]);assert.equal((await (await fetch(base+"/api/v1/photos/overview",{headers})).json() as PhotoOverview).immich,null);
+    assert.equal((await fetch(base+"/api/v1/photos/immich/connection",{method:"PUT",headers,body:JSON.stringify({url:fake!.url,apiKey:"good-key",direction:"twoWay",intervalMinutes:60,enabled:true,revision:1})})).status,400);
     await fetch(base+"/api/v1/photos/immich/connection/sync",{method:"POST",headers});const first=status.lastRunAt;
     for(let i=0;i<120&&status.lastRunAt===first;i++){await new Promise(r=>setTimeout(r,500));status=await state();}
-    assert.deepEqual([status.summary.imported,status.summary.exported],[0,0]);assert.equal((await (await fetch(base+"/api/v1/photos/assets",{headers})).json() as PhotoPage).items.filter(i=>i.name.startsWith("remote")).length,1);
+    assert.equal(status.summary.imported,0);assert.equal((await (await fetch(base+"/api/v1/photos/assets",{headers})).json() as PhotoPage).items.filter(i=>i.name.startsWith("remote")).length,1);
     assert.equal((await fetch(base+"/api/v1/photos/immich/connection",{method:"DELETE",headers})).status,200);
   }finally{await fake?.close();await runtime.close();}
 });

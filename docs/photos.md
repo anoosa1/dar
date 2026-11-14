@@ -10,7 +10,7 @@ in phases.
 - **Layout:** mock B (albums in the sidebar, square month-grouped grid, viewer in the
   middle sheet, details in the right sheet).
 - **Immich:** both directions. Dar connects to an Immich server with an API key
-  (import or two-way), and serves the Immich mobile-app API so the official app
+  (import only since November 14; two-way was dropped), and serves the Immich mobile-app API so the official app
   backs up to Dar with an app password (Photos read/write scope).
 - **Authorized dependencies:** Nix-provided media tools (ffmpeg, libvips,
   exiftool) run as subprocesses; bundled ML in the Nix closure (onnxruntime with
@@ -115,16 +115,19 @@ in phases.
   copies once ready, otherwise the original. Photos settings › Immich lists
   signed-in devices and signs them out. Not verified on a physical device yet; the
   protocol is covered by tests built from the 3.4.1 API and app sources.
-- **Immich server connector:** Photos settings › Immich connects to an Immich server
-  with an API key (checked first, then sealed with the instance keyring). Import
-  copies originals Dar lacks (by SHA-1) into the Photos folder with favorite,
-  archive and description, and mirrors album membership; Two-way also uploads Dar
-  photos Immich lacks. Runs every 15 minutes to daily or on Sync now, at most 300
-  files or 4 GiB per run, resuming next time. Private network and Tailscale addresses
-  are allowed; link-local, multicast and unspecified addresses are not, and loopback
+- **Immich import:** Photos settings › Immich connects to an Immich server with an API
+  key (checked first, then sealed with the instance keyring) and starts importing at
+  once. Originals Dar lacks (by SHA-1) are copied into the Photos folder with
+  favorite, archive and description, and album membership is mirrored; nothing is
+  sent to Immich. Runs every 15 minutes to daily or on Sync now, at most 300 files or
+  4 GiB per run; while more remains, the next run follows 30 seconds later. A
+  progress bar (phase, checked and imported counts, current file) shows in the
+  Immich tab and at the foot of the Photos sidebar while it runs. Private network and
+  Tailscale addresses are allowed; link-local, multicast and unspecified addresses are not, and loopback
   only with `services.dar.photos.immichAllowLocalHost` (for Immich on the same machine,
-  reached as `http://127.0.0.1:2283`; a machine often cannot reach its own Tailscale
-  address). Disconnecting keeps imported photos.
+  reached as `http://localhost:2283`, or `http://[::1]:2283` when Immich listens on
+  IPv6 only; a machine often cannot reach its own Tailscale address, and cannot at all
+  with Tailscale in userspace networking). Disconnecting keeps imported photos.
 - **Albums:** create (optionally from a selection), rename, delete (photos stay),
   add and remove; the first photo is the cover. Limits: 500 albums, 50,000 items.
 - **Search:** file names, descriptions, camera models and album names appear in the

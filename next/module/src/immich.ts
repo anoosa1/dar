@@ -256,14 +256,15 @@ export function immichConnectionView(ctx:Ctx,userId:string){
   const row=ctx.db.immichConnections.userId.find(userId);
   if(!row)return {connected:false};
   let summary:unknown={};try{summary=JSON.parse(row.summary||"{}");}catch{summary={};}
-  return {connected:true,url:row.url,direction:row.direction,intervalMinutes:row.intervalMinutes,enabled:row.enabled,lastRunAt:row.lastRunAt,lastError:row.lastError,summary,revision:row.revision};
+  return {connected:true,url:row.url,intervalMinutes:row.intervalMinutes,enabled:row.enabled,lastRunAt:row.lastRunAt,lastError:row.lastError,summary,revision:row.revision};
 }
 export function saveImmichConnection(ctx:Ctx,userId:string,p:Record<string,unknown>){
   if(Object.keys(p).some(k=>!["url","sealedKey","direction","intervalMinutes","enabled","revision"].includes(k)))fail("invalidInput");
   const old=ctx.db.immichConnections.userId.find(userId);if((old?.revision??0)!==p.revision)fail("conflict");
   const url=typeof p.url==="string"?p.url.trim().replace(/\/+$/,""):old?.url??"";
   if(!/^https?:\/\/[^\s/?#]+(\/[^\s?#]*)?$/.test(url)||url.length>500)fail("invalidInput");
-  const direction=p.direction===undefined?old?.direction??"import":p.direction;if(direction!=="import"&&direction!=="twoWay")fail("invalidInput");
+  // Import only (two-way was removed); older connections are kept and treated the same.
+  if(p.direction!==undefined&&p.direction!=="import")fail("invalidInput");const direction="import";
   const interval=p.intervalMinutes===undefined?old?.intervalMinutes??60:p.intervalMinutes;if(typeof interval!=="number"||![15,60,360,1440].includes(interval))fail("invalidInput");
   const sealedKey=p.sealedKey===undefined?old?.sealedKey??"":p.sealedKey;if(typeof sealedKey!=="string"||!sealedKey||sealedKey.length>2000)fail("invalidInput");
   const enabled=p.enabled===undefined?old?.enabled??true:p.enabled;if(typeof enabled!=="boolean")fail("invalidInput");
@@ -279,7 +280,7 @@ export function deleteImmichConnection(ctx:Ctx,userId:string){
 /** Connections whose interval has passed (or one account's, when asked to sync now). */
 export function immichDue(ctx:Ctx,userId:string){
   const now=Number(ctx.timestamp.toMillis()),rows=userId?[ctx.db.immichConnections.userId.find(userId)].filter(r=>!!r):[...ctx.db.immichConnections.iter()].filter(r=>r.enabled&&r.lastRunAt+r.intervalMinutes*60_000<=now);
-  return {connections:rows.filter(r=>ctx.db.accounts.id.find(r.userId)?.enabled).map(r=>({userId:r.userId,url:r.url,sealedKey:r.sealedKey,direction:r.direction}))};
+  return {connections:rows.filter(r=>ctx.db.accounts.id.find(r.userId)?.enabled).map(r=>({userId:r.userId,url:r.url,sealedKey:r.sealedKey}))};
 }
 export function immichReport(ctx:Ctx,userId:string,error:string,summary:unknown){
   const row=ctx.db.immichConnections.userId.find(userId);if(!row)return {ok:false};

@@ -10,7 +10,7 @@ import {useLockedFolder,UnlockForm,UnlockDialog,type LockedFolder} from "../lock
 import {photoFolderParts,type PhotoAlbum,type PhotoAsset,type PhotoDetail,type PhotoOverview,type PhotoPage,type PhotoView,type PhotoStack,type PhotoMoved,type PhotoDuplicateGroup,type PhotoDuplicatePage,type PhotoCounts} from "../../shared/photos.ts";
 import {flushSync} from "react-dom";
 import {SharePane,LinkDialog,LinksList} from "./sharing.tsx";
-import {ImmichSettings} from "./immich-settings.tsx";
+import {ImmichSettings,ImmichProgressBar} from "./immich-settings.tsx";
 import "./photos.css";
 
 const base="/api/v1/photos";
@@ -86,6 +86,14 @@ export function PhotosWorkspace({session,onSignedOut}:{session:BrowserSession;on
   // While the background scan is running, refresh so newly indexed media appears.
   const latest=useRef({loadItems,busy:false});latest.current={loadItems,busy:selected.size>0||!!open};
   useEffect(()=>{if(!overview?.indexing)return;const timer=setTimeout(()=>{void loadOverview();if(!latest.current.busy)void latest.current.loadItems();},8000);return()=>clearTimeout(timer);},[overview]);
+  // During an Immich import the sidebar bar updates every few seconds; new photos appear as they arrive.
+  const importedSeen=useRef(0),importRunning=useRef(false);
+  useEffect(()=>{
+    // New photos appear as they arrive, and once more when the import ends.
+    const imported=overview?.immich?.imported??0,ended=importRunning.current&&!overview?.immich;importRunning.current=!!overview?.immich;
+    if(imported!==importedSeen.current||ended){const changed=imported>importedSeen.current||ended;importedSeen.current=imported;if(changed&&!latest.current.busy)void latest.current.loadItems();}
+    if(!overview?.immich)return;const timer=setTimeout(()=>{void loadOverview();},3000);return()=>clearTimeout(timer);
+  },[overview]);
   useEffect(()=>{const node=sentinel.current;if(!node||!cursor)return;const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))void loadMore();},{root:grid.current,rootMargin:"600px"});observer.observe(node);return()=>observer.disconnect();},[cursor,loadMore]);
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(null),notice.undo?8000:4000);return()=>clearTimeout(timer);},[notice]);
 
@@ -216,6 +224,7 @@ export function PhotosWorkspace({session,onSignedOut}:{session:BrowserSession;on
     <div className="sidebar-heading photos-heading"><h2>More</h2></div>
     <nav aria-label="More photos views">{moreViews.map(navButton)}</nav>
     {overview?.indexing&&<p className="photos-indexing" role="status"><span className="photos-spinner" aria-hidden="true"/>Finding photos in Files…</p>}
+    {overview?.immich&&<button type="button" className="photos-sync-entry" onClick={()=>setSettings(true)} aria-label="Immich import in progress, open Photos settings"><ImmichProgressBar compact progress={overview.immich}/></button>}
     <button type="button" className="nav-item ui-app-settings-entry" onClick={()=>setSettings(true)}><Icon name="settings"/>Photos settings</button>
   </>;
 
@@ -317,7 +326,7 @@ export function PhotosWorkspace({session,onSignedOut}:{session:BrowserSession;on
     {unlockAction&&<UnlockDialog folder={folder} action={unlockAction.action} onClose={()=>setUnlockAction(null)} onUnlocked={()=>{const run=unlockAction.run;setUnlockAction(null);run();}}/>}
     {sharing&&<SharePane album={sharing} session={session} onClose={()=>setSharing(undefined)} onChanged={()=>{void loadOverview();}}/>}
     {linkFor&&<LinkDialog ids={linkFor} session={session} onClose={()=>{setLinkFor(undefined);setSelected(new Set());}} onCreated={()=>undefined}/>}
-    {settings&&<PhotosSettings session={session} overview={overview} folder={folder} onChanged={()=>{void loadOverview();}} onClose={()=>setSettings(false)}/>}
+    {settings&&<PhotosSettings session={session} overview={overview} folder={folder} onChanged={()=>{void loadOverview();}} onClose={()=>{setSettings(false);void loadOverview();}}/>}
     <div className="photos-toast-region" role="status" aria-live="polite">{notice&&<div className="settings-toast photos-toast"><span>{notice.message}</span>{notice.undo&&<button type="button" className="text-button" onClick={()=>{const undo=notice.undo!;setNotice(null);undo();}}>Undo</button>}</div>}</div>
   </div>;
 }

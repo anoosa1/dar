@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import {chromium} from "@playwright/test";
 import {openSearch} from "./ui-helpers.mjs";
+import http from "node:http";
+import {execFileSync} from "node:child_process";
+import {readFileSync} from "node:fs";
+import {createHash,randomUUID} from "node:crypto";
 const base=process.env.DAR_INTEGRATION_ORIGIN,root=process.env.DAR_TEST_ROOT;if(!base||!root)throw Error("Use the isolated Photos fixture.");
 const browser=await chromium.launch({executablePath:process.env.DAR_CHROMIUM,headless:true}),context=await browser.newContext({viewport:{width:1440,height:950}}),page=await context.newPage(),errors=[];
 page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()==="error"&&!/Failed to load resource/.test(m.text()))errors.push(m.text());});
@@ -136,6 +140,40 @@ try{
   await other.waitForFunction(()=>(document.querySelector(".photos-stage img")?.naturalWidth??0)>0);
   await other.getByRole("complementary",{name:"Photo details"}).getByText(/Shared by Photos fixture/).waitFor();await other.screenshot({path:path.join(root,"photos-shared-with-me.png")});
   await otherContext.close();
+
+  // Immich import with live status: a slow fake Immich (each original takes a second) so the bars can be seen mid-run.
+  const shots=["testsrc2","mandelbrot","smptehdbars"].map((source,n)=>{const file=path.join(root,`immich-${n}.jpg`);execFileSync("ffmpeg",["-nostdin","-v","error","-y","-f","lavfi","-i",`${source}=size=320x240`,"-frames:v","1",file]);return {id:randomUUID(),name:`immich-${n}.jpg`,bytes:readFileSync(file)};});
+  const immich=http.createServer((req,res)=>{void (async()=>{
+    for await (const _ of req);const url=new URL(req.url,"http://x"),json=v=>{res.writeHead(200,{"content-type":"application/json"});res.end(JSON.stringify(v));};
+    if(url.pathname==="/api/server/ping")return json({res:"pong"});
+    if(req.headers["x-api-key"]!=="browser-key"){res.writeHead(401);res.end("{}");return;}
+    if(url.pathname==="/api/users/me")return json({id:randomUUID(),name:"Remote",email:"remote@example.com"});
+    if(url.pathname==="/api/search/metadata")return json({assets:{items:shots.map(s=>({id:s.id,checksum:createHash("sha1").update(s.bytes).digest("base64"),originalFileName:s.name,originalMimeType:"image/jpeg",fileCreatedAt:"2022-06-01T10:00:00.000Z",fileModifiedAt:"2022-06-01T10:00:00.000Z",isFavorite:false,visibility:"timeline",isTrashed:false,type:"IMAGE"})),nextPage:null,total:shots.length}});
+    const original=/^\/api\/assets\/([^/]+)\/original$/.exec(url.pathname);
+    if(original){const shot=shots.find(s=>s.id===original[1]);await new Promise(r=>setTimeout(r,1000));res.writeHead(200,{"content-type":"image/jpeg"});res.end(shot.bytes);return;}
+    if(url.pathname==="/api/albums")return json([]);
+    res.writeHead(404);res.end("{}");
+  })();});
+  await new Promise(r=>immich.listen(0,"127.0.0.1",r));
+  try{
+    await page.goto(`${base}/photos`);await page.getByRole("button",{name:"Photos settings",exact:true}).first().click();
+    const settingsSheet=page.getByRole("dialog",{name:"Photos settings"});await settingsSheet.getByRole("tab",{name:"Immich"}).click();
+    await settingsSheet.getByLabel("Server address").fill(`http://127.0.0.1:${immich.address().port}`);await settingsSheet.getByLabel("API key").fill("browser-key");
+    assert.equal(await settingsSheet.getByText("Direction").count(),0);
+    await settingsSheet.getByRole("button",{name:"Connect"}).click();await settingsSheet.getByText("Connected to Immich. Importing has started.").waitFor();
+    const settingsBar=settingsSheet.getByRole("progressbar",{name:"Importing from Immich"});await settingsBar.waitFor();
+    await settingsSheet.getByText(/of 3 checked/).waitFor();await settingsSheet.getByText(/^immich-\d\.jpg$/).waitFor();
+    await page.screenshot({path:path.join(root,"photos-immich-progress.png")});
+    await settingsSheet.getByRole("button",{name:"Close settings"}).click();
+    const sidebarBar=page.getByRole("button",{name:"Immich import in progress, open Photos settings"});await sidebarBar.waitFor();
+    await page.screenshot({path:path.join(root,"photos-immich-sidebar.png")});
+    await sidebarBar.waitFor({state:"detached",timeout:30000});
+    await page.getByRole("list",{name:"Library photos"}).getByRole("button",{name:/^Photo immich-2\.jpg/}).waitFor();
+    await page.getByRole("button",{name:"Photos settings",exact:true}).first().click();await settingsSheet.getByRole("tab",{name:"Immich"}).click();
+    await settingsSheet.getByText(/3 imported · 0 albums · 3 on Immich/).waitFor();assert.equal(await settingsSheet.getByRole("progressbar").count(),0);
+    await settingsSheet.getByRole("button",{name:"Disconnect"}).click();await settingsSheet.getByText("Disconnected. Imported photos stay in Dar.").waitFor();
+    await settingsSheet.getByRole("button",{name:"Close settings"}).click();
+  }finally{await new Promise(r=>immich.close(r));}
   assert.deepEqual(errors,[]);
-  console.log("PASS Photos browser: library grid with thumbnails, upload into Files, viewer with details, favorite, description, keyboard navigation and focus return, selection to a new album, settings sheet, search with thumbnails and phone layout; trash with restore and Undo, duplicates, the Locked folder with password unlock and video playback, and the Files Locked folder; album sharing with a person and a password-protected link, the public page on desktop and phone, Shared with me, and the Immich settings tab.");
+  console.log("PASS Photos browser: library grid with thumbnails, upload into Files, viewer with details, favorite, description, keyboard navigation and focus return, selection to a new album, settings sheet, search with thumbnails and phone layout; trash with restore and Undo, duplicates, the Locked folder with password unlock and video playback, and the Files Locked folder; album sharing with a person and a password-protected link, the public page on desktop and phone, Shared with me, the Immich settings tab, and Immich import progress in settings and the sidebar.");
 }finally{await browser.close();}

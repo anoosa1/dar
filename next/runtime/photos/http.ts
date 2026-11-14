@@ -23,7 +23,7 @@ const messages:Record<string,Record<string,string>>={
   shareAlbum:{notFound:"No active account has that username.",quotaExceeded:"An album can be shared with up to 100 people."},
   createLink:{quotaExceeded:"You can have up to 200 shared links. Remove one first."},
   editLink:{conflict:"This link changed elsewhere. Reload it and try again."},
-  saveImmichConnection:{conflict:"The Immich connection changed elsewhere. Reload and try again.",invalidInput:"Check the server address (http:// or https://), the direction and the interval."},
+  saveImmichConnection:{conflict:"The Immich connection changed elsewhere. Reload and try again.",invalidInput:"Check the server address (http:// or https://) and the interval."},
   addToAlbum:{quotaExceeded:"An album can hold up to 50,000 items.",forbidden:"You can view this album but not add to it."},
 };
 const opaque=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -59,7 +59,7 @@ export async function handlePhotosHttp(req:IncomingMessage,res:ServerResponse,ur
     catch(error){if(error instanceof AppError&&messages[operation]?.[error.code])throw new AppError(error.code,error.status,messages[operation][error.code]);throw error;}
   };
   const input=async(allowed:string[])=>{const value=await body();if(Object.keys(value).some(key=>!allowed.includes(key)))throw new AppError("invalidInput");return value;};
-  if(route==="/overview"&&method==="GET"){const value=await call("overview",{});runtime.kick();return send(value);}
+  if(route==="/overview"&&method==="GET"){const value=await call<object>("overview",{});runtime.kick();return send({...value,immich:account.immich.progress(account.userId)??null});}
   if(route==="/assets"&&method==="GET"){
     const limit=Number(url.searchParams.get("limit")??120);if(!Number.isInteger(limit))throw new AppError("invalidInput");
     return send(await call("page",{view:url.searchParams.get("view")??"library",...url.searchParams.get("album")?{album:url.searchParams.get("album")}:{},cursor:url.searchParams.get("cursor")??"",limit}));
@@ -74,16 +74,19 @@ export async function handlePhotosHttp(req:IncomingMessage,res:ServerResponse,ur
   if(route==="/duplicates/resolve"&&method==="POST")return send(await call("resolveDuplicates",await input(["key","keep"])));
   if(route==="/duplicates/dismiss"&&method==="POST")return send(await call("dismissDuplicates",await input(["key"])));
   // Immich: devices signed in with the mobile app, and Dar's connection to an Immich server.
-  if(route==="/immich"&&method==="GET"){const [devices,connection]=await Promise.all([call<{devices:unknown[]}>("immichDevices",{}),call("immichConnection",{})]);return send({serverUrl:origin,...devices,connection});}
+  if(route==="/immich"&&method==="GET"){const [devices,connection]=await Promise.all([call<{devices:unknown[]}>("immichDevices",{}),call("immichConnection",{})]);return send({serverUrl:origin,...devices,connection,progress:account.immich.progress(account.userId)??null});}
   const device=/^\/immich\/devices\/([a-f0-9-]{36})$/.exec(route);
   if(device&&method==="DELETE")return send(await call("revokeImmichDevice",{id:device[1]}));
   if(route==="/immich/connection"&&method==="PUT"){
-    const value=await input(["url","apiKey","direction","intervalMinutes","enabled","revision"]),{apiKey,...rest}=value,current=await call<{connected:boolean;url?:string}>("immichConnection",{});
+    const value=await input(["url","apiKey","intervalMinutes","enabled","revision"]),{apiKey,...rest}=value,current=await call<{connected:boolean;url?:string}>("immichConnection",{});
     const url=typeof rest.url==="string"?rest.url.trim():"";
     if(typeof apiKey==="string"&&apiKey){
       if(apiKey.length>500)throw new AppError("invalidInput");
       try{await account.immich.test(url,apiKey);}catch(cause){throw new AppError("immichUnavailable",400,(cause as Error).message||"The Immich server could not be reached.");}
-      return send(await call("saveImmichConnection",{...rest,sealedKey:runtime.sealImmichKey(apiKey)}));
+      const saved=await call("saveImmichConnection",{...rest,sealedKey:runtime.sealImmichKey(apiKey)});
+      // A new server or key imports right away.
+      if(rest.enabled!==false)account.immich.syncNow(account.userId);
+      return send(saved);
     }
     if(!current.connected||url!==current.url)throw new AppError("invalidInput",400,"Enter the API key for this Immich server.");
     return send(await call("saveImmichConnection",rest));
