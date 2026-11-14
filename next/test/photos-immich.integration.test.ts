@@ -29,6 +29,8 @@ async function fakeImmich(assets:{id:string;bytes:Buffer;name:string;type:string
   const server=http.createServer((req,res)=>{void (async()=>{
     const chunks:Buffer[]=[];for await (const c of req)chunks.push(c as Buffer);const body=Buffer.concat(chunks),url=new URL(req.url!,"http://x");
     const json=(v:unknown,s=200)=>{res.writeHead(s,{"content-type":"application/json"});res.end(JSON.stringify(v));};
+    // A proxy in front that moved Immich: same host, permanent redirect.
+    if(url.pathname.startsWith("/old/")){res.writeHead(308,{location:url.pathname.slice(4)+url.search});res.end();return;}
     if(url.pathname==="/api/server/ping")return json({res:"pong"});
     if(req.headers["x-api-key"]!=="good-key")return json({message:"Invalid API key",statusCode:401},401);
     if(url.pathname==="/api/users/me")return json({id:randomUUID(),name:"Remote",email:"remote@example.com"});
@@ -148,7 +150,8 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     // The connector: Immich has one new photo (a favorite) and one Dar already has, in an album.
     const remoteId=randomUUID(),sameId=randomUUID();
     fake=await fakeImmich([{id:remoteId,bytes:remoteBytes,name:"remote.jpg",type:"image/jpeg",favorite:true,createdAt:"2023-08-01T12:00:00.000Z"},{id:sameId,bytes:beach,name:"beach.jpg",type:"image/jpeg",favorite:false,createdAt:"2024-03-05T10:00:00.000Z"}],[{id:randomUUID(),albumName:"Remote trip",assetIds:[remoteId,sameId]}]);
-    const connect2=(apiKey:string)=>fetch(base+"/api/v1/photos/immich/connection",{method:"PUT",headers,body:JSON.stringify({url:fake!.url,apiKey,direction:"twoWay",intervalMinutes:60,enabled:true,revision:0})});
+    const connect2=(apiKey:string,address=fake!.url+"/old")=>fetch(base+"/api/v1/photos/immich/connection",{method:"PUT",headers,body:JSON.stringify({url:address,apiKey,direction:"twoWay",intervalMinutes:60,enabled:true,revision:0})});
+    const refusedConnection=await connect2("good-key",`http://127.0.0.1:${await freePort()}`);assert.equal(refusedConnection.status,400);assert.match((await refusedConnection.json() as {error:{message:string}}).error.message,/Nothing accepted the connection/);
     const rejected=await connect2("bad-key");assert.equal(rejected.status,400);assert.match((await rejected.json() as {error:{message:string}}).error.message,/rejected the API key/);
     assert.equal((await connect2("good-key")).status,200);
     assert.equal((await fetch(base+"/api/v1/photos/immich/connection",{method:"PUT",headers,body:JSON.stringify({url:"http://169.254.169.254",apiKey:"good-key",direction:"import",intervalMinutes:60,enabled:true,revision:1})})).status,400);

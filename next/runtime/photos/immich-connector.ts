@@ -111,10 +111,20 @@ export type ImmichConnector=ReturnType<typeof createImmichConnector>;
 
 /** Minimal Immich API client: the server URL (with or without /api) and an API key. */
 function immichClient(url:string,key:string,signal:AbortSignal,allowLoopback=false){
-  const base=url.replace(/\/+$/,"").replace(/\/api$/,"")+"/api";
+  // Same-host redirects (http to https, a new port) are followed and remembered.
+  let base=url.replace(/\/+$/,"").replace(/\/api$/,"")+"/api";
   async function raw(route:string,init:{method?:string;body?:unknown}={}){
-    await allowedHost(base,allowLoopback);
-    const response=await fetch(base+route,{method:init.method??"GET",headers:{"x-api-key":key,accept:"application/json",...init.body!==undefined?{"content-type":"application/json"}:{}},body:init.body===undefined?undefined:JSON.stringify(init.body),signal:AbortSignal.any([signal,AbortSignal.timeout(10*60_000)]),redirect:"error"});
+    let target=base+route,response:Response|undefined;
+    for(let hop=0;hop<5;hop++){
+      await allowedHost(target,allowLoopback);
+      try{response=await fetch(target,{method:init.method??"GET",headers:{"x-api-key":key,accept:"application/json",...init.body!==undefined?{"content-type":"application/json"}:{}},body:init.body===undefined?undefined:JSON.stringify(init.body),signal:AbortSignal.any([signal,AbortSignal.timeout(10*60_000)]),redirect:"manual"});}catch(error){throw new Error(networkMessage(error,target));}
+      if(![301,302,303,307,308].includes(response.status))break;
+      const location=response.headers.get("location"),next=location?new URL(location,target):undefined;await response.body?.cancel().catch(()=>undefined);
+      if(!next||next.hostname!==new URL(target).hostname)throw new Error(`The server redirects to ${next?.host??"nowhere"}. Enter that address instead.`);
+      if(next.pathname.endsWith(route))base=next.origin+next.pathname.slice(0,next.pathname.length-route.length);
+      target=next.toString();response=undefined;
+    }
+    if(!response)throw new Error("The server redirected too many times.");
     if(!response.ok){await response.body?.cancel().catch(()=>undefined);throw new Error(response.status===401||response.status===403?"Immich rejected the API key.":`Immich answered ${response.status} for ${route}.`);}
     return response;
   }
@@ -128,8 +138,11 @@ function immichClient(url:string,key:string,signal:AbortSignal,allowLoopback=fal
         +`--${boundary}\r\ncontent-disposition: form-data; name="assetData"; filename="${item.name.replace(/"/g,"_")}"\r\ncontent-type: ${item.mediaType}\r\n\r\n`),tail=Buffer.from(`\r\n--${boundary}--\r\n`);
       const body=Readable.from((async function*(){yield head;for await (const chunk of createReadStream(file))yield chunk;yield tail;})());
       await allowedHost(base,allowLoopback);
-      const response=await fetch(base+"/assets",{method:"POST",headers:{"x-api-key":key,"x-immich-checksum":item.sha1,"content-type":`multipart/form-data; boundary=${boundary}`,"content-length":String(head.length+item.size+tail.length)},
-        body:Readable.toWeb(body) as unknown as BodyInit,duplex:"half",signal} as RequestInit);
+      let response:Response;
+      try{
+        response=await fetch(base+"/assets",{method:"POST",headers:{"x-api-key":key,"x-immich-checksum":item.sha1,"content-type":`multipart/form-data; boundary=${boundary}`,"content-length":String(head.length+item.size+tail.length)},
+          body:Readable.toWeb(body) as unknown as BodyInit,duplex:"half",signal,redirect:"manual"} as RequestInit);
+      }catch(error){throw new Error(networkMessage(error,base+"/assets"));}
       if(!response.ok)throw new Error(`Immich answered ${response.status} to an upload.`);
       return (await response.json() as {id:string}).id;
     },
@@ -149,4 +162,22 @@ async function allowedHost(base:string,allowLoopback:boolean){
   const url=new URL(base);if(!["http:","https:"].includes(url.protocol)||url.username||url.password)throw new Error("Use an http or https address without credentials.");
   const host=url.hostname.replace(/^\[|\]$/g,""),addresses=isIP(host)?[{address:host,family:isIP(host)}]:await lookup(host,{all:true}).catch(()=>{throw new Error("The Immich server's name could not be resolved.");});
   for(const {address,family} of addresses){if(allowLoopback&&(/^127\.|^::1$|^::ffff:127\./.test(address)))continue;const mapped=/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];if(mapped?blocked.check(mapped,"ipv4"):blocked.check(address,family===6?"ipv6":"ipv4"))throw new Error("That address points to this server or a reserved network. Use the Immich server's network address.");}
+}
+
+/**
+ * fetch reports every network failure as "fetch failed"; the reason is in its cause.
+ * Turn it into something an owner can act on (never including the API key).
+ */
+export function networkMessage(error:unknown,target:string){
+  const cause=(error as {cause?:{code?:string;message?:string;cause?:{code?:string}}}).cause,code=cause?.code??cause?.cause?.code??"",detail=cause?.message??(error as Error).message;
+  let host=target;try{const u=new URL(target);host=u.host;}catch{host=target;}
+  if((error as Error).name==="AbortError"||(error as Error).name==="TimeoutError")return `${host} did not answer in time.`;
+  console.warn(`Immich connector: ${host}: ${code||detail}`);
+  if(code==="ECONNREFUSED")return `Nothing accepted the connection at ${host}. Check the address and port (Immich listens on 2283 unless a proxy is in front).`;
+  if(code==="ENOTFOUND"||code==="EAI_AGAIN")return `The Dar server cannot resolve ${host}.`;
+  if(["ETIMEDOUT","UND_ERR_CONNECT_TIMEOUT","EHOSTUNREACH","ENETUNREACH","ECONNRESET"].includes(code))return `The Dar server cannot reach ${host} (${code}). Check that it is reachable from the Dar server, not just from your browser.`;
+  if(/CERT|SELF_SIGNED|UNABLE_TO_VERIFY|ALTNAME/.test(code))return `The HTTPS certificate of ${host} is not trusted by the Dar server (${code}). Use a certificate from a trusted authority, or the server's http:// address on your network.`;
+  if(code==="EPROTO"||/wrong version number|packet length too long/i.test(detail))return `${host} does not speak HTTPS on that port. Use http:// for it.`;
+  if(code==="UND_ERR_SOCKET"||/other side closed/i.test(detail))return `${host} closed the connection. If it serves HTTPS, use https://.`;
+  return `Immich could not be reached at ${host} (${code||detail||"network error"}).`;
 }
