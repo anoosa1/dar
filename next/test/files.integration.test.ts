@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { connect, login, upload } from "./integration-helpers.ts";
+import { identityAdmin } from "./identity-helpers.ts";
 import type { FileEntries } from "../client/module_bindings/types.ts";
 const origin = process.env.DAR_INTEGRATION_ORIGIN;
 
@@ -91,4 +92,22 @@ test("user isolation, read-only grants, live revocation and public-link revocati
     }
     assert.equal((await fetch(`${base}/api/v1/files/uploads`, { method: "POST", headers: { cookie: owner.headers.cookie, origin: "https://attacker.example", "content-type": "application/json" }, body: "{}" })).status, 403);
   } finally { db.disconnect(); recipient?.disconnect(); }
+});
+
+test("storage is unlimited by default and administrators can change an account's limit", { skip: !origin, timeout: 40_000 }, async () => {
+  const base = origin!, admin = await identityAdmin(base);
+  const users = await (await admin.api("/users")).json() as { items: { id: string; userName: string }[] };
+  const id = users.items.find(user => user.userName === "admin")!.id, path = `/users/${id}/storage`;
+  const meter = async () => (await (await admin.api("/storage")).json() as { items: { userId: string; used: number; quota: number }[] }).items.find(row => row.userId === id)!;
+  const reserve = (size: number) => fetch(`${base}/api/v1/files/uploads`, { method: "POST", headers: { ...admin.session.headers, "content-type": "application/json" }, body: JSON.stringify({ name: `quota-${randomUUID()}.txt`, size, mediaType: "text/plain", parentId: "" }) });
+  assert.equal((await meter()).quota, 0);
+  assert.equal((await admin.api(path, "PUT", { quota: 1024 })).status, 403);
+  assert.equal((await admin.write(path, "PUT", { quota: -1 })).status, 400);
+  const used = (await meter()).used, limited = await admin.write(path, "PUT", { quota: used + 10 });
+  assert.equal(limited.status, 200, await limited.clone().text());
+  assert.equal((await meter()).quota, used + 10);
+  assert.equal((await reserve(100)).status, 507);
+  assert.equal((await admin.write(path, "PUT", { quota: null })).status, 200);
+  assert.equal((await meter()).quota, 0);
+  await upload(base, admin.session, `unlimited-${randomUUID()}.txt`, "x".repeat(100));
 });

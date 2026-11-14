@@ -1,6 +1,6 @@
 import type {IncomingMessage,ServerResponse} from "node:http";
 import {createReadStream} from "node:fs";
-import {open,mkdtemp,rm} from "node:fs/promises";
+import {open,mkdtemp,rm,statfs} from "node:fs/promises";
 import {createHash,randomUUID} from "node:crypto";
 import path from "node:path";
 import type {Database} from "../database.ts";
@@ -98,7 +98,10 @@ export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,ur
     if(method==="GET"&&(route==="/users/me"||route==="/users/me/"))return send(user);
     if(method==="GET"&&route==="/users")return send([user]);
     if(route==="/users/me/preferences")return send(preferences());
-    if(method==="GET"&&route==="/server/storage"){const used=(user as {quotaUsageInBytes?:number}).quotaUsageInBytes??0,size=10*1024**3;return send({diskSize:"10 GiB",diskUse:`${(used/1024**3).toFixed(1)} GiB`,diskAvailable:`${((size-used)/1024**3).toFixed(1)} GiB`,diskSizeRaw:size,diskUseRaw:used,diskAvailableRaw:size-used,diskUsagePercentage:Math.round(used/size*10000)/100});}
+    if(method==="GET"&&route==="/server/storage"){
+      // Unlimited accounts report the free space of Dar's storage volume instead.
+      const {quotaUsageInBytes:used=0,quotaSizeInBytes:quota}=user as {quotaUsageInBytes?:number;quotaSizeInBytes?:number|null},disk=quota?undefined:await statfs(options.root),size=Math.max(1,quota||used+disk!.bavail*disk!.bsize);
+      return send({diskSize:`${(size/1024**3).toFixed(1)} GiB`,diskUse:`${(used/1024**3).toFixed(1)} GiB`,diskAvailable:`${((size-used)/1024**3).toFixed(1)} GiB`,diskSizeRaw:size,diskUseRaw:used,diskAvailableRaw:size-used,diskUsagePercentage:Math.round(used/size*10000)/100});}
     if(method==="GET"&&route==="/server/version-check")return send({checkedAt:new Date().toISOString(),releaseVersion:"v3.4.1"});
     if(method==="GET"&&["/partners","/memories","/tags","/notifications","/timeline/buckets","/stacks","/shared-links"].includes(route))return send([]);
     if(method==="GET"&&route==="/people")return send({people:[],total:0,hidden:0,hasNextPage:false});

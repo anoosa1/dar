@@ -47,6 +47,9 @@ export async function handleIdentityHttp(req:IncomingMessage,res:ServerResponse,
     if(method==="POST"&&!id||["PUT","PATCH"].includes(method)&&id){const row=await directory.save(kind,id,await body(),req.headers["if-match"],method==="PATCH",true);res.setHeader("etag",version(row));return json(res,resource(kind,row,base),id?200:201);}
     if(method==="DELETE"&&id){await directory.remove(kind,id,req.headers["if-match"],true);return json(res,{ok:true});}
   }
+  if(path==="/storage"&&method==="GET")return json(res,{items:await directory.call("storage"),nextCursor:""});
+  const storage=/^\/users\/([^/]+)\/storage$/.exec(path);
+  if(storage&&method==="PUT"){const p=await body(),quota=p.quota===null?0:p.quota;if(typeof quota!=="number"||!Number.isSafeInteger(quota)||quota<0)throw new AppError("invalidInput",400,"Use a whole number of bytes, or null for unlimited.");return json(res,await directory.call("setStorageQuota",{id:decodeURIComponent(storage[1]),quota}));}
   if(path==="/clients"&&method==="GET"){const items=await directory.call<Omit<ClientRow,"encrypted">[]>("clients");return json(res,{items:items.map(clientDocument),nextCursor:""});}
   const client=/^\/clients\/([^/]+)(\/secret)?$/.exec(path);
   if(client&&!client[2]&&method==="GET"){const row=await provider.store.call<ClientRow|null>("client",{id:client[1]});if(!row)throw new AppError("notFound",404);res.setHeader("etag",`W/"${row.revision}"`);return json(res,clientDocument(row));}

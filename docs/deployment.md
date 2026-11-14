@@ -54,6 +54,11 @@ such as `/var/lib -> /data/lib` are fine; the state directory and managed
 directories like `blobs` must not be symlinks. The unit uses a read-only system,
 private temp storage, and drains runtime and database on stop.
 
+Account storage is unlimited by default. Administrators can set a per-account
+limit in Settings → Directory (or `PUT /api/v1/identity/users/{id}/storage` with
+`{"quota": bytes}`, `null` for unlimited). Limits are kept in backups. A limit
+below current use blocks new uploads and copies but keeps existing files.
+
 ### OIDC clients
 
 ```nix

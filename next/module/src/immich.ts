@@ -53,7 +53,7 @@ export function immichSession(ctx:Ctx,digest:string,allows:(scope:string,permiss
 export function immichUser(ctx:Ctx,user:Account){
   const email=`${user.username}@dar`;
   return {id:user.id,email,name:user.displayName,isAdmin:user.administrator,avatarColor:"primary",profileImagePath:"",profileChangedAt:iso(user.createdAt),createdAt:iso(user.createdAt),updatedAt:iso(user.createdAt),
-    deletedAt:null,oauthId:"",shouldChangePassword:false,storageLabel:null,quotaSizeInBytes:10*1024**3,quotaUsageInBytes:ctx.db.usage.userId.find(user.id)?.used??0,status:"active",license:null,clusterGroupId:user.id};
+    deletedAt:null,oauthId:"",shouldChangePassword:false,storageLabel:null,quotaSizeInBytes:ctx.db.usage.userId.find(user.id)?.quota||null,quotaUsageInBytes:ctx.db.usage.userId.find(user.id)?.used??0,status:"active",license:null,clusterGroupId:user.id};
 }
 
 /** Where a file is (as in photos.ts): library, locked, trash or gone. */

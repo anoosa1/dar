@@ -53,7 +53,7 @@ export function directoryOperation(ctx: Ctx, operation: string,p:Record<string,u
     const row={id,username,displayName:String(document.displayName),verifier:typeof p.verifier==="string"?p.verifier:old?.verifier??"",administrator:old?.administrator??false,enabled:document.active!==false,createdAt:old?.createdAt??now(ctx)};
     const {userName:_u,displayName:_d,active:_a,...attributes}=document;
     const next={userId:id,document:JSON.stringify(attributes),revision:(previous?.revision??(old?1:0))+1,modifiedAt:now(ctx),deleted:false};
-    if(old)ctx.db.accounts.id.update(row);else {ctx.db.accounts.insert(row);ctx.db.usage.insert({userId:id,used:0,reserved:0});}
+    if(old)ctx.db.accounts.id.update(row);else {ctx.db.accounts.insert(row);ctx.db.usage.insert({userId:id,used:0,reserved:0,quota:0});}
     if(previous)ctx.db.directoryProfiles.userId.update(next);else ctx.db.directoryProfiles.insert(next);
     if(old&&old.displayName!==row.displayName)for(const m of ctx.db.directoryMembers.userId.filter(id)){const g=ctx.db.directoryGroups.id.find(m.groupId)!;ctx.db.directoryGroups.id.update({...g,revision:g.revision+1,modifiedAt:now(ctx)});}
     if(!row.enabled||old&&row.verifier!==old.verifier)revokeUser(ctx,id);
@@ -95,6 +95,13 @@ export function directoryOperation(ctx: Ctx, operation: string,p:Record<string,u
   }
   if(actor.scim)fail("forbidden");
   if(operation==="adminWrite")return {ok:true};
+  if(operation==="storage")return [...ctx.db.accounts.iter()].map(a=>{const m=ctx.db.usage.userId.find(a.id);return {userId:a.id,used:m?.used??0,quota:m?.quota??0};});
+  if(operation==="setStorageQuota") {
+    const id=String(p.id),quota=p.quota;if(!ctx.db.accounts.id.find(id)||ctx.db.directoryProfiles.userId.find(id)?.deleted)fail("notFound");
+    if(typeof quota!=="number"||!Number.isSafeInteger(quota)||quota<0)fail("invalidInput");
+    const m=ctx.db.usage.userId.find(id);if(m)ctx.db.usage.userId.update({...m,quota});else ctx.db.usage.insert({userId:id,used:0,reserved:0,quota});
+    return {userId:id,used:m?.used??0,quota};
+  }
   if(operation==="clients")return [...ctx.db.identityClients.iter()].map(({encrypted:_e,...row})=>row);
   if(operation==="saveClient") {
     const old=ctx.db.identityClients.id.find(String(p.id));expected(old?.revision??0,p.revision);

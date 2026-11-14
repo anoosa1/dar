@@ -299,7 +299,7 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
     <div className="workspace">
       {sidebar && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setSidebar(false)} />}
       <aside id={sidebarId} ref={sidebarRef} className={`sidebar ${sidebar ? "is-open" : ""}`} aria-label="Files navigation"><ActionMenu label="New" className="files-new-menu" actions={[{label:"Folder",icon:"folder",disabled:!connected||!writableHere,run:()=>openModal({type:"folder"})},{label:"File",icon:"file",disabled:!connected||!writableHere,items:[{label:"Text file",run:()=>{setSidebar(false);setNewFile("text");}},{label:"Markdown file",run:()=>{setSidebar(false);setNewFile("markdown");}}]}]}><Icon name="plus"/><span>New</span><Icon name="chevron"/></ActionMenu><nav>{sections.map(item => <button className={`nav-item ${section === item.id ? "active" : ""}`} aria-current={section === item.id ? "page" : undefined} key={item.id} onClick={() => navigate(item.id)}><Icon name={item.icon} />{item.label}</button>)}</nav>
-        <div className="storage"><strong><Icon name="folder" />Storage</strong><progress max={10 * 1024 ** 3} value={usage?.used ?? 0} aria-label="Storage used" /><span>{formatBytes(usage?.used ?? 0)} of 10 GB used</span></div>
+        <div className="storage"><strong><Icon name="folder" />Storage</strong>{usage?.quota ? <><progress max={usage.quota} value={usage.used} aria-label="Storage used" /><span>{formatBytes(usage.used)} of {formatBytes(usage.quota)} used</span></> : <span>{formatBytes(usage?.used ?? 0)} used</span>}</div>
         <AppSettingsButton app="files" onClick={()=>{setSidebar(false);setSettings(true);}}/>
       </aside>
       <main className="files-main" tabIndex={-1}>

@@ -49,7 +49,9 @@ const grants = table({}, { id: t.string().primaryKey(), fileId: t.string().index
 const publicShares = table({}, { id: t.string().primaryKey(), fileId: t.string().index("btree"), digest: t.string().unique(), expiresAt: t.f64() });
 const uploads = table({}, { id: t.string().primaryKey(), sessionId: t.string(), ownerId: t.string(), parentId: t.string(), fileId: t.string(),
   name: t.string(), size: t.f64(), mediaType: t.string(), expectedRevision: t.u32(), expiresAt: t.f64(), state: t.string(), digest: t.string(), expiresKey: t.string().index("btree").default("") });
-const usage = table({}, { userId: t.string().primaryKey(), used: t.f64(), reserved: t.f64() });
+/** `quota` is the storage limit in bytes; 0 means unlimited. */
+const usage = table({}, { userId: t.string().primaryKey(), used: t.f64(), reserved: t.f64(), quota: t.f64().default(0) });
+const fitsQuota = (meter: { used: number; reserved: number; quota: number }, bytes: number) => !meter.quota || meter.used + meter.reserved + bytes <= meter.quota;
 const favorites = table({}, { id: t.string().primaryKey(), fileId: t.string(), listKey: t.string().index("btree") });
 const backupPins = table({}, { id: t.string().primaryKey(), backupId: t.string().index("btree"), blobId: t.string().index("btree") });
 const appPasswords = table({}, { id: t.string().primaryKey(), userId: t.string().index("btree"), digest: t.string().unique(), label: t.string(), scope: t.string(), sessionId: t.string().unique(), principal: t.identity(), expiresAt: t.f64(), revoked: t.bool() });
@@ -263,7 +265,7 @@ export const serviceCreateAccount = db.reducer({
   if (ctx.db.accounts.count()>=10000n)fail("operationTooLarge");
   ctx.db.accounts.insert({ id: p.id, username: p.username, displayName: p.displayName, verifier: p.verifier,
     administrator: p.first, enabled: true, createdAt: now(ctx) });
-  ctx.db.usage.insert({ userId: p.id, used: 0, reserved: 0 });
+  ctx.db.usage.insert({ userId: p.id, used: 0, reserved: 0, quota: 0 });
 });
 export const serviceCreateSession = db.reducer({
   id: t.string(), userId: t.string(), digest: t.string(), csrfDigest: t.string(), expiresAt: t.f64(), expectedVerifier: t.string(),
@@ -449,8 +451,8 @@ export const copyEntry = db.reducer({ id: t.string(), newId: t.string(), parentI
       pending.push({ source: child, id: unusedUuid(ctx), parentId: entry.id, name: child.name });
     }
   }
-  const meter = ctx.db.usage.userId.find(ownerId) ?? ctx.db.usage.insert({ userId: ownerId, used: 0, reserved: 0 });
-  if (meter.used + meter.reserved + bytes > 10 * 1024 ** 3) fail("quotaExceeded");
+  const meter = ctx.db.usage.userId.find(ownerId) ?? ctx.db.usage.insert({ userId: ownerId, used: 0, reserved: 0, quota: 0 });
+  if (!fitsQuota(meter, bytes)) fail("quotaExceeded");
   ctx.db.usage.userId.update({ ...meter, used: meter.used + bytes });
   event(ctx, ownerId, p.newId, "copied");
 });
@@ -574,8 +576,8 @@ function beginUploadFor(tx: Ctx, userId: string, uploadKey: string, p: { id: str
     if (existing || findKey(tx, key(ownerId, parentId, name))) fail("conflict");
   }
   let meter = tx.db.usage.userId.find(ownerId);
-  if (!meter) meter = tx.db.usage.insert({ userId: ownerId, used: 0, reserved: 0 });
-  if (meter.used + meter.reserved + p.size > 10 * 1024 ** 3) fail("quotaExceeded");
+  if (!meter) meter = tx.db.usage.insert({ userId: ownerId, used: 0, reserved: 0, quota: 0 });
+  if (!fitsQuota(meter, p.size)) fail("quotaExceeded");
   tx.db.usage.userId.update({ ...meter, reserved: meter.reserved + p.size });
   const expiresAt = now(tx) + 3600_000;
   const upload = { id: p.id, sessionId: uploadKey, fileId: p.fileId, size: p.size, mediaType: p.mediaType, expectedRevision: p.expectedRevision, ownerId, name, parentId, expiresAt, state: "uploading", digest: "", expiresKey: String(expiresAt).padStart(16, "0") };
@@ -640,7 +642,7 @@ export const restoreVersion = db.reducer({ id: t.string(), versionId: t.string()
   revision(entry, p.expectedRevision);
   if (!version || version.fileId !== entry.id) fail("notFound");
   const meter = ctx.db.usage.userId.find(entry.ownerId)!;
-  if (meter.used + meter.reserved + version.size > 10 * 1024 ** 3) fail("quotaExceeded");
+  if (!fitsQuota(meter, version.size)) fail("quotaExceeded");
   ctx.db.usage.userId.update({ ...meter, used: meter.used + version.size });
   ctx.db.versions.insert({ ...version, id: unusedUuid(ctx), createdAt: now(ctx) });
   ctx.db.fileEntries.id.update({ ...entry, blobId: version.blobId, size: version.size, mediaType: version.mediaType, revision: entry.revision + 1, modifiedAt: now(ctx) });
@@ -699,7 +701,7 @@ export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, 
     return { id: blobId, size: upload.size, digest: upload.digest };
   });
   return JSON.stringify({ format: "dar-backup-v8", photos:photosSnapshot(tx), news:newsSnapshot(tx), agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
-    accounts: [...tx.db.accounts.iter()], files: [...tx.db.fileEntries.iter()], versions: history,
+    accounts: [...tx.db.accounts.iter()], quotas: [...tx.db.usage.iter()].filter(row => row.quota).map(row => ({ userId: row.userId, quota: row.quota })), files: [...tx.db.fileEntries.iter()], versions: history,
     grants: [...tx.db.grants.iter()], publicShares: [...tx.db.publicShares.iter()], favorites: [...tx.db.favorites.iter()],
     uploads: blobIds.map(blobId => tx.db.uploads.id.find(blobId)),
     activity: [...tx.db.activity.iter()].map(row => ({ ...row, id: row.id.toString() })),
@@ -724,13 +726,18 @@ type Row<K extends "accounts" | "versions" | "grants" | "publicShares" | "favori
 export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snapshot }) => {
   service(ctx);
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
-  const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; files: FileEntry[]; versions: Row<"versions">[];
+  const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; quotas?: { userId: string; quota: number }[]; files: FileEntry[]; versions: Row<"versions">[];
     grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads: Row<"uploads">[];
     activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot>;agent?:ReturnType<typeof agentSnapshot>;news?:ReturnType<typeof newsSnapshot>;photos?:ReturnType<typeof photosSnapshot> };
   const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6","dar-backup-v7","dar-backup-v8"],version=formats.indexOf(value.format)+1;
   if (!version||version>=2&&!value.pim||version>=3&&!value.identity||version>=4&&!value.workspace||version>=5&&!value.apps||version>=6&&!value.agent||version>=7&&!value.news||version>=8&&!value.photos) fail("invalidInput");
   for (const row of value.accounts) {
-    ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0 });
+    ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0, quota: 0 });
+  }
+  for (const row of value.quotas ?? []) {
+    const meter = ctx.db.usage.userId.find(row.userId);
+    if (!meter || !Number.isSafeInteger(row.quota) || row.quota < 0) fail("invalidInput");
+    ctx.db.usage.userId.update({ ...meter, quota: row.quota });
   }
   for (const row of value.files) {
     if (!ctx.db.accounts.id.find(row.ownerId) || nameOf(row.name) !== row.name || findKey(ctx, row.listKey)) fail("invalidInput");
@@ -1082,7 +1089,7 @@ export const serviceRevokeOwnedSession = db.reducer({ sessionId: t.string(), id:
 });
 
 export const serviceIdentity = db.procedure({ sessionId:t.string(), bearer:t.string(), proof:t.string(), operation:t.string(), payload:t.string() },t.string(),(ctx,p)=>ctx.withTx(tx=>{
-  service(tx);const actor=identityActor(tx,p.sessionId,p.bearer,p.proof,!["authorize","users","user","groups","group","clients","tokens"].includes(p.operation));
+  service(tx);const actor=identityActor(tx,p.sessionId,p.bearer,p.proof,!["authorize","users","user","groups","group","clients","tokens","storage"].includes(p.operation));
   return JSON.stringify(directoryOperation(tx,p.operation,JSON.parse(p.payload),actor));
 }));
 export const serviceIdentityProof = db.reducer({ sessionId:t.string(), digest:t.string(), expectedVerifier:t.string() },(ctx,p)=>{
