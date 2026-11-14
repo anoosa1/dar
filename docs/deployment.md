@@ -27,8 +27,10 @@ enabling ACME. Options: `package`, `origin`, `port` (4311), `databasePort` (4310
 `agent.*` ([Codex](codex.md), [Claude Code](claude-code.md)), `news.allowPrivateNetworks` ([News](news.md)) and `oidc.clients` (below). Keep origin, database
 name and state directory stable across upgrades. No credentials go in Nix.
 The package puts exiftool, libvips and ffmpeg on the service PATH for
-[Photos](photos.md); its regenerable thumbnails live in `photo-cache/` under the
-state directory.
+[Photos](photos.md); its regenerable thumbnails and converted videos live in `photo-cache/` under
+the state directory (safe to delete; converted videos can be large). The Immich
+mobile app uses `/.well-known/immich` and `/dav/immich/api`; a reverse proxy must pass
+both through (the generated nginx does) and allow 1 GiB request bodies.
 
 ### Proxy
 

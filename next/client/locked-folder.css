@@ -1,0 +1,11 @@
+/* Locked folder unlock form, shared by Files and Photos. */
+.locked-unlock{display:flex;flex-direction:column;align-items:stretch;gap:4px;width:min(100%,360px);margin:48px auto;text-align:center}
+.locked-unlock.is-compact{margin:0;width:100%;text-align:left}
+.locked-unlock-icon{display:flex;align-items:center;justify-content:center;width:72px;height:72px;margin:0 auto 14px;border-radius:24px;background:var(--tonal);color:var(--on-tonal)}
+.locked-unlock-icon .icon{width:34px;height:34px;stroke-width:1.3}
+.locked-unlock h2{margin:0 0 4px;font-size:19px;font-weight:550}
+.locked-unlock>p{margin:0 0 14px;font-size:13px;line-height:1.6;color:var(--muted)}
+.locked-unlock label{text-align:left}
+.locked-unlock .error{margin:0 0 8px;text-align:left}
+.locked-unlock .primary-button{margin-top:4px}
+.locked-unlock .field-hint{margin:10px 0 0}

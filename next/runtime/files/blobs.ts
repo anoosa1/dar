@@ -42,7 +42,8 @@ export function blobStore(root: string) {
       try { await directory.sync(); } finally { await directory.close(); }
       return true;
     },
-    async receive(req: IncomingMessage, id: string, expectedSize: number) {
+    /** Receives a request body, or a local stream (a staged Photos upload or import). */
+    async receive(req: IncomingMessage | AsyncIterable<Buffer>, id: string, expectedSize: number) {
       const destination = blobPath(root, id);
       if (active.size >= 4 || active.has(id)) throw new AppError("uploadBusy", 409);
       active.add(id);
@@ -52,7 +53,7 @@ export function blobStore(root: string) {
         file = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
         let size = 0;
         const hash = createHash("sha256");
-        req.setTimeout(60_000, () => req.destroy(new Error("Upload stalled.")));
+        if ("setTimeout" in req) req.setTimeout(60_000, () => req.destroy(new Error("Upload stalled.")));
         for await (const chunk of req) {
           size += chunk.length;
           if (size > expectedSize) throw new AppError("uploadTooLarge", 413);

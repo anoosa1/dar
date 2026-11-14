@@ -5,13 +5,17 @@ import {agentOperation,agentSnapshot,restoreAgent} from "./agent.ts";
 import {agentWorker} from "./agent-runs.ts";
 import {newsTables} from "./news-tables.ts";
 import {newsOperation,newsWorker,newsReadOperations,newsSnapshot,restoreNews} from "./news.ts";
-import {photosTables} from "./photos-tables.ts";
-import {photosOperation,photosWorker,photosSnapshot,restorePhotos} from "./photos.ts";
+import {photosTables,immichTables} from "./photos-tables.ts";
+import {photoFileEvent,touchAsset,currentSeq} from "./photo-sync.ts";
+import {immichSession,immichUser,immichSyncStart,immichSyncPage,immichAcks,immichSetAcks,immichDeleteAcks,immichBulkCheck,immichDuplicate,checksumToBase64,immichSessions,deleteImmichSession,immichConnectionView,saveImmichConnection,deleteImmichConnection,immichDue,immichReport,immichKnown,immichMap,immichApply,immichAlbum} from "./immich.ts";
+import {photosOperation,photosWorker,photosSnapshot,restorePhotos,photosLinkOperation,openPhotoLink,addLinkUpload,photosReadOperations,type PhotoFiles} from "./photos.ts";
+import {lockedFolderType,lockedFolderName,lockedUnlockMinutes} from "../../shared/locked-folder.ts";
+import {defaultPhotoFolder,photoFolderParts,nameParts,photoKind} from "../../shared/photos.ts";
 import {filePicker} from "./file-picker.ts";
 import {appOperation,appSnapshot,restoreApps} from "./apps.ts";
 import {validAppId} from "../../shared/installed-apps.ts";
 import {globalSearch} from "./global-search.ts";
-import {appSettings} from "./app-settings.ts";
+import {appSettings,appEnabled} from "./app-settings.ts";
 import {essentialApps} from "../../shared/app-settings.ts";
 import {passwordAllows, validPasswordScope} from "../../shared/app-scopes.ts";
 import { schema, table, t, Range, SenderError, type InferSchema, type ReducerCtx, type ViewCtx } from "spacetimedb/server";
@@ -51,7 +55,10 @@ const backupPins = table({}, { id: t.string().primaryKey(), backupId: t.string()
 const appPasswords = table({}, { id: t.string().primaryKey(), userId: t.string().index("btree"), digest: t.string().unique(), label: t.string(), scope: t.string(), sessionId: t.string().unique(), principal: t.identity(), expiresAt: t.f64(), revoked: t.bool() });
 const rootRevisions = table({}, { userId: t.string().primaryKey(), revision: t.u32(), modifiedAt: t.f64() });
 const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().index("btree"), fileId: t.string(), action: t.string(), at: t.f64() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, ...pimTables, ...identityTables, ...workspaceTables,...appTables,...agentTables,...newsTables,...photosTables }, { env: { DAR_ISSUER: t.string() } });
+// A browser session that confirmed the account password may open the Locked folder until expiresAt.
+const fileUnlocks = table({}, { sessionId: t.string().primaryKey(), userId: t.string().index("btree"), expiresAt: t.f64() });
+const fileUnlockExpiry = table({}, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), sessionId: t.string() });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -99,11 +106,30 @@ function nameOf(name: string): string {
   return name;
 }
 function opaqueId(value: string): void { if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value)) fail("invalidInput"); }
-function access(ctx: ReadCtx, entry: FileEntry, userId: string): "owner" | "write" | "read" | undefined {
+/** A browser session ID, `undefined` for the caller's own principal, or `true` for trusted service exports. */
+type Unlock = string | true | undefined;
+function isLockedRoot(entry: FileEntry) { return entry.kind === "folder" && !entry.parentId && entry.mediaType === lockedFolderType; }
+/** The Locked folder containing an entry (or the folder itself). */
+function lockedRoot(ctx: ReadCtx, entry: FileEntry): FileEntry | undefined {
+  let node: FileEntry | undefined = entry;
+  for (let depth = 0; node && depth < 128; depth++) { if (isLockedRoot(node)) return node; if (!node.parentId) return undefined; node = ctx.db.fileEntries.id.find(node.parentId) ?? undefined; }
+  return undefined;
+}
+/** Views have no clock; there the scheduled expiry removes the row instead. */
+function unlockedSession(ctx: ReadCtx, userId: string, sessionId: Unlock): boolean {
+  if (sessionId === true) return true;
+  const id = sessionId ?? ctx.db.principals.identity.find(ctx.sender)?.sessionId;
+  const row = id ? ctx.db.fileUnlocks.sessionId.find(id) : undefined;
+  const clock = (ctx as { timestamp?: { toMillis(): bigint } }).timestamp;
+  return !!row && row.userId === userId && (!clock || row.expiresAt > Number(clock.toMillis()));
+}
+function access(ctx: ReadCtx, entry: FileEntry, userId: string, sessionId?: Unlock): "owner" | "write" | "read" | undefined {
   let node: FileEntry | null = entry;
   let role: "owner" | "write" | "read" | undefined = entry.ownerId === userId ? "owner" : undefined;
   for (let depth = 0; node && depth < 128; depth++) {
     if (node.trashed) return undefined;
+    // Only the owner's unlocked session reaches the Locked folder; grants inside it pause.
+    if (isLockedRoot(node) && (node.ownerId !== userId || !unlockedSession(ctx, userId, sessionId))) return undefined;
     if (!role || role === "read") for (const grant of ctx.db.grants.fileId.filter(node.id)) {
       if (grant.userId === userId && (grant.role === "write" || !role)) role = grant.role as "write" | "read";
     }
@@ -112,16 +138,18 @@ function access(ctx: ReadCtx, entry: FileEntry, userId: string): "owner" | "writ
   }
   return undefined;
 }
-function writable(ctx: Ctx, id: string, userId: string) {
+function writable(ctx: Ctx, id: string, userId: string, sessionId?: Unlock) {
   const entry = ctx.db.fileEntries.id.find(id);
   if (!entry) fail("notFound");
-  const role = access(ctx, entry, userId);
+  const role = access(ctx, entry, userId, sessionId);
+  // The owner learns that a password is needed; anyone else sees nothing.
+  if (!role && entry.ownerId === userId && !entry.trashed && lockedRoot(ctx, entry)) fail("lockedFolder");
   if (role !== "write" && role !== "owner") fail("forbidden");
   return entry;
 }
-function destination(ctx: Ctx, parentId: string, userId: string): string {
+function destination(ctx: Ctx, parentId: string, userId: string, sessionId?: Unlock): string {
   if (!parentId) return userId;
-  const parent = writable(ctx, parentId, userId);
+  const parent = writable(ctx, parentId, userId, sessionId);
   if (parent.kind !== "folder") fail("invalidInput");
   return parent.ownerId;
 }
@@ -159,6 +187,7 @@ function event(ctx: Ctx, ownerId: string, fileId: string, action: string, parent
   const id = unusedUuid(ctx);
   ctx.db.activity.insert({ id, ownerId, fileId, action, at: now(ctx) });
   touchFolder(ctx, ownerId, parentId ?? ctx.db.fileEntries.id.find(fileId)?.parentId ?? "");
+  photoFileEvent(ctx, ownerId, fileId, action);
 }
 function revision(entry: FileEntry, expected: number) { if (entry.revision !== expected) fail("conflict"); }
 function renameGrants(ctx: Ctx, fileId: string, name: string) {
@@ -352,6 +381,7 @@ export const browse = db.reducer({ parentId: t.string(), section: t.string(), qu
 });
 export const renameEntry = db.reducer({ id: t.string(), name: t.string(), expectedRevision: t.u32() }, (ctx, p) => {
   const user = activeUser(ctx), entry = writable(ctx, p.id, user.id);
+  if (isLockedRoot(entry)) fail("forbidden");
   revision(entry, p.expectedRevision);
   const name = nameOf(p.name), listKey = key(entry.ownerId, entry.parentId, name);
   const collision = findKey(ctx, listKey);
@@ -363,16 +393,18 @@ export const renameEntry = db.reducer({ id: t.string(), name: t.string(), expect
 });
 export const favoriteEntry = db.reducer({ id: t.string(), favorite: t.bool(), expectedRevision: t.u32() }, (ctx, p) => {
   const user = activeUser(ctx), entry = writable(ctx, p.id, user.id);
-  if (entry.ownerId !== user.id) fail("forbidden");
+  if (entry.ownerId !== user.id || isLockedRoot(entry)) fail("forbidden");
   revision(entry, p.expectedRevision);
   ctx.db.fileEntries.id.update({ ...entry, favorite: p.favorite, revision: entry.revision + 1 });
   if (p.favorite && !ctx.db.favorites.id.find(entry.id)) ctx.db.favorites.insert({ id: entry.id, fileId: entry.id, listKey: `${entry.ownerId}/${entry.name.toLowerCase()}/${entry.id}` });
   if (!p.favorite) ctx.db.favorites.id.delete(entry.id);
   touchFolder(ctx, entry.ownerId, entry.parentId);
 });
-export const moveEntry = db.reducer({ id: t.string(), parentId: t.string(), expectedRevision: t.u32(), name: t.option(t.string()) }, (ctx, p) => {
-  const user = activeUser(ctx), entry = writable(ctx, p.id, user.id);
-  if (entry.ownerId !== user.id || destination(ctx, p.parentId, user.id) !== entry.ownerId) fail("forbidden");
+export const moveEntry = db.reducer({ id: t.string(), parentId: t.string(), expectedRevision: t.u32(), name: t.option(t.string()) }, (ctx, p) => moveFor(ctx, activeUser(ctx).id, p));
+/** File operations shared by the reducers and Photos (which acts for a browser session). */
+function moveFor(ctx: Ctx, userId: string, p: { id: string; parentId: string; expectedRevision: number; name?: string }, sessionId?: Unlock) {
+  const user = { id: userId }, entry = writable(ctx, p.id, user.id, sessionId);
+  if (entry.ownerId !== user.id || isLockedRoot(entry) || destination(ctx, p.parentId, user.id, sessionId) !== entry.ownerId) fail("forbidden");
   revision(entry, p.expectedRevision);
   let parentId = p.parentId;
   for (let depth = 0; parentId; depth++) {
@@ -388,11 +420,12 @@ export const moveEntry = db.reducer({ id: t.string(), parentId: t.string(), expe
   renameGrants(ctx, entry.id, name);
   event(ctx, entry.ownerId, entry.id, "moved");
   if (entry.parentId !== p.parentId) touchFolder(ctx, entry.ownerId, entry.parentId);
-});
+}
 export const copyEntry = db.reducer({ id: t.string(), newId: t.string(), parentId: t.string(), name: t.string(), expectedRevision: t.u32() }, (ctx, p) => {
   opaqueId(p.newId);
   const user = activeUser(ctx), source = ctx.db.fileEntries.id.find(p.id);
   if (!source || !access(ctx, source, user.id)) fail("notFound");
+  if (isLockedRoot(source)) fail("forbidden");
   revision(source, p.expectedRevision);
   const ownerId = destination(ctx, p.parentId, user.id), name = nameOf(p.name);
   if (findKey(ctx, key(ownerId, p.parentId, name))) fail("conflict");
@@ -421,27 +454,36 @@ export const copyEntry = db.reducer({ id: t.string(), newId: t.string(), parentI
   ctx.db.usage.userId.update({ ...meter, used: meter.used + bytes });
   event(ctx, ownerId, p.newId, "copied");
 });
-export const trashEntry = db.reducer({ id: t.string(), expectedRevision: t.u32() }, (ctx, p) => {
-  const user = activeUser(ctx), entry = writable(ctx, p.id, user.id);
-  if (entry.ownerId !== user.id) fail("forbidden");
+export const trashEntry = db.reducer({ id: t.string(), expectedRevision: t.u32() }, (ctx, p) => trashFor(ctx, activeUser(ctx).id, p));
+/** Locked items are deleted permanently instead: the trash is not locked. */
+function trashFor(ctx: Ctx, userId: string, p: { id: string; expectedRevision: number }, sessionId?: Unlock) {
+  const user = { id: userId }, entry = writable(ctx, p.id, user.id, sessionId);
+  if (entry.ownerId !== user.id || isLockedRoot(entry)) fail("forbidden");
+  if (lockedRoot(ctx, entry)) fail("lockedFolder");
   revision(entry, p.expectedRevision);
   ctx.db.fileEntries.id.update({ ...entry, trashed: true, listKey: `${user.id}/trash/${entry.name.toLowerCase()}/${entry.id}`, revision: entry.revision + 1, modifiedAt: now(ctx) });
   event(ctx, entry.ownerId, entry.id, "trashed");
-});
-export const restoreEntry = db.reducer({ id: t.string(), expectedRevision: t.u32() }, (ctx, p) => {
-  const user = activeUser(ctx), entry = ctx.db.fileEntries.id.find(p.id);
+}
+export const restoreEntry = db.reducer({ id: t.string(), expectedRevision: t.u32() }, (ctx, p) => restoreFor(ctx, activeUser(ctx).id, p));
+function restoreFor(ctx: Ctx, userId: string, p: { id: string; expectedRevision: number }, sessionId?: Unlock) {
+  const user = { id: userId }, entry = ctx.db.fileEntries.id.find(p.id);
   if (!entry || entry.ownerId !== user.id || !entry.trashed) fail("notFound");
   revision(entry, p.expectedRevision);
   const parent = entry.parentId && ctx.db.fileEntries.id.find(entry.parentId);
-  const parentId = parent && access(ctx, parent, user.id) ? parent.id : "";
+  // A parent now inside a locked Locked folder is not used: the item returns to All files.
+  const parentId = parent && access(ctx, parent, user.id, sessionId) ? parent.id : "";
   const listKey = key(user.id, parentId, entry.name);
   if (findKey(ctx, listKey)) fail("conflict");
   ctx.db.fileEntries.id.update({ ...entry, parentId, trashed: false, listKey, revision: entry.revision + 1, modifiedAt: now(ctx) });
   event(ctx, user.id, entry.id, "restored");
-});
-export const deleteEntry = db.reducer({ id: t.string(), expectedRevision: t.u32() }, (ctx, p) => {
-  const user = activeUser(ctx), entry = ctx.db.fileEntries.id.find(p.id);
-  if (!entry || entry.ownerId !== user.id || !entry.trashed) fail("notFound");
+}
+export const deleteEntry = db.reducer({ id: t.string(), expectedRevision: t.u32() }, (ctx, p) => deleteFor(ctx, activeUser(ctx).id, p));
+/** Deletes a trashed item, or an item inside the unlocked Locked folder, with its versions. */
+function deleteFor(ctx: Ctx, userId: string, p: { id: string; expectedRevision: number }, sessionId?: Unlock) {
+  const user = { id: userId }, entry = ctx.db.fileEntries.id.find(p.id);
+  if (!entry || entry.ownerId !== user.id) fail("notFound");
+  if (!entry.trashed && (isLockedRoot(entry) || !lockedRoot(ctx, entry))) fail("notFound");
+  if (!entry.trashed && !access(ctx, entry, user.id, sessionId)) fail("lockedFolder");
   revision(entry, p.expectedRevision);
   const pending = [entry]; let count = 0, bytes = 0;
   while (pending.length) {
@@ -451,17 +493,19 @@ export const deleteEntry = db.reducer({ id: t.string(), expectedRevision: t.u32(
     for (const version of ctx.db.versions.fileId.filter(item.id)) { bytes += version.size; ctx.db.versions.id.delete(version.id); }
     for (const grant of ctx.db.grants.fileId.filter(item.id)) ctx.db.grants.id.delete(grant.id);
     for (const share of ctx.db.publicShares.fileId.filter(item.id)) ctx.db.publicShares.id.delete(share.id);
+    if (item.kind === "file") touchAsset(ctx, item.id);
     ctx.db.fileEntries.id.delete(item.id);
     ctx.db.favorites.id.delete(item.id);
   }
   const meter = ctx.db.usage.userId.find(user.id);
   if (meter) ctx.db.usage.userId.update({ ...meter, used: Math.max(0, meter.used - bytes) });
   event(ctx, user.id, entry.id, "deleted", entry.parentId);
-});
+}
 export const grantAccess = db.reducer({ id: t.string(), fileId: t.string(), username: t.string(), role: t.string(), expectedRevision: t.u32() }, (ctx, p) => {
   opaqueId(p.id);
   const user = activeUser(ctx), entry = writable(ctx, p.fileId, user.id);
   if (entry.ownerId !== user.id) fail("forbidden");
+  if (lockedRoot(ctx, entry)) fail("lockedFolder");
   revision(entry, p.expectedRevision);
   const recipient = ctx.db.accounts.username.find(p.username.toLowerCase());
   if (!recipient?.enabled || recipient.id === user.id || !["read", "write"].includes(p.role)) fail("invalidInput");
@@ -509,16 +553,24 @@ export const myUsage = db.view({ public: true }, t.option(usage.rowType), ctx =>
 
 export const serviceBeginUpload = db.procedure({ sessionId: t.string(), id: t.string(), fileId: t.string(), parentId: t.string(), name: t.string(), size: t.f64(), mediaType: t.string(), expectedRevision: t.u32() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); const user = fromSession(tx, p.sessionId);
+  return JSON.stringify(beginUploadFor(tx, user.id, p.sessionId, p, p.sessionId));
+}));
+/**
+ * Reserves an upload for a user. uploadKey ties the transfer to its sender: a browser
+ * session ID, or `link:<id>` for a Photos shared-link visitor uploading for the owner.
+ */
+function beginUploadFor(tx: Ctx, userId: string, uploadKey: string, p: { id: string; fileId: string; parentId: string; name: string; size: number; mediaType: string; expectedRevision: number }, sessionId?: Unlock) {
+  const user = { id: userId };
   opaqueId(p.id); opaqueId(p.fileId);
   if (!Number.isSafeInteger(p.size) || p.size < 0 || p.size > 1024 ** 3 || p.mediaType.length > 150 || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(p.mediaType)) fail("invalidInput");
   let ownerId: string, name: string, parentId: string;
   const existing = tx.db.fileEntries.id.find(p.fileId);
   if (p.expectedRevision) {
     if (!existing || existing.kind !== "file") fail("notFound");
-    writable(tx, existing.id, user.id); revision(existing, p.expectedRevision);
+    writable(tx, existing.id, user.id, sessionId); revision(existing, p.expectedRevision);
     ownerId = existing.ownerId; name = existing.name; parentId = existing.parentId;
   } else {
-    ownerId = destination(tx, p.parentId, user.id); name = nameOf(p.name); parentId = p.parentId;
+    ownerId = destination(tx, p.parentId, user.id, sessionId); name = nameOf(p.name); parentId = p.parentId;
     if (existing || findKey(tx, key(ownerId, parentId, name))) fail("conflict");
   }
   let meter = tx.db.usage.userId.find(ownerId);
@@ -526,10 +578,10 @@ export const serviceBeginUpload = db.procedure({ sessionId: t.string(), id: t.st
   if (meter.used + meter.reserved + p.size > 10 * 1024 ** 3) fail("quotaExceeded");
   tx.db.usage.userId.update({ ...meter, reserved: meter.reserved + p.size });
   const expiresAt = now(tx) + 3600_000;
-  const upload = { ...p, ownerId, name, parentId, expiresAt, state: "uploading", digest: "", expiresKey: String(expiresAt).padStart(16, "0") };
+  const upload = { id: p.id, sessionId: uploadKey, fileId: p.fileId, size: p.size, mediaType: p.mediaType, expectedRevision: p.expectedRevision, ownerId, name, parentId, expiresAt, state: "uploading", digest: "", expiresKey: String(expiresAt).padStart(16, "0") };
   tx.db.uploads.insert(upload);
-  return JSON.stringify(upload);
-}));
+  return upload;
+}
 export const serviceUpload = db.procedure({ sessionId: t.string(), id: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); fromSession(tx, p.sessionId);
   const upload = tx.db.uploads.id.find(p.id);
@@ -537,20 +589,26 @@ export const serviceUpload = db.procedure({ sessionId: t.string(), id: t.string(
   return JSON.stringify(upload);
 }));
 export const serviceFinishUpload = db.reducer({ sessionId: t.string(), id: t.string(), digest: t.string() }, (ctx, p) => {
-  service(ctx); const user = fromSession(ctx, p.sessionId), upload = ctx.db.uploads.id.find(p.id);
-  if (!upload || upload.sessionId !== p.sessionId || upload.expiresAt <= now(ctx) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("notFound");
-  if (upload.state === "complete") { if (upload.digest !== p.digest) fail("conflict"); return; }
+  service(ctx); const user = fromSession(ctx, p.sessionId);
+  finishUploadFor(ctx, user.id, p.sessionId, p.id, p.digest, p.sessionId);
+});
+/** Completes an upload into a file entry; returns its file ID (also when it was already complete). */
+/** fileTime, from Immich clients, becomes the modified time: it dates photos without EXIF dates. */
+function finishUploadFor(ctx: Ctx, userId: string, uploadKey: string, id: string, digest: string, sessionId?: Unlock, fileTime?: number): string {
+  const user = { id: userId }, p = { digest }, upload = ctx.db.uploads.id.find(id);
+  if (!upload || upload.sessionId !== uploadKey || upload.expiresAt <= now(ctx) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("notFound");
+  if (upload.state === "complete") { if (upload.digest !== p.digest) fail("conflict"); return upload.fileId; }
   if (upload.state !== "uploading") fail("conflict");
   const existing = ctx.db.fileEntries.id.find(upload.fileId);
   if (upload.expectedRevision) {
     if (!existing) fail("notFound");
-    writable(ctx, existing.id, user.id); revision(existing, upload.expectedRevision);
+    writable(ctx, existing.id, user.id, sessionId); revision(existing, upload.expectedRevision);
   } else if (existing || findKey(ctx, key(upload.ownerId, upload.parentId, upload.name))) fail("conflict");
   // Replacements require current access to the file; creating a child requires
   // access to its destination. A direct file grant need not grant its parent.
-  if (!upload.expectedRevision && destination(ctx, upload.parentId, user.id) !== upload.ownerId) fail("forbidden");
+  if (!upload.expectedRevision && destination(ctx, upload.parentId, user.id, sessionId) !== upload.ownerId) fail("forbidden");
   const entry = { id: upload.fileId, ownerId: upload.ownerId, parentId: upload.parentId, name: upload.name, kind: "file", blobId: upload.id,
-    size: upload.size, mediaType: upload.mediaType, revision: (existing?.revision ?? 0) + 1, modifiedAt: now(ctx), trashed: false, favorite: existing?.favorite ?? false,
+    size: upload.size, mediaType: upload.mediaType, revision: (existing?.revision ?? 0) + 1, modifiedAt: fileTime && fileTime > 0 && fileTime < now(ctx) + 86400_000 ? fileTime : now(ctx), trashed: false, favorite: existing?.favorite ?? false,
     listKey: key(upload.ownerId, upload.parentId, upload.name) };
   if (existing) ctx.db.fileEntries.id.update(entry); else ctx.db.fileEntries.insert(entry);
   ctx.db.versions.insert({ id: upload.id, fileId: entry.id, blobId: upload.id, size: upload.size, mediaType: upload.mediaType, createdAt: now(ctx) });
@@ -558,7 +616,8 @@ export const serviceFinishUpload = db.reducer({ sessionId: t.string(), id: t.str
   const meter = ctx.db.usage.userId.find(upload.ownerId)!;
   ctx.db.usage.userId.update({ ...meter, reserved: meter.reserved - upload.size, used: meter.used + upload.size });
   event(ctx, upload.ownerId, entry.id, existing ? "updated" : "uploaded");
-});
+  return entry.id;
+}
 export const serviceCancelUpload = db.reducer({ sessionId: t.string(), id: t.string() }, (ctx, p) => {
   service(ctx); fromSession(ctx, p.sessionId); const upload = ctx.db.uploads.id.find(p.id);
   if (!upload || upload.sessionId !== p.sessionId) fail("notFound");
@@ -571,7 +630,7 @@ export const serviceDownload = db.procedure({ sessionId: t.string(), id: t.strin
   service(tx); const user = fromSession(tx, p.sessionId), entry = tx.db.fileEntries.id.find(p.id);
   const password=tx.db.appPasswords.sessionId.find(p.sessionId);
   if(password && !passwordAllows(password.scope,"files","read"))fail("forbidden");
-  if (!entry || entry.kind !== "file" || !access(tx, entry, user.id)) fail("notFound");
+  if (!entry || entry.kind !== "file" || !access(tx, entry, user.id, p.sessionId)) fail("notFound");
   const version = p.versionId ? tx.db.versions.id.find(p.versionId) : undefined;
   if (p.versionId && version?.fileId !== entry.id) fail("notFound");
   return JSON.stringify({ ...entry, blobId: version?.blobId ?? entry.blobId, size: version?.size ?? entry.size, mediaType: version?.mediaType ?? entry.mediaType });
@@ -591,6 +650,7 @@ export const createPublicShare = db.reducer({ id: t.string(), fileId: t.string()
   opaqueId(p.id);
   const user = activeUser(ctx), entry = writable(ctx, p.fileId, user.id);
   if (entry.ownerId !== user.id || entry.kind !== "file") fail("forbidden");
+  if (lockedRoot(ctx, entry)) fail("lockedFolder");
   revision(entry, p.expectedRevision);
   if (!/^[a-f0-9]{64}$/.test(p.digest) || !Number.isFinite(p.expiresAt) || p.expiresAt <= now(ctx) || p.expiresAt > now(ctx) + 30 * 86400_000) fail("invalidInput");
   ctx.db.publicShares.insert({ id: p.id, fileId: p.fileId, digest: p.digest, expiresAt: p.expiresAt });
@@ -651,7 +711,7 @@ export const serviceReleaseBackup = db.reducer({ id: t.string() }, (ctx, { id })
 export const serviceExport = db.procedure({ id: t.string(), username: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); const user = tx.db.accounts.username.find(p.username.toLowerCase());
   if (!user) fail("notFound");
-  const files = [...tx.db.fileEntries.ownerId.filter(user.id)].filter(entry => access(tx, entry, user.id));
+  const files = [...tx.db.fileEntries.ownerId.filter(user.id)].filter(entry => access(tx, entry, user.id, true));
   const blobs = [...new Set(files.filter(entry => entry.kind === "file").map(entry => entry.blobId))].map(id => {
     const upload = tx.db.uploads.id.find(id);
     if (!upload || !upload.digest || upload.state === "deleting") fail("contentUnavailable");
@@ -761,25 +821,194 @@ export const serviceNewsWorker=db.procedure({operation:t.string(),document:t.str
 }));
 /** Photos for browser sessions. App passwords get no Photos scope yet (Immich support is a later phase). */
 export const servicePhotos=db.procedure({sessionId:t.string(),operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
-  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+  service(tx);const user=fromSession(tx,p.sessionId),password=tx.db.appPasswords.sessionId.find(p.sessionId);
+  // App passwords with Photos access (the Immich app) reach Photos too: reads with read, changes with write.
+  if(password&&(password.revoked||password.expiresAt<=now(tx)||!passwordAllows(password.scope,"photos",photosReadOperations.has(p.operation)?"read":"write")))fail("forbidden");
+  if(password&&["uploadTarget","lock","unlock","createLink","editLink","deleteLink","links","immichDevices","revokeImmichDevice","immichConnection","saveImmichConnection","deleteImmichConnection"].includes(p.operation))fail("forbidden");
   if(p.document.length>1024*1024)fail("operationTooLarge");
   const value:unknown=JSON.parse(p.document);if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");
   if(p.operation==="uploadTarget")return JSON.stringify(photosUploadTarget(tx,user.id,value as Record<string,unknown>));
-  return JSON.stringify(photosOperation(tx,user.id,p.operation,value as Record<string,unknown>));
+  // Immich app devices signed in with this account (Photos settings › Immich).
+  if(p.operation==="immichDevices")return JSON.stringify({devices:immichSessions(tx,user.id)});
+  if(p.operation==="immichConnection")return JSON.stringify(immichConnectionView(tx,user.id));
+  if(p.operation==="saveImmichConnection")return JSON.stringify(saveImmichConnection(tx,user.id,value as Record<string,unknown>));
+  if(p.operation==="deleteImmichConnection")return JSON.stringify(deleteImmichConnection(tx,user.id));
+  if(p.operation==="revokeImmichDevice"){const id=(value as {id?:unknown}).id,row=typeof id==="string"?tx.db.immichSessions.id.find(id):undefined;if(!row||row.userId!==user.id)fail("notFound");deleteImmichSession(tx,row);return JSON.stringify({revoked:true});}
+  // Photos changes files through the same checks as Files, acting for this browser session.
+  const files:PhotoFiles={
+    unlocked:unlockedSession(tx,user.id,p.sessionId),
+    trash:entry=>trashFor(tx,user.id,{id:entry.id,expectedRevision:entry.revision},p.sessionId),
+    restore:entry=>restoreFor(tx,user.id,{id:entry.id,expectedRevision:entry.revision},p.sessionId),
+    remove:entry=>deleteFor(tx,user.id,{id:entry.id,expectedRevision:entry.revision},p.sessionId),
+    move:(entry,parentId)=>moveFor(tx,user.id,{id:entry.id,parentId,expectedRevision:entry.revision,name:freeName(tx,user.id,parentId,entry.name)},p.sessionId),
+    lockedFolder:()=>lockedFolderFor(tx,user.id),
+    monthFolder:(year,month)=>photosFolder(tx,user.id,year,month).parentId,
+    uploadFolder:()=>photoFolder(tx,user.id).join("/"),
+  };
+  return JSON.stringify(photosOperation(tx,user.id,p.operation,value as Record<string,unknown>,files));
+}));
+/**
+ * Shared-link visitors (no account). digest identifies the link and pass the visitor's
+ * password pass. Uploads go into the owner's Photos folder and the link's album.
+ */
+export const servicePhotoLink=db.procedure({digest:t.string(),pass:t.string(),operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);if(p.document.length>64*1024)fail("operationTooLarge");
+  const value:unknown=JSON.parse(p.document);if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");const q=value as Record<string,unknown>;
+  if(!["beginUpload","upload","finishUpload","cancelUpload"].includes(p.operation))return JSON.stringify(photosLinkOperation(tx,p.digest,p.pass,p.operation,q));
+  const {link,passed}=openPhotoLink(tx,p.digest,p.pass);if(!passed||!link.albumId||!link.allowUpload||!tx.db.photoAlbums.id.find(link.albumId))fail("forbidden");
+  const uploadKey=`link:${link.id}`;
+  if(p.operation==="beginUpload"){
+    const {parentId}=photosFolder(tx,link.ownerId,q.year,q.month);
+    if(typeof q.name!=="string"||typeof q.size!=="number"||typeof q.mediaType!=="string"||!photoKind(q.mediaType,q.name))fail("invalidInput");
+    const upload=beginUploadFor(tx,link.ownerId,uploadKey,{id:unusedUuid(tx),fileId:unusedUuid(tx),parentId,name:freeName(tx,link.ownerId,parentId,nameOf(q.name)),size:q.size,mediaType:q.mediaType.toLowerCase(),expectedRevision:0});
+    return JSON.stringify({id:upload.id,size:upload.size,state:upload.state});
+  }
+  const upload=typeof q.id==="string"?tx.db.uploads.id.find(q.id):undefined;
+  if(!upload||upload.sessionId!==uploadKey||upload.expiresAt<=now(tx))fail("notFound");
+  if(p.operation==="upload")return JSON.stringify({id:upload.id,size:upload.size,state:upload.state,fileId:upload.fileId});
+  if(p.operation==="cancelUpload"){
+    if(upload.state==="uploading"){const meter=tx.db.usage.userId.find(upload.ownerId)!;tx.db.usage.userId.update({...meter,reserved:Math.max(0,meter.reserved-upload.size)});tx.db.uploads.id.update({...upload,state:"cancelled"});}
+    return JSON.stringify({cancelled:true});
+  }
+  const fileId=finishUploadFor(tx,link.ownerId,uploadKey,upload.id,typeof q.digest==="string"?q.digest:"");
+  addLinkUpload(tx,link,fileId);
+  const entry=tx.db.fileEntries.id.find(fileId)!;
+  return JSON.stringify({fileId,job:{fileId,blobId:entry.blobId,name:entry.name,mediaType:entry.mediaType,modifiedAt:entry.modifiedAt,kind:photoKind(entry.mediaType,entry.name)??"image"}});
+}));
+/** Immich app sign-in: Dar username and an app password with Photos access, as the app sends them. */
+export const serviceImmichLogin=db.procedure({username:t.string(),digest:t.string(),tokenDigest:t.string(),deviceType:t.string(),deviceOS:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const password=tx.db.appPasswords.digest.find(p.digest),user=password&&tx.db.accounts.id.find(password.userId),session=password&&tx.db.sessions.id.find(password.sessionId);
+  if(!password||password.revoked||password.expiresAt<=now(tx)||!user?.enabled||user.username!==p.username.toLowerCase()||!session?.active)fail("unauthenticated");
+  if(!passwordAllows(password.scope,"photos","read")||!appEnabled(tx,"photos"))fail("forbidden");
+  if(!/^[a-f0-9]{64}$/.test(p.tokenDigest)||p.deviceType.length>100||p.deviceOS.length>100)fail("invalidInput");
+  if([...tx.db.immichSessions.userId.filter(user.id)].length>=50)fail("quotaExceeded");
+  const id=unusedUuid(tx);tx.db.immichSessions.insert({digest:p.tokenDigest,id,userId:user.id,sessionId:password.sessionId,deviceType:p.deviceType,deviceOS:p.deviceOS,createdAt:now(tx),usedAt:now(tx),epochSeen:currentSeq(tx)});
+  return JSON.stringify({...immichUser(tx,user),sessionId:id});
+}));
+/** Requests from the Immich app, by the digest of its access token. */
+export const serviceImmich=db.procedure({tokenDigest:t.string(),operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);if(p.document.length>2*1024*1024)fail("operationTooLarge");
+  const value:unknown=JSON.parse(p.document);if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");const q=value as Record<string,unknown>;
+  const write=["uploadBegin","uploadFinish","uploadCancel"].includes(p.operation);
+  const {session,user}=immichSession(tx,p.tokenDigest,(scope,permission)=>passwordAllows(scope,"photos",permission),write);
+  if(!appEnabled(tx,"photos"))fail("notFound");
+  const key=`immich:${session.id}`;
+  switch(p.operation){
+    case "session":return JSON.stringify({user:immichUser(tx,user),sessionId:session.id,protocolSessionId:session.sessionId});
+    case "logout":deleteImmichSession(tx,session);return JSON.stringify({ok:true});
+    case "syncStart":return JSON.stringify(immichSyncStart(tx,session,q.reset===true));
+    case "syncPage":{const after=typeof q.after==="number"&&Number.isFinite(q.after)?q.after:-1,limit=typeof q.limit==="number"?Math.min(Math.max(1,q.limit),2000):500;return JSON.stringify(immichSyncPage(tx,session,user,String(q.channel),after,limit));}
+    case "acks":return JSON.stringify(immichAcks(tx,session));
+    case "setAcks":immichSetAcks(tx,session,q.acks);return JSON.stringify({ok:true});
+    case "deleteAcks":immichDeleteAcks(tx,session,q.types);return JSON.stringify({ok:true});
+    case "bulkCheck":return JSON.stringify(immichBulkCheck(tx,user.id,q.assets));
+    case "uploadBegin":{
+      // Backups land in the Photos folder by their creation month; a file already here is a duplicate.
+      const sha1=typeof q.sha1==="string"?checksumToBase64(q.sha1):"",existing=immichDuplicate(tx,user.id,sha1);if(existing)return JSON.stringify({duplicate:existing});
+      if(typeof q.name!=="string"||typeof q.size!=="number"||typeof q.mediaType!=="string"||!photoKind(q.mediaType,q.name))fail("invalidInput");
+      const {parentId}=photosFolder(tx,user.id,q.year,q.month);
+      const upload=beginUploadFor(tx,user.id,key,{id:unusedUuid(tx),fileId:unusedUuid(tx),parentId,name:freeName(tx,user.id,parentId,nameOf(q.name)),size:q.size,mediaType:q.mediaType.toLowerCase(),expectedRevision:0});
+      return JSON.stringify({id:upload.id,size:upload.size});
+    }
+    case "uploadFinish":{
+      const upload=typeof q.id==="string"?tx.db.uploads.id.find(q.id):undefined;if(!upload||upload.sessionId!==key)fail("notFound");
+      const fileId=finishUploadFor(tx,user.id,key,upload.id,typeof q.digest==="string"?q.digest:"",undefined,typeof q.fileTime==="number"?q.fileTime:undefined),entry=tx.db.fileEntries.id.find(fileId)!;
+      return JSON.stringify({fileId,job:{fileId,blobId:entry.blobId,name:entry.name,mediaType:entry.mediaType,modifiedAt:entry.modifiedAt,kind:photoKind(entry.mediaType,entry.name)??"image"}});
+    }
+    case "uploadCancel":{
+      const upload=typeof q.id==="string"?tx.db.uploads.id.find(q.id):undefined;if(!upload||upload.sessionId!==key)fail("notFound");
+      if(upload.state==="uploading"){const meter=tx.db.usage.userId.find(upload.ownerId)!;tx.db.usage.userId.update({...meter,reserved:Math.max(0,meter.reserved-upload.size)});tx.db.uploads.id.update({...upload,state:"cancelled"});}
+      return JSON.stringify({ok:true});
+    }
+  }
+  fail("notFound");
+}));
+/** The Immich server connector (runtime only): due connections, imports into Files as the owner, mappings and reports. */
+export const serviceImmichWorker=db.procedure({operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);if(p.document.length>4*1024*1024)fail("operationTooLarge");
+  const value:unknown=JSON.parse(p.document);if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");const q=value as Record<string,unknown>;
+  const userId=typeof q.userId==="string"?q.userId:"",str=(v:unknown)=>typeof v==="string"?v:"";
+  if(p.operation==="due")return JSON.stringify(appEnabled(tx,"photos")?immichDue(tx,userId):{connections:[]});
+  if(!userId||!tx.db.immichConnections.userId.find(userId)||!tx.db.accounts.id.find(userId)?.enabled)fail("notFound");
+  const key=`connector:${userId}`;
+  switch(p.operation){
+    case "report":return JSON.stringify(immichReport(tx,userId,str(q.error),q.summary));
+    case "known":return JSON.stringify(immichKnown(tx,userId,str(q.after),typeof q.limit==="number"?Math.min(q.limit,5000):2000));
+    case "map":return JSON.stringify(immichMap(tx,userId,str(q.remoteId),str(q.fileId),str(q.checksum)));
+    case "apply":return JSON.stringify(immichApply(tx,userId,str(q.fileId),q.favorite===true,q.archived===true,str(q.description)));
+    case "album":return JSON.stringify(immichAlbum(tx,userId,str(q.remoteId),str(q.name),str(q.description),Array.isArray(q.fileIds)?q.fileIds.filter((x):x is string=>typeof x==="string"):[]));
+    case "importBegin":{
+      // Imported originals land in the Photos folder by their capture month, as uploads do.
+      const existing=immichDuplicate(tx,userId,checksumToBase64(str(q.sha1)));if(existing)return JSON.stringify({duplicate:existing});
+      const name=str(q.name),mediaType=str(q.mediaType).toLowerCase();if(typeof q.size!=="number"||!photoKind(mediaType,name))fail("invalidInput");
+      const {parentId}=photosFolder(tx,userId,q.year,q.month);
+      const upload=beginUploadFor(tx,userId,key,{id:unusedUuid(tx),fileId:unusedUuid(tx),parentId,name:freeName(tx,userId,parentId,nameOf(name)),size:q.size,mediaType:/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(mediaType)?mediaType:"application/octet-stream",expectedRevision:0});
+      return JSON.stringify({id:upload.id,size:upload.size});
+    }
+    case "importFinish":{
+      const upload=tx.db.uploads.id.find(str(q.id));if(!upload||upload.sessionId!==key)fail("notFound");
+      const fileId=finishUploadFor(tx,userId,key,upload.id,str(q.digest),undefined,typeof q.fileTime==="number"?q.fileTime:undefined),entry=tx.db.fileEntries.id.find(fileId)!;
+      return JSON.stringify({fileId,job:{fileId,blobId:entry.blobId,name:entry.name,mediaType:entry.mediaType,modifiedAt:entry.modifiedAt,kind:photoKind(entry.mediaType,entry.name)??"image"}});
+    }
+  }
+  fail("notFound");
+}));
+/** The first free name in a folder: "IMG_1.jpg", then "IMG_1 (2).jpg" and so on. */
+function freeName(ctx:Ctx,ownerId:string,parentId:string,name:string){
+  const {stem}=nameParts(name),suffix=name.slice(stem.length);
+  for(let n=1;n<1000;n++){const next=n===1?name:`${stem} (${n})${suffix}`;if(!findKey(ctx,key(ownerId,parentId,next)))return next;}
+  fail("conflict");
+}
+/** The account's Locked folder, created on first use outside the folder tree. */
+function lockedFolderFor(ctx:Ctx,userId:string){
+  const existing=findKey(ctx,`${userId}/locked`);if(existing)return existing.id;
+  const id=unusedUuid(ctx);
+  ctx.db.fileEntries.insert({id,ownerId:userId,parentId:"",name:lockedFolderName,kind:"folder",blobId:"",size:0,mediaType:lockedFolderType,revision:1,modifiedAt:now(ctx),trashed:false,favorite:false,listKey:`${userId}/locked`});
+  return id;
+}
+export const expireFileUnlock=db.reducer({onSchedule:fileUnlockExpiry},{expiry:fileUnlockExpiry.rowType},(ctx,{expiry})=>{
+  if(!ctx.senderAuth.isInternal)fail("forbidden");
+  const row=ctx.db.fileUnlocks.sessionId.find(expiry.sessionId);
+  if(row&&row.expiresAt<=now(ctx))ctx.db.fileUnlocks.sessionId.delete(row.sessionId);
+});
+/**
+ * Locked folder state for a browser session. The runtime verifies the password and
+ * passes the verifier it checked, so a password changed meanwhile is rejected.
+ */
+export const serviceLockedFolder=db.procedure({sessionId:t.string(),operation:t.string(),verifier:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+  const current=tx.db.fileUnlocks.sessionId.find(p.sessionId);
+  if(p.operation==="unlock"){
+    if(!p.verifier||user.verifier!==p.verifier)fail("conflict");
+    lockedFolderFor(tx,user.id);
+    const row={sessionId:p.sessionId,userId:user.id,expiresAt:now(tx)+lockedUnlockMinutes*60_000};
+    if(current)tx.db.fileUnlocks.sessionId.update(row);else tx.db.fileUnlocks.insert(row);
+    tx.db.fileUnlockExpiry.insert({scheduledId:0n,scheduledAt:ScheduleAt.time(BigInt(Math.ceil(row.expiresAt))*1000n),sessionId:p.sessionId});
+  }else if(p.operation==="lock"){if(current)tx.db.fileUnlocks.sessionId.delete(p.sessionId);}
+  else if(p.operation!=="state")fail("invalidInput");
+  const row=tx.db.fileUnlocks.sessionId.find(p.sessionId);
+  return JSON.stringify({folderId:findKey(tx,`${user.id}/locked`)?.id??"",unlockedUntil:row&&row.userId===user.id&&row.expiresAt>now(tx)?row.expiresAt:0});
 }));
 export const servicePhotosWorker=db.procedure({operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);if(p.document.length>1024*1024)fail("operationTooLarge");
   const value:unknown=JSON.parse(p.document);if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");
   return JSON.stringify(photosWorker(tx,p.operation,value as Record<string,unknown>));
 }));
-/** Photos uploads go to Files under Photos/YYYY/MM, creating missing folders as the owner. */
+/** The Photos folder from the account's preferences (default "pics"). */
+function photoFolder(ctx:Ctx,userId:string){
+  let saved:unknown;try{saved=JSON.parse(ctx.db.pimPreferences.userId.find(userId)?.value??"{}").photosUploadFolder;}catch{saved=undefined;}
+  return (typeof saved==="string"&&photoFolderParts(saved))||[defaultPhotoFolder];
+}
+/** Photos uploads go to Files under <Photos folder>/YYYY/MM, creating missing folders as the owner. */
 function photosUploadTarget(ctx:Ctx,userId:string,p:Record<string,unknown>){
   if(appSettings(ctx).disabled.includes("photos"))fail("notFound");
   if(Object.keys(p).some(k=>k!=="year"&&k!=="month"))fail("invalidInput");
-  const year=p.year,month=p.month;
+  return photosFolder(ctx,userId,p.year,p.month);
+}
+function photosFolder(ctx:Ctx,userId:string,year:unknown,month:unknown){
   if(typeof year!=="number"||!Number.isInteger(year)||year<1900||year>2999||typeof month!=="number"||!Number.isInteger(month)||month<1||month>12)fail("invalidInput");
   let parentId="";
-  for(const name of ["Photos",String(year),String(month).padStart(2,"0")]){
+  for(const name of [...photoFolder(ctx,userId),String(year),String(month).padStart(2,"0")]){
     const existing=findKey(ctx,key(userId,parentId,name));
     if(existing){if(existing.kind!=="folder"||existing.trashed)fail("conflict");parentId=existing.id;continue;}
     const id=unusedUuid(ctx);

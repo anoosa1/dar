@@ -133,3 +133,121 @@ body:has(.editing-pane,.settings-sheet) .photos-shell .pim-details.photos-detail
 .photos-list-heading .photos-zoom input{margin:0;min-height:0;padding:0}
 .photos-transfers ul{padding:0 16px 12px}
 @media(max-width:800px){.photos-shell.has-pim-details .ui-new{display:none}}
+
+/* Phase 2: Live Photos, stacks, video preparation, duplicates and the Locked folder. */
+.photos-badge+.photos-badge{top:26px}
+.photos-stack-badge{left:auto}
+.photos-tile .photos-badge.photos-stack-badge{top:auto;bottom:6px}
+.photos-video-wait{display:flex;align-items:center;gap:10px;padding:14px 18px;border-radius:14px;background:var(--panel);color:var(--muted);font-size:13px;box-shadow:0 8px 30px var(--shadow)}
+.photos-live{position:relative;display:grid;place-items:center;width:100%;height:100%;min-height:0}
+.photos-live>img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 8px 30px var(--shadow)}
+.photos-live-motion{position:absolute;inset:0;display:grid;place-items:center}
+.photos-live-motion video{max-width:100%;max-height:100%;width:auto;height:auto;background:transparent;border-radius:4px}
+.photos-live-toggle{position:absolute;left:12px;top:12px;display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:4px 12px 4px 8px;border-radius:16px;background:color-mix(in srgb,var(--panel) 85%,transparent);color:var(--text);font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase}
+.photos-live-toggle .icon{width:16px;height:16px}
+.photos-live-toggle[aria-pressed=true]{background:var(--accent);color:var(--panel)}
+.photos-stack-strip{display:flex;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid var(--border);overflow-x:auto;flex:none;color:var(--muted)}
+.photos-stack-strip>.icon{width:16px;height:16px;flex:none}
+.photos-stack-strip button{flex:none;width:44px;height:44px;padding:0;border-radius:6px;overflow:hidden;background:var(--hover);opacity:.75}
+.photos-stack-strip button img{width:100%;height:100%;object-fit:cover;display:block}
+.photos-stack-strip button.is-current{opacity:1;outline:2px solid var(--accent);outline-offset:1px}
+.photos-detail-note{display:flex;align-items:flex-start;gap:8px;margin:0;padding:10px 12px;border-radius:10px;background:var(--tonal);color:var(--on-tonal);font-size:12px;line-height:1.5}
+.photos-detail-note .icon{width:16px;height:16px;flex:none}
+.photos-props small+small{margin-top:2px}
+.photos-tools .text-button{min-height:36px;padding:6px 10px}
+.photos-grid-scroll .locked-unlock{margin-top:56px}
+.photos-folder-form{display:flex;gap:8px;align-items:center;width:100%}
+.photos-folder-form label{flex:1;margin:0}
+.photos-folder-form input{min-height:40px;padding:8px 10px}
+.photos-duplicates{display:flex;flex-direction:column;gap:14px}
+.photos-dup-group{border:1px solid var(--border);border-radius:14px;background:var(--raised);overflow:hidden}
+.photos-dup-head{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;padding:10px 12px 10px 16px;border-bottom:1px solid var(--border)}
+.photos-dup-head strong{font-size:13px}.photos-dup-head small{font-size:12px;color:var(--muted)}
+.photos-dup-head .primary-button{min-height:36px;padding:6px 14px}.photos-dup-head .text-button{min-height:36px}
+.photos-dup-items{list-style:none;margin:0;padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.photos-dup-items li{display:flex;flex-direction:column;gap:2px;min-width:0;padding:6px;border-radius:10px;border:2px solid transparent}
+.photos-dup-items li.is-kept{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.photos-dup-items label{position:relative;margin:0 0 4px;cursor:pointer}
+.photos-dup-thumb{display:block;aspect-ratio:1;border-radius:6px;overflow:hidden;background:var(--hover)}
+.photos-dup-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.photos-dup-keep{position:absolute;left:6px;top:6px;display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 5px;border-radius:12px;background:color-mix(in srgb,var(--panel) 88%,transparent);font-size:11px;font-weight:600;color:var(--text)}
+.photos-dup-keep input{width:15px;height:15px;margin:0}
+.photos-dup-items strong{font-size:12px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.photos-dup-items small{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.photos-dup-hint{margin:0 4px 12px}
+@media(max-width:800px){
+  .photos-dup-items{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .photos-dup-head .primary-button{width:100%}
+  .photos-live-toggle{top:8px;left:8px}
+}
+
+/* Phase 3: sharing with people and links (mock A's Share album in the right editing pane). */
+.photos-shared-mark{display:inline-flex;color:var(--muted)}.photos-shared-mark .icon{width:13px;height:13px}
+.photos-shared-by{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.photos-share-button{min-height:36px;padding:6px 14px}
+.photos-share{display:flex;flex-direction:column;gap:18px}
+.photos-share h3{margin:0 0 8px;font-size:13px;font-weight:600}
+.photos-share .error{margin:0}
+.photos-share-add{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:8px;align-items:end}
+.photos-share-add label{margin:0}.photos-share-add .primary-button{min-height:46px}
+.photos-share-people{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.photos-share-people li{display:flex;align-items:center;gap:10px;min-height:48px}
+.photos-share-people .ui-select,.photos-share-people .ui-select-trigger{width:120px}
+.photos-share-avatar{display:inline-grid;place-items:center;width:32px;height:32px;flex:none;border-radius:50%;background:var(--tonal);color:var(--on-tonal);font-size:11px;font-weight:700}
+.photos-share-name{flex:1;min-width:0;display:flex;flex-direction:column}.photos-share-name strong{font-size:13px;font-weight:550}.photos-share-name small{font-size:11px;color:var(--muted)}
+.photos-share .photos-hint{margin:0 0 10px}
+.photos-link{display:flex;flex-direction:column;gap:6px;margin:0 0 12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--raised)}
+.photos-link-url{display:flex;gap:6px;align-items:center}.photos-link-url input{flex:1;min-height:40px;padding:8px 10px;font-size:12px}
+.photos-link-url .secondary-button{min-height:40px;padding:6px 12px}
+.photos-link-meta{margin:0;font-size:12px;color:var(--muted)}
+.photos-link-row{display:flex;flex-direction:row;align-items:center;gap:8px;margin:0;font-size:13px;font-weight:500}
+.photos-link-row>span:first-child{flex:1}.photos-link-row .ui-select{flex:none;width:170px}
+label.photos-link-row{justify-content:space-between}
+.photos-link-password{display:flex;flex-wrap:wrap;gap:8px;align-items:end}.photos-link-password label{flex:1;min-width:160px;margin:0}
+.photos-link .settings-row{padding:6px 0}
+.photos-link>.text-button.danger{align-self:flex-start}
+.photos-links{display:flex;flex-direction:column;gap:8px}
+.photos-link-summary{border:1px solid var(--border);border-radius:12px;padding:0 12px}
+.photos-link-summary summary{display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-size:13px}.photos-link-summary summary small{margin-left:auto;color:var(--muted)}
+.photos-link-summary .icon{width:16px;height:16px}.photos-link-summary .photos-link{border:0;padding:0 0 12px;background:none}
+.photos-album-cards{list-style:none;margin:0;padding:4px 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
+.photos-album-card{display:flex;flex-direction:column;gap:4px;width:100%;padding:0;border:0;background:none;text-align:left;cursor:pointer;color:inherit}
+.photos-album-card-cover{display:grid;place-items:center;aspect-ratio:1;border-radius:12px;overflow:hidden;background:var(--hover);color:var(--muted)}
+.photos-album-card-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.photos-album-card strong{font-size:13px;font-weight:600}.photos-album-card small{font-size:12px;color:var(--muted)}
+.photos-album-card:focus-visible{outline:3px solid var(--accent);outline-offset:3px;border-radius:12px}
+
+/* Public shared-link page: the Photos grid and viewer in a minimal frame. */
+.public-photos{min-height:100dvh;display:flex;flex-direction:column;background:var(--surface-soft)}
+.public-photos-bar{display:flex;align-items:center;min-height:56px;padding:8px 24px}
+.public-photos-bar .brand{font-size:20px}.public-photos-bar .brand-mark{width:24px;height:24px;border-width:6px}
+.public-photos-main{flex:1;display:flex;flex-direction:column;min-height:0;margin:0 16px 16px;padding:8px 20px 20px;border-radius:20px;background:var(--panel)}
+.public-photos-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:12px 0 8px}
+.public-photos-heading h1{margin:0 0 4px;font-size:var(--content-heading-size,22px);font-weight:600}
+.public-photos-heading p{margin:0;font-size:13px;color:var(--muted)}.public-photos-description{margin-top:6px!important;color:var(--text)!important;max-width:640px;line-height:1.6}
+.public-photos .photos-viewer{min-height:calc(100dvh - 110px)}
+.public-photos .photos-stage img{max-width:100%;max-height:100%;object-fit:contain}
+.public-photos-meta{margin:0;padding:10px 12px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)}
+.public-photos>.photos-empty{margin:auto}
+@media(max-width:800px){
+  .public-photos-bar{padding:6px 14px}.public-photos-main{margin:0;border-radius:16px 16px 0 0;padding:4px 8px 16px}
+  .public-photos-heading{flex-direction:column}.public-photos .photos-grid{gap:2px}.public-photos .photos-grid[data-columns]{--photos-columns:3}
+  .photos-share-add{grid-template-columns:1fr}
+}
+.photos-link-row .photos-hint{margin:0}
+
+/* Phase 4: Photos settings › Immich. */
+.photos-immich-url{font-size:13px}
+.photos-devices{display:flex;flex-direction:column;gap:6px;padding:10px 0}
+.photos-devices>strong{font-size:13px;font-weight:550}
+.photos-devices ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.photos-devices li{display:flex;align-items:center;gap:10px;min-height:48px;border-top:1px solid var(--border)}
+.photos-devices li .icon{width:18px;height:18px;color:var(--muted)}
+.photos-devices li span{flex:1;min-width:0;display:flex;flex-direction:column}.photos-devices li small{font-size:12px;color:var(--muted)}
+.photos-immich-form{display:flex;flex-direction:column;gap:4px}
+.photos-immich-status{margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px;font-size:13px}
+.photos-immich-status p{margin:0 0 8px}.photos-immich-status .error{margin:0 0 8px}
+.photos-immich-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.photos-immich-intro{margin:0 0 10px;font-size:12px;line-height:1.6;color:var(--muted)}
+.photos-immich-submit{display:flex;justify-content:flex-end;margin-top:8px}
+.photos-devices .photos-hint{margin:0}

@@ -25,6 +25,7 @@ import {WorkspaceHeader} from "./shell.tsx";
 import {AgentWorkspace} from "./agent/workspace.tsx";
 import {NewsWorkspace} from "./news/workspace.tsx";
 import {PhotosWorkspace} from "./photos/workspace.tsx";
+import {PublicPhotos} from "./photos/public.tsx";
 // The shared frame is last so it supersedes the earlier per-surface frame rules.
 import "./frame.css";
 import "./settings-sheet.css";
@@ -65,4 +66,5 @@ function App() {
   if(session&&["/notes","/tasks"].includes(location.pathname))return <OptionalWorkspace kind={location.pathname==="/notes"?"notes":"tasks"} session={session} onSignedOut={signedOut}/>;
   return session ? location.pathname === "/contacts" ? <Contacts session={session} onSignedOut={signedOut} /> : location.pathname === "/calendar" ? <Calendar session={session} onSignedOut={signedOut} /> : <Files session={session} onSignedOut={signedOut} /> : <Auth initialized={status.initialized} onLogin={setSession} />;
 }
-createRoot(document.getElementById("root")!).render(<App />);
+// Photos shared links (/s/<token>) are for visitors without an account.
+createRoot(document.getElementById("root")!).render(location.pathname.startsWith("/s/")?<PublicPhotos/>:<App />);

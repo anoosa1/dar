@@ -35,6 +35,9 @@ import {createNewsRuntime,type NewsRuntime} from "./news/runtime.ts";
 import {handleNewsHttp} from "./news/http.ts";
 import {createPhotosRuntime,type PhotosRuntime} from "./photos/runtime.ts";
 import {handlePhotosHttp} from "./photos/http.ts";
+import {handlePhotoLinkHttp} from "./photos/public.ts";
+import {handleImmichHttp,immichBase,immichWellKnown} from "./photos/immich.ts";
+import {createImmichConnector,type ImmichConnector} from "./photos/immich-connector.ts";
 import {handleNextcloudNews,nextcloudBase} from "./news/nextcloud.ts";
 
 export interface ServerConfig {
@@ -90,7 +93,7 @@ export async function startServer(config: ServerConfig) {
   let appRuntime:Awaited<ReturnType<typeof activateApps>>|undefined;
   let agentRuntime:AgentRuntime|undefined;
   let newsRuntime:NewsRuntime|undefined;
-  let photosRuntime:PhotosRuntime|undefined;
+  let photosRuntime:PhotosRuntime|undefined,immichConnector:ImmichConnector|undefined;
   try {
   const db = await database(config.databaseUrl, config.databaseName, config.serviceTokenFile);
   await db.call("service_startup", [`${config.origin}/auth/issuer`]);
@@ -127,6 +130,7 @@ export async function startServer(config: ServerConfig) {
   newsRuntime=createNewsRuntime(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
   const blobs = blobStore(root);
   photosRuntime=await createPhotosRuntime(db,root);
+  immichConnector=createImmichConnector(db,root,blobs,photosRuntime,{allowLoopback:!!config.development});
   await blobs.recover();
   const attempts = new Map<string, { count: number; until: number }>();
   const cookieName = config.development ? "dar_session" : "__Host-dar_session";
@@ -168,6 +172,17 @@ export async function startServer(config: ServerConfig) {
         if ((await readAppSettings()).disabled.includes("news")) throw new AppError("notFound", 404);
         return await handleNextcloudNews(req, res, url, db, newsRuntime!, config.origin);
       }
+      // The Immich mobile app: it finds its API through /.well-known/immich (native client, no Origin header).
+      if (url.pathname === "/.well-known/immich" && method === "GET") {
+        if ((await readAppSettings()).disabled.includes("photos")) throw new AppError("notFound", 404);
+        return json(res, immichWellKnown);
+      }
+      if (url.pathname === immichBase || url.pathname.startsWith(immichBase + "/")) {
+        if ((await readAppSettings()).disabled.includes("photos")) throw new AppError("notFound", 404);
+        return await handleImmichHttp(req, res, url, { db, runtime: photosRuntime!, root, blobs, origin: config.origin, body: () => body(req, 2 * 1024 * 1024),
+          limit: key => { const scoped = `${key}:${peer(req)}`, previous = attempts.get(scoped), attempt = previous && previous.until > Date.now() ? previous : { count: 0, until: Date.now() + 60_000 };
+            if (++attempt.count > 10 || (!previous && attempts.size >= 10_000)) throw new AppError("rateLimited", 429, "Too many attempts. Wait a minute and try again."); attempts.set(scoped, attempt); } });
+      }
       if (url.pathname.startsWith("/dav/") && !url.pathname.startsWith("/dav/files/")) return await handlePimDav(req, res, db, config.origin);
       if (url.pathname.startsWith("/dav/")) return await handleDav(req, res, db, blobs, config.origin);
       if (url.pathname === "/auth/issuer/.well-known/openid-configuration") return json(res, { issuer: issuer.issuer, jwks_uri: `${issuer.issuer}/jwks`, id_token_signing_alg_values_supported: ["ES256"], subject_types_supported: ["public"] });
@@ -191,6 +206,13 @@ export async function startServer(config: ServerConfig) {
       const secret = req.headers.cookie?.split(";").map(part => part.trim()).find(part => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
       const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
       if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && origin !== config.origin) throw new AppError("invalidOrigin", 403);
+      // Photos shared links: visitors have no session. The database checks the link, its password pass and that Photos is on.
+      if (url.pathname.startsWith("/public/photos/")) {
+        if ((await readAppSettings()).disabled.includes("photos")) throw new AppError("notFound", 404, "This link is no longer available.");
+        return await handlePhotoLinkHttp(req, res, url, { db, runtime: photosRuntime!, root, blobs, secure: !config.development, body: () => body(req, 16 * 1024),
+          limit: key => { const scoped = `${key}:${peer(req)}`, previous = attempts.get(scoped), attempt = previous && previous.until > Date.now() ? previous : { count: 0, until: Date.now() + 60_000 };
+            if (++attempt.count > 10 || (!previous && attempts.size >= 10_000)) throw new AppError("rateLimited", 429, "Too many attempts. Wait a minute and try again."); attempts.set(scoped, attempt); } });
+      }
       if (["/api/v1/auth/login", "/api/v1/auth/setup"].includes(url.pathname) && method === "POST") {
         const key = peer(req);
         const previous = attempts.get(key);
@@ -244,7 +266,21 @@ export async function startServer(config: ServerConfig) {
         const optionalApp=/^\/api\/v1\/(notes|tasks|news|photos)(\/|$)/.exec(url.pathname);
         if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);
         if(/^\/api\/v1\/news(\/|$)/.test(url.pathname))return await handleNewsHttp(req,res,url,db,authenticated.session.id,authenticated.user.username,newsRuntime!,()=>body(req,3*1024*1024));
-        if(/^\/api\/v1\/photos(\/|$)/.test(url.pathname))return await handlePhotosHttp(req,res,url,db,authenticated.session.id,photosRuntime!,entry=>blobs.download(req,res,entry,true),()=>body(req,128*1024));
+        if(/^\/api\/v1\/photos(\/|$)/.test(url.pathname))return await handlePhotosHttp(req,res,url,db,authenticated.session.id,photosRuntime!,root,config.origin,{userId:authenticated.user.id,immich:immichConnector!},(entry,inline=true)=>blobs.download(req,res,entry,inline),()=>body(req,128*1024));
+        // The Locked folder opens for this browser session after the account password is confirmed.
+        const locked=/^\/api\/v1\/files\/locked(\/unlock|\/lock)?$/.exec(url.pathname);
+        if(locked&&(locked[1]?method==="POST":method==="GET")){
+          let verifier="";
+          if(locked[1]==="/unlock"){
+            const key=`unlock:${authenticated.user.id}`,previous=attempts.get(key),attempt=previous&&previous.until>Date.now()?previous:{count:0,until:Date.now()+60_000};
+            if(++attempt.count>10||(!previous&&attempts.size>=10_000))throw new AppError("rateLimited",429,"Too many attempts. Wait a minute and try again.");attempts.set(key,attempt);
+            const p=await body(req);if(Object.keys(p).some(k=>k!=="password"))throw new AppError("invalidInput");
+            try{verifier=await auth.confirm(authenticated,string(p.password));}
+            catch(error){if(error instanceof AppError&&error.code==="invalidCredentials")throw new AppError("invalidCredentials",403,"That password is not correct.");throw error;}
+            attempt.count=Math.max(0,attempt.count-1);
+          }
+          return json(res,await db.call("service_locked_folder",[authenticated.session.id,locked[1]?locked[1].slice(1):"state",verifier]));
+        }
         if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
         if(url.pathname==="/api/v1/account/profile"){
           const profile=await db.call<{id:string;revision:number}>("service_profile",[authenticated.session.id,"read","{}"]),etag=`"${profile.id}:${profile.revision}"`;
@@ -292,7 +328,7 @@ export async function startServer(config: ServerConfig) {
           const p = await body(req), token = createOpaqueToken(), id = randomUUID();
           const scope = string(p.scope, 120), apps=passwordApps.filter(app=>passwordGrants(scope).some(g=>g.startsWith(app+":"))), app = apps[0] === "contacts" ? "addressbooks" : apps[0] === "calendar" ? "calendars" : "files";
           await db.call("service_create_app_password", [authenticated.session.id, id, token.digest, string(p.label, 100), scope]);
-          return json(res, { id, secret: token.secret, filesDavUrl:apps.includes("files")?`${config.origin}/dav/files/${encodeURIComponent(authenticated.user.username)}/`:undefined, newsUrl:apps.includes("news")?`${config.origin}${nextcloudBase}`:undefined, davUrl: apps.length>1?`${config.origin}/dav/`:`${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
+          return json(res, { id, secret: token.secret, filesDavUrl:apps.includes("files")?`${config.origin}/dav/files/${encodeURIComponent(authenticated.user.username)}/`:undefined, newsUrl:apps.includes("news")?`${config.origin}${nextcloudBase}`:undefined, immichUrl:apps.includes("photos")?config.origin:undefined, davUrl: apps.length>1?`${config.origin}/dav/`:`${config.origin}/dav/${app}/${encodeURIComponent(authenticated.user.username)}/` }, 201);
         }
         const passwordRoute = /^\/api\/v1\/auth\/app-passwords\/([^/]+)$/.exec(url.pathname);
         if (passwordRoute && method === "DELETE") { await db.call("service_revoke_app_password", [authenticated.session.id, passwordRoute[1]]); return json(res, { ok: true }); }
@@ -370,9 +406,9 @@ export async function startServer(config: ServerConfig) {
       await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
       await Promise.allSettled([...inflight]);
       await maintenance;
-    } finally { attempts.clear();await newsRuntime?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
+    } finally { attempts.clear();await newsRuntime?.close();await immichConnector?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
   };
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(config.port, config.host, resolve); });
   return { server, ctx, close: () => ctx.fiber.dispose() };
-  } catch (error) {await newsRuntime?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
+  } catch (error) {await newsRuntime?.close();await immichConnector?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
 }

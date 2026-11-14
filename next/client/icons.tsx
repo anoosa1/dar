@@ -45,7 +45,7 @@ const paths = {
   image: "M4 4h16v16H4ZM10.6 9a1.6 1.6 0 1 1-3.2 0 1.6 1.6 0 0 1 3.2 0M4 17l5-5 4 4 2-2 5 5", sheet: "M5 3h14v18H5ZM5 9h14M5 15h14M11 9v12",
   pdf: "M6 3h8l4 4v14H6ZM14 3v5h4M9 13h1.5a1.5 1.5 0 0 1 0 3H9v-3ZM9 16v2", archive2: "M6 3h12v18H6ZM11 3v2h2v2h-2v2h2v2h-2M11 14h2v3h-2Z",
   media: "M9 18V6l11-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M20 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0", video: "M3 6h13v12H3ZM16 10l5-3v10l-5-3",
-  lock: "M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3", refresh: "M20 7V2m0 5h-5M4 17v5m0-5h5M20 7A9 9 0 0 0 4 8M4 17a9 9 0 0 0 16-1",
+  lock: "M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3", stack: "M12 3l9 5-9 5-9-5ZM3 13l9 5 9-5", live: "M14.5 12a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M12 5.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13M12 2v.01M19 5v.01M22 12v.01M19 19v.01M12 22v.01M5 19v.01M2 12v.01M5 5v.01", refresh: "M20 7V2m0 5h-5M4 17v5m0-5h5M20 7A9 9 0 0 0 4 8M4 17a9 9 0 0 0 16-1",
 } as const;
 export type IconName = keyof typeof paths;
 export function Icon({ name, className = "" }: { name: IconName; className?: string }) {

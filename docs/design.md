@@ -148,7 +148,9 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   Organize, Clipboard, Delete sections); Details is its own action and does not
   repeat Rename/Move/Copy/Delete. Details: preview, Preview/Download/Favorite/
   Share quick actions, then Details/Versions/Sharing tabs. Moving to deleted files
-  shows a toast with Undo. Storage is a meter card at the bottom of the sidebar.
+  shows a toast with Undo. The Locked folder is a sidebar section: a password form
+  (shared with Photos) until unlocked, then a normal folder with a Lock button whose
+  Delete is permanent; Move to Locked folder asks for the password when needed. Storage is a meter card at the bottom of the sidebar.
   Text and Markdown files open in the Notes editor layout (type, save status,
   Write/Preview, file menu; centered column with the name as title, edit time
   and the formatting bar); plain text uses a monospace font.
@@ -198,8 +200,18 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   sheet header has the title, count and a zoom slider for the square, month-grouped
   grid, and turns into a tonal selection bar. A photo opens in the middle sheet with
   a filmstrip; details sit in the right sheet (phones: Info opens them full screen
-  with Back). People/Places/Explore tabs, Shared with me, Duplicates, Locked folder
-  and Trash arrive with later phases. See [Photos](photos.md).
+  with Back). A "More" group lists Duplicates, Archive, Locked folder and Trash.
+  Live Photos and stacks are one tile with a badge; the viewer plays the motion and
+  shows stack members under the photo. Duplicates are cards of copies with Keep
+  checkboxes. A locked view shows the shared password form in place of the grid.
+  Shared with me lists albums others share as cover cards; your shared albums carry
+  a share mark. Share (album header) opens the right editing pane: people with Can
+  view/Can add, then links with copy, expiry, password and switches that save as
+  you go. Shared-link visitors get the Photos grid and viewer in a minimal frame
+  (brand bar, no app rail). Photos settings has an Immich tab: the mobile app's server
+  URL and sign-in, signed-in devices, and the Immich server connection with status and
+  Sync now. People/Places/Explore tabs arrive with later phases.
+  See [Photos](photos.md).
 - **Agent:** threads on the left, conversation and docked composer in the center,
   review on the right and collapsible output below, inside the shared frame.
   New thread is the create button; Ctrl/Cmd+P opens the command palette. Thread

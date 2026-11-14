@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {newsRefreshChoices,newsKeepChoices} from "../../shared/news.ts";
+import {defaultPhotoFolder,photoFolderParts} from "../../shared/photos.ts";
 import { randomUUID } from "node:crypto";
 import type { PimCollection, PimResource } from "../../shared/pim.ts";
 import { AppError } from "../errors.ts";
@@ -37,7 +38,9 @@ export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, u
       const value = JSON.stringify({calendarShowCancelled:flag("calendarShowCancelled",false),appearance:choice("appearance",["system","latte","mocha"],"system"),timezone:zone,weekStart,contactSort:choice("contactSort",["firstName","lastName"],"firstName"),hiddenCalendars:get("hiddenCalendars",[]),notesSort:choice("notesSort",["modified","title"],"modified"),tasksSort:choice("tasksSort",["modified","title","due"],"due"),filesView:choice("filesView",["list","grid"],"list"),filesShowHidden:flag("filesShowHidden",false),filesConfirmTrash:flag("filesConfirmTrash",false),filesDetailsTab:choice("filesDetailsTab",["details","versions","sharing"],"details"),notesEditorMode:choice("notesEditorMode",["write","preview"],"write"),tasksView:choice("tasksView",["all","inbox","today","upcoming","important","completed"],"today")});
       const numberChoice=(key:string,allowed:readonly number[],fallback:number)=>{const value=get(key,fallback);if(typeof value!=="number"||!allowed.includes(value))invalid(`Invalid ${key}.`);return value;};
       const news={newsMarkRead:choice("newsMarkRead",["open","scroll"],"open"),newsOrder:choice("newsOrder",["newest","oldest"],"newest"),newsShowRead:flag("newsShowRead",false),newsImages:choice("newsImages",["proxy","block"],"proxy"),newsRefresh:numberChoice("newsRefresh",newsRefreshChoices,30),newsKeepDays:numberChoice("newsKeepDays",newsKeepChoices,30)};
-      const agent={...news,agentSettledThreads:settled,agentPinnedThreads:pinned,agentArchivedThreads:archived,agentSendKey:choice("agentSendKey",["enter","modEnter"],"enter"),agentNotify:flag("agentNotify",false),agentGrouping:choice("agentGrouping",["recent","project"],"recent"),agentSnoozed:snoozed};
+      const folder=get("photosUploadFolder",defaultPhotoFolder),folderParts=typeof folder==="string"?photoFolderParts(folder):undefined;
+      if(!folderParts)invalid("Choose a Files folder like pics or Media/Camera, without control characters.");
+      const agent={...news,photosUploadFolder:folderParts.join("/"),agentSettledThreads:settled,agentPinnedThreads:pinned,agentArchivedThreads:archived,agentSendKey:choice("agentSendKey",["enter","modEnter"],"enter"),agentNotify:flag("agentNotify",false),agentGrouping:choice("agentGrouping",["recent","project"],"recent"),agentSnoozed:snoozed};
       const result = await service.call<{ revision: number }>("savePreferences", { revision: old.revision, value:JSON.stringify({...JSON.parse(value),...agent}) }); return json({ ...JSON.parse(value),...agent, revision: result.revision });
     }
   }

@@ -73,9 +73,10 @@ import/export and Nextcloud News API sync for mobile clients at `/dav/news`. See
 ## Photos
 
 Optional built-in gallery at `/photos` for the pictures and videos you keep in
-Files: month-grouped library, favorites, videos, archive, albums, a viewer with
-camera details and uploads into `Photos/YYYY/MM`. Thumbnails use the media tools in
-the Dar package. See [Photos](photos.md).
+Files: month-grouped library, favorites, videos, archive, albums, Live Photos,
+stacks, duplicates, a trash view, the Locked folder, sharing with people and
+links (`/s/…`), the Immich mobile app and an Immich server connector, video conversion for the browser and uploads into `pics/YYYY/MM`.
+Media tools come with the Dar package. See [Photos](photos.md).
 
 ## Prayer Times
 

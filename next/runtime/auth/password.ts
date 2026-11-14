@@ -41,3 +41,13 @@ export async function verifyPassword(password: string, verifier: string): Promis
   if (saltBytes.toString("base64url") !== salt || expectedBytes.toString("base64url") !== expected) return false;
   return timingSafeEqual(await derive(password, saltBytes), expectedBytes);
 }
+
+/**
+ * Photos shared-link passwords: the same verifier format, without the account rule of
+ * 15 characters (links are rate-limited and their passwords set by the owner).
+ */
+export async function hashLinkPassword(password: string): Promise<string> {
+  if ([...password].length < 4 || Buffer.byteLength(password, "utf8") > maxPasswordBytes) throw new Error("Use 4 to 200 characters.");
+  const salt = randomBytes(16);
+  return `${prefix}$${salt.toString("base64url")}$${(await derive(password, salt)).toString("base64url")}`;
+}

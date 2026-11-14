@@ -72,7 +72,7 @@ test("Photos: indexing, thumbnails, views, albums, descriptions, search, trash a
 
     // Favorites, videos and archive views with counts.
     await call("/assets",{ids:[trip,plain],favorite:true},"PATCH");await call("/assets",{ids:[plain],archived:true},"PATCH");
-    let overview=await call<PhotoOverview>("/overview");assert.deepEqual(overview.counts,{library:3,favorites:2,videos:1,archive:1});
+    let overview=await call<PhotoOverview>("/overview");assert.deepEqual(overview.counts,{library:3,favorites:2,videos:1,archive:1,trash:0,duplicates:0,shared:0});assert.equal(overview.uploadFolder,"pics");
     assert.deepEqual((await page("?view=favorites")).items.map(i=>i.id).sort(),[trip,plain].sort());
     assert.deepEqual((await page("?view=videos")).items.map(i=>i.id),[clip]);assert.deepEqual((await page("?view=archive")).items.map(i=>i.id),[plain]);
     assert.ok(!(await page()).items.some(i=>i.id===plain));
@@ -114,7 +114,7 @@ test("Photos: indexing, thumbnails, views, albums, descriptions, search, trash a
     const db=await connect(session);
     try{
       await db.reducers.trashEntry({id:trip,expectedRevision:1});
-      assert.ok(!(await page()).items.some(i=>i.id===trip));assert.equal((await raw(`/assets/${trip}`)).status,404);
+      assert.ok(!(await page()).items.some(i=>i.id===trip));assert.ok((await call<PhotoDetail>(`/assets/${trip}`)).trashedAt);assert.deepEqual((await page("?view=trash")).items.map(i=>i.id),[trip]);assert.equal((await raw(`/assets/${trip}/description`,{method:"PUT",body:JSON.stringify({description:"x",revision:99})})).status,404);
       assert.equal((await call<PhotoOverview>("/overview")).albums[0].count,1);
     }finally{db.disconnect();}
 

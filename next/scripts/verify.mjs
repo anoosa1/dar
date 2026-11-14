@@ -55,7 +55,7 @@ try {
   if(!photosOnly&&(newsOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly)){
     run(["--test","--test-concurrency=1","test/news.test.ts","test/news.integration.test.ts"],300_000);
   }
-  if(photosOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly&&!newsOnly)run(["--test","test/photos.integration.test.ts"],300_000);
+  if(photosOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly&&!newsOnly)run(["--test","--test-concurrency=1","test/photos.integration.test.ts","test/photos-library.integration.test.ts","test/photos-sharing.integration.test.ts","test/photos-immich.integration.test.ts"],600_000);
   if(!newsOnly&&!photosOnly&&(agentOnly||!identityOnly&&!workspaceOnly&&!pimOnly)){
     run(["--test","--test-concurrency=1","test/agent-connection.test.ts","test/agent.integration.test.ts","test/codex.integration.test.ts","test/claude.integration.test.ts"]);
     run(["test/agent-browser.mjs"]);
