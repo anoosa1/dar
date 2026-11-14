@@ -41,6 +41,7 @@ in {
       gitHosts = lib.mkOption { type = lib.types.listOf (lib.types.strMatching "[A-Za-z0-9][A-Za-z0-9.-]*"); default = []; description = "Allowed HTTPS repository hosts. Redirects and credential-bearing URLs are rejected."; };
     };
     news.allowPrivateNetworks = lib.mkOption { type = lib.types.bool; default = false; description = "Let News fetch feeds and images from private, loopback and link-local addresses (for feeds on your own network). Off by default to prevent server-side request forgery."; };
+    photos.immichAllowLocalHost = lib.mkOption { type = lib.types.bool; default = false; description = "Let the Photos Immich connector reach an Immich server on this machine (http://127.0.0.1:2283). Off by default so account owners cannot point the connector at local services. LAN and Tailscale addresses are always allowed."; };
     apps = lib.mkOption { type = lib.types.listOf lib.types.package; default = []; description = "Trusted prebuilt Dar app packages. Changes activate on service restart."; };
     oidc.clients = lib.mkOption {
       default = {};
@@ -96,7 +97,7 @@ in {
         DAR_PORT = toString cfg.port; DAR_DATABASE_PORT = toString cfg.databasePort;
         DAR_DATABASE_NAME = cfg.databaseName;
         DAR_APPS_FILE = toString appsFile;
-      } // lib.optionalAttrs cfg.news.allowPrivateNetworks { DAR_NEWS_ALLOW_PRIVATE_NETWORKS = "1"; } // lib.optionalAttrs (cfg.oidc.clients != {}) { DAR_OIDC_FILE = toString oidcFile; }
+      } // lib.optionalAttrs cfg.news.allowPrivateNetworks { DAR_NEWS_ALLOW_PRIVATE_NETWORKS = "1"; } // lib.optionalAttrs cfg.photos.immichAllowLocalHost { DAR_IMMICH_ALLOW_LOCAL_HOST = "1"; } // lib.optionalAttrs (cfg.oidc.clients != {}) { DAR_OIDC_FILE = toString oidcFile; }
         // lib.optionalAttrs (cfg.agent.enable && cfg.agent.package != null) { DAR_CODEX_FILE = toString codexFile; }
         // lib.optionalAttrs (cfg.agent.enable && claude.package != null) { DAR_CLAUDE_FILE = toString claudeFile; };
       serviceConfig = {

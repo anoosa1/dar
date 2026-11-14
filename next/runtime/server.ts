@@ -51,6 +51,8 @@ export interface ServerConfig {
   claudeFile?:string;
   /** Operator choice: let News fetch feeds on private/loopback networks (off by default). */
   newsAllowPrivateNetworks?:boolean;
+  /** Let the Immich connector reach a server on this machine (loopback), for Immich running beside Dar. */
+  immichAllowLocalHost?:boolean;
 }
 function json(res: ServerResponse, value: unknown, status = 200) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
@@ -130,7 +132,7 @@ export async function startServer(config: ServerConfig) {
   newsRuntime=createNewsRuntime(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
   const blobs = blobStore(root);
   photosRuntime=await createPhotosRuntime(db,root);
-  immichConnector=createImmichConnector(db,root,blobs,photosRuntime,{allowLoopback:!!config.development});
+  immichConnector=createImmichConnector(db,root,blobs,photosRuntime,{allowLoopback:!!config.development||!!config.immichAllowLocalHost});
   await blobs.recover();
   const attempts = new Map<string, { count: number; until: number }>();
   const cookieName = config.development ? "dar_session" : "__Host-dar_session";

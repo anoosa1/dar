@@ -120,9 +120,11 @@ in phases.
   copies originals Dar lacks (by SHA-1) into the Photos folder with favorite,
   archive and description, and mirrors album membership; Two-way also uploads Dar
   photos Immich lacks. Runs every 15 minutes to daily or on Sync now, at most 300
-  files or 4 GiB per run, resuming next time. Private network addresses are allowed;
-  loopback, link-local, multicast and unspecified addresses are not (development
-  installations allow loopback). Disconnecting keeps imported photos.
+  files or 4 GiB per run, resuming next time. Private network and Tailscale addresses
+  are allowed; link-local, multicast and unspecified addresses are not, and loopback
+  only with `services.dar.photos.immichAllowLocalHost` (for Immich on the same machine,
+  reached as `http://127.0.0.1:2283`; a machine often cannot reach its own Tailscale
+  address). Disconnecting keeps imported photos.
 - **Albums:** create (optionally from a selection), rename, delete (photos stay),
   add and remove; the first photo is the cover. Limits: 500 albums, 50,000 items.
 - **Search:** file names, descriptions, camera models and album names appear in the

@@ -161,7 +161,7 @@ for(const [net,bits] of [["::",128],["::1",128],["fe80::",10],["ff00::",8]] as c
 async function allowedHost(base:string,allowLoopback:boolean){
   const url=new URL(base);if(!["http:","https:"].includes(url.protocol)||url.username||url.password)throw new Error("Use an http or https address without credentials.");
   const host=url.hostname.replace(/^\[|\]$/g,""),addresses=isIP(host)?[{address:host,family:isIP(host)}]:await lookup(host,{all:true}).catch(()=>{throw new Error("The Immich server's name could not be resolved.");});
-  for(const {address,family} of addresses){if(allowLoopback&&(/^127\.|^::1$|^::ffff:127\./.test(address)))continue;const mapped=/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];if(mapped?blocked.check(mapped,"ipv4"):blocked.check(address,family===6?"ipv6":"ipv4"))throw new Error("That address points to this server or a reserved network. Use the Immich server's network address.");}
+  for(const {address,family} of addresses){if(allowLoopback&&(/^127\.|^::1$|^::ffff:127\./.test(address)))continue;const mapped=/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];if(mapped?blocked.check(mapped,"ipv4"):blocked.check(address,family===6?"ipv6":"ipv4"))throw new Error("That address points to this server or a reserved network. For Immich on the same machine, the administrator can set services.dar.photos.immichAllowLocalHost and you can use http://127.0.0.1:2283.");}
 }
 
 /**
