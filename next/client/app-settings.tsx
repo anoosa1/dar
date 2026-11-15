@@ -27,7 +27,11 @@ export function usePreferenceSaver(session:BrowserSession){
   const [preferences,setPreferences]=useState<Preferences>(),[states,setStates]=useState<Partial<Record<Key,SaveState>>>({}),[error,setError]=useState(""),[conflict,setConflict]=useState(false),[notice,setNotice]=useState<SettingsNotice|null>(null);
   const saved=useRef<Preferences|undefined>(undefined),queue=useRef(Promise.resolve()),alive=useRef(true);
   async function load(signal?:AbortSignal){const value=await request<Preferences>(endpoint,{signal});saved.current=value;if(alive.current){setPreferences(value);setConflict(false);setError("");setStates({});}}
-  useEffect(()=>{alive.current=true;const controller=new AbortController();void load(controller.signal).catch(e=>{if(!controller.signal.aborted)setError(e.message);});return()=>{alive.current=false;controller.abort();};},[]);
+  useEffect(()=>{alive.current=true;const controller=new AbortController();
+    // The page has usually just loaded these preferences; reuse them rather than asking again.
+    const fresh=sharedPreferences.read().value;if(fresh&&sharedPreferences.age()<2000){saved.current=fresh;setPreferences(fresh);}
+    else void load(controller.signal).catch(e=>{if(!controller.signal.aborted)setError(e.message);});
+    return()=>{alive.current=false;controller.abort();};},[]);
   function change<K extends Key>(key:K,value:Preferences[K],message:string,undoable=true){
     const before=saved.current?.[key];if(!saved.current||same(before,value))return;
     setPreferences(current=>current&&{...current,[key]:value});setStates(current=>({...current,[key]:"saving"}));setError("");setNotice(null);

@@ -50,9 +50,18 @@ export function staticAssets(directory: URL) {
     loaded.set(name, next); next.catch(() => loaded.delete(name));
     return await next;
   }
+  // App pages use the build's variant that preloads their code (pages.json), else index.html.
+  let routes: { version: string; map: Record<string, string> } | undefined;
+  async function page(pathname: string) {
+    const listing = await asset("pages.json");
+    if (!listing) return "index.html";
+    if (routes?.version !== listing.version) { try { routes = { version: listing.version, map: JSON.parse(listing.identity.toString()) }; } catch { return "index.html"; } }
+    const name = routes.map[pathname];
+    return typeof name === "string" && /^pages\/[a-z-]+\.html$/.test(name) ? name : "index.html";
+  }
   return {
     async send(req: IncomingMessage, res: ServerResponse, pathname: string) {
-      const requested = pathname.slice(1), name = hashed.test(requested) || stable.has(requested) ? requested : "index.html", value = await asset(name);
+      const requested = pathname.slice(1), name = hashed.test(requested) || stable.has(requested) ? requested : await page(pathname), value = await asset(name);
       if (!value) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }); res.end(req.method === "HEAD" ? undefined : "Not found"); return; }
       const headers: Record<string, string | number> = {
         "content-type": types[name.split(".").at(-1)!], etag: value.etag, vary: "accept-encoding", "x-content-type-options": "nosniff",

@@ -9,13 +9,13 @@ export interface SharedState<T>{value?:T;error:string}
  * latest result; the named events force a refresh and window focus refreshes stale
  * data while anything still reads it.
  */export function sharedRequest<T>(url:string,events:string[]){
-  let state:SharedState<T>={error:""},sequence=0,fetchedAt=0,controller:AbortController|undefined,listening=false;
+  let state:SharedState<T>={error:""},sequence=0,fetchedAt=0,receivedAt=0,controller:AbortController|undefined,listening=false;
   const listeners=new Set<()=>void>();
   const publish=(next:SharedState<T>)=>{state=next;for(const listener of listeners)listener();};
   function refresh(){
     controller?.abort();controller=new AbortController();
     const id=++sequence,signal=controller.signal;fetchedAt=Date.now();
-    void request<T>(url,{signal}).then(value=>{if(id===sequence)publish({value,error:""});}).catch((e:Error)=>{if(id===sequence&&!signal.aborted)publish({...state,error:e.message});});
+    void request<T>(url,{signal}).then(value=>{if(id===sequence){receivedAt=Date.now();publish({value,error:""});}}).catch((e:Error)=>{if(id===sequence&&!signal.aborted)publish({...state,error:e.message});});
   }
   const stale=()=>{if(listeners.size&&Date.now()-fetchedAt>fresh)refresh();};
   function subscribe(listener:()=>void){
@@ -26,5 +26,7 @@ export interface SharedState<T>{value?:T;error:string}
     return()=>{listeners.delete(listener);setTimeout(()=>{if(!listeners.size){controller?.abort();sequence++;fetchedAt=0;state={error:""};}});};
   }
   const read=()=>state;
-  return {refresh,read,subscribe,use:()=>useSyncExternalStore(subscribe,read)};
+  /** Milliseconds since the latest value arrived, or Infinity before any. */
+  const age=()=>state.value===undefined?Infinity:Date.now()-receivedAt;
+  return {refresh,read,age,subscribe,use:()=>useSyncExternalStore(subscribe,read)};
 }
