@@ -1,3 +1,4 @@
+import {localDate} from "../dates.ts";
 import {contactHref} from "./presentation.ts";
 import {EditorPane} from "../pane.tsx";
 import {Select,NewItemButton,ActionMenu} from "../controls.tsx";
@@ -99,4 +100,4 @@ function ContactEditor({ books, initial, initialBook, onSave, onClose }: { books
 /** The letter heading for a row under the current name sort. */
 function sortLetter(data:ContactData,sort:string){const key=(sort==="lastName"?data.lastName||data.displayName:data.firstName||data.displayName).trim();const first=key.normalize("NFD").replace(/\p{M}/gu,"").charAt(0).toUpperCase();return /\p{L}/u.test(first)?first:"#";}
 /** Formats vCard birthdays (YYYY-MM-DD or --MM-DD) without timezone shifts. */
-function birthday(value:string){const full=/^(\d{4})-(\d\d)-(\d\d)$/.exec(value),partial=/^--(\d\d)-?(\d\d)$/.exec(value);if(full)return new Date(Date.UTC(+full[1],+full[2]-1,+full[3])).toLocaleDateString(undefined,{year:"numeric",month:"long",day:"numeric",timeZone:"UTC"});if(partial)return new Date(Date.UTC(2000,+partial[1]-1,+partial[2])).toLocaleDateString(undefined,{month:"long",day:"numeric",timeZone:"UTC"});return value;}
+function birthday(value:string){const full=/^(\d{4})-(\d\d)-(\d\d)$/.exec(value),partial=/^--(\d\d)-?(\d\d)$/.exec(value);if(full)return localDate(new Date(Date.UTC(+full[1],+full[2]-1,+full[3])),{year:"numeric",month:"long",day:"numeric",timeZone:"UTC"});if(partial)return localDate(new Date(Date.UTC(2000,+partial[1]-1,+partial[2])),{month:"long",day:"numeric",timeZone:"UTC"});return value;}

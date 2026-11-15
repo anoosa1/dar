@@ -1,10 +1,12 @@
 import {useEffect,useId,useRef,useState,type ReactNode} from "react";
 import {createPortal} from "react-dom";
 import {Icon} from "./icons.tsx";
+import {useBodyClass} from "./body-class.ts";
 
 /** Non-modal workspace editor. Its form owns validation and persistence. */
 export function EditorPane({title,onClose,children,dirty:formDirty}:{title:string;onClose:()=>void;children:ReactNode;dirty?:boolean}){
   const ref=useRef<HTMLElement>(null),id=useId(),dirty=useRef(false),[discard,setDiscard]=useState(false);
+  useBodyClass("has-editing-pane");
   if(formDirty!==undefined)dirty.current=formDirty;
   function close(){if(dirty.current)setDiscard(true);else onClose();}
   useEffect(()=>{

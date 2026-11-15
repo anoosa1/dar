@@ -1,10 +1,9 @@
+import {localDate,localDateTime} from "../dates.ts";
 import {Fragment,useCallback,useEffect,useRef,useState,type FormEvent} from "react";
 import {request,RequestError} from "../api.ts";
 import {useAppearance} from "../appearance.tsx";
 import {Icon} from "../icons.tsx";
 import type {PhotoAsset,PhotoPage,PhotoPublicDetail,PhotoPublicShare} from "../../shared/photos.ts";
-import "./photos.css";
-import "../locked-folder.css";
 
 const message=(cause:unknown)=>(cause as Error).message||"The request could not be completed.";
 const duration=(seconds:number)=>{const s=Math.round(seconds),m=Math.floor(s/60),r=String(s%60).padStart(2,"0");return `${m}:${r}`;};
@@ -65,12 +64,12 @@ export function PublicPhotos(){
   return frame(<main className="public-photos-main" aria-label={share.title}>
     {current?<PublicViewer api={api} asset={current} index={index} total={items.length} share={share} onClose={close} onStep={delta=>{const next=items[index+delta];if(next)setOpen(next.id);if(index+delta>=items.length-4)void more();}}/>:<>
       <div className="public-photos-heading">
-        <div><h1>{share.title}</h1><p>{share.owner?`Shared by ${share.owner}`:"Shared photos"} · {share.count.toLocaleString()} item{share.count===1?"":"s"}{share.expiresAt?` · until ${new Date(share.expiresAt).toLocaleDateString([],{dateStyle:"medium"})}`:""}</p>{share.description&&<p className="public-photos-description">{share.description}</p>}</div>
+        <div><h1>{share.title}</h1><p>{share.owner?`Shared by ${share.owner}`:"Shared photos"} · {share.count.toLocaleString()} item{share.count===1?"":"s"}{share.expiresAt?` · until ${localDate(share.expiresAt,{dateStyle:"medium"})}`:""}</p>{share.description&&<p className="public-photos-description">{share.description}</p>}</div>
         {share.allowUpload&&<><button type="button" className="primary-button" onClick={()=>fileInput.current?.click()}><Icon name="upload"/>Add photos</button><input ref={fileInput} type="file" multiple hidden accept="image/*,video/*,.heic,.heif,.dng,.mov" aria-label="Add photos to this album" onChange={event=>{void upload(event.target.files);event.target.value="";}}/></>}
       </div>
       {!items.length&&<div className="photos-empty"><Icon name="image"/><h2>Nothing here yet</h2>{share.allowUpload&&<p>Add the first photos to this album.</p>}</div>}
       <div className="photos-grid" role="list" aria-label={`${share.title} photos`} data-columns={5}>
-        {items.map(item=>{const month=new Date(item.takenAt).toLocaleDateString([],{month:"long",year:"numeric"}),heading=share.showMetadata&&month!==lastMonth?(lastMonth=month,<h2 className="photos-month" key={"m-"+month}>{month}</h2>):null;
+        {items.map(item=>{const month=localDate(item.takenAt,{month:"long",year:"numeric"}),heading=share.showMetadata&&month!==lastMonth?(lastMonth=month,<h2 className="photos-month" key={"m-"+month}>{month}</h2>):null;
           return <Fragment key={item.id}>{heading}<div role="listitem" data-asset={item.id} className="photos-tile"><button type="button" className="photos-open" aria-label={`${item.kind==="video"?"Video":"Photo"} ${item.name}`} onClick={()=>setOpen(item.id)}>
             <PublicThumb api={api} asset={item}/>{item.kind==="video"&&<span className="photos-badge"><Icon name="video"/>{item.duration?duration(item.duration):""}</span>}{item.live&&<span className="photos-badge"><Icon name="live"/>Live</span>}
           </button></div></Fragment>;})}
@@ -116,7 +115,7 @@ function PublicViewer({api,asset,index,total,share,onClose,onStep}:{api:string;a
       {share.allowDownload&&<a className="icon-button" href={`${api}/assets/${asset.id}/original`} download aria-label="Download original" title="Download original"><Icon name="download"/></a>}
     </div>
     <div className="photos-stage">{asset.kind==="video"?<PublicVideo key={asset.id} api={api} asset={asset}/>:<PublicThumb key={asset.id} api={api} asset={asset} size="m"/>}</div>
-    {detail&&(detail.takenAt||camera||detail.description)&&<p className="public-photos-meta">{[detail.takenAt?new Date(detail.takenAt).toLocaleString([],{dateStyle:"long",timeStyle:"short"}):"",camera,detail.description].filter(Boolean).join(" · ")}</p>}
+    {detail&&(detail.takenAt||camera||detail.description)&&<p className="public-photos-meta">{[detail.takenAt?localDateTime(detail.takenAt,{dateStyle:"long",timeStyle:"short"}):"",camera,detail.description].filter(Boolean).join(" · ")}</p>}
   </section>;
 }
 

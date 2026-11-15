@@ -1,3 +1,4 @@
+import {localDate,localDateTime,localTime} from "../dates.ts";
 import {Fragment,useCallback,useEffect,useMemo,useRef,useState,type FormEvent,type ReactNode} from "react";
 import {request,type BrowserSession} from "../api.ts";
 import {WorkspaceHeader,useMobileNavigation} from "../shell.tsx";
@@ -9,7 +10,6 @@ import {usePreferences,usePreferenceSaver,SaveProblems} from "../app-settings.ts
 import {SettingsSheet,SettingRow,SettingSwitch,Segmented} from "../settings-sheet.tsx";
 import {renderArticle} from "./render.ts";
 import {newsDefaults,newsKeepChoices,newsRefreshChoices,type NewsDiscovered,type NewsFeed,type NewsFolder,type NewsItem,type NewsItemDetail,type NewsOverview} from "../../shared/news.ts";
-import "./news.css";
 
 const base="/api/v1/news";
 type View={type:"unread"|"starred"|"all"}|{type:"feed";id:number}|{type:"folder";id:number};
@@ -20,9 +20,9 @@ const initial=(title:string)=>[...title.replace(/^[^\p{L}\p{N}]+/u,"")][0]?.toUp
 const minutes=(value:number)=>value>=60?`${value/60} hour${value===60?"":"s"}`:`${value} minutes`;
 function dayLabel(time:number){
   const day=new Date(time),today=new Date();today.setHours(0,0,0,0);const start=new Date(day);start.setHours(0,0,0,0);const diff=Math.round((today.getTime()-start.getTime())/86400000);
-  return diff<=0?"Today":diff===1?"Yesterday":diff<7?day.toLocaleDateString([],{weekday:"long"}):day.toLocaleDateString([],{day:"numeric",month:"long",...day.getFullYear()!==today.getFullYear()?{year:"numeric"}:{}});
+  return diff<=0?"Today":diff===1?"Yesterday":diff<7?localDate(day,{weekday:"long"}):localDate(day,{day:"numeric",month:"long",...day.getFullYear()!==today.getFullYear()?{year:"numeric"}:{}});
 }
-const timeLabel=(time:number)=>dayLabel(time)==="Today"?new Date(time).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):new Date(time).toLocaleDateString([],{month:"short",day:"numeric"});
+const timeLabel=(time:number)=>dayLabel(time)==="Today"?localTime(time,{hour:"numeric",minute:"2-digit"}):localDate(time,{month:"short",day:"numeric"});
 function readView():{view:View;item?:number}{
   const p=new URLSearchParams(location.search),num=(key:string)=>Number(p.get(key))||0;
   const view:View=num("feed")?{type:"feed",id:num("feed")}:num("folder")?{type:"folder",id:num("folder")}:p.get("view")==="starred"?{type:"starred"}:p.get("view")==="all"?{type:"all"}:{type:"unread"};
@@ -226,7 +226,7 @@ function Reader({item,feed,error,images,session,onClose,onState,onNext,onRetry}:
     :<article className="news-article-body" dir={item.rtl?"rtl":undefined}>
       {feed?.fullText&&<span className="news-fulltext"><Icon name="file"/>Full text</span>}
       <h1 ref={heading} tabIndex={-1}>{item.url?<a href={item.url} target="_blank" rel="noopener noreferrer">{item.title||"Untitled"}</a>:item.title||"Untitled"}</h1>
-      <p className="news-byline">{[item.author&&`By ${item.author}`,new Date(item.pubDate).toLocaleString([],{dateStyle:"medium",timeStyle:"short"}),words>120?`${Math.max(1,Math.round(words/230))} min read`:""].filter(Boolean).join(" · ")}</p>
+      <p className="news-byline">{[item.author&&`By ${item.author}`,localDateTime(item.pubDate,{dateStyle:"medium",timeStyle:"short"}),words>120?`${Math.max(1,Math.round(words/230))} min read`:""].filter(Boolean).join(" · ")}</p>
       {item.enclosureLink&&/^https:/.test(item.enclosureLink)&&(/^(audio|video)\//.test(item.enclosureMime)||/\.(mp3|m4a|ogg|opus|mp4|webm)(\?|$)/i.test(item.enclosureLink))&&<div className="news-player">{video?<video ref={el=>{media.current=el;}} controls preload="metadata" src={item.enclosureLink} onPause={remember} onTimeUpdate={remember}/>:<audio ref={el=>{media.current=el;}} controls preload="metadata" src={item.enclosureLink} onPause={remember} onTimeUpdate={remember}/>}{item.mediaDescription&&<p>{item.mediaDescription}</p>}</div>}
       {item.enclosureLink&&!/^https:/.test(item.enclosureLink)&&<p><a href={item.enclosureLink} target="_blank" rel="noopener noreferrer">Open attachment</a></p>}
       <div ref={body} className="news-body"/>

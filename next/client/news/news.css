@@ -4,8 +4,8 @@
 .news-shell .pim-main.news-main{display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden}
 .news-shell .pim-details.news-details{display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden}
 /* Subscribe, Edit feed and News settings take the article sheet's place instead of squeezing it. */
-body:has(.editing-pane) .news-shell .pim-workspace,body:has(.editing-pane) .news-shell.has-pim-details .pim-workspace{grid-template-columns:248px minmax(0,1fr)}
-body:has(.editing-pane) .news-shell .pim-details.news-details{display:none}
+body.has-editing-pane .news-shell .pim-workspace,body.has-editing-pane .news-shell.has-pim-details .pim-workspace{grid-template-columns:248px minmax(0,1fr)}
+body.has-editing-pane .news-shell .pim-details.news-details{display:none}
 .news-sidebar{display:flex;flex-direction:column}
 .news-sidebar nav{display:flex;flex-direction:column}
 .news-sidebar .nav-item{display:flex;align-items:center;gap:10px;width:100%;min-width:0;text-align:left}
@@ -107,7 +107,7 @@ body:has(.editing-pane) .news-shell .pim-details.news-details{display:none}
 @media(max-width:1100px) and (min-width:801px){
   .news-shell .pim-workspace{grid-template-columns:210px minmax(0,1fr)}
   .news-shell.has-pim-details .pim-workspace{grid-template-columns:200px minmax(260px,1fr) minmax(340px,1.1fr)}
-  body:has(.editing-pane) .news-shell .pim-workspace,body:has(.editing-pane) .news-shell.has-pim-details .pim-workspace{grid-template-columns:210px minmax(0,1fr)}
+  body.has-editing-pane .news-shell .pim-workspace,body.has-editing-pane .news-shell.has-pim-details .pim-workspace{grid-template-columns:210px minmax(0,1fr)}
 }
 @media(max-width:800px){
   .news-shell .pim-workspace,.news-shell.has-pim-details .pim-workspace{display:flex}

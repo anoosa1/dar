@@ -12,7 +12,6 @@ import {WorkspaceHeader,useMobileNavigation} from "./shell.tsx";
 import {ProfileSettings} from "./profile.tsx";
 import {InstalledAppsSettings} from "./installed-app-settings.tsx";
 import {SettingsOverview} from "./settings-overview.tsx";
-import "./identity.css";
 
 type Data=Record<string,any>;
 interface Client {id:string;revision:number;enabled:boolean;name:string;redirectUris:string[];postLogoutRedirectUris:string[];scopes:string;requirePkce:boolean;type:"public"|"confidential"}

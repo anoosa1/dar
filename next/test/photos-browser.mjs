@@ -95,7 +95,7 @@ try{
   await page.keyboard.press("Escape");await page.getByRole("button",{name:"Lock",exact:true}).click();await page.getByLabel("Password").waitFor();assert.equal(await lockedGrid.count(),0);
 
   // Files: the same Locked folder, outside All files, opens with the password and deletes permanently.
-  await page.goto(`${base}/?section=locked`);await page.getByRole("heading",{name:"Locked folder",exact:true}).waitFor();
+  await page.goto(`${base}/?section=locked`);await page.getByRole("heading",{name:"Locked folder",exact:true,level:2}).waitFor();
   await page.getByLabel("Password").fill("a long isolated test password");await page.getByRole("button",{name:"Unlock"}).click();
   await page.getByRole("button",{name:"clip.mp4",exact:true}).waitFor();await page.screenshot({path:path.join(root,"files-locked.png")});
   await page.getByRole("button",{name:"Actions for clip.mp4"}).click();await page.getByRole("menuitem",{name:"Delete permanently"}).waitFor();assert.equal(await page.getByRole("menuitem",{name:"Move to deleted files"}).count(),0);await page.keyboard.press("Escape");

@@ -6,9 +6,13 @@ import {request,RequestError,type BrowserSession} from "./api.ts";
 import {SettingsSheet,SettingRow,SettingSwitch,Segmented,type SaveState,type SettingsNotice} from "./settings-sheet.tsx";
 import type {Preferences} from "../shared/preferences.ts";
 import type {AppId} from "./apps.tsx";
+import {sharedRequest} from "./shared-request.ts";
 export type {Preferences};
 const endpoint="/api/v1/pim/preferences";
-export function usePreferences(){const [value,setValue]=useState<Preferences>({revision:0}),[loaded,setLoaded]=useState(false),[error,setError]=useState("");useEffect(()=>{let active=true,controller=new AbortController();const load=()=>{controller.abort();controller=new AbortController();void request<Preferences>(endpoint,{signal:controller.signal}).then(p=>{if(active){setValue(p);setLoaded(true);setError("");}}).catch(e=>{if(active&&e.name!=="AbortError")setError(e.message);});};load();window.addEventListener("dar:preferences",load);window.addEventListener("focus",load);return()=>{active=false;controller.abort();window.removeEventListener("dar:preferences",load);window.removeEventListener("focus",load);};},[]);return {preferences:value,error,loaded};}
+/** The account's preferences, fetched once per page for every reader. */
+export const sharedPreferences=sharedRequest<Preferences>(endpoint,["dar:preferences"]);
+const unloaded:Preferences={revision:0};
+export function usePreferences(){const {value,error}=sharedPreferences.use();return {preferences:value??unloaded,error,loaded:!!value};}
 export async function savePreferences(value:Preferences,session:BrowserSession){const result=await request<Preferences>(endpoint,{method:"PUT",headers:{"if-match":`"preferences:${value.revision}"`},body:JSON.stringify(value)},session.csrfToken);window.dispatchEvent(new Event("dar:preferences"));return result;}
 export function AppSettingsButton({app,onClick}:{app:AppId;onClick:()=>void}){return <button type="button" className="nav-item ui-app-settings-entry" onClick={onClick}><Icon name="settings"/>{app[0].toUpperCase()+app.slice(1)} settings</button>;}
 

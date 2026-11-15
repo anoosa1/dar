@@ -34,10 +34,11 @@ import {createAgentRuntime,type AgentRuntime} from "./agent/runtime.ts";
 import {createNewsRuntime,type NewsRuntime} from "./news/runtime.ts";
 import {handleNewsHttp} from "./news/http.ts";
 import {createPhotosRuntime,type PhotosRuntime} from "./photos/runtime.ts";
-import {handlePhotosHttp} from "./photos/http.ts";
+import {handlePhotosHttp,sendFile} from "./photos/http.ts";
 import {handlePhotoLinkHttp} from "./photos/public.ts";
 import {handleImmichHttp,immichBase,immichWellKnown} from "./photos/immich.ts";
 import {createImmichConnector,type ImmichConnector} from "./photos/immich-connector.ts";
+import {staticAssets} from "./static.ts";
 import {handleNextcloudNews,nextcloudBase} from "./news/nextcloud.ts";
 
 export interface ServerConfig {
@@ -130,7 +131,7 @@ export async function startServer(config: ServerConfig) {
   ctx.effect(() => () => disposeResources(), "runtime-resources");
   agentRuntime=await createAgentRuntime(db,root,config.codexFile??path.join(root,"codex.json"),config.claudeFile??path.join(root,"claude.json"));
   newsRuntime=createNewsRuntime(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
-  const blobs = blobStore(root);
+  const blobs = blobStore(root), client = staticAssets(new URL("../dist/", import.meta.url));
   photosRuntime=await createPhotosRuntime(db,root);
   immichConnector=createImmichConnector(db,root,blobs,photosRuntime,{allowLoopback:!!config.development||!!config.immichAllowLocalHost});
   await blobs.recover();
@@ -365,15 +366,21 @@ export async function startServer(config: ServerConfig) {
           const entry = await db.call<BlobFile>("service_download", [authenticated.session.id, downloadRoute[1], url.searchParams.get("version") ?? ""]);
           return await blobs.download(req, res, entry, url.searchParams.get("preview") === "1");
         }
+        // Image tiles and previews use the shared Photos thumbnails instead of the original.
+        const thumbnailRoute = /^\/api\/v1\/files\/([^/]+)\/thumbnail$/.exec(url.pathname);
+        if (thumbnailRoute && ["GET", "HEAD"].includes(method)) {
+          const entry = await db.call<BlobFile>("service_download", [authenticated.session.id, thumbnailRoute[1], ""]), size = url.searchParams.get("size") === "m" ? "m" : "s";
+          const file = /^image\//.test(entry.mediaType) ? await photosRuntime!.thumbnailFile(entry.blobId, "image", size) : undefined;
+          // Without media tools the original stands in, as it did before thumbnails.
+          if (!file) return await blobs.download(req, res, entry, true);
+          return await sendFile(req, res, file, "image/webp", `"${entry.blobId}-${size}"`, "private, no-store");
+        }
         throw new AppError("notFound", 404);
       }
       if (method !== "GET" && method !== "HEAD") throw new AppError("notFound", 404);
       const interactionPage=/^\/identity\/interaction\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
       if(interactionPage&&method==="GET")await identity.prepareInteraction(req,res,interactionPage[1]);
-      const asset = /^\/(?:app|sdk)\.(?:js|css)$/.test(url.pathname)||/^\/chunks\/[a-zA-Z0-9_-]+\.js$/.test(url.pathname)?url.pathname.slice(1):"index.html";
-      const content = await readFile(new URL(`../dist/${asset}`, import.meta.url));
-      res.writeHead(200, { "content-type": asset.endsWith(".js") ? "text/javascript" : asset.endsWith(".css") ? "text/css" : "text/html", "cache-control": "no-cache" });
-      res.end(method === "HEAD" ? undefined : content);
+      return await client.send(req, res, url.pathname);
     } catch (error) {
       if (res.headersSent) { res.destroy(); return; }
       const failure = error instanceof AppError ? error : new AppError("internalError", 500, "The request could not be completed.");

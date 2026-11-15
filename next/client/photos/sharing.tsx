@@ -1,3 +1,4 @@
+import {localDate} from "../dates.ts";
 import {useCallback,useEffect,useState,type FormEvent} from "react";
 import {request,RequestError,type BrowserSession} from "../api.ts";
 import {Select} from "../controls.tsx";
@@ -11,7 +12,7 @@ const base="/api/v1/photos";
 const message=(cause:unknown)=>(cause as Error).message||"The request could not be completed.";
 /** Expiry choices for shared links; 0 never expires. */
 const expiries:[string,number][]=[["Never",0],["1 day",1],["7 days",7],["30 days",30],["90 days",90],["1 year",365]];
-export const expiryLabel=(at:number)=>!at?"Never expires":at<Date.now()?"Expired":`Expires ${new Date(at).toLocaleDateString([],{dateStyle:"medium"})}`;
+export const expiryLabel=(at:number)=>!at?"Never expires":at<Date.now()?"Expired":`Expires ${localDate(at,{dateStyle:"medium"})}`;
 
 /** Album sharing in the right editing pane (mock A's Share album): people on this Dar, then shared links. */
 export function SharePane({album,session,onClose,onChanged}:{album:PhotoAlbum;session:BrowserSession;onClose:()=>void;onChanged:()=>void}){

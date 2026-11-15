@@ -1,4 +1,5 @@
-import {Fragment,useCallback,useEffect,useMemo,useRef,useState,type FormEvent} from "react";
+import {localDate,localDateTime,localTime} from "../dates.ts";
+import {Fragment,memo,useCallback,useEffect,useMemo,useRef,useState,type FormEvent} from "react";
 import {request,formatBytes,RequestError,type BrowserSession} from "../api.ts";
 import {WorkspaceHeader,useMobileNavigation} from "../shell.tsx";
 import {ActionMenu,NewItemButton,type MenuAction} from "../controls.tsx";
@@ -11,7 +12,6 @@ import {photoFolderParts,type PhotoAlbum,type PhotoAsset,type PhotoDetail,type P
 import {flushSync} from "react-dom";
 import {SharePane,LinkDialog,LinksList} from "./sharing.tsx";
 import {ImmichSettings,ImmichProgressBar} from "./immich-settings.tsx";
-import "./photos.css";
 
 const base="/api/v1/photos";
 type ListView=Exclude<PhotoView,"album">|"duplicates"|"shared";
@@ -33,7 +33,7 @@ function writeView(view:View,asset?:string){
 }
 const thumb=(id:string,size:"s"|"m"="s")=>`${base}/assets/${id}/thumbnail${size==="m"?"?size=m":""}`;
 const content=(id:string)=>`/api/v1/files/${id}/content?preview=1`;
-const monthLabel=(time:number)=>new Date(time).toLocaleDateString([],{month:"long",year:"numeric"});
+const monthLabel=(time:number)=>localDate(time,{month:"long",year:"numeric"});
 const duration=(seconds:number)=>{const s=Math.round(seconds),h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=String(s%60).padStart(2,"0");return h?`${h}:${String(m).padStart(2,"0")}:${r}`:`${m}:${r}`;};
 const message=(cause:unknown)=>(cause as Error).message||"The request could not be completed.";
 const noun=(n:number)=>`${n} item${n===1?"":"s"}`;
@@ -45,6 +45,7 @@ export function PhotosWorkspace({session,onSignedOut}:{session:BrowserSession;on
   const [overview,setOverview]=useState<PhotoOverview>(),[overviewError,setOverviewError]=useState(""),[view,setView]=useState<View>(start.view);
   const [items,setItems]=useState<PhotoAsset[]>([]),[cursor,setCursor]=useState(""),[state,setState]=useState<"loading"|"ready"|"error">("loading"),[listError,setListError]=useState("");
   const [open,setOpen]=useState<string|undefined>(start.asset),[selected,setSelected]=useState<Set<string>>(new Set()),[zoom,setZoom]=useState(()=>Number(localStorage.getItem("dar:photos:zoom"))||5);
+  const toggleSelected=useCallback((id:string)=>setSelected(s=>{const n=new Set(s);if(n.has(id))n.delete(id);else n.add(id);return n;}),[]);
   const [notice,setNotice]=useState<Notice|null>(null),[albumDialog,setAlbumDialog]=useState<{album?:PhotoAlbum;ids?:string[]}>(),[confirm,setConfirm]=useState<PhotoAlbum>(),[settings,setSettings]=useState(false);
   const [transfers,setTransfers]=useState<Transfer[]>([]),[dragging,setDragging]=useState(false),[info,setInfo]=useState(false),[member,setMember]=useState<PhotoAsset>();
   const [unlockAction,setUnlockAction]=useState<{action:string;run:()=>void}|null>(null),[deleting,setDeleting]=useState<{ids:string[];empty?:boolean}>();
@@ -277,16 +278,9 @@ export function PhotosWorkspace({session,onSignedOut}:{session:BrowserSession;on
     {lockedClosed?(folder.state?<UnlockForm folder={folder} description="Enter your password to see your locked photos. They are also in Files › Locked folder, which opens with the same password."/>:<p className="photos-empty" role="status">{folder.error||"Checking the Locked folder…"}</p>):<>
     {state==="loading"&&!items.length&&<p className="photos-empty" role="status">Loading photos…</p>}
     {state==="ready"&&!items.length&&<div className="photos-empty">{empty}</div>}
-    <div className="photos-grid" role="list" aria-label={`${title} photos`} data-columns={columns}>
+    <div className={`photos-grid${selected.size&&items.some(item=>selected.has(item.id))?" is-selecting":""}`} role="list" aria-label={`${title} photos`} data-columns={columns}>
       {items.map(item=>{const month=monthLabel(inTrash?item.trashedAt??item.takenAt:item.takenAt),heading=month!==lastMonth?(lastMonth=month,<h2 className="photos-month" key={"m-"+month}>{inTrash?`Deleted ${month}`:month}</h2>):null,isSelected=selected.has(item.id);
-        return <Fragment key={item.id}>{heading}<div role="listitem" data-asset={item.id} className={`photos-tile${isSelected?" is-selected":""}`}>
-          <button type="button" className="photos-open" aria-label={`${item.kind==="video"?"Video":item.live?"Live Photo":"Photo"} ${item.name}, ${new Date(item.takenAt).toLocaleString([],{dateStyle:"medium",timeStyle:"short"})}${item.favorite?", favorite":""}${item.stack?`, stack of ${item.stack.count}`:""}`} onClick={event=>{if(selected.size||event.shiftKey){setSelected(s=>{const n=new Set(s);if(n.has(item.id))n.delete(item.id);else n.add(item.id);return n;});}else setOpen(item.id);}}>
-            <Thumb asset={item}/>{item.kind==="video"&&<span className="photos-badge"><Icon name="video"/>{item.duration?duration(item.duration):""}</span>}
-            {item.live&&<span className="photos-badge"><Icon name="live"/>Live</span>}{item.stack&&<span className="photos-badge photos-stack-badge"><Icon name="stack"/>{item.stack.count}</span>}
-            {item.favorite&&<span className="photos-fav"><Icon name="star"/></span>}
-          </button>
-          <input type="checkbox" className="photos-check" aria-label={`Select ${item.name}`} checked={isSelected} onChange={()=>setSelected(s=>{const n=new Set(s);if(n.has(item.id))n.delete(item.id);else n.add(item.id);return n;})}/>
-        </div></Fragment>;})}
+        return <Fragment key={item.id}>{heading}<PhotoTile item={item} isSelected={isSelected} selecting={selected.size>0} onOpen={setOpen} onToggle={toggleSelected}/></Fragment>;})}
     </div>
     {cursor&&state==="ready"&&<div className="photos-more" ref={sentinel}><button className="text-button" onClick={()=>{void loadMore();}}>Load more</button></div>}</>}
   </div>;
@@ -330,6 +324,18 @@ export function PhotosWorkspace({session,onSignedOut}:{session:BrowserSession;on
     <div className="photos-toast-region" role="status" aria-live="polite">{notice&&<div className="settings-toast photos-toast"><span>{notice.message}</span>{notice.undo&&<button type="button" className="text-button" onClick={()=>{const undo=notice.undo!;setNotice(null);undo();}}>Undo</button>}</div>}</div>
   </div>;
 }
+
+/** One grid tile. Memoized: a tap re-renders only the tiles it changes, not the whole library. */
+const PhotoTile=memo(function PhotoTile({item,isSelected,selecting,onOpen,onToggle}:{item:PhotoAsset;isSelected:boolean;selecting:boolean;onOpen:(id:string)=>void;onToggle:(id:string)=>void}){
+  return <div role="listitem" data-asset={item.id} className={`photos-tile${isSelected?" is-selected":""}`}>
+    <button type="button" className="photos-open" aria-label={`${item.kind==="video"?"Video":item.live?"Live Photo":"Photo"} ${item.name}, ${localDateTime(item.takenAt,{dateStyle:"medium",timeStyle:"short"})}${item.favorite?", favorite":""}${item.stack?`, stack of ${item.stack.count}`:""}`} onClick={event=>{if(selecting||event.shiftKey)onToggle(item.id);else onOpen(item.id);}}>
+      <Thumb asset={item}/>{item.kind==="video"&&<span className="photos-badge"><Icon name="video"/>{item.duration?duration(item.duration):""}</span>}
+      {item.live&&<span className="photos-badge"><Icon name="live"/>Live</span>}{item.stack&&<span className="photos-badge photos-stack-badge"><Icon name="stack"/>{item.stack.count}</span>}
+      {item.favorite&&<span className="photos-fav"><Icon name="star"/></span>}
+    </button>
+    <input type="checkbox" className="photos-check" aria-label={`Select ${item.name}`} checked={isSelected} onChange={()=>onToggle(item.id)}/>
+  </div>;
+});
 
 function Thumb({asset,size="s"}:{asset:PhotoAsset;size?:"s"|"m"}){
   const [failed,setFailed]=useState(false);
@@ -432,12 +438,12 @@ function Details({id,session,readOnly,onBack,onChanged,onAlbum,onError}:{id:stri
     <div className="photos-detail-body">
       {detail.owner&&<p className="photos-detail-note"><Icon name="share"/>Shared by {detail.owner}. <a href={`${base}/assets/${detail.id}/original`} download>Download original</a></p>}
       {detail.locked&&<p className="photos-detail-note"><Icon name="lock"/>In the Locked folder: hidden from the library, albums and search.</p>}
-      {readOnly&&detail.trashedAt&&<p className="photos-detail-note"><Icon name="trash"/>Moved to the trash {new Date(detail.trashedAt).toLocaleDateString([],{dateStyle:"medium"})}.</p>}
+      {readOnly&&detail.trashedAt&&<p className="photos-detail-note"><Icon name="trash"/>Moved to the trash {localDate(detail.trashedAt,{dateStyle:"medium"})}.</p>}
       <label className="photos-description"><span className="sr-only">Description</span><textarea value={description} maxLength={2000} rows={2} readOnly={readOnly} placeholder={readOnly?"No description":"Add a description…"} onChange={event=>{setDescription(event.target.value);setSaving("");}} onBlur={()=>{void save();}}/></label>
       {saving&&<p className="photos-saved" role="status">{saving==="saving"?"Saving…":"Saved"}</p>}
       {conflict&&<div className="error" role="alert"><p>This description changed elsewhere.</p><button className="text-button" onClick={()=>{void load();}}>Reload</button></div>}
       <ul className="photos-props">
-        <li><Icon name="calendar"/><span><strong>{new Date(detail.takenAt).toLocaleDateString([],{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</strong><small>{new Date(detail.takenAt).toLocaleTimeString([],{hour:"numeric",minute:"2-digit",timeZoneName:"short"})}</small></span></li>
+        <li><Icon name="calendar"/><span><strong>{localDate(detail.takenAt,{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</strong><small>{localTime(detail.takenAt,{hour:"numeric",minute:"2-digit",timeZoneName:"short"})}</small></span></li>
         <li><Icon name={detail.kind==="video"?"video":"image"}/><span><strong>{detail.name}</strong><small>{megapixels}{detail.width?`${detail.width} × ${detail.height} · `:""}{detail.kind==="video"&&detail.duration?`${duration(detail.duration)} · `:""}{formatBytes(detail.size)}</small>{video&&<small>{video}</small>}</span></li>
         {detail.live&&<li><Icon name="live"/><span><strong>Live Photo</strong><small>The motion part is kept next to the still in Files.</small></span></li>}
         {(camera||e.lens||settings)&&<li><Icon name="image"/><span><strong>{camera||"Camera"}</strong><small>{[e.lens,settings].filter(Boolean).join(" · ")}</small></span></li>}
@@ -488,7 +494,7 @@ function DuplicatesView({session,onNotice,onChanged}:{session:BrowserSession;onN
           <button type="button" className="primary-button" disabled={!!busy||!chosen.length||chosen.length===group.items.length} onClick={()=>{void resolve(group);}}>{busy===group.key?"Saving…":`Keep ${chosen.length}, trash ${group.items.length-chosen.length}`}</button></div>
         <ul className="photos-dup-items">{group.items.map(item=><li key={item.id} className={chosen.includes(item.id)?"is-kept":""}>
           <label><span className="photos-dup-thumb"><Thumb asset={item}/></span><span className="photos-dup-keep"><input type="checkbox" checked={chosen.includes(item.id)} onChange={()=>toggle(group,item.id)} aria-label={`Keep ${item.name} in ${item.path||"All files"}`}/>Keep</span></label>
-          <strong>{item.name}</strong><small>{item.width?`${item.width} × ${item.height} · `:""}{formatBytes(item.size)}</small><small>{new Date(item.takenAt).toLocaleDateString([],{dateStyle:"medium"})}{item.favorite?" · Favorite":""}</small><small className="photos-dup-path">{item.path||"All files"}</small>
+          <strong>{item.name}</strong><small>{item.width?`${item.width} × ${item.height} · `:""}{formatBytes(item.size)}</small><small>{localDate(item.takenAt,{dateStyle:"medium"})}{item.favorite?" · Favorite":""}</small><small className="photos-dup-path">{item.path||"All files"}</small>
         </li>)}</ul>
       </section>;})}
       {cursor&&<div className="photos-more"><button className="text-button" onClick={()=>{void load(cursor);}}>Load more</button></div>}

@@ -2,7 +2,6 @@ import {useEffect,useRef,useState} from "react";
 import {request} from "./api.ts";
 import {Icon} from "./icons.tsx";
 import type {DarFilePickerPage,DarFileSelection} from "../shared/file-picker.ts";
-import "./file-picker.css";
 export type {DarFileSelection};
 
 /** Inline Files browser shared by app forms. The caller owns its final action.

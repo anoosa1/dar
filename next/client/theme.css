@@ -52,7 +52,7 @@ a { color: var(--accent) }
 .appearance-options { border: 0; padding: 0; max-width: 620px }
 .appearance-options legend { margin: 18px 0 }
 .appearance-option { display:grid; grid-template-columns:20px 1fr 80px; align-items:center; gap:15px; padding:16px; border:1px solid var(--control-border); border-radius:12px; cursor:pointer }
-.appearance-option:has(input:checked) { border:2px solid var(--accent); padding:15px; background:var(--tonal); color:var(--on-tonal) }
+label.appearance-option.is-checked { border:2px solid var(--accent); padding:15px; background:var(--tonal); color:var(--on-tonal) }
 .appearance-option input { width:18px!important; min-height:18px!important; accent-color:var(--accent) }
 .theme-swatch { height:46px; border:1px solid var(--control-border); border-radius:8px }
 .swatch-latte { background:#fffafb; box-shadow:inset 14px 0 #ede3f5,inset 0 -10px #73396f }

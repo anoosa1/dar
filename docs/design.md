@@ -233,6 +233,11 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   silently overwrite another revision or discard a draft.
 - Verify real persistence and permissions in a real browser at desktop and phone
   sizes, with isolated roots, users and browser contexts.
+- Phones must stay responsive. Do not use `:has()` on `body` or large containers
+  (shells, workspaces, grids): Chrome then restyles the whole page on every
+  checkbox, menu or class change. Components set state classes instead
+  (`has-editing-pane` on `body`, `has-calendar-main`, `is-selecting`). Format
+  dates in lists with `client/dates.ts`, not per-row `toLocale…String(options)`.
 - A new visual direction needs static mocks and maintainer selection. Applying an
   already-selected pattern does not.
 

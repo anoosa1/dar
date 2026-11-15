@@ -1,3 +1,4 @@
+import {localDateTime} from "../dates.ts";
 import {useCallback,useEffect,useState,type FormEvent} from "react";
 import {request,type BrowserSession} from "../api.ts";
 import {Icon} from "../icons.tsx";
@@ -11,7 +12,7 @@ type Connection={connected:false}|{connected:true;url:string;intervalMinutes:num
 interface ImmichState {serverUrl:string;devices:Device[];connection:Connection;progress:PhotoImmichProgress|null}
 const intervals:[number,string][]=[[15,"Every 15 minutes"],[60,"Every hour"],[360,"Every 6 hours"],[1440,"Daily"]];
 const message=(cause:unknown)=>(cause as Error).message||"The request could not be completed.";
-const when=(ms:number)=>new Date(ms).toLocaleString([],{dateStyle:"medium",timeStyle:"short"});
+const when=(ms:number)=>localDateTime(ms,{dateStyle:"medium",timeStyle:"short"});
 
 /** Photos settings › Immich (mock A7): the Immich mobile app, and Dar's connection to an Immich server. */
 export function ImmichSettings({session}:{session:BrowserSession}){

@@ -97,7 +97,7 @@
  .agent-thread-heading{padding-inline:10px;height:42px;min-height:42px}.agent-thread-heading h2{font-size:11px;flex:1}.agent-heading-project{max-width:27%;font-size:10px}.agent-sidebar{padding:12px}
  .agent-shell .icon-button{min-width:34px;min-height:34px;width:34px;height:34px}.agent-message-meta{opacity:1}
  .agent-conversation{padding:18px 16px}.agent-composer-area{padding:8px 12px 12px}.agent-composer{padding:10px;border-radius:14px}.agent-composer textarea{min-height:46px;max-height:120px;font-size:16px}.agent-composer-controls .ui-select{max-width:190px}
- .agent-empty h2{font-size:22px}.agent-message-user .agent-message-body{max-width:95%}.agent-find{padding-inline:10px;gap:3px}.agent-find>span{font-size:9px}body:has(.agent-shell)>.editing-pane{top:44px}
+ .agent-empty h2{font-size:22px}.agent-message-user .agent-message-body{max-width:95%}.agent-find{padding-inline:10px;gap:3px}.agent-find>span{font-size:9px}body.has-agent-shell>.editing-pane{top:44px}
  .agent-view-details .agent-center{display:flex}.agent-view-details .agent-chat,.agent-view-details .agent-terminal{display:none!important}.agent-view-details .agent-context{display:block!important;width:100%;padding:16px}.agent-view-details .agent-thread-heading .agent-panel-controls{display:none}
 }
 

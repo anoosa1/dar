@@ -47,7 +47,7 @@
 
 /* Workspaces: transparent sidebar beside floating sheets. */
 :is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout){gap:var(--sheet-gap);height:100%;min-height:0;padding:0 var(--sheet-gap) var(--sheet-gap) 0;overflow:hidden;background:transparent}
-.pim-workspace,.pim-workspace:is(:has(.calendar-main),:has(.contacts-main),:has(.workspace-list)){height:100%;min-height:0}
+.pim-workspace,.pim-workspace:is(.has-calendar-main,.has-contacts-main,.has-workspace-list){height:100%;min-height:0}
 :is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout)>.sidebar{position:relative;top:auto;height:100%;min-height:0;padding:2px 4px 4px;overflow-y:auto;background:transparent;border:0;box-shadow:none}
 :is(.workspace>.files-main,.pim-workspace>.pim-main,.extension-workspace>main,.ui-settings-layout>.identity-main,.details-panel,.pim-details,.extension-details){height:100%;min-height:0;background:var(--panel);border:1px solid var(--sheet-border);border-radius:var(--sheet-radius)}
 :is(.workspace>.files-main,.pim-workspace>.pim-main:not(.calendar-main,.contacts-main),.extension-workspace>main,.ui-settings-layout>.identity-main){overflow-y:auto;scrollbar-gutter:stable}
@@ -67,7 +67,7 @@
 :is(.sidebar .nav-item,.ui-settings-nav nav button):is(.active,[aria-current=page],[aria-pressed=true]){background:var(--tonal);color:var(--on-tonal);font-weight:600}
 .ui-settings-nav nav button{min-height:36px;border-radius:18px}
 /* The top bar gear replaces the sidebar settings entry; phones show the entry as the last chip. */
-.app-shell:has(.topbar-tools .icon-button) .sidebar .ui-app-settings-entry{display:none}
+.app-shell>.topbar.has-settings~* .sidebar .ui-app-settings-entry{display:none}
 :is(.sidebar .nav-item,.ui-settings-nav nav button):is(.active,[aria-current=page],[aria-pressed=true]):hover{background:color-mix(in srgb,var(--tonal) 88%,var(--on-tonal))}
 
 /* Content: compact headings and pill selection in lists. */
@@ -80,11 +80,11 @@
 
 /* Fixed editors become sheets beside the workspace. */
 .editing-pane{top:var(--topbar-height);right:var(--sheet-gap);bottom:var(--sheet-gap);overflow:hidden;border:1px solid var(--sheet-border);border-radius:var(--sheet-radius);box-shadow:0 8px 28px var(--shadow)}
-body:has(.agent-shell)>.editing-pane{top:var(--topbar-height)}
-body:has(.editing-pane) :is(.workspace,.pim-workspace){padding-right:calc(420px + 2 * var(--sheet-gap))}
+body.has-agent-shell>.editing-pane{top:var(--topbar-height)}
+body.has-editing-pane :is(.workspace,.pim-workspace){padding-right:calc(420px + 2 * var(--sheet-gap))}
 .file-text-editor{top:var(--topbar-height);left:calc(var(--rail-width) + 230px + var(--sheet-gap));right:var(--sheet-gap);bottom:var(--sheet-gap);overflow:hidden;border:1px solid var(--sheet-border);border-radius:var(--sheet-radius)}
 @media(max-width:1150px) and (min-width:801px){.file-text-editor{left:calc(var(--rail-width) + 195px + var(--sheet-gap))}.topbar-title{width:191px}}
-@media(max-width:1000px) and (min-width:801px){body:has(.editing-pane) :is(.workspace,.pim-workspace){padding-right:calc(390px + 2 * var(--sheet-gap))}}
+@media(max-width:1000px) and (min-width:801px){body.has-editing-pane :is(.workspace,.pim-workspace){padding-right:calc(390px + 2 * var(--sheet-gap))}}
 @media(max-width:900px) and (min-width:801px){.file-text-editor{left:calc(var(--rail-width) + 180px + var(--sheet-gap))}.topbar-title{width:176px}.details-panel{position:fixed;top:var(--topbar-height);right:var(--sheet-gap);bottom:var(--sheet-gap);height:auto;z-index:22;box-shadow:0 8px 28px var(--shadow)}}
 
 /* Phones: search bar on top, chips for navigation, bottom app bar, full-screen details. */
@@ -120,7 +120,7 @@ body:has(.editing-pane) :is(.workspace,.pim-workspace){padding-right:calc(420px 
   .sidebar :is(.pim-sidebar-heading,.sidebar-heading,nav>h2){padding-left:4px}
   .ui-settings-nav nav>h2{display:block;flex:none;margin:0 0 0 6px;color:var(--muted);font-size:12px}
   .sidebar :is(.nav-item,.ui-app-settings-entry),.ui-settings-nav nav button{display:inline-flex;flex:none;align-items:center;gap:6px;width:auto;height:36px;min-height:36px;margin:0;padding:0 14px;border:1px solid var(--sheet-border);border-radius:8px;background:transparent;color:var(--text);font-size:13px;font-weight:500;white-space:nowrap}
-  .sidebar .ui-app-settings-entry,.app-shell:has(.topbar-tools .icon-button) .sidebar .ui-app-settings-entry{display:inline-flex;margin:0!important}
+  .sidebar .ui-app-settings-entry,.app-shell>.topbar.has-settings~* .sidebar .ui-app-settings-entry{display:inline-flex;margin:0!important}
   .sidebar :is(.nav-item,.ui-app-settings-entry) .icon,.ui-settings-nav nav button .icon{width:16px;height:16px}
   :is(.sidebar .nav-item,.ui-settings-nav nav button):is(.active,[aria-current=page],[aria-pressed=true]){border-color:transparent;background:var(--tonal);color:var(--on-tonal)}
   .sidebar :is(.contacts-book-row,.calendar-nav-row){display:inline-flex;flex:none;align-items:center;gap:2px}

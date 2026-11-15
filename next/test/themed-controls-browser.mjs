@@ -5,7 +5,8 @@ import path from "node:path";
 import {chromium} from "@playwright/test";
 
 // Exercise the built shared CSS without a service or any account data.
-const css=await readFile(new URL("../dist/app.css",import.meta.url),"utf8");
+const stylesheet=(await readFile(new URL("../dist/index.html",import.meta.url),"utf8")).match(/href="\/(app-[A-Z0-9]+\.css)"/)[1];
+const css=await readFile(new URL(`../dist/${stylesheet}`,import.meta.url),"utf8");
 const root=process.env.DAR_TEST_ROOT??await mkdtemp(path.join(tmpdir(),"dar-controls-"));
 const browser=await chromium.launch({executablePath:process.env.DAR_CHROMIUM,headless:true,ignoreDefaultArgs:["--hide-scrollbars"]});
 try{

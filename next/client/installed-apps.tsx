@@ -1,12 +1,11 @@
 import {useEffect,useRef,useState} from "react";
 import {request,type BrowserSession} from "./api.ts";
 import {WorkspaceHeader} from "./shell.tsx";
+import {sharedRequest} from "./shared-request.ts";
 import type {AppHost,AppModule} from "../sdk/client.tsx";
 import type {InstalledApp} from "../shared/installed-apps.ts";
-export function useInstalledApps(){
-  const [items,setItems]=useState<InstalledApp[]>([]);
-  useEffect(()=>{let controller:AbortController;const refresh=()=>{controller?.abort();controller=new AbortController();void request<{items:InstalledApp[]}>("/api/v1/apps",{signal:controller.signal}).then(r=>setItems(r.items)).catch(()=>{});};refresh();window.addEventListener("dar:apps",refresh);window.addEventListener("focus",refresh);return()=>{controller.abort();window.removeEventListener("dar:apps",refresh);window.removeEventListener("focus",refresh);};},[]);return items;
-}
+const installedApps=sharedRequest<{items:InstalledApp[]}>("/api/v1/apps",["dar:apps"]),none:InstalledApp[]=[];
+export function useInstalledApps(){return installedApps.use().value?.items??none;}
 export function InstalledAppPage({id,session,onSignedOut}:{id:string;session:BrowserSession;onSignedOut:()=>void}){
   const element=useRef<HTMLDivElement>(null),[error,setError]=useState(""),[loading,setLoading]=useState(true);
   useEffect(()=>{

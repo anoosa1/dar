@@ -3,7 +3,6 @@ import {request,type BrowserSession} from "./api.ts";
 import {Icon} from "./icons.tsx";
 import {Dialog} from "./dialog.tsx";
 import {lockedUnlockMinutes,type LockedFolderState} from "../shared/locked-folder.ts";
-import "./locked-folder.css";
 
 const endpoint="/api/v1/files/locked";
 /**

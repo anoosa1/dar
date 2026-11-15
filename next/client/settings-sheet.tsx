@@ -1,6 +1,7 @@
 import {useEffect,useId,useRef,type KeyboardEvent,type ReactNode} from "react";
 import {createPortal} from "react-dom";
 import {Icon,type IconName} from "./icons.tsx";
+import {useBodyClass} from "./body-class.ts";
 
 /** Settings sheet B (docs/spacetimedb/settings-revamp-mock-b.html): each control saves itself. */
 export type SaveState="saving"|"saved"|"error";
@@ -9,6 +10,7 @@ export interface SettingsNotice {message:string;undo?:()=>void}
 /** A right sheet in place of the details pane (a bottom sheet on phones). Closing never discards. */
 export function SettingsSheet({title,icon="settings",sections,section,onSection,onClose,notice,onNotice,footer="Changes save to your account as you make them.",children}:{title:string;icon?:IconName;sections:string[];section:string;onSection:(section:string)=>void;onClose:()=>void;notice?:SettingsNotice|null;onNotice?:(notice:null)=>void;footer?:ReactNode;children:ReactNode}){
   const ref=useRef<HTMLElement>(null),tabs=useRef<HTMLDivElement>(null),id=useId(),panel=useId(),close=useRef(onClose);close.current=onClose;
+  useBodyClass("has-editing-pane","has-settings-sheet");
   useEffect(()=>{
     const previous=document.activeElement as HTMLElement|null;
     (tabs.current?.querySelector<HTMLElement>('[aria-selected="true"]')??ref.current)?.focus();

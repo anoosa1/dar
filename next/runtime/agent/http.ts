@@ -1,6 +1,7 @@
 import type {IncomingMessage,ServerResponse} from "node:http";
 import type {Database} from "../database.ts";
 import {AppError} from "../errors.ts";
+import {createHash} from "node:crypto";
 import type {AgentRuntime} from "./runtime.ts";
 
 /** Native-session gateway; account scope is resolved again inside the database. */
@@ -50,7 +51,12 @@ export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url
   }
   const run=/^\/runs\/([a-f0-9-]+)(\/cancel)?$/.exec(path);
   if(run){
-    if(!run[2]&&method==="GET")return send(await db.call("service_agent",[sessionId,"run",JSON.stringify({id:run[1]})]));
+    if(!run[2]&&method==="GET"){
+      // Running turns are polled every second; an unchanged document answers 304 instead of resending it.
+      const text=JSON.stringify(await db.call("service_agent",[sessionId,"run",JSON.stringify({id:run[1]})])),tag=`"${createHash("sha256").update(text).digest("base64url")}"`;
+      if(req.headers["if-none-match"]===tag){res.writeHead(304,{etag:tag,"cache-control":"no-store"});res.end();return;}
+      res.writeHead(200,{"content-type":"application/json","cache-control":"no-store",etag:tag});res.end(text);return;
+    }
     if(run[2]&&method==="POST")return send(await runtime.cancel(sessionId,run[1]));
     throw new AppError("methodNotAllowed",405);
   }

@@ -17,7 +17,7 @@ html{scrollbar-gutter:stable}
 .sidebar{overflow-y:auto}
 .search-shortcut{flex:none;white-space:nowrap;font-family:inherit;font-size:11px;color:var(--muted);padding:3px 6px;border:1px solid var(--border);border-radius:5px}
 @media(max-width:800px){.search-shortcut{display:none}}
-.pim-main:has(>.calendar-time-scroll){display:flex;flex-direction:column;height:calc(100dvh - 78px);min-height:0}
+.pim-main.has-time-grid{display:flex;flex-direction:column;height:calc(100dvh - 78px);min-height:0}
 .pim-main>.calendar-time-scroll{flex:1;min-height:160px;max-height:none}
 .ui-switch input{appearance:none;width:42px!important;height:24px!important;min-height:24px!important;border:1px solid var(--muted);border-radius:20px;background:var(--surface-soft);position:relative;flex:none;margin:0;transition:background 150ms ease}
 .ui-switch input::before{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:transform 150ms ease}
@@ -35,7 +35,7 @@ html{scrollbar-gutter:stable}
   .files-main{padding:var(--pane-padding);min-height:calc(100dvh - 116px)}
   .details-panel{top:116px;width:100%;height:calc(100dvh - 116px);padding:var(--pane-padding);background:var(--panel);box-shadow:none;z-index:22}
   .ui-settings-layout{display:block}.ui-settings-layout .identity-main{padding:var(--pane-padding)}
-  .pim-main:has(>.calendar-time-scroll){height:calc(100dvh - 116px)}
+  .pim-main.has-time-grid{height:calc(100dvh - 116px)}
 }
 @media(max-width:650px){.ui-app-launcher>.ui-menu-panel,.ui-app-launcher[data-side=up]>.ui-menu-panel{position:fixed;left:15px;right:15px;top:62px;bottom:auto;min-width:0;max-width:none}}
 :root{--ui-radius:20px;--ui-color:var(--accent);--ui-surface:var(--panel);--ui-surface-soft:var(--panel);--ui-border:var(--surface-soft);--ui-text:var(--accent);--ui-fade:250ms;--ui-scale:300ms}
