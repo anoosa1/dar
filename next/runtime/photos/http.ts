@@ -10,6 +10,7 @@ import {createOpaqueToken} from "../auth/session.ts";
 import type {ImmichConnector} from "./immich-connector.ts";
 import {validLinkPassword,type PhotoLink,type PhotoAlbumMember} from "../../shared/photos.ts";
 import {photosReadOperations} from "../../shared/read-operations.ts";
+import {writeJson} from "../json-response.ts";
 /** A link as the database returns it: the token sealed with the instance keyring. */
 type SealedLink=Omit<PhotoLink,"url">&{sealed:string};
 
@@ -54,7 +55,7 @@ export async function sendFile(req:IncomingMessage,res:ServerResponse,file:strin
 export async function handlePhotosHttp(req:IncomingMessage,res:ServerResponse,url:URL,db:Database,sessionId:string,runtime:PhotosRuntime,root:string,origin:string,account:{userId:string;immich:ImmichConnector},
   download:(entry:BlobFile,inline?:boolean)=>Promise<void>,body:()=>Promise<Record<string,unknown>>){
   const method=req.method??"GET",route=url.pathname.slice("/api/v1/photos".length);
-  const send=(value:unknown,status=200)=>{res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(value));};
+  const send=(value:unknown,status=200)=>writeJson(res,status,JSON.stringify(value));
   const call=async<T=unknown>(operation:string,value:object)=>{
     try{return await db.operation<T>("service_photos",operation,photosReadOperations,[sessionId,operation,JSON.stringify(value)]);}
     catch(error){if(error instanceof AppError&&messages[operation]?.[error.code])throw new AppError(error.code,error.status,messages[operation][error.code]);throw error;}

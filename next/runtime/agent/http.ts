@@ -4,13 +4,14 @@ import {AppError} from "../errors.ts";
 import {createHash} from "node:crypto";
 import {agentReadOperations} from "../../shared/read-operations.ts";
 import type {AgentRuntime} from "./runtime.ts";
+import {writeJson} from "../json-response.ts";
 
 /** Native-session gateway; account scope is resolved again inside the database. */
 export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url:URL,db:Database,sessionId:string,userId:string,runtime:AgentRuntime,body:()=>Promise<Record<string,unknown>>){
   const method=req.method??"GET",path=url.pathname.slice("/api/v1/agent".length);
   // Reads skip the durability wait; see shared/read-operations.ts.
   const agent=(args:string[])=>db.operation("service_agent",args[1],agentReadOperations,args);
-  const send=(value:unknown,status=200)=>{res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(value));};
+  const send=(value:unknown,status=200)=>writeJson(res,status,JSON.stringify(value));
   if(path==="/shared"&&method==="GET")return send(await agent([sessionId,"sharedThreads","{}"]));
   const sharedHistory=/^\/shared\/([a-f0-9-]+)\/messages$/.exec(path);
   if(sharedHistory&&method==="GET"){const before=url.searchParams.get("before");if(before!==null&&!/^[1-9]\d{0,9}$/.test(before))throw new AppError("invalidInput");return send(await agent([sessionId,"sharedHistory",JSON.stringify({threadId:sharedHistory[1],...before?{before:Number(before)}:{}})]));}
@@ -58,7 +59,7 @@ export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url
       // Running turns are polled every second; an unchanged document answers 304 instead of resending it.
       const text=JSON.stringify(await agent([sessionId,"run",JSON.stringify({id:run[1]})])),tag=`"${createHash("sha256").update(text).digest("base64url")}"`;
       if(req.headers["if-none-match"]===tag){res.writeHead(304,{etag:tag,"cache-control":"no-store"});res.end();return;}
-      res.writeHead(200,{"content-type":"application/json","cache-control":"no-store",etag:tag});res.end(text);return;
+      writeJson(res,200,text,{etag:tag});return;
     }
     if(run[2]&&method==="POST")return send(await runtime.cancel(sessionId,run[1]));
     throw new AppError("methodNotAllowed",405);

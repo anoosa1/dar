@@ -11,12 +11,17 @@ const types: Record<string, string> = { js: "text/javascript; charset=utf-8", cs
 
 async function optional(file: URL) { try { return await readFile(file); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; } }
 /** The preferred encoding the client accepts (q > 0), brotli first. */
-function accepted(header: string | string[] | undefined) {
+/** Content encodings the client accepts (q > 0). */
+export function offeredEncodings(header: string | string[] | undefined) {
   const offered = new Set<string>();
   for (const part of String(header ?? "").toLowerCase().split(",")) {
     const [token, ...parameters] = part.trim().split(";"), q = parameters.map(value => /^\s*q=([0-9.]+)\s*$/.exec(value)?.[1]).find(Boolean);
     if (token && (q === undefined || Number(q) > 0)) offered.add(token.trim());
   }
+  return offered;
+}
+function accepted(header: string | string[] | undefined) {
+  const offered = offeredEncodings(header);
   return offered.has("br") ? "br" : offered.has("gzip") ? "gzip" : undefined;
 }
 

@@ -40,6 +40,7 @@ import {handleImmichHttp,immichBase,immichWellKnown} from "./photos/immich.ts";
 import {createImmichConnector,type ImmichConnector} from "./photos/immich-connector.ts";
 import {staticAssets} from "./static.ts";
 import {handleNextcloudNews,nextcloudBase} from "./news/nextcloud.ts";
+import {writeJson} from "./json-response.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
@@ -56,8 +57,7 @@ export interface ServerConfig {
   immichAllowLocalHost?:boolean;
 }
 function json(res: ServerResponse, value: unknown, status = 200) {
-  res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
-  res.end(JSON.stringify(value));
+  writeJson(res, status, JSON.stringify(value));
 }
 async function body(req: IncomingMessage, limit = 16_384): Promise<Record<string, unknown>> {
   if (!req.headers["content-type"]?.startsWith("application/json")) throw new AppError("invalidContentType", 415);

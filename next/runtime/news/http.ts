@@ -3,6 +3,7 @@ import type {Database} from "../database.ts";
 import {AppError} from "../errors.ts";
 import type {NewsRuntime} from "./runtime.ts";
 import {newsReadOperations} from "../../shared/read-operations.ts";
+import {writeJson} from "../json-response.ts";
 
 const messages:Record<string,Record<string,string>>={
   subscribe:{alreadyExists:"You are already subscribed to that feed.",quotaExceeded:"You have reached the limit of 500 feeds."},
@@ -16,7 +17,7 @@ const scope=(url:URL)=>{const type=url.searchParams.get("type")??"unread";if(!["
 /** Native-session News API. The database re-checks the account and app availability. */
 export async function handleNewsHttp(req:IncomingMessage,res:ServerResponse,url:URL,db:Database,sessionId:string,username:string,runtime:NewsRuntime,body:()=>Promise<Record<string,unknown>>){
   const method=req.method??"GET",path=url.pathname.slice("/api/v1/news".length);
-  const send=(value:unknown,status=200)=>{res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(value));};
+  const send=(value:unknown,status=200)=>writeJson(res,status,JSON.stringify(value));
   const call=async<T=unknown>(operation:string,value:object)=>{
     try{return await db.operation<T>("service_news",operation,newsReadOperations,[sessionId,operation,JSON.stringify(value)]);}
     catch(error){if(error instanceof AppError&&messages[operation]?.[error.code])throw new AppError(error.code,error.status,messages[operation][error.code]);throw error;}

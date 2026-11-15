@@ -8,6 +8,7 @@ import type { PimService } from "./service.ts";
 import { pimEtag } from "./service.ts";
 import { field, invalid } from "./standards.ts";
 import { timezone } from "./calendar.ts";
+import {writeJson} from "../json-response.ts";
 
 export function requireMatch(req: IncomingMessage, row: { id: string; revision: number } | undefined): number {
   if (!row) { if (req.headers["if-none-match"] !== "*") throw new AppError("preconditionRequired", 428); return 0; }
@@ -17,7 +18,7 @@ export function requireMatch(req: IncomingMessage, row: { id: string; revision: 
 }
 export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, url: URL, service: PimService, body: () => Promise<Record<string, unknown>>) {
   const method = req.method ?? "GET";
-  const json = (value: unknown, status = 200, row?: { id: string; revision: number }) => { if (row) res.setHeader("etag", pimEtag(row)); if (service.revision()) res.setHeader("x-dar-pim-revision", service.revision()); res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(value, (key, value) => ["modifiedAt", "dueAt"].includes(key) && typeof value === "number" ? new Date(value).toISOString() : value)); };
+  const json = (value: unknown, status = 200, row?: { id: string; revision: number }) => { if (row) res.setHeader("etag", pimEtag(row)); if (service.revision()) res.setHeader("x-dar-pim-revision", service.revision()); writeJson(res, status, JSON.stringify(value, (key, value) => ["modifiedAt", "dueAt"].includes(key) && typeof value === "number" ? new Date(value).toISOString() : value)); };
   const send = (text: string, kind: string, filename: string) => { res.writeHead(200, { "content-type": kind === "contacts" ? "text/vcard; charset=utf-8" : "text/calendar; charset=utf-8", "content-disposition": `attachment; filename="${filename}"`, "cache-control": "no-store" }); res.end(text); };
   if (url.pathname === "/api/v1/pim/preferences") {
     const old = await service.call<{ revision: number; value: string }>("preferences");
