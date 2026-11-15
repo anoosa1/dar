@@ -14,9 +14,18 @@ import { Icon } from "../icons.tsx";
 import { CollectionEditor, Sharing, PimShell, usePim, etag, CollectionDot, type Item, type Preferences } from "./common.tsx";
 
 const base = "/api/v1/calendar/calendars";
+// Views call this for every event on every day cell; building a formatter per call
+// took seconds for a month of events, so formatters and results are reused.
+const zoneFormats = new Map<string, Intl.DateTimeFormat>(), localTimes = new Map<string, string>();
 function local(epoch: number, zone: string) {
-  const p = new Map(new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(epoch).map(v=>[v.type,v.value]));
-  return `${p.get("year")}-${p.get("month")}-${p.get("day")}T${p.get("hour")}:${p.get("minute")}`;
+  const key = `${zone} ${epoch}`, known = localTimes.get(key);
+  if (known !== undefined) return known;
+  let format = zoneFormats.get(zone);
+  if (!format) { format = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }); zoneFormats.set(zone, format); }
+  const p = new Map(format.formatToParts(epoch).map(v=>[v.type,v.value]));
+  const value = `${p.get("year")}-${p.get("month")}-${p.get("day")}T${p.get("hour")}:${p.get("minute")}`;
+  if (localTimes.size >= 10_000) localTimes.clear();
+  localTimes.set(key, value); return value;
 }
 const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T12:00:00Z`)+days*86400000).toISOString().slice(0,10);
 function range(anchor: string, view: string, first: number) {

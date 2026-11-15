@@ -1,4 +1,4 @@
-import {localDate,localTime} from "../dates.ts";
+import {localDate,localDateTime,localTime} from "../dates.ts";
 import type {TaskData} from "../../shared/workspace.ts";
 
 export const taskStatus:Record<TaskData["status"],string>={"NEEDS-ACTION":"To do","IN-PROCESS":"In progress",COMPLETED:"Completed",CANCELLED:"Cancelled"};
@@ -16,7 +16,7 @@ export function taskDate(value:string,allDay:boolean){
   if(!value)return "No due date";
   const date=new Date((value.length===10?value+"T12:00:00":value.replace(/Z$/, ""))+"Z");
   if(!Number.isFinite(+date))return value;
-  return new Intl.DateTimeFormat(undefined,{year:"numeric",month:"short",day:"numeric",...allDay?{}:{hour:"numeric",minute:"2-digit"},timeZone:"UTC"}).format(date);
+  return localDateTime(date,{year:"numeric",month:"short",day:"numeric",...allDay?{}:{hour:"numeric",minute:"2-digit"},timeZone:"UTC"});
 }
 export function recurrenceLabel(rule:string,recurring=false){
   if(!rule)return recurring?"Custom schedule":"Does not repeat";
