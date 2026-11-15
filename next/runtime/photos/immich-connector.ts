@@ -12,12 +12,19 @@ import {photoKind,type PhotoImmichProgress} from "../../shared/photos.ts";
 import type {PhotosRuntime,PhotoJob} from "./runtime.ts";
 
 interface Connection {userId:string;url:string;sealedKey:string}
-interface RemoteAsset {id:string;checksum:string;originalFileName:string;originalMimeType?:string;fileCreatedAt:string;fileModifiedAt:string;isFavorite:boolean;visibility:string;isTrashed:boolean;type:string;exifInfo?:{description?:string|null}}
+interface RemoteAsset {id:string;checksum:string;originalFileName:string;originalMimeType?:string;fileCreatedAt:string;fileModifiedAt:string;isFavorite:boolean;visibility:string;isTrashed:boolean;type:string;exifInfo?:{description?:string|null;fileSizeInByte?:number|null}}
 interface Local {fileId:string;sha1:string}
 /** Per run, so a large library arrives over several runs without starving the server. */
 const budget={files:300,bytes:4*1024**3};
 /** While Immich has more to import, the next run starts this soon instead of waiting for the interval. */
 const backlogDelay=30_000;
+/** Dar's file size limit (Files, WebDAV and Immich uploads). */
+const maxFile=1024**3;
+/** This many failed files in a row means Immich or Dar is failing, not the files: the run stops. */
+const maxConsecutiveFailures=10;
+/** Why one file was not imported; the run goes on without it. */
+class AssetError extends Error {}
+const assetReasons:Record<string,string>={invalidInput:"Dar cannot store it",invalidName:"its name is not allowed in Dar",conflict:"a file with its name could not be created"};
 
 /**
  * Dar's import from an Immich server (API key, x-api-key). Originals Dar does not have
@@ -30,7 +37,7 @@ export function createImmichConnector(db:Database,root:string,blobs:ReturnType<t
   const worker=<T=unknown>(operation:string,value:object)=>db.call<T>("service_immich_worker",[operation,JSON.stringify(value)]);
   const progress=new Map<string,PhotoImmichProgress>(),backlog=new Set<string>();
   async function runOne(c:Connection){
-    const key=photos.openImmichKey(c.sealedKey),summary={remote:0,imported:0,albums:0,skipped:0};let error="";
+    const key=photos.openImmichKey(c.sealedKey),summary={remote:0,imported:0,albums:0,skipped:0,failed:0};let error="",firstFailure="",consecutive=0;
     const state:PhotoImmichProgress={phase:"connecting",done:0,total:0,imported:0,file:"",startedAt:Date.now()};progress.set(c.userId,state);
     const phase=(name:PhotoImmichProgress["phase"],total=0)=>{state.phase=name;state.done=0;state.total=total;state.file="";};
     try{
@@ -57,8 +64,16 @@ export function createImmichConnector(db:Database,root:string,blobs:ReturnType<t
           const existing=local.get(asset.checksum);if(existing){await map(asset.id,existing.fileId,asset.checksum);continue;}
           if(files>=budget.files||bytes>=budget.bytes){summary.skipped++;continue;}
           state.file=asset.originalFileName;
-          const imported=await importAsset(c,client,asset);if(!imported){summary.skipped++;continue;}
-          files++;bytes+=imported.size;summary.imported++;state.imported++;await map(asset.id,imported.fileId,asset.checksum);
+          // One file Dar cannot take must not stop the import: it is named in the report and retried next interval.
+          try{
+            const imported=await importAsset(c,client,asset);
+            files++;bytes+=imported.size;summary.imported++;state.imported++;consecutive=0;await map(asset.id,imported.fileId,asset.checksum);
+          }catch(cause){
+            const failure=cause as Error&{code?:string};if(closing||failure.name==="AbortError"||failure.code==="quotaExceeded")throw cause;
+            summary.failed++;const reason=failure instanceof AssetError?failure.message:assetReasons[failure.code??""]??failure.message;
+            firstFailure||=`${asset.originalFileName||asset.id}: ${reason}`;
+            if(++consecutive>=maxConsecutiveFailures)throw new Error(`${consecutive} files in a row could not be imported. ${firstFailure}`);
+          }
         }
         if(!result.assets.nextPage)break;
       }
@@ -74,20 +89,24 @@ export function createImmichConnector(db:Database,root:string,blobs:ReturnType<t
         }
         const {albumId}=await worker<{albumId:string}>("album",{userId:c.userId,remoteId:album.id,name:album.albumName,description:album.description??"",fileIds});if(albumId)summary.albums++;
       }
-    }catch(cause){error=(cause as Error).name==="AbortError"?"Stopped.":(cause as Error).message.slice(0,300);}
+    }catch(cause){const failure=cause as Error&{code?:string};error=failure.name==="AbortError"?"Stopped.":failure.code==="quotaExceeded"?"Your storage limit is reached; the import continues once there is space.":failure.message.slice(0,300);}
     progress.delete(c.userId);
     if(!error&&summary.skipped>0)backlog.add(c.userId);else backlog.delete(c.userId);
-    await worker("report",{userId:c.userId,error,summary}).catch(()=>undefined);
+    const failed=summary.failed?`${summary.failed} ${summary.failed===1?"file":"files"} could not be imported (${firstFailure.slice(0,200)}${summary.failed>1?" and others":""}).`:"";
+    await worker("report",{userId:c.userId,error:[error,failed].filter(Boolean).join(" "),summary}).catch(()=>undefined);
   }
   async function importAsset(c:Connection,client:ReturnType<typeof immichClient>,asset:RemoteAsset){
-    const name=(asset.originalFileName||"immich").replace(/[\\/]/g,"_").slice(0,255),mediaType=asset.originalMimeType||"application/octet-stream";
-    if(!photoKind(mediaType,name))return undefined;
+    const name=(asset.originalFileName||"immich").replace(/[\x00-\x1f\\/]/g,"_").trim().slice(0,255)||"immich",mediaType=asset.originalMimeType||"application/octet-stream";
+    if(!photoKind(mediaType,name))throw new AssetError(`${mediaType} is not a photo or video type`);
+    if((asset.exifInfo?.fileSizeInByte??0)>maxFile)throw new AssetError("it is larger than 1 GiB, Dar's file size limit");
     const dir=await mkdtemp(path.join(root,"uploads","immich-import-"));
     try{
       const file=path.join(dir,"original"),hash=createHash("sha1"),response=await client.raw(`/assets/${asset.id}/original`);
-      await pipeline(Readable.fromWeb(response.body as import("node:stream/web").ReadableStream),async function*(source){for await (const chunk of source){hash.update(chunk as Buffer);yield chunk;}},createWriteStream(file,{mode:0o600}));
-      const {size}=await stat(file),sha1=hash.digest("base64"),created=/^(\d{4})-(\d{2})/.exec(asset.fileCreatedAt)??/^(\d{4})-(\d{2})/.exec(new Date().toISOString())!;
-      const begun=await worker<{duplicate?:string;id?:string}>("importBegin",{userId:c.userId,sha1,name,size,mediaType,year:Number(created[1]),month:Number(created[2])});
+      await pipeline(Readable.fromWeb(response.body as import("node:stream/web").ReadableStream),async function*(source){let size=0;for await (const chunk of source){size+=(chunk as Buffer).length;if(size>maxFile)throw new AssetError("it is larger than 1 GiB, Dar's file size limit");hash.update(chunk as Buffer);yield chunk;}},createWriteStream(file,{mode:0o600}));
+      const {size}=await stat(file),sha1=hash.digest("base64"),taken=/^(\d{4})-(\d{2})/.exec(asset.fileCreatedAt??""),current=new Date();
+      // Bogus capture dates (year 1, 1800, 9999) land in this month's folder; Photos still reads the date from the file.
+      const [year,month]=taken&&Number(taken[1])>=1900&&Number(taken[1])<=2999&&Number(taken[2])>=1&&Number(taken[2])<=12?[Number(taken[1]),Number(taken[2])]:[current.getUTCFullYear(),current.getUTCMonth()+1];
+      const begun=await worker<{duplicate?:string;id?:string}>("importBegin",{userId:c.userId,sha1,name,size,mediaType,year,month});
       if(begun.duplicate)return {fileId:begun.duplicate,size:0};
       const digest=await blobs.receive(createReadStream(file) as AsyncIterable<Buffer>,begun.id!,size);
       const time=Date.parse(asset.fileCreatedAt);
