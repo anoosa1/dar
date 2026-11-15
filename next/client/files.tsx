@@ -31,6 +31,17 @@ const sections: { id: Section; label: string; icon: IconName }[] = [
   { id: "files", label: "All files", icon: "folder" }, { id: "favorites", label: "Favorites", icon: "star" },
   { id: "shared", label: "Shared with you", icon: "share" }, { id: "locked", label: "Locked folder", icon: "lock" }, { id: "trash", label: "Deleted files", icon: "trash" },
 ];
+/**
+ * Rows in the server's list order. The client cache keeps rows in arrival order, so
+ * an item added while the folder is open would otherwise land at the end, or past
+ * the 200 shown in a large folder. List keys sort by code point, as the index does.
+ */
+function listed(rows: Iterable<FileEntry>) { return [...rows].sort((a, b) => compareKeys(a.listKey, b.listKey)); }
+function compareKeys(a: string, b: string) {
+  let i = 0, j = 0;
+  while (i < a.length && j < b.length) { const x = a.codePointAt(i)!, y = b.codePointAt(j)!; if (x !== y) return x - y; i += x > 0xffff ? 2 : 1; j += y > 0xffff ? 2 : 1; }
+  return (i < a.length ? 1 : 0) - (j < b.length ? 1 : 0);
+}
 function readLocation(): { section: Section; parentId: string } {
   const parameters = new URLSearchParams(location.search);
   const section = parameters.get("section") as Section;
@@ -117,7 +128,7 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
     let disposed = false;
     const synchronize = () => {
       if (disposed) return;
-      if (navigationReady.current) setRows([...c.db.myFiles.iter()]);
+      if (navigationReady.current) setRows(listed(c.db.myFiles.iter()));
       setUsage([...c.db.myUsage.iter()][0] ?? null);
     };
     const gone = () => { if (!disposed) { setRows([]); setDetails(null); signedOut.current(); } };
@@ -141,7 +152,7 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
     if (inLocked && !lockedOpen) { setRows([]); setLoading(false); return; }
     const timer = setTimeout(() => {
       void connection.reducers.browse({ parentId: folder, section: inLocked ? "files" : section, query, cursor }).then(() => {
-        if (!cancelled) { navigationReady.current = true; setRows([...connection.db.myFiles.iter()]); setLoading(false); }
+        if (!cancelled) { navigationReady.current = true; setRows(listed(connection.db.myFiles.iter())); setLoading(false); }
       }).catch(cause => { if (!cancelled) { setError(failure(cause)); setRows([]); setLoading(false); if (/lockedFolder/.test(String(cause))) void locked.refresh(); } });
     }, query ? 180 : 0);
     return () => { cancelled = true; clearTimeout(timer); };
