@@ -6,13 +6,21 @@ provides OIDC sign-in and SCIM provisioning for other applications.
 
 ## Screenshots
 
-| Files · light | Calendar · dark |
+| Files · light | Photos · dark |
 | --- | --- |
-| ![Files in the light theme](docs/screenshots/files.png) | ![Calendar in the dark theme](docs/screenshots/calendar.png) |
+| ![Files in the light theme](docs/screenshots/files.png) | ![Photos in the dark theme](docs/screenshots/photos.png) |
+
+| Calendar · light | Contacts · dark |
+| --- | --- |
+| ![Calendar month view in the light theme](docs/screenshots/calendar.png) | ![Contacts with a contact open in the dark theme](docs/screenshots/contacts.png) |
 
 | Notes · light | Tasks · dark |
 | --- | --- |
-| ![Notes in the light theme](docs/screenshots/notes.png) | ![Tasks in the dark theme](docs/screenshots/tasks.png) |
+| ![Notes with a note open in the light theme](docs/screenshots/notes.png) | ![Tasks in the dark theme](docs/screenshots/tasks.png) |
+
+| Phone · Photos | Phone · Calendar |
+| --- | --- |
+| <img src="docs/screenshots/phone-photos.png" alt="Photos on a phone in the light theme" width="300"> | <img src="docs/screenshots/phone-calendar.png" alt="Calendar day view on a phone in the dark theme" width="300"> |
 
 ## Run locally
 
