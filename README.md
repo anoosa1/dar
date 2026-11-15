@@ -1,7 +1,7 @@
 # Dar
 
 A self-hosted personal cloud for Linux: Files, Contacts, Calendar, Notes, Tasks,
-an optional coding Agent, and installable apps such as Prayer Times. Dar also
+an Agent, and installable apps such as Prayer Times. Dar also
 provides OIDC sign-in and SCIM provisioning for other applications.
 
 ## Screenshots
