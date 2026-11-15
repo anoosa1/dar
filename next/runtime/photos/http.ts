@@ -9,6 +9,7 @@ import type {PhotosRuntime,PhotoJob} from "./runtime.ts";
 import {createOpaqueToken} from "../auth/session.ts";
 import type {ImmichConnector} from "./immich-connector.ts";
 import {validLinkPassword,type PhotoLink,type PhotoAlbumMember} from "../../shared/photos.ts";
+import {photosReadOperations} from "../../shared/read-operations.ts";
 /** A link as the database returns it: the token sealed with the instance keyring. */
 type SealedLink=Omit<PhotoLink,"url">&{sealed:string};
 
@@ -55,7 +56,7 @@ export async function handlePhotosHttp(req:IncomingMessage,res:ServerResponse,ur
   const method=req.method??"GET",route=url.pathname.slice("/api/v1/photos".length);
   const send=(value:unknown,status=200)=>{res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(value));};
   const call=async<T=unknown>(operation:string,value:object)=>{
-    try{return await db.call<T>("service_photos",[sessionId,operation,JSON.stringify(value)]);}
+    try{return await db.operation<T>("service_photos",operation,photosReadOperations,[sessionId,operation,JSON.stringify(value)]);}
     catch(error){if(error instanceof AppError&&messages[operation]?.[error.code])throw new AppError(error.code,error.status,messages[operation][error.code]);throw error;}
   };
   const input=async(allowed:string[])=>{const value=await body();if(Object.keys(value).some(key=>!allowed.includes(key)))throw new AppError("invalidInput");return value;};
@@ -147,7 +148,7 @@ export async function handlePhotosHttp(req:IncomingMessage,res:ServerResponse,ur
       const file=await runtime.thumbnailFile(info.blobId,info.kind,size);
       if(!file){
         // Without media tools, browser-decodable originals stand in; anything else is a 404 the grid shows as a tile.
-        if(info.kind==="image"&&renderable.test(info.mediaType))return await download(await db.call<BlobFile>("service_download",[sessionId,id,""]));
+        if(info.kind==="image"&&renderable.test(info.mediaType))return await download(await db.read<BlobFile>("service_download",[sessionId,id,""]));
         throw new AppError("notFound",404,"No preview is available for this file.");
       }
       return await sendFile(req,res,file,"image/webp",tag,"private, max-age=86400");

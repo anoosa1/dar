@@ -5,6 +5,9 @@ import { digestToken } from "../auth/session.ts";
 import { AppError } from "../errors.ts";
 import type { blobStore, BlobFile } from "./blobs.ts";
 
+/** WebDAV verbs the database answers without changing anything. */
+const davReads: ReadonlySet<string> = new Set(["STAT", "PROPFIND"]);
+
 interface Entry extends BlobFile { kind: string; modifiedAt: number }
 const escape = (value: string) => value.replace(/[<>&"']/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]!);
 const etag = (entry: Entry) => `"${entry.id}:${entry.revision}:${entry.blobId}"`;
@@ -31,7 +34,7 @@ export async function handleDav(req: IncomingMessage, res: ServerResponse, db: D
   if (separator < 1) throw new AppError("unauthenticated", 401);
   const username = decoded.slice(0, separator), secret = decoded.slice(separator + 1);
   if (!/^[A-Za-z0-9_-]{43}$/.test(secret)) throw new AppError("unauthenticated", 401);
-  const authenticated = await db.call<{ sessionId: string; username: string }>("service_protocol_authenticate", [username, digestToken(secret), !["GET", "HEAD", "PROPFIND"].includes(method)]);
+  const authenticated = await db.read<{ sessionId: string; username: string }>("service_protocol_authenticate", [username, digestToken(secret), !["GET", "HEAD", "PROPFIND"].includes(method)]);
   const url = new URL(req.url!, origin), prefix = `/dav/files/${encodeURIComponent(authenticated.username)}`;
   if (url.pathname !== prefix && !url.pathname.startsWith(`${prefix}/`)) throw new AppError("forbidden", 403);
   function logical(pathname: string) {
@@ -41,7 +44,7 @@ export async function handleDav(req: IncomingMessage, res: ServerResponse, db: D
     return pieces.join("/");
   }
   const pathname = logical(url.pathname);
-  const operation = <T>(verb: string, extra: { destination?: string; expectedRevision?: number; overwrite?: boolean; depth?: number } = {}) => db.call<T>("service_dav", [authenticated.sessionId, verb, pathname, extra.destination ?? "", extra.expectedRevision ?? 0, extra.overwrite ?? false, extra.depth ?? 0]);
+  const operation = <T>(verb: string, extra: { destination?: string; expectedRevision?: number; overwrite?: boolean; depth?: number } = {}) => db.operation<T>("service_dav", verb, davReads, [authenticated.sessionId, verb, pathname, extra.destination ?? "", extra.expectedRevision ?? 0, extra.overwrite ?? false, extra.depth ?? 0]);
   if (method === "PROPFIND") {
     if (req.headers.depth !== "0" && req.headers.depth !== "1") throw new AppError("finiteDepthRequired", 403);
     if (Number(req.headers["content-length"] ?? 0) > 16_384) throw new AppError("requestTooLarge", 413);
@@ -54,7 +57,7 @@ export async function handleDav(req: IncomingMessage, res: ServerResponse, db: D
   if (method === "GET" || method === "HEAD") {
     const entry = await operation<Entry>("STAT");
     if (entry.kind !== "file") throw new AppError("isDirectory", 405);
-    const file = await db.call<BlobFile>("service_download", [authenticated.sessionId, entry.id, ""]);
+    const file = await db.read<BlobFile>("service_download", [authenticated.sessionId, entry.id, ""]);
     return await blobs.download(req, res, file);
   }
   if (method === "MKCOL") {

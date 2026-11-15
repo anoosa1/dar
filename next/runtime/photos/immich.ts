@@ -10,6 +10,7 @@ import {createOpaqueToken,digestToken} from "../auth/session.ts";
 import {photoKind,type PhotoAlbum,type PhotoAlbumSharing,type PhotoDetail,type PhotoOverview,type PhotoPage} from "../../shared/photos.ts";
 import type {PhotosRuntime,PhotoJob} from "./runtime.ts";
 import {sendFile,type AssetInfo} from "./http.ts";
+import {photosReadOperations} from "../../shared/read-operations.ts";
 
 /**
  * The Immich mobile-app API (server v3.4.1 contract) at /dav/immich/api, found through
@@ -90,7 +91,7 @@ export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,ur
     const tokenDigest=digestToken(token);
     const immich=<T=unknown>(operation:string,value:object={})=>db.call<T>("service_immich",[tokenDigest,operation,JSON.stringify(value)]);
     const {user,protocolSessionId}=await immich<{user:{id:string;email:string;name:string;isAdmin:boolean};protocolSessionId:string}>("session");
-    const photos=<T=unknown>(operation:string,value:object={})=>db.call<T>("service_photos",[protocolSessionId,operation,JSON.stringify(value)]);
+    const photos=<T=unknown>(operation:string,value:object={})=>db.operation<T>("service_photos",operation,photosReadOperations,[protocolSessionId,operation,JSON.stringify(value)]);
     const input=async()=>await options.body();
     if(method==="POST"&&route==="/auth/validateToken")return send({authStatus:true});
     if(method==="GET"&&route==="/auth/status")return send({password:true,pinCode:false,isElevated:false});

@@ -105,7 +105,7 @@ export async function startServer(config: ServerConfig) {
     console.warn("Installed app registry is unavailable; starting without external apps.");
     return {apps:new Map(),inventory:[{id:"registry",name:"App registry",version:"",status:"Invalid registry. Check host configuration.",permissions:[]}]};
   });
-  const readAppSettings=()=>db.call<AppSettings>("service_app_settings",["","",false,0]);
+  const readAppSettings=()=>db.read<AppSettings>("service_app_settings",["","",false,0]);
   const initialAppSettings=await readAppSettings();
   const hostEnabledApps=new Set(appRegistry.apps.keys());
   appRuntime=await activateApps(appRegistry,initialAppSettings.disabled);
@@ -192,7 +192,7 @@ export async function startServer(config: ServerConfig) {
       if (url.pathname === "/auth/issuer/jwks") return json(res, issuer.jwks);
       if (url.pathname === "/api/v1/auth/status" && method === "GET") return json(res, await auth.status());
       if (url.pathname === "/api/v1/appearance" && method === "GET" || url.pathname === "/api/v1/appearance/logo" && method === "GET") {
-        const row=await db.call<{revision:number;value:string}>("service_appearance",["",0,""]), value=JSON.parse(row.value);
+        const row=await db.read<{revision:number;value:string}>("service_appearance",["",0,""]), value=JSON.parse(row.value);
         if(url.pathname.endsWith("/logo")){
           if(!value.logo)throw new AppError("notFound",404);
           res.writeHead(200,{"content-type":value.mediaType,"cache-control":"no-store"});res.end(Buffer.from(value.logo,"base64"));return;
@@ -203,7 +203,7 @@ export async function startServer(config: ServerConfig) {
         const token = url.pathname.slice("/public/files/".length);
         if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new AppError("notFound", 404);
         const { digestToken } = await import("./auth/session.ts");
-        const entry = await db.call<BlobFile>("service_public_download", [digestToken(token)]);
+        const entry = await db.read<BlobFile>("service_public_download", [digestToken(token)]);
         return await blobs.download(req, res, entry);
       }
       const secret = req.headers.cookie?.split(";").map(part => part.trim()).find(part => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
@@ -239,7 +239,7 @@ export async function startServer(config: ServerConfig) {
         const authenticated = await auth.authenticate(secret);
         if (!authenticated) throw new AppError("unauthenticated", 401);
         if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !authorizeCookieWrite(config.origin, origin, typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : undefined, authenticated.session.csrfDigest)) throw new AppError("csrfRejected", 403);
-        if(url.pathname==="/api/v1/search"&&method==="GET")return json(res,await db.call("service_global_search",[authenticated.session.id,string(url.searchParams.get("q")??"",800)]));
+        if(url.pathname==="/api/v1/search"&&method==="GET")return json(res,await db.read("service_global_search",[authenticated.session.id,string(url.searchParams.get("q")??"",800)]));
         if(url.pathname==="/api/v1/appSettings"&&method==="GET")return json(res,await readAppSettings());
         if(url.pathname==="/api/v1/admin/installedApps"){
           if(!authenticated.user.administrator)throw new AppError("forbidden",403);
@@ -258,7 +258,7 @@ export async function startServer(config: ServerConfig) {
           });appUpdate=update;return json(res,await update);
         }
         if(url.pathname==="/api/v1/apps"||url.pathname.startsWith("/api/v1/apps/"))return await handleAppHttp(req,res,url,appRegistry,db,authenticated.session.id,authenticated.user,appRuntime!.handlers,()=>body(req,80*1024));
-        if(url.pathname==="/api/v1/files/picker"&&method==="GET")return json(res,await db.call("service_file_picker",[authenticated.session.id,url.searchParams.get("parentId")??"",url.searchParams.get("cursor")??"",url.searchParams.get("kind")??"folder"]));
+        if(url.pathname==="/api/v1/files/picker"&&method==="GET")return json(res,await db.read("service_file_picker",[authenticated.session.id,url.searchParams.get("parentId")??"",url.searchParams.get("cursor")??"",url.searchParams.get("kind")??"folder"]));
         if(url.pathname==="/api/v1/agent/provider/connect"&&method==="POST"){
           if(!authenticated.user.administrator)throw new AppError("forbidden",403);
           await db.call("service_agent",[authenticated.session.id,"projects","{}"]);
@@ -282,7 +282,7 @@ export async function startServer(config: ServerConfig) {
             catch(error){if(error instanceof AppError&&error.code==="invalidCredentials")throw new AppError("invalidCredentials",403,"That password is not correct.");throw error;}
             attempt.count=Math.max(0,attempt.count-1);
           }
-          return json(res,await db.call("service_locked_folder",[authenticated.session.id,locked[1]?locked[1].slice(1):"state",verifier]));
+          return json(res,await (locked[1]?db.call:db.read)("service_locked_folder",[authenticated.session.id,locked[1]?locked[1].slice(1):"state",verifier]));
         }
         if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
         if(url.pathname==="/api/v1/account/profile"){
@@ -363,13 +363,13 @@ export async function startServer(config: ServerConfig) {
         }
         const downloadRoute = /^\/api\/v1\/files\/([^/]+)\/content$/.exec(url.pathname);
         if (downloadRoute && ["GET", "HEAD"].includes(method)) {
-          const entry = await db.call<BlobFile>("service_download", [authenticated.session.id, downloadRoute[1], url.searchParams.get("version") ?? ""]);
+          const entry = await db.read<BlobFile>("service_download", [authenticated.session.id, downloadRoute[1], url.searchParams.get("version") ?? ""]);
           return await blobs.download(req, res, entry, url.searchParams.get("preview") === "1");
         }
         // Image tiles and previews use the shared Photos thumbnails instead of the original.
         const thumbnailRoute = /^\/api\/v1\/files\/([^/]+)\/thumbnail$/.exec(url.pathname);
         if (thumbnailRoute && ["GET", "HEAD"].includes(method)) {
-          const entry = await db.call<BlobFile>("service_download", [authenticated.session.id, thumbnailRoute[1], ""]), size = url.searchParams.get("size") === "m" ? "m" : "s";
+          const entry = await db.read<BlobFile>("service_download", [authenticated.session.id, thumbnailRoute[1], ""]), size = url.searchParams.get("size") === "m" ? "m" : "s";
           const file = /^image\//.test(entry.mediaType) ? await photosRuntime!.thumbnailFile(entry.blobId, "image", size) : undefined;
           // Without media tools the original stands in, as it did before thumbnails.
           if (!file) return await blobs.download(req, res, entry, true);

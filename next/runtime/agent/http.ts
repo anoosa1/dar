@@ -2,27 +2,30 @@ import type {IncomingMessage,ServerResponse} from "node:http";
 import type {Database} from "../database.ts";
 import {AppError} from "../errors.ts";
 import {createHash} from "node:crypto";
+import {agentReadOperations} from "../../shared/read-operations.ts";
 import type {AgentRuntime} from "./runtime.ts";
 
 /** Native-session gateway; account scope is resolved again inside the database. */
 export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url:URL,db:Database,sessionId:string,userId:string,runtime:AgentRuntime,body:()=>Promise<Record<string,unknown>>){
   const method=req.method??"GET",path=url.pathname.slice("/api/v1/agent".length);
+  // Reads skip the durability wait; see shared/read-operations.ts.
+  const agent=(args:string[])=>db.operation("service_agent",args[1],agentReadOperations,args);
   const send=(value:unknown,status=200)=>{res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(value));};
-  if(path==="/shared"&&method==="GET")return send(await db.call("service_agent",[sessionId,"sharedThreads","{}"]));
+  if(path==="/shared"&&method==="GET")return send(await agent([sessionId,"sharedThreads","{}"]));
   const sharedHistory=/^\/shared\/([a-f0-9-]+)\/messages$/.exec(path);
-  if(sharedHistory&&method==="GET"){const before=url.searchParams.get("before");if(before!==null&&!/^[1-9]\d{0,9}$/.test(before))throw new AppError("invalidInput");return send(await db.call("service_agent",[sessionId,"sharedHistory",JSON.stringify({threadId:sharedHistory[1],...before?{before:Number(before)}:{}})]));}
+  if(sharedHistory&&method==="GET"){const before=url.searchParams.get("before");if(before!==null&&!/^[1-9]\d{0,9}$/.test(before))throw new AppError("invalidInput");return send(await agent([sessionId,"sharedHistory",JSON.stringify({threadId:sharedHistory[1],...before?{before:Number(before)}:{}})]));}
   const shares=/^\/threads\/([a-f0-9-]+)\/shares(?:\/([a-f0-9-]+))?$/.exec(path);
   if(shares){
-    if(method==="GET"&&!shares[2])return send(await db.call("service_agent",[sessionId,"threadShares",JSON.stringify({threadId:shares[1]})]));
-    if(method==="POST"&&!shares[2]){const input=await body();if(Object.keys(input).some(key=>key!=="id"&&key!=="username"))throw new AppError("invalidInput");return send(await db.call("service_agent",[sessionId,"shareThread",JSON.stringify({threadId:shares[1],...input})]),201);}
-    if(method==="DELETE"&&shares[2])return send(await db.call("service_agent",[sessionId,"unshareThread",JSON.stringify({threadId:shares[1],id:shares[2]})]));
+    if(method==="GET"&&!shares[2])return send(await agent([sessionId,"threadShares",JSON.stringify({threadId:shares[1]})]));
+    if(method==="POST"&&!shares[2]){const input=await body();if(Object.keys(input).some(key=>key!=="id"&&key!=="username"))throw new AppError("invalidInput");return send(await agent([sessionId,"shareThread",JSON.stringify({threadId:shares[1],...input})]),201);}
+    if(method==="DELETE"&&shares[2])return send(await agent([sessionId,"unshareThread",JSON.stringify({threadId:shares[1],id:shares[2]})]));
     throw new AppError("methodNotAllowed",405);
   }
-  if(path==="/provider/limits"&&method==="GET"){await db.call("service_agent",[sessionId,"projects","{}"]);return send(await runtime.limits(userId));}
+  if(path==="/provider/limits"&&method==="GET"){await agent([sessionId,"projects","{}"]);return send(await runtime.limits(userId));}
   const fork=/^\/threads\/([a-f0-9-]+)\/fork$/.exec(path);
-  if(fork&&method==="POST"){const input=await body();if(Object.keys(input).some(key=>key!=="id"&&key!=="sequence"))throw new AppError("invalidInput");return send(await db.call("service_agent",[sessionId,"forkThread",JSON.stringify({threadId:fork[1],...input})]),201);}
+  if(fork&&method==="POST"){const input=await body();if(Object.keys(input).some(key=>key!=="id"&&key!=="sequence"))throw new AppError("invalidInput");return send(await agent([sessionId,"forkThread",JSON.stringify({threadId:fork[1],...input})]),201);}
   if(path==="/provider"&&method==="GET"){
-    await db.call("service_agent",[sessionId,"projects","{}"]);return send(await runtime.status(userId));
+    await agent([sessionId,"projects","{}"]);return send(await runtime.status(userId));
   }
   const gitPath=/^\/threads\/([a-f0-9-]+)\/git$/.exec(path);
   if(gitPath){if(method==="GET")return send(await runtime.git(sessionId,userId,gitPath[1],{action:"status"}));if(method==="POST"){const input=await body();if(Object.keys(input).some(key=>!["action","name","message"].includes(key))||input.action==="status")throw new AppError("invalidInput");return send(await runtime.git(sessionId,userId,gitPath[1],input));}throw new AppError("methodNotAllowed",405);}
@@ -53,7 +56,7 @@ export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url
   if(run){
     if(!run[2]&&method==="GET"){
       // Running turns are polled every second; an unchanged document answers 304 instead of resending it.
-      const text=JSON.stringify(await db.call("service_agent",[sessionId,"run",JSON.stringify({id:run[1]})])),tag=`"${createHash("sha256").update(text).digest("base64url")}"`;
+      const text=JSON.stringify(await agent([sessionId,"run",JSON.stringify({id:run[1]})])),tag=`"${createHash("sha256").update(text).digest("base64url")}"`;
       if(req.headers["if-none-match"]===tag){res.writeHead(304,{etag:tag,"cache-control":"no-store"});res.end();return;}
       res.writeHead(200,{"content-type":"application/json","cache-control":"no-store",etag:tag});res.end(text);return;
     }
@@ -73,7 +76,7 @@ export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url
   if(single&&method==="DELETE")return send(await runtime.deleteThread(sessionId,userId,single[1]));
   if(single&&method==="PATCH"){
     const input=await body();if(Object.keys(input).some(key=>key!=="title"))throw new AppError("invalidInput");
-    return send(await db.call("service_agent",[sessionId,"renameThread",JSON.stringify({threadId:single[1],title:input.title})]));
+    return send(await agent([sessionId,"renameThread",JSON.stringify({threadId:single[1],title:input.title})]));
   }
   let operation:string,p:Record<string,unknown>,status=200;
   if(path==="/folders"&&method==="GET"){operation="folders";p={parentId:url.searchParams.get("parentId")??"",cursor:url.searchParams.get("cursor")??""};}
@@ -94,6 +97,6 @@ export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url
       operation="appendMessage";p={...input,threadId:match[1],revision:Number(etag.slice(1,-1))};status=201;
     }else throw new AppError("methodNotAllowed",405);
   }
-  const result=await db.call("service_agent",[sessionId,operation,JSON.stringify(p)]);
+  const result=await agent([sessionId,operation,JSON.stringify(p)]);
   return send(result,status);
 }

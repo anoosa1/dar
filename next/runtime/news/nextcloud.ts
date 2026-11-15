@@ -4,6 +4,7 @@ import {digestToken} from "../auth/session.ts";
 import {AppError} from "../errors.ts";
 import type {NewsRuntime} from "./runtime.ts";
 import type {NewsFeed,NewsFolder,NewsItemDetail,NewsOverview} from "../../shared/news.ts";
+import {newsReadOperations} from "../../shared/read-operations.ts";
 
 export const nextcloudBase="/dav/news";
 const typeNames=["feed","folder","starred","all"] as const;
@@ -26,8 +27,8 @@ export async function handleNextcloudNews(req:IncomingMessage,res:ServerResponse
   const username=decoded.slice(0,split),secret=decoded.slice(split+1);
   if(split<1||!/^[A-Za-z0-9_-]{43}$/.test(secret))throw new AppError("unauthenticated",401);
   const write=!["GET","HEAD"].includes(method);
-  const session=await db.call<{sessionId:string;username:string}>("service_pim_authenticate",[username,digestToken(secret),"news",write]);
-  const call=<T=unknown>(operation:string,value:object)=>db.call<T>("service_news",[session.sessionId,operation,JSON.stringify(value)]);
+  const session=await db.read<{sessionId:string;username:string}>("service_pim_authenticate",[username,digestToken(secret),"news",write]);
+  const call=<T=unknown>(operation:string,value:object)=>db.operation<T>("service_news",operation,newsReadOperations,[session.sessionId,operation,JSON.stringify(value)]);
   if(/^\/ocs\/v[12]\.php\/cloud\/user$/.test(path)){
     const v2=path.includes("/v2.");return send({ocs:{meta:{status:"ok",statuscode:v2?200:100,message:"OK"},data:{id:session.username,"display-name":session.username,displayname:session.username,email:null,enabled:true}}});
   }

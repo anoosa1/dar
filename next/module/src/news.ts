@@ -102,7 +102,7 @@ function exposeFeed(row:Feed,unread:Map<number,number>){
 }
 function unreadCounts(ctx:Ctx,userId:string){const counts=new Map<number,number>();for(const row of ctx.db.newsItems.unreadKey.filter(userId))counts.set(row.feedId,(counts.get(row.feedId)??0)+1);return counts;}
 
-export const newsReadOperations=new Set(["access","overview","folders","feeds","items","itemsUpdated","item","exportData","feedInfo"]);
+export {newsReadOperations} from "../../shared/read-operations.ts";
 /** Account-scoped News operations shared by the browser API and the Nextcloud News API. */
 export function newsOperation(ctx:Ctx,userId:string,operation:string,p:Record<string,unknown>){
   if(!appEnabled(ctx,"news"))fail("notFound");

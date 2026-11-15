@@ -625,4 +625,4 @@ export function addLinkUpload(ctx:Ctx,link:Link,fileId:string){
   if(!ctx.db.photoAlbumItems.id.find(id))insertAlbumItem(ctx,{id,albumId:link.albumId,fileId,addedAt:now});
 }
 /** Operations an app password with Photos read access may use; the rest need write. */
-export const photosReadOperations=new Set(["overview","page","detail","asset","duplicates","stackDetail","albumSharing"]);
+export {photosReadOperations} from "../../shared/read-operations.ts";

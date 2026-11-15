@@ -1,0 +1,11 @@
+/**
+ * Database operations that only read. App-password scopes use the Photos and News
+ * sets to tell reads from changes; the runtime also calls every listed operation
+ * without waiting for the database to confirm durability, which a read does not
+ * need. Only add an operation here if it can never insert, update or delete.
+ */
+export const photosReadOperations:ReadonlySet<string>=new Set(["overview","page","detail","asset","duplicates","stackDetail","albumSharing"]);
+export const newsReadOperations:ReadonlySet<string>=new Set(["access","overview","folders","feeds","items","itemsUpdated","item","exportData","feedInfo"]);
+export const pimReadOperations:ReadonlySet<string>=new Set(["resource","collections","preferences","reminders","page","list","grants","read","search"]);
+export const agentReadOperations:ReadonlySet<string>=new Set(["source","folders","sharedThreads","sharedHistory","projects","threads","threadShares","history","run"]);
+export const workspaceReadOperations:ReadonlySet<string>=new Set(["trash"]);

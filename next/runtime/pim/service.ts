@@ -8,10 +8,11 @@ import ICAL from "ical.js";
 import {isTask,readTask,writeTask} from "./tasks.ts";
 import {readNote} from "./notes.ts";
 import type {NoteData} from "../../shared/workspace.ts";
+import { pimReadOperations } from "../../shared/read-operations.ts";
 
 export const pimEtag = (row: { id: string; revision: number }) => `"${row.id}:${row.revision}"`;
 export function pimService(db: Database, sessionId: string) {
-  const call = <T>(operation: string, payload: object = {}) => db.call<T>("service_pim", [sessionId, operation, JSON.stringify(payload)]);
+  const call = <T>(operation: string, payload: object = {}) => db.operation<T>("service_pim", operation, pimReadOperations, [sessionId, operation, JSON.stringify(payload)]);
   const collections = () => call<PimCollection[]>("collections");
   const list = (collectionId: string) => call<{ collection: PimCollection; items: PimResource[] }>("list", { collectionId });
   const read = (collectionId: string, href: string) => call<PimResource>("read", { collectionId, href });

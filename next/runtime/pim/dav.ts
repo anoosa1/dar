@@ -57,11 +57,11 @@ export async function handlePimDav(req: IncomingMessage, res: ServerResponse, db
   if (!/^[A-Za-z0-9_-]{43}$/.test(secret)) throw new AppError("unauthenticated", 401);
   const write = ["PUT", "DELETE"].includes(method);
   let kind: "contacts" | "calendar" = url.pathname.startsWith("/dav/calendars/") ? "calendar" : "contacts";
-  async function authenticate(app: string) { return db.call<{ sessionId: string; username: string }>("service_pim_authenticate", [username, digestToken(secret), app, write]); }
+  async function authenticate(app: string) { return db.read<{ sessionId: string; username: string }>("service_pim_authenticate", [username, digestToken(secret), app, write]); }
   let authenticated, pimAccess=true, files: {sessionId:string;username:string}|undefined;
   const discovery=url.pathname==="/dav/"||url.pathname.startsWith("/dav/principals/");
   if(discovery){
-    try{files=await db.call("service_protocol_authenticate",[username,digestToken(secret),false]);}
+    try{files=await db.read("service_protocol_authenticate",[username,digestToken(secret),false]);}
     catch(error){if(!(error instanceof AppError)||![401,403].includes(error.status))throw error;}
   }
   try { authenticated = await authenticate(kind); }

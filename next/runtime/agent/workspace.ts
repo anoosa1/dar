@@ -93,7 +93,7 @@ export async function prepareWorkspace(root:string,userId:string,threadId:string
     }else{
       await directory(workspace);
       for(const row of source.files){
-        signal.throwIfAborted();const entry=await db.call<BlobFile>("service_download",[sessionId,row.id,""]);
+        signal.throwIfAborted();const entry=await db.read<BlobFile>("service_download",[sessionId,row.id,""]);
         if(entry.revision!==row.revision||entry.size!==row.size)throw new AppError("conflict",409,"A source file changed during workspace setup. Start a new thread.");
         const destination=path.join(workspace,safePath(row.path));await directory(path.dirname(destination));
         const input=await open(blobPath(root,entry.blobId),constants.O_RDONLY|constants.O_NOFOLLOW);

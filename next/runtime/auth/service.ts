@@ -23,7 +23,7 @@ export async function authService(db: Database, issuer: Issuer) {
     try { return await work(); } finally { hashing--; }
   }
   return {
-    async status() { return db.call<{ initialized: boolean }>("service_status"); },
+    async status() { return db.read<{ initialized: boolean }>("service_status"); },
     async createAccount(username: string, displayName: string, password: string, first: boolean) {
       try { validateNewPassword(password); } catch { throw new AppError("invalidPassword", 400, "Use at least 15 characters, up to 1024 UTF-8 bytes."); }
       const verifier = await bounded(() => hashPassword(password));
@@ -43,7 +43,7 @@ export async function authService(db: Database, issuer: Issuer) {
     },
     async authenticate(secret: string | undefined): Promise<Authenticated | null> {
       if (!secret || !/^[A-Za-z0-9_-]{43}$/.test(secret)) return null;
-      return db.call<Authenticated | null>("service_session", [digestToken(secret)]);
+      return db.read<Authenticated | null>("service_session", [digestToken(secret)]);
     },
     async confirm(auth: Authenticated, password: string) {
       const account=await db.call<Account>("service_account",[auth.user.username]);

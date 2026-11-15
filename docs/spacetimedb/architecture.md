@@ -24,6 +24,10 @@ flowchart LR
   protected keys. No SQLite, search server, ORM, broker or object store.
 - A reverse proxy terminates HTTPS. Unknown non-empty roots and symlinked managed
   storage fail closed.
+- Node service calls that change state wait until SpacetimeDB has made them
+  durable (`db.call`). Calls that only read (`db.read`, the sets in
+  `shared/read-operations.ts`) skip that wait, about 10 ms each; a read may then
+  show a change made milliseconds earlier that a power loss could still undo.
 
 ## Identity
 
