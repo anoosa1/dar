@@ -76,10 +76,10 @@ React/TypeScript with self-hosted CSS, fonts and SVG icons; UI rules are in the
 stay forbidden. Offline editing and full-text content search are out of scope;
 disconnection is shown honestly and reconnects refetch safely.
 
-Built-in apps open in place (`client/navigation.ts`): each app mounts afresh as
-after a page load, and a page with unsaved changes falls back to a normal load so
-the browser still warns. Installed apps, shared links and sign-in pages always
-load normally. Files, Contacts, Calendar, Notes and Tasks share one live
+Built-in and installed apps open in place (`client/navigation.ts`): each app
+mounts afresh as after a page load, and a page with unsaved changes falls back to
+a normal load so the browser still warns. Installed apps are disposed through the
+cleanup their `mount` returns. Shared links and sign-in pages always load normally. Files, Contacts, Calendar, Notes and Tasks share one live
 connection per page (`client/live.ts`), kept a minute after the last of them closes.
 
 ## Backups and upgrades

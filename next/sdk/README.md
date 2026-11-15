@@ -68,6 +68,13 @@ export function mount(element: HTMLElement, host: AppHost) {
 }
 ```
 
+Dar switches between apps without reloading the page, so the function `mount`
+returns must undo everything the app started: unmount its root and stop any
+timers, listeners or connections it opened (React effects with cleanup do this).
+Anything left running keeps running after the user opens another app. To keep
+unsaved changes, cancel `beforeunload` while they exist; Dar then loads the next
+page normally so the browser can warn.
+
 Use `npx dar-app-build .`. It bundles dependencies, externalizes the host SDK,
 extracts imported CSS and writes a complete `dist/dar-app.json` file inventory.
 Only `dist/` is installed. No package installation or compilation happens on the

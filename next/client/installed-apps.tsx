@@ -24,7 +24,9 @@ export function InstalledAppPage({id,session,onSignedOut}:{id:string;session:Bro
       },regional:()=>{if(!app.permissions.includes("regional:read"))return Promise.reject(Error("Permission not declared"));return request("/api/v1/pim/preferences",options);}};
       if(typeof module.mount!=="function")throw Error("Missing mount");dispose=module.mount(element.current!,host);setLoading(false);
     })().catch(fail);
-    return()=>{controller.abort();try{dispose?.();}finally{styles.forEach(s=>s.remove());}};
+    // Opening another app in place unmounts this page during React's commit; the app's
+    // own React root is unmounted just after, which React requires.
+    return()=>{controller.abort();styles.forEach(s=>s.remove());const finish=dispose;if(finish)setTimeout(()=>{try{finish();}catch(error){reportError(error);}});};
   },[id]);
   return <>{(loading||error)&&<div className="app-shell"><WorkspaceHeader app={`app:${id}`} session={session} onSignedOut={onSignedOut} query="" onQuery={()=>{}}/><main className="startup-state">{error?<><p role="alert">{error}</p><button className="primary-button" onClick={()=>location.reload()}>Try again</button><a href="/">Return to Files</a></>:<p role="status">Opening app…</p>}</main></div>}<div ref={element} hidden={!!error}/></>;
 }

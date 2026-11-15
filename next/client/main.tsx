@@ -62,8 +62,9 @@ function pageFor(path:string){
     :["/identity","/settings"].includes(path)?IdentitySettings:path==="/news"?NewsWorkspace:path==="/photos"?PhotosWorkspace:path==="/agent"?AgentWorkspace
     :["/notes","/tasks"].includes(path)?Workspace:path==="/contacts"?Contacts:path==="/calendar"?Calendar:Files;
 }
-/** Built-in apps open in place; installed apps, shared links and sign-in pages load normally. */
+/** Built-in and installed apps open in place; shared links and sign-in pages load normally. */
 const inPlace=new Set(["/","/contacts","/calendar","/notes","/tasks","/news","/photos","/agent","/settings","/identity"]);
+const opensInPlace=(path:string)=>inPlace.has(path)||/^\/apps\/[^/]+$/.test(path);
 const path=location.pathname;
 // Start downloading this page's code while the session is checked.
 pageFor(path).preload();
@@ -88,7 +89,7 @@ function App() {
   useEffect(() => {
     if (!session) return;
     let latest = 0;
-    const stop = interceptLinks(), release = setNavigator({ handles: url => inPlace.has(url.pathname), open: url => {
+    const stop = interceptLinks(), release = setNavigator({ handles: url => opensInPlace(url.pathname), open: url => {
       const request = ++latest;
       // Show the next app once its code is loaded, so the page never flashes empty.
       void pageFor(url.pathname).preload().then(() => {
