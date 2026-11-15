@@ -14,6 +14,7 @@ import {Markdown,MarkdownToolbar} from "./markdown.tsx";
 import {TaskOccurrences,ReminderInbox} from "./task-occurrences.tsx";
 import type {PimCollection,PimResource} from "../../shared/pim.ts";
 import type {NoteData,TaskData} from "../../shared/workspace.ts";
+import {navigate as openAddress} from "../navigation.ts";
 interface Item extends PimResource {data:NoteData|TaskData;role:string;collectionName?:string;snippet?:string;overdue?:boolean;nextOccurrence?:(TaskData&{recurrenceId:string});editingOccurrenceId?:string;parentId?:string;children?:{id:string;uid:string;title:string;status:string}[]}
 interface Trash {id:string;notebookName:string;trashedAt:string;resource:PimResource}
 const viewIcons:Record<string,IconName>={all:"list",favorites:"star",trash:"trash",inbox:"folder",today:"calendar",upcoming:"clock",important:"flag",completed:"check"};
@@ -37,7 +38,7 @@ export function Workspace({kind,session,onSignedOut}:{kind:"notes"|"tasks";sessi
   async function changeSort(value:string){setSort(value);try{const old=await request<Preferences>("/api/v1/pim/preferences");await request("/api/v1/pim/preferences",{method:"PUT",headers:{"if-match":`"preferences:${old.revision}"`},body:JSON.stringify({...old,[notes?"notesSort":"tasksSort"]:value})},session.csrfToken);}catch(e){setError((e as Error).message);}}
   const latestLoad=useRef(0);const current=collections.find(c=>c.id===collection);
   const noteNavigation:NoteNavigation=useRef(null);
-  useEffect(()=>{if(!notes)return;const leave=(event:Event)=>{const destination=(event as CustomEvent<{href:string}>).detail?.href;if(!destination||!noteNavigation.current)return;event.preventDefault();noteNavigation.current(()=>location.assign(destination));};window.addEventListener("dar:navigate",leave);return()=>window.removeEventListener("dar:navigate",leave);},[notes]);
+  useEffect(()=>{if(!notes)return;const leave=(event:Event)=>{const destination=(event as CustomEvent<{href:string}>).detail?.href;if(!destination||!noteNavigation.current)return;event.preventDefault();noteNavigation.current(()=>openAddress(destination,{guarded:true}));};window.addEventListener("dar:navigate",leave);return()=>window.removeEventListener("dar:navigate",leave);},[notes]);
   const [selectionError,setSelectionError]=useState(""),[quick,setQuick]=useState("");
   const today=new Intl.DateTimeFormat("en-CA",{timeZone:zone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   const quickTarget=current&&current.role!=="read"?current:collections.find(c=>c.role!=="read");

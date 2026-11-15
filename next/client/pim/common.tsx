@@ -1,6 +1,6 @@
 import {EditorPane} from "../pane.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { DbConnection } from "../module_bindings/index.ts";
+import { useLiveConnection, subscribe } from "../live.ts";
 import { request, type BrowserSession } from "../api.ts";
 import {WorkspaceHeader,useMobileNavigation} from "../shell.tsx";
 import {ConnectionStatus, type ConnectionState} from "../connection-status.tsx";
@@ -14,23 +14,17 @@ export interface Item<T> extends PimResource { data: T }
 export type {Preferences} from "../../shared/preferences.ts";
 export function usePim(session: BrowserSession, onSignedOut: () => void) {
   const [epoch, setEpoch] = useState(0), [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
+  const live = useLiveConnection(session), signedOut = useRef(onSignedOut); signedOut.current = onSignedOut;
+  // Lost connections show as reconnecting until the replayed subscription applies.
+  useEffect(() => { if (live.status === "reconnecting" || live.status === "error") setConnectionState(live.status); }, [live.status]);
   useEffect(() => {
-    let disposed = false, db: DbConnection | undefined;
-    const tab = crypto.randomUUID();
-    async function token() { return await request<{ token: string; databaseUrl: string; databaseName: string }>(`/api/v1/auth/token?tab=${tab}`, { method: "POST" }, session.csrfToken); }
-    void token().then(config => {
-      if (disposed) return;
-      db = DbConnection.builder().withUri(config.databaseUrl.replace(/^http/, "ws")).withDatabaseName(config.databaseName).withToken(config.token).withAutomaticReconnect().withTokenProvider(async () => (await token()).token)
-        .onConnect(c => {
-          const changed = () => { if (!disposed) setEpoch(n => n + 1); };
-          c.db.myPimChanges.onInsert(changed); c.db.myPimChanges.onUpdate(changed);
-          c.db.me.onDelete(() => { if (!disposed) onSignedOut(); });
-          c.subscriptionBuilder().onApplied(() => { if (!disposed) { setConnectionState("ready"); changed(); } }).onError(() => { if (!disposed) setConnectionState("error"); }).subscribe(["SELECT * FROM me", "SELECT * FROM my_pim_changes"]);
-        }).onAutomaticReconnect(() => { if (!disposed) setConnectionState("reconnecting"); })
-        .onDisconnect((_ctx, _error, next) => { if (!disposed) setConnectionState(next ? "reconnecting" : "error"); }).onConnectError(() => { if (!disposed) setConnectionState("error"); }).build();
-    }).catch(() => { if (!disposed) setConnectionState("error"); });
-    return () => { disposed = true; db?.disconnect(); };
-  }, [session]);
+    const c = live.connection; if (!c) return;
+    let disposed = false;
+    const changed = () => { if (!disposed) setEpoch(n => n + 1); }, gone = () => { if (!disposed) signedOut.current(); };
+    c.db.myPimChanges.onInsert(changed); c.db.myPimChanges.onUpdate(changed); c.db.me.onDelete(gone);
+    const stop = subscribe(c, ["SELECT * FROM me", "SELECT * FROM my_pim_changes"], () => { if (!disposed) { setConnectionState("ready"); changed(); } }, () => { if (!disposed) setConnectionState("error"); });
+    return () => { disposed = true; c.db.myPimChanges.removeOnInsert(changed); c.db.myPimChanges.removeOnUpdate(changed); c.db.me.removeOnDelete(gone); stop(); };
+  }, [live.connection]);
   return { epoch, connectionState, refresh: () => setEpoch(n => n + 1) };
 }
 export function PimShell({ kind, session, onSignedOut, query, onQuery, sidebar, children, details, connectionState, mainClassName="", contentClassName="", noteEditor=false }: { kind: "contacts" | "calendar"|"notes"|"tasks"; session: BrowserSession; onSignedOut: () => void; query: string; onQuery: (query: string) => void; sidebar: ReactNode; children: ReactNode; details?: ReactNode; connectionState: ConnectionState;mainClassName?:string;

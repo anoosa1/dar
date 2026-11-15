@@ -5,8 +5,9 @@ import {Icon,type IconName} from "./icons.tsx";
 import {FileTile} from "./file-types.tsx";
 import {useAppList} from "./apps.tsx";
 import type {SearchResults,SearchResult,SearchGroup} from "../shared/search.ts";
+import {navigate} from "./navigation.ts";
 
-export function navigateSearchResult(href:string){const event=new CustomEvent("dar:navigate",{cancelable:true,detail:{href}});if(window.dispatchEvent(event))location.assign(href);}
+export function navigateSearchResult(href:string){navigate(href);}
 
 const order:SearchGroup[]=["Photos","Files","Contacts","Calendar","Notes","Tasks","News","Applications"];
 const groupIcon:Record<string,IconName>={Photos:"image",Files:"file",Contacts:"contacts",Calendar:"calendar",Notes:"file",Tasks:"check",News:"rss",Applications:"grid",Actions:"chevron",Recent:"undo"};

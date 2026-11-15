@@ -2,7 +2,8 @@ import {localDate,localDateTime,localTime} from "./dates.ts";
 import {TextEditor,editableText,writeTextFile} from "./text-editor.tsx";
 import {DarFilePicker,type DarFileSelection} from "./file-picker.tsx";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { DbConnection } from "./module_bindings/index.ts";
+import type { DbConnection } from "./module_bindings/index.ts";
+import { useLiveConnection, subscribe } from "./live.ts";
 import type { FileEntries as FileEntry, Usage as MyUsage } from "./module_bindings/types.ts";
 import {WorkspaceHeader,useMobileNavigation} from "./shell.tsx";
 import {ConnectionStatus, type ConnectionState} from "./connection-status.tsx";
@@ -108,33 +109,28 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   }
   useEffect(()=>{function shortcuts(e:KeyboardEvent){if(e.defaultPrevented||modal||settings||document.querySelector("dialog[open]")||(e.target as HTMLElement).closest("input,textarea,select,[contenteditable=true],[role=combobox]")||window.getSelection()?.toString())return;const entry=rows.find(row=>selected.has(row.id));if(e.key==="F2"&&selected.size===1&&entry&&!entry.trashed){e.preventDefault();openModal({type:"rename",entry});}else if(e.ctrlKey||e.metaKey){const key=e.key.toLowerCase();if(key==="v"&&clipboard&&writableHere){e.preventDefault();void paste();}else if(["c","x"].includes(key)&&entry&&selected.size===1&&!entry.trashed&&(key==="c"||entry.ownerId===session.user.id)){e.preventDefault();collect(entry,key==="x"?"cut":"copy");}}}document.addEventListener("keydown",shortcuts);return()=>document.removeEventListener("keydown",shortcuts);},[rows,selected,clipboard,connection,parentId,section,modal,settings,folder,writableHere]);
 
+  // The page's shared live connection; Files adds its own subscription to it.
+  const live = useLiveConnection(session), signedOut = useRef(onSignedOut); signedOut.current = onSignedOut;
+  useEffect(() => { if (live.status === "reconnecting" || live.status === "error") setState(live.status); }, [live.status]);
   useEffect(() => {
-    let disposed = false; let db: DbConnection | undefined;
-    const tabId = crypto.randomUUID();
-    const getToken = () => request<{ token: string; databaseUrl: string; databaseName: string }>(`/api/v1/auth/token?tab=${tabId}`, { method: "POST" }, session.csrfToken);
-    void getToken().then(config => {
+    const c = live.connection; if (!c) return;
+    let disposed = false;
+    const synchronize = () => {
       if (disposed) return;
-      db = DbConnection.builder().withUri(config.databaseUrl.replace(/^http/, "ws")).withDatabaseName(config.databaseName).withToken(config.token)
-        .withAutomaticReconnect().withTokenProvider(async () => (await getToken()).token)
-        .onConnect(c => {
-          const synchronize = () => {
-            if (disposed) return;
-            if (navigationReady.current) setRows([...c.db.myFiles.iter()]);
-            setUsage([...c.db.myUsage.iter()][0] ?? null);
-          };
-          c.db.myFiles.onInsert(synchronize); c.db.myFiles.onDelete(synchronize); c.db.myFiles.onUpdate(synchronize);
-          c.db.myUsage.onInsert(synchronize); c.db.myUsage.onDelete(synchronize); c.db.myUsage.onUpdate(synchronize);
-          c.db.me.onDelete(() => { if (!disposed) { setRows([]); setDetails(null); onSignedOut(); } });
-          c.subscriptionBuilder().onApplied(() => { if (!disposed) { synchronize(); setState("ready"); setConnection(c); setConnectionEpoch(value => value + 1); } })
-            .onError(() => { if (!disposed) setState("error"); })
-            .subscribe(["SELECT * FROM me", "SELECT * FROM my_files", "SELECT * FROM my_usage"]);
-        })
-        .onAutomaticReconnect(() => { if (!disposed) setState("reconnecting"); })
-        .onDisconnect((_ctx, _error, next) => { if (!disposed) setState(next ? "reconnecting" : "error"); })
-        .onConnectError(() => { if (!disposed) setState("error"); }).build();
-    }).catch(() => { if (!disposed) setState("error"); });
-    return () => { disposed = true; db?.disconnect(); };
-  }, [session]);
+      if (navigationReady.current) setRows([...c.db.myFiles.iter()]);
+      setUsage([...c.db.myUsage.iter()][0] ?? null);
+    };
+    const gone = () => { if (!disposed) { setRows([]); setDetails(null); signedOut.current(); } };
+    c.db.myFiles.onInsert(synchronize); c.db.myFiles.onDelete(synchronize); c.db.myFiles.onUpdate(synchronize);
+    c.db.myUsage.onInsert(synchronize); c.db.myUsage.onDelete(synchronize); c.db.myUsage.onUpdate(synchronize);
+    c.db.me.onDelete(gone);
+    const stop = subscribe(c, ["SELECT * FROM me", "SELECT * FROM my_files", "SELECT * FROM my_usage"], () => { if (!disposed) { synchronize(); setState("ready"); setConnection(c); setConnectionEpoch(value => value + 1); } }, () => { if (!disposed) setState("error"); });
+    return () => {
+      disposed = true; stop(); c.db.me.removeOnDelete(gone);
+      c.db.myFiles.removeOnInsert(synchronize); c.db.myFiles.removeOnDelete(synchronize); c.db.myFiles.removeOnUpdate(synchronize);
+      c.db.myUsage.removeOnInsert(synchronize); c.db.myUsage.removeOnDelete(synchronize); c.db.myUsage.removeOnUpdate(synchronize);
+    };
+  }, [live.connection]);
 
   useEffect(() => {
     if (!connection) return;

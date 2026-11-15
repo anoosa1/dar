@@ -1,5 +1,6 @@
 import {useAppearance} from "./appearance.tsx";
-import React, { Suspense, use, useEffect, useState, type ComponentType } from "react";
+import React, { Fragment, Suspense, use, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from "react";
+import { interceptLinks, setNavigator } from "./navigation.ts";
 import { createRoot } from "react-dom/client";
 import { request, RequestError, type BrowserSession } from "./api.ts";
 // Every stylesheet is bundled here, in cascade order, so one cached app CSS file
@@ -56,11 +57,16 @@ const NewsWorkspace=page(()=>import("./news/workspace.tsx").then(m=>m.NewsWorksp
 const PhotosWorkspace=page(()=>import("./photos/workspace.tsx").then(m=>m.PhotosWorkspace));
 const PublicPhotos=page(()=>import("./photos/public.tsx").then(m=>m.PublicPhotos));
 
+function pageFor(path:string){
+  return path.startsWith("/s/")?PublicPhotos:path.startsWith("/identity/interaction/")?IdentityInteraction:path.startsWith("/apps/")?InstalledAppPage
+    :["/identity","/settings"].includes(path)?IdentitySettings:path==="/news"?NewsWorkspace:path==="/photos"?PhotosWorkspace:path==="/agent"?AgentWorkspace
+    :["/notes","/tasks"].includes(path)?Workspace:path==="/contacts"?Contacts:path==="/calendar"?Calendar:Files;
+}
+/** Built-in apps open in place; installed apps, shared links and sign-in pages load normally. */
+const inPlace=new Set(["/","/contacts","/calendar","/notes","/tasks","/news","/photos","/agent","/settings","/identity"]);
 const path=location.pathname;
 // Start downloading this page's code while the session is checked.
-(path.startsWith("/s/")?PublicPhotos:path.startsWith("/identity/interaction/")?IdentityInteraction:path.startsWith("/apps/")?InstalledAppPage
-  :["/identity","/settings"].includes(path)?IdentitySettings:path==="/news"?NewsWorkspace:path==="/photos"?PhotosWorkspace:path==="/agent"?AgentWorkspace
-  :["/notes","/tasks"].includes(path)?Workspace:path==="/contacts"?Contacts:path==="/calendar"?Calendar:Files).preload();
+pageFor(path).preload();
 
 const opening=<main className="startup-state" aria-busy="true"><div className="brand-mark" /><p role="status">Opening your space…</p></main>;
 function OptionalWorkspace({kind,session,onSignedOut}:{kind:"notes"|"tasks"|"agent"|"news"|"photos";session:BrowserSession;onSignedOut:()=>void}){
@@ -73,6 +79,28 @@ function App() {
   const [session, setSession] = useState<BrowserSession | null>(null);
   useAppearance(session);
   const [ready, setReady] = useState(false), [error, setError] = useState("");
+  // Each visit to an app mounts it afresh, as a page load would.
+  const [route, setRoute] = useState({ path: location.pathname, visit: 0 }), fromRail = useRef(false);
+  useEffect(() => {
+    const pop = () => setRoute(current => current.path === location.pathname ? current : { path: location.pathname, visit: current.visit + 1 });
+    window.addEventListener("popstate", pop); return () => window.removeEventListener("popstate", pop);
+  }, []);
+  useEffect(() => {
+    if (!session) return;
+    let latest = 0;
+    const stop = interceptLinks(), release = setNavigator({ handles: url => inPlace.has(url.pathname), open: url => {
+      const request = ++latest;
+      // Show the next app once its code is loaded, so the page never flashes empty.
+      void pageFor(url.pathname).preload().then(() => {
+        if (request !== latest) return;
+        fromRail.current = !!document.activeElement?.closest(".app-rail");
+        history.pushState(null, "", url.pathname + url.search + url.hash);
+        setRoute(current => ({ path: url.pathname, visit: current.visit + 1 })); window.scrollTo(0, 0);
+      }, () => location.assign(url.href));
+    } });
+    return () => { stop(); release(); };
+  }, [session]);
+  useLayoutEffect(() => { if (fromRail.current) { fromRail.current = false; document.querySelector<HTMLElement>(".app-rail [aria-current=page]")?.focus(); } }, [route.visit]);
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -92,7 +120,9 @@ function App() {
   if (error) return <main className="startup-state"><h1>Unable to connect</h1><p role="alert">{error}</p><button className="primary-button" onClick={() => location.reload()}>Try again</button></main>;
   if (!ready || !status) return opening;
   const signedOut = () => { setSession(null); setStatus({ initialized: true }); };
-  const path = location.pathname;
+  return <Fragment key={route.visit}>{screen(route.path, status, session, setSession, signedOut)}</Fragment>;
+}
+function screen(path: string, status: { initialized: boolean }, session: BrowserSession | null, setSession: (session: BrowserSession) => void, signedOut: () => void) {
   if(path.startsWith("/identity/interaction/"))return <IdentityInteraction session={session} onLogin={setSession}/>;
   if(!session)return <Auth initialized={status.initialized} onLogin={setSession} />;
   if(path.startsWith("/apps/"))return <InstalledAppPage id={path.split("/")[2]} session={session} onSignedOut={signedOut}/>;
