@@ -1048,7 +1048,9 @@ export const servicePim = db.procedure({ sessionId: t.string(), operation: t.str
   service(tx); const user = fromSession(tx, p.sessionId);
   const password = tx.db.appPasswords.sessionId.find(p.sessionId);
   if (password && (password.revoked || password.expiresAt <= now(tx))) fail("unauthenticated");
-  return JSON.stringify(pimOperation(tx, user.id, p.operation, JSON.parse(p.payload), password?.scope));
+  const value = pimOperation(tx, user.id, p.operation, JSON.parse(p.payload), password?.scope);
+  // The account's change counter as of this result lets a page skip reloading data it already has.
+  return JSON.stringify({ value, revision: tx.db.pimChanges.userId.find(user.id)?.revision ?? 0 });
 }));
 export const serviceWorkspace=db.procedure({sessionId:t.string(),operation:t.string(),payload:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");const data=JSON.parse(p.payload);

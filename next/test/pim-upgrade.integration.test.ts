@@ -30,7 +30,7 @@ test("auth/Files module upgrades in place; old backup imports and unknown format
   const pin=randomUUID(),snapshot=await db.call<{format:string;files:{id:string}[]}>("service_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v1");await db.call("service_release_backup",[pin]);
   run(["publish",name,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",databaseUrl!,"--yes","--no-config"]);
   const existing=await db.call<{id:string}>("service_download",[sessionId,fileId,""]);assert.equal(existing.id,fileId);
-  const created=await db.call<{id:string}>("service_pim",[sessionId,"createCollection",JSON.stringify({id:randomUUID(),kind:"contacts",name:"After upgrade",color:"#2563eb"})]);assert.ok(created.id);
+  const created=(await db.call<{value:{id:string}}>("service_pim",[sessionId,"createCollection",JSON.stringify({id:randomUUID(),kind:"contacts",name:"After upgrade",color:"#2563eb"})])).value;assert.ok(created.id);
   const restoredName=`dar-old-restore-${randomUUID().slice(0,8)}`;
   run(["publish",restoredName,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",databaseUrl!,"--yes","--no-config"]);
   const restored=await database(databaseUrl!,restoredName,process.env.DAR_DATABASE_TOKEN_FILE!);

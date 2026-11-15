@@ -12,7 +12,12 @@ import { pimReadOperations } from "../../shared/read-operations.ts";
 
 export const pimEtag = (row: { id: string; revision: number }) => `"${row.id}:${row.revision}"`;
 export function pimService(db: Database, sessionId: string) {
-  const call = <T>(operation: string, payload: object = {}) => db.operation<T>("service_pim", operation, pimReadOperations, [sessionId, operation, JSON.stringify(payload)]);
+  // The newest account change revision any call in this request has seen.
+  let revision = 0;
+  const call = async <T>(operation: string, payload: object = {}) => {
+    const result = await db.operation<{ value: T; revision: number }>("service_pim", operation, pimReadOperations, [sessionId, operation, JSON.stringify(payload)]);
+    revision = Math.max(revision, result.revision); return result.value;
+  };
   const collections = () => call<PimCollection[]>("collections");
   const list = (collectionId: string) => call<{ collection: PimCollection; items: PimResource[] }>("list", { collectionId });
   const read = (collectionId: string, href: string) => call<PimResource>("read", { collectionId, href });
@@ -59,7 +64,7 @@ export function pimService(db: Database, sessionId: string) {
     if (result.length > 5000) invalid("Calendar window contains too many occurrences.");
     return result.sort((a,b) => a.startAt.localeCompare(b.startAt));
   }
-  return { call, collections, list, read, put, importText, exportText, occurrences };
+  return { call, collections, list, read, put, importText, exportText, occurrences, revision: () => revision };
 }
 export type PimService = ReturnType<typeof pimService>;
 export function kindFromPath(value: string): PimKind { if (value === "contacts") return "contacts"; if (value === "calendar") return "calendar"; invalid("Unknown app."); }

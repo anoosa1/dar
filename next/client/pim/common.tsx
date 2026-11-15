@@ -1,7 +1,7 @@
 import {EditorPane} from "../pane.tsx";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useLiveConnection, subscribe } from "../live.ts";
-import { request, type BrowserSession } from "../api.ts";
+import { request, loadedPimRevision, whenPimSettled, type BrowserSession } from "../api.ts";
 import {WorkspaceHeader,useMobileNavigation} from "../shell.tsx";
 import {ConnectionStatus, type ConnectionState} from "../connection-status.tsx";
 import {Select,ActionMenu} from "../controls.tsx";
@@ -15,16 +15,22 @@ export type {Preferences} from "../../shared/preferences.ts";
 export function usePim(session: BrowserSession, onSignedOut: () => void) {
   const [epoch, setEpoch] = useState(0), [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const live = useLiveConnection(session), signedOut = useRef(onSignedOut); signedOut.current = onSignedOut;
+  // Register this account before the app's first requests record their revisions.
+  useLayoutEffect(() => { loadedPimRevision(session.csrfToken); }, [session.csrfToken]);
   // Lost connections show as reconnecting until the replayed subscription applies.
   useEffect(() => { if (live.status === "reconnecting" || live.status === "error") setConnectionState(live.status); }, [live.status]);
   useEffect(() => {
     const c = live.connection; if (!c) return;
     let disposed = false;
     const changed = () => { if (!disposed) setEpoch(n => n + 1); }, gone = () => { if (!disposed) signedOut.current(); };
-    c.db.myPimChanges.onInsert(changed); c.db.myPimChanges.onUpdate(changed); c.db.me.onDelete(gone);
-    const stop = subscribe(c, ["SELECT * FROM me", "SELECT * FROM my_pim_changes"], () => { if (!disposed) { setConnectionState("ready"); changed(); } }, () => { if (!disposed) setConnectionState("error"); });
-    return () => { disposed = true; c.db.myPimChanges.removeOnInsert(changed); c.db.myPimChanges.removeOnUpdate(changed); c.db.me.removeOnDelete(gone); stop(); };
-  }, [live.connection]);
+    // Initial (and replayed) data only reloads what is newer than the page already loaded;
+    // the comparison waits for this app's first requests. Later changes always reload.
+    const current = () => { for (const row of c.db.myPimChanges.iter()) return row.revision; return 0; };
+    const compare = () => whenPimSettled(() => { if (current() > loadedPimRevision(session.csrfToken)) changed(); });
+    c.db.myPimChanges.onInsert(compare); c.db.myPimChanges.onUpdate(changed); c.db.me.onDelete(gone);
+    const stop = subscribe(c, ["SELECT * FROM me", "SELECT * FROM my_pim_changes"], () => { if (!disposed) { setConnectionState("ready"); compare(); } }, () => { if (!disposed) setConnectionState("error"); });
+    return () => { disposed = true; c.db.myPimChanges.removeOnInsert(compare); c.db.myPimChanges.removeOnUpdate(changed); c.db.me.removeOnDelete(gone); stop(); };
+  }, [live.connection, session.csrfToken]);
   return { epoch, connectionState, refresh: () => setEpoch(n => n + 1) };
 }
 export function PimShell({ kind, session, onSignedOut, query, onQuery, sidebar, children, details, connectionState, mainClassName="", contentClassName="", noteEditor=false }: { kind: "contacts" | "calendar"|"notes"|"tasks"; session: BrowserSession; onSignedOut: () => void; query: string; onQuery: (query: string) => void; sidebar: ReactNode; children: ReactNode; details?: ReactNode; connectionState: ConnectionState;mainClassName?:string;

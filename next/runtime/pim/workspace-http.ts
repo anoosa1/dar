@@ -16,7 +16,7 @@ export async function handleWorkspaceHttp(req:IncomingMessage,res:ServerResponse
   const viewerZone=timezone(url.searchParams.get("timezone")??"UTC");
   const notes=url.pathname.startsWith("/api/v1/notes"),base=notes?"/api/v1/notes":"/api/v1/tasks",kind=notes?"notes":"calendar",path=url.pathname.slice(base.length),method=req.method??"GET",service=pimService(db,sid);
   const workspace=<T>(operation:string,p:object={})=>db.operation<T>("service_workspace",operation,workspaceReadOperations,[sid,operation,JSON.stringify(p)]);
-  const json=(value:unknown,status=200,row?:{id:string;revision:number})=>{if(row)res.setHeader("etag",pimEtag(row));res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(value,(key,v)=>["modifiedAt","trashedAt"].includes(key)&&typeof v==="number"?new Date(v).toISOString():v));};
+  const json=(value:unknown,status=200,row?:{id:string;revision:number})=>{if(row)res.setHeader("etag",pimEtag(row));if(service.revision())res.setHeader("x-dar-pim-revision",service.revision());res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(value,(key,v)=>["modifiedAt","trashedAt"].includes(key)&&typeof v==="number"?new Date(v).toISOString():v));};
   const send=(content:string,name:string,media:string)=>{res.writeHead(200,{"content-type":media,"content-disposition":`attachment; filename="${name}"`,"cache-control":"no-store"});res.end(content);};
   if(notes&&path==="/trash"&&method==="GET")return json(await workspace("trash",{cursor:url.searchParams.get("cursor")??""}));
   const trash=/^\/trash\/([^/]+)(?:\/(restore))?$/.exec(path);
