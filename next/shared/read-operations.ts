@@ -9,3 +9,4 @@ export const newsReadOperations:ReadonlySet<string>=new Set(["access","overview"
 export const pimReadOperations:ReadonlySet<string>=new Set(["resource","collections","preferences","reminders","page","list","grants","read","search"]);
 export const agentReadOperations:ReadonlySet<string>=new Set(["source","folders","sharedThreads","sharedHistory","projects","threads","threadShares","history","run"]);
 export const workspaceReadOperations:ReadonlySet<string>=new Set(["trash"]);
+export const identityReadOperations:ReadonlySet<string>=new Set(["users","user","groups","group","clients","tokens","storage"]);

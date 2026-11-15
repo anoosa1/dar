@@ -29,7 +29,7 @@ export async function handleIdentityHttp(req:IncomingMessage,res:ServerResponse,
   const method=req.method??"GET",path=url.pathname.slice("/api/v1/identity".length);
   const uid=/^\/interactions\/([^/]+)$/.exec(path);
   if(uid){if(method==="GET")return json(res,await provider.details(req,res,uid[1],authenticated));if(method==="POST")return json(res,await provider.decide(req,res,uid[1],authenticated,await body()));throw new AppError("notFound",404);}
-  if(path==="/connections"&&method==="GET")return json(res,{items:await db.call("service_connected_applications",[authenticated.session.id,""]),nextCursor:""});
+  if(path==="/connections"&&method==="GET")return json(res,{items:await db.read("service_connected_applications",[authenticated.session.id,""]),nextCursor:""});
   if(path.startsWith("/connections/")&&method==="DELETE")return json(res,{items:await db.call("service_connected_applications",[authenticated.session.id,decodeURIComponent(path.slice(13))]),nextCursor:""});
   if(!authenticated.user.administrator)throw new AppError("forbidden",403);
   const proof=typeof req.headers["x-identity-proof"]==="string"?digestToken(req.headers["x-identity-proof"]):"";

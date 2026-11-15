@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { Database } from "../database.ts";
 import type { authService } from "../auth/service.ts";
 import { AppError } from "../errors.ts";
+import { identityReadOperations } from "../../shared/read-operations.ts";
 import { applyPatch, normalize, resource, ScimError, type DirectoryRecord } from "./scim-model.ts";
 
 export interface DirectoryActor {sessionId?:string;bearer?:string;proof?:string}
 export function directoryService(db:Database,auth:Awaited<ReturnType<typeof authService>>,actor:DirectoryActor){
-  const call=<T=unknown>(operation:string,p:object={})=>db.call<T>("service_identity",[actor.sessionId??"",actor.bearer??"",actor.proof??"",operation,JSON.stringify(p)]);
+  const call=<T=unknown>(operation:string,p:object={})=>db.operation<T>("service_identity",operation,identityReadOperations,[actor.sessionId??"",actor.bearer??"",actor.proof??"",operation,JSON.stringify(p)]);
   const get=(kind:"Users"|"Groups",id:string)=>call<DirectoryRecord>(kind==="Users"?"user":"group",{id});
   return {
     call,get,

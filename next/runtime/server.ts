@@ -323,10 +323,10 @@ export async function startServer(config: ServerConfig) {
           const p = await body(req); await auth.changePassword(authenticated, string(p.currentPassword), string(p.password));
           res.setHeader("set-cookie", cookie("", 0)); return json(res, { ok: true });
         }
-        if (url.pathname === "/api/v1/auth/sessions" && method === "GET") return json(res, { items: await db.call("service_sessions", [authenticated.session.id]) });
+        if (url.pathname === "/api/v1/auth/sessions" && method === "GET") return json(res, { items: await db.read("service_sessions", [authenticated.session.id]) });
         const sessionRoute = /^\/api\/v1\/auth\/sessions\/([^/]+)$/.exec(url.pathname);
         if (sessionRoute && method === "DELETE") { await db.call("service_revoke_owned_session", [authenticated.session.id, sessionRoute[1]]); return json(res, { ok: true }); }
-        if (url.pathname === "/api/v1/auth/app-passwords" && method === "GET") return json(res, { items: await db.call("service_app_passwords", [authenticated.session.id]) });
+        if (url.pathname === "/api/v1/auth/app-passwords" && method === "GET") return json(res, { items: await db.read("service_app_passwords", [authenticated.session.id]) });
         if (url.pathname === "/api/v1/auth/app-passwords" && method === "POST") {
           const p = await body(req), token = createOpaqueToken(), id = randomUUID();
           const scope = string(p.scope, 120), apps=passwordApps.filter(app=>passwordGrants(scope).some(g=>g.startsWith(app+":"))), app = apps[0] === "contacts" ? "addressbooks" : apps[0] === "calendar" ? "calendars" : "files";
