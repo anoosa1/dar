@@ -6,7 +6,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { AppError } from "../errors.ts";
 
-export interface BlobFile { id: string; name: string; blobId: string; size: number; mediaType: string; revision: number }
+export interface BlobFile { id: string; name: string; blobId: string; size: number; mediaType: string; revision: number; /** Inside the Locked folder (set by downloads through Files). */ locked?: boolean }
 export function blobPath(root: string, id: string) {
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)) throw new AppError("invalidBlobId");
   return path.join(root, "blobs", id);

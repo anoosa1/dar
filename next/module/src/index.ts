@@ -635,7 +635,8 @@ export const serviceDownload = db.procedure({ sessionId: t.string(), id: t.strin
   if (!entry || entry.kind !== "file" || !access(tx, entry, user.id, p.sessionId)) fail("notFound");
   const version = p.versionId ? tx.db.versions.id.find(p.versionId) : undefined;
   if (p.versionId && version?.fileId !== entry.id) fail("notFound");
-  return JSON.stringify({ ...entry, blobId: version?.blobId ?? entry.blobId, size: version?.size ?? entry.size, mediaType: version?.mediaType ?? entry.mediaType });
+  // `locked` keeps Locked folder files out of browser caches.
+  return JSON.stringify({ ...entry, blobId: version?.blobId ?? entry.blobId, size: version?.size ?? entry.size, mediaType: version?.mediaType ?? entry.mediaType, locked: !!lockedRoot(tx, entry) });
 }));
 export const restoreVersion = db.reducer({ id: t.string(), versionId: t.string(), expectedRevision: t.u32() }, (ctx, p) => {
   const user = activeUser(ctx), entry = writable(ctx, p.id, user.id), version = ctx.db.versions.id.find(p.versionId);

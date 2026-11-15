@@ -373,7 +373,8 @@ export async function startServer(config: ServerConfig) {
           const file = /^image\//.test(entry.mediaType) ? await photosRuntime!.thumbnailFile(entry.blobId, "image", size) : undefined;
           // Without media tools the original stands in, as it did before thumbnails.
           if (!file) return await blobs.download(req, res, entry, true);
-          return await sendFile(req, res, file, "image/webp", `"${entry.blobId}-${size}"`, "private, no-store");
+          // The address carries the revision, so browsers may keep it a day, as in Photos; Locked folder files are never kept.
+          return await sendFile(req, res, file, "image/webp", `"${entry.blobId}-${size}"`, entry.locked === false ? "private, max-age=86400" : "private, no-store");
         }
         throw new AppError("notFound", 404);
       }
