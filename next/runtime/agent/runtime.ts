@@ -10,7 +10,10 @@ import {codexAccount,codexModels,verifyCodexSandbox,codexInstructions,object,str
 import {openAppServer,assertNoCodexRules,type AppServer} from "./app-server.ts";
 import {claudeAccount,claudeArgs,claudeCommandsAvailable,claudeLimits,claudeModels,openClaude,type ClaudeConfig} from "./claude.ts";
 import {createTerminals} from "./terminal.ts";
-import {prepareWorkspace,git,type Source} from "./workspace.ts";
+import {prepareWorkspace,git,branchChanges,type BranchChange,type Source} from "./workspace.ts";
+import {historyReadOperations} from "../../shared/read-operations.ts";
+import type {HistoryBranch} from "../../shared/history.ts";
+import type {AgentProject} from "../../shared/agent.ts";
 import {activeAgentRun,agentImageTypes,agentAttachmentLimits,type AgentLimits,type AgentLimitWindow,type AgentHistory,type AgentRun,type AgentRunDocument,type AgentProvider,type AgentStep,type AgentAttachment,type AgentMessage,type AgentModel,type AgentProviderId,type AgentProviderStatus,type AgentQuestion,agentProviderNames,agentProviderOf} from "../../shared/agent.ts";
 import {createWriteStream} from "node:fs";
 import {pipeline} from "node:stream/promises";
@@ -448,6 +451,27 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
      * Local Git for repository threads, run by Dar rather than the sandbox (which keeps .git
      * read-only). No remotes are contacted: pushing and pull requests stay disabled.
      */
+    /**
+     * The thread's history branch when its project is a tracked Files folder. Committing
+     * stores the working copy's changes as staged versions and replaces the branch.
+     */
+    async branch(sessionId:string,userId:string,threadId:string,commit:boolean,receive:(data:Buffer,id:string)=>Promise<string>){
+      const history=await operation<AgentHistory>(sessionId,"history",{threadId}),projects=await operation<{items:AgentProject[]}>(sessionId,"projects",{});
+      const project=projects.items.find(item=>item.id===history.thread.projectId);
+      if(project?.sourceType!=="files")return {tracked:false};
+      const folderId=project.sourceRef,call=<T>(name:string,value:object)=>db.operation<T>("service_history",name,historyReadOperations,[sessionId,name,JSON.stringify({folderId,threadId,...value})]);
+      let state:{revision:number;branch:HistoryBranch|null};
+      try{state=await call("branch",{});}catch(error){if(error instanceof AppError&&error.code==="notFound")return {tracked:false,folderId};throw error;}
+      if(!commit)return {tracked:true,folderId,...state};
+      if(history.runs.some(item=>activeAgentRun(item.status)))throw new AppError("runActive",409,"Wait for the agent to finish before committing its changes.");
+      const changes=await branchChanges(root,userId,threadId);
+      if(!changes.length)throw new AppError("nothingToCommit",409,"The agent has not changed any files in this thread.");
+      const content=changes.filter(change=>change.data),{uploads}=await call<{uploads:string[]}>("stageBegin",{files:content.map(change=>({size:change.data!.length,mediaType:change.mediaType}))});
+      const digests=new Map<BranchChange,{uploadId:string;digest:string}>();
+      for(const [index,change] of content.entries())digests.set(change,{uploadId:uploads[index],digest:await receive(change.data!,uploads[index])});
+      const files=changes.map(({data:_data,mediaType:_mediaType,...change})=>({...change,...digests.get(changes.find(item=>item.path===change.path)!)}));
+      return {tracked:true,folderId,...await call<{revision:number;branch:HistoryBranch|null}>("stage",{title:history.thread.title,files})};
+    },
     async git(sessionId:string,userId:string,threadId:string,p:Record<string,unknown>){
       const history=await operation<AgentHistory>(sessionId,"history",{threadId}),work=path.join(root,"agent-workspaces",userId,threadId,"work");
       try{if(!(await lstat(path.join(work,".git"))).isDirectory())throw Error();}catch{return {available:false};}

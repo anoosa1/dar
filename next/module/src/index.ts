@@ -24,6 +24,8 @@ import { pimTables, pimChanges } from "./pim-tables.ts";
 import { pimOperation, pimSnapshot, restorePim, reminderWork, commitReminders, deferReminder, pimSubscriptionWork } from "./pim.ts";
 import { identityTables } from "./identity-tables.ts";
 import {workspaceTables} from "./workspace-tables.ts";
+import {historyTables} from "./history-tables.ts";
+import {historyOperation,dropRepo,historyKeeps,historySnapshot,historyVersionOwners,restoreHistory,type HistoryFiles} from "./history.ts";
 import {workspaceSnapshot,restoreWorkspace,noteTrashOperation,validateTaskParent} from "./workspace.ts";
 import { identityActor, directoryOperation, providerOperation, revokeProvider, revokeUser, identitySnapshot, restoreIdentity, touchProfile,profile as directoryProfile } from "./identity.ts";
 import { maxFileBytes } from "../../shared/limits.ts";
@@ -62,7 +64,7 @@ const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().in
 // A browser session that confirmed the account password may open the Locked folder until expiresAt.
 const fileUnlocks = table({}, { sessionId: t.string().primaryKey(), userId: t.string().index("btree"), expiresAt: t.f64() });
 const fileUnlockExpiry = table({}, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), sessionId: t.string() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -494,7 +496,10 @@ function deleteFor(ctx: Ctx, userId: string, p: { id: string; expectedRevision: 
     const item = pending.pop()!;
     if (++count > 2000) fail("operationTooLarge");
     if (item.kind === "folder") for (const child of ctx.db.fileEntries.listKey.filter(windowOf(`${user.id}/${item.id}/`))) pending.push(child);
-    for (const version of ctx.db.versions.fileId.filter(item.id)) { bytes += version.size; ctx.db.versions.id.delete(version.id); }
+    // A tracked folder's history goes with it; versions another folder's history uses stay (and stay counted).
+    const repo = item.kind === "folder" ? ctx.db.fileRepos.id.find(item.id) : undefined;
+    if (repo) dropRepo(ctx, repo);
+    for (const version of [...ctx.db.versions.fileId.filter(item.id)]) { if (historyKeeps(ctx, version.id)) continue; bytes += version.size; ctx.db.versions.id.delete(version.id); }
     for (const grant of ctx.db.grants.fileId.filter(item.id)) ctx.db.grants.id.delete(grant.id);
     for (const share of ctx.db.publicShares.fileId.filter(item.id)) ctx.db.publicShares.id.delete(share.id);
     if (item.kind === "file") touchAsset(ctx, item.id);
@@ -524,6 +529,18 @@ export const revokeGrant = db.reducer({ id: t.string() }, (ctx, { id }) => {
   if (entry?.ownerId !== user.id) fail("forbidden");
   ctx.db.grants.id.delete(id);
 });
+/** Files' checks for folder history, acting for one account and (for the Locked folder) one browser session. */
+function historyFiles(ctx: Ctx, userId: string, sessionId?: Unlock): HistoryFiles {
+  return { role: entry => access(ctx, entry, userId, sessionId), inLocked: entry => !!lockedRoot(ctx, entry), uuid: () => unusedUuid(ctx),
+    event: (ownerId, fileId, action, parentId) => event(ctx, ownerId, fileId, action, parentId), key, findKey: value => findKey(ctx, value), nameOf, fitsQuota };
+}
+/** Folder history (docs/spacetimedb/folder-history.md) for browser sessions; app passwords have no history scope. */
+export const serviceHistory = db.procedure({ sessionId: t.string(), operation: t.string(), document: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
+  service(tx); const user = fromSession(tx, p.sessionId); if (tx.db.appPasswords.sessionId.find(p.sessionId)) fail("forbidden");
+  if (p.document.length > 1024 * 1024) fail("operationTooLarge");
+  const value: unknown = JSON.parse(p.document); if (!value || typeof value !== "object" || Array.isArray(value)) fail("invalidInput");
+  return JSON.stringify(historyOperation(tx, historyFiles(tx, user.id, p.sessionId), user.id, `history:${p.sessionId}`, p.operation, value as Record<string, unknown>));
+}));
 export const fileDetails = db.procedure({ id: t.string() }, t.string(), (ctx, { id }) => readResult(() => ctx.withTx(tx => {
   const user = activeUser(tx), entry = tx.db.fileEntries.id.find(id);
   if (!entry || !(entry.ownerId === user.id && entry.trashed) && !access(tx, entry, user.id)) fail("notFound");
@@ -703,7 +720,7 @@ export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, 
     tx.db.backupPins.insert({ id: `${id}/${blobId}`, backupId: id, blobId });
     return { id: blobId, size: upload.size, digest: upload.digest };
   });
-  return JSON.stringify({ format: "dar-backup-v8", photos:photosSnapshot(tx), news:newsSnapshot(tx), agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
+  return JSON.stringify({ format: "dar-backup-v9", history:historySnapshot(tx), photos:photosSnapshot(tx), news:newsSnapshot(tx), agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
     accounts: [...tx.db.accounts.iter()], quotas: [...tx.db.usage.iter()].filter(row => row.quota).map(row => ({ userId: row.userId, quota: row.quota })), files: [...tx.db.fileEntries.iter()], versions: history,
     grants: [...tx.db.grants.iter()], publicShares: [...tx.db.publicShares.iter()], favorites: [...tx.db.favorites.iter()],
     uploads: blobIds.map(blobId => tx.db.uploads.id.find(blobId)),
@@ -731,9 +748,9 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
   const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; quotas?: { userId: string; quota: number }[]; files: FileEntry[]; versions: Row<"versions">[];
     grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads: Row<"uploads">[];
-    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot>;agent?:ReturnType<typeof agentSnapshot>;news?:ReturnType<typeof newsSnapshot>;photos?:ReturnType<typeof photosSnapshot> };
-  const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6","dar-backup-v7","dar-backup-v8"],version=formats.indexOf(value.format)+1;
-  if (!version||version>=2&&!value.pim||version>=3&&!value.identity||version>=4&&!value.workspace||version>=5&&!value.apps||version>=6&&!value.agent||version>=7&&!value.news||version>=8&&!value.photos) fail("invalidInput");
+    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot>;agent?:ReturnType<typeof agentSnapshot>;news?:ReturnType<typeof newsSnapshot>;photos?:ReturnType<typeof photosSnapshot>;history?:ReturnType<typeof historySnapshot> };
+  const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6","dar-backup-v7","dar-backup-v8","dar-backup-v9"],version=formats.indexOf(value.format)+1;
+  if (!version||version>=2&&!value.pim||version>=3&&!value.identity||version>=4&&!value.workspace||version>=5&&!value.apps||version>=6&&!value.agent||version>=7&&!value.news||version>=8&&!value.photos||version>=9&&!value.history) fail("invalidInput");
   for (const row of value.accounts) {
     ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0, quota: 0 });
   }
@@ -754,11 +771,13 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
       parentId = parent.parentId;
     }
   }
+  // Versions of files deleted for good (or staged for a branch) remain while history uses them.
+  const kept = historyVersionOwners(value.history);
   for (const row of value.versions) {
-    const entry = ctx.db.fileEntries.id.find(row.fileId);
-    if (!entry || entry.kind !== "file") fail("invalidInput");
+    const entry = ctx.db.fileEntries.id.find(row.fileId), ownerId = entry ? entry.ownerId : kept.get(row.id);
+    if (entry ? entry.kind !== "file" : !ownerId) fail("invalidInput");
     ctx.db.versions.insert(row);
-    const meter = ctx.db.usage.userId.find(entry.ownerId)!;
+    const meter = ctx.db.usage.userId.find(ownerId!)!;
     ctx.db.usage.userId.update({ ...meter, used: meter.used + row.size });
   }
   for (const row of value.grants) {
@@ -769,6 +788,7 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   for (const row of value.favorites) ctx.db.favorites.insert(row);
   for (const row of value.uploads) ctx.db.uploads.insert({ ...row, state: "complete" });
   for (const row of value.activity) ctx.db.activity.insert(row);
+  restoreHistory(ctx, value.history);
   restorePim(ctx, value.pim);
   restoreIdentity(ctx,value.identity);
   restoreWorkspace(ctx,value.workspace);

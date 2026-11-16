@@ -15,6 +15,7 @@ import { lockRoot } from "./lock.ts";
 import { handleDav } from "./files/dav.ts";
 import { createOpaqueToken } from "./auth/session.ts";
 import { reconcileStorage } from "./files/maintenance.ts";
+import { handleHistoryHttp } from "./files/history.ts";
 import { handlePimHttp } from "./pim/http.ts";
 import { pimService } from "./pim/service.ts";
 import { deliverReminders } from "./pim/reminders.ts";
@@ -269,7 +270,7 @@ export async function startServer(config: ServerConfig) {
           const input=Number(req.headers["content-length"]??0)>0?await body(req):{};if(Object.keys(input).some(key=>key!=="provider")||input.provider!==undefined&&input.provider!=="codex"&&input.provider!=="claude")throw new AppError("invalidInput");
           return json(res,await agentRuntime!.connect(authenticated.user.id,input.provider==="claude"?"claude":"codex"));
         }
-        if(/^\/api\/v1\/agent(\/|$)/.test(url.pathname))return await handleAgentHttp(req,res,url,db,authenticated.session.id,authenticated.user.id,agentRuntime!,()=>body(req,128*1024));
+        if(/^\/api\/v1\/agent(\/|$)/.test(url.pathname))return await handleAgentHttp(req,res,url,db,authenticated.session.id,authenticated.user.id,agentRuntime!,()=>body(req,128*1024),(data,id)=>blobs.receive((async function*(){yield data;})(),id,data.length));
         const optionalApp=/^\/api\/v1\/(notes|tasks|news|photos)(\/|$)/.exec(url.pathname);
         if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);
         if(/^\/api\/v1\/news(\/|$)/.test(url.pathname))return await handleNewsHttp(req,res,url,db,authenticated.session.id,authenticated.user.username,newsRuntime!,()=>body(req,3*1024*1024));
@@ -345,6 +346,7 @@ export async function startServer(config: ServerConfig) {
           const p = await body(req); const id = await auth.createAccount(string(p.username, 64), string(p.displayName, 100), string(p.password), false);
           return json(res, { id }, 201);
         }
+        if (url.pathname.startsWith("/api/v1/files/history/")) return await handleHistoryHttp(req, res, url, db, authenticated.session.id, root, blobs, () => body(req, 1024 * 1024));
         if (url.pathname === "/api/v1/files/uploads" && method === "POST") {
           const p = await body(req), id = randomUUID();
           const upload = await db.call("service_begin_upload", [authenticated.session.id, id,

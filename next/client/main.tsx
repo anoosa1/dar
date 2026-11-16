@@ -22,6 +22,8 @@ import "./calendar-layout.css";
 import "./contacts-layout.css";
 import "./app-launcher.css";
 import "./control-theme.css";
+import "./diff.css";
+import "./history.css";
 import "./agent/workspace.css";
 import "./news/news.css";
 import "./photos/photos.css";

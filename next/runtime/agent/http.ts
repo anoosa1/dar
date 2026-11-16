@@ -7,7 +7,7 @@ import type {AgentRuntime} from "./runtime.ts";
 import {writeJson} from "../json-response.ts";
 
 /** Native-session gateway; account scope is resolved again inside the database. */
-export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url:URL,db:Database,sessionId:string,userId:string,runtime:AgentRuntime,body:()=>Promise<Record<string,unknown>>){
+export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url:URL,db:Database,sessionId:string,userId:string,runtime:AgentRuntime,body:()=>Promise<Record<string,unknown>>,receive:(data:Buffer,id:string)=>Promise<string>){
   const method=req.method??"GET",path=url.pathname.slice("/api/v1/agent".length);
   // Reads skip the durability wait; see shared/read-operations.ts.
   const agent=(args:string[])=>db.operation("service_agent",args[1],agentReadOperations,args);
@@ -28,6 +28,9 @@ export async function handleAgentHttp(req:IncomingMessage,res:ServerResponse,url
   if(path==="/provider"&&method==="GET"){
     await agent([sessionId,"projects","{}"]);return send(await runtime.status(userId));
   }
+  // A Files project whose folder keeps history: the thread's branch (folder-history.md).
+  const branchPath=/^\/threads\/([a-f0-9-]+)\/branch$/.exec(path);
+  if(branchPath){if(method==="GET")return send(await runtime.branch(sessionId,userId,branchPath[1],false,receive));if(method==="POST")return send(await runtime.branch(sessionId,userId,branchPath[1],true,receive),201);throw new AppError("methodNotAllowed",405);}
   const gitPath=/^\/threads\/([a-f0-9-]+)\/git$/.exec(path);
   if(gitPath){if(method==="GET")return send(await runtime.git(sessionId,userId,gitPath[1],{action:"status"}));if(method==="POST"){const input=await body();if(Object.keys(input).some(key=>!["action","name","message"].includes(key))||input.action==="status")throw new AppError("invalidInput");return send(await runtime.git(sessionId,userId,gitPath[1],input));}throw new AppError("methodNotAllowed",405);}
   const terminal=/^\/threads\/([a-f0-9-]+)\/terminal(?:\/(input|resize))?$/.exec(path);

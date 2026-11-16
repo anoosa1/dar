@@ -14,6 +14,9 @@ import {DarFilePicker,type DarFileSelection} from "../file-picker.tsx";
 import {activeAgentRun,type AgentProject,type AgentThread,type AgentMessage,type AgentHistory,type AgentRun,type AgentProvider,type AgentChange,type AgentModel,type AgentStep,type AgentRunSummary,type AgentAttachment,type AgentLimits,type AgentProviderId,agentImageTypes,agentAttachmentLimits,agentProviderNames,agentProviderOf} from "../../shared/agent.ts";
 const providerName=(model:string)=>agentProviderNames[agentProviderOf(model)];
 import {ThreadTerminal} from "./terminal.tsx";
+import {Diff,DiffStat,unifiedHunks,countLines} from "../diff.tsx";
+import {historyFailure} from "../folder-history.tsx";
+import type {HistoryBranch} from "../../shared/history.ts";
 import {useBodyClass} from "../body-class.ts";
 
 const base="/api/v1/agent";
@@ -86,7 +89,6 @@ function ProjectMark({name}:{name:string}){
   let hash=0;for(const char of name)hash=(hash*31+char.codePointAt(0)!)>>>0;
   return <span className="agent-project-mark" data-tint={hash%5} aria-hidden="true">{[...name.trim()][0]?.toLocaleUpperCase()??"?"}</span>;
 }
-type DiffLine={kind:" "|"-"|"+";text:string};
 /** Recorded source diffs hold whole old/new contents. A trailing empty element is the final newline, not a line. */
 function fullContents(diff:string){
   const lines=diff.split("\n"),header=/^@@ (added|modified|deleted) @@$/.exec(lines[2]??"");
@@ -99,44 +101,14 @@ function fullContents(diff:string){
   if(old.at(-1)==="")old.pop();if(next.at(-1)==="")next.pop();
   return {head:lines.slice(0,2),old,next};
 }
-/** Minimal line diff. Large middles fall back to replacement to bound browser work. */
-function lineDiff(old:string[],next:string[]):DiffLine[]{
-  let start=0,endOld=old.length,endNew=next.length;
-  while(start<endOld&&start<endNew&&old[start]===next[start])start++;
-  while(endOld>start&&endNew>start&&old[endOld-1]===next[endNew-1]){endOld--;endNew--;}
-  const a=old.slice(start,endOld),b=next.slice(start,endNew),middle:DiffLine[]=[];
-  if(a.length*b.length>2_000_000)middle.push(...a.map(text=>({kind:"-" as const,text})),...b.map(text=>({kind:"+" as const,text})));
-  else{
-    const width=b.length+1,table=new Uint32Array((a.length+1)*width);
-    for(let i=a.length-1;i>=0;i--)for(let j=b.length-1;j>=0;j--)table[i*width+j]=a[i]===b[j]?table[(i+1)*width+j+1]+1:Math.max(table[(i+1)*width+j],table[i*width+j+1]);
-    let i=0,j=0;while(i<a.length||j<b.length){
-      if(i<a.length&&j<b.length&&a[i]===b[j]){middle.push({kind:" ",text:a[i]});i++;j++;}
-      else if(i<a.length&&(j===b.length||table[(i+1)*width+j]>=table[i*width+j+1]))middle.push({kind:"-",text:a[i++]});
-      else middle.push({kind:"+",text:b[j++]});
-    }
-  }
-  return [...old.slice(0,start).map(text=>({kind:" " as const,text})),...middle,...old.slice(endOld).map(text=>({kind:" " as const,text}))];
-}
 /** Render a recorded whole-file patch as unified hunks with three context lines. */
 function unifiedPatch(diff:string){
-  const contents=fullContents(diff);if(!contents)return diff;
-  const lines=lineDiff(contents.old,contents.next),changed=lines.flatMap((line,index)=>line.kind===" "?[]:[index]);
-  if(!changed.length)return contents.head.join("\n");
-  const ranges:[number,number][]=[];for(const index of changed){const from=Math.max(0,index-3),to=Math.min(lines.length,index+4),last=ranges.at(-1);if(last&&from<=last[1])last[1]=to;else ranges.push([from,to]);}
-  const output=[...contents.head];let oldLine=1,newLine=1,cursor=0;
-  for(const [from,to] of ranges){
-    for(;cursor<from;cursor++){if(lines[cursor].kind!=="+")oldLine++;if(lines[cursor].kind!=="-")newLine++;}
-    const slice=lines.slice(from,to),oldCount=slice.filter(line=>line.kind!=="+").length,newCount=slice.filter(line=>line.kind!=="-").length;
-    output.push(`@@ -${oldCount?oldLine:oldLine-1},${oldCount} +${newCount?newLine:newLine-1},${newCount} @@`,...slice.map(line=>line.kind+line.text));
-  }
-  return output.join("\n");
+  const contents=fullContents(diff);return contents?unifiedHunks(contents.old,contents.next,contents.head):diff;
 }
 function diffCounts(diff:string){
-  const contents=fullContents(diff),lines:DiffLine[]=contents?lineDiff(contents.old,contents.next):diff.split("\n").filter(line=>!line.startsWith("+++")&&!line.startsWith("---")).map(line=>({kind:line[0]==="+"||line[0]==="-"?line[0]:" ",text:""}));
-  return {added:lines.filter(line=>line.kind==="+").length,removed:lines.filter(line=>line.kind==="-").length};
-}
-function DiffStat({added,removed}:{added:number;removed:number}){
-  return <span className="agent-diff-stat"><span className="agent-added">+{added}</span><span className="agent-removed">−{removed}</span></span>;
+  const contents=fullContents(diff);if(contents)return countLines(contents.old,contents.next);
+  const lines=diff.split("\n").filter(line=>!line.startsWith("+++")&&!line.startsWith("---"));
+  return {added:lines.filter(line=>line[0]==="+").length,removed:lines.filter(line=>line[0]==="-").length};
 }
 
 const effortLabel=(value:string)=>value==="xhigh"?"Extra high":value[0].toUpperCase()+value.slice(1);
@@ -483,20 +455,44 @@ function DraftComposer({session,project,provider,checkingProvider,draftCache,onC
     </form></div>;
 }
 
-/** Render the recorded patch, retaining its original markers and hunk boundaries. */
-function Diff({source,wrap}:{source:string;wrap:boolean}){
-  let oldLine=1,newLine=1,inHunk=false;
-  return <div className={`agent-diff${wrap?" agent-diff-wrap":""}`} role="region" aria-label="File diff" tabIndex={0}>{source.split("\n").filter(line=>!line.startsWith("--- ")&&!line.startsWith("+++ ")).map((line,index)=>{
-    let oldNumber:number|undefined,newNumber:number|undefined,kind="";
-    if(line.startsWith("@@")){const hunk=/^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(line);oldLine=hunk?Number(hunk[1]):1;newLine=hunk?Number(hunk[2]):1;inHunk=true;kind="hunk";}
-    else if(inHunk){if(line.startsWith("-")){kind="removed";oldNumber=oldLine++;}else if(line.startsWith("+")){kind="added";newNumber=newLine++;}else if(line.startsWith(" ")){oldNumber=oldLine++;newNumber=newLine++;}}
-    return <div key={index} className={`agent-diff-line ${kind}`}><span className="agent-diff-number" aria-hidden="true">{oldNumber}</span><span className="agent-diff-number" aria-hidden="true">{newNumber}</span><code className="agent-diff-text">{(kind==="hunk"||!inHunk?line:line.slice(1))||" "}</code></div>;
-  })}</div>;
-}
 
 /** Stacked per-file review. Hunks are derived for display; Apply writes the recorded content only. */
+type BranchState={tracked:boolean;folderId?:string;revision?:number;branch?:HistoryBranch|null};
+/**
+ * For a Files folder that keeps history, the thread's changes go to a history branch
+ * (docs/spacetimedb/folder-history.md) and merge into the folder as one commit.
+ */
+function HistoryBranchCard({threadId,completed,state,onState,session}:{threadId:string;completed:boolean;state:BranchState;onState:(value:BranchState)=>void;session:BrowserSession}){
+  const [busy,setBusy]=useState(""),[error,setError]=useState(""),[conflicts,setConflicts]=useState<string[]>([]),[notice,setNotice]=useState(""),[confirm,setConfirm]=useState(false);
+  const branch=state.branch;
+  async function commit(){
+    setBusy("commit");setError("");setConflicts([]);setNotice("");
+    try{onState(await request<BranchState>(`${base}/threads/${threadId}/branch`,{method:"POST",body:"{}"},session.csrfToken));setNotice("Changes committed to the branch.");}
+    catch(e){setError(historyFailure(e));}finally{setBusy("");}
+  }
+  async function finish(action:"merge"|"discard"){
+    if(!branch||!state.folderId)return;setBusy(action);setError("");setConflicts([]);setNotice("");
+    try{
+      const result=await request<{merged:boolean;conflicts?:string[]}>(`/api/v1/files/history/${state.folderId}/branches/${action}`,{method:"POST",body:JSON.stringify({name:branch.name,revision:state.revision})},session.csrfToken);
+      if(result.conflicts?.length)setConflicts(result.conflicts);
+      else{setNotice(action==="merge"?"Merged into the folder and committed to its history.":"Branch discarded. The folder was not changed.");onState(await request<BranchState>(`${base}/threads/${threadId}/branch`));}
+    }catch(e){setError(historyFailure(e));}finally{setBusy("");setConfirm(false);}
+  }
+  return <div className="agent-history-branch">
+    <div className="agent-history-branch-heading"><Icon name="history"/><div><strong>{branch?branch.name:"Folder history"}</strong><small>{branch?`${branch.changes.length} ${branch.changes.length===1?"file":"files"} · committed ${localDateTime(branch.modifiedAt,{dateStyle:"medium",timeStyle:"short"})}`:"Commit these changes to a branch, then merge them into the folder."}</small></div></div>
+    <div className="agent-history-branch-actions">
+      <button className={branch?"secondary-button":"primary-button"} disabled={!completed||!!busy} title={completed?undefined:"Available when the run has finished"} onClick={()=>{void commit();}}>{busy==="commit"?"Committing…":branch?"Update branch":"Commit to branch"}</button>
+      {branch&&<><button className="primary-button" disabled={!!busy} onClick={()=>{void finish("merge");}}>{busy==="merge"?"Merging…":"Merge into folder"}</button><button className="text-button danger" disabled={!!busy} onClick={()=>setConfirm(true)}>Discard</button></>}
+    </div>
+    {conflicts.length>0&&<div className="error" role="alert">These files changed after the agent started, so nothing was merged: {conflicts.join(", ")}. Start a new thread from the current folder, or discard this branch.</div>}
+    {error&&<p className="error" role="alert">{error}</p>}<span className="sr-only" role="status">{notice}</span>{notice&&<p className="agent-history-branch-notice">{notice}</p>}
+    {confirm&&<Dialog title="Discard this branch?" onClose={()=>setConfirm(false)}><p>The committed changes on {branch?.name} are deleted. The folder and this thread’s working copy are not changed.</p><div className="dialog-actions"><button className="text-button" onClick={()=>setConfirm(false)}>Cancel</button><button className="danger-button" disabled={!!busy} onClick={()=>{void finish("discard");}}>Discard branch</button></div></Dialog>}
+  </div>;
+}
 function ChangeReview({run,session}:{run?:AgentRun;session:BrowserSession}){
   const [busy,setBusy]=useState(""),[error,setError]=useState(""),[applied,setApplied]=useState<string[]>([]),[download,setDownload]=useState("");
+  const [history,setHistory]=useState<BranchState>({tracked:false});
+  useEffect(()=>{if(!run)return;const abort=new AbortController();void request<BranchState>(`${base}/threads/${run.threadId}/branch`,{signal:abort.signal}).then(setHistory).catch(()=>{});return()=>abort.abort();},[run?.threadId]);
   const [wrap,setWrap]=useState(false),[collapsed,setCollapsed]=useState<string[]>([]),[notice,setNotice]=useState("");
   const controller=useRef(new AbortController());useEffect(()=>()=>controller.current.abort(),[]);
   const changes=run?.document.changes??[];
@@ -516,12 +512,13 @@ function ChangeReview({run,session}:{run?:AgentRun;session:BrowserSession}){
   if(!changes.length)return <div className="agent-review-empty"><Icon name="file"/><h3>No changes yet</h3><p>Files the agent edits in this thread appear here for review.</p></div>;
   return <>
     <div className="agent-review-toolbar"><span className="agent-review-scope"><strong>{changes.length} {changes.length===1?"file":"files"}</strong><DiffStat {...total}/><span>· Latest run</span></span><button className="icon-button" aria-label="Wrap lines" title="Wrap lines" aria-pressed={wrap} onClick={()=>setWrap(value=>!value)}><Icon name="menu"/></button><button className="icon-button" aria-label={allCollapsed?"Expand diff":"Collapse diff"} title={allCollapsed?"Expand all":"Collapse all"} onClick={()=>setCollapsed(allCollapsed?[]:changes.map(change=>change.path))}><Icon name={allCollapsed?"grid":"list"}/></button>{download&&<a className="icon-button" href={download} download="agent-review.diff" aria-label="Download review" title="Download review"><Icon name="download"/></a>}</div>
+    {history.tracked&&run&&<HistoryBranchCard threadId={run.threadId} completed={run.status==="completed"} state={history} onState={setHistory} session={session}/>}
     {patches.map(({change,patch,counts})=>{const open=!collapsed.includes(change.path);return <section key={change.path} className="agent-review-file" aria-label={change.path}>
       <header><button className="agent-review-file-toggle" aria-expanded={open} aria-label={`${open?"Collapse":"Expand"} ${change.path}`} onClick={()=>setCollapsed(current=>open?[...current,change.path]:current.filter(path=>path!==change.path))}><Icon name="chevron"/><span className="agent-review-path" title={change.path}>{change.path}</span></button><span className={`agent-change-kind is-${change.kind}`}>{change.kind==="added"?"New":change.kind==="deleted"?"Deleted":"Modified"}</span><DiffStat {...counts}/><button className="icon-button" aria-label={`Copy diff for ${change.path}`} title="Copy diff" onClick={()=>{void copy(patch,"Diff copied.");}}><Icon name="copy"/></button></header>
       {open&&<Diff source={patch} wrap={wrap}/>}
-      {open&&change.content!==undefined&&change.fileId&&run?.status==="completed"&&<div className="agent-review-apply"><span>Edits stay in this thread’s working copy until applied.</span><button className="primary-button" disabled={!!busy||applied.includes(change.path)} onClick={()=>{void apply(change);}}>{busy===change.path?"Applying…":applied.includes(change.path)?"Applied to Files":"Apply this edit to Files"}</button></div>}
+      {open&&!history.tracked&&change.content!==undefined&&change.fileId&&run?.status==="completed"&&<div className="agent-review-apply"><span>Edits stay in this thread’s working copy until applied.</span><button className="primary-button" disabled={!!busy||applied.includes(change.path)} onClick={()=>{void apply(change);}}>{busy===change.path?"Applying…":applied.includes(change.path)?"Applied to Files":"Apply this edit to Files"}</button></div>}
     </section>;})}
-    <p className="agent-review-note">New files, deletions and Git publishing are not applied automatically.</p>
+    <p className="agent-review-note">{history.tracked?"Merging applies new, changed and deleted files together and commits them to the folder’s history.":"New files, deletions and Git publishing are not applied automatically. Keep history for the folder in Files to merge every change at once."}</p>
     <span className="sr-only" role="status">{notice}</span>{error&&<p role="alert" className="error">{error}</p>}
   </>;
 }

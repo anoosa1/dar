@@ -1,0 +1,11 @@
+/* Line diffs shared by Agent's review and Files history (client/diff.tsx). */
+.diff-stat{display:inline-flex;gap:5px;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;flex:none}.diff-added{color:var(--success)}.diff-removed{color:var(--danger)}
+.code-diff{overflow:auto;font:12px/20px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--panel);margin:0}
+.code-diff:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.code-diff-wrap .code-diff-line{min-width:0}.code-diff-wrap .code-diff-text{white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.code-diff-line{display:flex;min-width:max-content;min-height:20px}
+.code-diff-line.hunk{color:var(--muted);background:color-mix(in srgb,var(--accent) 7%,var(--panel));font-size:11px}
+.code-diff-number{display:inline-block;flex:none;min-width:40px;padding:0 8px;color:var(--muted);opacity:.7;text-align:right;user-select:none;font-size:11px}
+.code-diff-text{padding:0 12px;white-space:pre;color:var(--text)}
+.code-diff-line.added{background:color-mix(in srgb,var(--success) 14%,transparent)}.code-diff-line.added .code-diff-number{background:color-mix(in srgb,var(--success) 10%,transparent)}
+.code-diff-line.removed{background:color-mix(in srgb,var(--danger) 14%,transparent)}.code-diff-line.removed .code-diff-number{background:color-mix(in srgb,var(--danger) 10%,transparent)}

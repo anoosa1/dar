@@ -13,6 +13,7 @@ const pimOnly=process.argv.includes("--pim");
 const agentOnly=process.argv.includes("--agent");
 const newsOnly=process.argv.includes("--news");
 const photosOnly=process.argv.includes("--photos");
+const historyOnly=process.argv.includes("--history");
 const root = await mkdtemp(path.join(tmpdir(), "dar-acceptance-"));
 const appBuild=spawnSync(process.execPath,["sdk/build.mjs","../apps/prayer-times"],{cwd:project,stdio:"inherit"});
 if(appBuild.status!==0)throw new Error("Example app build failed.");
@@ -52,6 +53,8 @@ try {
   run(["node_modules/typescript/bin/tsc", "-p", "module/tsconfig.json"]);
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
+  if(historyOnly){run(["--test","test/history.integration.test.ts"],300_000);if(existsSync(path.join(project,"test/history-browser.mjs")))run(["test/history-browser.mjs"],300_000);console.info(`PASS history acceptance. Isolated artifacts: ${root}`);}
+  else{
   if(!photosOnly&&(newsOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly)){
     run(["--test","--test-concurrency=1","test/news.test.ts","test/news.integration.test.ts"],300_000);
   }
@@ -86,7 +89,7 @@ try {
   if(!identityOnly&&!pimOnly)run(["test/workspace-browser.mjs"]);
   if(!identityOnly&&!pimOnly)run(["test/shared-ui-browser.mjs"]);
   if(!identityOnly&&!workspaceOnly){
-  if(!pimOnly){run(["--test", "--test-concurrency=1", "test/auth-primitives.test.ts", "test/auth-security.integration.test.ts", "test/files.integration.test.ts", "test/dav.integration.test.ts", "test/backup.integration.test.ts", "test/gc.integration.test.ts", "test/keyring.test.ts", "test/pagination.integration.test.ts", "test/storage.test.ts"]);
+  if(!pimOnly){run(["--test", "--test-concurrency=1", "test/auth-primitives.test.ts", "test/auth-security.integration.test.ts", "test/files.integration.test.ts", "test/history.integration.test.ts", "test/dav.integration.test.ts", "test/backup.integration.test.ts", "test/gc.integration.test.ts", "test/keyring.test.ts", "test/pagination.integration.test.ts", "test/storage.test.ts"]);
   run(["test/browser.mjs"]);}
   run(["test/pim-browser.mjs"]);
   run(["test/contacts-layout-browser.mjs"]);
@@ -107,6 +110,7 @@ try {
   console.info(`PASS all acceptance checks. Database process-tree RSS for this fixture: ${Math.round(rss / 1024)} MiB; this is not an archive-capacity guarantee.`);
   console.info(`Isolated artifacts: ${root}`);
   }else console.info(`PASS ${photosOnly?"Photos":newsOnly?"News":"Agent"} acceptance. Isolated artifacts: ${root}`);
+  }
 } finally {
   if (child.exitCode === null && child.signalCode === null) await new Promise(resolve => {
     const timer = setTimeout(() => child.kill("SIGKILL"), 15_000);

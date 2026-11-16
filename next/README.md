@@ -24,7 +24,7 @@ at it. NixOS uses `/var/lib/dar`.
 
 | Command | Effect |
 | --- | --- |
-| `backup <dir>` | Consistent backup (format v6) of the database and referenced blobs; pins retained content |
+| `backup <dir>` | Consistent backup (format v9) of the database and referenced blobs; pins retained content |
 | `restore <dir>` | Restore into an empty root and database only, never over a live instance |
 | `release-backup <id>` | Release a backup's retention pins so cleanup can reclaim content |
 | `export-files <username> <dir>` | Export one account's files as plain files |

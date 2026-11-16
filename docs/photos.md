@@ -132,7 +132,7 @@ in phases.
   add and remove; the first photo is the cover. Limits: 500 albums, 50,000 items.
 - **Search:** file names, descriptions, camera models and album names appear in the
   spotlight search with thumbnails (never locked or trashed photos).
-- **Backups** (format v8) include Photos metadata, stacks, album members and links
+- **Backups** (format v8 and later) include Photos metadata, stacks, album members and links
   (not visitor passes); older v8 backups
   restore without them. Deleting an account deletes its Photos metadata, links and
   memberships.

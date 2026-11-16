@@ -67,6 +67,9 @@ flowchart LR
 - Downloads go through the runtime with current permission checks, safe
   Content-Disposition, range/HEAD and attachment-only active content. Public links
   are hashed capability URLs with expiry and revocation.
+- Folder history: repos, changesets, changes, head trees and branches reference
+  versions, so history adds no bytes; permanent deletion keeps versions history
+  uses. See [folder history](folder-history.md).
 
 ## Client
 
@@ -84,7 +87,7 @@ connection per page (`client/live.ts`), kept a minute after the last of them clo
 
 ## Backups and upgrades
 
-Backups (format v8 with Photos metadata, reading v1–v7) snapshot database state and referenced blobs
+Backups (format v9 with folder history, reading v1–v8) snapshot database state and referenced blobs
 with pins; restore needs an empty root and invalidates sessions and bearer
 credentials. Schema changes are additive numbered migrations tested against
 older databases. Verification: `npm --prefix next run verify` (typechecks,

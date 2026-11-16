@@ -149,7 +149,11 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   turns the toolbar into a tonal bar. Item actions in three-dot menus (Open,
   Organize, Clipboard, Delete sections); Details is its own action and does not
   repeat Rename/Move/Copy/Delete. Details: preview, Preview/Download/Favorite/
-  Share quick actions, then Details/Versions/Sharing tabs. Moving to deleted files
+  Share quick actions, then Details/Versions/Sharing tabs; folders show History in place of
+  Versions ([folder history](spacetimedb/folder-history.md)): Track history, uncommitted
+  changes with Review and commit (right pane with per-file diffs) and Snapshot, agent
+  branches, the commit list (a commit opens in the right pane with Restore folder to
+  this point), Download as Git bundle and Stop keeping history. Moving to deleted files
   shows a toast with Undo. The Locked folder is a sidebar section: a password form
   (shared with Photos) until unlocked, then a normal folder with a Lock button whose
   Delete is permanent; Move to Locked folder asks for the password when needed. Storage is a meter card at the bottom of the sidebar.
@@ -234,6 +238,8 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   Working and Settled shelves. On phones the thread list is home and a thread
   opens full screen with Back and Conversation/Details/Changes/Terminal tabs.
   Saving a message is distinct from running it; never show simulated output.
+  A Files project whose folder keeps history commits its changes to a branch from the
+  review panel and merges them into the folder; diffs use the shared `Diff` (`diff.tsx`).
   See [Agent workspace](spacetimedb/agent-workspace.md), [Codex](codex.md) and
   [Claude Code](claude-code.md). With both connected, the model menu groups models
   by provider and labels follow the selected model's provider.

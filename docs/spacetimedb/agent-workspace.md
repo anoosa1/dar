@@ -25,7 +25,10 @@ run protocol and limits are in [Codex](../codex.md) and [Claude Code](../claude-
 - **Review and output:** changed-files card and a review panel with per-file
   diffs (collapse, wrap, copy, download), Codex code review and compaction, a
   read-only output drawer and a sandboxed terminal, Git status/branch/commit,
-  usage limits and token counts. Text edits to Files are applied only after review.
+  usage limits and token counts. Text edits to Files are applied only after review;
+  when the Files folder keeps [history](folder-history.md), Commit to branch stores every
+  added, changed and deleted file on `agent/<thread>` and Merge into folder applies
+  them together as one commit.
 - **Keys:** Ctrl/Cmd+P palette, Ctrl/Cmd+Shift+O new thread, Ctrl/Cmd+B sidebar,
   Ctrl/Cmd+F find. Ctrl/Cmd+K is the shared cross-app search.
 

@@ -1,0 +1,42 @@
+/* Folder history in Files' details sheet and editing pane (client/folder-history.tsx). */
+.history-panel{display:flex;flex-direction:column;gap:12px;font-size:12px}
+.history-panel .property-card{margin:0}
+.history-panel .error,.history-error .error{margin:0}
+.history-error{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.history-notice{display:flex;align-items:center;gap:8px;margin:0;padding:8px 12px;border-radius:10px;background:var(--success-soft);color:var(--success);font-size:12px}.history-notice>.icon{width:15px;height:15px}
+.empty-history{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:16px 8px}
+.empty-history>.icon{width:30px;height:30px;color:var(--accent)}.empty-history h3{margin:0;font-size:14px}.empty-history p{margin:0;line-height:1.6;color:var(--muted)}
+.history-pending{list-style:none;margin:0;padding:4px 14px 2px}
+.history-pending li{display:flex;align-items:center;gap:8px;min-height:30px;min-width:0}
+.history-pending li>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.history-more,.history-clean{margin:0;padding:4px 14px 10px;color:var(--muted)}
+.history-clean{display:flex;align-items:center;gap:8px;padding-top:8px}.history-clean>.icon{width:15px;height:15px;color:var(--success)}
+.history-actions{display:flex;gap:8px;flex-wrap:wrap;padding:6px 14px 14px}.history-actions button{flex:1;min-height:40px;padding:8px 12px;font-size:12px}
+.history-change-kind{flex:none;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600;line-height:18px;background:var(--surface-soft);color:var(--muted)}
+.history-change-kind.is-added{background:color-mix(in srgb,var(--success) 14%,transparent);color:var(--success)}
+.history-change-kind.is-deleted{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
+.history-change-kind.is-modified{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
+.history-heading{margin:8px 0 0!important}
+.history-log{list-style:none;margin:0;padding:0}
+.history-entry{display:flex;align-items:flex-start;gap:10px;width:100%;min-height:44px;padding:10px 6px;border-bottom:1px solid var(--line);border-radius:0;text-align:left;color:var(--text)}
+.history-entry:hover{background:var(--hover)}
+.history-entry>.icon{width:15px;height:15px;margin-top:2px;color:var(--muted)}
+.history-entry>span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.history-entry strong{font-weight:550;font-size:12px;overflow-wrap:anywhere}.history-entry small{color:var(--muted);font-size:10.5px}
+.history-footer{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding-top:6px;border-top:1px solid var(--line)}
+.history-footer .text-button{padding-left:6px;font-size:12px;text-decoration:none}.history-footer .icon{width:16px;height:16px}
+.history-summary h3{margin:0 0 4px;font-size:15px;overflow-wrap:anywhere}.history-summary p{margin:0 0 12px;font-size:12px}
+.history-form textarea{width:100%;min-height:72px;resize:vertical;border:1px solid var(--control-border);border-radius:9px;padding:10px 12px;background:var(--raised);color:var(--text);font:inherit;font-size:13px}
+.history-list-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:6px}
+.history-changes{border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:12px}
+.history-change+.history-change{border-top:1px solid var(--border)}
+.history-change>header{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 10px;background:color-mix(in srgb,var(--surface-soft) 60%,var(--panel))}
+.history-change>header .icon-button{width:28px;min-width:28px;height:28px;min-height:28px;padding:5px}
+.history-change-toggle{display:flex;align-items:center;gap:6px;min-width:0;flex:1;min-height:36px;padding:0 2px;color:var(--text);text-align:left;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;border-radius:6px}
+.history-change-toggle>.icon{width:12px;height:12px;flex:none;color:var(--muted);transition:transform .15s}.history-change-toggle[aria-expanded=true]>.icon{transform:rotate(90deg)}
+.history-change-path{display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}.history-change-path small{color:var(--muted);font-size:10.5px}
+.history-change .code-diff{max-height:420px;border-top:1px solid var(--border)}
+.history-note{margin:0;padding:10px 12px;color:var(--muted);font-size:12px;border-top:1px solid var(--border)}
+.editing-pane .error ul{margin:6px 0;padding-left:18px}
+@media(prefers-reduced-motion:reduce){.history-change-toggle>.icon{transition:none}}
+.history-entry:focus-visible{outline-offset:-3px}
