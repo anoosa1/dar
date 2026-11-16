@@ -1,12 +1,45 @@
-import {Children,isValidElement,useEffect,useId,useRef,useState,type ReactNode,type SelectHTMLAttributes,type ChangeEvent,type ButtonHTMLAttributes} from "react";
+import {Children,isValidElement,useEffect,useId,useLayoutEffect,useRef,useState,type ReactNode,type RefObject,type SelectHTMLAttributes,type ChangeEvent,type ButtonHTMLAttributes} from "react";
 import {Icon,type IconName} from "./icons.tsx";
+
+/**
+ * Menus, listboxes and pickers open in the browser's top layer (Popover API) at a
+ * viewport-clamped position next to their anchor, so no sheet, rail, pane or scroll
+ * container can cover or clip them. Coordinates are CSS custom properties set through
+ * CSSOM; app CSS may still pin a panel (for example as a phone bottom sheet).
+ */
+export function useFloating(open:boolean,anchor:RefObject<HTMLElement|null>,panel:RefObject<HTMLElement|null>,align:"start"|"end"="end",gap=6){
+  useLayoutEffect(()=>{
+    const element=panel.current;if(!open||!element)return;
+    if(!element.hasAttribute("popover"))element.setAttribute("popover","manual");
+    try{if(!element.matches(":popover-open"))element.showPopover();}catch{/* Older browsers keep the in-flow position. */}
+    const place=()=>{
+      const box=anchor.current?.getBoundingClientRect();if(!box)return;
+      const margin=8,below=innerHeight-box.bottom-gap-margin,above=box.top-gap-margin;
+      element.style.setProperty("--float-anchor-width",`${Math.round(box.width)}px`);
+      const height=element.offsetHeight,width=element.offsetWidth,up=height>below&&above>below;
+      element.style.setProperty("--float-max-height",`${Math.max(120,Math.floor(up?above:below))}px`);
+      const top=Math.max(margin,Math.min(up?box.top-gap-Math.min(height,above):box.bottom+gap,innerHeight-margin-Math.min(height,innerHeight-2*margin)));
+      // Flip to the other edge of the anchor before clamping, so a menu never covers the rail.
+      let left=align==="end"?box.right-width:box.left;
+      if(left<margin)left=box.left;else if(left+width>innerWidth-margin)left=box.right-width;
+      left=Math.max(margin,Math.min(left,innerWidth-margin-width));
+      element.style.setProperty("--float-top",`${Math.round(top)}px`);element.style.setProperty("--float-left",`${Math.round(left)}px`);
+      element.dataset.side=up?"up":"down";
+    };
+    place();
+    const resized=new ResizeObserver(place);resized.observe(element);
+    addEventListener("resize",place);addEventListener("scroll",place,true);
+    return()=>{resized.disconnect();removeEventListener("resize",place);removeEventListener("scroll",place,true);try{if(element.matches(":popover-open"))element.hidePopover();}catch{}};
+  },[open,align,gap]);
+}
 
 /** A menu command. `section` starts a labelled group; `shortcut` is a visible hint only. */
 export interface MenuAction {label:string;icon?:IconName;disabled?:boolean;danger?:boolean;href?:string;run?:()=>void;separator?:boolean;current?:boolean;items?:MenuAction[];shortcut?:string;section?:string;download?:boolean}
 /** Commands share dismissal, arrow-key navigation and focus restoration. */
-export function ActionMenu({label,children,actions,className="",onOpen,heading}:{label:string;children:ReactNode;/** A function is called each time the open menu renders, so items reflect current state. */actions:MenuAction[]|(()=>MenuAction[]);className?:string;onOpen?:()=>void;heading?:ReactNode}){
+export function ActionMenu({label,children,actions,className="",onOpen,heading,align="end"}:{label:string;children:ReactNode;/** A function is called each time the open menu renders, so items reflect current state. */actions:MenuAction[]|(()=>MenuAction[]);className?:string;onOpen?:()=>void;heading?:ReactNode;align?:"start"|"end"}){
   const [page,setPage]=useState<MenuAction[]>(),[open,setOpen]=useState(false),[side,setSide]=useState("down"),root=useRef<HTMLDivElement>(null),trigger=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null),id=useId();
   function toggle(){if(!open){setPage(undefined);onOpen?.();setSide((trigger.current?.getBoundingClientRect().bottom??0)>innerHeight/2?"up":"down");}setOpen(!open);}
+  useFloating(open,trigger,menu,align);
   function close(){setOpen(false);trigger.current?.focus();}
   useEffect(()=>{if(!open)return;const dismiss=(e:PointerEvent)=>{if(!root.current?.contains(e.target as Node))setOpen(false);};document.addEventListener("pointerdown",dismiss);menu.current?.querySelector<HTMLElement>("[role^=menuitem]:not(:disabled)")?.focus();return()=>document.removeEventListener("pointerdown",dismiss);},[open,page]);
   return <div className={`ui-menu ${className}`} ref={root} data-side={side}><button type="button" className="ui-menu-trigger" aria-label={label} aria-expanded={open} aria-haspopup="menu" aria-controls={id} ref={trigger} onClick={toggle} onKeyDown={e=>{if(e.key==="ArrowDown"){e.preventDefault();if(!open)toggle();}}}>{children}</button>{open&&<div id={id} ref={menu} role="menu" aria-label={label} className="ui-menu-panel" onKeyDown={e=>{const items=[...menu.current!.querySelectorAll<HTMLElement>("[role^=menuitem]:not(:disabled)")],index=items.indexOf(document.activeElement as HTMLElement);if(e.key==="Escape"){e.preventDefault();e.stopPropagation();close();}else if(["ArrowDown","ArrowUp","Home","End"].includes(e.key)){e.preventDefault();items[e.key==="Home"?0:e.key==="End"?items.length-1:(index+(e.key==="ArrowDown"?1:-1)+items.length)%items.length]?.focus();}else if(e.key==="Tab")setOpen(false);}}>{heading&&<div className="ui-account-heading">{heading}</div>}{page&&<><button type="button" role="menuitem" className="ui-menu-item ui-menu-back" onClick={()=>setPage(undefined)}><Icon name="back"/><span>Back</span></button><hr/></>}{(page??(typeof actions==="function"?actions():actions)).map((action,index)=><div key={index}>{action.separator&&<hr/>}{action.section&&<div className="ui-menu-section" aria-hidden="true">{action.section}</div>}{action.href?<a role="menuitem" className={`ui-menu-item ${action.danger?"danger":""}`} aria-current={action.current?"page":undefined} href={action.href} download={action.download||undefined} onClick={close}>{action.icon&&<Icon name={action.icon}/>}<span>{action.label}</span>{action.current&&<Icon name="check" className="ui-menu-current"/>}{action.shortcut&&<kbd className="ui-menu-shortcut" aria-hidden="true">{action.shortcut}</kbd>}</a>:<button type="button" role={action.current===undefined?"menuitem":"menuitemradio"} aria-checked={action.current===undefined?undefined:action.current} disabled={action.disabled} aria-haspopup={action.items?"menu":undefined} className={`ui-menu-item ${action.danger?"danger":""}`} onClick={()=>{if(action.items){setPage(action.items);return;}close();action.run?.();}}>{action.icon&&<Icon name={action.icon}/>}<span>{action.label}</span>{action.shortcut&&<kbd className="ui-menu-shortcut" aria-hidden="true">{action.shortcut}</kbd>}{action.current&&<Icon name="check" className="ui-menu-current"/>}{action.items&&<Icon name="chevron" className="ui-menu-submenu"/>}</button>}</div>)}</div>}</div>;
@@ -21,6 +54,7 @@ export function Select({children,value,defaultValue,onChange,name,disabled,requi
   const options=choices(children),[local,setLocal]=useState(String(defaultValue??options[0]?.value??"")),[open,setOpen]=useState(false),[side,setSide]=useState("down"),root=useRef<HTMLDivElement>(null),button=useRef<HTMLButtonElement>(null),input=useRef<HTMLInputElement>(null),list=useRef<HTMLDivElement>(null),generated=useId(),id=givenId??generated,current=String(value??local),selected=options.find(o=>o.value===current);
   const [implicitLabel,setImplicitLabel]=useState("");
   useEffect(()=>{const label=button.current?.closest("label")??button.current?.labels?.[0];if(label)setImplicitLabel([...label.childNodes].filter(node=>node.nodeType===Node.TEXT_NODE).map(node=>node.textContent).join(" ").trim());},[]);
+  useFloating(open,button,list,"start",5);
   function choose(next:string){setLocal(next);setOpen(false);button.current?.focus();onChange?.({target:{value:next,name,form:input.current?.form},currentTarget:{value:next,name,form:input.current?.form}} as unknown as ChangeEvent<HTMLSelectElement>);}
   useEffect(()=>{const field=input.current;if(!field)return;const changed=()=>choose(field.value);field.addEventListener("change",changed);return()=>field.removeEventListener("change",changed);},[onChange,name]);
   useEffect(()=>{if(!open)return;const dismiss=(e:PointerEvent)=>{if(!root.current?.contains(e.target as Node))setOpen(false);};document.addEventListener("pointerdown",dismiss);(list.current?.querySelector<HTMLElement>('[aria-selected="true"]')??list.current?.querySelector<HTMLElement>('[role="option"]:not(:disabled)'))?.focus();return()=>document.removeEventListener("pointerdown",dismiss);},[open]);

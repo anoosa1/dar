@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {newsRefreshChoices,newsKeepChoices} from "../../shared/news.ts";
 import {defaultPhotoFolder,photoFolderParts} from "../../shared/photos.ts";
+import {defaultNotesFolder} from "../../shared/workspace.ts";
 import { randomUUID } from "node:crypto";
 import type { PimCollection, PimResource } from "../../shared/pim.ts";
 import { AppError } from "../errors.ts";
@@ -16,7 +17,7 @@ export function requireMatch(req: IncomingMessage, row: { id: string; revision: 
   if (req.headers["if-match"] !== pimEtag(row)) throw new AppError("revisionConflict", 412);
   return row.revision;
 }
-export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, url: URL, service: PimService, body: () => Promise<Record<string, unknown>>) {
+export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, url: URL, service: PimService, body: () => Promise<Record<string, unknown>>, onSubscriptionChanged: () => void = () => {}) {
   const method = req.method ?? "GET";
   const json = (value: unknown, status = 200, row?: { id: string; revision: number }) => { if (row) res.setHeader("etag", pimEtag(row)); if (service.revision()) res.setHeader("x-dar-pim-revision", service.revision()); writeJson(res, status, JSON.stringify(value, (key, value) => ["modifiedAt", "dueAt"].includes(key) && typeof value === "number" ? new Date(value).toISOString() : value)); };
   const send = (text: string, kind: string, filename: string) => { res.writeHead(200, { "content-type": kind === "contacts" ? "text/vcard; charset=utf-8" : "text/calendar; charset=utf-8", "content-disposition": `attachment; filename="${filename}"`, "cache-control": "no-store" }); res.end(text); };
@@ -36,12 +37,14 @@ export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, u
       if(!Array.isArray(snoozed)||snoozed.length>128||snoozed.some(row=>!row||typeof row!=="object"||Object.keys(row).some(key=>key!=="id"&&key!=="until")||typeof row.id!=="string"||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(row.id)||!Number.isSafeInteger(row.until)||row.until<0))invalid("Invalid snoozed thread list.");
       const choice=(key:string,allowed:string[],fallback:string)=>{const value=get(key,fallback);if(typeof value!=="string"||!allowed.includes(value))invalid(`Invalid ${key}.`);return value;};
       const flag=(key:string,fallback:boolean)=>{const value=get(key,fallback);if(typeof value!=="boolean")invalid(`Invalid ${key}.`);return value;};
-      const value = JSON.stringify({calendarShowCancelled:flag("calendarShowCancelled",false),appearance:choice("appearance",["system","latte","mocha"],"system"),timezone:zone,weekStart,contactSort:choice("contactSort",["firstName","lastName"],"firstName"),hiddenCalendars:get("hiddenCalendars",[]),notesSort:choice("notesSort",["modified","title"],"modified"),tasksSort:choice("tasksSort",["modified","title","due"],"due"),filesView:choice("filesView",["list","grid"],"list"),filesShowHidden:flag("filesShowHidden",false),filesConfirmTrash:flag("filesConfirmTrash",false),filesDetailsTab:choice("filesDetailsTab",["details","versions","sharing"],"details"),notesEditorMode:choice("notesEditorMode",["write","preview"],"write"),tasksView:choice("tasksView",["all","inbox","today","upcoming","important","completed"],"today")});
+      const value = JSON.stringify({calendarShowCancelled:flag("calendarShowCancelled",false),calendarShowTasks:flag("calendarShowTasks",true),appearance:choice("appearance",["system","latte","mocha"],"system"),timezone:zone,weekStart,contactSort:choice("contactSort",["firstName","lastName"],"firstName"),hiddenCalendars:get("hiddenCalendars",[]),notesSort:choice("notesSort",["modified","title"],"modified"),tasksSort:choice("tasksSort",["modified","title","due"],"due"),filesView:choice("filesView",["list","grid"],"list"),filesShowHidden:flag("filesShowHidden",false),filesConfirmTrash:flag("filesConfirmTrash",false),filesDetailsTab:choice("filesDetailsTab",["details","versions","sharing"],"details"),notesEditorMode:choice("notesEditorMode",["write","preview"],"write"),tasksView:choice("tasksView",["all","inbox","today","upcoming","important","completed"],"today")});
       const numberChoice=(key:string,allowed:readonly number[],fallback:number)=>{const value=get(key,fallback);if(typeof value!=="number"||!allowed.includes(value))invalid(`Invalid ${key}.`);return value;};
       const news={newsMarkRead:choice("newsMarkRead",["open","scroll"],"open"),newsOrder:choice("newsOrder",["newest","oldest"],"newest"),newsShowRead:flag("newsShowRead",false),newsImages:choice("newsImages",["proxy","block"],"proxy"),newsRefresh:numberChoice("newsRefresh",newsRefreshChoices,30),newsKeepDays:numberChoice("newsKeepDays",newsKeepChoices,30)};
       const folder=get("photosUploadFolder",defaultPhotoFolder),folderParts=typeof folder==="string"?photoFolderParts(folder):undefined;
       if(!folderParts)invalid("Choose a Files folder like pics or Media/Camera, without control characters.");
-      const agent={...news,photosUploadFolder:folderParts.join("/"),agentSettledThreads:settled,agentPinnedThreads:pinned,agentArchivedThreads:archived,agentSendKey:choice("agentSendKey",["enter","modEnter"],"enter"),agentNotify:flag("agentNotify",false),agentGrouping:choice("agentGrouping",["recent","project"],"recent"),agentSnoozed:snoozed};
+      const notesFolder=get("notesFolder",defaultNotesFolder),notesParts=typeof notesFolder==="string"?photoFolderParts(notesFolder):undefined;
+      if(!notesParts)invalid("Choose a Files folder like docs/notes, without control characters.");
+      const agent={...news,photosUploadFolder:folderParts.join("/"),notesFolder:notesParts.join("/"),notesImported:flag("notesImported",false),agentSettledThreads:settled,agentPinnedThreads:pinned,agentArchivedThreads:archived,agentSendKey:choice("agentSendKey",["enter","modEnter"],"enter"),agentNotify:flag("agentNotify",false),agentGrouping:choice("agentGrouping",["recent","project"],"recent"),agentSnoozed:snoozed};
       const result = await service.call<{ revision: number }>("savePreferences", { revision: old.revision, value:JSON.stringify({...JSON.parse(value),...agent}) }); return json({ ...JSON.parse(value),...agent, revision: result.revision });
     }
   }
@@ -52,7 +55,12 @@ export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, u
     const result=await service.call<{items:unknown[];groups:string[];nextCursor:string}>("search",{kind:"contacts",collection:url.searchParams.get("book")??"",q:url.searchParams.get("q")??"",tag:url.searchParams.get("group")??"",favorite:url.searchParams.get("favorite")==="1",sort:url.searchParams.get("sort"),cursor:Buffer.from(url.searchParams.get("cursor")??"","base64url").toString("utf8")});
     return json({...result,nextCursor:result.nextCursor?Buffer.from(result.nextCursor).toString("base64url"):""});
   }
-  const match = /^\/api\/v1\/(contacts|calendar)\/(books|calendars)(?:\/([a-f0-9-]{36}))?(?:\/(items|export|import|occurrences|grants)(?:\/([a-zA-Z0-9_.-]+))?)?$/.exec(url.pathname);
+  if (url.pathname === "/api/v1/calendar/subscriptions" && method === "POST") {
+    const p = await body();
+    const row = await service.call<PimCollection>("subscribe", { id: randomUUID(), name: field(p.name, 255), color: field(p.color ?? "#2563eb", 7), url: field(p.url, 2048), refreshMinutes: p.refreshMinutes ?? 360 });
+    onSubscriptionChanged(); return json(row, 201, row);
+  }
+  const match = /^\/api\/v1\/(contacts|calendar)\/(books|calendars)(?:\/([a-f0-9-]{36}))?(?:\/(items|export|import|occurrences|grants|subscription|refresh)(?:\/([a-zA-Z0-9_.-]+))?)?$/.exec(url.pathname);
   if (!match || match[1] === "contacts" && match[2] !== "books" || match[1] === "calendar" && match[2] !== "calendars") throw new AppError("notFound", 404);
   const [, kind, , id, sub, href] = match;
   if (!id) {
@@ -73,7 +81,9 @@ export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, u
     if (method === "GET") return json({ items: await service.call("grants", { collectionId: id }) });
     if (method === "POST" || method === "DELETE") return json(await service.call(method === "POST" ? "share" : "revoke", { ...await body(), collectionId: id, revision: requireMatch(req, collection) }));
   }
-  if (sub === "occurrences" && kind === "calendar" && method === "GET") return json({ items: await service.occurrences(id, url.searchParams.get("timezone") ?? "UTC", new Date(url.searchParams.get("from") ?? ""), new Date(url.searchParams.get("to") ?? ""), url.searchParams.get("includeCancelled") === "1"), nextCursor: "" });
+  if (sub === "subscription" && kind === "calendar" && method === "PUT") { const p = await body(); const value = await service.call("updateSubscription", { collectionId: id, ...(p.url !== undefined ? { url: field(p.url, 2048) } : {}), ...(p.refreshMinutes !== undefined ? { refreshMinutes: p.refreshMinutes } : {}) }); onSubscriptionChanged(); return json(value); }
+  if (sub === "refresh" && kind === "calendar" && method === "POST") { const value = await service.call("refreshSubscription", { collectionId: id }); onSubscriptionChanged(); return json(value); }
+  if (sub === "occurrences" && kind === "calendar" && method === "GET") return json({ items: await service.occurrences(id, url.searchParams.get("timezone") ?? "UTC", new Date(url.searchParams.get("from") ?? ""), new Date(url.searchParams.get("to") ?? ""), url.searchParams.get("includeCancelled") === "1", url.searchParams.get("includeTasks") === "1"), nextCursor: "" });
   if (sub === "export" && method === "GET") return send(await service.exportText(id), kind, kind === "contacts" ? "contacts.vcf" : "calendar.ics");
   if (sub === "import" && method === "POST") { const p = await body(); return json(await service.importText(collection, field(p.content, 2*1024*1024))); }
   if (sub === "items") {

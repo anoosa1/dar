@@ -17,10 +17,11 @@ async function post(url,data){const response=await fetch(base+url,{method:"POST"
 await upload(base,admin,marker+".md","# A quieter week\n\nKeep room for the important things.\n");
 const connection=await connect(admin);
 try{for(let i=0;i<24;i++)await connection.reducers.createFolder({id:randomUUID(),parentId:"",name:`${marker} folder ${String(i+1).padStart(2,"0")}`});}finally{connection.disconnect();}
-const notebook=await post("/api/v1/notes/notebooks",{name:marker,color:"#73396f"});
-const note=await post("/api/v1/notes/items",{collectionId:notebook.id,title:marker,content:"# A quieter week\n\n- Plant herbs\n- Finish the chapter\n- Take a long walk\n"});
+// Notes are Markdown files in Files › docs/notes; folders there are notebooks.
+const notesRoot=(await(await fetch(base+"/api/v1/notes/library",{headers:admin.headers})).json()).rootId;
+const note=await upload(base,admin,marker+" note.md","# A quieter week\n\n- Plant herbs\n- Finish the chapter\n- Take a long walk\n",notesRoot);
 const longNotebookName="N".repeat(223)+randomUUID().replaceAll("-",""),longTaskListName="T".repeat(223)+randomUUID().replaceAll("-","");
-await post("/api/v1/notes/notebooks",{name:longNotebookName,color:"#73396f"});
+{const folders=await connect(admin);try{await folders.reducers.createFolder({id:randomUUID(),parentId:notesRoot,name:longNotebookName});}finally{folders.disconnect();}}
 await post("/api/v1/tasks/lists",{name:longTaskListName,color:"#73396f"});
 const tasklist=await post("/api/v1/tasks/lists",{name:marker,color:"#73396f"});
 const task=await post("/api/v1/tasks/items",{collectionId:tasklist.id,title:marker,description:"Make room for the important things.",priority:5});
@@ -100,12 +101,12 @@ try{
       await page.getByRole("button",{name:"New address book",exact:true}).click();await page.getByLabel("Name",{exact:true}).waitFor();await capture("new-address-book");await page.getByRole("button",{name:"Cancel",exact:true}).click();
       await navigate("/calendar",()=>page.getByRole("button",{name:"Choose date",exact:true}));await calendarDate(page,"2026-11-08");await capture("calendar");await page.getByRole("button",{name:"Choose date",exact:true}).click();await capture("calendar-date");await page.keyboard.press("Escape");await openSettings("Calendar");await capture("calendar-settings");await closeSettings();
       await page.getByRole("button",{name:"New event",exact:true}).click();await page.getByLabel("Title",{exact:true}).waitFor();await capture("new-event");await page.getByRole("button",{name:"Cancel",exact:true}).click();
-      await navigate(`/notes?item=${note.id}`,()=>page.getByLabel("Note title",{exact:true}));await capture("notes-write");await noteDetails(page);await capture("notes-details");await closeDialog();await page.getByRole("button",{name:"Preview",exact:true}).click();await capture("notes-preview");
+      await navigate(`/notes?note=${note.fileId}`,()=>page.getByRole("region",{name:`Editor for ${marker} note.md`,exact:true}));await capture("notes-write");await page.getByRole("region",{name:`Editor for ${marker} note.md`,exact:true}).getByRole("button",{name:"Preview",exact:true}).click();await capture("notes-preview");
       await navigate("/notes",()=>page.getByRole("heading",{name:"All notes",exact:true}));await openSettings("Notes");await capture("notes-settings");await closeSettings();
       await navigate(`/tasks?item=${task.id}`,()=>page.getByRole("heading",{name:marker,exact:true}));await capture("task-details");
       await navigate("/tasks",()=>page.getByRole("heading",{name:"Today",exact:true}));await openSettings("Tasks");await capture("tasks-settings");await closeSettings();
       await page.getByRole("button",{name:"New task",exact:true}).click();await page.getByLabel("Title",{exact:true}).waitFor();await capture("new-task");await page.getByRole("button",{name:"Cancel",exact:true}).click();
-      for(const [url,noun,name,menu,label] of [["notes","notebook",longNotebookName,"Delete notebook","Delete notebook"],["tasks","task list",longTaskListName,"Delete task list","Delete task list"]]){
+      for(const [url,noun,name,menu,label,title] of [["notes","folder",longNotebookName,"Move to deleted files","Move to deleted files","Move folder to deleted files?"],["tasks","task list",longTaskListName,"Delete task list","Delete task list","Delete task list?"]]){
         await navigate("/"+url,()=>page.getByRole("navigation",{name:"Applications",exact:true}));
         
         // Sidebar sizing determines collection pagination after its first layout.
@@ -114,7 +115,7 @@ try{
         for(let i=0;!await targetAction.isVisible()&&i<100;i++){const nextPage=page.getByRole("button",{name:`Next ${noun}s`,exact:true});assert.ok(await nextPage.isEnabled());await nextPage.click();}
         await targetAction.click();
         await page.getByRole("menuitem",{name:menu,exact:true}).click();
-        const dialog=page.getByRole("dialog",{name:label+"?",exact:true});await dialog.waitFor();
+        const dialog=page.getByRole("dialog",{name:title,exact:true});await dialog.waitFor();
         assert.ok((await dialog.textContent()).includes(name));assert.equal(await dialog.getByRole("button",{name:label,exact:true}).count(),1);
         assert.equal(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
         const action=await dialog.getByRole("button",{name:label,exact:true}).boundingBox(),box=await dialog.boundingBox();

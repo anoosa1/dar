@@ -30,7 +30,7 @@ body.has-editing-pane .workspace,body.has-editing-pane .pim-workspace{padding-ri
 body.has-editing-pane .details-panel,body.has-editing-pane .pim-details{display:none}
 body.has-editing-pane .pim-shell .pim-workspace{grid-template-columns:230px minmax(0,1fr)}
 .files-new-menu{display:block;margin:0 0 var(--section-gap)}.files-new-menu>.ui-menu-trigger{display:flex;gap:10px;background:var(--accent);color:var(--on-accent);border:1px solid var(--accent);border-radius:12px;padding:12px 22px;min-height:46px;font-weight:650}
-.files-new-menu>.ui-menu-trigger{width:100%}.files-new-menu>.ui-menu-panel{left:0;right:auto;width:100%;min-width:0;max-width:100%}.files-new-menu .ui-menu-item{white-space:normal;padding:10px 8px}.files-new-menu>.ui-menu-trigger>.icon:last-child{margin-left:auto;transform:rotate(90deg);width:15px}
+.files-new-menu>.ui-menu-trigger{width:100%}.files-new-menu>.ui-menu-panel{width:max(220px,var(--float-anchor-width,0px));min-width:0}.files-new-menu .ui-menu-item{white-space:normal;padding:10px 8px}.files-new-menu>.ui-menu-trigger>.icon:last-child{margin-left:auto;transform:rotate(90deg);width:15px}
 .new-button.ui-new{border:1px solid var(--accent);background:var(--accent);color:var(--on-accent)}
 .file-text-editor{position:fixed;top:78px;bottom:0;left:230px;right:0;z-index:24;background:var(--panel);color:var(--text);display:flex;flex-direction:column;min-width:0}
 .text-formatting{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--border);padding:4px 14px}.text-formatting .text-button{font-size:12px;padding:6px 10px}

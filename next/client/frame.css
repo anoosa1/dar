@@ -60,7 +60,7 @@
 .sidebar .ui-new:hover,.files-new-menu>.ui-menu-trigger:hover,.files-new-menu>.ui-menu-trigger[aria-expanded=true]{background:color-mix(in srgb,var(--tonal) 86%,var(--on-tonal))}
 .sidebar .ui-new .icon,.files-new-menu>.ui-menu-trigger>.icon:first-child{width:20px;height:20px}
 .files-new-menu{display:inline-flex;align-self:flex-start;margin:0}
-.files-new-menu>.ui-menu-panel{left:2px;right:auto;width:220px;max-width:calc(100vw - 30px)}
+.files-new-menu>.ui-menu-panel{width:max(220px,var(--float-anchor-width,0px));max-width:calc(100vw - 30px)}
 .sidebar .nav-item{min-height:36px;margin:0 0 1px;padding:7px 12px;border-radius:18px;font-size:13px}
 .sidebar .nav-item .icon{width:18px;height:18px}
 :is(.sidebar .nav-item,.ui-settings-nav nav button):hover{background:var(--hover);color:var(--text)}
@@ -85,6 +85,9 @@ body.has-editing-pane :is(.workspace,.pim-workspace){padding-right:calc(420px + 
 .file-text-editor{top:var(--topbar-height);left:calc(var(--rail-width) + 230px + var(--sheet-gap));right:var(--sheet-gap);bottom:var(--sheet-gap);overflow:hidden;border:1px solid var(--sheet-border);border-radius:var(--sheet-radius)}
 @media(max-width:1150px) and (min-width:801px){.file-text-editor{left:calc(var(--rail-width) + 195px + var(--sheet-gap))}.topbar-title{width:191px}}
 @media(max-width:1000px) and (min-width:801px){body.has-editing-pane :is(.workspace,.pim-workspace){padding-right:calc(390px + 2 * var(--sheet-gap))}}
+/* Agent keeps its sheets beside the editing pane or settings sheet instead of under it. */
+@media(min-width:1001px){body.has-editing-pane .agent-shell>.agent-layout{padding-right:calc(420px + 2 * var(--sheet-gap))}}
+@media(max-width:1000px) and (min-width:801px){body.has-editing-pane .agent-shell>.agent-layout{padding-right:calc(390px + 2 * var(--sheet-gap))}}
 @media(max-width:900px) and (min-width:801px){.file-text-editor{left:calc(var(--rail-width) + 180px + var(--sheet-gap))}.topbar-title{width:176px}.details-panel{position:fixed;top:var(--topbar-height);right:var(--sheet-gap);bottom:var(--sheet-gap);height:auto;z-index:22;box-shadow:0 8px 28px var(--shadow)}}
 
 /* Phones: search bar on top, chips for navigation, bottom app bar, full-screen details. */

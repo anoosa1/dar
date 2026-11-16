@@ -1,11 +1,34 @@
-.dar-file-picker{display:flex;flex-direction:column;gap:12px;border:1px solid var(--border);border-radius:12px;padding:12px;min-width:0}
-.dar-file-picker p,.dar-file-picker label{margin:0}
-.dar-picker-path{display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:12px;overflow-wrap:anywhere}
-.dar-picker-path .text-button{padding:6px;min-height:36px;font-size:12px;white-space:normal;text-align:left}
-.dar-file-picker ul{list-style:none;padding:0;margin:0;max-height:280px;overflow:auto;scrollbar-gutter:stable}
-.dar-picker-row{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;border-radius:8px;padding:10px 8px;text-align:left;color:var(--text);font-size:13px}
-.dar-picker-row span{min-width:0;overflow-wrap:anywhere;flex:1}
-.dar-picker-row .icon{width:18px;height:18px;color:var(--muted)}
-.dar-picker-row .icon:last-child{width:13px}
-.dar-picker-row:hover,.dar-picker-row[aria-pressed=true]{background:var(--tonal);color:var(--on-tonal)}
-.dar-picker-selection{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+/* Shared Files picker: a compact browser inside forms and editing panes. */
+.dar-file-picker{display:flex;flex-direction:column;min-width:0;border:1px solid var(--border);border-radius:16px;background:var(--panel);overflow:hidden}
+.dar-file-picker p{margin:0}
+.dar-picker-head{display:flex;align-items:center;gap:4px;min-height:52px;padding:6px 10px 6px 6px;border-bottom:1px solid var(--border)}
+.dar-picker-path{display:flex;align-items:center;flex-wrap:wrap;gap:2px;min-width:0;font-size:13px}
+.dar-picker-path>span{display:inline-flex;align-items:center;gap:2px;min-width:0}
+.dar-picker-path .icon{width:12px;height:12px;color:var(--muted);flex:none}
+.dar-picker-path button{min-height:32px;padding:4px 8px;border:0;border-radius:8px;background:transparent;color:var(--muted);font:inherit;cursor:pointer;overflow-wrap:anywhere;text-align:left}
+.dar-picker-path button:hover:not(:disabled){background:var(--hover);color:var(--text)}
+.dar-picker-path button:disabled{cursor:default}
+.dar-picker-path strong{padding:4px 8px;color:var(--text);font-weight:600;overflow-wrap:anywhere}
+.dar-picker-search{display:flex;align-items:center;gap:8px;margin:10px 12px 4px;padding:0 12px;min-height:38px;border:1px solid var(--border);border-radius:19px;background:var(--surface,var(--panel))}
+.dar-picker-search .icon{width:15px;height:15px;color:var(--muted);flex:none}
+.dar-picker-search input{flex:1;min-width:0;min-height:36px;border:0!important;padding:0!important;background:transparent!important;box-shadow:none!important;font-size:13px}
+.dar-picker-search input:focus{outline:0}
+.dar-picker-search:focus-within{border-color:var(--accent);outline:2px solid color-mix(in srgb,var(--accent) 30%,transparent);outline-offset:0}
+.dar-picker-list{list-style:none;margin:0;padding:6px;max-height:min(360px,45dvh);overflow:auto;scrollbar-gutter:stable}
+.dar-picker-list li{display:flex;align-items:center;gap:2px;border-radius:10px}
+.dar-picker-list li:hover{background:var(--hover)}
+.dar-picker-list li.is-selected{background:var(--tonal);color:var(--on-tonal)}
+.dar-picker-row{display:flex;align-items:center;gap:12px;flex:1;min-width:0;min-height:44px;padding:6px 8px;border:0;border-radius:10px;background:transparent;color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.dar-picker-row>span:not(.file-tile){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dar-picker-row>.icon{width:16px;height:16px;color:var(--accent);flex:none}
+.dar-picker-row .file-tile{flex:none}
+.dar-picker-row:focus-visible,.dar-picker-open:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.dar-picker-open{flex:none;width:36px;height:36px;margin-right:2px}
+.dar-picker-open .icon{width:14px;height:14px}
+.dar-picker-state{padding:16px;font-size:13px;text-align:center}
+.dar-picker-state .secondary-button{margin-top:8px}
+.dar-picker-pages{display:flex;justify-content:space-between;padding:0 10px 6px}
+.dar-picker-selection{display:flex;align-items:center;gap:8px;min-height:44px;padding:8px 14px;border-top:1px solid var(--border);color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+.dar-picker-selection .icon{width:16px;height:16px;flex:none}
+.dar-picker-selection strong{color:var(--text);font-weight:600}
+@media(prefers-reduced-motion:reduce){.dar-picker-list li,.dar-picker-row{transition:none}}

@@ -134,7 +134,7 @@ in {
         forceSSL = true; enableACME = true;
         locations = {
           "/" = { proxyPass = "http://127.0.0.1:${toString cfg.port}"; recommendedProxySettings = false; extraConfig = proxyHeaders + ''
-            client_max_body_size 1024m;
+            client_max_body_size 16g;
             proxy_request_buffering off;
             proxy_buffering off;
             proxy_read_timeout 120s;

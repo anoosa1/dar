@@ -17,7 +17,17 @@ Delivered November 6, 2026 (layout A, Focused workspace). UI rules are in the
   or the whole series. Move and resize open a reviewable editor. Read/write
   sharing, ICS import/export and in-app reminders.
 - Organizer/attendee data is preserved, but no invitations are sent (no mail
-  transport). Remote calendar subscriptions are not supported.
+  transport).
+- Subscriptions: a calendar can follow an iCalendar link (https://, http:// or
+  webcal://, tried as HTTPS first). Dar fetches it every 15 minutes to daily
+  (conditional requests, 8 MiB and 10,000 events at most), syncs events by UID and
+  removes events the source dropped. Subscribed events are read-only in the apps
+  and over CalDAV, raise no reminders and are not listed as task lists. The link
+  can hold a secret, so only the owner sees it; it is never logged. Fetches use the
+  News network guard (public addresses only unless `news.allowPrivateNetworks`).
+  Failures are shown on the calendar and retried within the hour.
+- Dated tasks from task lists appear in Calendar at their due time (date-only
+  tasks on their due day) and open in Tasks; Calendar settings can hide them.
 
 ## Data and protocols
 

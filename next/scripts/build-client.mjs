@@ -28,7 +28,7 @@ const appFile = output("client/main.tsx"), shared = closure(appFile);
 const html = files => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Dar</title><link rel="stylesheet" href="/${app.css}"><script type="module" src="/${app.js}"></script>${[...files].map(file => `<link rel="modulepreload" href="${relative(file)}">`).join("")}</head><body><div id="root"></div></body></html>`;
 await writeFile(path.join(dist, "index.html"), html(shared));
 // Keep in step with pageFor() in client/main.tsx.
-const routes = { "/": "client/files.tsx", "/photos": "client/photos/workspace.tsx", "/contacts": "client/pim/contacts.tsx", "/calendar": "client/pim/calendar.tsx", "/notes": "client/pim/workspace.tsx", "/tasks": "client/pim/workspace.tsx", "/news": "client/news/workspace.tsx", "/agent": "client/agent/workspace.tsx", "/settings": "client/identity.tsx", "/identity": "client/identity.tsx" };
+const routes = { "/": "client/files.tsx", "/photos": "client/photos/workspace.tsx", "/contacts": "client/pim/contacts.tsx", "/calendar": "client/pim/calendar.tsx", "/notes": "client/notes.tsx", "/tasks": "client/pim/workspace.tsx", "/news": "client/news/workspace.tsx", "/agent": "client/agent/workspace.tsx", "/settings": "client/identity.tsx", "/identity": "client/identity.tsx" };
 const pages = {};
 await mkdir(path.join(dist, "pages"), { recursive: true });
 for (const [route, source] of Object.entries(routes)) {

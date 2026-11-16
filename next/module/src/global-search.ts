@@ -7,7 +7,7 @@ import type {Ctx} from "./index.ts";
 import type {SearchGroup,SearchResult,SearchResults} from "../../shared/search.ts";
 type FileEntry=NonNullable<ReturnType<Ctx["db"]["fileEntries"]["id"]["find"]>>;
 /** Search only account-owned or currently granted scopes. Bound work and response size. */
-export function globalSearch(ctx:Ctx,userId:string,query:string,canRead:(entry:FileEntry)=>boolean):SearchResults{
+export function globalSearch(ctx:Ctx,userId:string,query:string,canRead:(entry:FileEntry)=>boolean,isNote:(entry:FileEntry)=>boolean=()=>false):SearchResults{
   const q=query.normalize("NFC").toLowerCase().trim(),groups=new Map<SearchGroup,SearchResult[]>();let remaining=20000,truncated=false;
   const visit=()=>{if(remaining--<=0){truncated=true;return false;}return true;};
   const matches=(value:string)=>value.normalize("NFC").toLowerCase().includes(q);
@@ -15,7 +15,8 @@ export function globalSearch(ctx:Ctx,userId:string,query:string,canRead:(entry:F
   const preferences=JSON.parse(ctx.db.pimPreferences.userId.find(userId)?.value??"{}");
   const seen=new Set<string>();
   function file(entry:FileEntry){if(seen.has(entry.id))return;seen.add(entry.id);if(entry.trashed||!canRead(entry)||preferences.filesShowHidden!==true&&entry.name.startsWith("."))return;
-    if(matches(entry.name))add({id:entry.id,group:"Files",title:entry.name,detail:entry.kind==="folder"?"Folder":"File",href:entry.kind==="folder"?`/?folder=${entry.id}`:entry.ownerId===userId?`/?folder=${entry.parentId}&file=${entry.id}`:`/?section=shared&file=${entry.id}`});
+    if(matches(entry.name)&&entry.ownerId===userId&&isNote(entry))add({id:entry.id,group:"Notes",title:entry.name.replace(/\.(md|markdown)$/i,""),detail:"Note",href:`/notes?note=${entry.id}`});
+    else if(matches(entry.name))add({id:entry.id,group:"Files",title:entry.name,detail:entry.kind==="folder"?"Folder":"File",href:entry.kind==="folder"?`/?folder=${entry.id}`:entry.ownerId===userId?`/?folder=${entry.parentId}&file=${entry.id}`:`/?section=shared&file=${entry.id}`});
   }
   for(const entry of ctx.db.fileEntries.ownerId.filter(userId)){if(!visit())break;file(entry);}
   const folders:string[]=[];
@@ -25,7 +26,7 @@ export function globalSearch(ctx:Ctx,userId:string,query:string,canRead:(entry:F
     for(const entry of ctx.db.fileEntries.listKey.filter(range)){if(!visit())break;file(entry);if(entry.kind==="folder"&&!entry.trashed&&canRead(entry))folders.push(entry.id);}if(remaining<=0)break;
   }
   const collections=pimOperation(ctx,userId,"collections",{}) as {id:string;kind:string;name:string}[];
-  for(const collection of collections){for(const row of ctx.db.pimResources.collectionId.filter(collection.id)){
+  for(const collection of collections.filter(c=>c.kind!=="notes")){for(const row of ctx.db.pimResources.collectionId.filter(collection.id)){
     if(!visit())break;const data=JSON.parse(row.projection) as Record<string,unknown>;
     if(!matches(row.projection+(collection.kind==="notes"?"\n"+row.content:"")))continue;
     const group:SearchGroup=collection.kind==="notes"?"Notes":collection.kind==="contacts"?"Contacts":data.kind==="task"?"Tasks":"Calendar";

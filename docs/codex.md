@@ -89,7 +89,7 @@ can be added through `systemd.services.dar.path`; commands have no network.
 - Files sources copy authorized versions; reviewed edits to existing UTF-8 text
   files up to 64 KiB are applied as new Files versions with revision checks. New
   files and deletions stay in the working copy. Apply is per file, not atomic.
-- Workspaces: 200 files, 1 MiB per file, 8 MiB total; 10 minutes per run;
+- Workspaces: 200 files, 1 MiB per file, 8 MiB total; 30 minutes per run;
   50 messages and 128 KiB of context per thread. One active run per account.
 - Backups hold Agent history and bounded review data, not credentials or working
   copies; apply or export changes before restoring elsewhere.

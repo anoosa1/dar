@@ -5,11 +5,15 @@ import {trashNote,validateTaskParent} from "./workspace.ts";
 import {appEnabled} from "./app-settings.ts";
 import type {ContactData} from "../../shared/pim.ts";
 import type {NoteData} from "../../shared/workspace.ts";
+import {calendarRefreshChoices} from "../../shared/pim.ts";
 
 function fail(code: string): never { throw new SenderError(code); }
 function text(value: unknown, max = 255): string { if (typeof value !== "string" || !value || value.length > max || /[\u0000]/.test(value)) fail("invalidInput"); return value; }
 function id(value: unknown) { const result = text(value, 36); if (!/^[a-f0-9-]{36}$/.test(result)) fail("invalidInput"); return result; }
 function expected(actual: number, value: unknown) { if (value !== actual) fail("conflict"); }
+/** webcal:// is kept as given (its scheme is decided when fetching); webcals:// means HTTPS. */
+function subscriptionUrl(value: unknown) { const url = text(value, 2048).trim().replace(/^webcals:\/\//i, "https://"); if (!/^(https?|webcal):\/\/[^\s]+$/i.test(url)) fail("invalidInput"); return url; }
+function refreshChoice(value: unknown) { if (typeof value !== "number" || !(calendarRefreshChoices as readonly number[]).includes(value)) fail("invalidInput"); return value; }
 function dueKey(at: number) { return String(Math.floor(at)).padStart(16,"0"); }
 function bump(ctx: Ctx, userId: string) {
   const old = ctx.db.pimChanges.userId.find(userId), row = { userId, revision: (old?.revision ?? 0) + 1 };
@@ -78,7 +82,19 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
       if (row) rows.push({ ...row, role: grant.role });
     }
     if (rows.length > 200) fail("operationTooLarge");
-    return rows.filter(row => allowsKind(row.kind)&&(row.kind!=="notes"||appEnabled(ctx,"notes")));
+    return rows.filter(row => allowsKind(row.kind)&&(row.kind!=="notes"||appEnabled(ctx,"notes"))).map(row => {
+      const subscription = row.kind === "calendar" ? ctx.db.pimSubscriptions.collectionId.find(row.id) : undefined;
+      if (!subscription) return row;
+      return { ...row, subscription: { url: row.role === "owner" ? subscription.url : "", refreshMinutes: subscription.refreshMinutes, lastSyncAt: subscription.lastSyncAt, lastError: subscription.lastError } };
+    });
+  }
+  if (operation === "subscribe") {
+    if ([...ctx.db.pimCollections.ownerId.filter(userId)].length >= 100) fail("operationTooLarge");
+    const color = text(p.color, 7); if (!/^#[0-9a-f]{6}$/i.test(color)) fail("invalidInput");
+    const row = { id: id(p.id), ownerId: userId, kind: "calendar", name: text(text(p.name).trim()), color, revision: 1, modifiedAt: at };
+    ctx.db.pimCollections.insert(row);
+    ctx.db.pimSubscriptions.insert({ collectionId: row.id, ownerId: userId, url: subscriptionUrl(p.url), refreshMinutes: refreshChoice(p.refreshMinutes), nextAt: dueKey(at), lastSyncAt: 0, lastError: "", etag: "", lastModified: "" });
+    notify(ctx, row); log(ctx, userId, row.id, "calendar.subscribed"); return { ...row, role: "owner" };
   }
   if (operation === "createCollection") {
     const kind = text(p.kind);
@@ -119,6 +135,15 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
     for (const row of ctx.db.pimResources.collectionId.filter(c.id)) { if (rows.length >= 10000) fail("operationTooLarge"); rows.push(row); }
     return { collection: c, items: metadataOnly ? rows.map(({content,projection,...row})=>({...row,content:"",projection:""})) : rows };
   }
+  if (operation === "updateSubscription" || operation === "refreshSubscription") {
+    const subscription = ctx.db.pimSubscriptions.collectionId.find(c.id);
+    if (c.role !== "owner" || !subscription) fail("forbidden");
+    const url = operation === "updateSubscription" && p.url !== undefined ? subscriptionUrl(p.url) : subscription.url;
+    const next = { ...subscription, url, refreshMinutes: operation === "updateSubscription" && p.refreshMinutes !== undefined ? refreshChoice(p.refreshMinutes) : subscription.refreshMinutes, nextAt: dueKey(at),
+      etag: url === subscription.url ? subscription.etag : "", lastModified: url === subscription.url ? subscription.lastModified : "" };
+    ctx.db.pimSubscriptions.collectionId.update(next); notify(ctx, c);
+    return { url: next.url, refreshMinutes: next.refreshMinutes, lastSyncAt: next.lastSyncAt, lastError: next.lastError };
+  }
   if (["renameCollection", "deleteCollection", "share", "revoke", "grants"].includes(operation)) {
     if (c.role !== "owner") fail("forbidden");
     if (operation === "grants") return [...ctx.db.pimGrants.collectionId.filter(c.id)].map(row => ({ ...row, username: ctx.db.accounts.id.find(row.userId)?.username }));
@@ -138,6 +163,7 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
       let count = 0;
       for (const row of ctx.db.pimResources.collectionId.filter(c.id)) { if (++count > 10000) fail("operationTooLarge"); if(c.kind==="notes")trashNote(ctx,row);invalidateReminders(ctx, row.id); ctx.db.pimResources.id.delete(row.id); }
       for (const grant of ctx.db.pimGrants.collectionId.filter(c.id)) ctx.db.pimGrants.id.delete(grant.id);
+      ctx.db.pimSubscriptions.collectionId.delete(c.id);
       ctx.db.pimCollections.id.delete(c.id); log(ctx, userId, c.id, `${c.kind}.collectionDeleted`); return { ok: true };
     }
     const { role: _role, ...base } = c;
@@ -149,8 +175,10 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
   if (!/^[a-zA-Z0-9_.-]+\.(vcf|ics|md)$/.test(href)||!href.endsWith(c.kind==="contacts"?".vcf":c.kind==="notes"?".md":".ics")) fail("invalidInput");
   const old = ctx.db.pimResources.hrefKey.find(`${c.id}/${href}`);
   if (operation === "read") { if (!old) fail("notFound"); return old; }
+  // Subscribed calendars change only through their sync; CalDAV and the apps see them read-only.
+  if (["move", "put", "delete"].includes(operation) && ctx.db.pimSubscriptions.collectionId.find(c.id)) fail("forbidden");
   if(operation==="move"){
-    if(!batch||!old)fail("invalidInput");expected(old.revision,p.revision);const target=collection(ctx,userId,p.targetCollectionId,true);if(target.kind!==c.kind||target.ownerId!==c.ownerId)fail("forbidden");if(target.id===c.id)return old;
+    if(!batch||!old)fail("invalidInput");expected(old.revision,p.revision);const target=collection(ctx,userId,p.targetCollectionId,true);if(ctx.db.pimSubscriptions.collectionId.find(target.id))fail("forbidden");if(target.kind!==c.kind||target.ownerId!==c.ownerId)fail("forbidden");if(target.id===c.id)return old;
     if(ctx.db.pimResources.uidKey.find(`${target.id}/${old.uid}`)||ctx.db.pimResources.hrefKey.find(`${target.id}/${href}`))fail("conflict");
     const moved={...old,collectionId:target.id,hrefKey:`${target.id}/${href}`,uidKey:`${target.id}/${old.uid}`,content:p.content===undefined?old.content:text(p.content,262144),projection:p.projection===undefined?old.projection:text(p.projection,65536),revision:old.revision+1,modifiedAt:at};
     invalidateReminders(ctx,old.id);ctx.db.pimResources.id.delete(old.id);ctx.db.pimResources.insert(moved);validateTaskParent(ctx,target.id,old.uid,moved.projection);if(target.kind==="calendar")ctx.db.pimReminderCursors.insert({resourceId:old.id,revision:moved.revision,at,runAt:dueKey(at+1000)});
@@ -183,7 +211,7 @@ export function pimOperation(ctx: Ctx, userId: string, operation: string, p: Rec
 }
 
 export function pimSnapshot(ctx: Ctx) {
-  return { collections: [...ctx.db.pimCollections.iter()], resources: [...ctx.db.pimResources.iter()], grants: [...ctx.db.pimGrants.iter()], preferences: [...ctx.db.pimPreferences.iter()], reminders: [...ctx.db.pimReminders.iter()], cursors: [...ctx.db.pimReminderCursors.iter()] };
+  return { collections: [...ctx.db.pimCollections.iter()], resources: [...ctx.db.pimResources.iter()], grants: [...ctx.db.pimGrants.iter()], preferences: [...ctx.db.pimPreferences.iter()], reminders: [...ctx.db.pimReminders.iter()], cursors: [...ctx.db.pimReminderCursors.iter()], subscriptions: [...ctx.db.pimSubscriptions.iter()] };
 }
 type Snapshot = ReturnType<typeof pimSnapshot>;
 export function restorePim(ctx: Ctx, data: Snapshot | undefined) {
@@ -205,6 +233,7 @@ export function restorePim(ctx: Ctx, data: Snapshot | undefined) {
     if (!ctx.db.accounts.id.find(row.userId) || !ctx.db.pimResources.id.find(row.resourceId)) fail("invalidInput");
     ctx.db.pimReminders.insert(row);
   }
+  for (const row of data.subscriptions ?? []) { const c = ctx.db.pimCollections.id.find(row.collectionId); if (c?.kind !== "calendar" || c.ownerId !== row.ownerId) fail("invalidInput"); ctx.db.pimSubscriptions.insert(row); }
   for (const row of data.cursors ?? []) { if (!ctx.db.pimResources.id.find(row.resourceId)) fail("invalidInput"); ctx.db.pimReminderCursors.insert({ ...row, runAt: row.runAt || dueKey(row.at) }); }
   for (const row of ctx.db.pimResources.iter()) if (ctx.db.pimCollections.id.find(row.collectionId)?.kind === "calendar" && !ctx.db.pimReminderCursors.resourceId.find(row.id)) ctx.db.pimReminderCursors.insert({ resourceId: row.id, revision: row.revision, at: row.modifiedAt, runAt: dueKey(row.modifiedAt) });
 }
@@ -215,7 +244,7 @@ export function reminderWork(ctx: Ctx) {
     const row = ctx.db.pimResources.id.find(cursor.resourceId);
     if (!row) continue;
     const c = ctx.db.pimCollections.id.find(row.collectionId);
-    if (c?.kind !== "calendar" || !ctx.db.accounts.id.find(c.ownerId)?.enabled) continue;
+    if (c?.kind !== "calendar" || !ctx.db.accounts.id.find(c.ownerId)?.enabled || ctx.db.pimSubscriptions.collectionId.find(c.id)) continue;
     const from = cursor.revision === row.revision ? cursor.at : row.modifiedAt;
     if (from >= at - 1000) continue;
     const preferences = JSON.parse(ctx.db.pimPreferences.userId.find(c.ownerId)?.value ?? "{}");
@@ -241,4 +270,56 @@ export function commitReminders(ctx: Ctx, resourceId: string, revision: number, 
 export function deferReminder(ctx: Ctx, resourceId: string, revision: number, from: number) {
   const cursor = ctx.db.pimReminderCursors.resourceId.find(resourceId);
   if (cursor?.revision === revision && cursor.at === from) ctx.db.pimReminderCursors.resourceId.update({ ...cursor, runAt: dueKey(Number(ctx.timestamp.toMillis()) + 300000) });
+}
+
+/**
+ * The subscription worker (service only): pick due calendars, upsert fetched events by UID,
+ * then remove events the source no longer lists. Each call is bounded.
+ */
+export function pimSubscriptionWork(ctx: Ctx, operation: string, p: Record<string, unknown>) {
+  const at = Number(ctx.timestamp.toMillis());
+  if (operation === "due") {
+    const rows = [];
+    for (const row of ctx.db.pimSubscriptions.nextAt.filter(new Range({ tag: "unbounded" }, { tag: "included", value: dueKey(at) }))) {
+      if (!ctx.db.accounts.id.find(row.ownerId)?.enabled) continue;
+      // A lease: a crashed or slow sync is retried later instead of running twice.
+      ctx.db.pimSubscriptions.collectionId.update({ ...row, nextAt: dueKey(at + 15 * 60000) });
+      rows.push({ collectionId: row.collectionId, url: row.url, etag: row.etag, lastModified: row.lastModified });
+      if (rows.length >= 10) break;
+    }
+    return rows;
+  }
+  const c = ctx.db.pimCollections.id.find(id(p.collectionId)), subscription = c && ctx.db.pimSubscriptions.collectionId.find(c.id);
+  if (!c || !subscription) return { ok: false };
+  if (operation === "put") {
+    if (!Array.isArray(p.items) || p.items.length > 200) fail("invalidInput");
+    let changed = 0, count = [...ctx.db.pimResources.collectionId.filter(c.id)].length;
+    for (const input of p.items as Record<string, unknown>[]) {
+      const uid = text(input.uid, 1024), href = text(input.href, 255), old = ctx.db.pimResources.uidKey.find(`${c.id}/${uid}`);
+      if (!/^[a-f0-9]{40}\.ics$/.test(href) || typeof input.content !== "string" || input.content.length > 262144) fail("invalidInput");
+      if (old && old.content === input.content) continue;
+      const row = { id: old?.id ?? id(input.id), collectionId: c.id, href, hrefKey: `${c.id}/${href}`, uid, uidKey: `${c.id}/${uid}`, content: input.content, projection: text(input.projection, 65536), revision: (old?.revision ?? 0) + 1, modifiedAt: at };
+      if (old) ctx.db.pimResources.id.update(row); else { if (++count > 10000) fail("operationTooLarge"); if (ctx.db.pimResources.hrefKey.find(row.hrefKey)) continue; ctx.db.pimResources.insert(row); }
+      changed++;
+    }
+    if (changed) { ctx.db.pimCollections.id.update({ ...c, revision: c.revision + 1, modifiedAt: at }); notify(ctx, c); }
+    return { changed };
+  }
+  if (operation === "finish") {
+    let changed = false;
+    if (Array.isArray(p.uids)) {
+      if (p.uids.length > 10000) fail("operationTooLarge");
+      const keep = new Set(p.uids.map(value => String(value)));
+      for (const row of [...ctx.db.pimResources.collectionId.filter(c.id)]) if (!keep.has(row.uid)) { invalidateReminders(ctx, row.id); ctx.db.pimResources.id.delete(row.id); changed = true; }
+    }
+    const error = typeof p.error === "string" ? p.error.slice(0, 500) : "";
+    // Failures retry within the hour; successes wait for the chosen interval.
+    const wait = Math.min(subscription.refreshMinutes, error ? 60 : subscription.refreshMinutes) * 60000;
+    ctx.db.pimSubscriptions.collectionId.update({ ...subscription, lastError: error, lastSyncAt: error ? subscription.lastSyncAt : at, nextAt: dueKey(at + wait),
+      etag: error ? subscription.etag : typeof p.etag === "string" ? p.etag.slice(0, 500) : "", lastModified: error ? subscription.lastModified : typeof p.lastModified === "string" ? p.lastModified.slice(0, 500) : "" });
+    if (changed) ctx.db.pimCollections.id.update({ ...c, revision: c.revision + 1, modifiedAt: at });
+    notify(ctx, c);
+    return { ok: true };
+  }
+  fail("invalidInput");
 }

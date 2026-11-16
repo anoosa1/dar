@@ -482,3 +482,34 @@ button.task-check:hover{border-color:var(--accent)!important;background:color-mi
 @media(prefers-reduced-motion:no-preference){.files-toast{animation:files-toast-in .18s ease-out}@keyframes files-toast-in{from{opacity:0;translate:0 8px}to{opacity:1;translate:0 0}}}
 /* Rows that carry screen-reader text contain it, so it never extends the page. */
 :is(.contact-row,.workspace-row-content,.file-name,.property,.calendar-event){position:relative}
+/* Selection bar: labels give way to icons when space is short. */
+.file-toolbar.is-selecting .file-selection-more>.ui-menu-trigger{color:inherit}
+.app-shell .files-main{container:files-main/inline-size}
+.app-shell .file-toolbar.is-selecting :is(strong,.text-button){white-space:nowrap}
+@container files-main (max-width:820px){.app-shell .file-toolbar.is-selecting .text-button>span{display:none}}
+/* File previews share the text editor's sheet; the stage fits the content to it. */
+.file-preview:focus{outline:0}
+.file-preview .workspace-editor-top{gap:4px}
+.file-preview-meta{margin-left:auto;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.file-preview-steps{display:flex;align-items:center;gap:2px;margin:0 4px;color:var(--muted);font-size:12px;white-space:nowrap}
+.file-preview-title{flex:none;margin:0;padding:2px 24px 12px;font-size:20px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-preview-stage{flex:1;min-height:0;display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);place-items:center;overflow:hidden;margin:0 12px 12px;padding:12px;border-radius:12px;background:color-mix(in srgb,var(--text) 6%,var(--panel))}
+.file-preview-stage>img,.file-preview-stage>video{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 8px 30px var(--shadow)}
+.file-preview-stage>video{width:100%;height:100%;background:#000}
+.file-preview-pdf .file-preview-stage{padding:0;background:var(--panel)}
+.file-preview-stage>iframe{width:100%;height:100%;border:1px solid var(--border);border-radius:8px;background:#fff}
+.file-preview-text .file-preview-stage,.file-preview-none .file-preview-stage{place-items:stretch;background:transparent;padding:0}
+.file-preview-stage>.file-preview-source{margin:0;overflow:auto;padding:16px 20px;border:1px solid var(--border);border-radius:12px;background:var(--panel);color:var(--text);font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.file-preview-none .file-preview-stage{place-items:center}
+.file-preview-audio{display:flex;flex-direction:column;align-items:center;gap:20px;width:min(480px,100%)}
+.file-preview-audio>audio{width:100%}
+.file-preview-empty{max-width:420px;text-align:center}
+@media(max-width:800px){.file-preview-meta,.file-preview-steps>span{display:none}.file-preview-title{padding:2px var(--pane-padding) 10px;font-size:17px}.file-preview-stage{margin:0 0 8px;border-radius:0}}
+/* Dated tasks in Calendar: a check glyph (not just color) marks them; completed ones are struck through. */
+a.calendar-event.calendar-task{display:flex;align-items:center;gap:6px;width:100%;min-width:0;text-decoration:none;cursor:pointer}
+.calendar-event-wrap.is-task>.calendar-event{padding-right:6px}
+.calendar-task strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.calendar-task-check{display:inline-flex;flex:none;color:var(--accent)}.calendar-task-check .icon{width:13px;height:13px}
+.calendar-task.is-done{opacity:.6}.calendar-task.is-done strong{text-decoration:line-through}
+.calendar-task:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.calendar-time-grid .calendar-slot>.calendar-event-wrap.is-task>.calendar-event{flex-direction:row;align-items:flex-start}

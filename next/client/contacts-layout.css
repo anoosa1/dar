@@ -14,7 +14,7 @@
 .contacts-book-row>.nav-item>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .contacts-book-actions{flex:none}
 .contacts-book-actions>.ui-menu-trigger{padding:6px;min-width:28px;min-height:36px}
-.contacts-book-actions>.ui-menu-panel{min-width:190px;right:0}
+.contacts-book-actions>.ui-menu-panel{min-width:190px}
 @media(max-width:800px){
   .pim-workspace.has-contacts-main{height:calc(100dvh - 116px);min-height:0}
   .pim-shell.has-pim-details .contacts-main{display:none}

@@ -11,6 +11,7 @@ import {photoKind,type PhotoAlbum,type PhotoAlbumSharing,type PhotoDetail,type P
 import type {PhotosRuntime,PhotoJob} from "./runtime.ts";
 import {sendFile,type AssetInfo} from "./http.ts";
 import {photosReadOperations} from "../../shared/read-operations.ts";
+import {maxFileBytes} from "../../shared/limits.ts";
 
 /**
  * The Immich mobile-app API (server v3.4.1 contract) at /dav/immich/api, found through
@@ -146,7 +147,7 @@ export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,ur
       const boundary=/boundary=(?:"([^"]+)"|([^;]+))/i.exec(req.headers["content-type"]??"");if(!boundary)throw new AppError("invalidInput",400,"Expected multipart form data.");
       const dir=await mkdtemp(path.join(root,"uploads","immich-"));
       try{
-        const parts=await readMultipart(req,boundary[1]??boundary[2],dir,1024**3),field=(name:string)=>parts.find(p=>p.name===name&&p.value!==undefined)?.value;
+        const parts=await readMultipart(req,boundary[1]??boundary[2],dir,maxFileBytes),field=(name:string)=>parts.find(p=>p.name===name&&p.value!==undefined)?.value;
         const data=parts.find(p=>p.name==="assetData"&&p.file);if(!data?.file)throw new AppError("invalidInput",400,"assetData is required.");
         const name=(field("filename")||data.filename||"upload").replace(/[\\/]/g,"_").slice(0,255),ext=name.split(".").pop()?.toLowerCase()??"";
         const mediaType=data.mediaType&&data.mediaType!=="application/octet-stream"?data.mediaType:mediaTypes[ext]??"application/octet-stream";

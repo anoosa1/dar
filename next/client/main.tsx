@@ -51,6 +51,7 @@ const Calendar=page(()=>import("./pim/calendar.tsx").then(m=>m.Calendar));
 const IdentitySettings=page(()=>import("./identity.tsx").then(m=>m.IdentitySettings));
 const IdentityInteraction=page(()=>import("./identity.tsx").then(m=>m.IdentityInteraction));
 const Workspace=page(()=>import("./pim/workspace.tsx").then(m=>m.Workspace));
+const Notes=page(()=>import("./notes.tsx").then(m=>m.Notes));
 const InstalledAppPage=page(()=>import("./installed-apps.tsx").then(m=>m.InstalledAppPage));
 const AgentWorkspace=page(()=>import("./agent/workspace.tsx").then(m=>m.AgentWorkspace));
 const NewsWorkspace=page(()=>import("./news/workspace.tsx").then(m=>m.NewsWorkspace));
@@ -72,7 +73,7 @@ pageFor(path).preload();
 const opening=<main className="startup-state" aria-busy="true"><div className="brand-mark" /><p role="status">Opening your space…</p></main>;
 function OptionalWorkspace({kind,session,onSignedOut}:{kind:"notes"|"tasks"|"agent"|"news"|"photos";session:BrowserSession;onSignedOut:()=>void}){
   const {settings,error}=useAppSettings();
-  if(settings&&!settings.disabled.includes(kind))return kind==="agent"?<AgentWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="news"?<NewsWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="photos"?<PhotosWorkspace session={session} onSignedOut={onSignedOut}/>:<Workspace kind={kind} session={session} onSignedOut={onSignedOut}/>;
+  if(settings&&!settings.disabled.includes(kind))return kind==="agent"?<AgentWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="news"?<NewsWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="photos"?<PhotosWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="notes"?<Notes session={session} onSignedOut={onSignedOut}/>:<Workspace kind={kind} session={session} onSignedOut={onSignedOut}/>;
   return <div className="app-shell"><WorkspaceHeader app={kind} session={session} onSignedOut={onSignedOut} query="" onQuery={()=>{}}/><main className="startup-state">{error?<><h1>Unable to load apps</h1><p role="alert">{error}</p><button className="primary-button" onClick={()=>location.reload()}>Try again</button></>:settings?<><h1>App disabled</h1><p>This app has been disabled by an administrator.</p></>:<p role="status">Opening app…</p>}<a href="/">Return to Files</a></main></div>;
 }
 function App() {

@@ -30,7 +30,7 @@ The package puts exiftool, libvips and ffmpeg on the service PATH for
 [Photos](photos.md); its regenerable thumbnails and converted videos live in `photo-cache/` under
 the state directory (safe to delete; converted videos can be large). The Immich
 mobile app uses `/.well-known/immich` and `/dav/immich/api`; a reverse proxy must pass
-both through (the generated nginx does) and allow 1 GiB request bodies.
+both through (the generated nginx does) and allow 16 GiB request bodies.
 
 ### Proxy
 
@@ -38,7 +38,7 @@ both through (the generated nginx does) and allow 1 GiB request bodies.
 - `configureNginx = true` sets up HTTPS, opens 80/443 and forwards only the exact
   subscription WebSocket and the POST-only `/spacetime/v1/identity/websocket-token`
   exchange; other `/spacetime/` routes are rejected. DAV and well-known routes
-  go to Dar. Bodies stream with a 1 GiB limit.
+  go to Dar. Bodies stream with a 16 GiB limit.
 - It also maps the public hostname to `127.0.0.1` in `/etc/hosts`, because
   SpacetimeDB fetches Dar's HTTPS signing keys and the host must reach its own
   origin. With your own proxy, make sure that works.

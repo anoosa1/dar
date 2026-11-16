@@ -11,6 +11,7 @@ import {immichSession,immichUser,immichSyncStart,immichSyncPage,immichAcks,immic
 import {photosOperation,photosWorker,photosSnapshot,restorePhotos,photosLinkOperation,openPhotoLink,addLinkUpload,photosReadOperations,type PhotoFiles} from "./photos.ts";
 import {lockedFolderType,lockedFolderName,lockedUnlockMinutes} from "../../shared/locked-folder.ts";
 import {defaultPhotoFolder,photoFolderParts,nameParts,photoKind} from "../../shared/photos.ts";
+import {defaultNotesFolder,isNoteFile} from "../../shared/workspace.ts";
 import {filePicker} from "./file-picker.ts";
 import {appOperation,appSnapshot,restoreApps} from "./apps.ts";
 import {validAppId} from "../../shared/installed-apps.ts";
@@ -20,11 +21,12 @@ import {essentialApps} from "../../shared/app-settings.ts";
 import {passwordAllows, validPasswordScope} from "../../shared/app-scopes.ts";
 import { schema, table, t, Range, SenderError, type InferSchema, type ReducerCtx, type ViewCtx } from "spacetimedb/server";
 import { pimTables, pimChanges } from "./pim-tables.ts";
-import { pimOperation, pimSnapshot, restorePim, reminderWork, commitReminders, deferReminder } from "./pim.ts";
+import { pimOperation, pimSnapshot, restorePim, reminderWork, commitReminders, deferReminder, pimSubscriptionWork } from "./pim.ts";
 import { identityTables } from "./identity-tables.ts";
 import {workspaceTables} from "./workspace-tables.ts";
 import {workspaceSnapshot,restoreWorkspace,noteTrashOperation,validateTaskParent} from "./workspace.ts";
 import { identityActor, directoryOperation, providerOperation, revokeProvider, revokeUser, identitySnapshot, restoreIdentity, touchProfile,profile as directoryProfile } from "./identity.ts";
+import { maxFileBytes } from "../../shared/limits.ts";
 
 const instance = table({}, { id: t.string().primaryKey(), service: t.identity(), issuer: t.string() });
 const accounts = table({}, {
@@ -564,7 +566,7 @@ export const serviceBeginUpload = db.procedure({ sessionId: t.string(), id: t.st
 function beginUploadFor(tx: Ctx, userId: string, uploadKey: string, p: { id: string; fileId: string; parentId: string; name: string; size: number; mediaType: string; expectedRevision: number }, sessionId?: Unlock) {
   const user = { id: userId };
   opaqueId(p.id); opaqueId(p.fileId);
-  if (!Number.isSafeInteger(p.size) || p.size < 0 || p.size > 1024 ** 3 || p.mediaType.length > 150 || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(p.mediaType)) fail("invalidInput");
+  if (!Number.isSafeInteger(p.size) || p.size < 0 || p.size > maxFileBytes || p.mediaType.length > 150 || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(p.mediaType)) fail("invalidInput");
   let ownerId: string, name: string, parentId: string;
   const existing = tx.db.fileEntries.id.find(p.fileId);
   if (p.expectedRevision) {
@@ -1025,10 +1027,55 @@ function photosFolder(ctx:Ctx,userId:string,year:unknown,month:unknown){
   }
   return {parentId};
 }
+/** The Notes folder from the account's preferences (default "docs/notes"). */
+function notesFolderParts(ctx:ReadCtx,userId:string){
+  let saved:unknown;try{saved=JSON.parse(ctx.db.pimPreferences.userId.find(userId)?.value??"{}").notesFolder;}catch{saved=undefined;}
+  return (typeof saved==="string"&&photoFolderParts(saved))||defaultNotesFolder.split("/");
+}
+/** Finds (or, when asked, creates as the owner) the Notes folder. Never the Locked folder or a trashed one. */
+function notesRoot(ctx:Ctx,userId:string,create:boolean){
+  let parentId="";
+  for(const name of notesFolderParts(ctx,userId)){
+    const existing=findKey(ctx,key(userId,parentId,name));
+    if(existing){if(existing.kind!=="folder"||existing.trashed||isLockedRoot(existing))fail("conflict");parentId=existing.id;continue;}
+    if(!create)return undefined;
+    const id=unusedUuid(ctx);
+    ctx.db.fileEntries.insert({id,ownerId:userId,parentId,name,kind:"folder",blobId:"",size:0,mediaType:"inode/directory",revision:1,modifiedAt:now(ctx),trashed:false,favorite:false,listKey:key(userId,parentId,name)});
+    event(ctx,userId,id,"created");parentId=id;
+  }
+  return parentId;
+}
+/**
+ * The Notes library: the folder tree and Markdown files under the Notes folder, bounded.
+ * Hidden names (such as .obsidian) and deleted items are left out. Blob IDs go to the runtime only.
+ */
+export const serviceNotes=db.procedure({sessionId:t.string(),operation:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+  if(appSettings(tx).disabled.includes("notes"))fail("notFound");
+  if(p.operation!=="library")fail("invalidInput");
+  const rootId=notesRoot(tx,user.id,true)!,parts=notesFolderParts(tx,user.id);
+  const folders:{id:string;parentId:string;name:string;path:string;modifiedAt:number}[]=[],files:{id:string;parentId:string;name:string;blobId:string;size:number;revision:number;modifiedAt:number;favorite:boolean;path:string}[]=[];
+  const queue=[{id:rootId,path:"",depth:0}];let scanned=0,truncated=false;
+  for(let i=0;i<queue.length&&!truncated;i++){
+    const folder=queue[i],prefix=`${user.id}/${folder.id}/`,range=new Range<string>({tag:"included",value:prefix},{tag:"excluded",value:prefix.slice(0,-1)+"0"});
+    for(const entry of tx.db.fileEntries.listKey.filter(range)){
+      if(++scanned>5000){truncated=true;break;}
+      if(entry.trashed||entry.name.startsWith("."))continue;
+      const path=folder.path?`${folder.path}/${entry.name}`:entry.name;
+      if(entry.kind==="folder"){if(folder.depth>=16){truncated=true;continue;}folders.push({id:entry.id,parentId:folder.id,name:entry.name,path,modifiedAt:entry.modifiedAt});queue.push({id:entry.id,path,depth:folder.depth+1});}
+      else if(isNoteFile(entry.name)&&files.length<3000)files.push({id:entry.id,parentId:folder.id,name:entry.name,blobId:entry.blobId,size:entry.size,revision:entry.revision,modifiedAt:entry.modifiedAt,favorite:entry.favorite,path});
+    }
+  }
+  let legacy=0;for(const c of tx.db.pimCollections.ownerId.filter(user.id))if(c.kind==="notes")for(const _row of tx.db.pimResources.collectionId.filter(c.id))legacy++;
+  return JSON.stringify({rootId,path:parts.join("/"),folders,files,truncated,legacy});
+}));
 export const serviceGlobalSearch=db.procedure({sessionId:t.string(),query:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
   if(p.query.length>200)fail("invalidInput");if(!p.query.trim())return JSON.stringify({items:[],truncated:false});
-  return JSON.stringify(globalSearch(tx,user.id,p.query,entry=>!!access(tx,entry,user.id)));
+  // Markdown files under the Notes folder are Notes results; the folder is never created by a search.
+  let notes:string|undefined;try{notes=appEnabled(tx,"notes")?notesRoot(tx,user.id,false):undefined;}catch{notes=undefined;}
+  const isNote=(entry:FileEntry)=>{if(!notes||entry.kind!=="file"||!isNoteFile(entry.name))return false;let parent=entry.parentId;for(let depth=0;parent&&depth<20;depth++){if(parent===notes)return true;parent=tx.db.fileEntries.id.find(parent)?.parentId??"";}return false;};
+  return JSON.stringify(globalSearch(tx,user.id,p.query,entry=>!!access(tx,entry,user.id),isNote));
 }));
 
 export const serviceSessions = db.procedure({ sessionId: t.string() }, t.string(), (ctx, { sessionId }) => ctx.withTx(tx => {
@@ -1044,6 +1091,8 @@ export const servicePimReminderWork = db.procedure(t.string(), ctx => ctx.withTx
 export const servicePimCommitReminders = db.reducer({ resourceId: t.string(), revision: t.u32(), from: t.f64(), to: t.f64(), reminders: t.string() }, (ctx, p) => {
   service(ctx); commitReminders(ctx, p.resourceId, p.revision, p.from, p.to, JSON.parse(p.reminders));
 });
+/** Calendar subscription sync; the runtime fetches, the module validates and stores. */
+export const servicePimSubscriptions = db.procedure({ operation: t.string(), payload: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => { service(tx); return JSON.stringify(pimSubscriptionWork(tx, p.operation, JSON.parse(p.payload))); }));
 export const servicePimDeferReminder = db.reducer({ resourceId: t.string(), revision: t.u32(), from: t.f64() }, (ctx, p) => { service(ctx); deferReminder(ctx, p.resourceId, p.revision, p.from); });
 export const servicePim = db.procedure({ sessionId: t.string(), operation: t.string(), payload: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); const user = fromSession(tx, p.sessionId);

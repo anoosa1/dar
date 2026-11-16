@@ -91,7 +91,9 @@ Selected [search mock A](spacetimedb/search-palette-mocks.html) (spotlight) over
   page), a check on the current choice and the destructive item last. Every
   dropdown (menus, selects, search results, the date picker, Agent pickers) uses
   the same surface (14px radius, raised, one shadow) and rows; a select marks its
-  choice with the menu check, not a tonal fill.
+  choice with the menu check, not a tonal fill. Menus, selects and pickers open in
+  the browser's top layer (`useFloating` in `controls.tsx`), placed beside their
+  trigger and clamped to the viewport, so no rail, sheet or pane covers or clips them.
 
 ## Content sheets (apps revamp, November 12)
 
@@ -153,7 +155,14 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   Delete is permanent; Move to Locked folder asks for the password when needed. Storage is a meter card at the bottom of the sidebar.
   Text and Markdown files open in the Notes editor layout (type, save status,
   Write/Preview, file menu; centered column with the name as title, edit time
-  and the formatting bar); plain text uses a monospace font.
+  and the formatting bar); plain text uses a monospace font. Other files preview
+  in the same sheet (`file-preview.tsx`): images, PDFs (the browser's viewer),
+  video, audio and text, fitted to the sheet, with previous/next (arrow keys),
+  Download and the file menu. The selection bar offers Download (files), Move to…,
+  Copy to…, Move to deleted files (Delete permanently in the Locked folder) and
+  More (favorites, Locked folder); Deleted files offers Restore. The shared folder
+  picker (`file-picker.tsx`) is a small browser: back, breadcrumb, filter, rows with
+  type tiles (click selects, the chevron opens) and the destination below.
 - **Contacts:** letter-grouped list under the name sort, with hued avatars, title ·
   organization and the address-book dot. Groups are sidebar rows. The card offers
   Email, Call, Favorite and Edit; values are links. The editor uses sections and
@@ -165,15 +174,19 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   Day draw duration-sized blocks in lanes with a now line; Month has six bounded
   rows with a link to overflowing days and hides times in narrow cells. Event
   cards show a readable date line; forms split date and time and show inclusive
-  all-day end dates. Week start, cancelled events and ICS in settings; timezone in
-  Regional settings, with per-event timezone fields.
-- **Notes:** list rows show title, a plain-text excerpt, edit time and notebook.
-  The note bar has Close, notebook, save status, Write/Preview, favorite and the
-  note menu (details, Export Markdown); the document is a centered column with a
-  quiet title and an icon formatting bar. Exact Markdown, safe preview,
-  autosave, private recovery drafts and explicit conflicts. Leaving an unsaved
-  note offers save/retry, keep draft and close, or discard, then resumes the
-  requested navigation only after success.
+  all-day end dates. Week start, cancelled events, tasks and ICS in settings; timezone
+  in Regional settings, with per-event timezone fields. The Calendars `+` menu has
+  New calendar and Subscribe by link (right pane: link, name, color, refresh);
+  subscribed calendars carry a link mark (an alert mark after a failed refresh),
+  Refresh now and Edit subscription, and their events are read-only. Dated tasks
+  show as check chips at their due time and open in Tasks.
+- **Notes:** notes are Markdown files in a Files folder (`docs/notes` by default,
+  set in Notes settings); its folders are the sidebar's notebooks. List rows show
+  title, a plain-text excerpt, edit time and folder, with a row menu (favorite,
+  rename, move, Show in Files, delete). A note opens in the shared Markdown editor
+  in the right sheet: Close, folder, save status, Write/Preview and the file menu;
+  autosave, private recovery drafts and explicit conflicts. New notes take their
+  first heading as the file name when closed.
 - **Tasks:** quick add (title only) above the list; due-date sort groups Overdue,
   Today, Tomorrow, Upcoming, No date and Completed. Rows show a priority-colored
   check, due, repetition, list and tags. The card leads with Complete/Reopen and
@@ -212,7 +225,9 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   URL and sign-in, signed-in devices, and the Immich server connection with status and
   Sync now. People/Places/Explore tabs arrive with later phases.
   See [Photos](photos.md).
-- **Agent:** threads on the left, conversation and docked composer in the center,
+- **Agent:** the settings sheet and editing panes sit beside the Agent's sheets
+  (which make room), as in other apps; choosing and adding a project both use the
+  right pane. Threads on the left, conversation and docked composer in the center,
   review on the right and collapsible output below, inside the shared frame.
   New thread is the create button; Ctrl/Cmd+P opens the command palette. Thread
   rows are one 36px line (project mark, title, age; actions on hover/focus) with

@@ -1,6 +1,7 @@
 import {localDate,localDateTime,localTime} from "./dates.ts";
 import {TextEditor,editableText,writeTextFile} from "./text-editor.tsx";
 import {DarFilePicker,type DarFileSelection} from "./file-picker.tsx";
+import {FilePreview} from "./file-preview.tsx";
 import { memo, useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import type { DbConnection } from "./module_bindings/index.ts";
 import { useLiveConnection, subscribe } from "./live.ts";
@@ -24,7 +25,7 @@ interface Details {
   grants: { id: string; username: string; role: string }[];
   publicShares: { id: string; expiresAt: number }[];
 }
-type Modal = { type: "folder" | "rename" | "move" | "copy" | "delete"; entry?: FileEntry };
+type Modal = { type: "folder" | "rename" | "move" | "copy" | "delete"; entry?: FileEntry; entries?: FileEntry[] };
 interface Transfer { id: string; name: string; progress: number; status: "uploading" | "complete" | "error" | "cancelled"; message?: string }
 interface FileClipboard {userId:string;id:string;name:string;revision:number;mode:"copy"|"cut"}
 const sections: { id: Section; label: string; icon: IconName }[] = [
@@ -99,7 +100,7 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   const [targetPath, setTargetPath] = useState<{ id: string; name: string }[]>([]);
   const [targetFolder,setTargetFolder]=useState<DarFileSelection>();
   const [transfers, setTransfers] = useState<Transfer[]>([]), [publicLink, setPublicLink] = useState("");
-  const [preview, setPreview] = useState<FileEntry | null>(null), [textPreview, setTextPreview] = useState("");
+  const [preview, setPreviewEntry] = useState<FileEntry | null>(null);
   const uploadInput = useRef<HTMLInputElement>(null), replacementInput = useRef<HTMLInputElement>(null);
   const uploadRequests = useRef(new Map<string, XMLHttpRequest>());
   const uploadReservations = useRef(new Map<string, AbortController>());
@@ -127,6 +128,30 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   function menuItems(entry:FileEntry):MenuAction[]{const owner=entry.ownerId===session.user.id,write=owner||roles[entry.id]==="write";return entry.trashed?[{label:"Details",icon:"info",run:()=>select(entry)},{label:"Restore",icon:"history",disabled:!owner||busy,run:()=>{void perform(()=>connection!.reducers.restoreEntry({id:entry.id,expectedRevision:entry.revision}),"Item restored.");}},{label:"Delete permanently",icon:"trash",danger:true,separator:true,disabled:!owner||busy,run:()=>openModal({type:"delete",entry})}]:[...(entry.kind==="file"?[{label:"Preview",icon:"eye" as const,run:()=>setPreview(entry)},{label:"Download",icon:"download" as const,href:`/api/v1/files/${entry.id}/content`}]:[{label:"Open folder",icon:"folder" as const,run:()=>{void openEntry(entry);}}]),{label:"Details",icon:"info",run:()=>select(entry)},{label:entry.favorite?"Remove favorite":"Add to favorites",icon:"star",separator:true,disabled:!owner||busy,run:()=>{void perform(()=>connection!.reducers.favoriteEntry({id:entry.id,favorite:!entry.favorite,expectedRevision:entry.revision}));}},{label:"Rename",icon:"pencil",shortcut:"F2",disabled:!write||busy,run:()=>openModal({type:"rename",entry})},{label:"Move to…",icon:"move",disabled:!owner||busy,run:()=>openModal({type:"move",entry})},{label:"Copy to…",icon:"copy",run:()=>openModal({type:"copy",entry})},{label:"Copy",icon:"copy",separator:true,shortcut:modifier+"C",run:()=>collect(entry,"copy")},{label:"Cut",icon:"scissors",shortcut:modifier+"X",disabled:!owner||busy,run:()=>collect(entry,"cut")},...(inLocked?[]:[{label:"Move to Locked folder",icon:"lock" as const,separator:true,disabled:!owner||busy,run:()=>{void moveToLocked([entry]);}}]),inLocked?{label:"Delete permanently",icon:"trash",danger:true,separator:true,disabled:!owner||busy,run:()=>openModal({type:"delete",entry})}:{label:"Move to deleted files",icon:"trash",danger:true,disabled:!owner||busy,run:()=>requestTrash([entry])}];}
   rowHandlers.current={toggle,open:entry=>{if(!entry.trashed)void openEntry(entry);else select(entry);},preview:entry=>{if(entry.kind==="file"&&!entry.trashed)setPreview(entry);},openMenu,menuItems};
   function actions(entry:FileEntry){return <ActionMenu label={`Actions for ${entry.name}`} className="ui-file-actions" onOpen={()=>openMenu(entry)} actions={menuItems(entry)}><Icon name="more"/></ActionMenu>;}
+  /** Downloads each selected file; the browser may ask once to allow several downloads. */
+  function download(items:FileEntry[]){items.forEach((item,index)=>setTimeout(()=>{const link=document.createElement("a");link.href=`/api/v1/files/${item.id}/content`;link.download=item.name;document.body.append(link);link.click();link.remove();},index*250));}
+  /** The tonal selection bar: every action applies to all selected items and is offered only when it can. */
+  function selectionActions(){
+    const chosen=visible.filter(item=>selected.has(item.id)),owned=chosen.every(item=>item.ownerId===session.user.id),off=!connected||busy||!chosen.length;
+    const count=`${chosen.length} ${chosen.length===1?"item":"items"}`;
+    if(section==="trash")return <>
+      <button className="text-button" aria-label="Restore selected items" disabled={off||!owned} onClick={()=>{void perform(async()=>{for(const item of chosen)await connection!.reducers.restoreEntry({id:item.id,expectedRevision:item.revision});setSelected(new Set());setDetails(null);},`${count} restored.`);}}><Icon name="history"/><span>Restore</span></button>
+      <button className="text-button danger" aria-label="Delete selected items permanently" disabled={off||!owned} onClick={()=>openModal({type:"delete",entries:chosen})}><Icon name="trash"/><span>Delete permanently</span></button>
+    </>;
+    const favorite=!chosen.every(item=>item.favorite);
+    return <>
+      {chosen.every(item=>item.kind==="file")&&<button className="text-button" aria-label="Download selected files" title="Download" disabled={off} onClick={()=>download(chosen)}><Icon name="download"/><span>Download</span></button>}
+      <button className="text-button" aria-label="Move selected items" title="Move to…" disabled={off||!owned} onClick={()=>openModal({type:"move",entries:chosen})}><Icon name="move"/><span>Move to…</span></button>
+      <button className="text-button" aria-label="Copy selected items" title="Copy to…" disabled={off} onClick={()=>openModal({type:"copy",entries:chosen})}><Icon name="copy"/><span>Copy to…</span></button>
+      {inLocked
+        ?<button className="text-button danger" aria-label="Delete selected items permanently" disabled={off||!owned} onClick={()=>openModal({type:"delete",entries:chosen})}><Icon name="trash"/><span>Delete permanently</span></button>
+        :<button className="text-button" aria-label="Move selected items to deleted files" title="Move to deleted files" disabled={off||!owned} onClick={()=>{requestTrash(chosen);}}><Icon name="trash"/><span>Move to deleted files</span></button>}
+      <ActionMenu label="More actions for selected items" className="file-selection-more" actions={[
+        {label:favorite?"Add to favorites":"Remove from favorites",icon:"star",disabled:off||!owned,run:()=>{void perform(async()=>{for(const item of chosen)if(item.favorite!==favorite)await connection!.reducers.favoriteEntry({id:item.id,favorite,expectedRevision:item.revision});},favorite?`${count} added to favorites.`:`${count} removed from favorites.`);}},
+        ...(inLocked?[]:[{label:"Move to Locked folder",icon:"lock" as const,disabled:off||!owned,run:()=>{void moveToLocked(chosen);}}]),
+      ]}><Icon name="more"/></ActionMenu>
+    </>;
+  }
   /** Moves items into the Locked folder, asking for the password first when it is locked. */
   async function moveToLocked(entries:FileEntry[],folderId=locked.unlocked?locked.state?.folderId:undefined){
     if(!connection)return;
@@ -196,13 +221,6 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
     if (row && row.revision !== current.entry.revision) void showDetails(row);
     else if (!row) void showDetails(current.entry);
   }, [rows]);
-  useEffect(() => {
-    setTextPreview("");
-    if (!preview || !/^(text\/|application\/json)/.test(preview.mediaType) || preview.size > 1024 * 1024) return;
-    const abort = new AbortController();
-    void fetch(`/api/v1/files/${preview.id}/content`, { signal: abort.signal }).then(r => { if (!r.ok) throw new Error(); return r.text(); }).then(setTextPreview).catch(() => { if (!abort.signal.aborted) setTextPreview("This preview is unavailable. You can still download the file."); });
-    return () => abort.abort();
-  }, [preview]);
 
   async function perform(work: () => Promise<unknown>, message = "") {
     setError(""); setBusy(true);
@@ -227,13 +245,14 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
   }
   async function openEntry(entry: FileEntry) {
     if (entry.trashed) { select(entry); return; }
-    if (entry.kind !== "folder") { if(editableText(entry))setTextEditor(entry);else setPreview(entry); return; }
+    if (entry.kind !== "folder") { if(editableText(entry)){setPreviewEntry(null);setTextEditor(entry);}else setPreview(entry); return; }
     if (!connection || entry.trashed) return;
     try {
       const d = readProcedure<Details>(await connection.procedures.fileDetails({ id: entry.id }));
       navigate(inLocked ? "locked" : "files", entry.id, [...d.ancestors, { id: entry.id, name: entry.name }]);
     } catch (cause) { setError(failure(cause)); }
   }
+  function setPreview(entry: FileEntry | null) { if (entry) setTextEditor(null); setPreviewEntry(entry); }
   function select(entry: FileEntry) { setTab(preferences.filesDetailsTab??"details");setSelected(new Set([entry.id])); setPublicLink(""); void showDetails(entry); }
   function toggle(entry: FileEntry) {
     setSelected(previous => { const next = new Set(previous); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; });
@@ -245,16 +264,19 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
     const success = await perform(async () => {
       if (!connection) throw new Error("Wait for the connection to return.");
       if (modal.type === "folder") await connection.reducers.createFolder({ id: crypto.randomUUID(), parentId: folder, name: String(p.name) });
-      const entry = "entry" in modal ? modal.entry : undefined;
+      const entry = "entry" in modal ? modal.entry : undefined, many = modal.entries ?? [];
       if (entry && modal.type === "rename") await connection.reducers.renameEntry({ id: entry.id, name: String(p.name), expectedRevision: entry.revision });
       if (entry && modal.type === "move") await connection.reducers.moveEntry({ id: entry.id, parentId: targetFolder!.id, expectedRevision: entry.revision });
       if (entry && modal.type === "copy") await connection.reducers.copyEntry({ id: entry.id, newId: crypto.randomUUID(), name: String(p.name), parentId: targetFolder!.id, expectedRevision: entry.revision });
+      // Several selected items keep their names; copies into the same folder are marked as copies.
+      if (!entry && modal.type === "move") { for (const item of many) await connection.reducers.moveEntry({ id: item.id, parentId: targetFolder!.id, expectedRevision: item.revision }); setSelected(new Set()); setDetails(null); }
+      if (!entry && modal.type === "copy") { for (const item of many) await connection.reducers.copyEntry({ id: item.id, newId: crypto.randomUUID(), name: item.parentId === targetFolder!.id ? `${item.name} copy` : item.name, parentId: targetFolder!.id, expectedRevision: item.revision }); setSelected(new Set()); }
       if (modal.type === "delete") {
-        const targets = entry ? [entry] : visible.filter(item => selected.has(item.id));
+        const targets = entry ? [entry] : many.length ? many : visible.filter(item => selected.has(item.id));
         for (const item of targets) await connection.reducers.deleteEntry({ id: item.id, expectedRevision: item.revision });
         setSelected(new Set()); setDetails(null);
       }
-    }, "Changes saved.");
+    }, !("entry" in modal && modal.entry) && modal.entries?.length && (modal.type === "move" || modal.type === "copy") ? `${modal.entries.length} ${modal.entries.length === 1 ? "item" : "items"} ${modal.type === "move" ? "moved" : "copied"}.` : "Changes saved.");
     if (success) setModal(null);
   }
   async function trashEntries(targets:FileEntry[]) {
@@ -321,7 +343,7 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
 
     <div className="workspace">
       {sidebar && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setSidebar(false)} />}
-      <aside id={sidebarId} ref={sidebarRef} className={`sidebar ${sidebar ? "is-open" : ""}`} aria-label="Files navigation"><ActionMenu label="New" className="files-new-menu" actions={[{label:"Folder",icon:"folder",disabled:!connected||!writableHere,run:()=>openModal({type:"folder"})},{label:"File",icon:"file",disabled:!connected||!writableHere,items:[{label:"Text file",run:()=>{setSidebar(false);setNewFile("text");}},{label:"Markdown file",run:()=>{setSidebar(false);setNewFile("markdown");}}]}]}><Icon name="plus"/><span>New</span><Icon name="chevron"/></ActionMenu><nav>{sections.map(item => <button className={`nav-item ${section === item.id ? "active" : ""}`} aria-current={section === item.id ? "page" : undefined} key={item.id} onClick={() => navigate(item.id)}><Icon name={item.icon} />{item.label}</button>)}</nav>
+      <aside id={sidebarId} ref={sidebarRef} className={`sidebar ${sidebar ? "is-open" : ""}`} aria-label="Files navigation"><ActionMenu label="New" className="files-new-menu" align="start" actions={[{label:"Folder",icon:"folder",disabled:!connected||!writableHere,run:()=>openModal({type:"folder"})},{label:"File",icon:"file",disabled:!connected||!writableHere,items:[{label:"Text file",run:()=>{setSidebar(false);setNewFile("text");}},{label:"Markdown file",run:()=>{setSidebar(false);setNewFile("markdown");}}]}]}><Icon name="plus"/><span>New</span><Icon name="chevron"/></ActionMenu><nav>{sections.map(item => <button className={`nav-item ${section === item.id ? "active" : ""}`} aria-current={section === item.id ? "page" : undefined} key={item.id} onClick={() => navigate(item.id)}><Icon name={item.icon} />{item.label}</button>)}</nav>
         <div className="storage"><strong><Icon name="folder" />Storage</strong>{usage?.quota ? <><progress max={usage.quota} value={usage.used} aria-label="Storage used" /><span>{formatBytes(usage.used)} of {formatBytes(usage.quota)} used</span></> : <span>{formatBytes(usage?.used ?? 0)} used</span>}</div>
         <AppSettingsButton app="files" onClick={()=>{setSidebar(false);setSettings(true);}}/>
       </aside>
@@ -331,7 +353,7 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
         {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError("")}><Icon name="close" /></button></div>}
         {clipboard&&<div className="ui-clipboard" role="status"><span>{clipboard.mode==="cut"?"Cut":"Copied"}: {clipboard.name}</span><button className="secondary-button" disabled={!connected||busy||!writableHere} onClick={()=>{void paste();}}>Paste here</button><button className="text-button" onClick={()=>remember(null)}>Clear clipboard</button></div>}
         {notice && <div className="notice files-toast" role="status"><Icon name="check" /><span>{notice}</span>{undoTrash&&notice.endsWith("moved to deleted files.")&&<button className="text-button" onClick={()=>{void undoLastTrash();}}>Undo</button>}<button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice("")}><Icon name="close" /></button></div>}
-        <div className={`file-toolbar${selected.size?" is-selecting":""}`}>{selected.size ? <><button className="icon-button" aria-label="Clear selection" title="Clear selection" onClick={() => setSelected(new Set())}><Icon name="close" /></button><strong>{selected.size} selected</strong><span className="file-toolbar-spacer"/>{section === "trash" || inLocked ? <button className="text-button danger" onClick={() => openModal({ type: "delete" })}><Icon name="trash" />Delete permanently</button> : <button className="text-button" aria-label="Move selected items to deleted files" disabled={!connected || busy || visible.some(entry => selected.has(entry.id) && entry.ownerId !== session.user.id)} onClick={() => { requestTrash(visible.filter(item => selected.has(item.id))); }}><Icon name="trash" /><span>Move to deleted files</span></button>}</> : <span>{connection ? visible.length : "—"}{hasMore ? "+" : ""} {visible.length===1&&!hasMore?"item":"items"}{query ? ` starting with “${query}”` : ""}</span>}</div>
+        <div className={`file-toolbar${selected.size?" is-selecting":""}`}>{selected.size ? <><button className="icon-button" aria-label="Clear selection" title="Clear selection" onClick={() => setSelected(new Set())}><Icon name="close" /></button><strong>{selected.size} selected</strong><span className="file-toolbar-spacer"/>{selectionActions()}</> : <span>{connection ? visible.length : "—"}{hasMore ? "+" : ""} {visible.length===1&&!hasMore?"item":"items"}{query ? ` starting with “${query}”` : ""}</span>}</div>
         {inLocked && !lockedOpen ? (locked.state ? <UnlockForm folder={locked} description="Enter your password to open it. Files here are hidden from All files, search, sharing, WebDAV and other apps, including Photos’ library." onUnlocked={() => setError("")} /> : <p className="muted" role="status">{locked.error || "Checking the Locked folder…"}</p>) : state !== "ready" && !connection ? null : loading ? <div className="file-skeleton" aria-busy="true" aria-label="Loading files">{[1, 2, 3, 4].map(id => <div key={id}><span /><span /></div>)}</div> : !visible.length ? <div className="empty-state"><span className="empty-icon"><Icon name={section === "trash" ? "trash" : section === "shared" ? "share" : query ? "search" : inLocked ? "lock" : "folder"} /></span><h2>{query ? "No matching files" : inLocked ? "Nothing locked yet" : section === "trash" ? "Nothing in deleted files" : section === "shared" ? "No shared files" : section === "favorites" ? "No favorites" : "No files"}</h2><p>{query ? "Search matches the beginning of a filename in this folder." : inLocked ? "Choose Move to Locked folder on a file or folder, or upload here. Deleting here is permanent." : section === "files" ? "Drop your first file here, or upload something to get started." : section === "favorites" ? "Mark a file or folder as a favorite to find it here." : section === "shared" ? "When someone shares with you, it will appear here." : "Items you delete will appear here for recovery."}</p>{writableHere && !query && <button className="primary-button" disabled={!connected} onClick={() => uploadInput.current?.click()}><Icon name="upload" />Upload your first file</button>}</div> : grid ? <div className="file-grid">{visible.map(entry => <article key={entry.id} className={`file-card ${selected.has(entry.id) ? "is-selected" : ""}`}><button className={`card-open card-preview-${entry.kind}`} onClick={() => { void openEntry(entry); }} aria-label={`Open ${entry.name}`}>{/^image\/(png|jpeg|gif|webp)$/.test(entry.mediaType)&&entry.size<=8*1024*1024?<img src={`/api/v1/files/${entry.id}/thumbnail?v=${entry.revision}`} alt="" loading="lazy" decoding="async"/>:<FileTile entry={entry} large/>}</button><div className="card-caption"><input type="checkbox" checked={selected.has(entry.id)} aria-label={`Select ${entry.name}`} onChange={() => toggle(entry)} /><button className="name-button" onClick={() => {void openEntry(entry);}}>{entry.name}</button>{actions(entry)}</div><p>{entry.kind === "folder" ? "Folder" : formatBytes(entry.size)} · {date(entry.modifiedAt)}{entry.favorite&&<Icon name="star" className="favorite-icon"/>}</p></article>)}</div> : <div className="table-scroll"><table className="file-table"><thead><tr><th className="checkbox-cell"><input type="checkbox" aria-label="Select all visible files" checked={visible.length > 0 && visible.every(entry => selected.has(entry.id))} onChange={event => setSelected(event.target.checked ? new Set(visible.map(entry => entry.id)) : new Set())} /></th><th>Name <span aria-hidden="true">↑</span></th><th className="date-cell">Modified</th><th className="size-cell">Size</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{visible.map(entry => <FileRow key={entry.id} entry={entry} checked={selected.has(entry.id)} highlighted={selected.has(entry.id) || chosen?.id === entry.id} shared={entry.ownerId!==session.user.id} role={roles[entry.id]} busy={busy} inLocked={inLocked} handlers={rowHandlers}/>)}</tbody></table></div>}
         {(previous.length > 0 || hasMore) && <div className="pagination"><button className="secondary-button" disabled={!previous.length} onClick={() => { setCursor(previous.at(-1) ?? ""); setPrevious(previous.slice(0, -1)); }}>Previous</button><span>Page {previous.length + 1}</span><button className="secondary-button" disabled={!hasMore} onClick={() => { setPrevious([...previous, cursor]); setCursor(visible.at(-1)!.listKey); }}>Next</button></div>}
         {writableHere&&visible.length>0&&<div className="drop-hint"><Icon name="upload" /> Drag files into this folder to upload</div>}
@@ -359,13 +381,13 @@ export function Files({ session, onSignedOut }: { session: BrowserSession; onSig
     {unlockAction&&<UnlockDialog folder={locked} action={unlockAction.action} onClose={()=>setUnlockAction(null)} onUnlocked={value=>{const run=unlockAction.run;setUnlockAction(null);if(value.folderId)run(value.folderId);}}/>}
     {settings&&<AppSettings app="files" session={session} onClose={()=>setSettings(false)}/>}
     {trashConfirmation&&<Dialog title="Move to deleted files?" onClose={()=>setTrashConfirmation(null)}><p>{trashConfirmation.length===1?trashConfirmation[0].name:`${trashConfirmation.length} selected items`} can be restored from Deleted files.</p><div className="dialog-actions"><button className="text-button" onClick={()=>setTrashConfirmation(null)}>Cancel</button><button className="primary-button" disabled={busy} onClick={()=>{void trashEntries(trashConfirmation).then(ok=>{if(ok)setTrashConfirmation(null);});}}>Move to deleted files</button></div></Dialog>}
-    {modal && <FileOperationPane title={modal.type === "folder" ? "New folder" : modal.type === "rename" ? "Rename item" : modal.type === "move" ? "Move item" : modal.type === "copy" ? "Copy item" : modal.type === "delete" ? "Delete permanently?" : "Delete permanently?"} onClose={() => setModal(null)}><form onSubmit={submitModal}>
-      {["folder", "rename", "copy"].includes(modal.type) && <label>Name<input name="name" required maxLength={255} defaultValue={"entry" in modal ? modal.type === "copy" ? `${modal.entry!.name} copy` : modal.entry?.name : ""} autoFocus /></label>}
-      {(modal.type === "move" || modal.type === "copy") && <DarFilePicker key={`${modal.type}:${modal.entry?.id}`} mode="folder" allowRoot initialFolderId={targetPath.at(-1)?.id??""} excludeIds={modal.entry?[modal.entry.id]:[]} disabled={busy} onChange={setTargetFolder}/>}
-      {modal.type === "delete" && <p>This permanently removes {"entry" in modal && modal.entry ? `“${modal.entry.name}”` : `${selected.size} selected items`} and their versions. This cannot be undone.</p>}
+    {modal && <FileOperationPane title={modal.type === "folder" ? "New folder" : modal.type === "rename" ? "Rename item" : modal.type === "move" ? modal.entries?.length ? `Move ${modal.entries.length} ${modal.entries.length === 1 ? "item" : "items"}` : "Move item" : modal.type === "copy" ? modal.entries?.length ? `Copy ${modal.entries.length} ${modal.entries.length === 1 ? "item" : "items"}` : "Copy item" : modal.type === "delete" ? "Delete permanently?" : "Delete permanently?"} onClose={() => setModal(null)}><form onSubmit={submitModal}>
+      {(["folder", "rename"].includes(modal.type) || modal.type === "copy" && modal.entry) && <label>Name<input name="name" required maxLength={255} defaultValue={"entry" in modal ? modal.type === "copy" ? `${modal.entry!.name} copy` : modal.entry?.name : ""} autoFocus /></label>}
+      {(modal.type === "move" || modal.type === "copy") && <DarFilePicker key={`${modal.type}:${modal.entry?.id??modal.entries?.map(item=>item.id).join(",")}`} mode="folder" allowRoot initialFolderId={targetPath.at(-1)?.id??""} excludeIds={modal.entry?[modal.entry.id]:modal.entries?.map(item=>item.id)??[]} disabled={busy} onChange={setTargetFolder}/>}
+      {modal.type === "delete" && <p>This permanently removes {"entry" in modal && modal.entry ? `“${modal.entry.name}”` : `${modal.entries?.length ?? selected.size} selected items`} and their versions. This cannot be undone.</p>}
       {error && <p className="error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="text-button" onClick={() => setModal(null)}>Cancel</button><button className={modal.type === "delete" ? "danger-button" : "primary-button"} disabled={busy||(modal.type==="move"||modal.type==="copy")&&!targetFolder}>{busy ? "Saving…" : modal.type === "folder" ? "Create folder" : modal.type === "delete" ? "Delete permanently" : modal.type === "move" ? "Move here" : modal.type === "copy" ? "Copy here" : "Save"}</button></div>
     </form></FileOperationPane>}
-    {preview && <Dialog title={preview.name} onClose={() => setPreview(null)}><div className="preview-content">{/^image\/(png|jpeg|gif|webp)$/.test(preview.mediaType) ? <img src={`/api/v1/files/${preview.id}/content?preview=1`} alt={preview.name} /> : /^(text\/|application\/json)/.test(preview.mediaType) && preview.size <= 1024 * 1024 ? <pre>{textPreview || "Loading preview…"}</pre> : <div className="empty-state"><Icon name="file" /><p>A browser preview isn’t available for this file.</p></div>}</div><a className="primary-button" href={`/api/v1/files/${preview.id}/content`}><Icon name="download" />Download</a></Dialog>}
+    {preview&&<FilePreview key={preview.id} entry={preview} siblings={visible.filter(item=>item.kind==="file"&&!editableText(item))} onOpen={setPreview} onClose={()=>setPreview(null)} actions={[{label:"Details",icon:"info",run:()=>select(preview)}]}/>}
   </div>;
 }
 

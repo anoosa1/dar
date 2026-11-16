@@ -70,8 +70,9 @@ body:is(.has-editing-pane,.has-settings-sheet) .photos-shell .pim-details.photos
 .photos-empty>.icon{width:32px;height:32px}.photos-empty h2{margin:4px 0 0;font-size:16px;color:var(--text)}.photos-empty p{margin:0 0 8px;font-size:13px;line-height:1.6}
 
 /* Viewer in the middle sheet with a filmstrip. */
-.photos-viewer{display:flex;flex-direction:column;flex:1;min-height:0}
-.photos-stage{position:relative;flex:1;min-height:0;display:grid;place-items:center;padding:12px;background:color-mix(in srgb,var(--text) 6%,var(--panel))}
+.photos-viewer{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+/* Definite tracks let max-width/max-height fit the photo to the stage instead of its natural size. */
+.photos-stage{position:relative;flex:1;min-height:0;display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);place-items:center;overflow:hidden;padding:12px;background:color-mix(in srgb,var(--text) 6%,var(--panel))}
 .photos-stage img,.photos-stage video{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 8px 30px var(--shadow)}
 .photos-stage video{width:100%;height:100%;background:#000}
 .photos-strip{display:flex;gap:4px;padding:8px 12px;border-top:1px solid var(--border);overflow-x:auto;scrollbar-width:thin;flex:none}
@@ -139,9 +140,9 @@ body:is(.has-editing-pane,.has-settings-sheet) .photos-shell .pim-details.photos
 .photos-stack-badge{left:auto}
 .photos-tile .photos-badge.photos-stack-badge{top:auto;bottom:6px}
 .photos-video-wait{display:flex;align-items:center;gap:10px;padding:14px 18px;border-radius:14px;background:var(--panel);color:var(--muted);font-size:13px;box-shadow:0 8px 30px var(--shadow)}
-.photos-live{position:relative;display:grid;place-items:center;width:100%;height:100%;min-height:0}
+.photos-live{position:relative;display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);place-items:center;width:100%;height:100%;min-height:0;overflow:hidden}
 .photos-live>img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 8px 30px var(--shadow)}
-.photos-live-motion{position:absolute;inset:0;display:grid;place-items:center}
+.photos-live-motion{position:absolute;inset:0;display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);place-items:center}
 .photos-live-motion video{max-width:100%;max-height:100%;width:auto;height:auto;background:transparent;border-radius:4px}
 .photos-live-toggle{position:absolute;left:12px;top:12px;display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:4px 12px 4px 8px;border-radius:16px;background:color-mix(in srgb,var(--panel) 85%,transparent);color:var(--text);font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase}
 .photos-live-toggle .icon{width:16px;height:16px}
@@ -225,7 +226,7 @@ label.photos-link-row{justify-content:space-between}
 .public-photos-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:12px 0 8px}
 .public-photos-heading h1{margin:0 0 4px;font-size:var(--content-heading-size,22px);font-weight:600}
 .public-photos-heading p{margin:0;font-size:13px;color:var(--muted)}.public-photos-description{margin-top:6px!important;color:var(--text)!important;max-width:640px;line-height:1.6}
-.public-photos .photos-viewer{min-height:calc(100dvh - 110px)}
+.public-photos .photos-viewer{height:calc(100dvh - 110px);min-height:320px}
 .public-photos .photos-stage img{max-width:100%;max-height:100%;object-fit:contain}
 .public-photos-meta{margin:0;padding:10px 12px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)}
 .public-photos>.photos-empty{margin:auto}

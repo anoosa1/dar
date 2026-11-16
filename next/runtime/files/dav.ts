@@ -4,6 +4,7 @@ import type { Database } from "../database.ts";
 import { digestToken } from "../auth/session.ts";
 import { AppError } from "../errors.ts";
 import type { blobStore, BlobFile } from "./blobs.ts";
+import { maxFileBytes } from "../../shared/limits.ts";
 
 /** WebDAV verbs the database answers without changing anything. */
 const davReads: ReadonlySet<string> = new Set(["STAT", "PROPFIND"]);
@@ -73,7 +74,7 @@ export async function handleDav(req: IncomingMessage, res: ServerResponse, db: D
     }
     if (req.headers["content-length"] === undefined) throw new AppError("lengthRequired", 411);
     const size = Number(req.headers["content-length"]);
-    if (!Number.isSafeInteger(size) || size < 0 || size > 1024 ** 3) throw new AppError("uploadTooLarge", 413);
+    if (!Number.isSafeInteger(size) || size < 0 || size > maxFileBytes) throw new AppError("uploadTooLarge", 413);
     const id = randomUUID(), fileId = target.entry?.id ?? randomUUID();
     await db.call("service_begin_upload", [authenticated.sessionId, id, fileId, target.parentId, target.name, size, req.headers["content-type"]?.split(";")[0] ?? "application/octet-stream", target.entry?.revision ?? 0]);
     try {

@@ -5,7 +5,7 @@ import { readContact, writeContact } from "./contacts.ts";
 import { cancelOccurrence, expand, readEvent, splitCalendarImport, writeEvent } from "./calendar.ts";
 import { field, invalid, resources, serialize } from "./standards.ts";
 import ICAL from "ical.js";
-import {isTask,readTask,writeTask} from "./tasks.ts";
+import {isTask,readTask,writeTask,taskOccurrences} from "./tasks.ts";
 import {readNote} from "./notes.ts";
 import type {NoteData} from "../../shared/workspace.ts";
 import { pimReadOperations } from "../../shared/read-operations.ts";
@@ -58,9 +58,16 @@ export function pimService(db: Database, sessionId: string) {
     }
     return serialize(root);
   }
-  async function occurrences(collectionId: string, zone: string, from: Date, to: Date, includeCancelled = false) {
+  async function occurrences(collectionId: string, zone: string, from: Date, to: Date, includeCancelled = false, includeTasks = false) {
     const { collection, items } = await list(collectionId); if (collection.kind !== "calendar") invalid("This is not a calendar.");
     const result = items.filter(row=>!isTask(row.content)).flatMap(row => expand(row, zone, from, to, false, includeCancelled));
+    // Dated tasks sit at their due time (date-only tasks on their due day); undated tasks stay in Tasks.
+    if (includeTasks) for (const row of items.filter(row=>isTask(row.content))) for (const task of taskOccurrences(row, zone, from, to)) {
+      if (task.status === "CANCELLED" && !includeCancelled) continue;
+      const end = Date.parse(task.endAt), startAt = task.allDay ? new Date(end - 86400000).toISOString() : task.due ? task.endAt : task.startAt, endAt = task.allDay || task.due ? task.endAt : task.startAt;
+      result.push({ resourceId: task.resourceId, collectionId: task.collectionId, href: task.href, revision: task.revision, recurrenceId: task.recurrenceId, startAt, endAt, task: true, priority: task.priority,
+        title: task.title, start: task.start, end: task.due, timezone: task.timezone, allDay: task.allDay, description: task.description, location: "", recurrence: task.recurrence, recurring: task.recurring, attendees: [], reminderMinutes: task.reminderMinutes, status: task.status });
+    }
     if (result.length > 5000) invalid("Calendar window contains too many occurrences.");
     return result.sort((a,b) => a.startAt.localeCompare(b.startAt));
   }

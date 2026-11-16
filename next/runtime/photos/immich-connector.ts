@@ -9,6 +9,7 @@ import {BlockList,isIP} from "node:net";
 import type {Database} from "../database.ts";
 import type {blobStore} from "../files/blobs.ts";
 import {photoKind,type PhotoImmichProgress} from "../../shared/photos.ts";
+import {maxFileBytes,maxFileLabel} from "../../shared/limits.ts";
 import type {PhotosRuntime,PhotoJob} from "./runtime.ts";
 
 interface Connection {userId:string;url:string;sealedKey:string}
@@ -19,7 +20,7 @@ const budget={files:300,bytes:4*1024**3};
 /** While Immich has more to import, the next run starts this soon instead of waiting for the interval. */
 const backlogDelay=30_000;
 /** Dar's file size limit (Files, WebDAV and Immich uploads). */
-const maxFile=1024**3;
+const maxFile=maxFileBytes;
 /** This many failed files in a row means Immich or Dar is failing, not the files: the run stops. */
 const maxConsecutiveFailures=10;
 /** Why one file was not imported; the run goes on without it. */
@@ -98,11 +99,11 @@ export function createImmichConnector(db:Database,root:string,blobs:ReturnType<t
   async function importAsset(c:Connection,client:ReturnType<typeof immichClient>,asset:RemoteAsset){
     const name=(asset.originalFileName||"immich").replace(/[\x00-\x1f\\/]/g,"_").trim().slice(0,255)||"immich",mediaType=asset.originalMimeType||"application/octet-stream";
     if(!photoKind(mediaType,name))throw new AssetError(`${mediaType} is not a photo or video type`);
-    if((asset.exifInfo?.fileSizeInByte??0)>maxFile)throw new AssetError("it is larger than 1 GiB, Dar's file size limit");
+    if((asset.exifInfo?.fileSizeInByte??0)>maxFile)throw new AssetError(`it is larger than ${maxFileLabel}, Dar's file size limit`);
     const dir=await mkdtemp(path.join(root,"uploads","immich-import-"));
     try{
       const file=path.join(dir,"original"),hash=createHash("sha1"),response=await client.raw(`/assets/${asset.id}/original`);
-      await pipeline(Readable.fromWeb(response.body as import("node:stream/web").ReadableStream),async function*(source){let size=0;for await (const chunk of source){size+=(chunk as Buffer).length;if(size>maxFile)throw new AssetError("it is larger than 1 GiB, Dar's file size limit");hash.update(chunk as Buffer);yield chunk;}},createWriteStream(file,{mode:0o600}));
+      await pipeline(Readable.fromWeb(response.body as import("node:stream/web").ReadableStream),async function*(source){let size=0;for await (const chunk of source){size+=(chunk as Buffer).length;if(size>maxFile)throw new AssetError(`it is larger than ${maxFileLabel}, Dar's file size limit`);hash.update(chunk as Buffer);yield chunk;}},createWriteStream(file,{mode:0o600}));
       const {size}=await stat(file),sha1=hash.digest("base64"),taken=/^(\d{4})-(\d{2})/.exec(asset.fileCreatedAt??""),current=new Date();
       // Bogus capture dates (year 1, 1800, 9999) land in this month's folder; Photos still reads the date from the file.
       const [year,month]=taken&&Number(taken[1])>=1900&&Number(taken[1])<=2999&&Number(taken[2])>=1&&Number(taken[2])<=12?[Number(taken[1]),Number(taken[2])]:[current.getUTCFullYear(),current.getUTCMonth()+1];

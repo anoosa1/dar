@@ -7,6 +7,17 @@ import {SettingsSheet,SettingRow,SettingSwitch,Segmented,type SaveState,type Set
 import type {Preferences} from "../shared/preferences.ts";
 import type {AppId} from "./apps.tsx";
 import {sharedRequest} from "./shared-request.ts";
+import {photoFolderParts} from "../shared/photos.ts";
+import {defaultNotesFolder} from "../shared/workspace.ts";
+
+/** The Files folder that holds notes; saved on submit, only when valid. */
+function NotesFolderSetting({value,state,onSave}:{value:string;state?:SaveState;onSave:(value:string)=>void}){
+  const [draft,setDraft]=useState<string>(),current=draft??value,valid=!!photoFolderParts(current);
+  return <SettingRow label="Notes folder" hint={`Notes are Markdown files in Files › ${value}. Folders inside it are notebooks.`} state={state} stacked>
+    <form className="photos-folder-form" onSubmit={event=>{event.preventDefault();const parts=photoFolderParts(current);if(!parts)return;setDraft(undefined);onSave(parts.join("/"));}}><label><span className="sr-only">Notes folder</span><input value={current} maxLength={500} onChange={event=>setDraft(event.target.value)} aria-invalid={!valid}/></label><button className="secondary-button" disabled={!valid||current===value}>Save</button></form>
+    {!valid&&<p className="field-error" role="alert">Use folder names separated by /, like docs/notes.</p>}
+  </SettingRow>;
+}
 export type {Preferences};
 const endpoint="/api/v1/pim/preferences";
 /** The account's preferences, fetched once per page for every reader. */
@@ -82,8 +93,10 @@ export function AppSettings({app,session,onClose,onChanged}:{app:SettingsApp;ses
       {app==="contacts"&&<section className="settings-group" aria-label="Display"><h3>Display</h3><SettingRow label="Sort contacts by" hint="Order of the contact list" state={state.contactSort}><Segmented label="Sort contacts by" value={p.contactSort??"firstName"} options={[["firstName","First name"],["lastName","Last name"]] as const} onChange={value=>set("contactSort",value,`Contacts sorted by ${value==="lastName"?"last":"first"} name`)}/></SettingRow></section>}
       {app==="calendar"&&<><section className="settings-group" aria-label="Display"><h3>Display</h3>
         <SettingRow label="Week begins" hint="Month and Week views and the date picker" state={state.weekStart}><Segmented label="Week begins" value={p.weekStart??1} options={[[1,"Monday"],[0,"Sunday"]] as const} onChange={value=>set("weekStart",value,`Week begins on ${value?"Monday":"Sunday"}`)}/></SettingRow>
-        <SettingSwitch label="Show cancelled events" hint="Shown struck through instead of hidden" state={state.calendarShowCancelled} checked={p.calendarShowCancelled??false} onChange={value=>set("calendarShowCancelled",value,value?"Cancelled events shown":"Cancelled events hidden")}/></section>
+        <SettingSwitch label="Show cancelled events" hint="Shown struck through instead of hidden" state={state.calendarShowCancelled} checked={p.calendarShowCancelled??false} onChange={value=>set("calendarShowCancelled",value,value?"Cancelled events shown":"Cancelled events hidden")}/>
+        <SettingSwitch label="Show tasks" hint="Dated tasks appear at their due time" state={state.calendarShowTasks} checked={p.calendarShowTasks??true} onChange={value=>set("calendarShowTasks",value,value?"Tasks shown":"Tasks hidden")}/></section>
         <section className="settings-group" aria-label="Time"><h3>Time</h3><SettingRow label="Timezone" hint={`${p.timezone??"UTC"} · events with their own timezone keep it`}><a className="secondary-button" href="/settings?section=regional">Regional settings</a></SettingRow></section></>}
+      {app==="notes"&&<section className="settings-group" aria-label="Storage"><h3>Storage</h3><NotesFolderSetting value={p.notesFolder??defaultNotesFolder} state={state.notesFolder} onSave={value=>set("notesFolder",value,`Notes now live in ${value}`)}/></section>}
       {(app==="notes"||app==="tasks")&&<section className="settings-group" aria-label="Lists"><h3>Lists</h3>
         <SettingRow label="Default sorting" hint={`Order of the ${app} list`} state={state[app==="notes"?"notesSort":"tasksSort"]} stacked={app==="tasks"}><Segmented label="Default sorting" value={(app==="notes"?p.notesSort:p.tasksSort)??(app==="notes"?"modified":"due")} options={(app==="notes"?["modified","title"]:["modified","title","due"]).map(value=>[value,sorting[value as keyof typeof sorting]] as const)} onChange={value=>set(app==="notes"?"notesSort":"tasksSort",value,`Sorted by ${sorting[value as keyof typeof sorting].toLowerCase()}`)}/></SettingRow>
         {app==="notes"&&<SettingRow label="Open notes in" hint="Editing or reading view" state={state.notesEditorMode}><Segmented label="Open notes in" value={p.notesEditorMode??"write"} options={[["write","Write"],["preview","Preview"]] as const} onChange={value=>set("notesEditorMode",value,`Notes open in ${value==="write"?"Write":"Preview"}`)}/></SettingRow>}

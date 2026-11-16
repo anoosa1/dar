@@ -9,4 +9,6 @@ export const pimChanges = table({}, { userId: t.string().primaryKey(), revision:
 export const pimPreferences = table({}, { userId: t.string().primaryKey(), value: t.string(), revision: t.u32() });
 export const pimReminders = table({}, { id: t.string().primaryKey(), userId: t.string().index("btree"), resourceId: t.string().index("btree"), resourceRevision: t.u32(), dueAt: t.f64(), title: t.string(), acknowledged: t.bool() });
 export const pimReminderCursors = table({}, { resourceId: t.string().primaryKey(), revision: t.u32(), at: t.f64(), runAt: t.string().index("btree").default("") });
-export const pimTables = { pimCollections, pimResources, pimGrants, pimChanges, pimPreferences, pimReminders, pimReminderCursors };
+/** A calendar kept in sync with a remote ICS address. Its events are read-only in Dar; the address may carry a secret, so only the owner sees it. */
+export const pimSubscriptions = table({}, { collectionId: t.string().primaryKey(), ownerId: t.string().index("btree"), url: t.string(), refreshMinutes: t.u32(), nextAt: t.string().index("btree"), lastSyncAt: t.f64(), lastError: t.string(), etag: t.string(), lastModified: t.string() });
+export const pimTables = { pimCollections, pimResources, pimGrants, pimChanges, pimPreferences, pimReminders, pimReminderCursors, pimSubscriptions };

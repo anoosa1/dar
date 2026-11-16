@@ -45,3 +45,16 @@
 .app-shell.pim-shell.has-pim-details.has-note-editor .pim-workspace{grid-template-columns:230px minmax(200px,300px) minmax(0,1fr)}
 @media(max-width:1000px) and (min-width:801px){.app-shell.pim-shell.has-pim-details.has-note-editor .pim-workspace{grid-template-columns:230px minmax(180px,240px) minmax(0,1fr)}.workspace-note-editor{padding-inline:var(--pane-padding)}}
 @media(max-width:800px){.workspace-note-editor{padding:12px var(--pane-padding)}.workspace-note-editor .note-title{font-size:26px;padding:14px 0;min-height:62px}.workspace-note-editor .note-source{font-size:15px}.workspace-note-editor .workspace-editor-top .text-button{font-size:12px;padding:7px 9px}}
+/* Notes as files: the shared Markdown editor fills the note sheet instead of floating. */
+.pim-details.has-note-editor>.file-text-editor{position:static;inset:auto;width:auto;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none;z-index:auto}
+.notes-folders{display:flex;flex-direction:column;min-height:0;overflow:auto}
+.notes-folder-row{display:flex;align-items:center;gap:2px;min-width:0}
+.notes-folder-row>.nav-item{flex:1;min-width:0}
+.notes-folder-row>.nav-item>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.notes-folder-row.depth-1{padding-left:14px}.notes-folder-row.depth-2{padding-left:28px}.notes-folder-row.depth-3{padding-left:42px}.notes-folder-row.depth-4{padding-left:56px}.notes-folder-row.depth-5{padding-left:70px}
+.notes-folder-row .ui-menu-trigger{opacity:0}.notes-folder-row:is(:hover,:focus-within) .ui-menu-trigger,.notes-folder-row .ui-menu-trigger[aria-expanded=true]{opacity:1}
+.notes-folders-empty{padding:4px 12px}
+.notes-notice{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.notes-legacy{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px;padding:14px;border:1px solid var(--sheet-border,var(--border));border-radius:12px;background:var(--tonal);color:var(--on-tonal);font-size:13px}.notes-legacy p{flex:1 1 100%;margin:0}.notes-legacy .text-button{color:inherit}
+@media(max-width:800px){.notes-folder-row .ui-menu-trigger{opacity:1}.notes-folders{flex-direction:row;overflow:visible}.notes-folder-row[class*=depth-]{padding-left:0}}
+.pim-details.has-note-editor .document-editor .note-source{font:15px/1.75 Inter,ui-sans-serif,system-ui,sans-serif}

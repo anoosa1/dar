@@ -22,7 +22,7 @@ export async function handleWorkspaceHttp(req:IncomingMessage,res:ServerResponse
   if(notes&&path==="/trash"&&method==="GET")return json(await workspace("trash",{cursor:url.searchParams.get("cursor")??""}));
   const trash=/^\/trash\/([^/]+)(?:\/(restore))?$/.exec(path);
   if(notes&&trash){const rows=await workspace<{items:{id:string;resource:PimResource}[]}>("trash",{id:trash[1]}),row=rows.items.find(r=>r.id===trash[1]);if(!row)throw new AppError("notFound",404);if(method==="GET")return json(row,200,row.resource);if(method==="DELETE"||method==="POST"&&trash[2])return json(await workspace(trash[2]?"restore":"purge",{...trash[2]?await body():{},id:row.id,revision:requireMatch(req,row.resource)}));}
-  const collections=(await service.collections()).filter(c=>c.kind===kind),collectionName=notes?"notebooks":"lists";
+  const collections=(await service.collections()).filter(c=>c.kind===kind&&!c.subscription),collectionName=notes?"notebooks":"lists";
   const group=new RegExp(`^/${collectionName}(?:/([^/]+))?(?:/(grants|export|import))?$`).exec(path);
   if(group){const [,id,sub]=group;if(!id){if(method==="GET")return json({items:collections,nextCursor:""});if(method==="POST"){const p=await body(),row=await service.call<PimCollection>("createCollection",{id:randomUUID(),kind,name:field(p.name,255),color:field(p.color??"#2563eb",7)});return json(row,201,row);}}
     const c=collections.find(c=>c.id===id);if(!c)throw new AppError("notFound",404);

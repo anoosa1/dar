@@ -51,8 +51,8 @@ try {
   await page.locator("dialog,[data-editor-pane]").getByRole("button", { name: "Save", exact: true }).click();
   await page.getByRole("heading", { name: "A little hello.txt", exact: true }).waitFor();
   await page.getByRole("button", { name: "Preview", exact: true }).click();
-  await page.locator("dialog,[data-editor-pane]").getByText("A real file uploaded through the Files app.", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("region", { name: "Preview of A little hello.txt", exact: true }).getByText("A real file uploaded through the Files app.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Close preview", exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Preview");
   await page.getByRole("button", { name: "Add to favorites", exact: true }).click();
   await page.getByRole("button", { name: "Remove favorite", exact: true }).waitFor();

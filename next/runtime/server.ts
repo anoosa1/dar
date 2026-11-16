@@ -32,6 +32,8 @@ import { configureOidc } from "./identity/config.ts";
 import {handleAgentHttp} from "./agent/http.ts";
 import {createAgentRuntime,type AgentRuntime} from "./agent/runtime.ts";
 import {createNewsRuntime,type NewsRuntime} from "./news/runtime.ts";
+import {createCalendarSubscriptions,type CalendarSubscriptions} from "./pim/subscriptions.ts";
+import {createNotesLibrary} from "./notes/library.ts";
 import {handleNewsHttp} from "./news/http.ts";
 import {createPhotosRuntime,type PhotosRuntime} from "./photos/runtime.ts";
 import {handlePhotosHttp,sendFile} from "./photos/http.ts";
@@ -41,6 +43,7 @@ import {createImmichConnector,type ImmichConnector} from "./photos/immich-connec
 import {staticAssets} from "./static.ts";
 import {handleNextcloudNews,nextcloudBase} from "./news/nextcloud.ts";
 import {writeJson} from "./json-response.ts";
+import {maxFileBytes} from "../shared/limits.ts";
 
 export interface ServerConfig {
   host: string; port: number; origin: string; root: string;
@@ -95,7 +98,7 @@ export async function startServer(config: ServerConfig) {
   let ownedContext: Context | undefined;
   let appRuntime:Awaited<ReturnType<typeof activateApps>>|undefined;
   let agentRuntime:AgentRuntime|undefined;
-  let newsRuntime:NewsRuntime|undefined;
+  let newsRuntime:NewsRuntime|undefined,calendarSubscriptions:CalendarSubscriptions|undefined;
   let photosRuntime:PhotosRuntime|undefined,immichConnector:ImmichConnector|undefined;
   try {
   const db = await database(config.databaseUrl, config.databaseName, config.serviceTokenFile);
@@ -131,7 +134,8 @@ export async function startServer(config: ServerConfig) {
   ctx.effect(() => () => disposeResources(), "runtime-resources");
   agentRuntime=await createAgentRuntime(db,root,config.codexFile??path.join(root,"codex.json"),config.claudeFile??path.join(root,"claude.json"));
   newsRuntime=createNewsRuntime(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
-  const blobs = blobStore(root), client = staticAssets(new URL("../dist/", import.meta.url));
+  calendarSubscriptions=createCalendarSubscriptions(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
+  const blobs = blobStore(root), client = staticAssets(new URL("../dist/", import.meta.url)), notesLibrary = createNotesLibrary(db, root);
   photosRuntime=await createPhotosRuntime(db,root);
   immichConnector=createImmichConnector(db,root,blobs,photosRuntime,{allowLoopback:!!config.development||!!config.immichAllowLocalHost});
   await blobs.recover();
@@ -284,6 +288,7 @@ export async function startServer(config: ServerConfig) {
           }
           return json(res,await (locked[1]?db.call:db.read)("service_locked_folder",[authenticated.session.id,locked[1]?locked[1].slice(1):"state",verifier]));
         }
+        if(url.pathname==="/api/v1/notes/library"&&method==="GET")return json(res,await notesLibrary.library(authenticated.session.id,(url.searchParams.get("q")??"").slice(0,200)));
         if(/^\/api\/v1\/(notes|tasks)(\/|$)/.test(url.pathname))return await handleWorkspaceHttp(req,res,url,db,authenticated.session.id,()=>body(req,3*1024*1024));
         if(url.pathname==="/api/v1/account/profile"){
           const profile=await db.call<{id:string;revision:number}>("service_profile",[authenticated.session.id,"read","{}"]),etag=`"${profile.id}:${profile.revision}"`;
@@ -300,7 +305,7 @@ export async function startServer(config: ServerConfig) {
           await handleIdentityHttp(req,res,url,db,auth,authenticated,identity,config.origin,!!config.development,()=>body(req,256*1024));
           if(attempt)attempt.count=Math.max(0,attempt.count-1);return;
         }
-        if (/^\/api\/v1\/(contacts|calendar|pim)(\/|$)/.test(url.pathname)) return await handlePimHttp(req, res, url, pimService(db, authenticated.session.id), () => body(req, 3 * 1024 * 1024));
+        if (/^\/api\/v1\/(contacts|calendar|pim)(\/|$)/.test(url.pathname)) return await handlePimHttp(req, res, url, pimService(db, authenticated.session.id), () => body(req, 3 * 1024 * 1024), () => calendarSubscriptions!.poke());
         if (url.pathname === "/api/v1/auth/session" && method === "GET") return json(res, { user: authenticated.user, csrfToken: issuer.csrf(secret!) });
         if(url.pathname==="/api/v1/appearance" && method==="PUT"){
           if(!authenticated.user.administrator)throw new AppError("forbidden",403);
@@ -343,7 +348,7 @@ export async function startServer(config: ServerConfig) {
         if (url.pathname === "/api/v1/files/uploads" && method === "POST") {
           const p = await body(req), id = randomUUID();
           const upload = await db.call("service_begin_upload", [authenticated.session.id, id,
-            p.fileId ? string(p.fileId, 100) : randomUUID(), string(p.parentId ?? "", 100), string(p.name, 1024), integer(p.size, 1024 ** 3),
+            p.fileId ? string(p.fileId, 100) : randomUUID(), string(p.parentId ?? "", 100), string(p.name, 1024), integer(p.size, maxFileBytes),
             string(p.mediaType ?? "application/octet-stream", 150).toLowerCase(), integer(p.expectedRevision ?? 0, 0xffffffff)]);
           return json(res, upload, 201);
         }
@@ -416,9 +421,9 @@ export async function startServer(config: ServerConfig) {
       await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
       await Promise.allSettled([...inflight]);
       await maintenance;
-    } finally { attempts.clear();await newsRuntime?.close();await immichConnector?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
+    } finally { attempts.clear();await newsRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
   };
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(config.port, config.host, resolve); });
   return { server, ctx, close: () => ctx.fiber.dispose() };
-  } catch (error) {await newsRuntime?.close();await immichConnector?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
+  } catch (error) {await newsRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
 }

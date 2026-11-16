@@ -6,19 +6,25 @@ identity as the other apps; no extra dependency or worker. UI rules are in the
 
 ## Notes
 
-- Markdown stored in SpacetimeDB with title, notebook, tags and favorite; metadata
-  and content commit together. Notes are not mirrored into Files.
-- Notebooks with read/write sharing; create, edit, rename, move, duplicate,
-  favorite, tag, search, sort and deep links. Private trash with restore (into
-  another notebook if the original was deleted) and explicit purge.
-- Autosave after 650 ms with revision checks. Failed or interrupted saves keep a
-  tab-local recovery draft with explicit recovery and conflict choices; this is
-  not offline editing.
-- Preview is a small safe dialect: headings, paragraphs, single-line
-  emphasis/strong/code/links, flat lists and checklists, single-line quotes and
-  fenced code. HTML and images stay literal; links allow HTTP(S) and authorized
-  Files routes. Source is always preserved exactly.
-- APIs: `/api/v1/notes/notebooks`, `/items`, `/trash`.
+- Notes are Markdown files in a Files folder, like an Obsidian vault: Files ›
+  `docs/notes` by default (Notes settings › Notes folder), created on first use.
+  Folders inside it are notebooks; hidden names (such as `.obsidian`) are skipped.
+  Any editor, WebDAV client or the Files app edits the same files, with Files'
+  versions, favorites (the note star), sharing and Deleted files (restore there).
+- The list shows each note's title (front-matter `title`, a leading `#` heading,
+  else the file name), a plain-text excerpt, edit time and folder. Summaries come
+  from the immutable blobs and are cached by blob ID. The library lists up to
+  3,000 notes and 5,000 entries, 16 folders deep.
+- New notes start as `Untitled.md` and take their first heading as the file name
+  when closed. Rename, move between folders, favorite and delete from the row menu.
+- The editor is the shared Markdown editor (autosave with revision checks,
+  tab-local recovery drafts, explicit conflicts, Write/Preview).
+- Global search finds notes by file name. Notes from the earlier database storage
+  are copied once into the folder (one folder per notebook; title as a heading,
+  tags as front matter, favorites kept); the old copies are left untouched and
+  their notebook import/export stays in Notes settings.
+- APIs: `/api/v1/notes/library` (tree and summaries); writes use the Files APIs.
+  The older `/api/v1/notes/notebooks`, `/items` and `/trash` remain for the copy.
 
 ## Tasks
 

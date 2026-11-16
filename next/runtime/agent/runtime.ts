@@ -16,6 +16,28 @@ import {createWriteStream} from "node:fs";
 import {pipeline} from "node:stream/promises";
 import {Transform,type Readable} from "node:stream";
 
+export const agentRunMinutes=30;
+/** The module accepts at most 512 KiB per save; step output and the terminal tail give way first. */
+function bounded(data:AgentRunDocument):AgentRunDocument{
+  const fits=(value:AgentRunDocument)=>JSON.stringify({status:"completed",document:value}).length<=500*1024;
+  if(fits(data))return data;
+  let next:AgentRunDocument={...data,truncated:true,steps:data.steps?.map(({output:_output,...step})=>step)};if(fits(next))return next;
+  next={...next,terminal:next.terminal.slice(-8192),changes:next.changes.map(({content:_content,fileId:_fileId,expectedRevision:_revision,mediaType:_mediaType,...change})=>({...change,diff:change.diff.slice(0,4096)}))};if(fits(next))return next;
+  return {...next,steps:next.steps?.slice(-20).map(step=>({...step,label:step.label.slice(0,500)})),output:next.output.slice(0,32768),terminal:""};
+}
+/** Why a run stopped itself, in words the run owner can act on. */
+function stopReason(error:unknown){
+  const code=error instanceof AppError?error.code:"";
+  if(code==="workspaceTooLarge")return "The working copy grew past Dar's limits (200 files, 1 MiB per file, 8 MiB total), so the run was stopped. Remove generated files such as dependencies or build output, then retry.";
+  if(code==="unsafeWorkspace")return "The working copy now contains a symbolic link or special file, so the run was stopped. Remove it, then retry.";
+  if(code==="workspaceChanged")return "A working copy file kept changing while Dar checked it, so the run was stopped. Retry when the command has finished.";
+  if(code==="unauthenticated")return "Your session ended while the run was working, so it was stopped. Sign in again and retry.";
+  if(code==="forbidden")return "The run lost access to its project (the folder was moved or unshared, or the Agent was turned off), so it was stopped.";
+  if(code==="operationTooLarge"||code==="invalidInput")return "Dar could not save this run's progress, so it was stopped. Its output so far is kept.";
+  if(code==="databaseUnavailable"||!code)return "Dar could not reach its database for several seconds, so the run was stopped. Retry when Dar is less busy.";
+  return error instanceof AppError&&error.message!==code?error.message:`The run stopped unexpectedly (${code}).`;
+}
+
 /** Codex and Claude Code bindings share one shape: paths, account ID and Git hosts, never tokens. */
 async function configuration(filename:string,name="Codex"):Promise<CodexConfig|undefined>{
   try{await lstat(filename);}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return undefined;throw error;}
@@ -88,14 +110,30 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
   async function execute(id:string,sessionId:string,controller:AbortController,config:CodexConfig|ClaudeConfig,provider:AgentProviderId){
     const lease=randomUUID(),data=blank();let timer:ReturnType<typeof setInterval>|undefined,checkpoint:Promise<void>|undefined,dirty=true;
     let workspaceCheck:(()=>Promise<void>)|undefined,lastWorkspaceCheck=0;
-    const timeout=setTimeout(()=>controller.abort(),10*60000);
+    // An internal stop records why, so the run says what happened instead of a generic interruption.
+    let failure:string|undefined,strikes=0;
+    const stop=(reason:string)=>{if(controller.signal.aborted)return;failure=reason;controller.abort();};
+    const timeout=setTimeout(()=>stop(`The run reached Dar's ${agentRunMinutes} minute limit and was stopped. Its output so far is kept.`),agentRunMinutes*60000);
+    /** Saves the result; a document the module rejects is retried without its bulky parts so the reason is never lost. */
+    const finish=async(status:"completed"|"failed"|"cancelled")=>{
+      try{await worker(id,lease,"finish",{status,document:bounded(data)});return;}
+      catch(error){if(error instanceof AppError&&["forbidden","conflict","notFound"].includes(error.code)){await worker(id,lease,"interrupt").catch(()=>{});return;}}
+      const {claudeSession,codexThread,contextRevision,effort,mode,attachments}=data;
+      const minimal:AgentRunDocument={...blank(),output:data.output.slice(0,16000),error:(data.error||"The run finished, but its full details could not be saved.").slice(0,2000),truncated:true,
+        ...claudeSession?{claudeSession}:{},...codexThread?{codexThread}:{},...contextRevision!==undefined?{contextRevision}:{},...effort?{effort}:{},...mode?{mode}:{},...attachments?{attachments}:{}};
+      await worker(id,lease,"finish",{status:status==="completed"?"failed":status,document:minimal}).catch(()=>worker(id,lease,"interrupt").catch(()=>{}));
+    };
     try{
       const row=await worker<{ownerId:string;threadId:string;messageId:string;model:string;document:string}|null>(id,lease,"claim");if(!row)return;
       const initial=JSON.parse(row.document) as AgentRunDocument;let result:"completed"|"failed"|"cancelled"="failed";
       if(initial.effort)data.effort=initial.effort;if(initial.mode)data.mode=initial.mode;if(initial.attachments)data.attachments=initial.attachments;
       timer=setInterval(()=>{
         if(checkpoint)return;
-        checkpoint=(async()=>{await worker(id,lease,"check");if(workspaceCheck&&Date.now()-lastWorkspaceCheck>2000){lastWorkspaceCheck=Date.now();await workspaceCheck();}if(dirty){dirty=false;await worker(id,lease,"update",{document:data});}})().catch(()=>controller.abort()).finally(()=>{checkpoint=undefined;});
+        checkpoint=(async()=>{await worker(id,lease,"check");if(workspaceCheck&&Date.now()-lastWorkspaceCheck>2000){lastWorkspaceCheck=Date.now();await workspaceCheck();}if(dirty){dirty=false;await worker(id,lease,"update",{document:bounded(data)});}strikes=0;})().catch(error=>{
+          // A busy database is retried for about ten seconds; anything else stops the run with its reason.
+          if((!(error instanceof AppError)||error.code==="databaseUnavailable")&&++strikes<20){dirty=true;return;}
+          stop(stopReason(error));
+        }).finally(()=>{checkpoint=undefined;});
       },500);
       const history=await operation<AgentHistory>(sessionId,"history",{threadId:row.threadId}),source=await operation<Source>(sessionId,"source",{projectId:history.thread.projectId});
       if(history.nextBefore)throw new AppError("contextTooLarge",413,"This thread has more than 50 messages. Start a new thread to provide bounded context.");
@@ -284,11 +322,11 @@ export async function createAgentRuntime(db:Database,root:string,filename:string
       const final=await operation<AgentHistory>(sessionId,"history",{threadId:row.threadId});data.contextRevision=final.thread.revision+(result==="completed"&&data.output?1:0);
       clearInterval(timer);timer=undefined;await checkpoint;controller.signal.throwIfAborted();
       const changes=await prepared.changes();data.changes=changes.changes;data.truncated||=changes.truncated;
-      if(result!=="completed")data.error=provider==="claude"?limit([data.error,"Claude Code could not complete the turn. Inspect its saved output before retrying."].filter(Boolean).join("\n\n"),2400):"The Codex CLI could not complete the turn. Inspect its saved output before retrying.";
-      await worker(id,lease,"finish",{status:result,document:data});
+      if(result!=="completed")data.error=provider==="claude"?limit([data.error,"Claude Code could not complete the turn. Inspect its saved output before retrying."].filter(Boolean).join("\n\n"),2000):"The Codex CLI could not complete the turn. Inspect its saved output before retrying.";
+      await finish(result);
     }catch(error){
       if(timer)clearInterval(timer);await checkpoint;
-      if(!controller.signal.aborted){data.error=error instanceof AppError?error.message:"Execution failed. Inspect the saved output before retrying.";await worker(id,lease,"finish",{status:"failed",document:data}).catch(()=>worker(id,lease,"interrupt").catch(()=>{}));}
+      if(!controller.signal.aborted||failure){data.error=(failure??(error instanceof AppError?stopReason(error):"Execution failed. Inspect the saved output before retrying.")).slice(0,2000);await finish("failed");}
       else await worker(id,lease,"interrupt").catch(()=>{});
     }finally{clearTimeout(timeout);if(timer)clearInterval(timer);active.delete(id);}
   }

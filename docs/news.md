@@ -38,7 +38,8 @@ at 2,000 per request and updates since a time at 5,000.
 - Fetching is server-side only, without cookies or credentials. Private, loopback,
   link-local and other non-public addresses are refused at connection time and
   on every redirect, unless the operator sets `services.dar.news.allowPrivateNetworks`
-  (or `DAR_NEWS_ALLOW_PRIVATE_NETWORKS=1`). Responses are limited in size and time.
+  (or `DAR_NEWS_ALLOW_PRIVATE_NETWORKS=1`), which also applies to Calendar
+  subscriptions. Responses are limited in size and time.
 - Article HTML is reduced to an allowlist of formatting elements with absolute
   http(s) links on the server, and again in the browser. Remote images load
   through Dar's image proxy (raster types only, served inert) or are blocked.

@@ -148,9 +148,9 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     await call("/auth/logout",{body:{}});assert.equal((await fetch(api+"/users/me",{headers:auth})).status,401);
 
     // The connector: Immich has one new photo (a favorite) and one Dar already has, in an album.
-    // A video over Dar's 1 GiB limit and a photo with a bogus capture year must not stop the import.
+    // A video over Dar's 16 GiB limit and a photo with a bogus capture year must not stop the import.
     const remoteId=randomUUID(),sameId=randomUUID();
-    fake=await fakeImmich([{id:randomUUID(),bytes:wave,name:"huge.mov",type:"video/quicktime",favorite:false,createdAt:"2023-01-01T00:00:00.000Z",size:2*1024**3},{id:randomUUID(),bytes:Buffer.concat([solo,Buffer.from([0])]),name:"undated.jpg",type:"image/jpeg",favorite:false,createdAt:"0001-01-01T00:00:00.000Z"},{id:remoteId,bytes:remoteBytes,name:"remote.jpg",type:"image/jpeg",favorite:true,createdAt:"2023-08-01T12:00:00.000Z"},{id:sameId,bytes:beach,name:"beach.jpg",type:"image/jpeg",favorite:false,createdAt:"2024-03-05T10:00:00.000Z"}],[{id:randomUUID(),albumName:"Remote trip",assetIds:[remoteId,sameId]}]);
+    fake=await fakeImmich([{id:randomUUID(),bytes:wave,name:"huge.mov",type:"video/quicktime",favorite:false,createdAt:"2023-01-01T00:00:00.000Z",size:17*1024**3},{id:randomUUID(),bytes:Buffer.concat([solo,Buffer.from([0])]),name:"undated.jpg",type:"image/jpeg",favorite:false,createdAt:"0001-01-01T00:00:00.000Z"},{id:remoteId,bytes:remoteBytes,name:"remote.jpg",type:"image/jpeg",favorite:true,createdAt:"2023-08-01T12:00:00.000Z"},{id:sameId,bytes:beach,name:"beach.jpg",type:"image/jpeg",favorite:false,createdAt:"2024-03-05T10:00:00.000Z"}],[{id:randomUUID(),albumName:"Remote trip",assetIds:[remoteId,sameId]}]);
     const connect2=(apiKey:string,address=fake!.url+"/old")=>fetch(base+"/api/v1/photos/immich/connection",{method:"PUT",headers,body:JSON.stringify({url:address,apiKey,intervalMinutes:60,enabled:true,revision:0})});
     const refusedConnection=await connect2("good-key",`http://127.0.0.1:${await freePort()}`);assert.equal(refusedConnection.status,400);assert.match((await refusedConnection.json() as {error:{message:string}}).error.message,/Nothing accepted the connection/);
     const rejected=await connect2("bad-key");assert.equal(rejected.status,400);assert.match((await rejected.json() as {error:{message:string}}).error.message,/rejected the API key/);
@@ -159,7 +159,7 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     const state=async()=>(await (await fetch(base+"/api/v1/photos/immich",{headers})).json() as {connection:{lastRunAt:number;lastError:string;summary:{imported:number;albums:number}};progress:unknown}).connection;
     assert.equal((await fetch(base+"/api/v1/photos/immich/connection/sync",{method:"POST",headers})).status,202);
     let status=await state();for(let i=0;i<120&&!status.lastRunAt;i++){await new Promise(r=>setTimeout(r,500));status=await state();}
-    assert.match(status.lastError,/^1 file could not be imported \(huge\.mov: it is larger than 1 GiB/);assert.deepEqual([status.summary.imported,status.summary.albums],[2,1]);
+    assert.match(status.lastError,/^1 file could not be imported \(huge\.mov: it is larger than 16 GiB/);assert.deepEqual([status.summary.imported,status.summary.albums],[2,1]);
     const page=(await (await fetch(base+"/api/v1/photos/assets",{headers})).json() as PhotoPage).items,imported=page.find(i=>i.name==="remote.jpg")!;assert.ok(page.some(i=>i.name==="undated.jpg"));
     const importedDetail=await (await fetch(base+`/api/v1/photos/assets/${imported.id}`,{headers})).json() as PhotoDetail;
     assert.equal(importedDetail.favorite,true);assert.equal(importedDetail.description,"from immich");assert.equal(new Date(importedDetail.takenAt).getUTCFullYear(),2023);

@@ -82,10 +82,11 @@ export function blobStore(root: string) {
         res.setHeader("etag", etag);
         res.setHeader("cache-control", "private, no-store");
         res.setHeader("accept-ranges", "bytes");
-        const inline = preview && /^(image\/(png|jpeg|gif|webp)|text\/plain|application\/pdf)$/.test(entry.mediaType);
+        // Only types browsers render without running the file's own script; SVG and HTML always download.
+        const inline = preview && /^(image\/(png|jpeg|gif|webp|avif)|text\/plain|application\/pdf|video\/(mp4|webm|ogg)|audio\/(mpeg|mp4|ogg|wav|webm|flac|aac|x-wav|x-flac))$/.test(entry.mediaType);
         res.setHeader("content-type", inline ? entry.mediaType : "application/octet-stream");
         res.setHeader("content-disposition", `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(entry.name).replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16)}`)}`);
-        if (inline) res.setHeader("content-security-policy", "sandbox; default-src 'none'");
+        if (inline) res.setHeader("content-security-policy", "sandbox; default-src 'none'; frame-ancestors 'self'");
         if (req.headers["if-none-match"] === etag) { res.writeHead(304); res.end(); return; }
         let start = 0, end = entry.size - 1, status = 200;
         if (req.headers.range && (!req.headers["if-range"] || req.headers["if-range"] === etag)) {
