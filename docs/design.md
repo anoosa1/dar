@@ -229,6 +229,18 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   URL and sign-in, signed-in devices, and the Immich server connection with status and
   Sync now. People/Places/Explore tabs arrive with later phases.
   See [Photos](photos.md).
+- **Books:** selected [mock A](spacetimedb/books-mocks.html) over B (November 16). Sidebar
+  views (Home, Reading, Want to read, All books, Finished), then libraries (top folders of the
+  Books folder). Home has Continue reading cards and Recently added / Want to read shelves;
+  other views are a cover grid with a sort menu. Covers show progress, a finished check and a
+  format badge; books without a cover get a typographic cover. Details sit in the right sheet
+  (cover, status, Read/Continue, Want to read, Download, Mark as finished, description, series
+  strip, facts, Show in Files). A book opens in the middle sheet (the sidebar folds away) with
+  a bar (Back, title, chapter, Aa, bookmark, contents, full screen, more), contents and
+  bookmarks on the right and a footer scrubber; Aa holds theme (Dar, Paper, Sepia, Night),
+  font, size, spacing and Pages/Scroll, saved to the account. A newer place from another device
+  asks Go there / Stay here. Phones show the reader and details below the search bar with Back.
+  See [Books](books.md).
 - **Agent:** the settings sheet and editing panes sit beside the Agent's sheets
   (which make room), as in other apps; choosing and adding a project both use the
   right pane. Threads on the left, conversation and docked composer in the center,

@@ -46,6 +46,9 @@ const paths = {
   pdf: "M6 3h8l4 4v14H6ZM14 3v5h4M9 13h1.5a1.5 1.5 0 0 1 0 3H9v-3ZM9 16v2", archive2: "M6 3h12v18H6ZM11 3v2h2v2h-2v2h2v2h-2M11 14h2v3h-2Z",
   media: "M9 18V6l11-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M20 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0", video: "M3 6h13v12H3ZM16 10l5-3v10l-5-3",
   lock: "M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3", stack: "M12 3l9 5-9 5-9-5ZM3 13l9 5 9-5", live: "M14.5 12a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M12 5.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13M12 2v.01M19 5v.01M22 12v.01M19 19v.01M12 22v.01M5 19v.01M2 12v.01M5 5v.01", refresh: "M20 7V2m0 5h-5M4 17v5m0-5h5M20 7A9 9 0 0 0 4 8M4 17a9 9 0 0 0 16-1",
+  book: "M4 19.5V4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5ZM4 19.5A1.5 1.5 0 0 0 5.5 21H20v-3", reading: "M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2ZM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7Z",
+  bookmark: "M6 3h12v18l-6-4-6 4Z", library: "M4 4h4v16H4ZM10 4h4v16h-4ZM15.5 5.5l3.8-1 3.7 14.5-3.8 1Z", typography: "M3 19 8 6l5 13M5 14h6M15 19v-5.5a2.5 2.5 0 0 1 5 0V19M20 15.5h-3a1.8 1.8 0 0 0 0 3.5c1.5 0 3-.8 3-2.5",
+  expand: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5", minus: "M5 12h14", fitWidth: "M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4", spread: "M2 4h9v16H2ZM13 4h9v16h-9Z",
 } as const;
 export type IconName = keyof typeof paths;
 export function Icon({ name, className = "" }: { name: IconName; className?: string }) {

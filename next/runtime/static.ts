@@ -3,11 +3,11 @@ import { readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 
 /** Built client files: content-hashed names never change, so browsers keep them for a year. */
-const hashed = /^(?:(?:app|sdk)-[A-Z0-9]{8}\.(?:js|css)|chunks\/[a-z0-9_-]+-[A-Z0-9]{8}\.js)$/;
+const hashed = /^(?:(?:app|sdk)-[A-Z0-9]{8}\.(?:js|css)|chunks\/[a-z0-9_-]+-[A-Z0-9]{8}\.js|pdfjs\/\d+\.\d+\.\d+\/(?:pdf\.worker\.min\.mjs|(?:cmaps|standard_fonts|wasm|iccs)\/[A-Za-z0-9._-]+))$/;
 /** Stable names that browsers revalidate: the page, the installed-app runtime and server-rendered page styles. */
 const stable = new Set(["index.html", "app.css", "sdk.js", "sdk.css"]);
 interface Asset { identity: Buffer; br?: Buffer; gzip?: Buffer; etag: string; version: string }
-const types: Record<string, string> = { js: "text/javascript; charset=utf-8", css: "text/css; charset=utf-8", html: "text/html; charset=utf-8" };
+const types: Record<string, string> = { js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8", css: "text/css; charset=utf-8", html: "text/html; charset=utf-8", wasm: "application/wasm", bcmap: "application/octet-stream", pfb: "application/octet-stream", ttf: "font/ttf", icc: "application/vnd.iccprofile" };
 
 async function optional(file: URL) { try { return await readFile(file); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; } }
 /** The preferred encoding the client accepts (q > 0), brotli first. */
@@ -64,7 +64,7 @@ export function staticAssets(directory: URL) {
       const requested = pathname.slice(1), name = hashed.test(requested) || stable.has(requested) ? requested : await page(pathname), value = await asset(name);
       if (!value) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }); res.end(req.method === "HEAD" ? undefined : "Not found"); return; }
       const headers: Record<string, string | number> = {
-        "content-type": types[name.split(".").at(-1)!], etag: value.etag, vary: "accept-encoding", "x-content-type-options": "nosniff",
+        "content-type": types[name.split(".").at(-1)!] ?? "application/octet-stream", etag: value.etag, vary: "accept-encoding", "x-content-type-options": "nosniff",
         "cache-control": hashed.test(name) ? "public, max-age=31536000, immutable" : "no-cache",
       };
       const match = String(req.headers["if-none-match"] ?? "").split(",").map(tag => tag.trim().replace(/^W\//, ""));

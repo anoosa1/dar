@@ -1,4 +1,4 @@
-{ lib, buildNpmPackage, makeWrapper, runtime, git, exiftool, vips, ffmpeg-headless }:
+{ lib, buildNpmPackage, makeWrapper, runtime, git, exiftool, vips, ffmpeg-headless, libarchive }:
 buildNpmPackage {
   pname = "dar";
   version = "0.1.0";
@@ -7,7 +7,7 @@ buildNpmPackage {
     filter = path: type: !(lib.hasPrefix ".env" (baseNameOf path)) && !(builtins.elem (baseNameOf path) [ "node_modules" "dist" "module_bindings" "state" ".git" ".npmrc" "test" "flake.nix" "flake.lock" "README.md" "AGENTS.md" ]);
   };
   nodejs = runtime.nodeWithNpm;
-  npmDepsHash = "sha256-yiyj4iuq1zivPfP2z0/Y3QL+USR7zMwrG78Ag2SxYS0=";
+  npmDepsHash = "sha256-evPAqQcIAkxckxx7FI5mVU2oIa8o6zKFK3nX1qckHok=";
   nativeBuildInputs = [ makeWrapper runtime.spacetime ];
   dontNpmBuild = true;
   buildPhase = ''
@@ -30,7 +30,7 @@ buildNpmPackage {
     makeWrapper ${runtime.node}/bin/node $out/bin/dar \
       --add-flags "$out/lib/dar/scripts/serve.mjs" \
       --set DAR_PREBUILT 1 \
-      --prefix PATH : ${lib.makeBinPath [ git runtime.node exiftool vips ffmpeg-headless ]} \
+      --prefix PATH : ${lib.makeBinPath [ git runtime.node exiftool vips ffmpeg-headless libarchive ]} \
       --set DAR_SPACETIME_BIN ${runtime.spacetime}/bin/spacetime
     makeWrapper ${runtime.node}/bin/node $out/bin/dar-operator \
       --add-flags "$out/lib/dar/scripts/operator.ts"

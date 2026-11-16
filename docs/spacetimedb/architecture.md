@@ -87,7 +87,7 @@ connection per page (`client/live.ts`), kept a minute after the last of them clo
 
 ## Backups and upgrades
 
-Backups (format v9 with folder history, reading v1–v8) snapshot database state and referenced blobs
+Backups (format v10 with Books reading state, reading v1–v9) snapshot database state and referenced blobs
 with pins; restore needs an empty root and invalidates sessions and bearer
 credentials. Schema changes are additive numbered migrations tested against
 older databases. Verification: `npm --prefix next run verify` (typechecks,

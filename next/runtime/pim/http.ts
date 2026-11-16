@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {newsRefreshChoices,newsKeepChoices} from "../../shared/news.ts";
 import {defaultPhotoFolder,photoFolderParts} from "../../shared/photos.ts";
 import {defaultNotesFolder} from "../../shared/workspace.ts";
+import {defaultBooksFolder} from "../../shared/books.ts";
 import { randomUUID } from "node:crypto";
 import type { PimCollection, PimResource } from "../../shared/pim.ts";
 import { AppError } from "../errors.ts";
@@ -44,7 +45,11 @@ export async function handlePimHttp(req: IncomingMessage, res: ServerResponse, u
       if(!folderParts)invalid("Choose a Files folder like pics or Media/Camera, without control characters.");
       const notesFolder=get("notesFolder",defaultNotesFolder),notesParts=typeof notesFolder==="string"?photoFolderParts(notesFolder):undefined;
       if(!notesParts)invalid("Choose a Files folder like docs/notes, without control characters.");
-      const agent={...news,photosUploadFolder:folderParts.join("/"),notesFolder:notesParts.join("/"),notesImported:flag("notesImported",false),agentSettledThreads:settled,agentPinnedThreads:pinned,agentArchivedThreads:archived,agentSendKey:choice("agentSendKey",["enter","modEnter"],"enter"),agentNotify:flag("agentNotify",false),agentGrouping:choice("agentGrouping",["recent","project"],"recent"),agentSnoozed:snoozed};
+      const booksFolder=get("booksFolder",defaultBooksFolder),booksParts=typeof booksFolder==="string"?photoFolderParts(booksFolder):undefined;
+      if(!booksParts)invalid("Choose a Files folder like docs/books, without control characters.");
+      const books={booksFolder:booksParts.join("/"),booksTheme:choice("booksTheme",["dar","paper","sepia","night"],"dar"),booksFont:choice("booksFont",["serif","sans","book"],"serif"),booksFontSize:numberChoice("booksFontSize",[14,15,16,17,18,19,20,21,22,24,26,28],18),
+        booksLineHeight:choice("booksLineHeight",["tight","normal","loose"],"normal"),booksLayout:choice("booksLayout",["pages","scroll"],"pages"),booksComicDirection:choice("booksComicDirection",["auto","ltr","rtl"],"auto"),booksSort:choice("booksSort",["recent","title","author","added"],"recent")};
+      const agent={...news,...books,photosUploadFolder:folderParts.join("/"),notesFolder:notesParts.join("/"),notesImported:flag("notesImported",false),agentSettledThreads:settled,agentPinnedThreads:pinned,agentArchivedThreads:archived,agentSendKey:choice("agentSendKey",["enter","modEnter"],"enter"),agentNotify:flag("agentNotify",false),agentGrouping:choice("agentGrouping",["recent","project"],"recent"),agentSnoozed:snoozed};
       const result = await service.call<{ revision: number }>("savePreferences", { revision: old.revision, value:JSON.stringify({...JSON.parse(value),...agent}) }); return json({ ...JSON.parse(value),...agent, revision: result.revision });
     }
   }

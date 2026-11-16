@@ -11,7 +11,8 @@ interaction rules; app-specific code must not drift from that contract.
 - No SQLite, external identity provider, offline editing or end-to-end encryption.
 - Approved dependencies beyond the base stack: `ical.js`, `saxes`,
   `oidc-provider@9.13.3` (with its internal Koa) and `@types/oidc-provider@9.13.1`;
-  `openid-client` for tests only.
+  `openid-client` for tests only; `pdfjs-dist` (bundled into the client for Books and Files'
+  PDF preview, November 16) and `bsdtar` (libarchive, Nix) for comic archives.
 - Do not treat passing primitive tests as completion; verify end-to-end behavior.
 
 ## Selected designs
@@ -23,8 +24,9 @@ app content: Files Focused explorer (C), Contacts/Calendar and Notes/Tasks
 Focused workspace (A), identity Account settings tabs (B), creation/appearance
 Focused pane (A), sign-in/app-password mock A, Prayer Times layout B and the
 Agent T3 parity A, Photos mock B and spotlight search mock A (November 13; see
-`../docs/photos.md`), and News mock A (`../docs/spacetimedb/news-reader-mock-a.html`,
-November 12). App settings, Dar settings and Prayer Times follow settings
+`../docs/photos.md`), News mock A (`../docs/spacetimedb/news-reader-mock-a.html`,
+November 12) and Books mock A (`../docs/spacetimedb/books-mocks.html`, November 16;
+see `../docs/books.md`). App settings, Dar settings and Prayer Times follow settings
 sheet B (`../docs/spacetimedb/settings-revamp-mock-b.html`, November 12), which
 supersedes the settings modal and explicit settings save. Files, Contacts,
 Calendar, Notes, Tasks and shared menus follow the apps revamp

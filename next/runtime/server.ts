@@ -35,6 +35,8 @@ import {createAgentRuntime,type AgentRuntime} from "./agent/runtime.ts";
 import {createNewsRuntime,type NewsRuntime} from "./news/runtime.ts";
 import {createCalendarSubscriptions,type CalendarSubscriptions} from "./pim/subscriptions.ts";
 import {createNotesLibrary} from "./notes/library.ts";
+import {createBooksRuntime,type BooksRuntime} from "./books/runtime.ts";
+import {handleBooksHttp} from "./books/http.ts";
 import {handleNewsHttp} from "./news/http.ts";
 import {createPhotosRuntime,type PhotosRuntime} from "./photos/runtime.ts";
 import {handlePhotosHttp,sendFile} from "./photos/http.ts";
@@ -100,7 +102,7 @@ export async function startServer(config: ServerConfig) {
   let appRuntime:Awaited<ReturnType<typeof activateApps>>|undefined;
   let agentRuntime:AgentRuntime|undefined;
   let newsRuntime:NewsRuntime|undefined,calendarSubscriptions:CalendarSubscriptions|undefined;
-  let photosRuntime:PhotosRuntime|undefined,immichConnector:ImmichConnector|undefined;
+  let photosRuntime:PhotosRuntime|undefined,immichConnector:ImmichConnector|undefined,booksRuntime:BooksRuntime|undefined;
   try {
   const db = await database(config.databaseUrl, config.databaseName, config.serviceTokenFile);
   await db.call("service_startup", [`${config.origin}/auth/issuer`]);
@@ -117,7 +119,7 @@ export async function startServer(config: ServerConfig) {
   // Keep revisioned writes and hook disposal/activation in the same order.
   let appUpdate:Promise<unknown>=Promise.resolve();
   const managedApps=(settings:AppSettings):ManagedApp[]=>[
-    ...["files","photos","contacts","calendar","notes","tasks","news","agent"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","news","photos","agent"].includes(id)})),
+    ...["files","photos","books","contacts","calendar","notes","tasks","news","agent"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","news","photos","books","agent"].includes(id)})),
     ...appRegistry.inventory.map(item=>({...item,enabled:appRegistry.apps.has(item.id)&&!settings.disabled.includes(item.id),canToggle:hostEnabledApps.has(item.id)})),
   ];
   const databasePublicUrl = `${(config.databasePublicUrl ?? (config.development ? config.databaseUrl : `${config.origin}/spacetime`)).replace(/\/$/, "")}/`;
@@ -138,6 +140,7 @@ export async function startServer(config: ServerConfig) {
   calendarSubscriptions=createCalendarSubscriptions(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
   const blobs = blobStore(root), client = staticAssets(new URL("../dist/", import.meta.url)), notesLibrary = createNotesLibrary(db, root);
   photosRuntime=await createPhotosRuntime(db,root);
+  booksRuntime=await createBooksRuntime(db,root);
   immichConnector=createImmichConnector(db,root,blobs,photosRuntime,{allowLoopback:!!config.development||!!config.immichAllowLocalHost});
   await blobs.recover();
   const attempts = new Map<string, { count: number; until: number }>();
@@ -271,9 +274,10 @@ export async function startServer(config: ServerConfig) {
           return json(res,await agentRuntime!.connect(authenticated.user.id,input.provider==="claude"?"claude":"codex"));
         }
         if(/^\/api\/v1\/agent(\/|$)/.test(url.pathname))return await handleAgentHttp(req,res,url,db,authenticated.session.id,authenticated.user.id,agentRuntime!,()=>body(req,128*1024),(data,id)=>blobs.receive((async function*(){yield data;})(),id,data.length));
-        const optionalApp=/^\/api\/v1\/(notes|tasks|news|photos)(\/|$)/.exec(url.pathname);
+        const optionalApp=/^\/api\/v1\/(notes|tasks|news|photos|books)(\/|$)/.exec(url.pathname);
         if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);
         if(/^\/api\/v1\/news(\/|$)/.test(url.pathname))return await handleNewsHttp(req,res,url,db,authenticated.session.id,authenticated.user.username,newsRuntime!,()=>body(req,3*1024*1024));
+        if(/^\/api\/v1\/books(\/|$)/.test(url.pathname))return await handleBooksHttp(req,res,url,db,authenticated.session.id,booksRuntime!,()=>body(req,64*1024));
         if(/^\/api\/v1\/photos(\/|$)/.test(url.pathname))return await handlePhotosHttp(req,res,url,db,authenticated.session.id,photosRuntime!,root,config.origin,{userId:authenticated.user.id,immich:immichConnector!},(entry,inline=true)=>blobs.download(req,res,entry,inline),()=>body(req,128*1024));
         // The Locked folder opens for this browser session after the account password is confirmed.
         const locked=/^\/api\/v1\/files\/locked(\/unlock|\/lock)?$/.exec(url.pathname);
@@ -423,9 +427,9 @@ export async function startServer(config: ServerConfig) {
       await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
       await Promise.allSettled([...inflight]);
       await maintenance;
-    } finally { attempts.clear();await newsRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
+    } finally { attempts.clear();await newsRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await booksRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
   };
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(config.port, config.host, resolve); });
   return { server, ctx, close: () => ctx.fiber.dispose() };
-  } catch (error) {await newsRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
+  } catch (error) {await newsRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await booksRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
 }

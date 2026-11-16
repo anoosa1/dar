@@ -497,7 +497,7 @@ button.task-check:hover{border-color:var(--accent)!important;background:color-mi
 .file-preview-stage>img,.file-preview-stage>video{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 8px 30px var(--shadow)}
 .file-preview-stage>video{width:100%;height:100%;background:#000}
 .file-preview-pdf .file-preview-stage{padding:0;background:var(--panel)}
-.file-preview-stage>iframe{width:100%;height:100%;border:1px solid var(--border);border-radius:8px;background:#fff}
+.file-preview-stage>.pdf-view{width:100%;height:100%;place-self:stretch;border:1px solid var(--border);border-radius:8px}
 .file-preview-text .file-preview-stage,.file-preview-none .file-preview-stage{place-items:stretch;background:transparent;padding:0}
 .file-preview-stage>.file-preview-source{margin:0;overflow:auto;padding:16px 20px;border:1px solid var(--border);border-radius:12px;background:var(--panel);color:var(--text);font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 .file-preview-none .file-preview-stage{place-items:center}

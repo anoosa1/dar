@@ -14,6 +14,7 @@ const agentOnly=process.argv.includes("--agent");
 const newsOnly=process.argv.includes("--news");
 const photosOnly=process.argv.includes("--photos");
 const historyOnly=process.argv.includes("--history");
+const booksOnly=process.argv.includes("--books");
 const root = await mkdtemp(path.join(tmpdir(), "dar-acceptance-"));
 const appBuild=spawnSync(process.execPath,["sdk/build.mjs","../apps/prayer-times"],{cwd:project,stdio:"inherit"});
 if(appBuild.status!==0)throw new Error("Example app build failed.");
@@ -53,11 +54,13 @@ try {
   run(["node_modules/typescript/bin/tsc", "-p", "module/tsconfig.json"]);
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
-  if(historyOnly){run(["--test","test/history.integration.test.ts"],300_000);if(existsSync(path.join(project,"test/history-browser.mjs")))run(["test/history-browser.mjs"],300_000);console.info(`PASS history acceptance. Isolated artifacts: ${root}`);}
+  if(booksOnly){run(["--test","test/books.integration.test.ts"],300_000);run(["test/books-browser.mjs"],300_000);console.info(`PASS Books acceptance. Isolated artifacts: ${root}`);}
+  else if(historyOnly){run(["--test","test/history.integration.test.ts"],300_000);if(existsSync(path.join(project,"test/history-browser.mjs")))run(["test/history-browser.mjs"],300_000);console.info(`PASS history acceptance. Isolated artifacts: ${root}`);}
   else{
   if(!photosOnly&&(newsOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly)){
     run(["--test","--test-concurrency=1","test/news.test.ts","test/news.integration.test.ts"],300_000);
   }
+  if(!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly&&!newsOnly&&!photosOnly){run(["--test","test/books.integration.test.ts"],300_000);run(["test/books-browser.mjs"],300_000);}
   if(photosOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly&&!newsOnly)run(["--test","--test-concurrency=1","test/photos.integration.test.ts","test/photos-library.integration.test.ts","test/photos-sharing.integration.test.ts","test/photos-immich.integration.test.ts"],600_000);
   if(!newsOnly&&!photosOnly&&(agentOnly||!identityOnly&&!workspaceOnly&&!pimOnly)){
     run(["--test","--test-concurrency=1","test/agent-connection.test.ts","test/agent.integration.test.ts","test/codex.integration.test.ts","test/claude.integration.test.ts"]);

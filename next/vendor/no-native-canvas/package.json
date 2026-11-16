@@ -1,0 +1,6 @@
+{
+  "name": "@napi-rs/canvas",
+  "version": "0.0.0-dar",
+  "private": true,
+  "description": "Stands in for pdf.js's optional Node canvas: Dar runs pdf.js only in browsers, so the native binaries are never fetched."
+}

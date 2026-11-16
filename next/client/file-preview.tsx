@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from "react";
+import {Suspense,lazy,useEffect,useRef,useState} from "react";
 import type {FileEntries as FileEntry} from "./module_bindings/types.ts";
 import {Icon} from "./icons.tsx";
 import {ActionMenu,type MenuAction} from "./controls.tsx";
@@ -16,6 +16,8 @@ export function previewKind(entry:Pick<FileEntry,"kind"|"mediaType"|"size">):"im
   if((/^text\//.test(media)||media==="application/json")&&entry.size<=1024*1024)return "text";
   return undefined;
 }
+// pdf.js loads only when a PDF is previewed; browsers' own viewers cannot run inside Dar's sandboxed previews.
+const PdfView=lazy(()=>import("./books/pdf.tsx").then(m=>({default:m.PdfView})));
 const formatSize=(bytes:number)=>bytes<1024?`${bytes} B`:bytes<1024**2?`${(bytes/1024).toFixed(1)} KB`:bytes<1024**3?`${(bytes/1024**2).toFixed(1)} MB`:`${(bytes/1024**3).toFixed(1)} GB`;
 
 /**
@@ -54,7 +56,7 @@ export function FilePreview({entry,siblings,onOpen,onClose,actions=[]}:{entry:Fi
     <h1 className="file-preview-title">{entry.name}</h1>
     <div className="file-preview-stage">{failed||!kind?unavailable
       :kind==="image"?<img key={entry.id} src={source} alt={entry.name} onError={()=>setFailed(true)}/>
-      :kind==="pdf"?<iframe key={entry.id} src={source} title={`PDF ${entry.name}`}/>
+      :kind==="pdf"?<Suspense fallback={<p className="muted" role="status">Loading preview…</p>}><PdfView key={entry.id} url={`${content}?v=${entry.revision}`} label={`PDF ${entry.name}`} className="file-preview-document" onError={()=>setFailed(true)}/></Suspense>
       :kind==="video"?<video key={entry.id} src={source} controls playsInline preload="metadata" aria-label={entry.name} onError={()=>setFailed(true)}/>
       :kind==="audio"?<div className="file-preview-audio"><FileTile entry={entry} large/><audio key={entry.id} src={source} controls preload="metadata" aria-label={entry.name} onError={()=>setFailed(true)}/></div>
       :text===undefined?<p className="muted" role="status">Loading preview…</p>:<pre className="file-preview-source">{text}</pre>}

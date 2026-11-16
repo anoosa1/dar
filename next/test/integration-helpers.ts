@@ -19,8 +19,8 @@ export async function connect(session: Awaited<ReturnType<typeof login>>) {
   await new Promise<void>((resolve, reject) => connection.subscriptionBuilder().onApplied(() => resolve()).onError(ctx => reject(ctx.event)).subscribe(["SELECT * FROM me", "SELECT * FROM my_files", "SELECT * FROM my_usage"]));
   return connection;
 }
-export async function upload(base: string, session: Awaited<ReturnType<typeof login>>, name: string, contents: string | Buffer, parentId = "", fileId?: string, expectedRevision?: number) {
-  const response = await fetch(`${base}/api/v1/files/uploads`, { method: "POST", headers: { ...session.headers, "content-type": "application/json" }, body: JSON.stringify({ name, size: Buffer.byteLength(contents), mediaType: "text/plain", parentId, fileId, expectedRevision }) });
+export async function upload(base: string, session: Awaited<ReturnType<typeof login>>, name: string, contents: string | Buffer, parentId = "", fileId?: string, expectedRevision?: number, mediaType = "text/plain") {
+  const response = await fetch(`${base}/api/v1/files/uploads`, { method: "POST", headers: { ...session.headers, "content-type": "application/json" }, body: JSON.stringify({ name, size: Buffer.byteLength(contents), mediaType, parentId, fileId, expectedRevision }) });
   assert.equal(response.status, 201, await response.clone().text());
   const reservation = await response.json() as { id: string; fileId: string };
   const transfer = await fetch(`${base}/api/v1/files/uploads/${reservation.id}`, { method: "PUT", headers: session.headers, body: typeof contents === "string" ? contents : new Uint8Array(contents), signal: AbortSignal.timeout(10_000) });

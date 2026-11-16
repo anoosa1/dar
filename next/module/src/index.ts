@@ -12,6 +12,9 @@ import {photosOperation,photosWorker,photosSnapshot,restorePhotos,photosLinkOper
 import {lockedFolderType,lockedFolderName,lockedUnlockMinutes} from "../../shared/locked-folder.ts";
 import {defaultPhotoFolder,photoFolderParts,nameParts,photoKind} from "../../shared/photos.ts";
 import {defaultNotesFolder,isNoteFile} from "../../shared/workspace.ts";
+import {defaultBooksFolder,bookFormat} from "../../shared/books.ts";
+import {booksTables} from "./books-tables.ts";
+import {booksOperation,bookStates,booksSnapshot,restoreBooks} from "./books.ts";
 import {filePicker} from "./file-picker.ts";
 import {appOperation,appSnapshot,restoreApps} from "./apps.ts";
 import {validAppId} from "../../shared/installed-apps.ts";
@@ -64,7 +67,7 @@ const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().in
 // A browser session that confirmed the account password may open the Locked folder until expiresAt.
 const fileUnlocks = table({}, { sessionId: t.string().primaryKey(), userId: t.string().index("btree"), expiresAt: t.f64() });
 const fileUnlockExpiry = table({}, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), sessionId: t.string() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -720,7 +723,7 @@ export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, 
     tx.db.backupPins.insert({ id: `${id}/${blobId}`, backupId: id, blobId });
     return { id: blobId, size: upload.size, digest: upload.digest };
   });
-  return JSON.stringify({ format: "dar-backup-v9", history:historySnapshot(tx), photos:photosSnapshot(tx), news:newsSnapshot(tx), agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
+  return JSON.stringify({ format: "dar-backup-v10", books:booksSnapshot(tx), history:historySnapshot(tx), photos:photosSnapshot(tx), news:newsSnapshot(tx), agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
     accounts: [...tx.db.accounts.iter()], quotas: [...tx.db.usage.iter()].filter(row => row.quota).map(row => ({ userId: row.userId, quota: row.quota })), files: [...tx.db.fileEntries.iter()], versions: history,
     grants: [...tx.db.grants.iter()], publicShares: [...tx.db.publicShares.iter()], favorites: [...tx.db.favorites.iter()],
     uploads: blobIds.map(blobId => tx.db.uploads.id.find(blobId)),
@@ -748,9 +751,9 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
   const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; quotas?: { userId: string; quota: number }[]; files: FileEntry[]; versions: Row<"versions">[];
     grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads: Row<"uploads">[];
-    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot>;agent?:ReturnType<typeof agentSnapshot>;news?:ReturnType<typeof newsSnapshot>;photos?:ReturnType<typeof photosSnapshot>;history?:ReturnType<typeof historySnapshot> };
-  const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6","dar-backup-v7","dar-backup-v8","dar-backup-v9"],version=formats.indexOf(value.format)+1;
-  if (!version||version>=2&&!value.pim||version>=3&&!value.identity||version>=4&&!value.workspace||version>=5&&!value.apps||version>=6&&!value.agent||version>=7&&!value.news||version>=8&&!value.photos||version>=9&&!value.history) fail("invalidInput");
+    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot>;agent?:ReturnType<typeof agentSnapshot>;news?:ReturnType<typeof newsSnapshot>;photos?:ReturnType<typeof photosSnapshot>;history?:ReturnType<typeof historySnapshot>;books?:ReturnType<typeof booksSnapshot> };
+  const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6","dar-backup-v7","dar-backup-v8","dar-backup-v9","dar-backup-v10"],version=formats.indexOf(value.format)+1;
+  if (!version||version>=2&&!value.pim||version>=3&&!value.identity||version>=4&&!value.workspace||version>=5&&!value.apps||version>=6&&!value.agent||version>=7&&!value.news||version>=8&&!value.photos||version>=9&&!value.history||version>=10&&!value.books) fail("invalidInput");
   for (const row of value.accounts) {
     ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0, quota: 0 });
   }
@@ -796,6 +799,7 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   restoreAgent(ctx,value.agent);
   restoreNews(ctx,value.news);
   restorePhotos(ctx,value.photos);
+  restoreBooks(ctx,value.books);
 });
 
 export const serviceInstalledApps=db.reducer({document:t.string()},(ctx,p)=>{
@@ -811,7 +815,7 @@ export const serviceAppSettings=db.procedure({sessionId:t.string(),appId:t.strin
   const user=fromSession(tx,p.sessionId);
   if(!user.administrator||tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
   if((essentialApps as readonly string[]).includes(p.appId))fail("forbidden");
-  if(!["notes","tasks","agent","news","photos"].includes(p.appId)&&!validAppId(p.appId))fail("invalidInput");
+  if(!["notes","tasks","agent","news","photos","books"].includes(p.appId)&&!validAppId(p.appId))fail("invalidInput");
   if(settings.revision!==p.revision)fail("conflict");
   const disabled=settings.disabled.filter(id=>id!==p.appId);if(!p.enabled)disabled.push(p.appId);
   if(disabled.length>200)fail("operationTooLarge");
@@ -1047,15 +1051,18 @@ function photosFolder(ctx:Ctx,userId:string,year:unknown,month:unknown){
   }
   return {parentId};
 }
-/** The Notes folder from the account's preferences (default "docs/notes"). */
-function notesFolderParts(ctx:ReadCtx,userId:string){
-  let saved:unknown;try{saved=JSON.parse(ctx.db.pimPreferences.userId.find(userId)?.value??"{}").notesFolder;}catch{saved=undefined;}
-  return (typeof saved==="string"&&photoFolderParts(saved))||defaultNotesFolder.split("/");
+/** A Files folder named in the account's preferences (Notes: "docs/notes", Books: "docs/books"). */
+function preferenceFolderParts(ctx:ReadCtx,userId:string,preference:"notesFolder"|"booksFolder",fallback:string){
+  let saved:unknown;try{saved=JSON.parse(ctx.db.pimPreferences.userId.find(userId)?.value??"{}")[preference];}catch{saved=undefined;}
+  return (typeof saved==="string"&&photoFolderParts(saved))||fallback.split("/");
 }
-/** Finds (or, when asked, creates as the owner) the Notes folder. Never the Locked folder or a trashed one. */
-function notesRoot(ctx:Ctx,userId:string,create:boolean){
+const notesFolderParts=(ctx:ReadCtx,userId:string)=>preferenceFolderParts(ctx,userId,"notesFolder",defaultNotesFolder);
+const booksFolderParts=(ctx:ReadCtx,userId:string)=>preferenceFolderParts(ctx,userId,"booksFolder",defaultBooksFolder);
+const notesRoot=(ctx:Ctx,userId:string,create:boolean)=>ownFolder(ctx,userId,notesFolderParts(ctx,userId),create);
+/** Finds (or, when asked, creates as the owner) an app's folder. Never the Locked folder or a trashed one. */
+function ownFolder(ctx:Ctx,userId:string,parts:string[],create:boolean){
   let parentId="";
-  for(const name of notesFolderParts(ctx,userId)){
+  for(const name of parts){
     const existing=findKey(ctx,key(userId,parentId,name));
     if(existing){if(existing.kind!=="folder"||existing.trashed||isLockedRoot(existing))fail("conflict");parentId=existing.id;continue;}
     if(!create)return undefined;
@@ -1088,6 +1095,38 @@ export const serviceNotes=db.procedure({sessionId:t.string(),operation:t.string(
   }
   let legacy=0;for(const c of tx.db.pimCollections.ownerId.filter(user.id))if(c.kind==="notes")for(const _row of tx.db.pimResources.collectionId.filter(c.id))legacy++;
   return JSON.stringify({rootId,path:parts.join("/"),folders,files,truncated,legacy});
+}));
+/**
+ * Books: the library lists book files under the Books folder (top folders are libraries) with
+ * the account's reading states; the runtime reads metadata and covers from the blobs. Other
+ * operations keep reading state and bookmarks for books the account can read.
+ */
+export const serviceBooks=db.procedure({sessionId:t.string(),operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+  if(!appEnabled(tx,"books"))fail("notFound");
+  if(p.document.length>64*1024)fail("operationTooLarge");
+  const value:unknown=JSON.parse(p.document||"{}");if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");
+  if(p.operation==="library"){
+    const rootId=ownFolder(tx,user.id,booksFolderParts(tx,user.id),true)!,parts=booksFolderParts(tx,user.id);
+    const libraries:{id:string;name:string}[]=[],files:{id:string;parentId:string;name:string;blobId:string;size:number;revision:number;modifiedAt:number;path:string;library:string}[]=[];
+    const queue=[{id:rootId,path:"",depth:0,library:""}];let scanned=0,truncated=false;
+    for(let i=0;i<queue.length&&!truncated;i++){
+      const folder=queue[i],prefix=`${user.id}/${folder.id}/`,range=new Range<string>({tag:"included",value:prefix},{tag:"excluded",value:prefix.slice(0,-1)+"0"});
+      for(const entry of tx.db.fileEntries.listKey.filter(range)){
+        if(++scanned>20000){truncated=true;break;}
+        if(entry.trashed||entry.name.startsWith("."))continue;
+        const path=folder.path?`${folder.path}/${entry.name}`:entry.name;
+        if(entry.kind==="folder"){
+          if(folder.depth>=16){truncated=true;continue;}
+          if(!folder.depth)libraries.push({id:entry.id,name:entry.name});
+          queue.push({id:entry.id,path,depth:folder.depth+1,library:folder.library||entry.id});
+        }else if(bookFormat(entry.name)&&files.length<10000)files.push({id:entry.id,parentId:folder.id,name:entry.name,blobId:entry.blobId,size:entry.size,revision:entry.revision,modifiedAt:entry.modifiedAt,path,library:folder.library});
+      }
+    }
+    return JSON.stringify({rootId,path:parts.join("/"),libraries,files,states:bookStates(tx,user.id),truncated});
+  }
+  const readable=(fileId:string)=>{const entry=tx.db.fileEntries.id.find(fileId);return !!entry&&entry.kind==="file"&&!!access(tx,entry,user.id,p.sessionId);};
+  return JSON.stringify(booksOperation(tx,user.id,p.operation,value as Record<string,unknown>,readable));
 }));
 export const serviceGlobalSearch=db.procedure({sessionId:t.string(),query:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
