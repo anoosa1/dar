@@ -18,17 +18,18 @@ type ListView=Exclude<PhotoView,"album">|"duplicates"|"shared";
 type View={type:ListView}|{type:"album";id:string};
 interface Notice {message:string;undo?:()=>void}
 interface Transfer {id:string;name:string;progress:number;status:"uploading"|"complete"|"error";message?:string}
-const mainViews:[ListView,string,IconName][]=[["library","Library","image"],["favorites","Favorites","star"],["shared","Shared with me","share"],["videos","Videos","video"]];
+// Photos (the default) shows the Photos folder; All photos every picture and video in Files.
+const mainViews:[ListView,string,IconName][]=[["folder","Photos","image"],["library","All photos","grid"],["favorites","Favorites","star"],["shared","Shared with me","share"],["videos","Videos","video"]];
 const moreViews:[ListView,string,IconName][]=[["duplicates","Duplicates","copy"],["archive","Archive","archive"],["locked","Locked folder","lock"],["trash","Trash","trash"]];
 const allViews=[...mainViews,...moreViews];
 const zoomSteps=[3,4,5,6,8,10,12];
 
 function readView():{view:View;asset?:string}{
   const p=new URLSearchParams(location.search),album=p.get("album"),v=p.get("view");
-  return {view:album?{type:"album",id:album}:allViews.some(([id])=>id===v)?{type:v as ListView}:{type:"library"},asset:p.get("asset")??undefined};
+  return {view:album?{type:"album",id:album}:allViews.some(([id])=>id===v)?{type:v as ListView}:{type:"folder"},asset:p.get("asset")??undefined};
 }
 function writeView(view:View,asset?:string){
-  const p=new URLSearchParams();if(view.type==="album")p.set("album",view.id);else if(view.type!=="library")p.set("view",view.type);if(asset)p.set("asset",asset);
+  const p=new URLSearchParams();if(view.type==="album")p.set("album",view.id);else if(view.type!=="folder")p.set("view",view.type);if(asset)p.set("asset",asset);
   const next=`/photos${p.size?"?"+p:""}`;if(next!==location.pathname+location.search)history.replaceState(null,"",next);
 }
 const thumb=(id:string,size:"s"|"m"="s")=>`${base}/assets/${id}/thumbnail${size==="m"?"?size=m":""}`;
@@ -266,7 +267,8 @@ export function PhotosWorkspace({session,onSignedOut}:{session:BrowserSession;on
       {album&&albumOwner&&<button type="button" className="secondary-button photos-share-button" onClick={()=>setSharing(album)}><Icon name="share"/>Share</button>}
       {album&&<ActionMenu label={`Actions for ${album.name}`} actions={albumActions(album)}><Icon name="more"/></ActionMenu>}
     </div></div>;
-  const empty=view.type==="library"?<><Icon name="image"/><h2>{overview?.indexing?"Looking for photos…":"No photos yet"}</h2><p>Upload photos and videos, or drop them here. Photos also shows the pictures and videos already in your Files.</p><button className="primary-button" onClick={()=>fileInput.current?.click()}><Icon name="upload"/>Upload</button></>
+  const empty=view.type==="folder"?<><Icon name="image"/><h2>{overview?.indexing?"Looking for photos…":"No photos yet"}</h2><p>Upload photos and videos, or drop them here. They go to Files › {overview?.uploadFolder??"pics"}. All photos also shows the pictures and videos elsewhere in your Files.</p><button className="primary-button" onClick={()=>fileInput.current?.click()}><Icon name="upload"/>Upload</button></>
+    :view.type==="library"?<><Icon name="image"/><h2>{overview?.indexing?"Looking for photos…":"No photos yet"}</h2><p>Upload photos and videos, or drop them here. Photos also shows the pictures and videos already in your Files.</p><button className="primary-button" onClick={()=>fileInput.current?.click()}><Icon name="upload"/>Upload</button></>
     :view.type==="favorites"?<><h2>No favorites</h2><p>Star a photo to keep it here.</p></>
     :view.type==="archive"?<><h2>Archive is empty</h2><p>Archived photos are hidden from the library but stay in albums and Files.</p></>
     :view.type==="videos"?<><h2>No videos</h2><p>Videos you upload or keep in Files appear here.</p></>
@@ -278,7 +280,7 @@ export function PhotosWorkspace({session,onSignedOut}:{session:BrowserSession;on
     {lockedClosed?(folder.state?<UnlockForm folder={folder} description="Enter your password to see your locked photos. They are also in Files › Locked folder, which opens with the same password."/>:<p className="photos-empty" role="status">{folder.error||"Checking the Locked folder…"}</p>):<>
     {state==="loading"&&!items.length&&<p className="photos-empty" role="status">Loading photos…</p>}
     {state==="ready"&&!items.length&&<div className="photos-empty">{empty}</div>}
-    <div className={`photos-grid${selected.size&&items.some(item=>selected.has(item.id))?" is-selecting":""}`} role="list" aria-label={`${title} photos`} data-columns={columns}>
+    <div className={`photos-grid${selected.size&&items.some(item=>selected.has(item.id))?" is-selecting":""}`} role="list" aria-label={view.type==="folder"?"Photos":`${title} photos`} data-columns={columns}>
       {items.map(item=>{const month=monthLabel(inTrash?item.trashedAt??item.takenAt:item.takenAt),heading=month!==lastMonth?(lastMonth=month,<h2 className="photos-month" key={"m-"+month}>{inTrash?`Deleted ${month}`:month}</h2>):null,isSelected=selected.has(item.id);
         return <Fragment key={item.id}>{heading}<PhotoTile item={item} isSelected={isSelected} selecting={selected.size>0} onOpen={setOpen} onToggle={toggleSelected}/></Fragment>;})}
     </div>
@@ -315,7 +317,7 @@ export function PhotosWorkspace({session,onSignedOut}:{session:BrowserSession;on
     {transfers.length>0&&<section className="transfer-panel photos-transfers" aria-label="Uploads"><div className="transfer-heading"><strong>{transfers.some(t=>t.status==="uploading")?`Uploading ${transfers.filter(t=>t.status==="uploading").length}`:"Uploads"}</strong><button className="icon-button" aria-label="Dismiss finished uploads" disabled={transfers.some(t=>t.status==="uploading")} onClick={()=>setTransfers([])}><Icon name="close"/></button></div>
       <ul>{transfers.map(t=><li key={t.id} className={`photos-transfer is-${t.status}`}><span>{t.name}</span><progress max={1} value={t.progress} aria-label={`${t.name} upload progress`}/>{t.message?<small role="alert">{t.message}</small>:<small>{t.status==="complete"?"Done":`${Math.round(t.progress*100)}%`}</small>}</li>)}</ul></section>}
     {albumDialog&&<AlbumDialog album={albumDialog.album} ids={albumDialog.ids} session={session} onClose={()=>setAlbumDialog(undefined)} onSaved={async(saved,created)=>{setAlbumDialog(undefined);setSelected(new Set());await loadOverview();if(created)setNotice({message:albumDialog.ids?.length?`Added ${albumDialog.ids.length} to ${saved.name}`:`Created ${saved.name}`});}}/>}
-    {confirm&&<Dialog title={`Delete ${confirm.name}?`} onClose={()=>setConfirm(undefined)}><ConfirmBody album={confirm} session={session} onClose={()=>setConfirm(undefined)} onDeleted={async()=>{if(view.type==="album"&&view.id===confirm.id)choose({type:"library"});setConfirm(undefined);await loadOverview();setNotice({message:`Deleted ${confirm.name}`});}}/></Dialog>}
+    {confirm&&<Dialog title={`Delete ${confirm.name}?`} onClose={()=>setConfirm(undefined)}><ConfirmBody album={confirm} session={session} onClose={()=>setConfirm(undefined)} onDeleted={async()=>{if(view.type==="album"&&view.id===confirm.id)choose({type:"folder"});setConfirm(undefined);await loadOverview();setNotice({message:`Deleted ${confirm.name}`});}}/></Dialog>}
     {deleting&&<DeleteDialog session={session} ids={deleting.ids} empty={!!deleting.empty} locked={inLocked} onClose={()=>setDeleting(undefined)} onDeleted={async(removed,label)=>{setDeleting(undefined);if(removed)removeLocal(removed);else{setItems([]);setOpen(undefined);}await refresh();setNotice({message:label});}} onLocked={()=>{setDeleting(undefined);void folder.refresh();}}/>}
     {unlockAction&&<UnlockDialog folder={folder} action={unlockAction.action} onClose={()=>setUnlockAction(null)} onUnlocked={()=>{const run=unlockAction.run;setUnlockAction(null);run();}}/>}
     {sharing&&<SharePane album={sharing} session={session} onClose={()=>setSharing(undefined)} onChanged={()=>{void loadOverview();}}/>}

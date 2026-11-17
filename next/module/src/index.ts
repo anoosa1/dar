@@ -1007,6 +1007,7 @@ export const servicePhotos=db.procedure({sessionId:t.string(),operation:t.string
     lockedFolder:()=>lockedFolderFor(tx,user.id),
     monthFolder:(year,month)=>photosFolder(tx,user.id,year,month).parentId,
     uploadFolder:()=>photoFolder(tx,user.id).join("/"),
+    uploadFolderId:()=>{let parentId="";for(const name of photoFolder(tx,user.id)){const folder=findKey(tx,key(user.id,parentId,name));if(folder?.kind!=="folder"||folder.trashed)return "";parentId=folder.id;}return parentId;},
   };
   return JSON.stringify(photosOperation(tx,user.id,p.operation,value as Record<string,unknown>,files));
 }));

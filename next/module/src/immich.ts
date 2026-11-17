@@ -111,6 +111,11 @@ function visibleAlbums(ctx:Ctx,userId:string){
   for(const m of ctx.db.photoAlbumMembers.userId.filter(userId)){const a=ctx.db.photoAlbums.id.find(m.albumId);if(a)albums.push(a);}
   return albums;
 }
+/** The user and everyone in their albums: the people the device knows. */
+function peopleOf(ctx:Ctx,userId:string){
+  const ids=new Set([userId]);for(const a of visibleAlbums(ctx,userId)){ids.add(a.ownerId);for(const m of ctx.db.photoAlbumMembers.albumId.filter(a.id))ids.add(m.userId);}
+  return ids;
+}
 
 /**
  * The start of a sync stream: whether the device must start over (its epoch is behind, or
@@ -155,9 +160,7 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
     return {lines,last,more:false};
   }
   if(channel==="users"){
-
-    const ids=new Set([userId]);for(const a of visibleAlbums(ctx,userId)){ids.add(a.ownerId);for(const m of ctx.db.photoAlbumMembers.albumId.filter(a.id))ids.add(m.userId);}
-    for(const id of ids){const a=ctx.db.accounts.id.find(id);if(a)emit("UserV1",{id:a.id,name:a.displayName,email:a.id===userId?immichEmail(ctx,a):`${a.username}@dar`,avatarColor:"primary",deletedAt:null,hasProfileImage:false,profileChangedAt:iso(a.createdAt)},Math.max(1,currentSeq(ctx)));}
+    for(const id of peopleOf(ctx,userId)){const a=ctx.db.accounts.id.find(id);if(a)emit("UserV1",{id:a.id,name:a.displayName,email:a.id===userId?immichEmail(ctx,a):`${a.username}@dar`,avatarColor:"primary",deletedAt:null,hasProfileImage:false,profileChangedAt:iso(a.createdAt)},Math.max(1,currentSeq(ctx)));}
     return {lines,last,more:false};
   }
   // Tombstones for the user, ordered by sequence.
@@ -187,19 +190,40 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
   }
   // Rows without an index by sequence are gathered, sorted and paged.
   type Pending={seq:number;type:string;data:Record<string,unknown>};const pending:Pending[]=[];
-  const albums=visibleAlbums(ctx,userId);
-  if(channel==="albums")for(const a of albums)if(a.syncSeq>after)pending.push({seq:a.syncSeq,type:"AlbumV2",data:{id:a.id,name:a.name,description:a.description,createdAt:iso(a.createdAt),updatedAt:iso(a.updatedAt),thumbnailAssetId:a.coverId||null,isActivityEnabled:false,order:"desc"}});
+  const albums=visibleAlbums(ctx,userId),people=peopleOf(ctx,userId);
+  /**
+   * Whether the device holds this asset: its own photos outside the Locked folder (the trash
+   * too), and others' library photos in a shared album. The app's database refuses album
+   * rows and covers that name any other asset, and the whole sync fails.
+   */
+  const held=(asset:Asset|null|undefined):asset is Asset=>{
+    const entry=asset&&fileOf(ctx,asset),state=entry?place(entry):"gone";
+    return asset?.ownerId===userId?state==="library"||state==="trash":state==="library"&&!!asset&&people.has(asset.ownerId);
+  };
+  if(channel==="albums")for(const a of albums)if(a.syncSeq>after){
+    let cover=a.coverId&&held(ctx.db.photoAssets.fileId.find(a.coverId))?a.coverId:null;
+    if(!cover)for(const item of ctx.db.photoAlbumItems.albumId.filter(a.id))if(held(ctx.db.photoAssets.fileId.find(item.fileId))){cover=item.fileId;break;}
+    pending.push({seq:a.syncSeq,type:"AlbumV2",data:{id:a.id,name:a.name,description:a.description,createdAt:iso(a.createdAt),updatedAt:iso(a.updatedAt),thumbnailAssetId:cover,isActivityEnabled:false,order:"desc"}});
+  }
   if(channel==="albumUsers")for(const a of albums){
     if(a.syncSeq>after)pending.push({seq:a.syncSeq,type:"AlbumUserV1",data:{albumId:a.id,userId:a.ownerId,role:"owner"}});
     for(const m of ctx.db.photoAlbumMembers.albumId.filter(a.id))if(m.syncSeq>after)pending.push({seq:m.syncSeq,type:"AlbumUserV1",data:{albumId:a.id,userId:m.userId,role:m.role==="editor"?"editor":"viewer"}});
   }
-  if(channel==="albumToAssets")for(const a of albums)for(const item of ctx.db.photoAlbumItems.albumId.filter(a.id))if(item.syncSeq>after)pending.push({seq:item.syncSeq,type:"AlbumToAssetV1",data:{albumId:a.id,assetId:item.fileId}});
+  // Album rows follow their asset too: one held again (unlocked, restored) gets its albums back.
+  if(channel==="albumToAssets")for(const a of albums)for(const item of ctx.db.photoAlbumItems.albumId.filter(a.id)){
+    const asset=ctx.db.photoAssets.fileId.find(item.fileId),seq=Math.max(item.syncSeq,asset?.syncSeq??0);
+    if(seq>after&&held(asset))pending.push({seq,type:"AlbumToAssetV1",data:{albumId:a.id,assetId:item.fileId}});
+  }
+  // Others' photos come with the album rows that name them, so one added later is sent then.
   if(channel==="albumAssets"||channel==="albumAssetExifs"){
-    const seen=new Set<string>();
+    const latest=new Map<string,{asset:Asset;seq:number}>();
     for(const a of albums)for(const item of ctx.db.photoAlbumItems.albumId.filter(a.id)){
-      const asset=ctx.db.photoAssets.fileId.find(item.fileId);if(!asset||asset.ownerId===userId||asset.syncSeq<=after||seen.has(asset.fileId))continue;seen.add(asset.fileId);
-      const entry=fileOf(ctx,asset);if(!entry||place(entry)!=="library")continue;
-      pending.push(channel==="albumAssets"?{seq:asset.syncSeq,type:"AlbumAssetCreateV2",data:assetData(ctx,asset,entry,"library",userId)}:{seq:asset.syncSeq,type:"AlbumAssetExifCreateV1",data:exifData(asset,entry)});
+      const asset=ctx.db.photoAssets.fileId.find(item.fileId);if(!asset||asset.ownerId===userId)continue;
+      const seq=Math.max(item.syncSeq,asset.syncSeq),known=latest.get(asset.fileId);if(!known||seq>known.seq)latest.set(asset.fileId,{asset,seq});
+    }
+    for(const {asset,seq} of latest.values()){
+      if(seq<=after||!held(asset))continue;const entry=fileOf(ctx,asset)!;
+      pending.push(channel==="albumAssets"?{seq,type:"AlbumAssetCreateV2",data:assetData(ctx,asset,entry,"library",userId)}:{seq,type:"AlbumAssetExifCreateV1",data:exifData(asset,entry)});
     }
   }
   if(channel==="stacks")for(const s of ctx.db.photoStacks.ownerId.filter(userId))if(s.syncSeq>after)pending.push({seq:s.syncSeq,type:"StackV1",data:{id:s.id,ownerId:s.ownerId,primaryAssetId:s.primaryId,createdAt:iso(s.createdAt),updatedAt:iso(s.updatedAt)}});

@@ -117,8 +117,23 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
 
     // Sync stream: everything first, then only changes, deletes and resets.
     const types=["AuthUsersV2","UsersV1","AssetsV2","AssetExifsV1","AlbumsV2","AlbumUsersV1","AlbumToAssetsV1","AlbumAssetsV2","StacksV1","PeopleV1","MemoriesV2"];
+    // The app's database (3.4.1) enforces foreign keys: a row naming one it does not hold fails the whole sync.
+    const device={users:new Set<string>(),assets:new Set<string>(),albums:new Set<string>()};
+    const apply=(l:Line)=>{
+      const d=l.data as Record<string,string|null>,need=(held:Set<string>,id:string|null|undefined,what:string)=>assert.ok(id&&held.has(id),`${l.type} names ${what} ${id} the app does not hold`);
+      if(l.type==="SyncResetV1")for(const held of Object.values(device))held.clear();
+      else if(l.type==="UserV1")device.users.add(d.id!);
+      else if(l.type==="AssetV2"||l.type==="AlbumAssetCreateV2"){need(device.users,d.ownerId,"owner");device.assets.add(d.id!);}
+      else if(l.type==="AssetDeleteV1")device.assets.delete(d.assetId!);
+      else if(l.type==="AssetExifV1"||l.type==="AlbumAssetExifCreateV1")need(device.assets,d.assetId,"asset");
+      else if(l.type==="AlbumV2"){if(d.thumbnailAssetId)need(device.assets,d.thumbnailAssetId,"cover");device.albums.add(d.id!);}
+      else if(l.type==="AlbumDeleteV1")device.albums.delete(d.albumId!);
+      else if(l.type==="AlbumUserV1"){need(device.albums,d.albumId,"album");need(device.users,d.userId,"user");}
+      else if(l.type==="AlbumToAssetV1"){need(device.albums,d.albumId,"album");need(device.assets,d.assetId,"asset");}
+      else if(l.type==="StackV1")need(device.users,d.ownerId,"owner");
+    };
     const stream=async()=>{const r=await fetch(api+"/sync/stream",{method:"POST",headers:{...auth,"content-type":"application/json",accept:"application/jsonlines+json"},body:JSON.stringify({types})});assert.equal(r.status,200);
-      const lines=(await r.text()).trim().split("\n").map(l=>JSON.parse(l) as Line);
+      const lines=(await r.text()).trim().split("\n").map(l=>JSON.parse(l) as Line);lines.forEach(apply);
       const last=new Map<string,string>();for(const l of lines)last.set(l.ack.split("|")[0],l.ack);await call("/sync/ack",{body:{acks:[...last.values()]}});return lines;};
     const kinds=(lines:Line[])=>lines.map(l=>l.type);
     let lines=await stream();
@@ -141,6 +156,9 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     lines=await stream();assert.ok(lines.find(l=>l.type==="AssetV2"&&l.data.id===video.id)!.data.deletedAt);
     await call("/trash/restore/assets",{body:{ids:[video.id]}});await call("/assets",{method:"DELETE",body:{ids:[video.id],force:true}});
     lines=await stream();assert.ok(lines.some(l=>l.type==="AssetDeleteV1"&&l.data.assetId===video.id));
+    // An album whose photo the device does not hold (its folder trashed) names neither it nor its cover.
+    await call("/albums/assets",{method:"PUT",body:{albumIds:[album.id],assetIds:[photo.id]}});
+    lines=await stream();assert.equal(lines.find(l=>l.type==="AlbumV2")!.data.thumbnailAssetId,photo.id);
     const files=await connect(session);
     try{
       const parent=readProcedure<{ancestors:{id:string;name:string}[]}>(await files.procedures.fileDetails({id:photo.id})).ancestors[0];
@@ -148,10 +166,19 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
       await files.reducers.trashEntry({id:parent.id,expectedRevision:folder.revision});
       assert.deepEqual(kinds(await stream()),["SyncResetV1"]);
       lines=await stream();assert.equal(lines.filter(l=>l.type==="AssetV2").length,0);assert.equal(kinds(lines).at(-1),"SyncCompleteV1");
+      assert.equal(lines.find(l=>l.type==="AlbumV2")!.data.thumbnailAssetId,null);assert.ok(!lines.some(l=>l.type==="AlbumToAssetV1"));
       await files.reducers.restoreEntry({id:parent.id,expectedRevision:folder.revision+1});
-      assert.deepEqual(kinds(await stream()),["SyncResetV1"]);assert.ok((await stream()).some(l=>l.type==="AssetV2"&&l.data.id===photo.id));
+      assert.deepEqual(kinds(await stream()),["SyncResetV1"]);lines=await stream();
+      assert.ok(lines.some(l=>l.type==="AssetV2"&&l.data.id===photo.id));assert.ok(lines.some(l=>l.type==="AlbumToAssetV1"&&l.data.assetId===photo.id));
     }finally{files.disconnect();}
-    assert.equal((await upload(solo,"solo.jpg","image/jpeg")).http,201);
+    const soloPhoto=await upload(solo,"solo.jpg","image/jpeg");assert.equal(soloPhoto.http,201);
+    // A photo moved to the Locked folder leaves the device with its album rows; moved out, both return.
+    await call("/albums/assets",{method:"PUT",body:{albumIds:[album.id],assetIds:[soloPhoto.id]}});await stream();
+    assert.equal((await fetch(base+"/api/v1/files/locked/unlock",{method:"POST",headers,body:JSON.stringify({password:"a long isolated test password"})})).status,200);
+    const lockOrUnlock=async(action:string)=>{const r=await fetch(base+`/api/v1/photos/assets/${action}`,{method:"POST",headers,body:JSON.stringify({ids:[soloPhoto.id]})});assert.equal(r.status,200,await r.clone().text());};
+    await lockOrUnlock("lock");lines=await stream();assert.ok(lines.some(l=>l.type==="AssetDeleteV1"&&l.data.assetId===soloPhoto.id));assert.ok(!lines.some(l=>l.type==="AlbumToAssetV1"));
+    await call("/sync/ack",{method:"DELETE",body:{}});lines=await stream();assert.ok(!lines.some(l=>l.type==="AlbumToAssetV1"&&l.data.assetId===soloPhoto.id||l.data.thumbnailAssetId===soloPhoto.id));
+    await lockOrUnlock("unlock");lines=await stream();assert.ok(lines.some(l=>l.type==="AlbumToAssetV1"&&l.data.assetId===soloPhoto.id));
     // The web app sees the devices; signing out ends the token.
     const devices=(await (await fetch(base+"/api/v1/photos/immich",{headers})).json() as {devices:{id:string}[]}).devices;assert.equal(devices.length,1);
     await call("/auth/logout",{body:{}});assert.equal((await fetch(api+"/users/me",{headers:auth})).status,401);

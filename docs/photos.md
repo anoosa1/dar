@@ -41,7 +41,9 @@ in phases.
   immutable blob ID, at most two tool runs at a time with time limits. The cache is
   not backed up and can be deleted. If a tool is missing, browser-decodable images
   fall back to the original and others show a placeholder.
-- **Library:** Library (not archived), Favorites, Shared with me and Videos, then albums, then
+- **Library:** Photos (the default: the Photos folder, `pics` unless changed, not archived),
+  All photos (every picture and video in Files, not archived; search results open here),
+  Favorites, Shared with me and Videos, then albums, then
   Duplicates, Archive, Locked folder and Trash; newest first, with a zoom slider
   (3–12 columns). Select with the tile checkbox or Shift click; the tonal bar offers
   favorite, add to album, remove from album, stack, archive, Move to Locked folder
@@ -116,7 +118,10 @@ in phases.
   as duplicates. The app's sync stream sends your library (favorites, archive, trash
   with its date, Live Photo motion parts hidden), EXIF, albums you own or share with
   their people and photos, and stacks; partners, memories, people, OCR and edits are
-  empty. Changes travel incrementally by Dar's change sequence; a trashed, restored
+  empty. The app's database refuses rows that name an asset it does not hold, so album
+  memberships and covers are sent only for assets the device has (a photo that leaves, for example into the
+  Locked folder, takes its album rows with it and brings them back when it returns), and others' photos
+  travel with the album rows that add them. Changes travel incrementally by Dar's change sequence; a trashed, restored
   or moved folder of photos, joining or leaving a shared album, or 30 days without a
   sync make the device start over. Locked photos never sync. Videos play converted
   copies once ready, otherwise the original. Photos settings › Immich lists

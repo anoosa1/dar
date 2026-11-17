@@ -12,8 +12,10 @@ page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()
 page.setDefaultTimeout(15000);
 try{
   await page.goto(`${base}/photos`);await page.getByLabel("Username",{exact:true}).fill("admin");await page.getByLabel("Password",{exact:true}).fill("a long isolated test password");await page.getByRole("button",{name:"Sign in",exact:true}).click();
-  await page.getByRole("heading",{name:"Library",exact:true}).waitFor();
-  const grid=page.getByRole("list",{name:"Library photos"});await grid.getByRole("listitem").nth(1).waitFor();
+  await page.getByRole("heading",{name:"Photos",exact:true}).waitFor();
+  const views=page.getByRole("navigation",{name:"Photos views"}),photosView=views.getByRole("button",{name:/^Photos/});
+  assert.equal(await photosView.getAttribute("aria-current"),"page");
+  const grid=page.getByRole("list",{name:"Photos",exact:true});await grid.getByRole("listitem").nth(1).waitFor();
   assert.equal(await grid.getByRole("listitem").count(),2);
   assert.equal(await page.getByRole("link",{name:"Photos",exact:true}).first().getAttribute("aria-current"),"page");
 
@@ -24,6 +26,10 @@ try{
   const newest=grid.getByRole("button",{name:/^Photo plain\.png/});await newest.waitFor();
   await page.waitForFunction(()=>[...document.querySelectorAll(".photos-open img")].some(img=>img.complete&&img.naturalWidth>0));
   await page.screenshot({path:path.join(root,"photos-library.png")});
+  // All photos is every picture in Files, at ?view=library; Photos (the Photos folder) is the default.
+  await views.getByRole("button",{name:/^All photos/}).click();await page.getByRole("heading",{name:"All photos",exact:true}).waitFor();
+  await page.getByRole("list",{name:"All photos photos"}).getByRole("button",{name:/^Photo plain\.png/}).waitFor();assert.match(page.url(),/\?view=library$/);
+  await photosView.click();await grid.waitFor();assert.equal(new URL(page.url()).search,"");
 
   // Viewer in the middle sheet with details on the right; favorite, keyboard navigation and focus return.
   await newest.click();const viewer=page.getByRole("region",{name:"Viewer for plain.png"});await viewer.waitFor();
@@ -35,7 +41,7 @@ try{
   await page.keyboard.press("Escape");await grid.waitFor();
   await page.waitForFunction(()=>document.activeElement?.classList.contains("photos-open"),undefined,{timeout:5000});
   await page.getByRole("button",{name:/^Favorites/}).click();await page.getByRole("list",{name:"Favorites photos"}).getByRole("button",{name:/^Photo plain\.png/}).first().waitFor();
-  await page.getByRole("button",{name:/^Library/}).click();await grid.waitFor();
+  await photosView.click();await grid.waitFor();
 
   // Select, then create an album from the selection.
   await page.getByLabel("Select clip.mp4",{exact:true}).check();const selection=page.getByRole("toolbar",{name:"Selection"});await selection.getByText("1 selected").waitFor();
@@ -69,7 +75,7 @@ try{
   const trashGrid=page.getByRole("list",{name:"Trash photos"});await trashGrid.getByRole("button",{name:/^Photo trip\.jpg/}).waitFor();
   await page.getByLabel("Select trip.jpg",{exact:true}).check();await page.getByRole("toolbar",{name:"Selection"}).getByRole("button",{name:"Restore"}).click();
   await page.getByText("1 item restored").waitFor();await page.getByText("Trash is empty").waitFor();
-  await page.getByRole("button",{name:/^Library/}).click();await grid.getByRole("button",{name:/^Photo trip\.jpg/}).waitFor();
+  await photosView.click();await grid.getByRole("button",{name:/^Photo trip\.jpg/}).waitFor();
   await page.getByLabel("Select trip.jpg",{exact:true}).check();await page.getByRole("toolbar",{name:"Selection"}).getByRole("button",{name:"Move to trash"}).click();
   await page.getByText("1 item moved to the trash").waitFor();assert.equal(await grid.getByRole("button",{name:/^Photo trip\.jpg/}).count(),0);
   await page.getByRole("button",{name:"Undo",exact:true}).click();await grid.getByRole("button",{name:/^Photo trip\.jpg/}).waitFor();
@@ -81,7 +87,7 @@ try{
   await group.getByRole("button",{name:"Keep 1, trash 1"}).click();await page.getByText("Kept 1, moved 1 to the trash").waitFor();await page.getByText("No duplicates").waitFor();
 
   // Locked folder: moving asks for the password, then the photo leaves the library; the video plays there.
-  await page.getByRole("button",{name:/^Library/}).click();await grid.getByRole("button",{name:/^Video clip\.mp4/}).waitFor();
+  await photosView.click();await grid.getByRole("button",{name:/^Video clip\.mp4/}).waitFor();
   await page.getByLabel("Select clip.mp4",{exact:true}).check();await page.getByRole("toolbar",{name:"Selection"}).getByRole("button",{name:"Move to Locked folder"}).click();
   const unlock=page.getByRole("dialog",{name:"Unlock the Locked folder"});await unlock.getByLabel("Password").fill("wrong password here");await unlock.getByRole("button",{name:"Unlock"}).click();
   await unlock.getByText("That password is not correct.").waitFor();
@@ -168,7 +174,7 @@ try{
     const sidebarBar=page.getByRole("button",{name:"Immich import in progress, open Photos settings"});await sidebarBar.waitFor();
     await page.screenshot({path:path.join(root,"photos-immich-sidebar.png")});
     await sidebarBar.waitFor({state:"detached",timeout:30000});
-    await page.getByRole("list",{name:"Library photos"}).getByRole("button",{name:/^Photo immich-2\.jpg/}).waitFor();
+    await grid.getByRole("button",{name:/^Photo immich-2\.jpg/}).waitFor();
     await page.getByRole("button",{name:"Photos settings",exact:true}).first().click();await settingsSheet.getByRole("tab",{name:"Immich"}).click();
     await settingsSheet.getByText(/3 imported · 0 albums · 3 on Immich/).waitFor();assert.equal(await settingsSheet.getByRole("progressbar").count(),0);
     await settingsSheet.getByRole("button",{name:"Disconnect"}).click();await settingsSheet.getByText("Disconnected. Imported photos stay in Dar.").waitFor();

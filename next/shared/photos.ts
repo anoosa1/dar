@@ -1,5 +1,6 @@
 /** Photos indexes image and video files in Files; these are its browser-facing shapes. */
-export type PhotoView="library"|"favorites"|"videos"|"archive"|"album"|"trash"|"locked";
+/** library is every photo; folder only those in the account's Photos folder (default pics). */
+export type PhotoView="library"|"folder"|"favorites"|"videos"|"archive"|"album"|"trash"|"locked";
 export interface PhotoExif {make?:string;model?:string;lens?:string;fNumber?:number;exposure?:number;iso?:number;focalLength?:number;orientation?:number;videoCodec?:string;audioCodec?:string}
 /**
  * How a browser plays a video: the original as is, a fast remux of its H.264 stream
@@ -32,7 +33,7 @@ export interface PhotoPage {items:PhotoAsset[];cursor:string}
 export interface PhotoStack {id:string;primaryId:string;items:PhotoAsset[]}
 export interface PhotoDuplicateGroup {key:string;identical:boolean;items:(PhotoAsset&{path:string})[]}
 export interface PhotoDuplicatePage {groups:PhotoDuplicateGroup[];cursor:string}
-export interface PhotoCounts {library:number;favorites:number;videos:number;archive:number;trash:number;duplicates:number;shared:number}
+export interface PhotoCounts {library:number;folder:number;favorites:number;videos:number;archive:number;trash:number;duplicates:number;shared:number}
 export interface PhotoOverview {albums:PhotoAlbum[];sharedAlbums:PhotoAlbum[];counts:PhotoCounts;indexing:boolean;uploadFolder:string;
   /** An Immich import in progress for this account, if any. */
   immich?:PhotoImmichProgress|null}
