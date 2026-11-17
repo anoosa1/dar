@@ -9,7 +9,7 @@ import {spawnSync,execFile} from "node:child_process";
 import {promisify} from "node:util";
 import {startServer} from "../runtime/server.ts";
 import {login,connect} from "./integration-helpers.ts";
-import {follow} from "./identity-helpers.ts";
+import {follow,identityAdmin} from "./identity-helpers.ts";
 import {readProcedure} from "../client/api.ts";
 import type {PhotoDetail,PhotoOverview,PhotoPage} from "../shared/photos.ts";
 
@@ -90,6 +90,10 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     const preferences=await call<{memories:Record<string,unknown>;people:Record<string,unknown>}>("/users/me/preferences");
     assert.deepEqual(preferences.memories,{enabled:false,duration:5,sidebarWeb:false});assert.deepEqual(preferences.people,{enabled:false,sidebarWeb:false,updateStrategy:"self"});
     assert.equal((await fetch(api+"/users/me",{headers:{authorization:`Bearer ${accessToken}`}})).status,200);
+    // The Android app (3.4.1) keeps only the cookies set at sign-in, never the body's token.
+    const appCookie=(response:Response)=>response.headers.getSetCookie().map(c=>c.split(";")[0]).join("; ");
+    assert.match(appCookie(signed),new RegExp(`immich_access_token=${accessToken}`));
+    assert.equal((await fetch(api+"/users/me",{headers:{cookie:appCookie(signed)}})).status,200);
 
     // Backup: multipart upload into pics/YYYY/MM, duplicates by SHA-1.
     const upload=async(bytes:Buffer,file:string,type:string,fields:Record<string,string>={},as:Record<string,string>=auth)=>{
@@ -163,6 +167,7 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     assert.equal((await finish(flow.url.href,randomBytes(42).toString("base64url"))).status,401);
     const finished=await finish(flow.url.href,verifier);assert.equal(finished.status,201,await finished.clone().text());
     const oauthLogin=await finished.json() as {accessToken:string;userEmail:string};assert.equal(oauthLogin.userEmail,"admin@dar");
+    assert.equal((await fetch(api+"/users/me",{headers:{cookie:appCookie(finished)}})).status,200);
     assert.equal((await finish(flow.url.href,verifier)).status,401);
     const oauthAuth={"x-immich-user-token":oauthLogin.accessToken};
     assert.equal((await (await fetch(api+"/users/me",{headers:oauthAuth})).json() as {email:string}).email,"admin@dar");
@@ -171,6 +176,16 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     assert.equal((await upload(Buffer.concat([solo,Buffer.from([1])]),"solo again.jpg","image/jpeg",{},oauthAuth)).http,201);
     await fetch(api+"/auth/logout",{method:"POST",headers:{...oauthAuth,"content-type":"application/json"},body:"{}"});
     assert.equal((await fetch(api+"/users/me",{headers:oauthAuth})).status,401);assert.ok(!(await passwords()).some(p=>p.label==="Immich on Pixel 6"));
+
+    // With a directory email, the app shows it and signs in with it.
+    const directory=await identityAdmin(base),userId=(await (await directory.api("/users")).json() as {items:{id:string;userName:string}[]}).items.find(u=>u.userName==="admin")!.id;
+    const current=await directory.api(`/users/${userId}`);assert.equal(current.status,200);
+    const patched=await directory.write(`/users/${userId}`,"PATCH",{schemas:["urn:ietf:params:scim:api:messages:2.0:PatchOp"],Operations:[{op:"add",path:"emails",value:[{value:"Anas@Example.org",type:"work",primary:true}]}]},current.headers.get("etag")!);
+    assert.equal(patched.status,200,await patched.clone().text());
+    const byEmail=await signIn("anas@example.org",photosPassword.secret);assert.equal(byEmail.status,201,await byEmail.clone().text());
+    assert.equal((await byEmail.json() as {userEmail:string}).userEmail,"anas@example.org");
+    assert.equal((await (await fetch(api+"/users/me",{headers:{cookie:appCookie(byEmail)}})).json() as {email:string}).email,"anas@example.org");
+    assert.equal((await signIn("someone@example.org",photosPassword.secret)).status,401);
 
     // The connector: Immich has one new photo (a favorite) and one Dar already has, in an album.
     // A video over Dar's 16 GiB limit and a photo with a bogus capture year must not stop the import.

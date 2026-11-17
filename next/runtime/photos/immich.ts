@@ -27,6 +27,15 @@ const mediaTypes:Record<string,string>={jpg:"image/jpeg",jpeg:"image/jpeg",png:"
   dng:"image/x-adobe-dng",cr2:"image/x-canon-cr2",cr3:"image/x-canon-cr3",nef:"image/x-nikon-nef",arw:"image/x-sony-arw",orf:"image/x-olympus-orf",rw2:"image/x-panasonic-rw2",raf:"image/x-fuji-raf",
   mp4:"video/mp4",m4v:"video/mp4",mov:"video/quicktime",webm:"video/webm",mkv:"video/x-matroska","3gp":"video/3gpp",avi:"video/x-msvideo"};
 const iso=(ms:number)=>new Date(Math.max(0,ms)).toISOString();
+/**
+ * The app (3.4.1) keeps its access token from these cookies, as Immich sets them at sign-in;
+ * it never sends the token from the response body.
+ */
+function authCookies(token:string,type:"password"|"oauth",secure:boolean){
+  const attributes=`Path=/; Max-Age=${400*86400}; SameSite=Lax${secure?"; Secure":""}`;
+  return [`immich_access_token=${token}; ${attributes}; HttpOnly`,`immich_auth_type=${type}; ${attributes}; HttpOnly`,`immich_is_authenticated=true; ${attributes}`];
+}
+const clearedCookies=["immich_access_token","immich_auth_type","immich_is_authenticated"].map(name=>`${name}=; Path=/; Max-Age=0; SameSite=Lax`);
 const statusText:Record<number,string>={400:"Bad Request",401:"Unauthorized",403:"Forbidden",404:"Not Found",409:"Conflict",413:"Payload Too Large",429:"Too Many Requests",500:"Internal Server Error",503:"Service Unavailable",507:"Insufficient Storage"};
 
 interface Part {name:string;filename?:string;mediaType?:string;value?:string;file?:{path:string;size:number;sha1:string}}
@@ -70,23 +79,24 @@ export type ImmichOAuthRedeem=(code:string,redirectUri:string,verifier:string)=>
 const oauthCallback=/^app\.immich:\/(?:\/\/)?oauth-callback(?:\?|$)/;
 export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,url:URL,options:{db:Database;runtime:PhotosRuntime;root:string;blobs:ReturnType<typeof blobStore>;limit:(key:string)=>void;body:()=>Promise<Record<string,unknown>>;origin:string;redeem:ImmichOAuthRedeem}){
   const {db,runtime,root,blobs}=options,method=req.method??"GET",route=url.pathname.slice(immichBase.length)||"/";
-  const send=(value:unknown,status=200)=>{res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store"});res.end(JSON.stringify(value));};
+  const send=(value:unknown,status=200,cookies?:string[])=>{res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...cookies?{"set-cookie":cookies}:{}});res.end(JSON.stringify(value));};
+  const secure=new URL(options.origin).protocol==="https:";
   try{
     // Public server information the app reads before sign-in.
     if(method==="GET"&&route==="/server/ping")return send({res:"pong"});
     if(method==="GET"&&route==="/server/version")return send(version);
     if(method==="GET"&&route==="/server/features")return send({backups:false,configFile:false,duplicateDetection:true,email:false,facialRecognition:false,importFaces:false,map:false,oauth:true,oauthAutoLaunch:false,ocr:false,passwordLogin:true,realtimeTranscoding:false,reverseGeocoding:false,search:false,sidecar:false,smartSearch:false,trash:true});
-    if(method==="GET"&&route==="/server/config")return send({externalDomain:options.origin,isInitialized:true,isOnboarded:true,loginPageMessage:"Use Sign in with Dar, or your Dar username followed by @ (for example anas@dar) and an app password with Photos access.",maintenanceMode:false,mapDarkStyleUrl:"",mapLightStyleUrl:"",minFaces:3,oauthButtonText:"Sign in with Dar",publicUsers:false,trashDays:0,userDeleteDelay:7});
+    if(method==="GET"&&route==="/server/config")return send({externalDomain:options.origin,isInitialized:true,isOnboarded:true,loginPageMessage:"Use Sign in with Dar, or your directory email (or your Dar username followed by @dar) and an app password with Photos access.",maintenanceMode:false,mapDarkStyleUrl:"",mapLightStyleUrl:"",minFaces:3,oauthButtonText:"Sign in with Dar",publicUsers:false,trashDays:0,userDeleteDelay:7});
     if(method==="GET"&&route==="/server/media-types")return send({image:Object.entries(mediaTypes).filter(([,t])=>t.startsWith("image/")).map(([e])=>"."+e),video:Object.entries(mediaTypes).filter(([,t])=>t.startsWith("video/")).map(([e])=>"."+e),sidecar:[]});
     if(method==="GET"&&route==="/server/about")return send({version:"v3.4.1",versionUrl:"https://github.com/immich-app/immich/releases/tag/v3.4.1",licensed:false,repository:"Dar (Immich-compatible)"});
     if(method==="POST"&&route==="/auth/login"){
       options.limit("immich-login");
       const p=await options.body(),email=typeof p.email==="string"?p.email.trim():"",password=typeof p.password==="string"?p.password:"";
-      const username=email.split("@")[0].toLowerCase();if(!username||!password||password.length>1024)throw new AppError("unauthenticated",401,"Incorrect email or password");
+      if(!email.split("@")[0]||email.length>320||!password||password.length>1024)throw new AppError("unauthenticated",401,"Incorrect email or password");
       const token=createOpaqueToken();
       try{
-        const user=await db.call<{id:string;email:string;name:string;isAdmin:boolean}>("service_immich_login",[username,digestToken(password),token.digest,device(req,"devicetype","device-type","Mobile"),device(req,"devicemodel","device-model","Immich")]);
-        return send({accessToken:token.secret,userId:user.id,userEmail:user.email,name:user.name,isAdmin:user.isAdmin,isOnboarded:true,profileImagePath:"",shouldChangePassword:false},201);
+        const user=await db.call<{id:string;email:string;name:string;isAdmin:boolean}>("service_immich_login",[email,digestToken(password),token.digest,device(req,"devicetype","device-type","Mobile"),device(req,"devicemodel","device-model","Immich")]);
+        return send({accessToken:token.secret,userId:user.id,userEmail:user.email,name:user.name,isAdmin:user.isAdmin,isOnboarded:true,profileImagePath:"",shouldChangePassword:false},201,authCookies(token.secret,"password",secure));
       }catch(error){if(error instanceof AppError&&["unauthenticated","forbidden"].includes(error.code))throw new AppError("unauthenticated",401,error.code==="forbidden"?"This app password has no Photos access.":"Incorrect email or password");throw error;}
     }
     // OAuth: the app opens Dar's OIDC sign-in in a browser tab, then hands the callback here.
@@ -110,13 +120,13 @@ export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,ur
       try{
         // The device's app password has no secret anyone holds: only this access token uses it.
         const user=await db.call<{id:string;email:string;name:string;isAdmin:boolean}>("service_immich_oauth_login",[userId,digestToken(randomBytes(32).toString("base64url")),token.digest,device(req,"devicetype","device-type","Mobile"),device(req,"devicemodel","device-model","Immich")]);
-        return send({accessToken:token.secret,userId:user.id,userEmail:user.email,name:user.name,isAdmin:user.isAdmin,isOnboarded:true,profileImagePath:"",shouldChangePassword:false},201);
+        return send({accessToken:token.secret,userId:user.id,userEmail:user.email,name:user.name,isAdmin:user.isAdmin,isOnboarded:true,profileImagePath:"",shouldChangePassword:false},201,authCookies(token.secret,"oauth",secure));
       }catch(error){if(error instanceof AppError&&error.code==="forbidden")throw new AppError("forbidden",403,"Photos is turned off on this server.");throw error;}
     }
     // Immich's relay for providers that cannot redirect to the app's scheme; Dar redirects directly.
     if(method==="GET"&&route==="/oauth/mobile-redirect"){res.writeHead(307,{location:`${immichOAuthClient.redirectUri}${url.search}`,"cache-control":"no-store"});res.end();return;}
     // Everything else needs an Immich access token.
-    const cookie=req.headers.cookie?.split(";").map(p=>p.trim()).find(p=>p.startsWith("immich_access_token="))?.slice(19);
+    const cookie=req.headers.cookie?.split(";").map(p=>p.trim()).find(p=>p.startsWith("immich_access_token="))?.slice("immich_access_token=".length);
     const bearer=/^Bearer (.+)$/i.exec(req.headers.authorization??"")?.[1];
     const token=String(req.headers["x-immich-user-token"]??bearer??cookie??"");
     if(!/^[A-Za-z0-9_-]{43}$/.test(token))throw new AppError("unauthenticated",401,"Authentication required");
@@ -127,7 +137,7 @@ export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,ur
     const input=async()=>await options.body();
     if(method==="POST"&&route==="/auth/validateToken")return send({authStatus:true});
     if(method==="GET"&&route==="/auth/status")return send({password:true,pinCode:false,isElevated:false});
-    if(method==="POST"&&route==="/auth/logout"){await immich("logout");return send({successful:true,redirectUri:"/auth/login?autoLaunch=0"});}
+    if(method==="POST"&&route==="/auth/logout"){await immich("logout");return send({successful:true,redirectUri:"/auth/login?autoLaunch=0"},200,clearedCookies);}
     if(method==="GET"&&(route==="/users/me"||route==="/users/me/"))return send(user);
     if(method==="GET"&&route==="/users")return send([user]);
     if(route==="/users/me/preferences")return send(preferences());

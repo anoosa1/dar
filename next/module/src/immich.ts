@@ -50,8 +50,20 @@ export function immichSession(ctx:Ctx,digest:string,allows:(scope:string,permiss
   if(now-session.usedAt>60_000)ctx.db.immichSessions.digest.update({...session,usedAt:now});
   return {session,user};
 }
+/** The account's own email for the app: its directory email (primary, else the first), else username@dar. */
+export function immichEmail(ctx:Ctx,user:Account){
+  const profile=ctx.db.directoryProfiles.userId.find(user.id);let emails:unknown;
+  try{emails=JSON.parse(profile?.document??"{}").emails;}catch{emails=undefined;}
+  const list=Array.isArray(emails)?emails.filter((e):e is {value:string;primary?:boolean}=>typeof e?.value==="string"&&/^[^\s@]+@[^\s@]+$/.test(e.value)):[];
+  return ((list.find(e=>e.primary)??list[0])?.value??`${user.username}@dar`).toLowerCase();
+}
+/** Sign-in names the app may send: the directory email, or the username followed by "@" and anything. */
+export function immichLoginMatches(ctx:Ctx,user:Account,login:string){
+  const value=login.trim().toLowerCase();
+  return value===immichEmail(ctx,user)||value.split("@")[0]===user.username;
+}
 export function immichUser(ctx:Ctx,user:Account){
-  const email=`${user.username}@dar`;
+  const email=immichEmail(ctx,user);
   return {id:user.id,email,name:user.displayName,isAdmin:user.administrator,avatarColor:"primary",profileImagePath:"",profileChangedAt:iso(user.createdAt),createdAt:iso(user.createdAt),updatedAt:iso(user.createdAt),
     deletedAt:null,oauthId:"",shouldChangePassword:false,storageLabel:null,quotaSizeInBytes:ctx.db.usage.userId.find(user.id)?.quota||null,quotaUsageInBytes:ctx.db.usage.userId.find(user.id)?.used??0,status:"active",license:null,clusterGroupId:user.id};
 }
@@ -145,7 +157,7 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
   if(channel==="users"){
 
     const ids=new Set([userId]);for(const a of visibleAlbums(ctx,userId)){ids.add(a.ownerId);for(const m of ctx.db.photoAlbumMembers.albumId.filter(a.id))ids.add(m.userId);}
-    for(const id of ids){const a=ctx.db.accounts.id.find(id);if(a)emit("UserV1",{id:a.id,name:a.displayName,email:`${a.username}@dar`,avatarColor:"primary",deletedAt:null,hasProfileImage:false,profileChangedAt:iso(a.createdAt)},Math.max(1,currentSeq(ctx)));}
+    for(const id of ids){const a=ctx.db.accounts.id.find(id);if(a)emit("UserV1",{id:a.id,name:a.displayName,email:a.id===userId?immichEmail(ctx,a):`${a.username}@dar`,avatarColor:"primary",deletedAt:null,hasProfileImage:false,profileChangedAt:iso(a.createdAt)},Math.max(1,currentSeq(ctx)));}
     return {lines,last,more:false};
   }
   // Tombstones for the user, ordered by sequence.

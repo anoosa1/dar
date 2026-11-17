@@ -7,7 +7,7 @@ import {newsTables} from "./news-tables.ts";
 import {newsOperation,newsWorker,newsReadOperations,newsSnapshot,restoreNews} from "./news.ts";
 import {photosTables,immichTables} from "./photos-tables.ts";
 import {photoFileEvent,touchAsset,currentSeq} from "./photo-sync.ts";
-import {immichSession,immichUser,immichSyncStart,immichSyncPage,immichAcks,immichSetAcks,immichDeleteAcks,immichBulkCheck,immichDuplicate,checksumToBase64,immichSessions,deleteImmichSession,immichConnectionView,saveImmichConnection,deleteImmichConnection,immichDue,immichReport,immichKnown,immichMap,immichApply,immichAlbum} from "./immich.ts";
+import {immichSession,immichUser,immichLoginMatches,immichSyncStart,immichSyncPage,immichAcks,immichSetAcks,immichDeleteAcks,immichBulkCheck,immichDuplicate,checksumToBase64,immichSessions,deleteImmichSession,immichConnectionView,saveImmichConnection,deleteImmichConnection,immichDue,immichReport,immichKnown,immichMap,immichApply,immichAlbum} from "./immich.ts";
 import {photosOperation,photosWorker,photosSnapshot,restorePhotos,photosLinkOperation,openPhotoLink,addLinkUpload,photosReadOperations,type PhotoFiles} from "./photos.ts";
 import {lockedFolderType,lockedFolderName,lockedUnlockMinutes} from "../../shared/locked-folder.ts";
 import {defaultPhotoFolder,photoFolderParts,nameParts,photoKind,immichOAuthClient} from "../../shared/photos.ts";
@@ -933,7 +933,7 @@ export const servicePhotoLink=db.procedure({digest:t.string(),pass:t.string(),op
 /** Immich app sign-in: Dar username and an app password with Photos access, as the app sends them. */
 export const serviceImmichLogin=db.procedure({username:t.string(),digest:t.string(),tokenDigest:t.string(),deviceType:t.string(),deviceOS:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);const password=tx.db.appPasswords.digest.find(p.digest),user=password&&tx.db.accounts.id.find(password.userId),session=password&&tx.db.sessions.id.find(password.sessionId);
-  if(!password||password.revoked||password.expiresAt<=now(tx)||!user?.enabled||user.username!==p.username.toLowerCase()||!session?.active)fail("unauthenticated");
+  if(!password||password.revoked||password.expiresAt<=now(tx)||!user?.enabled||!immichLoginMatches(tx,user,p.username)||!session?.active)fail("unauthenticated");
   if(!passwordAllows(password.scope,"photos","read")||!appEnabled(tx,"photos"))fail("forbidden");
   if(!/^[a-f0-9]{64}$/.test(p.tokenDigest)||p.deviceType.length>100||p.deviceOS.length>100)fail("invalidInput");
   if([...tx.db.immichSessions.userId.filter(user.id)].length>=50)fail("quotaExceeded");
