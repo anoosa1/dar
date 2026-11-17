@@ -15,6 +15,8 @@ export interface PhotoFiles {
   /** Moves into a folder, numbering the name if it is taken. */
   move(entry:Entry,parentId:string):void;
   lockedFolder():string;monthFolder(year:number,month:number):string;uploadFolder():string;
+  /** The Photos folder's ID, or "" while it does not exist. */
+  uploadFolderId():string;
 }
 
 function fail(code:string):never{throw new SenderError(code);}
@@ -115,6 +117,19 @@ function reader(ctx:Ctx,viewer=""){
 }
 type Reader=ReturnType<typeof reader>;
 
+/** Whether an entry is somewhere under a folder; folder chains are cached per call. */
+function within(ctx:Ctx,folderId:string){
+  const known=new Map<string,boolean>();
+  return (entry:Entry)=>{
+    if(!folderId)return false;const chain:string[]=[];let found=false,current=entry.parentId;
+    for(let depth=0;current&&depth<128;depth++){
+      const cached=known.get(current);if(cached!==undefined){found=cached;break;}
+      chain.push(current);if(current===folderId){found=true;break;}
+      current=ctx.db.fileEntries.id.find(current)?.parentId??"";
+    }
+    for(const id of chain)known.set(id,found);return found;
+  };
+}
 function inView(view:string,asset:Asset){
   return view==="favorites"?asset.favorite:view==="videos"?asset.kind==="video"&&!asset.archived:view==="archive"?asset.archived:view==="locked"?true:!asset.archived;
 }
@@ -213,9 +228,9 @@ export function photosOperation(ctx:Ctx,userId:string,operation:string,p:Record<
   const fresh=(id:string)=>ctx.db.fileEntries.id.find(id)!;
   switch(operation){
     case "overview":{
-      keys(p,[]);const counts={library:0,favorites:0,videos:0,archive:0,trash:0,duplicates:0,shared:0};let scanned=0;
+      keys(p,[]);const counts={library:0,folder:0,favorites:0,videos:0,archive:0,trash:0,duplicates:0,shared:0};let scanned=0;const inFolder=within(ctx,files.uploadFolderId());
       for(const row of ctx.db.photoAssets.ownerId.filter(userId)){if(++scanned>200000)break;const entry=r.fileOf(row);if(!entry||r.stateOf(entry)!=="library"||!r.shown(row,entry,"library"))continue;
-        if(!row.archived)counts.library++;if(row.favorite)counts.favorites++;if(row.kind==="video"&&!row.archived)counts.videos++;if(row.archived)counts.archive++;}
+        if(!row.archived){counts.library++;if(inFolder(entry))counts.folder++;}if(row.favorite)counts.favorites++;if(row.kind==="video"&&!row.archived)counts.videos++;if(row.archived)counts.archive++;}
       scanned=0;for(const entry of ctx.db.fileEntries.listKey.filter(prefixRange(`${userId}/trash/`))){if(++scanned>20000)break;const row=entry.kind==="file"?ctx.db.photoAssets.fileId.find(entry.id):undefined;if(row&&row.ownerId===userId&&r.fileOf(row)&&!(row.kind==="video"&&r.livePartner(row,entry)))counts.trash++;}
       counts.duplicates=duplicateGroups(ctx,r,userId,"",1000).groups.length;
       const order=(a:Album,b:Album)=>b.updatedAt-a.updatedAt||a.name.localeCompare(b.name);
@@ -225,7 +240,7 @@ export function photosOperation(ctx:Ctx,userId:string,operation:string,p:Record<
       return {albums,sharedAlbums,counts,indexing:ctx.db.photoState.name.find("scan")?.value!=="idle",uploadFolder:files.uploadFolder()};
     }
     case "page":{
-      keys(p,["view","album","cursor","limit"]);const view=text(p.view,20);if(!["library","favorites","videos","archive","album","trash","locked"].includes(view))fail("invalidInput");
+      keys(p,["view","album","cursor","limit"]);const view=text(p.view,20);if(!["library","folder","favorites","videos","archive","album","trash","locked"].includes(view))fail("invalidInput");
       const limit=int(p.limit??120,1,500),cursor=p.cursor===undefined||p.cursor===""?"":text(p.cursor,300);const items:PhotoAsset[]=[];
       if(view==="album"||view==="trash"){
         const offset=cursor?int(Number(cursor),0,200000):0;let all:{asset:Asset;entry:Entry}[];
@@ -241,9 +256,10 @@ export function photosOperation(ctx:Ctx,userId:string,operation:string,p:Record<
       }
       const state:State=view==="locked"?"locked":"library";if(state==="locked"&&!files.unlocked)fail("lockedFolder");
       if(cursor&&!cursor.startsWith(userId+"/"))fail("invalidInput");let last="",scanned=0;
+      const inFolder=view==="folder"?within(ctx,files.uploadFolderId()):()=>true;
       for(const row of ctx.db.photoAssets.timeKey.filter(ownerRange(userId,cursor||undefined))){
         last=row.timeKey;if(++scanned>20000)return {items,cursor:last};
-        const entry=r.fileOf(row);if(!entry||r.stateOf(entry)!==state||!inView(view,row)||!r.shown(row,entry,state))continue;
+        const entry=r.fileOf(row);if(!entry||r.stateOf(entry)!==state||!inView(view,row)||!r.shown(row,entry,state)||!inFolder(entry))continue;
         items.push(r.expose(row,entry,state));if(items.length>=limit)return {items,cursor:last};
       }
       return {items,cursor:""};
@@ -525,7 +541,7 @@ export function photosSearch(ctx:Ctx,userId:string,matches:(value:string)=>boole
   for(const row of ctx.db.photoAssets.ownerId.filter(userId)){
     if(!visit())return;const entry=r.fileOf(row);if(!entry||r.stateOf(entry)!=="library")continue;const exif=exifOf(row);
     if(matches(entry.name)||matches(row.description)||matches(`${exif.make??""} ${exif.model??""}`))
-      add({id:row.fileId,title:entry.name,detail:[new Date(row.takenAt).toISOString().slice(0,10),row.description].filter(Boolean).join(" · "),href:`/photos?asset=${row.fileId}`,thumbnail:`/api/v1/photos/assets/${row.fileId}/thumbnail`});
+      add({id:row.fileId,title:entry.name,detail:[new Date(row.takenAt).toISOString().slice(0,10),row.description].filter(Boolean).join(" · "),href:`/photos?view=library&asset=${row.fileId}`,thumbnail:`/api/v1/photos/assets/${row.fileId}/thumbnail`});
   }
 }
 export function deletePhotosAccount(ctx:Ctx,ownerId:string){

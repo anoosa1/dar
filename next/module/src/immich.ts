@@ -90,9 +90,23 @@ function liveLinks(ctx:Ctx,asset:Asset,entry:Entry){
   if(["mov","mp4"].includes(ext))for(const e of ["heic","heif","jpg","jpeg"]){const s=sibling(`${stem}.${e}`),a=s&&ctx.db.photoAssets.fileId.find(s.id);if(a?.kind==="image")return {hidden:true};}
   return {};
 }
-function assetData(ctx:Ctx,asset:Asset,entry:Entry,state:string,viewer:string){
+/**
+ * The checksum the app sees. Its database keeps one asset per owner and checksum (Immich never
+ * stores a file twice; Dar keeps copies in different folders), and a second insert silently
+ * replaces the first, so the copy with the lowest file ID that is in the library or trash keeps
+ * the SHA-1 and the others, and photos not hashed yet, get one of their own.
+ */
+function deviceChecksum(ctx:Ctx,asset:Asset,place:(entry:Entry)=>string){
+  if(!asset.sha1)return `dar:${asset.fileId}`;
+  for(const copy of ctx.db.photoAssets.sha1.filter(asset.sha1)){
+    if(copy.ownerId!==asset.ownerId||copy.fileId>=asset.fileId)continue;
+    const entry=fileOf(ctx,copy),state=entry?place(entry):"gone";if(state==="library"||state==="trash")return `${asset.sha1}:${asset.fileId}`;
+  }
+  return asset.sha1;
+}
+function assetData(ctx:Ctx,asset:Asset,entry:Entry,state:string,viewer:string,place:(entry:Entry)=>string){
   const live=liveLinks(ctx,asset,entry),mine=asset.ownerId===viewer;
-  return {id:asset.fileId,ownerId:asset.ownerId,originalFileName:entry.name,checksum:asset.sha1,thumbhash:null,fileCreatedAt:iso(asset.takenAt),fileModifiedAt:iso(entry.modifiedAt),localDateTime:iso(asset.takenAt),
+  return {id:asset.fileId,ownerId:asset.ownerId,originalFileName:entry.name,checksum:deviceChecksum(ctx,asset,place),thumbhash:null,fileCreatedAt:iso(asset.takenAt),fileModifiedAt:iso(entry.modifiedAt),localDateTime:iso(asset.takenAt),
     createdAt:iso(asset.indexedAt),deletedAt:state==="trash"?iso(entry.modifiedAt):null,type:asset.kind==="video"?"VIDEO":"IMAGE",isFavorite:mine&&asset.favorite,isEdited:false,libraryId:null,
     visibility:live.hidden?"hidden":mine&&asset.archived?"archive":"timeline",duration:asset.kind==="video"?Math.round(asset.duration*1000):null,width:asset.width||null,height:asset.height||null,
     livePhotoVideoId:live.motion??null,stackId:mine&&asset.stackId?asset.stackId:null};
@@ -111,6 +125,11 @@ function visibleAlbums(ctx:Ctx,userId:string){
   for(const m of ctx.db.photoAlbumMembers.userId.filter(userId)){const a=ctx.db.photoAlbums.id.find(m.albumId);if(a)albums.push(a);}
   return albums;
 }
+/** The user and everyone in their albums: the people the device knows. */
+function peopleOf(ctx:Ctx,userId:string){
+  const ids=new Set([userId]);for(const a of visibleAlbums(ctx,userId)){ids.add(a.ownerId);for(const m of ctx.db.photoAlbumMembers.albumId.filter(a.id))ids.add(m.userId);}
+  return ids;
+}
 
 /**
  * The start of a sync stream: whether the device must start over (its epoch is behind, or
@@ -122,7 +141,9 @@ export function immichSyncStart(ctx:Ctx,session:Session,reset:boolean){
   const checkpoints=[...ctx.db.immichCheckpoints.immichId.filter(session.id)];
   if(reset){for(const row of checkpoints)ctx.db.immichCheckpoints.id.delete(row.id);checkpoints.length=0;}
   const complete=checkpoints.find(c=>c.type==="SyncCompleteV1");
-  if(checkpoints.length&&(epochOf(ctx,session.userId)>session.epochSeen||complete&&now-ackTime(complete.ack)>30*86400_000))return {reset:true,checkpoints:{},nowId:"",backfilling:false};
+  // Devices synced before copies of a picture were told apart (format 2) may have lost assets: they start over once.
+  const format=checkpoints.find(c=>c.type==="DarFormat")?.ack;
+  if(checkpoints.length&&(format!=="2"||epochOf(ctx,session.userId)>session.epochSeen||complete&&now-ackTime(complete.ack)>30*86400_000))return {reset:true,checkpoints:{},nowId:"",backfilling:false,upTo:0};
   // Rows from before the upgrade have no sequence yet: number them, in bounded batches.
   let numbered=0;const budget=2000;
   for(const row of ctx.db.photoAssets.ownerId.filter(session.userId)){if(numbered>=budget)break;if(!row.syncKey){updateAsset(ctx,row);numbered++;}}
@@ -137,13 +158,18 @@ export function immichSyncStart(ctx:Ctx,session:Session,reset:boolean){
     }
   }
   for(const stack of ctx.db.photoStacks.ownerId.filter(session.userId))if(!stack.syncSeq&&numbered<budget){updateStack(ctx,stack);numbered++;}
-  if(numbered>=budget)return {reset:false,checkpoints:{},nowId:"",backfilling:true};
-  if(!checkpoints.length)ctx.db.immichSessions.digest.update({...ctx.db.immichSessions.digest.find(session.digest)!,epochSeen:currentSeq(ctx)});
-  return {reset:false,checkpoints:Object.fromEntries(checkpoints.map(c=>[c.type,c.ack])),nowId:updateId(now,currentSeq(ctx)),backfilling:false};
+  if(numbered>=budget)return {reset:false,checkpoints:{},nowId:"",backfilling:true,upTo:0};
+  if(!checkpoints.length){ctx.db.immichSessions.digest.update({...ctx.db.immichSessions.digest.find(session.digest)!,epochSeen:currentSeq(ctx)});ctx.db.immichCheckpoints.insert({id:`${session.id}/DarFormat`,immichId:session.id,type:"DarFormat",ack:"2"});}
+  return {reset:false,checkpoints:Object.fromEntries(checkpoints.map(c=>[c.type,c.ack])),nowId:updateId(now,currentSeq(ctx)),backfilling:false,upTo:currentSeq(ctx)};
 }
 
-/** One page of a sync channel: lines after the given sequence, at most limit. */
-export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:string,after:number,limit:number):{lines:Line[];last:number;more:boolean}{
+/**
+ * One page of a sync channel: lines after the given sequence, at most limit. Every channel
+ * stops at upTo, the sequence when the stream started: a photo added while the stream runs
+ * (a backup in progress) waits for the next sync, or a later channel (EXIF, albums) would
+ * name an asset the device never received, and its database refuses the row.
+ */
+export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:string,after:number,limit:number,upTo=Infinity):{lines:Line[];last:number;more:boolean}{
   const now=Number(ctx.timestamp.toMillis()),userId=user.id,ackType=channelAck[channel];if(!ackType)fail("invalidInput");
   const lines:Line[]=[];let last=after;
   const emit=(type:string,data:Record<string,unknown>,seq:number,ack=ackType)=>{lines.push({type,data,ack:`${ack}|${updateId(now,seq)}`});last=seq;};
@@ -155,9 +181,7 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
     return {lines,last,more:false};
   }
   if(channel==="users"){
-
-    const ids=new Set([userId]);for(const a of visibleAlbums(ctx,userId)){ids.add(a.ownerId);for(const m of ctx.db.photoAlbumMembers.albumId.filter(a.id))ids.add(m.userId);}
-    for(const id of ids){const a=ctx.db.accounts.id.find(id);if(a)emit("UserV1",{id:a.id,name:a.displayName,email:a.id===userId?immichEmail(ctx,a):`${a.username}@dar`,avatarColor:"primary",deletedAt:null,hasProfileImage:false,profileChangedAt:iso(a.createdAt)},Math.max(1,currentSeq(ctx)));}
+    for(const id of peopleOf(ctx,userId)){const a=ctx.db.accounts.id.find(id);if(a)emit("UserV1",{id:a.id,name:a.displayName,email:a.id===userId?immichEmail(ctx,a):`${a.username}@dar`,avatarColor:"primary",deletedAt:null,hasProfileImage:false,profileChangedAt:iso(a.createdAt)},Math.max(1,currentSeq(ctx)));}
     return {lines,last,more:false};
   }
   // Tombstones for the user, ordered by sequence.
@@ -168,7 +192,7 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
   if(deletes[channel]){
     const [kind,shape]=deletes[channel];
     for(const row of ctx.db.photoSyncDeletes.key.filter(new Range<string>({tag:"excluded",value:String(Math.max(0,after)).padStart(16,"0")},{tag:"unbounded"}))){
-      if(lines.length>=limit)return {lines,last,more:true};
+      if(row.seq>upTo)break;if(lines.length>=limit)return {lines,last,more:true};
       if(row.kind!==kind||!row.audience.split(",").includes(userId))continue;
       emit(ackType,shape(row),row.seq);
     }
@@ -176,36 +200,58 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
   }
   // The user's own assets (and their EXIF), by syncKey.
   if(channel==="assets"||channel==="exifs"){
-    const range=new Range<string>({tag:"excluded",value:syncKey(userId,Math.max(0,after))},{tag:"excluded",value:userId+"0"});
+    const range=new Range<string>({tag:"excluded",value:syncKey(userId,Math.max(0,after))},Number.isFinite(upTo)?{tag:"included",value:syncKey(userId,upTo)}:{tag:"excluded",value:userId+"0"});
     for(const asset of ctx.db.photoAssets.syncKey.filter(range)){
       if(lines.length>=limit)return {lines,last,more:true};
       const entry=fileOf(ctx,asset),state=entry?place(entry):"gone";
       if(!entry||state==="gone"||state==="locked"){if(channel==="assets")emit("AssetDeleteV1",{assetId:asset.fileId},asset.syncSeq);else last=asset.syncSeq;continue;}
-      if(channel==="assets")emit("AssetV2",assetData(ctx,asset,entry,state,userId),asset.syncSeq);else emit("AssetExifV1",exifData(asset,entry),asset.syncSeq);
+      if(channel==="assets")emit("AssetV2",assetData(ctx,asset,entry,state,userId,place),asset.syncSeq);else emit("AssetExifV1",exifData(asset,entry),asset.syncSeq);
     }
     return {lines,last,more:false};
   }
   // Rows without an index by sequence are gathered, sorted and paged.
   type Pending={seq:number;type:string;data:Record<string,unknown>};const pending:Pending[]=[];
-  const albums=visibleAlbums(ctx,userId);
-  if(channel==="albums")for(const a of albums)if(a.syncSeq>after)pending.push({seq:a.syncSeq,type:"AlbumV2",data:{id:a.id,name:a.name,description:a.description,createdAt:iso(a.createdAt),updatedAt:iso(a.updatedAt),thumbnailAssetId:a.coverId||null,isActivityEnabled:false,order:"desc"}});
+  const albums=visibleAlbums(ctx,userId),people=peopleOf(ctx,userId);
+  /**
+   * Whether the device holds this asset: its own photos outside the Locked folder (the trash
+   * too), and others' library photos in a shared album. The app's database refuses album
+   * rows and covers that name any other asset, and the whole sync fails.
+   */
+  const held=(asset:Asset|null|undefined):asset is Asset=>{
+    const entry=asset&&fileOf(ctx,asset),state=entry?place(entry):"gone";
+    if(!asset||asset.syncSeq>upTo)return false;
+    return asset.ownerId===userId?state==="library"||state==="trash":state==="library"&&people.has(asset.ownerId);
+  };
+  if(channel==="albums")for(const a of albums)if(a.syncSeq>after){
+    let cover=a.coverId&&held(ctx.db.photoAssets.fileId.find(a.coverId))?a.coverId:null;
+    if(!cover)for(const item of ctx.db.photoAlbumItems.albumId.filter(a.id))if(held(ctx.db.photoAssets.fileId.find(item.fileId))){cover=item.fileId;break;}
+    pending.push({seq:a.syncSeq,type:"AlbumV2",data:{id:a.id,name:a.name,description:a.description,createdAt:iso(a.createdAt),updatedAt:iso(a.updatedAt),thumbnailAssetId:cover,isActivityEnabled:false,order:"desc"}});
+  }
   if(channel==="albumUsers")for(const a of albums){
     if(a.syncSeq>after)pending.push({seq:a.syncSeq,type:"AlbumUserV1",data:{albumId:a.id,userId:a.ownerId,role:"owner"}});
     for(const m of ctx.db.photoAlbumMembers.albumId.filter(a.id))if(m.syncSeq>after)pending.push({seq:m.syncSeq,type:"AlbumUserV1",data:{albumId:a.id,userId:m.userId,role:m.role==="editor"?"editor":"viewer"}});
   }
-  if(channel==="albumToAssets")for(const a of albums)for(const item of ctx.db.photoAlbumItems.albumId.filter(a.id))if(item.syncSeq>after)pending.push({seq:item.syncSeq,type:"AlbumToAssetV1",data:{albumId:a.id,assetId:item.fileId}});
+  // Album rows follow their asset too: one held again (unlocked, restored) gets its albums back.
+  if(channel==="albumToAssets")for(const a of albums)for(const item of ctx.db.photoAlbumItems.albumId.filter(a.id)){
+    const asset=ctx.db.photoAssets.fileId.find(item.fileId),seq=Math.max(item.syncSeq,asset?.syncSeq??0);
+    if(seq>after&&held(asset))pending.push({seq,type:"AlbumToAssetV1",data:{albumId:a.id,assetId:item.fileId}});
+  }
+  // Others' photos come with the album rows that name them, so one added later is sent then.
   if(channel==="albumAssets"||channel==="albumAssetExifs"){
-    const seen=new Set<string>();
+    const latest=new Map<string,{asset:Asset;seq:number}>();
     for(const a of albums)for(const item of ctx.db.photoAlbumItems.albumId.filter(a.id)){
-      const asset=ctx.db.photoAssets.fileId.find(item.fileId);if(!asset||asset.ownerId===userId||asset.syncSeq<=after||seen.has(asset.fileId))continue;seen.add(asset.fileId);
-      const entry=fileOf(ctx,asset);if(!entry||place(entry)!=="library")continue;
-      pending.push(channel==="albumAssets"?{seq:asset.syncSeq,type:"AlbumAssetCreateV2",data:assetData(ctx,asset,entry,"library",userId)}:{seq:asset.syncSeq,type:"AlbumAssetExifCreateV1",data:exifData(asset,entry)});
+      const asset=ctx.db.photoAssets.fileId.find(item.fileId);if(!asset||asset.ownerId===userId)continue;
+      const seq=Math.max(item.syncSeq,asset.syncSeq),known=latest.get(asset.fileId);if(!known||seq>known.seq)latest.set(asset.fileId,{asset,seq});
+    }
+    for(const {asset,seq} of latest.values()){
+      if(seq<=after||!held(asset))continue;const entry=fileOf(ctx,asset)!;
+      pending.push(channel==="albumAssets"?{seq,type:"AlbumAssetCreateV2",data:assetData(ctx,asset,entry,"library",userId,place)}:{seq,type:"AlbumAssetExifCreateV1",data:exifData(asset,entry)});
     }
   }
   if(channel==="stacks")for(const s of ctx.db.photoStacks.ownerId.filter(userId))if(s.syncSeq>after)pending.push({seq:s.syncSeq,type:"StackV1",data:{id:s.id,ownerId:s.ownerId,primaryAssetId:s.primaryId,createdAt:iso(s.createdAt),updatedAt:iso(s.updatedAt)}});
-  pending.sort((x,y)=>x.seq-y.seq);
-  for(const row of pending.slice(0,limit))emit(row.type,row.data,row.seq);
-  return {lines,last,more:pending.length>limit};
+  const due=pending.filter(row=>row.seq<=upTo).sort((x,y)=>x.seq-y.seq);
+  for(const row of due.slice(0,limit))emit(row.type,row.data,row.seq);
+  return {lines,last,more:due.length>limit};
 }
 
 export function immichSetAcks(ctx:Ctx,session:Session,acks:unknown){
@@ -220,7 +266,7 @@ export function immichSetAcks(ctx:Ctx,session:Session,acks:unknown){
   }
   for(const [type,ack] of latest){const id=`${session.id}/${type}`,row={id,immichId:session.id,type,ack};if(ctx.db.immichCheckpoints.id.find(id))ctx.db.immichCheckpoints.id.update(row);else ctx.db.immichCheckpoints.insert(row);}
 }
-export function immichAcks(ctx:Ctx,session:Session){return [...ctx.db.immichCheckpoints.immichId.filter(session.id)].map(c=>({type:c.type,ack:c.ack}));}
+export function immichAcks(ctx:Ctx,session:Session){return [...ctx.db.immichCheckpoints.immichId.filter(session.id)].filter(c=>entityTypes.has(c.type)).map(c=>({type:c.type,ack:c.ack}));}
 export function immichDeleteAcks(ctx:Ctx,session:Session,types:unknown){
   if(types!==undefined&&(!Array.isArray(types)||types.some(t=>typeof t!=="string")))fail("invalidInput");
   for(const row of [...ctx.db.immichCheckpoints.immichId.filter(session.id)])if(!types||(types as string[]).includes(row.type))ctx.db.immichCheckpoints.id.delete(row.id);

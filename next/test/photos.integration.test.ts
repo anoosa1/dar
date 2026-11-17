@@ -72,10 +72,15 @@ test("Photos: indexing, thumbnails, views, albums, descriptions, search, trash a
 
     // Favorites, videos and archive views with counts.
     await call("/assets",{ids:[trip,plain],favorite:true},"PATCH");await call("/assets",{ids:[plain],archived:true},"PATCH");
-    let overview=await call<PhotoOverview>("/overview");assert.deepEqual(overview.counts,{library:3,favorites:2,videos:1,archive:1,trash:0,duplicates:0,shared:0});assert.equal(overview.uploadFolder,"pics");
+    let overview=await call<PhotoOverview>("/overview");assert.deepEqual(overview.counts,{library:3,folder:3,favorites:2,videos:1,archive:1,trash:0,duplicates:0,shared:0});assert.equal(overview.uploadFolder,"pics");
     assert.deepEqual((await page("?view=favorites")).items.map(i=>i.id).sort(),[trip,plain].sort());
     assert.deepEqual((await page("?view=videos")).items.map(i=>i.id),[clip]);assert.deepEqual((await page("?view=archive")).items.map(i=>i.id),[plain]);
     assert.ok(!(await page()).items.some(i=>i.id===plain));
+    // The Photos folder view leaves out photos elsewhere in Files; All photos (library) keeps them.
+    await call("/assets",{ids:[plain],archived:false},"PATCH");
+    assert.deepEqual((await page("?view=folder")).items.map(i=>i.id).sort(),[trip,clip,broken].sort());assert.ok((await page()).items.some(i=>i.id===plain));
+    assert.deepEqual((({library,folder})=>({library,folder}))((await call<PhotoOverview>("/overview")).counts),{library:4,folder:3});
+    await call("/assets",{ids:[plain],archived:true},"PATCH");
     assert.equal((await raw("/assets",{method:"PATCH",body:JSON.stringify({ids:[trip]})})).status,400);
 
     // Descriptions use revision checks.

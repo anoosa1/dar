@@ -1030,6 +1030,7 @@ export const servicePhotos=db.procedure({sessionId:t.string(),operation:t.string
     lockedFolder:()=>lockedFolderFor(tx,user.id),
     monthFolder:(year,month)=>photosFolder(tx,user.id,year,month).parentId,
     uploadFolder:()=>photoFolder(tx,user.id).join("/"),
+    uploadFolderId:()=>{let parentId="";for(const name of photoFolder(tx,user.id)){const folder=findKey(tx,key(user.id,parentId,name));if(folder?.kind!=="folder"||folder.trashed)return "";parentId=folder.id;}return parentId;},
   };
   return JSON.stringify(photosOperation(tx,user.id,p.operation,value as Record<string,unknown>,files));
 }));
@@ -1098,7 +1099,7 @@ export const serviceImmich=db.procedure({tokenDigest:t.string(),operation:t.stri
     case "session":return JSON.stringify({user:immichUser(tx,user),sessionId:session.id,protocolSessionId:session.sessionId});
     case "logout":deleteImmichSession(tx,session);return JSON.stringify({ok:true});
     case "syncStart":return JSON.stringify(immichSyncStart(tx,session,q.reset===true));
-    case "syncPage":{const after=typeof q.after==="number"&&Number.isFinite(q.after)?q.after:-1,limit=typeof q.limit==="number"?Math.min(Math.max(1,q.limit),2000):500;return JSON.stringify(immichSyncPage(tx,session,user,String(q.channel),after,limit));}
+    case "syncPage":{const after=typeof q.after==="number"&&Number.isFinite(q.after)?q.after:-1,limit=typeof q.limit==="number"?Math.min(Math.max(1,q.limit),2000):500;const upTo=typeof q.upTo==="number"&&Number.isFinite(q.upTo)?q.upTo:Infinity;return JSON.stringify(immichSyncPage(tx,session,user,String(q.channel),after,limit,upTo));}
     case "acks":return JSON.stringify(immichAcks(tx,session));
     case "setAcks":immichSetAcks(tx,session,q.acks);return JSON.stringify({ok:true});
     case "deleteAcks":immichDeleteAcks(tx,session,q.types);return JSON.stringify({ok:true});
