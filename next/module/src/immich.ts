@@ -90,9 +90,23 @@ function liveLinks(ctx:Ctx,asset:Asset,entry:Entry){
   if(["mov","mp4"].includes(ext))for(const e of ["heic","heif","jpg","jpeg"]){const s=sibling(`${stem}.${e}`),a=s&&ctx.db.photoAssets.fileId.find(s.id);if(a?.kind==="image")return {hidden:true};}
   return {};
 }
-function assetData(ctx:Ctx,asset:Asset,entry:Entry,state:string,viewer:string){
+/**
+ * The checksum the app sees. Its database keeps one asset per owner and checksum (Immich never
+ * stores a file twice; Dar keeps copies in different folders), and a second insert silently
+ * replaces the first, so the copy with the lowest file ID that is in the library or trash keeps
+ * the SHA-1 and the others, and photos not hashed yet, get one of their own.
+ */
+function deviceChecksum(ctx:Ctx,asset:Asset,place:(entry:Entry)=>string){
+  if(!asset.sha1)return `dar:${asset.fileId}`;
+  for(const copy of ctx.db.photoAssets.sha1.filter(asset.sha1)){
+    if(copy.ownerId!==asset.ownerId||copy.fileId>=asset.fileId)continue;
+    const entry=fileOf(ctx,copy),state=entry?place(entry):"gone";if(state==="library"||state==="trash")return `${asset.sha1}:${asset.fileId}`;
+  }
+  return asset.sha1;
+}
+function assetData(ctx:Ctx,asset:Asset,entry:Entry,state:string,viewer:string,place:(entry:Entry)=>string){
   const live=liveLinks(ctx,asset,entry),mine=asset.ownerId===viewer;
-  return {id:asset.fileId,ownerId:asset.ownerId,originalFileName:entry.name,checksum:asset.sha1,thumbhash:null,fileCreatedAt:iso(asset.takenAt),fileModifiedAt:iso(entry.modifiedAt),localDateTime:iso(asset.takenAt),
+  return {id:asset.fileId,ownerId:asset.ownerId,originalFileName:entry.name,checksum:deviceChecksum(ctx,asset,place),thumbhash:null,fileCreatedAt:iso(asset.takenAt),fileModifiedAt:iso(entry.modifiedAt),localDateTime:iso(asset.takenAt),
     createdAt:iso(asset.indexedAt),deletedAt:state==="trash"?iso(entry.modifiedAt):null,type:asset.kind==="video"?"VIDEO":"IMAGE",isFavorite:mine&&asset.favorite,isEdited:false,libraryId:null,
     visibility:live.hidden?"hidden":mine&&asset.archived?"archive":"timeline",duration:asset.kind==="video"?Math.round(asset.duration*1000):null,width:asset.width||null,height:asset.height||null,
     livePhotoVideoId:live.motion??null,stackId:mine&&asset.stackId?asset.stackId:null};
@@ -127,7 +141,9 @@ export function immichSyncStart(ctx:Ctx,session:Session,reset:boolean){
   const checkpoints=[...ctx.db.immichCheckpoints.immichId.filter(session.id)];
   if(reset){for(const row of checkpoints)ctx.db.immichCheckpoints.id.delete(row.id);checkpoints.length=0;}
   const complete=checkpoints.find(c=>c.type==="SyncCompleteV1");
-  if(checkpoints.length&&(epochOf(ctx,session.userId)>session.epochSeen||complete&&now-ackTime(complete.ack)>30*86400_000))return {reset:true,checkpoints:{},nowId:"",backfilling:false,upTo:0};
+  // Devices synced before copies of a picture were told apart (format 2) may have lost assets: they start over once.
+  const format=checkpoints.find(c=>c.type==="DarFormat")?.ack;
+  if(checkpoints.length&&(format!=="2"||epochOf(ctx,session.userId)>session.epochSeen||complete&&now-ackTime(complete.ack)>30*86400_000))return {reset:true,checkpoints:{},nowId:"",backfilling:false,upTo:0};
   // Rows from before the upgrade have no sequence yet: number them, in bounded batches.
   let numbered=0;const budget=2000;
   for(const row of ctx.db.photoAssets.ownerId.filter(session.userId)){if(numbered>=budget)break;if(!row.syncKey){updateAsset(ctx,row);numbered++;}}
@@ -143,7 +159,7 @@ export function immichSyncStart(ctx:Ctx,session:Session,reset:boolean){
   }
   for(const stack of ctx.db.photoStacks.ownerId.filter(session.userId))if(!stack.syncSeq&&numbered<budget){updateStack(ctx,stack);numbered++;}
   if(numbered>=budget)return {reset:false,checkpoints:{},nowId:"",backfilling:true,upTo:0};
-  if(!checkpoints.length)ctx.db.immichSessions.digest.update({...ctx.db.immichSessions.digest.find(session.digest)!,epochSeen:currentSeq(ctx)});
+  if(!checkpoints.length){ctx.db.immichSessions.digest.update({...ctx.db.immichSessions.digest.find(session.digest)!,epochSeen:currentSeq(ctx)});ctx.db.immichCheckpoints.insert({id:`${session.id}/DarFormat`,immichId:session.id,type:"DarFormat",ack:"2"});}
   return {reset:false,checkpoints:Object.fromEntries(checkpoints.map(c=>[c.type,c.ack])),nowId:updateId(now,currentSeq(ctx)),backfilling:false,upTo:currentSeq(ctx)};
 }
 
@@ -189,7 +205,7 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
       if(lines.length>=limit)return {lines,last,more:true};
       const entry=fileOf(ctx,asset),state=entry?place(entry):"gone";
       if(!entry||state==="gone"||state==="locked"){if(channel==="assets")emit("AssetDeleteV1",{assetId:asset.fileId},asset.syncSeq);else last=asset.syncSeq;continue;}
-      if(channel==="assets")emit("AssetV2",assetData(ctx,asset,entry,state,userId),asset.syncSeq);else emit("AssetExifV1",exifData(asset,entry),asset.syncSeq);
+      if(channel==="assets")emit("AssetV2",assetData(ctx,asset,entry,state,userId,place),asset.syncSeq);else emit("AssetExifV1",exifData(asset,entry),asset.syncSeq);
     }
     return {lines,last,more:false};
   }
@@ -229,7 +245,7 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
     }
     for(const {asset,seq} of latest.values()){
       if(seq<=after||!held(asset))continue;const entry=fileOf(ctx,asset)!;
-      pending.push(channel==="albumAssets"?{seq,type:"AlbumAssetCreateV2",data:assetData(ctx,asset,entry,"library",userId)}:{seq,type:"AlbumAssetExifCreateV1",data:exifData(asset,entry)});
+      pending.push(channel==="albumAssets"?{seq,type:"AlbumAssetCreateV2",data:assetData(ctx,asset,entry,"library",userId,place)}:{seq,type:"AlbumAssetExifCreateV1",data:exifData(asset,entry)});
     }
   }
   if(channel==="stacks")for(const s of ctx.db.photoStacks.ownerId.filter(userId))if(s.syncSeq>after)pending.push({seq:s.syncSeq,type:"StackV1",data:{id:s.id,ownerId:s.ownerId,primaryAssetId:s.primaryId,createdAt:iso(s.createdAt),updatedAt:iso(s.updatedAt)}});
@@ -250,7 +266,7 @@ export function immichSetAcks(ctx:Ctx,session:Session,acks:unknown){
   }
   for(const [type,ack] of latest){const id=`${session.id}/${type}`,row={id,immichId:session.id,type,ack};if(ctx.db.immichCheckpoints.id.find(id))ctx.db.immichCheckpoints.id.update(row);else ctx.db.immichCheckpoints.insert(row);}
 }
-export function immichAcks(ctx:Ctx,session:Session){return [...ctx.db.immichCheckpoints.immichId.filter(session.id)].map(c=>({type:c.type,ack:c.ack}));}
+export function immichAcks(ctx:Ctx,session:Session){return [...ctx.db.immichCheckpoints.immichId.filter(session.id)].filter(c=>entityTypes.has(c.type)).map(c=>({type:c.type,ack:c.ack}));}
 export function immichDeleteAcks(ctx:Ctx,session:Session,types:unknown){
   if(types!==undefined&&(!Array.isArray(types)||types.some(t=>typeof t!=="string")))fail("invalidInput");
   for(const row of [...ctx.db.immichCheckpoints.immichId.filter(session.id)])if(!types||(types as string[]).includes(row.type))ctx.db.immichCheckpoints.id.delete(row.id);

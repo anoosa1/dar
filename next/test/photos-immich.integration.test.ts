@@ -120,13 +120,18 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     // Sync stream: everything first, then only changes, deletes and resets.
     const types=["AuthUsersV2","UsersV1","AssetsV2","AssetExifsV1","AlbumsV2","AlbumUsersV1","AlbumToAssetsV1","AlbumAssetsV2","StacksV1","PeopleV1","MemoriesV2"];
     // The app's database (3.4.1) enforces foreign keys: a row naming one it does not hold fails the whole sync.
-    const device={users:new Set<string>(),assets:new Set<string>(),albums:new Set<string>()};
+    // Its assets are also unique by owner and checksum, and the insert replaces (deletes) the older one.
+    const device={users:new Set<string>(),assets:new Set<string>(),albums:new Set<string>()},checksums=new Map<string,string>();
     const apply=(l:Line)=>{
       const d=l.data as Record<string,string|null>,need=(held:Set<string>,id:string|null|undefined,what:string)=>assert.ok(id&&held.has(id),`${l.type} names ${what} ${id} the app does not hold`);
-      if(l.type==="SyncResetV1")for(const held of Object.values(device))held.clear();
+      if(l.type==="SyncResetV1"){for(const held of Object.values(device))held.clear();checksums.clear();}
       else if(l.type==="UserV1")device.users.add(d.id!);
-      else if(l.type==="AssetV2"||l.type==="AlbumAssetCreateV2"){need(device.users,d.ownerId,"owner");device.assets.add(d.id!);}
-      else if(l.type==="AssetDeleteV1")device.assets.delete(d.assetId!);
+      else if(l.type==="AssetV2"||l.type==="AlbumAssetCreateV2"){
+        need(device.users,d.ownerId,"owner");const key=`${d.ownerId}/${d.checksum}`;
+        for(const [id,other] of checksums)if(other===key&&id!==d.id){device.assets.delete(id);checksums.delete(id);}
+        device.assets.add(d.id!);checksums.set(d.id!,key);
+      }
+      else if(l.type==="AssetDeleteV1"){device.assets.delete(d.assetId!);checksums.delete(d.assetId!);}
       else if(l.type==="AssetExifV1"||l.type==="AlbumAssetExifCreateV1")need(device.assets,d.assetId,"asset");
       else if(l.type==="AlbumV2"){if(d.thumbnailAssetId)need(device.assets,d.thumbnailAssetId,"cover");device.albums.add(d.id!);}
       else if(l.type==="AlbumDeleteV1")device.albums.delete(d.albumId!);
@@ -192,6 +197,16 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
       assert.ok(!page.lines.some(l=>l.data.id===during.id||l.data.assetId===during.id),channel);
     }
     assert.ok((await stream()).some(l=>l.type==="AssetExifV1"&&l.data.assetId===during.id));
+    // A copy of a picture elsewhere in Files (same SHA-1): the app keeps one asset per checksum, so the copy
+    // gets its own; both stay on the device, and the EXIF of each finds its asset.
+    const web={...session.headers,"content-type":"application/json"};
+    const reserved=await fetch(base+"/api/v1/files/uploads",{method:"POST",headers:web,body:JSON.stringify({parentId:"",name:"beach copy.jpg",size:beach.length,mediaType:"image/jpeg"})});assert.equal(reserved.status,201);
+    const copied=await fetch(`${base}/api/v1/files/uploads/${(await reserved.json() as {id:string}).id}`,{method:"PUT",headers:{cookie:session.headers.cookie,origin:base,"x-csrf-token":session.headers["x-csrf-token"]},body:new Uint8Array(beach)});
+    const copyId=(await copied.json() as {id:string}).id;assert.deepEqual(await (await fetch(base+`/api/v1/photos/assets/${copyId}/index`,{method:"POST",headers:web})).json(),{indexed:true});
+    lines=await stream();const copies=lines.filter(l=>l.type==="AssetV2"&&[photo.id,copyId].includes(l.data.id as string));
+    assert.equal(copies.length,2);assert.equal(new Set(copies.map(l=>l.data.checksum)).size,2);assert.ok(copies.some(l=>l.data.checksum===sha1(beach)));
+    assert.ok(device.assets.has(photo.id)&&device.assets.has(copyId));
+    await call("/sync/ack",{method:"DELETE",body:{}});await stream();assert.ok(device.assets.has(photo.id)&&device.assets.has(copyId));
     // A device whose EXIF checkpoint lags its asset checkpoint (an earlier stream failed before EXIF) and that
     // lacks an asset gets the assets again before their EXIF, instead of failing on every sync.
     device.assets.delete(during.id);await call("/sync/ack",{method:"DELETE",body:{types:["AssetExifV1"]}});

@@ -24,11 +24,24 @@ function tombstone(ctx:Ctx,kind:string,entityId:string,extraId:string,audience:s
   const seq=nextSeq(ctx),key=String(seq).padStart(16,"0");ctx.db.photoSyncDeletes.insert({id:key,key,kind,entityId,extraId,audience:[...new Set(audience)].join(","),seq,at:Number(ctx.timestamp.toMillis())});
 }
 
-export function insertAsset(ctx:Ctx,row:Omit<Asset,"syncSeq"|"syncKey"|"sha1">&{sha1?:string}){const seq=nextSeq(ctx);return ctx.db.photoAssets.insert({sha1:"",...row,syncSeq:seq,syncKey:syncKey(row.ownerId,seq)});}
-export function updateAsset(ctx:Ctx,row:Omit<Asset,"syncSeq"|"syncKey"|"sha1">&{sha1?:string}){const seq=nextSeq(ctx);return ctx.db.photoAssets.fileId.update({sha1:ctx.db.photoAssets.fileId.find(row.fileId)?.sha1??"",...row,syncSeq:seq,syncKey:syncKey(row.ownerId,seq)});}
-export function deleteAsset(ctx:Ctx,fileId:string){const row=ctx.db.photoAssets.fileId.find(fileId);if(row)tombstone(ctx,"asset",fileId,"",[row.ownerId]);return ctx.db.photoAssets.fileId.delete(fileId);}
-/** A file event in Files: the photo's visibility may have changed. */
-export function touchAsset(ctx:Ctx,fileId:string){const row=ctx.db.photoAssets.fileId.find(fileId);if(row)updateAsset(ctx,row);}
+/**
+ * The Immich app keeps one asset per owner and checksum, so copies of a picture (the same
+ * SHA-1) are told apart there by which copy is shown (see immich.ts). When a copy appears,
+ * leaves or changes place, the other copies are sent again.
+ */
+function touchCopies(ctx:Ctx,ownerId:string,sha1:string,fileId:string){
+  if(!sha1)return;
+  for(const copy of [...ctx.db.photoAssets.sha1.filter(sha1)])if(copy.ownerId===ownerId&&copy.fileId!==fileId){const seq=nextSeq(ctx);ctx.db.photoAssets.fileId.update({...copy,syncSeq:seq,syncKey:syncKey(ownerId,seq)});}
+}
+export function insertAsset(ctx:Ctx,row:Omit<Asset,"syncSeq"|"syncKey"|"sha1">&{sha1?:string}){const seq=nextSeq(ctx),result=ctx.db.photoAssets.insert({sha1:"",...row,syncSeq:seq,syncKey:syncKey(row.ownerId,seq)});touchCopies(ctx,result.ownerId,result.sha1,result.fileId);return result;}
+export function updateAsset(ctx:Ctx,row:Omit<Asset,"syncSeq"|"syncKey"|"sha1">&{sha1?:string}){
+  const old=ctx.db.photoAssets.fileId.find(row.fileId),seq=nextSeq(ctx),result=ctx.db.photoAssets.fileId.update({sha1:old?.sha1??"",...row,syncSeq:seq,syncKey:syncKey(row.ownerId,seq)});
+  if(old&&old.sha1!==result.sha1){touchCopies(ctx,old.ownerId,old.sha1,result.fileId);touchCopies(ctx,result.ownerId,result.sha1,result.fileId);}
+  return result;
+}
+export function deleteAsset(ctx:Ctx,fileId:string){const row=ctx.db.photoAssets.fileId.find(fileId);if(row)tombstone(ctx,"asset",fileId,"",[row.ownerId]);const result=ctx.db.photoAssets.fileId.delete(fileId);if(row)touchCopies(ctx,row.ownerId,row.sha1,fileId);return result;}
+/** A file event in Files: the photo's visibility may have changed, and with it which copy the app shows. */
+export function touchAsset(ctx:Ctx,fileId:string){const row=ctx.db.photoAssets.fileId.find(fileId);if(row){updateAsset(ctx,row);touchCopies(ctx,row.ownerId,row.sha1,fileId);}}
 
 export function insertAlbum(ctx:Ctx,row:Omit<Album,"syncSeq">){return ctx.db.photoAlbums.insert({...row,syncSeq:nextSeq(ctx)});}
 export function updateAlbum(ctx:Ctx,row:Omit<Album,"syncSeq">){return ctx.db.photoAlbums.id.update({...row,syncSeq:nextSeq(ctx)});}

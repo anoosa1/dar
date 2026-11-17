@@ -123,7 +123,11 @@ in phases.
   Locked folder, takes its album rows with it and brings them back when it returns), and others' photos
   travel with the album rows that add them. A stream stops at the change sequence it started at; anything
   added meanwhile (a backup in progress) waits for the next sync. When the EXIF checkpoint is behind the
-  asset checkpoint (a stream failed before EXIF), assets are sent again from there before their EXIF. Changes travel incrementally by Dar's change sequence; a trashed, restored
+  asset checkpoint (a stream failed before EXIF), assets are sent again from there before their EXIF. The app
+  also keeps one asset per checksum (a second one silently replaces the first), so of several copies of a
+  picture (the same SHA-1) the one with the lowest file ID in the library or trash keeps the SHA-1 and the
+  others, and photos not hashed yet, get their own; a change to one copy resends the others. Devices synced
+  before this start over once. Changes travel incrementally by Dar's change sequence; a trashed, restored
   or moved folder of photos, joining or leaving a shared album, or 30 days without a
   sync make the device start over. Locked photos never sync. Videos play converted
   copies once ready, otherwise the original. Photos settings › Immich lists
