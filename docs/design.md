@@ -261,6 +261,18 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   requests add Commits and Files and the merge box); New, Edit and Labels use the right editing
   pane with Write/Preview Markdown. Label colours are named, never colour alone. Repositories
   shared with you are a "Shared with you" sidebar section. See [Git](git.md).
+- **Chat:** selected [mock A](spacetimedb/chat-mocks.html) over B, with account tabs over
+  one rail app per platform (D) (November 17). A client for other platforms: WhatsApp first
+  (Dar as a linked device through whatsmeow), Discord later. Account tabs under New chat
+  (label on the selected tab, icon and unread count on the others, + to link) scope the whole
+  app to one account; accounts never mix. WhatsApp's views are Chats, Unread, Groups and
+  Archived, with the link status card at the bottom; Discord's tab has direct messages, then
+  servers with channels, shown as flat rows (C). The chat list is its own sheet (avatar, name,
+  time, preview with ticks, pin/mute marks, unread count) and the conversation fills the rest:
+  bubbles with read ticks, replies, reactions, edits, photos, voice notes and documents, the
+  composer docked below. Chat info opens as a right sheet; Link WhatsApp uses the right
+  editing pane (QR code on desktop, pairing code on phones). Phones put the account tabs
+  above the view chips. See [Chat](chat.md).
 - **Agent:** the settings sheet and editing panes sit beside the Agent's sheets
   (which make room), as in other apps; choosing and adding a project both use the
   right pane. Threads on the left, conversation and docked composer in the center,
