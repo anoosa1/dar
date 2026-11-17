@@ -40,7 +40,7 @@ async function fetchText(url:string|undefined,signal:AbortSignal){
 }
 
 /** One path with its diff, loaded when expanded. */
-function ChangeRow({folderId,change,live,selected,onSelect}:{folderId:string;change:HistoryChange;live:boolean;selected?:boolean;onSelect?:(value:boolean)=>void}){
+export function ChangeRow({folderId,change,live,selected,onSelect}:{folderId:string;change:HistoryChange;live:boolean;selected?:boolean;onSelect?:(value:boolean)=>void}){
   const [open,setOpen]=useState(false),[diff,setDiff]=useState<{patch:string;added:number;removed:number}|{note:string}|null>(null),[wrap,setWrap]=useState(false);
   useEffect(()=>{
     if(!open||diff)return;

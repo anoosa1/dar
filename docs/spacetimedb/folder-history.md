@@ -68,7 +68,10 @@ an app password: Files read access clones and fetches, Files write access pushes
   caches always give the same IDs.
 - **Cache:** `<root>/git/<folderId>.git` is a bare repository rebuilt from the
   database when missing; maintenance removes those of folders that stopped keeping
-  history. It is not backed up.
+  history. It is not backed up. Every minute, maintenance packs the caches used since
+  (`git gc --auto` at a few hundred loose objects or 8 packs, with a bitmap and commit
+  graph), since Dar's own commits and rebuilt caches are loose objects that make every
+  clone recompress them.
 - **Pushing main:** fast-forward only and never deleted, like a protected branch.
   Its new commits (first-parent line) join the history, keeping their authors,
   times and messages, and change the live folder in the same transaction: renames
@@ -88,7 +91,9 @@ an app password: Files read access clones and fetches, Files write access pushes
 - **Uploads:** like Files uploads, a push may take as long as it keeps moving: a body is
   dropped after a minute without new bytes, below 16 KiB a minute, or after 6 hours
   (`runtime/upload-pace.ts`). While Dar checks and stores a push it sends Git keep-alive
-  packets, so proxies do not time out.
+  packets, so proxies do not time out. A push's new files are written in one batch and
+  made durable with one file-system flush (`sync --file-system`; each file is flushed
+  instead when there are fewer than 16 or that fails) and one directory flush.
 
 ## API
 

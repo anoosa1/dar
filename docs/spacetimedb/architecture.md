@@ -60,7 +60,8 @@ flowchart LR
 - **Upload:** reserve → stream to a private temp file within limits → hash, fsync,
   finalize without overwriting, fsync the directory → a service call verifies the
   reservation, authorization, revision, size, digest and quota → commit version,
-  revision and activity together. Retries return the same result.
+  revision and activity together. Retries return the same result. A Git push stores its
+  files as one batch (`receiveBatch`): written in turn, flushed together, then linked.
 - Request bodies (uploads, WebDAV writes, Git pushes) have no total time limit: one is
   dropped after a minute without new bytes, below 16 KiB a minute, or after 6 hours.
   Headers must arrive within 15 seconds.

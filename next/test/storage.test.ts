@@ -59,3 +59,26 @@ test("a root has one owner; blob reads fail closed on symlinks", async () => {
   await assert.rejects(blobStore(root).existingDigest(id, 36));
   assert.equal(await readFile(target, "utf8"), "do not read through the blob symlink");
 });
+test("a batch of blobs is stored with each digest, flushed together or one by one, and leaves nothing on failure", async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), "dar-storage-batch-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const root = await openRoot(path.join(directory, "dar")), blobs = blobStore(root);
+  const { createHash } = await import("node:crypto");
+  const items = (contents: string[]) => contents.map(text => ({ id: randomUUID(), size: Buffer.byteLength(text), text }));
+  const feed = (list: ReturnType<typeof items>) => (async function* () { for (const item of list) yield { id: item.id, size: item.size, source: (async function* () { yield Buffer.from(item.text); })() }; })();
+  // Fewer than 16 files are flushed one by one; more take one file-system flush.
+  for (const count of [3, 40]) {
+    const list = items(Array.from({ length: count }, (_, index) => `blob ${count}/${index}\n`.repeat(index + 1)));
+    const digests = await blobs.receiveBatch(feed(list));
+    for (const item of list) {
+      assert.equal(await readFile(path.join(root, "blobs", item.id), "utf8"), item.text);
+      assert.equal(digests.get(item.id), createHash("sha256").update(item.text).digest("hex"));
+    }
+  }
+  assert.deepEqual(await readdir(path.join(root, "uploads")), []);
+  // A stream shorter than its size fails the batch before anything is linked.
+  const bad = items(["complete\n", "short\n"]); bad[1].size += 10;
+  await assert.rejects(blobs.receiveBatch(feed(bad)), /incompleteUpload/);
+  assert.deepEqual(await readdir(path.join(root, "uploads")), []);
+  for (const item of bad) await assert.rejects(readFile(path.join(root, "blobs", item.id)), /ENOENT/);
+});

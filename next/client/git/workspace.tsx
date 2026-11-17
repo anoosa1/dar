@@ -1,35 +1,28 @@
 import {useCallback,useEffect,useId,useMemo,useRef,useState,type ReactNode} from "react";
 import {request,formatBytes,type BrowserSession} from "../api.ts";
-import {WorkspaceHeader,Avatar,useMobileNavigation} from "../shell.tsx";
+import {WorkspaceHeader,useMobileNavigation} from "../shell.tsx";
 import {Icon,type IconName} from "../icons.tsx";
-import {ActionMenu,NewItemButton,Select,useFloating,type MenuAction} from "../controls.tsx";
+import {ActionMenu,NewItemButton,Select,useFloating} from "../controls.tsx";
 import {Segmented} from "../settings-sheet.tsx";
 import {Dialog} from "../dialog.tsx";
 import {EditorPane} from "../pane.tsx";
 import {DarFilePicker,type DarFileSelection} from "../file-picker.tsx";
-import {Diff} from "../diff.tsx";
 import {Markdown} from "../pim/markdown.tsx";
 import {useLiveConnection} from "../live.ts";
 import {edited} from "../pim/presentation.ts";
 import {localDate,localDateTime} from "../dates.ts";
 import {graphRows,type GraphRow} from "./graph.ts";
+import {IssuesTab,IssueSheet,IssueEditor,LabelsEditor,type IssueEditing} from "./tracker.tsx";
+import {api,repoApi,message,plural,short,kindLabel,SourceChip,Sha,Person,copy,useLoad,Failure,Loading,SheetHead,useSheetFocus,FileChanges,MergeBox} from "./parts.tsx";
 import type {HistoryOverview} from "../../shared/history.ts";
-import type {GitMergeResult,GitActivity,GitAgentBranch,GitBranch,GitBranches,GitCommit,GitCommitDetail,GitCommitPage,GitCompare,GitFileChange,GitRef,GitRepository,GitSource,GitTag,GitTree} from "../../shared/git.ts";
+import type {GitActivity,GitAgentBranch,GitBranch,GitBranches,GitCommit,GitCommitDetail,GitCommitPage,GitCompare,GitRef,GitRepository,GitTag,GitTree} from "../../shared/git.ts";
 
 type View="overview"|"repositories"|"agent";
-type Tab="code"|"commits"|"branches"|"tags";
-type Sheet={type:"commit";sha:string}|{type:"compare";base:string;head:string}|{type:"file";ref:string;path:string};
+type Tab="code"|"issues"|"pulls"|"commits"|"branches"|"tags";
+type Sheet={type:"commit";sha:string}|{type:"compare";base:string;head:string}|{type:"file";ref:string;path:string}|{type:"issue";number:number};
 interface Notice {message:string}
-const api="/api/v1/git";
-const repoApi=(id:string)=>`${api}/repositories/${id}`;
 const views:[View,string,IconName][]=[["overview","Overview","activity"],["repositories","Repositories","repo"],["agent","Agent branches","agent"]];
-const tabs:[Tab,string,IconName][]=[["code","Code","code"],["commits","Commits","commit"],["branches","Branches","branch"],["tags","Tags","tag"]];
-const message=(cause:unknown)=>cause instanceof Error?cause.message:"The request could not be completed.";
-const plural=(count:number,one:string,many=one+"s")=>`${count.toLocaleString()} ${count===1?one:many}`;
-const short=(sha:string)=>sha.slice(0,7);
-const sourceLabel:Record<GitSource,string>={git:"Git push",dar:"Dar",agent:"Agent"};
-const sourceIcon:Record<GitSource,IconName>={git:"upload",dar:"folder",agent:"agent"};
-const kindLabel:Record<GitFileChange["kind"],string>={added:"Added",modified:"Modified",deleted:"Deleted",renamed:"Renamed"};
+const tabs:[Tab,string,IconName][]=[["code","Code","code"],["issues","Issues","issue"],["pulls","Pull requests","pull"],["commits","Commits","commit"],["branches","Branches","branch"],["tags","Tags","tag"]];
 /** Repository marks take one of a fixed set of hues from the name (colour is data, not theme). */
 const hue=(text:string)=>{let h=0;for(const c of text)h=(h*31+c.codePointAt(0)!)%9973;return h%6;};
 const zipUrl=(id:string,ref:string)=>`${repoApi(id)}/archive?ref=${encodeURIComponent(ref)}`;
@@ -37,7 +30,7 @@ const zipUrl=(id:string,ref:string)=>`${repoApi(id)}/archive?ref=${encodeURIComp
 function readState(){
   const p=new URLSearchParams(location.search),view=p.get("view"),tab=p.get("tab");
   return {view:(views.some(([id])=>id===view)?view:"overview") as View,repo:p.get("repo")??undefined,tab:(tabs.some(([id])=>id===tab)?tab:"code") as Tab,
-    ref:p.get("ref")??"",path:p.get("path")??"",commit:p.get("commit")??undefined};
+    ref:p.get("ref")??"",path:p.get("path")??"",commit:p.get("commit")??undefined,issue:/^[1-9]\d{0,5}$/.test(p.get("issue")??"")?Number(p.get("issue")):undefined};
 }
 
 /**
@@ -50,21 +43,24 @@ export function GitWorkspace({session,onSignedOut}:{session:BrowserSession;onSig
   const start=useMemo(readState,[]);
   const [repos,setRepos]=useState<GitRepository[]>(),[error,setError]=useState(""),[reload,setReload]=useState(0);
   const [view,setView]=useState<View>(start.view),[repoId,setRepoId]=useState(start.repo),[tab,setTab]=useState<Tab>(start.tab);
-  const [ref,setRef]=useState(start.ref),[path,setPath]=useState(start.path),[sheet,setSheet]=useState<Sheet|undefined>(start.commit?{type:"commit",sha:start.commit}:undefined);
+  const [ref,setRef]=useState(start.ref),[path,setPath]=useState(start.path),[sheet,setSheet]=useState<Sheet|undefined>(start.issue?{type:"issue",number:start.issue}:start.commit?{type:"commit",sha:start.commit}:undefined);
   const [creating,setCreating]=useState(false),[notice,setNotice]=useState<Notice|null>(null);
+  // Issues and pull requests change without a new repository revision; this reloads their views.
+  const [editing,setEditing]=useState<IssueEditing>(),[trackerVersion,setTrackerVersion]=useState(0);
+  const trackerChanged=()=>{setTrackerVersion(n=>n+1);setReload(n=>n+1);};
   const {open:navigation,setOpen:setNavigation,id:navigationId,ref:navigationRef}=useMobileNavigation();
   const load=useCallback(async(signal?:AbortSignal)=>{try{setRepos(await request<GitRepository[]>(`${api}/repositories`,{signal}));setError("");}catch(cause){if(!signal?.aborted)setError(message(cause));}},[]);
   useEffect(()=>{const abort=new AbortController();void load(abort.signal);return()=>abort.abort();},[reload]);
   useEffect(()=>{const focus=()=>setReload(n=>n+1);addEventListener("focus",focus);return()=>removeEventListener("focus",focus);},[]);
-  useEffect(()=>{const url=new URL(location.href);for(const key of ["view","repo","tab","ref","path","commit"])url.searchParams.delete(key);
-    if(repoId){url.searchParams.set("repo",repoId);if(tab!=="code")url.searchParams.set("tab",tab);if(ref)url.searchParams.set("ref",ref);if(path)url.searchParams.set("path",path);if(sheet?.type==="commit")url.searchParams.set("commit",sheet.sha);}
+  useEffect(()=>{const url=new URL(location.href);for(const key of ["view","repo","tab","ref","path","commit","issue"])url.searchParams.delete(key);
+    if(repoId){url.searchParams.set("repo",repoId);if(tab!=="code")url.searchParams.set("tab",tab);if(ref)url.searchParams.set("ref",ref);if(path)url.searchParams.set("path",path);if(sheet?.type==="commit")url.searchParams.set("commit",sheet.sha);if(sheet?.type==="issue")url.searchParams.set("issue",String(sheet.number));}
     else if(view!=="overview")url.searchParams.set("view",view);
     history.replaceState(null,"",url);},[view,repoId,tab,ref,path,sheet]);
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(null),5000);return()=>clearTimeout(timer);},[notice]);
 
   const repo=repoId?repos?.find(item=>item.id===repoId):undefined;
   const notify=(text:string)=>setNotice({message:text});
-  const openRepo=(id:string,nextTab:Tab="code")=>{setRepoId(id);setTab(nextTab);setRef("");setPath("");setSheet(undefined);setNavigation(false);};
+  const openRepo=(id:string,nextTab:Tab="code")=>{setRepoId(id);setTab(nextTab);setRef("");setPath("");setSheet(undefined);setEditing(undefined);setNavigation(false);};
   const choose=(next:View)=>{setView(next);setRepoId(undefined);setSheet(undefined);setNavigation(false);};
   const agentCount=repos?.reduce((sum,item)=>sum+item.agentBranches,0)??0;
   const title=repo?repo.name:views.find(([id])=>id===view)![1];
@@ -74,8 +70,11 @@ export function GitWorkspace({session,onSignedOut}:{session:BrowserSession;onSig
     <nav aria-label="Git views">{views.map(([id,label,icon])=><button key={id} className={`nav-item${!repoId&&view===id?" active":""}`} aria-current={!repoId&&view===id?"page":undefined} onClick={()=>choose(id)}><Icon name={icon}/><span className="git-row-title">{label}</span>
       {id==="repositories"&&!!repos?.length&&<span className="git-count">{repos.length}</span>}{id==="agent"&&agentCount>0&&<span className="git-count">{agentCount}</span>}</button>)}</nav>
     <div className="sidebar-heading git-heading"><h2>Repositories</h2></div>
-    <nav aria-label="Repositories" className="git-repo-nav">{repos?.map(item=><button key={item.id} className={`nav-item${repoId===item.id?" active":""}`} aria-current={repoId===item.id?"page":undefined} onClick={()=>openRepo(item.id)}>
+    <nav aria-label="Repositories" className="git-repo-nav">{repos?.filter(item=>item.role==="owner").map(item=><button key={item.id} className={`nav-item${repoId===item.id?" active":""}`} aria-current={repoId===item.id?"page":undefined} onClick={()=>openRepo(item.id)}>
       <RepoMark name={item.name}/><span className="git-row-title">{item.name}</span>{item.dirty>0&&<span className="git-dirty-dot" title={`${plural(item.dirty,"uncommitted change")} in Dar`}><span className="sr-only">{plural(item.dirty,"uncommitted change")}</span></span>}</button>)}</nav>
+    {!!repos?.some(item=>item.role!=="owner")&&<><div className="sidebar-heading git-heading"><h2>Shared with you</h2></div>
+      <nav aria-label="Shared repositories" className="git-repo-nav">{repos.filter(item=>item.role!=="owner").map(item=><button key={item.id} className={`nav-item${repoId===item.id?" active":""}`} aria-current={repoId===item.id?"page":undefined} onClick={()=>openRepo(item.id)}>
+        <RepoMark name={item.name}/><span className="git-row-title">{item.name}</span><span className="git-count" title={`Shared by ${item.owner}`}>{item.role==="read"?"Read":"Write"}</span></button>)}</nav></>}
     <div className="git-key-card"><Icon name="key"/><div><strong>Clone with an app password</strong><span>Sign in as {session.user.username} with an app password that has Files access.</span><a href="/settings?section=security">Create app password</a></div></div>
   </>;
 
@@ -83,15 +82,17 @@ export function GitWorkspace({session,onSignedOut}:{session:BrowserSession;onSig
   if(error&&!repos)content=<div className="git-empty" role="alert"><h2>Git could not be loaded</h2><p>{error}</p><button className="secondary-button" onClick={()=>setReload(n=>n+1)}>Try again</button></div>;
   else if(!repos)content=<p className="git-empty" role="status">Loading repositories…</p>;
   else if(repoId&&!repo)content=<div className="git-empty" role="alert"><h2>This repository is not available</h2><p>The folder may have stopped keeping history, or you no longer have access.</p><button className="secondary-button" onClick={()=>choose("repositories")}>Show repositories</button></div>;
-  else if(repo)content=<Repository key={repo.id} repo={repo} session={session} tab={tab} onTab={next=>{setTab(next);setSheet(undefined);}} gitRef={ref} onRef={setRef} path={path} onPath={setPath} sheet={sheet} onSheet={setSheet} notify={notify} onChanged={()=>setReload(n=>n+1)}/>;
+  else if(repo)content=<Repository key={repo.id} repo={repo} session={session} tab={tab} onTab={next=>{setTab(next);setSheet(undefined);}} trackerVersion={trackerVersion} onEdit={setEditing} gitRef={ref} onRef={setRef} path={path} onPath={setPath} sheet={sheet} onSheet={setSheet} notify={notify} onChanged={()=>setReload(n=>n+1)}/>;
   else if(!repos.length)content=<div className="git-empty"><span className="empty-icon"><Icon name="repo"/></span><h2>No repositories yet</h2><p>A folder becomes a repository when it keeps history. Start a new one, or keep history on a folder you already have.</p><div className="git-empty-actions"><button className="primary-button" onClick={()=>setCreating(true)}><Icon name="plus"/>New repository</button><a className="secondary-button" href="/">Open Files</a></div></div>;
   else if(view==="overview")content=<Overview repos={repos} onOpen={openRepo}/>;
   else if(view==="repositories")content=<RepositoryList repos={repos} onOpen={openRepo}/>;
   else content=<AgentBranches repos={repos} onOpen={id=>openRepo(id,"branches")}/>;
 
-  const details=repo&&sheet?<aside className="pim-details git-details" aria-label={sheet.type==="commit"?"Commit":sheet.type==="compare"?"Compare":"File"}>
-    {sheet.type==="commit"?<CommitSheet key={sheet.sha} repo={repo} sha={sheet.sha} session={session} onChanged={()=>setReload(n=>n+1)} onClose={()=>setSheet(undefined)} onBrowse={sha=>{setTab("code");setRef(sha);setPath("");setSheet(undefined);}} onCommit={sha=>setSheet({type:"commit",sha})} notify={notify}/>
-      :sheet.type==="compare"?<CompareSheet key={`${sheet.base}...${sheet.head}`} repo={repo} session={session} notify={notify} onMerged={()=>{setSheet(undefined);setReload(n=>n+1);}} base={sheet.base} head={sheet.head} onChange={(base,head)=>setSheet({type:"compare",base,head})} onCommit={sha=>setSheet({type:"commit",sha})} onClose={()=>setSheet(undefined)}/>
+  const details=repo&&sheet?<aside className="pim-details git-details" aria-label={sheet.type==="commit"?"Commit":sheet.type==="compare"?"Compare":sheet.type==="issue"?"Conversation":"File"}>
+    {sheet.type==="issue"?<IssueSheet key={sheet.number} repo={repo} number={sheet.number} session={session} version={trackerVersion} notify={notify} onClose={()=>setSheet(undefined)} onOpen={number=>setSheet({type:"issue",number})}
+        onCommit={sha=>setSheet({type:"commit",sha})} onEdit={setEditing} onChanged={trackerChanged}/>
+      :sheet.type==="commit"?<CommitSheet key={sheet.sha} repo={repo} sha={sheet.sha} session={session} onChanged={()=>setReload(n=>n+1)} onClose={()=>setSheet(undefined)} onBrowse={sha=>{setTab("code");setRef(sha);setPath("");setSheet(undefined);}} onCommit={sha=>setSheet({type:"commit",sha})} notify={notify}/>
+      :sheet.type==="compare"?<CompareSheet key={`${sheet.base}...${sheet.head}`} repo={repo} session={session} onPull={(base,head)=>setEditing({type:"issue",kind:"pull",base,head})} notify={notify} onMerged={()=>{setSheet(undefined);setReload(n=>n+1);}} base={sheet.base} head={sheet.head} onChange={(base,head)=>setSheet({type:"compare",base,head})} onCommit={sha=>setSheet({type:"commit",sha})} onClose={()=>setSheet(undefined)}/>
       :<FileSheet key={`${sheet.ref}:${sheet.path}`} repo={repo} gitRef={sheet.ref} path={sheet.path} onClose={()=>setSheet(undefined)}/>}
   </aside>:null;
   return <div className={`app-shell pim-shell git-shell${details?" has-pim-details":""}`}>
@@ -105,6 +106,9 @@ export function GitWorkspace({session,onSignedOut}:{session:BrowserSession;onSig
       </main>
       {details}
     </div>
+    {repo&&editing?.type==="issue"&&<IssueEditor key={editing.issue?.number??`new-${editing.kind}`} repo={repo} editing={editing} session={session} onClose={()=>setEditing(undefined)}
+      onSaved={number=>{const kind=editing.kind;setEditing(undefined);trackerChanged();setTab(kind==="pull"?"pulls":"issues");setSheet({type:"issue",number});notify(editing.issue?"Saved":`Opened #${number}`);}}/>}
+    {repo&&editing?.type==="labels"&&<LabelsEditor repo={repo} session={session} onClose={()=>setEditing(undefined)} onChanged={trackerChanged}/>}
     {creating&&<NewRepository session={session} onClose={()=>setCreating(false)} onCreated={id=>{setCreating(false);void load().then(()=>openRepo(id));notify("Repository ready");}}/>}
     <div className="git-toast-region" role="status" aria-live="polite">{notice&&<div className="settings-toast git-toast"><span>{notice.message}</span></div>}</div>
   </div>;
@@ -116,19 +120,7 @@ function Spark({weeks,label}:{weeks:number[];label:string}){
   const max=Math.max(1,...weeks);
   return <span className="git-spark" role="img" aria-label={label}>{weeks.map((value,index)=><i key={index} className={`h${value?Math.max(1,Math.round(value/max*8)):0}`}/>)}</span>;
 }
-function SourceChip({source}:{source:GitSource}){return <span className={`git-source is-${source}`}><Icon name={sourceIcon[source]}/>{sourceLabel[source]}</span>;}
 function Refs({refs}:{refs:GitRef[]}){return <>{refs.map(item=><span key={`${item.kind}:${item.name}`} className={`git-ref is-${item.kind}`}><Icon name={item.kind==="tag"?"tag":"branch"}/>{item.name}</span>)}</>;}
-function Sha({sha}:{sha:string}){return <code className="git-sha" title={sha}>{short(sha)}</code>;}
-function Person({name,source}:{name:string;source?:GitSource}){return source==="agent"?<span className="avatar git-agent-avatar" aria-hidden="true"><Icon name="agent"/></span>:<Avatar name={name}/>;}
-function copy(text:string,notify:(text:string)=>void,what:string){void navigator.clipboard.writeText(text).then(()=>notify(`Copied ${what}`),()=>notify("Select the text and copy it"));}
-function useLoad<T>(url:string|undefined,deps:unknown[]=[]){
-  const [value,setValue]=useState<T>(),[error,setError]=useState(""),[attempt,setAttempt]=useState(0);
-  useEffect(()=>{if(!url)return;const abort=new AbortController();setError("");
-    void request<T>(url,{signal:abort.signal}).then(setValue).catch(cause=>{if(!abort.signal.aborted)setError(message(cause));});return()=>abort.abort();},[url,attempt,...deps]);
-  return {value,error,retry:()=>setAttempt(n=>n+1),setValue};
-}
-function Failure({error,retry,what}:{error:string;retry:()=>void;what:string}){return <div className="git-failure error" role="alert"><Icon name="alert"/><div><strong>{what} could not be loaded</strong><span>{error}</span></div><button className="secondary-button" onClick={retry}>Retry</button></div>;}
-function Loading({label}:{label:string}){return <div className="git-skeleton" role="status" aria-label={label}><span/><span/><span/></div>;}
 
 // ---- Overview, list and Agent branches -----------------------------------------------------
 
@@ -205,7 +197,7 @@ function AgentBranches({repos,onOpen}:{repos:GitRepository[];onOpen:(id:string)=
 // ---- A repository ------------------------------------------------------------------------------
 
 interface RefLists {branches:GitBranches;tags:GitTag[]}
-function Repository({repo,session,tab,onTab,gitRef,onRef,path,onPath,sheet,onSheet,notify,onChanged}:{repo:GitRepository;session:BrowserSession;tab:Tab;onTab:(tab:Tab)=>void;gitRef:string;onRef:(ref:string)=>void;path:string;onPath:(path:string)=>void;sheet?:Sheet;onSheet:(sheet:Sheet|undefined)=>void;notify:(text:string)=>void;onChanged:()=>void}){
+function Repository({repo,session,tab,onTab,gitRef,onRef,path,onPath,sheet,onSheet,notify,onChanged,trackerVersion,onEdit}:{repo:GitRepository;session:BrowserSession;tab:Tab;onTab:(tab:Tab)=>void;gitRef:string;onRef:(ref:string)=>void;path:string;onPath:(path:string)=>void;sheet?:Sheet;onSheet:(sheet:Sheet|undefined)=>void;notify:(text:string)=>void;onChanged:()=>void;trackerVersion:number;onEdit:(editing:IssueEditing)=>void}){
   const [version,setVersion]=useState(0);
   const [refs,setRefs]=useState<RefLists>(),[refsError,setRefsError]=useState("");
   useEffect(()=>{const abort=new AbortController();
@@ -213,19 +205,21 @@ function Repository({repo,session,tab,onTab,gitRef,onRef,path,onPath,sheet,onShe
       .then(([branches,tags])=>{setRefs({branches,tags});setRefsError("");}).catch(cause=>{if(!abort.signal.aborted)setRefsError(message(cause));});return()=>abort.abort();},[repo.id,repo.revision,version]);
   const changed=()=>{setVersion(n=>n+1);onChanged();};
   const [confirm,setConfirm]=useState<{name:string;old:string;kind:"branch"|"tag";commits?:number}>();
-  const counts:Record<Tab,number|undefined>={code:undefined,commits:repo.commits,branches:repo.branches,tags:repo.tags};
+  const counts:Record<Tab,number|undefined>={code:undefined,issues:repo.openIssues,pulls:repo.openPulls,commits:repo.commits,branches:repo.branches,tags:repo.tags};
+  const write=repo.role!=="read",pullFrom=(head:string)=>onEdit({type:"issue",kind:"pull",base:"main",head});
   const tabIds=useId();
   return <div className="git-repo">
-    <div className="git-repo-head"><RepoMark name={repo.name} size="is-m"/><div className="git-repo-title"><h1>{repo.name}</h1><a className="git-crumb" href={`/?folder=${repo.parentId}&file=${repo.id}`}><Icon name="folder"/>{repo.path}</a></div>
+    <div className="git-repo-head"><RepoMark name={repo.name} size="is-m"/><div className="git-repo-title"><h1>{repo.name}</h1><a className="git-crumb" href={repo.role==="owner"?`/?folder=${repo.parentId}&file=${repo.id}`:`/?folder=${repo.id}`}><Icon name={repo.role==="owner"?"folder":"share"}/>{repo.role==="owner"?repo.path:`Shared by ${repo.owner} · ${repo.role==="read"?"read only":"can write"}`}</a></div>
       <div className="git-tools"><CloneMenu repo={repo} gitRef={gitRef||"main"} username={session.user.username} notify={notify}/>
-        <ActionMenu label={`More actions for ${repo.name}`} actions={[{label:"Show in Files",icon:"folder",href:`/?folder=${repo.parentId}&file=${repo.id}`},{label:"Copy clone address",icon:"copy",run:()=>copy(repo.clone.alias,notify,"clone address")},{label:"Download Git bundle",icon:"archive",href:`/api/v1/files/history/${repo.id}/bundle`,download:true,separator:true}]}><Icon name="more"/></ActionMenu></div></div>
+        <ActionMenu label={`More actions for ${repo.name}`} actions={[{label:"Show in Files",icon:"folder",href:repo.role==="owner"?`/?folder=${repo.parentId}&file=${repo.id}`:`/?folder=${repo.id}`},{label:"Copy clone address",icon:"copy",run:()=>copy(repo.clone.alias,notify,"clone address")},{label:"Download Git bundle",icon:"archive",href:`/api/v1/files/history/${repo.id}/bundle`,download:true,separator:true}]}><Icon name="more"/></ActionMenu></div></div>
     <div className="git-tabs" role="tablist" aria-label={`${repo.name} sections`}>{tabs.map(([id,label,icon])=><button key={id} id={`${tabIds}-${id}`} role="tab" aria-selected={tab===id} aria-controls={`${tabIds}-panel`} className={tab===id?"is-active":""} onClick={()=>onTab(id)}><Icon name={icon}/>{label}{counts[id]!==undefined&&<span className="git-tab-count">{counts[id]}</span>}</button>)}</div>
     <div className="git-panel" role="tabpanel" id={`${tabIds}-panel`} aria-labelledby={`${tabIds}-${tab}`}>
       {refsError&&<Failure error={refsError} retry={()=>setVersion(n=>n+1)} what="Branches and tags"/>}
-      {tab==="code"?<Code repo={repo} refs={refs} gitRef={gitRef} onRef={onRef} path={path} onPath={onPath} onFile={file=>onSheet({type:"file",ref:gitRef||"main",path:file})} onCommits={()=>onTab("commits")} onCommit={sha=>onSheet({type:"commit",sha})}/>
+      {tab==="issues"||tab==="pulls"?<IssuesTab key={tab} repo={repo} kind={tab==="pulls"?"pull":"issue"} version={trackerVersion} selected={sheet?.type==="issue"?sheet.number:undefined} onOpen={number=>onSheet({type:"issue",number})} onEdit={onEdit}/>
+        :tab==="code"?<Code repo={repo} refs={refs} gitRef={gitRef} onRef={onRef} path={path} onPath={onPath} onFile={file=>onSheet({type:"file",ref:gitRef||"main",path:file})} onCommits={()=>onTab("commits")} onCommit={sha=>onSheet({type:"commit",sha})}/>
         :tab==="commits"?<Commits repo={repo} refs={refs} selected={sheet?.type==="commit"?sheet.sha:undefined} onCommit={sha=>onSheet({type:"commit",sha})}/>
-        :tab==="branches"?<BranchesTab repo={repo} refs={refs} onCompare={head=>onSheet({type:"compare",base:"main",head})} onCommit={sha=>onSheet({type:"commit",sha})} onDelete={branch=>setConfirm({name:`refs/heads/${branch.name}`,old:branch.sha,kind:"branch",commits:branch.ahead})} onCode={name=>{onRef(name);onPath("");onTab("code");}} notify={notify}/>
-        :<TagsTab repo={repo} refs={refs} onCommit={sha=>onSheet({type:"commit",sha})} onDelete={tag=>setConfirm({name:`refs/tags/${tag.name}`,old:tag.sha,kind:"tag"})} notify={notify}/>}
+        :tab==="branches"?<BranchesTab repo={repo} refs={refs} write={write} onPull={pullFrom} onCompare={head=>onSheet({type:"compare",base:"main",head})} onCommit={sha=>onSheet({type:"commit",sha})} onDelete={branch=>setConfirm({name:`refs/heads/${branch.name}`,old:branch.sha,kind:"branch",commits:branch.ahead})} onCode={name=>{onRef(name);onPath("");onTab("code");}} notify={notify}/>
+        :<TagsTab repo={repo} refs={refs} write={write} onCommit={sha=>onSheet({type:"commit",sha})} onDelete={tag=>setConfirm({name:`refs/tags/${tag.name}`,old:tag.sha,kind:"tag"})} notify={notify}/>}
     </div>
     {confirm&&<Dialog title={`Delete ${confirm.name.replace(/^refs\/(heads|tags)\//,"")}?`} onClose={()=>setConfirm(undefined)}><DeleteRef repo={repo} target={confirm} session={session} onCancel={()=>setConfirm(undefined)} onDeleted={()=>{setConfirm(undefined);notify(confirm.kind==="tag"?"Tag deleted":"Branch deleted");if(gitRef===confirm.name.replace(/^refs\/(heads|tags)\//,""))onRef("");if(sheet?.type==="compare")onSheet(undefined);changed();}}/></Dialog>}
   </div>;
@@ -345,7 +339,7 @@ function CommitRow({commit,selected,onOpen,graph}:{commit:GitCommit;selected:boo
   </button>;
 }
 
-function BranchesTab({repo,refs,onCompare,onCommit,onDelete,onCode,notify}:{repo:GitRepository;refs?:RefLists;onCompare:(head:string)=>void;onCommit:(sha:string)=>void;onDelete:(branch:GitBranch)=>void;onCode:(name:string)=>void;notify:(text:string)=>void}){
+function BranchesTab({repo,refs,write,onPull,onCompare,onCommit,onDelete,onCode,notify}:{repo:GitRepository;refs?:RefLists;write:boolean;onPull:(head:string)=>void;onCompare:(head:string)=>void;onCommit:(sha:string)=>void;onDelete:(branch:GitBranch)=>void;onCode:(name:string)=>void;notify:(text:string)=>void}){
   if(!refs)return <div className="git-scroll"><Loading label="Loading branches"/></div>;
   const {main,branches,agent}=refs.branches,widest=Math.max(1,...branches.flatMap(branch=>[branch.ahead,branch.behind]));
   const bar=(value:number)=>`w${value?Math.max(1,Math.round(value/widest*10)):0}`;
@@ -353,45 +347,28 @@ function BranchesTab({repo,refs,onCompare,onCommit,onDelete,onCode,notify}:{repo
     <Icon name="branch"/><div className="git-branch-body"><span className="git-branch-name">{branch.name}{isMain&&<span className="git-tag">Default</span>}</span><span><button type="button" className="git-link" onClick={()=>onCommit(branch.sha)}>{branch.subject}</button> · {branch.author} · {edited(branch.time)}</span></div>
     {isMain?<span className="git-muted git-branch-state">The folder matches this branch</span>:<span className="git-divergence" role="img" aria-label={`${branch.behind} behind and ${branch.ahead} ahead of main`}><span className="is-behind"><small>{branch.behind} behind</small><i className={bar(branch.behind)}/></span><span className="is-ahead"><small>{branch.ahead} ahead</small><i className={bar(branch.ahead)}/></span></span>}
     <span className="git-branch-actions">{!isMain&&<button type="button" className="secondary-button" onClick={()=>onCompare(branch.name)}><Icon name="compare"/>Compare</button>}
-      <ActionMenu label={`Actions for ${branch.name}`} actions={[{label:"Browse files",icon:"code",run:()=>onCode(isMain?"":branch.name)},...isMain?[]:[{label:"Compare with main",icon:"compare" as const,run:()=>onCompare(branch.name)}],{label:"Download ZIP",icon:"download",href:zipUrl(repo.id,branch.name),download:true},{label:"Copy name",icon:"copy",run:()=>copy(branch.name,notify,"branch name")},...isMain?[]:[{label:"Delete branch",icon:"trash" as const,danger:true,separator:true,run:()=>onDelete(branch)}]]}><Icon name="more"/></ActionMenu></span>
+      <ActionMenu label={`Actions for ${branch.name}`} actions={[{label:"Browse files",icon:"code",run:()=>onCode(isMain?"":branch.name)},...isMain?[]:[{label:"Compare with main",icon:"compare" as const,run:()=>onCompare(branch.name)}],...isMain||!write?[]:[{label:"Open pull request",icon:"pull" as const,run:()=>onPull(branch.name)}],{label:"Download ZIP",icon:"download",href:zipUrl(repo.id,branch.name),download:true},{label:"Copy name",icon:"copy",run:()=>copy(branch.name,notify,"branch name")},...isMain||!write?[]:[{label:"Delete branch",icon:"trash" as const,danger:true,separator:true,run:()=>onDelete(branch)}]]}><Icon name="more"/></ActionMenu></span>
   </li>;
   return <div className="git-scroll git-branches">
     <section className="git-group" aria-label="Default branch"><h2>Default branch</h2>{main?<ul>{row(main,true)}</ul>:<p className="git-hint">Nothing is committed on main yet.</p>}</section>
     <section className="git-group" aria-label="Branches"><h2>Branches</h2>{branches.length?<ul>{branches.map(branch=>row(branch))}</ul>:<p className="git-hint">Push a branch with Git to keep work beside main: <code>git push origin my-branch</code></p>}</section>
-    {agent.length>0&&<section className="git-group" aria-label="Agent branches"><h2>Agent branches</h2><ul>{agent.map(branch=><li key={branch.name} className="git-branch-row"><Icon name="branch" className="is-agent"/><div className="git-branch-body"><span className="git-branch-name">{branch.name}</span><span>{branch.message||"No message"} · {plural(branch.files,"file")} · {edited(branch.modifiedAt)}</span></div><span/><span className="git-branch-actions"><a className="secondary-button" href={`/agent?thread=${encodeURIComponent(branch.threadId)}`}><Icon name="external"/>Open in Agent</a></span></li>)}</ul>
-      <p className="git-group-note"><Icon name="info"/>Agent branches are reviewed and merged in Agent. Pushes to agent/ branches are refused.</p></section>}
+    {agent.length>0&&<section className="git-group" aria-label="Agent branches"><h2>Agent branches</h2><ul>{agent.map(branch=><li key={branch.name} className="git-branch-row"><Icon name="branch" className="is-agent"/><div className="git-branch-body"><span className="git-branch-name">{branch.name}</span><span>{branch.message||"No message"} · {plural(branch.files,"file")} · {edited(branch.modifiedAt)}</span></div><span/><span className="git-branch-actions">{write&&<button type="button" className="secondary-button" onClick={()=>onPull(branch.name)}><Icon name="pull"/>Open pull request</button>}<a className="secondary-button" href={`/agent?thread=${encodeURIComponent(branch.threadId)}`}><Icon name="external"/>Open in Agent</a></span></li>)}</ul>
+      <p className="git-group-note"><Icon name="info"/>Agent branches are reviewed in Agent, or in a pull request here, and merged into the folder. Pushes to agent/ branches are refused.</p></section>}
   </div>;
 }
-function TagsTab({repo,refs,onCommit,onDelete,notify}:{repo:GitRepository;refs?:RefLists;onCommit:(sha:string)=>void;onDelete:(tag:GitTag)=>void;notify:(text:string)=>void}){
+function TagsTab({repo,refs,write,onCommit,onDelete,notify}:{repo:GitRepository;refs?:RefLists;write:boolean;onCommit:(sha:string)=>void;onDelete:(tag:GitTag)=>void;notify:(text:string)=>void}){
   if(!refs)return <div className="git-scroll"><Loading label="Loading tags"/></div>;
   if(!refs.tags.length)return <div className="git-empty"><span className="empty-icon"><Icon name="tag"/></span><h2>No tags yet</h2><p>Tag a version with Git and push it:</p><pre className="git-command">{"git tag -a v1.0 -m \"Version 1.0\"\ngit push origin v1.0"}</pre></div>;
   return <ul className="git-scroll git-tag-list" aria-label="Tags">{refs.tags.map(tag=><li key={tag.name} className="git-tag-row">
     <Icon name="tag"/><div className="git-branch-body"><span className="git-branch-name">{tag.name}</span><span>{tag.message||"Lightweight tag"} · {tag.author} · {edited(tag.time)}</span></div>
     <button type="button" className="git-link" onClick={()=>onCommit(tag.target)}><Sha sha={tag.target}/></button>
     <span className="git-branch-actions"><a className="secondary-button" href={zipUrl(repo.id,tag.name)} download><Icon name="download"/>ZIP</a>
-      <ActionMenu label={`Actions for ${tag.name}`} actions={[{label:"Show commit",icon:"commit",run:()=>onCommit(tag.target)},{label:"Copy name",icon:"copy",run:()=>copy(tag.name,notify,"tag name")},{label:"Delete tag",icon:"trash",danger:true,separator:true,run:()=>onDelete(tag)}]}><Icon name="more"/></ActionMenu></span>
+      <ActionMenu label={`Actions for ${tag.name}`} actions={[{label:"Show commit",icon:"commit",run:()=>onCommit(tag.target)},{label:"Copy name",icon:"copy",run:()=>copy(tag.name,notify,"tag name")},...write?[{label:"Delete tag",icon:"trash" as const,danger:true,separator:true,run:()=>onDelete(tag)}]:[]]}><Icon name="more"/></ActionMenu></span>
   </li>)}</ul>;
 }
 
 // ---- Right sheet ------------------------------------------------------------------------------
 
-function SheetHead({title,children,onClose}:{title:ReactNode;children?:ReactNode;onClose:()=>void}){
-  return <div className="git-sheet-head"><button className="icon-button git-sheet-back" aria-label="Close" onClick={onClose}><Icon name="back"/></button><h2>{title}</h2>{children}<button className="icon-button git-sheet-close" aria-label="Close" title="Close (Escape)" onClick={onClose}><Icon name="close"/></button></div>;
-}
-function useSheetFocus(onClose:()=>void){
-  const root=useRef<HTMLDivElement>(null);
-  useEffect(()=>{root.current?.focus({preventScroll:true});},[]);
-  return {ref:root,tabIndex:-1,onKeyDown:(event:React.KeyboardEvent)=>{if(event.key==="Escape"&&!(event.target as HTMLElement).closest("[role=menu],[role=listbox],[role=dialog]")){event.preventDefault();onClose();}}};
-}
-function FileChanges({files,wrap}:{files:GitFileChange[];wrap:boolean}){
-  const [open,setOpen]=useState<Set<string>>(()=>new Set(files.slice(0,5).map(file=>file.path)));
-  return <div className="git-diffs">{files.map(file=><section key={file.path} className="git-diff">
-    <button type="button" className="git-diff-head" aria-expanded={open.has(file.path)} onClick={()=>setOpen(current=>{const next=new Set(current);if(next.has(file.path))next.delete(file.path);else next.add(file.path);return next;})}>
-      <Icon name="chevron" className={open.has(file.path)?"is-open":""}/><span className="git-diff-path">{file.previousPath?`${file.previousPath} → ${file.path}`:file.path}</span><span className={`git-kind is-${file.kind}`}>{kindLabel[file.kind]}</span>
-      <span className="git-stat">{file.binary?"Binary":<><span className="git-added">+{file.added}</span> <span className="git-removed">−{file.removed}</span></>}</span></button>
-    {open.has(file.path)&&(file.patch?<Diff source={file.patch} wrap={wrap} label={`Changes to ${file.path}`}/>:<p className="git-hint">{file.binary?"Binary file; no line changes to show.":file.truncated?"This diff is too large to show here. Clone the repository to see it.":file.kind==="renamed"?"Renamed without changes.":"No line changes."}</p>)}
-  </section>)}</div>;
-}
 function CommitSheet({repo,sha,session,onChanged,onClose,onBrowse,onCommit,notify}:{repo:GitRepository;sha:string;session:BrowserSession;onChanged:()=>void;onClose:()=>void;onBrowse:(sha:string)=>void;onCommit:(sha:string)=>void;notify:(text:string)=>void}){
   const {value:commit,error,retry}=useLoad<GitCommitDetail>(`${repoApi(repo.id)}/commits/${sha}`),[wrap,setWrap]=useState(false),focus=useSheetFocus(onClose),[restoring,setRestoring]=useState(false);
   return <div className="git-sheet" {...focus}>
@@ -412,7 +389,7 @@ function CommitSheet({repo,sha,session,onChanged,onClose,onBrowse,onCommit,notif
       </>}
     </div>
     <div className="git-sheet-foot"><button className="secondary-button" onClick={()=>onBrowse(sha)}><Icon name="code"/>Browse files</button><a className="secondary-button" href={zipUrl(repo.id,sha)} download><Icon name="download"/>ZIP</a>
-      {commit?.restore&&<button className="secondary-button" onClick={()=>setRestoring(true)}><Icon name="history"/>Restore folder to this point</button>}</div>
+      {commit?.restore&&repo.role!=="read"&&<button className="secondary-button" onClick={()=>setRestoring(true)}><Icon name="history"/>Restore folder to this point</button>}</div>
     {restoring&&commit?.restore&&<Dialog title="Restore this folder?" onClose={()=>setRestoring(false)}><RestoreFolder repo={repo} commit={commit} session={session} onCancel={()=>setRestoring(false)} onDone={()=>{setRestoring(false);notify(`Folder restored to “${commit.subject}”`);onChanged();}}/></Dialog>}
   </div>;
 }
@@ -425,30 +402,7 @@ function RestoreFolder({repo,commit,session,onCancel,onDone}:{repo:GitRepository
       void request(`/api/v1/files/history/${repo.id}/restore`,{method:"POST",body:JSON.stringify({id:commit.restore!.changesetId,revision:commit.restore!.revision})},session.csrfToken).then(onDone).catch(cause=>{
         const text=message(cause);setError(/uncommittedChanges/.test(text)?"The folder has uncommitted changes. Commit them in Files first, then restore.":/conflict/.test(text)?"The history changed meanwhile. Close this and try again.":text);setBusy(false);});}}>Restore folder</button></div></>;
 }
-/** Merging from the web: fast-forward, or a merge commit when the branches have diverged. */
-function MergeBox({repo,compare,session,onMerged}:{repo:GitRepository;compare:GitCompare;session:BrowserSession;onMerged:(result:GitMergeResult)=>void}){
-  const [mode,setMode]=useState<"fast-forward"|"merge">(compare.fastForward?"fast-forward":"merge"),[text,setText]=useState(""),[remove,setRemove]=useState(compare.head!=="main");
-  const [busy,setBusy]=useState(false),[error,setError]=useState(""),messageId=useId();
-  const blocked=mode==="merge"&&!compare.mergeable;
-  async function merge(){
-    setBusy(true);setError("");
-    try{onMerged(await request<GitMergeResult>(`${repoApi(repo.id)}/merge`,{method:"POST",body:JSON.stringify({base:compare.base,head:compare.head,baseSha:compare.baseSha,headSha:compare.headSha,mode,...mode==="merge"&&text.trim()?{message:text.trim()}:{},deleteBranch:remove})},session.csrfToken));}
-    catch(cause){setError(message(cause));setBusy(false);}
-  }
-  return <section className="git-merge" aria-label={`Merge ${compare.head} into ${compare.base}`}>
-    <h3 className="git-sheet-label">Merge into {compare.base}</h3>
-    <Segmented label="How to merge" value={mode} options={[["fast-forward","Fast-forward"],["merge","Merge commit"]] as const} disabled={busy} onChange={setMode}/>
-    {mode==="fast-forward"?compare.fastForward?<p className="git-hint">{compare.base} moves forward to {compare.head}; no new commit is made.</p>
-      :<p className="git-hint">{compare.base} has {plural(compare.behind,"commit")} that {compare.head} doesn’t, so it can’t fast-forward. Choose Merge commit.</p>
-      :compare.mergeable?<label className="git-field" htmlFor={messageId}>Message<input id={messageId} value={text} maxLength={2000} placeholder={`Merge branch '${compare.head}'${compare.base==="main"?"":` into ${compare.base}`}`} onChange={event=>setText(event.target.value)}/></label>
-      :<div className="git-banner"><Icon name="alert"/><div><strong>These branches conflict</strong><span>Merge {compare.base} into {compare.head} with Git, resolve the conflicts and push; then merge here.</span></div></div>}
-    {compare.base==="main"&&<p className="git-hint">The folder in Files changes with main. Files with uncommitted changes in Dar stop the merge until they are committed.</p>}
-    {compare.head!=="main"&&<label className="git-check"><input type="checkbox" checked={remove} disabled={busy} onChange={event=>setRemove(event.target.checked)}/>Delete {compare.head} after merging</label>}
-    {error&&<p className="error" role="alert">{error}</p>}
-    <button className="primary-button git-merge-button" disabled={busy||blocked||(mode==="fast-forward"&&!compare.fastForward)} onClick={()=>void merge()}><Icon name="merge"/>{busy?"Merging…":mode==="fast-forward"?`Fast-forward ${compare.base}`:`Merge into ${compare.base}`}</button>
-  </section>;
-}
-function CompareSheet({repo,session,notify,onMerged,base,head,onChange,onCommit,onClose}:{repo:GitRepository;session:BrowserSession;notify:(text:string)=>void;onMerged:()=>void;base:string;head:string;onChange:(base:string,head:string)=>void;onCommit:(sha:string)=>void;onClose:()=>void}){
+function CompareSheet({repo,session,notify,onMerged,onPull,base,head,onChange,onCommit,onClose}:{repo:GitRepository;session:BrowserSession;notify:(text:string)=>void;onMerged:()=>void;onPull:(base:string,head:string)=>void;base:string;head:string;onChange:(base:string,head:string)=>void;onCommit:(sha:string)=>void;onClose:()=>void}){
   const {value,error,retry}=useLoad<GitCompare>(`${repoApi(repo.id)}/compare?${new URLSearchParams({base,head})}`,[repo.revision]),focus=useSheetFocus(onClose);
   const {value:lists}=useLoad<GitBranches>(`${repoApi(repo.id)}/branches`);
   const names=lists?[...lists.main?["main"]:[],...lists.branches.map(branch=>branch.name)]:[base,head];
@@ -463,7 +417,8 @@ function CompareSheet({repo,session,notify,onMerged,base,head,onChange,onCommit,
           <div className="git-files-summary"><strong>{plural(value.files.length,"file")} changed</strong><span className="git-stat"><span className="git-added">+{value.files.reduce((sum,file)=>sum+file.added,0)}</span> <span className="git-removed">−{value.files.reduce((sum,file)=>sum+file.removed,0)}</span></span></div>
           <ul className="git-file-summary">{value.files.map(file=><li key={file.path}><span className={`git-kind-letter is-${file.kind}`} title={kindLabel[file.kind]}>{kindLabel[file.kind][0]}<span className="sr-only">{kindLabel[file.kind]}</span></span><span className="git-diff-path">{file.path}</span><span className="git-stat">{file.binary?"Binary":<><span className="git-added">+{file.added}</span> <span className="git-removed">−{file.removed}</span></>}</span></li>)}</ul>
         </>}
-        {value.ahead.length>0&&<MergeBox key={`${value.baseSha}:${value.headSha}`} repo={repo} compare={value} session={session} onMerged={result=>{notify(result.fastForward?`${base} now points at ${head}`:`Merged ${head} into ${base}`);onMerged();}}/>}
+        {value.ahead.length>0&&repo.role!=="read"&&<button type="button" className="secondary-button git-open-pull" onClick={()=>onPull(base,head)}><Icon name="pull"/>Open pull request</button>}
+        {value.ahead.length>0&&repo.role!=="read"&&<MergeBox key={`${value.baseSha}:${value.headSha}`} repo={repo} compare={value} session={session} onMerged={result=>{notify(result.fastForward?`${base} now points at ${head}`:`Merged ${head} into ${base}`);onMerged();}}/>}
       </>}
     </div>
   </div>;

@@ -1,6 +1,7 @@
 import type {Ctx} from "./index.ts";
 import {historyLimits,gitLimits} from "../../shared/history.ts";
 import {fail,now,first,keys,charge,release,fresh,folderOf,scan,headTree,status,trash,setContent,createFile,moveFile,type HistoryFiles} from "./history.ts";
+import {openCounts,pullsAfterPush} from "./tracker.ts";
 
 /**
  * Git over HTTPS for tracked folders (docs/spacetimedb/folder-history.md#git). The runtime keeps a
@@ -62,20 +63,31 @@ function pathOf(ctx:Ctx,entry:FileEntry){
   return names.join("/");
 }
 /**
- * The caller's tracked folders for the Git app: where each is, how many files differ from main
- * (-1 when the folder is too large to compare), its Agent branches and the bytes its history holds.
+ * The caller's tracked folders for the Git app, and those at or under folders shared with them: where
+ * each is, how many files differ from main (-1 when the folder is too large to compare), its Agent
+ * branches, the bytes its history holds, the caller's access and open issues and pull requests.
+ * A shared repository shows only its own name, not the owner's folders above it.
  */
-function repositories(ctx:Ctx,userId:string){
-  return [...ctx.db.fileRepos.ownerId.filter(userId)].flatMap(repo=>{
+function repositories(ctx:Ctx,files:HistoryFiles,userId:string){
+  const found=new Map<string,Repo>([...ctx.db.fileRepos.ownerId.filter(userId)].map(repo=>[repo.id,repo]));
+  for(const grant of ctx.db.grants.userId.filter(userId)){
+    const shared=ctx.db.fileEntries.id.find(grant.fileId);if(!shared||shared.kind!=="folder")continue;
+    for(const repo of ctx.db.fileRepos.ownerId.filter(shared.ownerId)){
+      let id=repo.id;
+      for(let depth=0;id&&depth<128&&!found.has(repo.id);depth++){if(id===shared.id)found.set(repo.id,repo);id=ctx.db.fileEntries.id.find(id)?.parentId??"";}
+    }
+  }
+  return [...found.values()].flatMap(repo=>{
     const root=ctx.db.fileEntries.id.find(repo.id);if(!root||root.trashed)return [];
+    const role=files.role(root);if(!role)return [];
     let dirty=-1;try{dirty=status(ctx,repo,root).changes.length;}catch{/* larger than history allows */}
     const seen=new Set<string>();let size=0;
     for(const set of ctx.db.fileChangesets.repoId.filter(repo.id))for(const change of ctx.db.fileChanges.changesetId.filter(set.id)){
       if(!change.versionId||seen.has(change.versionId))continue;
       seen.add(change.versionId);size+=ctx.db.versions.id.find(change.versionId)?.size??0;
     }
-    return [{id:repo.id,name:root.name,path:pathOf(ctx,root),parentId:root.parentId,revision:repo.revision,createdAt:repo.createdAt,modifiedAt:repo.modifiedAt,
-      dirty,agentBranches:[...ctx.db.fileBranches.repoId.filter(repo.id)].length,size}];
+    return [{id:repo.id,name:root.name,path:role==="owner"?pathOf(ctx,root):root.name,parentId:role==="owner"?root.parentId:"",revision:repo.revision,createdAt:repo.createdAt,modifiedAt:repo.modifiedAt,
+      dirty,agentBranches:[...ctx.db.fileBranches.repoId.filter(repo.id)].length,size,role,...role==="owner"?{}:{owner:person(ctx,root.ownerId).name},...openCounts(ctx,repo.id)}];
   });
 }
 function refsOf(ctx:Ctx,repo:Repo){return [...ctx.db.fileGitRefs.repoId.filter(repo.id)].map(row=>({name:row.name,sha:row.target}));}
@@ -83,7 +95,7 @@ function refsOf(ctx:Ctx,repo:Repo){return [...ctx.db.fileGitRefs.repoId.filter(r
 /** Operations for serviceGit; `uploadKey` ties a push's blobs to the pushing session. */
 export function gitOperation(ctx:Ctx,files:HistoryFiles,userId:string,uploadKey:string,operation:string,p:Record<string,unknown>){
   switch(operation){
-    case "repositories":keys(p,[]);return repositories(ctx,userId);
+    case "repositories":keys(p,[]);return repositories(ctx,files,userId);
     case "changesetOf":{
       // The main commit a Git ID is, so the Git app can restore the folder to it.
       keys(p,["folderId","sha"]);const {repo}=repoOf(ctx,files,p,false),row=objectOf(ctx,repo,sha(p.sha)),set=row?.changesetId?ctx.db.fileChangesets.id.find(row.changesetId):undefined;
@@ -309,6 +321,12 @@ function push(ctx:Ctx,files:HistoryFiles,userId:string,uploadKey:string,p:Record
     else if(ctx.db.fileGitRefs.id.find(rowId))ctx.db.fileGitRefs.id.update({id:rowId,repoId:repo.id,name:update.name,target:update.new,updatedAt:at});
     else ctx.db.fileGitRefs.insert({id:rowId,repoId:repo.id,name:update.name,target:update.new,updatedAt:at});
   }
+  // Pull requests follow their branches: merged once their base contains them, closed when their branch goes.
+  const applied=new Map(updates.filter(update=>!errors.has(update.name)&&(update.name!==mainRef||plan)).map(update=>[update.name,update.new]));
+  pullsAfterPush(ctx,files,repo,userId,(name,when)=>{
+    const ref=`refs/heads/${name}`,before=ref===mainRef?currentMain:current.get(ref)??zero,value=when==="after"&&applied.has(ref)?applied.get(ref)!:before;
+    return value===zero||value===""?undefined:value;
+  },isAncestor);
   collect(ctx,repo);
   const latest=ctx.db.fileRepos.id.find(repo.id)!;
   ctx.db.fileRepos.id.update({...latest,revision:latest.revision+1,modifiedAt:at});

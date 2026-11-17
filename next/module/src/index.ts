@@ -28,6 +28,8 @@ import { pimOperation, pimSnapshot, restorePim, reminderWork, commitReminders, d
 import { identityTables } from "./identity-tables.ts";
 import {workspaceTables} from "./workspace-tables.ts";
 import {historyTables} from "./history-tables.ts";
+import {trackerTables} from "./tracker-tables.ts";
+import {trackerOperation} from "./tracker.ts";
 import {historyOperation,dropRepo,historyKeeps,historySnapshot,historyVersionOwners,restoreHistory,type HistoryFiles} from "./history.ts";
 import {gitOperation} from "./git.ts";
 import {workspaceSnapshot,restoreWorkspace,noteTrashOperation,validateTaskParent} from "./workspace.ts";
@@ -68,7 +70,7 @@ const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().in
 // A browser session that confirmed the account password may open the Locked folder until expiresAt.
 const fileUnlocks = table({}, { sessionId: t.string().primaryKey(), userId: t.string().index("btree"), expiresAt: t.f64() });
 const fileUnlockExpiry = table({}, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), sessionId: t.string() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...trackerTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -190,6 +192,7 @@ function unusedUuid(ctx: Ctx): string {
   // every namespace where the module generates identifiers.
   let id = ctx.newUuidV4().toString();
   while (ctx.db.activity.id.find(id) || ctx.db.fileEntries.id.find(id) || ctx.db.versions.id.find(id) || ctx.db.sessions.id.find(id) || ctx.db.uploads.id.find(id)
+    || ctx.db.gitComments.id.find(id) || ctx.db.gitLabels.id.find(id)
     || ctx.db.principals.identity.find(new Identity(BigInt(`0x${id.replaceAll("-", "")}`)))) id = ctx.newUuidV4().toString();
   return id;
 }
@@ -562,6 +565,13 @@ export const serviceGit = db.procedure({ sessionId: t.string(), operation: t.str
   if (p.document.length > 64 * 1024 * 1024) fail("operationTooLarge");
   const value: unknown = JSON.parse(p.document); if (!value || typeof value !== "object" || Array.isArray(value)) fail("invalidInput");
   return JSON.stringify(gitOperation(tx, historyFiles(tx, user.id, p.sessionId), user.id, `git:${p.sessionId}`, p.operation, value as Record<string, unknown>));
+}));
+/** Issues and pull requests (docs/git.md#issues-and-pull-requests) for browser sessions; app passwords have no access. */
+export const serviceGitTracker = db.procedure({ sessionId: t.string(), operation: t.string(), document: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
+  service(tx); const user = fromSession(tx, p.sessionId); if (tx.db.appPasswords.sessionId.find(p.sessionId)) fail("forbidden");
+  if (p.document.length > 256 * 1024) fail("operationTooLarge");
+  const value: unknown = JSON.parse(p.document); if (!value || typeof value !== "object" || Array.isArray(value)) fail("invalidInput");
+  return JSON.stringify(trackerOperation(tx, historyFiles(tx, user.id, p.sessionId), user.id, p.operation, value as Record<string, unknown>));
 }));
 /** Tracked folders, so the runtime can drop Git caches of folders that stopped keeping history. */
 export const serviceGitRepos = db.procedure(t.string(), ctx => ctx.withTx(tx => { service(tx); return JSON.stringify([...tx.db.fileRepos.iter()].map(repo => ({ id: repo.id, generation: repo.createdAt }))); }));

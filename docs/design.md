@@ -254,7 +254,13 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   and source filters; Graph or List), Branches (behind/ahead of main, Compare, ZIP, delete
   with confirmation; Agent branches open in Agent) and Tags tabs. Commits (with Restore folder
   to this point for main), comparisons (with Merge: fast-forward or a merge commit, optionally
-  deleting the branch) and files open in the right sheet. Files are not edited here. See [Git](git.md).
+  deleting the branch) and files open in the right sheet. Files are not edited here. Issues and
+  Pull requests (November 17, applying mock B's patterns) are tabs after Code: Open/Closed, a
+  label filter, Labels and New in the toolbar; rows show a state icon, title, label chips and
+  #number. An item opens in the right sheet (title, state chip, labels menu, Conversation; pull
+  requests add Commits and Files and the merge box); New, Edit and Labels use the right editing
+  pane with Write/Preview Markdown. Label colours are named, never colour alone. Repositories
+  shared with you are a "Shared with you" sidebar section. See [Git](git.md).
 - **Agent:** the settings sheet and editing panes sit beside the Agent's sheets
   (which make room), as in other apps; choosing and adding a project both use the
   right pane. Threads on the left, conversation and docked composer in the center,
