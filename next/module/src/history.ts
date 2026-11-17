@@ -2,6 +2,7 @@ import {SenderError,Range} from "spacetimedb/server";
 import type {Ctx} from "./index.ts";
 import {storeBlob,releaseBlob} from "./blobs.ts";
 import {historyReadOperations} from "../../shared/read-operations.ts";
+import {agentBranchDone,dropTracker} from "./tracker.ts";
 import {historyLimits,historyBranchName,type HistoryChange,type HistoryChangeKind,type HistoryChangeset,type HistoryBranch} from "../../shared/history.ts";
 
 type FileEntry=NonNullable<ReturnType<Ctx["db"]["fileEntries"]["id"]["find"]>>;
@@ -235,6 +236,7 @@ function dropBranch(ctx:Ctx,repo:Repo,branch:Branch){
  * only history kept (of files deleted for good, or staged) are released from the quota.
  */
 export function dropRepo(ctx:Ctx,repo:Repo){
+  dropTracker(ctx,repo.id);
   for(const branch of [...ctx.db.fileBranches.repoId.filter(repo.id)])dropBranch(ctx,repo,branch);
   const versionIds=new Set<string>();let rows=0;
   for(const set of [...ctx.db.fileChangesets.repoId.filter(repo.id)]){
@@ -357,7 +359,7 @@ export function historyOperation(ctx:Ctx,files:HistoryFiles,userId:string,upload
     case "discard":{
       keys(p,["folderId","name","revision"]);revision(repo,p.revision);
       const branch=[...ctx.db.fileBranches.repoId.filter(repo.id)].find(row=>row.name===p.name);if(!branch)fail("notFound");
-      if(operation==="discard"){dropBranch(ctx,repo,branch);ctx.db.fileRepos.id.update({...repo,revision:repo.revision+1,modifiedAt:now(ctx)});return {merged:false};}
+      if(operation==="discard"){agentBranchDone(ctx,files,repo.id,branch.name,userId,false);dropBranch(ctx,repo,branch);ctx.db.fileRepos.id.update({...repo,revision:repo.revision+1,modifiedAt:now(ctx)});return {merged:false};}
       const set=ctx.db.fileChangesets.id.find(branch.changesetId)!,changes=[...ctx.db.fileChanges.changesetId.filter(set.id)],live=scan(ctx,root);
       // Each file must still be as the agent found it; nothing is applied otherwise.
       const conflicts=changes.filter(change=>{const entry=live.get(change.path);return change.kind==="added"?!!entry:!entry||entry.id!==change.fileId||entry.revision!==change.expectRevision;}).map(change=>change.path);
@@ -373,6 +375,7 @@ export function historyOperation(ctx:Ctx,files:HistoryFiles,userId:string,upload
       // The changes now belong to main; the branch's staged versions became the files' own.
       for(const change of changes)ctx.db.fileChanges.id.delete(change.id);
       ctx.db.fileChangesets.id.delete(set.id);ctx.db.fileBranches.id.delete(branch.id);
+      agentBranchDone(ctx,files,repo.id,branch.name,userId,true);
       if(!items.length){ctx.db.fileRepos.id.update({...repo,revision:repo.revision+1,modifiedAt:now(ctx)});return {merged:true};}
       return {merged:true,...record(ctx,files,ctx.db.fileRepos.id.find(repo.id)!,userId,items,"merge",`Merge ${branch.name}: ${set.message}`.slice(0,historyLimits.messageBytes/2))};
     }

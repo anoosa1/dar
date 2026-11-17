@@ -66,7 +66,9 @@ flowchart LR
   link under the digest and fsync the directory, or keep identical content already
   stored and mark it used now → a service call verifies the reservation,
   authorization, revision, size, digest and quota → commit version, blob record,
-  revision and activity together. Retries return the same result.
+  revision and activity together. Retries return the same result. A Git push stores its
+  files as one batch (`receiveBatch`): written in turn, flushed together, then linked
+  under their digests.
 - Request bodies (uploads, WebDAV writes, Git pushes) have no total time limit: one is
   dropped after a minute without new bytes, below 16 KiB a minute, or after 6 hours.
   Headers must arrive within 15 seconds.

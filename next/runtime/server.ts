@@ -289,7 +289,7 @@ export async function startServer(config: ServerConfig) {
         const optionalApp=/^\/api\/v1\/(notes|tasks|news|photos|books|git)(\/|$)/.exec(url.pathname);
         if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);
         if(/^\/api\/v1\/news(\/|$)/.test(url.pathname))return await handleNewsHttp(req,res,url,db,authenticated.session.id,authenticated.user.username,newsRuntime!,()=>body(req,3*1024*1024));
-        if(/^\/api\/v1\/git\//.test(url.pathname))return await handleGitApi(req,res,url,authenticated.session.id,authenticated.user,()=>body(req,16*1024));
+        if(/^\/api\/v1\/git\//.test(url.pathname))return await handleGitApi(req,res,url,authenticated.session.id,authenticated.user,()=>body(req,256*1024));
         if(/^\/api\/v1\/books(\/|$)/.test(url.pathname))return await handleBooksHttp(req,res,url,db,authenticated.session.id,booksRuntime!,()=>body(req,64*1024));
         if(/^\/api\/v1\/photos(\/|$)/.test(url.pathname))return await handlePhotosHttp(req,res,url,db,authenticated.session.id,photosRuntime!,root,config.origin,{userId:authenticated.user.id,immich:immichConnector!},(entry,inline=true)=>blobs.download(req,res,entry,inline),()=>body(req,128*1024));
         // The Locked folder opens for this browser session after the account password is confirmed.
@@ -431,7 +431,7 @@ export async function startServer(config: ServerConfig) {
       await reconcileStorage(db, blobs);
       // Content no upload recorded reads the whole blob directory: once a day, from the first run.
       if (Date.now() - swept >= 86400_000) { swept = Date.now(); await sweepOrphans(db, blobs); }
-      await repositories.prune();
+      await repositories.maintain();
       await deliverReminders(db);
       await identity.maintain();
     })().catch(() => { console.warn("Storage maintenance will retry."); }).finally(() => { maintenance = undefined; });

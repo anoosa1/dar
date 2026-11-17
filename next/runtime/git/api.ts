@@ -4,16 +4,16 @@ import type {Database} from "../database.ts";
 import {AppError} from "../errors.ts";
 import {writeJson} from "../json-response.ts";
 import {git,gitProcess,lines,zero,emptyTree,pushFromDar,type GitBlobs,type GitRepositories} from "../files/git.ts";
-import {historyReadOperations} from "../../shared/read-operations.ts";
+import {gitTrackerReadOperations,historyReadOperations} from "../../shared/read-operations.ts";
 import {gitPath,type HistoryOverview} from "../../shared/history.ts";
-import {gitAlias,validRefName,type GitActivity,type GitAgentBranch,type GitBranch,type GitBranches,type GitChangeKind,type GitCommit,type GitCommitDetail,type GitCommitPage,type GitCompare,type GitEvent,type GitFileChange,type GitRef,type GitRepository,type GitSource,type GitTag,type GitTree,type GitTreeEntry} from "../../shared/git.ts";
+import {gitAlias,validRefName,type GitActivity,type GitAgentBranch,type GitBranch,type GitBranches,type GitChangeKind,type GitCommit,type GitCommitDetail,type GitCommitPage,type GitCompare,type GitEvent,type GitFileChange,type GitRef,type GitRepository,type GitSource,type GitTag,type GitTree,type GitTreeEntry,type GitIssue,type GitPullChanges} from "../../shared/git.ts";
 
 /**
  * The Git app's reads (docs/git.md) under /api/v1/git. Repositories are tracked folders; each read
  * brings the folder's Git cache up to date under its lock and asks Git. Deleting a branch or tag goes
  * through the same database push as `git push --delete`, so it is checked and released the same way.
  */
-interface RepoRow {id:string;name:string;path:string;parentId:string;revision:number;createdAt:number;modifiedAt:number;dirty:number;agentBranches:number;size:number}
+interface RepoRow {id:string;name:string;path:string;parentId:string;revision:number;createdAt:number;modifiedAt:number;dirty:number;agentBranches:number;size:number;role:"owner"|"write"|"read";owner?:string;openIssues:number;openPulls:number}
 type Sync=Awaited<ReturnType<GitRepositories["syncLocked"]>>;
 
 const unit="\x1f",record="\x1e";
@@ -63,6 +63,7 @@ function treePath(value:string|null){
 
 export function gitApi(db:Database,repositories:GitRepositories,blobs:GitBlobs,origin:string){
   const repoRows=(sessionId:string)=>repositories.call<RepoRow[]>(sessionId,"repositories",{});
+  const tracker=<T>(sessionId:string,operation:string,document:Record<string,unknown>)=>db.operation<T>("service_git_tracker",operation,gitTrackerReadOperations,[sessionId,operation,JSON.stringify(document)]);
   const overview=(sessionId:string,folderId:string)=>db.operation<HistoryOverview>("service_history","overview",historyReadOperations,[sessionId,"overview",JSON.stringify({folderId})]);
   const run=(dir:string,args:string[],input?:string)=>git(dir,["-c","core.quotepath=off","--git-dir",dir,...args],input===undefined?{}:{input});
   /** Brings the cache up to date and runs work on it under the folder's lock. */
@@ -83,8 +84,10 @@ export function gitApi(db:Database,repositories:GitRepositories,blobs:GitBlobs,o
     return value;
   }
   async function summary(sessionId:string,username:string,row:RepoRow):Promise<GitRepository>{
+    // The alias names the caller's own folders; a shared repository is cloned by its ID.
     const base={id:row.id,name:row.name,path:row.path,parentId:row.parentId,createdAt:row.createdAt,revision:row.revision,dirty:row.dirty,agentBranches:row.agentBranches,size:row.size,
-      clone:{alias:origin+gitAlias(username,row.path),id:origin+gitPath(row.id)}};
+      role:row.role,...row.owner?{owner:row.owner}:{},openIssues:row.openIssues,openPulls:row.openPulls,
+      clone:{alias:origin+(row.role==="owner"?gitAlias(username,row.path):gitPath(row.id)),id:origin+gitPath(row.id)}};
     try{
       return await withRepo(sessionId,row.id,async(dir,state)=>{
         const refs=lines((await run(dir,["for-each-ref","--format=%(refname)","refs/heads","refs/tags"])).stdout);
@@ -252,13 +255,17 @@ export function gitApi(db:Database,repositories:GitRepositories,blobs:GitBlobs,o
     });
   }
   async function compare(dir:string,baseName:string|null,headName:string|null):Promise<GitCompare>{
-    const base=await refOf(dir,baseName),head=await refOf(dir,headName),{ahead,behind}=await aheadBehind(dir,base,head);
+    return compareTips(dir,await refOf(dir,baseName),await refOf(dir,headName),baseName!,headName!);
+  }
+  /** Two refs or commit IDs; names label them. Pull requests also get each file's hunks. */
+  async function compareTips(dir:string,base:string,head:string,baseName:string,headName:string,patches=false):Promise<GitCompare>{
+    const {ahead,behind}=await aheadBehind(dir,base,head);
     const mergeBase=(await git(dir,["--git-dir",dir,"merge-base",base,head],{allowFailure:true})).stdout.toString().trim()||emptyTree;
     const list=parseLog((await run(dir,["log","--date-order",`--max-count=${limits.compare}`,"--shortstat","--diff-merges=first-parent",logFormat,`${base}..${head}`])).stdout);
     const tip=async(ref:string)=>(await run(dir,["rev-parse","--verify",ref])).stdout.toString().trim();
     // Whether Git can merge without conflicts; --quiet only answers, writing nothing.
     const mergeable=ahead>0&&(behind===0||(await git(dir,["--git-dir",dir,"merge-tree","--write-tree","--quiet",base,head],{allowFailure:true})).code===0);
-    return {base:baseName!,head:headName!,baseSha:await tip(base),headSha:await tip(head),ahead:list,behind,fastForward:behind===0&&ahead>0,mergeable,files:ahead?await changes(dir,mergeBase,head,false):[]};
+    return {base:baseName,head:headName,baseSha:await tip(base),headSha:await tip(head),ahead:list,behind,fastForward:behind===0&&ahead>0,mergeable,files:ahead?await changes(dir,mergeBase,head,patches):[]};
   }
   async function archive(res:ServerResponse,dir:string,ref:string,name:string){
     const full=/^[0-9a-f]{40}$/.test(ref)?await commitOf(dir,ref):await refOf(dir,ref);
@@ -337,11 +344,69 @@ export function gitApi(db:Database,repositories:GitRepositories,blobs:GitBlobs,o
     });
   }
 
+  /**
+   * A pull request's commits and files. Open: the branches as they are now. Merged or closed: the tips
+   * it had, while Git still has them. Agent branches: the changes waiting in the folder's history.
+   */
+  async function pullChanges(sessionId:string,folderId:string,pull:GitIssue):Promise<GitPullChanges>{
+    if(pull.agent){
+      if(pull.state!=="open")return {note:pull.state==="merged"?"These changes were merged into the folder.":"This pull request is closed."};
+      const history=await overview(sessionId,folderId),branch=history.branches.find(item=>item.name===pull.head);
+      if(!branch||!history.repo)return {note:"The Agent branch no longer exists."};
+      return {agent:{changes:branch.changes,revision:history.repo.revision,threadId:branch.threadId}};
+    }
+    return withRepo(sessionId,folderId,async dir=>{
+      if(pull.state==="open"){
+        try{return {compare:await compareTips(dir,await refOf(dir,pull.base!,["heads"]),await refOf(dir,pull.head!,["heads"]),pull.base!,pull.head!,true)};}
+        catch(cause){if(cause instanceof AppError&&cause.code==="notFound")return {note:`${pull.head} or ${pull.base} no longer exists. Push the branch again to continue.`};throw cause;}
+      }
+      const have=async(sha?:string)=>!!sha&&await commitOf(dir,sha).then(()=>true,()=>false);
+      if(await have(pull.baseSha)&&await have(pull.headSha))return {compare:await compareTips(dir,pull.baseSha!,pull.headSha!,pull.base!,pull.head!,true)};
+      return {note:"Its commits are no longer in the repository; the branch was deleted without being merged."};
+    });
+  }
+  /** /issues, /labels and /comments of a repository; the database checks access and input. */
+  async function trackerRoute(req:IncomingMessage,sessionId:string,folderId:string,path:string,body:()=>Promise<Record<string,unknown>>,params:URLSearchParams):Promise<{value:unknown;status?:number}|undefined>{
+    const method=req.method??"GET",call=<T=unknown>(operation:string,document:Record<string,unknown>={})=>tracker<T>(sessionId,operation,{...document,folderId});
+    const input=async(extra:Record<string,unknown>)=>({...await body(),...extra});
+    if(path==="/issues"&&method==="GET"){
+      const kind=params.get("kind"),state=params.get("state")??"open",label=params.get("label");
+      return {value:await call("list",{kind,state,...label?{label}:{}})};
+    }
+    if(path==="/issues"&&method==="POST")return {value:await call("create",await input({})),status:201};
+    if(path==="/labels"&&method==="GET")return {value:await call("labels")};
+    if(path==="/labels"&&method==="POST")return {value:await call("saveLabel",await input({})),status:201};
+    let match=/^\/labels\/([a-f0-9-]{36})$/.exec(path);
+    if(match&&method==="PATCH")return {value:await call("saveLabel",await input({id:match[1]}))};
+    if(match&&method==="DELETE")return {value:await call("deleteLabel",{id:match[1]})};
+    match=/^\/comments\/([a-f0-9-]{36})$/.exec(path);
+    if(match&&method==="PATCH")return {value:await call("editComment",await input({id:match[1]}))};
+    if(match&&method==="DELETE")return {value:await call("deleteComment",{id:match[1]})};
+    match=/^\/issues\/([1-9]\d{0,5})(\/comments|\/changes)?$/.exec(path);
+    if(!match)return undefined;
+    const number=Number(match[1]);
+    if(!match[2]&&method==="GET")return {value:await call("issue",{number})};
+    if(!match[2]&&method==="PATCH")return {value:await call("update",await input({number}))};
+    if(match[2]==="/comments"&&method==="POST")return {value:await call("comment",await input({number})),status:201};
+    if(match[2]==="/changes"&&method==="GET"){
+      const pull=await call<GitIssue>("issue",{number});
+      if(pull.kind!=="pull")throw new AppError("notFound",404);
+      return {value:await pullChanges(sessionId,folderId,pull)};
+    }
+    return undefined;
+  }
+
   return async function handleGitApi(req:IncomingMessage,res:ServerResponse,url:URL,sessionId:string,user:{username:string;displayName:string},body:()=>Promise<Record<string,unknown>>){
     const username=user.username;
     const send=(value:unknown,status=200)=>writeJson(res,status,JSON.stringify(value)),method=req.method??"GET",params=url.searchParams;
     if(url.pathname==="/api/v1/git/repositories"&&method==="GET")return send(await repositoriesOf(sessionId,username));
     if(url.pathname==="/api/v1/git/activity"&&method==="GET")return send(await activity(sessionId));
+    const tracked=/^\/api\/v1\/git\/repositories\/([a-f0-9-]{36})(\/(?:issues|labels|comments)(?:\/.*)?)$/.exec(url.pathname);
+    if(tracked){
+      const result=await trackerRoute(req,sessionId,tracked[1],tracked[2],body,params);
+      if(!result)throw new AppError("notFound",404);
+      return send(result.value,result.status);
+    }
     const match=/^\/api\/v1\/git\/repositories\/([a-f0-9-]{36})(\/[a-z]+)?(?:\/([0-9a-f]{40}))?$/.exec(url.pathname);
     if(!match)throw new AppError("notFound",404);
     const folderId=match[1],rest=match[2]??"",sha=match[3];

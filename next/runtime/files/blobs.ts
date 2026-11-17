@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { link, lstat, open, opendir, unlink, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { pipeline } from "node:stream/promises";
+import { spawn } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { AppError } from "../errors.ts";
@@ -32,22 +33,55 @@ function inTurn<T>(key: string, work: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * syncfs(2), which Node does not offer, through coreutils' sync: flushes every file written on the
+ * file system holding `target`. Resolves false when it could not run, so the caller flushes each file.
+ */
+function syncFileSystem(target: string) {
+  return new Promise<boolean>(resolve => {
+    const child = spawn("sync", ["--file-system", target], { stdio: "ignore", env: { PATH: process.env.PATH ?? "" } });
+    child.once("error", () => resolve(false)); child.once("close", code => resolve(code === 0));
+  });
+}
+
+/**
  * One receive per upload ID. A receive hashes into a temporary file, then links it under its
  * digest, or keeps the identical content already stored and marks it used now. The database
  * records the digest afterwards, so content linked or used within graceMs is never removed;
  * maintenance reclaims what no reference ever reached (files/maintenance.ts).
  */
 export function blobStore(root: string, options: { graceMs?: number } = {}) {
+  // Upload IDs being received, and how many receives run at once.
   const active = new Set<string>(), graceMs = options.graceMs ?? blobGraceMs, directory = path.join(root, "blobs");
+  let receivers = 0;
   async function syncDirectory() {
     const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     try { await handle.sync(); } finally { await handle.close(); }
   }
-  /** Stores a complete, flushed temporary file under its digest. */
-  function store(temporary: string, digest: string, size: number) {
+  /** Writes one stream to its temporary file, checking its size; returns the open file and digest. */
+  async function stage(source: AsyncIterable<Buffer>, temporary: string, expectedSize: number) {
+    const file = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+    try {
+      let size = 0;
+      const hash = createHash("sha256");
+      for await (const chunk of source) {
+        size += chunk.length;
+        if (size > expectedSize) throw new AppError("uploadTooLarge", 413);
+        hash.update(chunk);
+        let offset = 0;
+        while (offset < chunk.length) offset += (await file.write(chunk, offset, chunk.length - offset)).bytesWritten;
+      }
+      if (size !== expectedSize) throw new AppError("incompleteUpload", 400);
+      return { file, digest: hash.digest("hex") };
+    } catch (error) { await file.close(); throw error; }
+  }
+  /**
+   * Places a complete, flushed temporary file under its digest. Returns true when it linked a new
+   * name (the caller flushes the directory); identical content already stored is kept and marked used now.
+   */
+  function place(temporary: string, digest: string, size: number) {
     const destination = blobPath(root, digest);
     return inTurn(destination, async () => {
-      try { await link(temporary, destination); await syncDirectory(); return; }
+      try { await link(temporary, destination); return true; }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
       const existing = await open(destination, constants.O_RDONLY | constants.O_NOFOLLOW);
       try {
@@ -55,6 +89,7 @@ export function blobStore(root: string, options: { graceMs?: number } = {}) {
         if (!stat.isFile() || stat.size !== size) throw new AppError("contentUnavailable", 503);
         const at = new Date(); await existing.utimes(at, at);
       } finally { await existing.close(); }
+      return false;
     });
   }
   return {
@@ -94,31 +129,55 @@ export function blobStore(root: string, options: { graceMs?: number } = {}) {
     },
     /** Receives a request body, or a local stream (a staged Photos upload or import); returns its SHA-256. */
     async receive(req: IncomingMessage | AsyncIterable<Buffer>, id: string, expectedSize: number): Promise<string> {
-      if (active.size >= 4 || active.has(id)) throw new AppError("uploadBusy", 409);
-      active.add(id);
+      if (receivers >= 4 || active.has(id)) throw new AppError("uploadBusy", 409);
+      active.add(id); receivers++;
       const temporary = path.join(root, "uploads", `${id}.tmp`);
       let file: Awaited<ReturnType<typeof open>> | undefined;
       try {
-        file = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
-        let size = 0;
-        const hash = createHash("sha256");
         if ("setTimeout" in req) req.setTimeout(60_000, () => req.destroy(new Error("Upload stalled.")));
-        for await (const chunk of req) {
-          size += chunk.length;
-          if (size > expectedSize) throw new AppError("uploadTooLarge", 413);
-          hash.update(chunk);
-          let offset = 0;
-          while (offset < chunk.length) offset += (await file.write(chunk, offset, chunk.length - offset)).bytesWritten;
-        }
-        if (size !== expectedSize) throw new AppError("incompleteUpload", 400);
+        const staged = await stage(req, temporary, expectedSize);
+        file = staged.file;
         await file.sync(); await file.close(); file = undefined;
-        const digest = hash.digest("hex");
-        await store(temporary, digest, expectedSize);
-        return digest;
+        if (await place(temporary, staged.digest, expectedSize)) await syncDirectory();
+        return staged.digest;
       } finally {
         await file?.close();
         await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; });
-        active.delete(id);
+        active.delete(id); receivers--;
+      }
+    },
+    /**
+     * Receives local streams one after another, as a Git push hands over its files, and makes them
+     * durable together (one file-system flush and one directory flush) instead of two flushes in turn
+     * per file. Returns each upload ID's SHA-256 once all are stored under their digests. On failure no
+     * temporary file remains; content already linked is reclaimed like any content no upload recorded.
+     */
+    async receiveBatch(items: AsyncIterable<{ id: string; size: number; source: AsyncIterable<Buffer> }>) {
+      if (receivers >= 4) throw new AppError("uploadBusy", 409);
+      receivers++;
+      const digests = new Map<string, string>(), staged: { id: string; temporary: string; size: number }[] = [];
+      try {
+        for await (const item of items) {
+          if (active.has(item.id) || digests.has(item.id)) throw new AppError("uploadBusy", 409);
+          const temporary = path.join(root, "uploads", `${item.id}.tmp`);
+          active.add(item.id); staged.push({ id: item.id, temporary, size: item.size });
+          const { file, digest } = await stage(item.source, temporary, item.size);
+          await file.close(); digests.set(item.id, digest);
+        }
+        // Many files: one flush of the file system. Few, or when that is unavailable: each file.
+        if (staged.length < 16 || !await syncFileSystem(path.join(root, "uploads"))) {
+          for (const { temporary } of staged) {
+            const file = await open(temporary, constants.O_RDONLY | constants.O_NOFOLLOW);
+            try { await file.sync(); } finally { await file.close(); }
+          }
+        }
+        let linked = false;
+        for (const { id, temporary, size } of staged) if (await place(temporary, digests.get(id)!, size)) linked = true;
+        if (linked) await syncDirectory();
+        return digests;
+      } finally {
+        for (const { id, temporary } of staged) { await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); active.delete(id); }
+        receivers--;
       }
     },
     async download(req: IncomingMessage, res: ServerResponse, entry: BlobFile, preview = false) {

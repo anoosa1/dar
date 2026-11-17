@@ -137,8 +137,11 @@ function headerOf(raw:Buffer){const end=raw.indexOf("\n\n");return (end<0?raw:ra
 /** Per-folder repositories under <root>/git, one operation at a time per folder. */
 export function gitRepositories(db:Database,root:string){
   const base=path.join(root,"git"),locks=new Map<string,Promise<unknown>>();
+  // Folders whose repository may have new objects since the last maintenance.
+  const touched=new Set<string>();
   const dirOf=(folderId:string)=>path.join(base,`${folderId}.git`);
   function locked<T>(folderId:string,work:()=>Promise<T>):Promise<T>{
+    touched.add(folderId);
     const previous=locks.get(folderId)??Promise.resolve(),next=previous.catch(()=>{}).then(work);
     const settled=next.catch(()=>{});locks.set(folderId,settled);void settled.then(()=>{if(locks.get(folderId)===settled)locks.delete(folderId);});
     return next;
@@ -239,14 +242,32 @@ export function gitRepositories(db:Database,root:string){
     return {dir,state:{...state,main}};
   }
   const sync=(sessionId:string,folderId:string)=>locked(folderId,()=>syncLocked(sessionId,folderId));
+  /**
+   * git gc --auto with low thresholds: a few hundred loose objects become a pack, and 8 packs one
+   * pack with a bitmap; each writes a commit graph. Unreachable objects (refused pushes, the Git
+   * app's merge checks) go at once: the repository is a cache, and the caller holds the lock.
+   */
+  async function compact(dir:string){
+    try{await access(dir);}catch{return;}
+    await git(dir,["--git-dir",dir,"-c","gc.auto=250","-c","gc.autoPackLimit=8","-c","gc.autoDetach=false","-c","gc.pruneExpire=now",
+      "-c","repack.writeBitmaps=true","-c","gc.writeCommitGraph=true","gc","--auto","--quiet"],{timeout:1_800_000});
+  }
 
   return {
     sync,syncLocked,
-    /** Removes repositories of folders that no longer keep history. */
-    async prune(){
+    /**
+     * Removes repositories of folders that no longer keep history, and packs the ones used since
+     * last time once loose objects or packs pile up: Dar's own commits and a rebuilt repository
+     * are loose objects, and each push adds a pack, which makes every clone and fetch slower.
+     */
+    async maintain(){
       let names:string[];try{names=await readdir(base);}catch{return;}
       const repos=new Set((await db.read<{id:string}[]>("service_git_repos")).map(repo=>`${repo.id}.git`));
       for(const name of names)if(/^[a-f0-9-]{36}\.git$/.test(name)&&!repos.has(name))await locked(name.slice(0,36),()=>rm(path.join(base,name),{recursive:true,force:true}));
+      const folders=[...touched];touched.clear();
+      for(const folderId of folders)if(repos.has(`${folderId}.git`))await locked(folderId,()=>compact(dirOf(folderId))).catch(()=>{});
+      // locked() marks each folder it runs for; packing is not a change.
+      for(const folderId of folders)touched.delete(folderId);
     },
     /** main and every branch and tag as a Git bundle, for the History tab's download. */
     async bundle(sessionId:string,folderId:string,res:ServerResponse,name:string){
@@ -526,17 +547,21 @@ async function applyPush(db:Database,repositories:GitRepositories,blobs:Blobs,se
   const uploads=begin.blobs.filter((row):row is {sha:string;uploadId:string}=>"uploadId" in row);
   for(const row of begin.blobs)if("blobId" in row)stored.push({sha:row.sha,size:sizes.get(row.sha),blobId:row.blobId});
   if(uploads.length){
+    // One batch: the files are flushed to disk together rather than one after another.
     const child=gitProcess(dir,["cat-file","--batch"],env),batch=new BatchReader(child.stdout!);child.stderr!.resume();child.stdin!.end(uploads.map(row=>row.sha).join("\n")+"\n");
-    for(const row of uploads){
-      const header=await batch.header(),size=sizes.get(row.sha)!;
-      if(header.sha!==row.sha||header.size!==size)throw new AppError("gitFailed",502,"Git could not read the push.");
-      let sample:Buffer|undefined;
-      const source=(async function*(){for await(const chunk of batch.stream(size)){if(!sample)sample=chunk.subarray(0,8192);yield chunk;}})();
-      const digest=await blobs.receive(source,row.uploadId,size);
-      // UTF-8 at the start (cut at a character boundary) makes an unknown extension plain text.
-      text.set(row.sha,!!sample&&(isUtf8(sample)||sample.length===8192&&[1,2,3].some(cut=>isUtf8(sample!.subarray(0,8192-cut)))));
-      stored.push({sha:row.sha,size,uploadId:row.uploadId,digest});
-    }
+    try{
+      const digests=await blobs.receiveBatch((async function*(){
+        for(const row of uploads){
+          const header=await batch.header(),size=sizes.get(row.sha)!;
+          if(header.sha!==row.sha||header.size!==size)throw new AppError("gitFailed",502,"Git could not read the push.");
+          let sample:Buffer|undefined;
+          yield {id:row.uploadId,size,source:(async function*(){for await(const chunk of batch.stream(size)){if(!sample)sample=chunk.subarray(0,8192);yield chunk;}})()};
+          // UTF-8 at the start (cut at a character boundary) makes an unknown extension plain text.
+          text.set(row.sha,!!sample&&(isUtf8(sample)||sample.length===8192&&[1,2,3].some(cut=>isUtf8(sample!.subarray(0,8192-cut)))));
+        }
+      })());
+      for(const row of uploads)stored.push({sha:row.sha,size:sizes.get(row.sha),uploadId:row.uploadId,digest:digests.get(row.uploadId)});
+    }finally{if(child.exitCode===null)child.kill("SIGKILL");}
   }
   // By extension; else plain text for UTF-8 content; else (""), the type stored content already has.
   const typed=(change:Change)=>{if(change.kind==="deleted")return change;const guess=mediaTypeOf(change.path);return {...change,mediaType:guess!=="application/octet-stream"?guess:text.get(change.blob)?"text/plain":""};};
