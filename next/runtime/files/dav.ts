@@ -10,7 +10,7 @@ import { maxFileBytes } from "../../shared/limits.ts";
 
 /** WebDAV verbs the database answers without changing anything. */
 const davReads: ReadonlySet<string> = new Set(["STAT", "PROPFIND", "PREPARE"]);
-const D = "DAV:", microsoft = "urn:schemas-microsoft-com:";
+const D = "DAV:", microsoft = "urn:schemas-microsoft-com:", owncloud = "http://owncloud.org/ns";
 /**
  * Locks are advisory: LOCK always grants a token and writes do not check it. Finder and Windows
  * mount a server read-only unless it locks; a write that races another still keeps the earlier
@@ -19,6 +19,7 @@ const D = "DAV:", microsoft = "urn:schemas-microsoft-com:";
 const lockSeconds = 3600;
 
 interface Entry extends BlobFile { kind: string; modifiedAt: number }
+interface Listed extends Entry { sha1: string; md5: string }
 interface Target { entry?: Entry; parentId: string; name: string }
 const escape = (value: string) => value.replace(/[<>&"']/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]!);
 const etag = (entry: Entry) => `"${entry.id}:${entry.revision}:${entry.blobId}"`;
@@ -29,8 +30,13 @@ function condition(req: IncomingMessage, entry: Entry) {
   if (!match.split(",").some(value => value.trim() === etag(entry))) throw new AppError("revisionConflict", 412);
 }
 const lockProperties = `<d:supportedlock>${["exclusive", "shared"].map(scope => `<d:lockentry><d:lockscope><d:${scope}/></d:lockscope><d:locktype><d:write/></d:locktype></d:lockentry>`).join("")}</d:supportedlock><d:lockdiscovery/>`;
-function propertyResponse(entry: Entry, href: string) {
-  return `<d:response><d:href>${escape(href)}</d:href><d:propstat><d:prop><d:displayname>${escape(entry.name)}</d:displayname><d:resourcetype>${entry.kind === "folder" ? "<d:collection/>" : ""}</d:resourcetype><d:getcontentlength>${entry.size}</d:getcontentlength><d:getcontenttype>${escape(entry.mediaType)}</d:getcontenttype><d:getetag>${escape(etag(entry))}</d:getetag><d:getlastmodified>${new Date(entry.modifiedAt).toUTCString()}</d:getlastmodified><d:creationdate>${new Date(entry.modifiedAt).toISOString()}</d:creationdate>${lockProperties}</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`;
+/** ownCloud's checksum property, which rclone and the ownCloud and Nextcloud clients read (SHA-1 and MD5 once runtime/files/checksums.ts has them). */
+function checksums(entry: Listed) {
+  if (entry.kind !== "file") return "";
+  return `<oc:checksums><oc:checksum>${entry.sha1 ? `SHA1:${entry.sha1} MD5:${entry.md5} ` : ""}SHA256:${escape(entry.blobId)}</oc:checksum></oc:checksums>`;
+}
+function propertyResponse(entry: Listed, href: string) {
+  return `<d:response><d:href>${escape(href)}</d:href><d:propstat><d:prop><d:displayname>${escape(entry.name)}</d:displayname><d:resourcetype>${entry.kind === "folder" ? "<d:collection/>" : ""}</d:resourcetype><d:getcontentlength>${entry.size}</d:getcontentlength><d:getcontenttype>${escape(entry.mediaType)}</d:getcontenttype><d:getetag>${escape(etag(entry))}</d:getetag><d:getlastmodified>${new Date(entry.modifiedAt).toUTCString()}</d:getlastmodified><d:creationdate>${new Date(entry.modifiedAt).toISOString()}</d:creationdate>${checksums(entry)}${lockProperties}</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`;
 }
 /** Modified-time properties clients set: DAV:lastmodified (Unix seconds; rclone, ownCloud), getlastmodified and Win32LastModifiedTime (HTTP dates). */
 function patch(node: Xml, set: boolean): { status: number; time?: number } {
@@ -41,6 +47,8 @@ function patch(node: Xml, set: boolean): { status: number; time?: number } {
   }
   // Windows sets these on every save; they describe its local copy and change nothing here.
   if (node.uri === microsoft && ["Win32CreationTime", "Win32LastAccessTime", "Win32FileAttributes"].includes(node.name)) return { status: 200 };
+  // rclone sends back the checksums it read with each time it sets; Dar computes them from the content.
+  if (node.uri === owncloud && node.name === "checksums") return { status: 200 };
   return { status: 403 };
 }
 const reasons: Record<number, string> = { 200: "OK", 403: "Forbidden", 424: "Failed Dependency" };
@@ -52,7 +60,8 @@ function mediaType(req: IncomingMessage, name: string) {
 async function* nothing(): AsyncIterable<Buffer> {}
 
 /** Standards paths expose logical Files resources; they never map to disk paths. */
-export async function handleDav(req: IncomingMessage, res: ServerResponse, db: Database, blobs: ReturnType<typeof blobStore>, origin: string) {
+/** `stored` runs after new content is recorded (runtime/files/checksums.ts hashes it). */
+export async function handleDav(req: IncomingMessage, res: ServerResponse, db: Database, blobs: ReturnType<typeof blobStore>, origin: string, stored: () => void = () => {}) {
   const method = req.method ?? "GET";
   if (req.headers.origin && req.headers.origin !== origin) throw new AppError("invalidOrigin", 403);
   res.setHeader("allow", "OPTIONS, PROPFIND, PROPPATCH, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY, LOCK, UNLOCK");
@@ -87,16 +96,27 @@ export async function handleDav(req: IncomingMessage, res: ServerResponse, db: D
       digest = await blobs.receive(source, id, size);
       await db.call("service_finish_upload", [authenticated.sessionId, id, digest, fileTime]);
     } catch (error) { await db.call("service_cancel_upload", [authenticated.sessionId, id]).catch(() => {}); throw error; }
+    stored();
     // Finishing gives the file the next revision, so its ETag is known without another read.
     return `"${fileId}:${(target.entry?.revision ?? 0) + 1}:${digest}"`;
   }
   if (method === "PROPFIND") {
-    if (req.headers.depth !== "0" && req.headers.depth !== "1") throw new AppError("finiteDepthRequired", 403);
+    // No Depth means infinity (RFC 4918); the module takes 2 for it.
+    const header = String(req.headers.depth ?? "infinity").toLowerCase(), depth = ({ "0": 0, "1": 1, infinity: 2 } as Record<string, number>)[header];
+    if (depth === undefined) throw new AppError("invalidDepth");
     if (Number(req.headers["content-length"] ?? 0) > 16_384) throw new AppError("requestTooLarge", 413);
     req.resume();
-    const value = await operation<{ root: Entry; children: Entry[] }>("PROPFIND", { depth: Number(req.headers.depth) });
-    const href = `${prefix}${pathname ? `/${pathname.split("/").map(encodeURIComponent).join("/")}` : ""}${value.root.kind === "folder" ? "/" : ""}`;
-    const xml = `<?xml version="1.0" encoding="UTF-8"?><d:multistatus xmlns:d="DAV:">${propertyResponse(value.root, href)}${value.children.map(child => propertyResponse(child, `${href}${encodeURIComponent(child.name)}${child.kind === "folder" ? "/" : ""}`)).join("")}</d:multistatus>`;
+    let value: { root: Listed; children: (Listed & { path: string })[] };
+    try { value = await operation("PROPFIND", { depth }); }
+    catch (error) {
+      // A tree past the listing limit is refused as RFC 4918 asks; clients then list folder by folder.
+      if (!(depth === 2 && error instanceof AppError && error.code === "operationTooLarge")) throw error;
+      res.writeHead(403, { "content-type": "application/xml; charset=utf-8" });
+      res.end(`<?xml version="1.0" encoding="UTF-8"?><d:error xmlns:d="DAV:"><d:propfind-finite-depth/></d:error>`); return;
+    }
+    const encode = (path: string) => path.split("/").map(encodeURIComponent).join("/");
+    const href = `${prefix}${pathname ? `/${encode(pathname)}` : ""}${value.root.kind === "folder" ? "/" : ""}`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?><d:multistatus xmlns:d="DAV:" xmlns:oc="${owncloud}">${propertyResponse(value.root, href)}${value.children.map(child => propertyResponse(child, `${href}${encode(child.path)}${child.kind === "folder" ? "/" : ""}`)).join("")}</d:multistatus>`;
     res.writeHead(207, { "content-type": "application/xml; charset=utf-8" }); res.end(xml); return;
   }
   if (method === "PROPPATCH") {
@@ -149,8 +169,10 @@ export async function handleDav(req: IncomingMessage, res: ServerResponse, db: D
   if (method === "MKCOL") {
     if (Number(req.headers["content-length"] ?? 0)) throw new AppError("unsupportedBody", 415);
     req.resume();
-    // An existing resource answers 405, which clients take as "already there".
-    if (!(await operation<{ created: boolean }>("MKCOL")).created) throw new AppError("alreadyExists", 405);
+    // An existing resource answers 405, which clients take as "already there". rclone asks before
+    // every upload, so a read answers that without waiting for a durable write.
+    const exists = await operation("STAT").then(() => true, error => { if (error instanceof AppError && error.code === "notFound") return false; throw error; });
+    if (exists || !(await operation<{ created: boolean }>("MKCOL")).created) throw new AppError("alreadyExists", 405);
     res.writeHead(201); res.end(); return;
   }
   if (method === "PUT") {

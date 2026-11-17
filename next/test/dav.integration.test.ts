@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { login } from "./integration-helpers.ts";
 const origin = process.env.DAR_INTEGRATION_ORIGIN;
@@ -81,6 +81,11 @@ test("WebDAV clients: parent folders, modified times, advisory locks and streame
   patched = await proppatch("<z:Win32LastModifiedTime>Wed, 02 Mar 2022 10:00:00 GMT</z:Win32LastModifiedTime><z:Win32FileAttributes>00000020</z:Win32FileAttributes>");
   assert.doesNotMatch(await patched.text(), /403|424/);
   assert.equal(await modified(dated), Date.UTC(2022, 2, 2, 10));
+  // rclone sends back the checksums it read with the time; they are accepted and ignored.
+  patched = await proppatch(`<d:lastmodified>1650000000</d:lastmodified><oc:checksums xmlns:oc="http://owncloud.org/ns"><oc:checksum>SHA1:${"0".repeat(40)}</oc:checksum></oc:checksums>`);
+  assert.doesNotMatch(await patched.text(), /403|424/);
+  assert.equal(await modified(dated), 1650000000_000);
+  patched = await proppatch("<z:Win32LastModifiedTime>Wed, 02 Mar 2022 10:00:00 GMT</z:Win32LastModifiedTime>");
   // Properties apply together: an unsupported one fails the request and changes nothing.
   patched = await proppatch("<d:lastmodified>1500000000</d:lastmodified><d:author>someone</d:author>");
   const failed = await patched.text();
@@ -110,5 +115,27 @@ test("WebDAV clients: parent folders, modified times, advisory locks and streame
   assert.deepEqual(Buffer.from(await (await fetch(streamed, { headers })).arrayBuffer()), content);
   const unsized = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(3)); controller.close(); } });
   assert.equal((await fetch(`${folder}unsized.bin`, { method: "PUT", headers, body: unsized, duplex: "half" } as RequestInit)).status, 411);
+  // Renaming and moving keep the modified time.
+  assert.equal((await fetch(`${folder}deeper/`, { method: "MKCOL", headers })).status, 201);
+  const moved = `${folder}deeper/renamed.txt`, before = await modified(dated);
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  assert.equal((await fetch(dated, { method: "MOVE", headers: { ...headers, destination: moved } })).status, 201);
+  assert.equal(await modified(moved), before);
+  // Listings carry SHA-256 at once, and SHA-1 and MD5 once the runtime has hashed the content (rclone compares those).
+  const sha1 = createHash("sha1").update(content).digest("hex"), md5 = createHash("md5").update(content).digest("hex"), sha256 = createHash("sha256").update(content).digest("hex");
+  let checksum = "";
+  for (let attempt = 0; attempt < 50 && !checksum.includes("SHA1:"); attempt++) {
+    if (attempt) await new Promise(resolve => setTimeout(resolve, 100));
+    checksum = /<oc:checksum>([^<]*)</.exec(await (await fetch(streamed, { method: "PROPFIND", headers: { ...headers, depth: "0" } })).text())?.[1] ?? "";
+  }
+  assert.equal(checksum, `SHA1:${sha1} MD5:${md5} SHA256:${sha256}`);
+  // Depth infinity (also the default) lists the whole tree; finite depths stay as they were.
+  for (const depth of [{ depth: "infinity" }, {}] as Record<string, string>[]) {
+    const tree = await (await fetch(folder, { method: "PROPFIND", headers: { ...headers, ...depth } })).text();
+    assert.ok(tree.includes(`<d:href>${new URL(moved).pathname}</d:href>`), tree.slice(0, 400));
+    assert.ok(tree.includes(`<d:href>${new URL(`${folder}deeper/`).pathname}</d:href>`));
+  }
+  assert.ok(!(await (await fetch(folder, { method: "PROPFIND", headers: { ...headers, depth: "1" } })).text()).includes("renamed.txt"));
+  assert.equal((await fetch(folder, { method: "PROPFIND", headers: { ...headers, depth: "2" } })).status, 400);
   assert.equal((await fetch(folder, { method: "DELETE", headers })).status, 204);
 });

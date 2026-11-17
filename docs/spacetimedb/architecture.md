@@ -85,7 +85,9 @@ flowchart LR
   if referenced content is missing.
 - WebDAV (`/dav/files/<username>/`) uses the same checked operations; `If-Match` is
   optional (a replaced file keeps its versions), locks are advisory and clients may set
-  modified times. See [WebDAV](../webdav.md).
+  modified times, which renames and moves keep. A runtime worker records each blob's SHA-1
+  and MD5 (blob checksums) for sync clients that compare only those; Dar never names or
+  trusts content by them. See [WebDAV](../webdav.md).
 - Downloads go through the runtime with current permission checks, safe
   Content-Disposition, range/HEAD and attachment-only active content. Public links
   are hashed capability URLs with expiry and revocation.

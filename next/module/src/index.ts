@@ -71,6 +71,8 @@ const backupPins = table({}, { id: t.string().primaryKey(), backupId: t.string()
  * versions or backup pins still use it, "" for never.
  */
 const fileBlobs = table({}, { id: t.string().primaryKey(), size: t.f64(), state: t.string(), checkKey: t.string().index("btree") });
+/** The SHA-1 and MD5 of a stored blob, for WebDAV sync clients that compare only those (rclone, ownCloud, Nextcloud). Never used to name or trust content; runtime/files/checksums.ts fills it. */
+const blobChecksums = table({}, { id: t.string().primaryKey(), sha1: t.string(), md5: t.string() });
 /** Applied Files storage migrations; 1 is content-addressed blobs. */
 const fileMigrations = table({}, { id: t.u32().primaryKey(), appliedAt: t.f64() });
 const blobMigration = 1;
@@ -80,7 +82,7 @@ const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().in
 // A browser session that confirmed the account password may open the Locked folder until expiresAt.
 const fileUnlocks = table({}, { sessionId: t.string().primaryKey(), userId: t.string().index("btree"), expiresAt: t.f64() });
 const fileUnlockExpiry = table({}, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), sessionId: t.string() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, fileBlobs, fileMigrations, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...trackerTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, fileBlobs, blobChecksums, fileMigrations, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...trackerTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -409,7 +411,8 @@ export const renameEntry = db.reducer({ id: t.string(), name: t.string(), expect
   const name = nameOf(p.name), listKey = key(entry.ownerId, entry.parentId, name);
   const collision = findKey(ctx, listKey);
   if (collision && collision.id !== entry.id) fail("conflict");
-  ctx.db.fileEntries.id.update({ ...entry, name, listKey, revision: entry.revision + 1, modifiedAt: now(ctx) });
+  // Renaming and moving keep the modified time: it dates the content (WebDAV sync, Photos).
+  ctx.db.fileEntries.id.update({ ...entry, name, listKey, revision: entry.revision + 1 });
   if (entry.favorite) ctx.db.favorites.id.update({ id: entry.id, fileId: entry.id, listKey: `${entry.ownerId}/${name.toLowerCase()}/${entry.id}` });
   renameGrants(ctx, entry.id, name);
   event(ctx, entry.ownerId, entry.id, "renamed");
@@ -438,7 +441,7 @@ function moveFor(ctx: Ctx, userId: string, p: { id: string; parentId: string; ex
   const listKey = key(entry.ownerId, p.parentId, name);
   const existing = findKey(ctx, listKey);
   if (existing && existing.id !== entry.id) fail("conflict");
-  ctx.db.fileEntries.id.update({ ...entry, name, parentId: p.parentId, listKey, revision: entry.revision + 1, modifiedAt: now(ctx) });
+  ctx.db.fileEntries.id.update({ ...entry, name, parentId: p.parentId, listKey, revision: entry.revision + 1 });
   if (entry.favorite) ctx.db.favorites.id.update({ id: entry.id, fileId: entry.id, listKey: `${entry.ownerId}/${name.toLowerCase()}/${entry.id}` });
   renameGrants(ctx, entry.id, name);
   event(ctx, entry.ownerId, entry.id, "moved");
@@ -764,7 +767,24 @@ export const serviceMaintenance = db.procedure(t.string(), ctx => ctx.withTx(tx 
 export const serviceAcknowledgeGc = db.reducer({ id: t.string() }, (ctx, { id }) => {
   service(ctx);
   const blob = ctx.db.fileBlobs.id.find(id);
-  if (blob?.state === "deleting") ctx.db.fileBlobs.id.delete(id);
+  if (blob?.state === "deleting") { ctx.db.fileBlobs.id.delete(id); ctx.db.blobChecksums.id.delete(id); }
+});
+/** Stored blobs without checksums, in ID order after `after`, at most `limit` (runtime/files/checksums.ts). */
+export const serviceBlobsWithoutChecksum = db.procedure({ after: t.string(), limit: t.u32() }, t.string(), (ctx, p) => ctx.withTx(tx => {
+  service(tx);
+  if (p.limit < 1 || p.limit > 500) fail("invalidInput");
+  const ids: string[] = [];
+  for (const blob of tx.db.fileBlobs.iter()) if (blob.state === "stored" && blob.id > p.after && !tx.db.blobChecksums.id.find(blob.id)) ids.push(blob.id);
+  return JSON.stringify(ids.sort().slice(0, p.limit));
+}));
+export const serviceRecordChecksums = db.reducer({ items: t.string() }, (ctx, p) => {
+  service(ctx); const items = JSON.parse(p.items) as unknown;
+  if (!Array.isArray(items) || items.length > 500) fail("invalidInput");
+  for (const item of items as { id?: unknown; sha1?: unknown; md5?: unknown }[]) {
+    if (typeof item?.id !== "string" || !isBlobId(item.id) || typeof item.sha1 !== "string" || !/^[a-f0-9]{40}$/.test(item.sha1) || typeof item.md5 !== "string" || !/^[a-f0-9]{32}$/.test(item.md5)) fail("invalidInput");
+    // A blob collected while it was hashed gets no row.
+    if (ctx.db.fileBlobs.id.find(item.id) && !ctx.db.blobChecksums.id.find(item.id)) ctx.db.blobChecksums.insert({ id: item.id, sha1: item.sha1, md5: item.md5 });
+  }
 });
 /** The subset of these blob IDs the database has no record of (runtime/files/maintenance.ts). */
 export const serviceUnknownBlobs = db.procedure({ ids: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
@@ -839,7 +859,8 @@ export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, 
     const blob = tx.db.fileBlobs.id.find(blobId);
     if (!blob || blob.state === "deleting") fail("contentUnavailable");
     tx.db.backupPins.insert({ id: `${id}/${blobId}`, backupId: id, blobId });
-    return { id: blobId, size: blob.size, digest: blobId };
+    const sums = tx.db.blobChecksums.id.find(blobId);
+    return { id: blobId, size: blob.size, digest: blobId, sha1: sums?.sha1, md5: sums?.md5 };
   });
   return JSON.stringify({ format: "dar-backup-v11", books:booksSnapshot(tx), history:historySnapshot(tx), photos:photosSnapshot(tx), news:newsSnapshot(tx), agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
     accounts: [...tx.db.accounts.iter()], quotas: [...tx.db.usage.iter()].filter(row => row.quota).map(row => ({ userId: row.userId, quota: row.quota })), files: [...tx.db.fileEntries.iter()], versions: history,
@@ -867,7 +888,7 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   service(ctx);
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
   const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; quotas?: { userId: string; quota: number }[]; files: FileEntry[]; versions: Row<"versions">[];
-    grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads?: Row<"uploads">[]; blobs: { id: string; size: number; digest: string }[];
+    grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads?: Row<"uploads">[]; blobs: { id: string; size: number; digest: string; sha1?: string; md5?: string }[];
     activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot>;agent?:ReturnType<typeof agentSnapshot>;news?:ReturnType<typeof newsSnapshot>;photos?:ReturnType<typeof photosSnapshot>;history?:ReturnType<typeof historySnapshot>;books?:ReturnType<typeof booksSnapshot> };
   const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6","dar-backup-v7","dar-backup-v8","dar-backup-v9","dar-backup-v10","dar-backup-v11"],version=formats.indexOf(value.format)+1;
   if (!version||version>=2&&!value.pim||version>=3&&!value.identity||version>=4&&!value.workspace||version>=5&&!value.apps||version>=6&&!value.agent||version>=7&&!value.news||version>=8&&!value.photos||version>=9&&!value.history||version>=10&&!value.books) fail("invalidInput");
@@ -912,6 +933,7 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
     for (const row of value.blobs) {
       if (row.id !== row.digest || !isBlobId(row.id) || !Number.isSafeInteger(row.size) || row.size < 0 || ctx.db.fileBlobs.id.find(row.id)) fail("invalidInput");
       ctx.db.fileBlobs.insert({ id: row.id, size: row.size, state: "stored", checkKey: "" });
+      if (typeof row.sha1 === "string" && /^[a-f0-9]{40}$/.test(row.sha1) && typeof row.md5 === "string" && /^[a-f0-9]{32}$/.test(row.md5)) ctx.db.blobChecksums.insert({ id: row.id, sha1: row.sha1, md5: row.md5 });
     }
     if (!ctx.db.fileMigrations.id.find(blobMigration)) ctx.db.fileMigrations.insert({ id: blobMigration, appliedAt: now(ctx) });
   } else {
@@ -1438,13 +1460,19 @@ export const serviceDav = db.procedure({ sessionId: t.string(), method: t.string
   const rootEntry = { id: "", ownerId: user.id, name: user.username, kind: "folder", size: 0, mediaType: "inode/directory", revision: rootState?.revision ?? 1, blobId: "", modifiedAt: rootState?.modifiedAt ?? user.createdAt };
   if (p.method === "STAT") return JSON.stringify(entry ?? rootEntry);
   if (p.method === "PROPFIND") {
-    const root = entry ?? rootEntry;
-    const children = [];
-    if (p.depth && root.kind === "folder") for (const child of tx.db.fileEntries.listKey.filter(windowOf(`${user.id}/${root.id}/`))) {
-      if (children.length >= 10_000) fail("operationTooLarge");
-      children.push(child);
+    const root = entry ?? rootEntry, sums = (blobId: string) => { const row = blobId ? tx.db.blobChecksums.id.find(blobId) : undefined; return { sha1: row?.sha1 ?? "", md5: row?.md5 ?? "" }; };
+    // Depth 1 lists a folder; depth 2 stands for infinity and lists the folders it may open, breadth first.
+    const children: (FileEntry & { path: string; sha1: string; md5: string })[] = [], pending = root.kind === "folder" && p.depth ? [{ id: root.id, path: "" }] : [];
+    for (let index = 0; index < pending.length; index++) {
+      const folder = pending[index];
+      for (const child of tx.db.fileEntries.listKey.filter(windowOf(`${user.id}/${folder.id}/`))) {
+        if (children.length >= 10_000) fail("operationTooLarge");
+        const path = folder.path ? `${folder.path}/${child.name}` : child.name;
+        children.push({ ...child, path, ...sums(child.blobId) });
+        if (p.depth > 1 && child.kind === "folder" && access(tx, child, user.id)) pending.push({ id: child.id, path });
+      }
     }
-    return JSON.stringify({ root, children });
+    return JSON.stringify({ root: { ...root, ...sums(root.blobId) }, children });
   }
   if (p.method === "MKCOL") {
     if (entry) return JSON.stringify({ created: false });

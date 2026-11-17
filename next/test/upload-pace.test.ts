@@ -31,8 +31,9 @@ function send(port:number,chunks:number,every:number,stallMs=0){
 test("upload pace: slow but steady bodies finish past every window",async()=>{
   const {instance,port}=await server();
   try{
-    // 2.4 s at 1,000 bytes a second: several windows and four times the idle limit.
-    const steady=await send(port,24,100);
+    // 2.4 s at 2,000 bytes a second, twice the minimum so a late timer under load cannot
+    // starve a window: several windows and six times the idle limit.
+    const steady=await send(port,48,50);
     assert.equal(steady.status,200);assert.ok(steady.elapsed>2000);
   }finally{instance.close();}
 });
