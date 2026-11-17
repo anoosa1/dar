@@ -46,6 +46,7 @@ import {handlePhotosHttp,sendFile} from "./photos/http.ts";
 import {handlePhotoLinkHttp} from "./photos/public.ts";
 import {handleImmichHttp,immichBase,immichWellKnown} from "./photos/immich.ts";
 import {createImmichConnector,type ImmichConnector} from "./photos/immich-connector.ts";
+import {immichOAuthClient} from "../shared/photos.ts";
 import {staticAssets} from "./static.ts";
 import {handleNextcloudNews,nextcloudBase} from "./news/nextcloud.ts";
 import {writeJson} from "./json-response.ts";
@@ -195,6 +196,7 @@ export async function startServer(config: ServerConfig) {
       if (url.pathname === immichBase || url.pathname.startsWith(immichBase + "/")) {
         if ((await readAppSettings()).disabled.includes("photos")) throw new AppError("notFound", 404);
         return await handleImmichHttp(req, res, url, { db, runtime: photosRuntime!, root, blobs, origin: config.origin, body: () => body(req, 2 * 1024 * 1024),
+          redeem: (code, redirectUri, verifier) => identity.redeemBuiltInCode(immichOAuthClient.id, code, redirectUri, verifier),
           limit: key => { const scoped = `${key}:${peer(req)}`, previous = attempts.get(scoped), attempt = previous && previous.until > Date.now() ? previous : { count: 0, until: Date.now() + 60_000 };
             if (++attempt.count > 10 || (!previous && attempts.size >= 10_000)) throw new AppError("rateLimited", 429, "Too many attempts. Wait a minute and try again."); attempts.set(scoped, attempt); } });
       }

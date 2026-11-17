@@ -2,6 +2,8 @@ import { SenderError, Range } from "spacetimedb/server";
 import {deleteNewsAccount} from "./news.ts";
 import {deletePhotosAccount} from "./photos.ts";
 import type { Ctx } from "./index.ts";
+import {appEnabled} from "./app-settings.ts";
+import {immichOAuthClient} from "../../shared/photos.ts";
 
 function fail(code: string): never { throw new SenderError(code); }
 const now = (ctx: Ctx) => Number(ctx.timestamp.toMillis());
@@ -122,6 +124,8 @@ function group(ctx:Ctx,id:string) {
   const row=ctx.db.directoryGroups.id.find(id);if(!row)fail("notFound");
   return {...JSON.parse(row.document),id,revision:row.revision,createdAt:row.createdAt,modifiedAt:row.modifiedAt,members:[...ctx.db.directoryMembers.groupId.filter(id)].map(m=>({value:m.userId,display:ctx.db.accounts.id.find(m.userId)?.displayName}))};
 }
+/** Stored clients while enabled; the built-in Immich client while Photos is on. */
+function clientEnabled(ctx:Ctx,id:string){return id===immichOAuthClient.id?appEnabled(ctx,"photos"):!!ctx.db.identityClients.id.find(id)?.enabled;}
 export function providerOperation(ctx:Ctx,operation:string,p:Record<string,unknown>) {
   if(operation==="saveClient")return directoryOperation(ctx,operation,p,{id:"",scim:false});
   const id=String(p.id??"");
@@ -132,7 +136,7 @@ export function providerOperation(ctx:Ctx,operation:string,p:Record<string,unkno
     const row=operation==="find"?ctx.db.providerModels.id.find(id):[...ctx.db.providerModels[operation==="findUid"?"uidKey":"userCodeKey"].filter(id)][0];
     if(!row||row.expiresAt<=now(ctx))return null;
     if(row.accountId&&!profile(ctx,row.accountId)?.active)return null;
-    if(row.clientId&&!ctx.db.identityClients.id.find(row.clientId)?.enabled)return null;
+    if(row.clientId&&!clientEnabled(ctx,row.clientId))return null;
     if(row.grantKey&&(ctx.db.providerModels.id.find(row.grantKey)?.expiresAt??0)<=now(ctx))return null;
     if(row.nativeSessionId){const s=ctx.db.sessions.id.find(row.nativeSessionId);if(!s?.active||s.expiresAt<=now(ctx))return null;}
     return row;
@@ -142,7 +146,7 @@ export function providerOperation(ctx:Ctx,operation:string,p:Record<string,unkno
     if(row.grantKey&&(ctx.db.providerModels.id.find(row.grantKey)?.expiresAt??0)<=now(ctx))fail("conflict");
     if(row.accountId&&!profile(ctx,row.accountId)?.active)fail("unauthenticated");
     if(row.nativeSessionId){const s=ctx.db.sessions.id.find(row.nativeSessionId);if(!s?.active||s.expiresAt<=now(ctx)||row.accountId&&row.accountId!==s.userId)fail("unauthenticated");}
-    if(row.clientId&&!ctx.db.identityClients.id.find(row.clientId)?.enabled)fail("forbidden");
+    if(row.clientId&&!clientEnabled(ctx,row.clientId))fail("forbidden");
     const old=ctx.db.providerModels.id.find(id);if(!old&&ctx.db.providerModels.count()>=50000n)fail("operationTooLarge");
     if(old)ctx.db.providerModels.id.update({...row,consumed:Math.max(row.consumed,old.consumed)});else ctx.db.providerModels.insert(row);return {ok:true};
   }

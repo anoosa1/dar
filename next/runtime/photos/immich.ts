@@ -1,13 +1,13 @@
 import type {IncomingMessage,ServerResponse} from "node:http";
 import {createReadStream} from "node:fs";
 import {open,mkdtemp,rm,statfs} from "node:fs/promises";
-import {createHash,randomUUID} from "node:crypto";
+import {createHash,randomBytes,randomUUID} from "node:crypto";
 import path from "node:path";
 import type {Database} from "../database.ts";
 import {blobPath,type blobStore} from "../files/blobs.ts";
 import {AppError} from "../errors.ts";
 import {createOpaqueToken,digestToken} from "../auth/session.ts";
-import {photoKind,type PhotoAlbum,type PhotoAlbumSharing,type PhotoDetail,type PhotoOverview,type PhotoPage} from "../../shared/photos.ts";
+import {photoKind,immichOAuthClient,type PhotoAlbum,type PhotoAlbumSharing,type PhotoDetail,type PhotoOverview,type PhotoPage} from "../../shared/photos.ts";
 import type {PhotosRuntime,PhotoJob} from "./runtime.ts";
 import {sendFile,type AssetInfo} from "./http.ts";
 import {photosReadOperations} from "../../shared/read-operations.ts";
@@ -15,9 +15,10 @@ import {maxFileBytes} from "../../shared/limits.ts";
 
 /**
  * The Immich mobile-app API (server v3.4.1 contract) at /dav/immich/api, found through
- * /.well-known/immich. Sign-in: Dar username followed by "@" and anything, and an app
- * password with Photos access. Photos changes go through the same Photos operations as
- * the web app, acting for that app password's session.
+ * /.well-known/immich. Sign-in: the app's OAuth button ("Sign in with Dar") through Dar's own
+ * OIDC provider, which gives the device its own Photos app password; or Dar username followed
+ * by "@" and anything, and an app password with Photos access. Photos changes go through the
+ * same Photos operations as the web app, acting for that app password's session.
  */
 export const immichBase="/dav/immich/api";
 export const immichWellKnown={api:{endpoint:immichBase}};
@@ -63,15 +64,19 @@ async function readMultipart(req:IncomingMessage,boundary:string,dir:string,maxF
   return parts;
 }
 
-export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,url:URL,options:{db:Database;runtime:PhotosRuntime;root:string;blobs:ReturnType<typeof blobStore>;limit:(key:string)=>void;body:()=>Promise<Record<string,unknown>>;origin:string}){
+/** Redeems an authorization code of Dar's built-in Immich OIDC client; returns the account ID. */
+export type ImmichOAuthRedeem=(code:string,redirectUri:string,verifier:string)=>Promise<string>;
+/** The app's callback, in either spelling (Android may drop the empty authority). */
+const oauthCallback=/^app\.immich:\/(?:\/\/)?oauth-callback(?:\?|$)/;
+export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,url:URL,options:{db:Database;runtime:PhotosRuntime;root:string;blobs:ReturnType<typeof blobStore>;limit:(key:string)=>void;body:()=>Promise<Record<string,unknown>>;origin:string;redeem:ImmichOAuthRedeem}){
   const {db,runtime,root,blobs}=options,method=req.method??"GET",route=url.pathname.slice(immichBase.length)||"/";
   const send=(value:unknown,status=200)=>{res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store"});res.end(JSON.stringify(value));};
   try{
     // Public server information the app reads before sign-in.
     if(method==="GET"&&route==="/server/ping")return send({res:"pong"});
     if(method==="GET"&&route==="/server/version")return send(version);
-    if(method==="GET"&&route==="/server/features")return send({backups:false,configFile:false,duplicateDetection:true,email:false,facialRecognition:false,importFaces:false,map:false,oauth:false,oauthAutoLaunch:false,ocr:false,passwordLogin:true,realtimeTranscoding:false,reverseGeocoding:false,search:false,sidecar:false,smartSearch:false,trash:true});
-    if(method==="GET"&&route==="/server/config")return send({externalDomain:options.origin,isInitialized:true,isOnboarded:true,loginPageMessage:"Sign in with your Dar username followed by @ (for example anas@dar) and an app password with Photos access.",maintenanceMode:false,mapDarkStyleUrl:"",mapLightStyleUrl:"",minFaces:3,oauthButtonText:"",publicUsers:false,trashDays:0,userDeleteDelay:7});
+    if(method==="GET"&&route==="/server/features")return send({backups:false,configFile:false,duplicateDetection:true,email:false,facialRecognition:false,importFaces:false,map:false,oauth:true,oauthAutoLaunch:false,ocr:false,passwordLogin:true,realtimeTranscoding:false,reverseGeocoding:false,search:false,sidecar:false,smartSearch:false,trash:true});
+    if(method==="GET"&&route==="/server/config")return send({externalDomain:options.origin,isInitialized:true,isOnboarded:true,loginPageMessage:"Use Sign in with Dar, or your Dar username followed by @ (for example anas@dar) and an app password with Photos access.",maintenanceMode:false,mapDarkStyleUrl:"",mapLightStyleUrl:"",minFaces:3,oauthButtonText:"Sign in with Dar",publicUsers:false,trashDays:0,userDeleteDelay:7});
     if(method==="GET"&&route==="/server/media-types")return send({image:Object.entries(mediaTypes).filter(([,t])=>t.startsWith("image/")).map(([e])=>"."+e),video:Object.entries(mediaTypes).filter(([,t])=>t.startsWith("video/")).map(([e])=>"."+e),sidecar:[]});
     if(method==="GET"&&route==="/server/about")return send({version:"v3.4.1",versionUrl:"https://github.com/immich-app/immich/releases/tag/v3.4.1",licensed:false,repository:"Dar (Immich-compatible)"});
     if(method==="POST"&&route==="/auth/login"){
@@ -80,10 +85,36 @@ export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,ur
       const username=email.split("@")[0].toLowerCase();if(!username||!password||password.length>1024)throw new AppError("unauthenticated",401,"Incorrect email or password");
       const token=createOpaqueToken();
       try{
-        const user=await db.call<{id:string;email:string;name:string;isAdmin:boolean}>("service_immich_login",[username,digestToken(password),token.digest,String(req.headers.devicetype??req.headers["device-type"]??"Mobile").slice(0,100),String(req.headers.devicemodel??req.headers["device-model"]??"Immich").slice(0,100)]);
+        const user=await db.call<{id:string;email:string;name:string;isAdmin:boolean}>("service_immich_login",[username,digestToken(password),token.digest,device(req,"devicetype","device-type","Mobile"),device(req,"devicemodel","device-model","Immich")]);
         return send({accessToken:token.secret,userId:user.id,userEmail:user.email,name:user.name,isAdmin:user.isAdmin,isOnboarded:true,profileImagePath:"",shouldChangePassword:false},201);
       }catch(error){if(error instanceof AppError&&["unauthenticated","forbidden"].includes(error.code))throw new AppError("unauthenticated",401,error.code==="forbidden"?"This app password has no Photos access.":"Incorrect email or password");throw error;}
     }
+    // OAuth: the app opens Dar's OIDC sign-in in a browser tab, then hands the callback here.
+    if(method==="POST"&&route==="/oauth/authorize"){
+      const p=await options.body(),state=typeof p.state==="string"?p.state:"",challenge=typeof p.codeChallenge==="string"?p.codeChallenge:"";
+      if(p.redirectUri!==immichOAuthClient.redirectUri)throw new AppError("invalidInput",400,`Use the redirect URI ${immichOAuthClient.redirectUri}.`);
+      if(!/^[A-Za-z0-9_-]{43}$/.test(challenge)||!/^[\x21-\x7e]{8,512}$/.test(state))throw new AppError("invalidInput",400,"A state and an S256 code challenge are required.");
+      const target=new URL(`${options.origin}/oidc/auth`);
+      for(const [key,value] of Object.entries({client_id:immichOAuthClient.id,response_type:"code",scope:"openid",redirect_uri:immichOAuthClient.redirectUri,state,code_challenge:challenge,code_challenge_method:"S256"}))target.searchParams.set(key,value);
+      return send({url:target.href},201);
+    }
+    if(method==="POST"&&route==="/oauth/callback"){
+      options.limit("immich-login");
+      const p=await options.body(),raw=typeof p.url==="string"?p.url:"";
+      if(raw.length>4096||!oauthCallback.test(raw))throw new AppError("invalidInput",400,"Unexpected OAuth callback URL.");
+      const query=new URLSearchParams(raw.slice(raw.indexOf("?")+1)),code=query.get("code")??"",verifier=typeof p.codeVerifier==="string"?p.codeVerifier:"";
+      if(query.get("error"))throw new AppError("unauthenticated",401,query.get("error_description")||"Sign-in was cancelled.");
+      if(typeof p.state!=="string"||query.get("state")!==p.state)throw new AppError("unauthenticated",401,"The sign-in state does not match. Try again.");
+      const userId=await options.redeem(code,immichOAuthClient.redirectUri,verifier);
+      const token=createOpaqueToken();
+      try{
+        // The device's app password has no secret anyone holds: only this access token uses it.
+        const user=await db.call<{id:string;email:string;name:string;isAdmin:boolean}>("service_immich_oauth_login",[userId,digestToken(randomBytes(32).toString("base64url")),token.digest,device(req,"devicetype","device-type","Mobile"),device(req,"devicemodel","device-model","Immich")]);
+        return send({accessToken:token.secret,userId:user.id,userEmail:user.email,name:user.name,isAdmin:user.isAdmin,isOnboarded:true,profileImagePath:"",shouldChangePassword:false},201);
+      }catch(error){if(error instanceof AppError&&error.code==="forbidden")throw new AppError("forbidden",403,"Photos is turned off on this server.");throw error;}
+    }
+    // Immich's relay for providers that cannot redirect to the app's scheme; Dar redirects directly.
+    if(method==="GET"&&route==="/oauth/mobile-redirect"){res.writeHead(307,{location:`${immichOAuthClient.redirectUri}${url.search}`,"cache-control":"no-store"});res.end();return;}
     // Everything else needs an Immich access token.
     const cookie=req.headers.cookie?.split(";").map(p=>p.trim()).find(p=>p.startsWith("immich_access_token="))?.slice(19);
     const bearer=/^Bearer (.+)$/i.exec(req.headers.authorization??"")?.[1];
@@ -246,6 +277,8 @@ export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,ur
     res.end(JSON.stringify({message:failure.message===failure.code?statusText[status]??failure.code:failure.message,error:statusText[status]??"Error",statusCode:status,correlationId:randomUUID().slice(0,8)}));
   }
 }
+/** The device type and model headers the app sends at sign-in. */
+function device(req:IncomingMessage,name:string,alternative:string,fallback:string){return String(req.headers[name]??req.headers[alternative]??fallback).slice(0,100);}
 function assetResponse(d:PhotoDetail,viewer:string){
   const e=d.exif;
   return {id:d.id,deviceAssetId:d.id,deviceId:"dar",ownerId:d.owner?"":viewer,originalFileName:d.name,originalMimeType:d.mediaType,originalPath:"",checksum:d.checksum??"",thumbhash:null,type:d.kind==="video"?"VIDEO":"IMAGE",
@@ -257,7 +290,7 @@ function assetResponse(d:PhotoDetail,viewer:string){
 /** Immich's per-user preferences, at defaults; Dar keeps its own settings. */
 function preferences(){
   return {albums:{defaultAssetOrder:"desc"},cast:{gCastEnabled:false},download:{archiveSize:4294967296,includeEmbeddedVideos:false},emailNotifications:{enabled:false,albumInvite:false,albumUpdate:false},
-    folders:{enabled:false,sidebarWeb:false},memories:{enabled:false,duration:5},people:{enabled:false,sidebarWeb:false},purchase:{showSupportBadge:false,hideBuyButtonUntil:"2099-01-01T00:00:00.000Z"},
+    folders:{enabled:false,sidebarWeb:false},memories:{enabled:false,duration:5,sidebarWeb:false},people:{enabled:false,sidebarWeb:false,updateStrategy:"self"},purchase:{showSupportBadge:false,hideBuyButtonUntil:"2099-01-01T00:00:00.000Z"},
     ratings:{enabled:false},recentlyAdded:{enabled:true,sidebarWeb:false},sharedLinks:{enabled:false,sidebarWeb:false},tags:{enabled:false,sidebarWeb:false}};
 }
 export {iso as immichIso};

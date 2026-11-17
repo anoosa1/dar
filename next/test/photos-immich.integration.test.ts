@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import {test} from "node:test";
 import {mkdtemp,readFile} from "node:fs/promises";
 import path from "node:path";
-import {randomUUID,createHash} from "node:crypto";
+import {randomUUID,createHash,randomBytes} from "node:crypto";
 import http from "node:http";
 import {createServer} from "node:net";
 import {spawnSync,execFile} from "node:child_process";
 import {promisify} from "node:util";
 import {startServer} from "../runtime/server.ts";
 import {login,connect} from "./integration-helpers.ts";
+import {follow} from "./identity-helpers.ts";
 import {readProcedure} from "../client/api.ts";
 import type {PhotoDetail,PhotoOverview,PhotoPage} from "../shared/photos.ts";
 
@@ -71,7 +72,8 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     const api=base+"/dav/immich/api";
     assert.deepEqual(await (await fetch(api+"/server/ping")).json(),{res:"pong"});
     const version=await (await fetch(api+"/server/version")).json() as {major:number;minor:number;patch:number};assert.deepEqual([version.major,version.minor,version.patch],[3,4,1]);
-    assert.equal((await (await fetch(api+"/server/features")).json() as {passwordLogin:boolean}).passwordLogin,true);
+    assert.deepEqual((({passwordLogin,oauth,oauthAutoLaunch})=>({passwordLogin,oauth,oauthAutoLaunch}))(await (await fetch(api+"/server/features")).json() as Record<string,boolean>),{passwordLogin:true,oauth:true,oauthAutoLaunch:false});
+    assert.equal((await (await fetch(api+"/server/config")).json() as {oauthButtonText:string}).oauthButtonText,"Sign in with Dar");
     assert.ok((await (await fetch(api+"/server/media-types")).json() as {image:string[]}).image.includes(".heic"));
 
     // Sign-in: the username before "@", and an app password that allows Photos.
@@ -84,12 +86,15 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     const call=async<T>(route:string,init:{method?:string;body?:unknown}={})=>{const r=await fetch(api+route,{method:init.method??(init.body===undefined?"GET":"POST"),headers:{...auth,...init.body!==undefined?{"content-type":"application/json"}:{}},body:init.body===undefined?undefined:JSON.stringify(init.body)});assert.ok(r.ok,`${route}: ${r.status} ${await r.clone().text()}`);return (r.status===204?undefined:await r.json()) as T;};
     assert.equal((await fetch(api+"/users/me",{headers:{"x-immich-user-token":"x".repeat(43)}})).status,401);
     assert.equal((await call<{email:string}>("/users/me")).email,"admin@dar");
+    // The app reads these with a generated client that rejects any missing required field (3.4.1).
+    const preferences=await call<{memories:Record<string,unknown>;people:Record<string,unknown>}>("/users/me/preferences");
+    assert.deepEqual(preferences.memories,{enabled:false,duration:5,sidebarWeb:false});assert.deepEqual(preferences.people,{enabled:false,sidebarWeb:false,updateStrategy:"self"});
     assert.equal((await fetch(api+"/users/me",{headers:{authorization:`Bearer ${accessToken}`}})).status,200);
 
     // Backup: multipart upload into pics/YYYY/MM, duplicates by SHA-1.
-    const upload=async(bytes:Buffer,file:string,type:string,fields:Record<string,string>={})=>{
+    const upload=async(bytes:Buffer,file:string,type:string,fields:Record<string,string>={},as:Record<string,string>=auth)=>{
       const form=multipart({deviceAssetId:file,deviceId:"phone",fileCreatedAt:"2024-03-05T10:00:00.000Z",fileModifiedAt:"2024-03-05T10:00:00.000Z",filename:file,...fields},{name:file,type,bytes});
-      const r=await fetch(api+"/assets",{method:"POST",headers:{...auth,"content-type":form.type,"x-immich-checksum":sha1(bytes)},body:new Uint8Array(form.body)});return {http:r.status,...await r.json() as {id:string;status:string}};
+      const r=await fetch(api+"/assets",{method:"POST",headers:{...as,"content-type":form.type,"x-immich-checksum":sha1(bytes)},body:new Uint8Array(form.body)});return {http:r.status,...await r.json() as {id:string;status:string}};
     };
     const photo=await upload(beach,"beach.jpg","image/jpeg",{isFavorite:"true"});assert.deepEqual([photo.http,photo.status],[201,"created"]);
     assert.deepEqual(await upload(beach,"beach copy.jpg","image/jpeg"),{http:200,id:photo.id,status:"duplicate"});
@@ -146,6 +151,26 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     // The web app sees the devices; signing out ends the token.
     const devices=(await (await fetch(base+"/api/v1/photos/immich",{headers})).json() as {devices:{id:string}[]}).devices;assert.equal(devices.length,1);
     await call("/auth/logout",{body:{}});assert.equal((await fetch(api+"/users/me",{headers:auth})).status,401);
+
+    // Sign in with Dar: the app's OAuth flow through Dar's own OIDC provider (PKCE, the app's scheme).
+    const verifier=randomBytes(42).toString("base64url"),codeChallenge=createHash("sha256").update(verifier).digest("base64url"),oauthState=randomUUID().replaceAll("-","");
+    const authorize=(redirectUri:string)=>fetch(api+"/oauth/authorize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({redirectUri,state:oauthState,codeChallenge})});
+    assert.equal((await authorize("https://evil.example/callback")).status,400);
+    const started=await authorize("app.immich:///oauth-callback");assert.equal(started.status,201);
+    const flow=await follow(base,session,(await started.json() as {url:string}).url);assert.equal(flow.url.protocol,"app.immich:");
+    const finish=(callback:string,codeVerifier:string,state=oauthState)=>fetch(api+"/oauth/callback",{method:"POST",headers:{"content-type":"application/json",deviceModel:"Pixel 6",deviceType:"Android"},body:JSON.stringify({url:callback,state,codeVerifier})});
+    assert.equal((await finish(flow.url.href,verifier,"other")).status,401);
+    assert.equal((await finish(flow.url.href,randomBytes(42).toString("base64url"))).status,401);
+    const finished=await finish(flow.url.href,verifier);assert.equal(finished.status,201,await finished.clone().text());
+    const oauthLogin=await finished.json() as {accessToken:string;userEmail:string};assert.equal(oauthLogin.userEmail,"admin@dar");
+    assert.equal((await finish(flow.url.href,verifier)).status,401);
+    const oauthAuth={"x-immich-user-token":oauthLogin.accessToken};
+    assert.equal((await (await fetch(api+"/users/me",{headers:oauthAuth})).json() as {email:string}).email,"admin@dar");
+    const passwords=async()=>(await (await fetch(base+"/api/v1/auth/app-passwords",{headers})).json() as {items:{label:string;scope:string}[]}).items;
+    assert.deepEqual((await passwords()).filter(p=>p.label==="Immich on Pixel 6").map(p=>p.scope),["v2 photos:read photos:write"]);
+    assert.equal((await upload(Buffer.concat([solo,Buffer.from([1])]),"solo again.jpg","image/jpeg",{},oauthAuth)).http,201);
+    await fetch(api+"/auth/logout",{method:"POST",headers:{...oauthAuth,"content-type":"application/json"},body:"{}"});
+    assert.equal((await fetch(api+"/users/me",{headers:oauthAuth})).status,401);assert.ok(!(await passwords()).some(p=>p.label==="Immich on Pixel 6"));
 
     // The connector: Immich has one new photo (a favorite) and one Dar already has, in an album.
     // A video over Dar's 16 GiB limit and a photo with a bogus capture year must not stop the import.

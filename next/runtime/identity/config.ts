@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { clientMetadata } from "./http.ts";
 import type { IdentityProvider } from "./provider.ts";
 import type { Document } from "./scim-model.ts";
+import { immichOAuthClient } from "../../shared/photos.ts";
 
 /** Validate the whole file before applying revisioned client updates at startup. */
 export async function configureOidc(filename: string, store: IdentityProvider["store"], development: boolean, optional = false) {
@@ -19,6 +20,7 @@ export async function configureOidc(filename: string, store: IdentityProvider["s
     if (!value || typeof value !== "object") throw new Error("Invalid OIDC client configuration.");
     const p = value as Document, id = p.id;
     if (typeof id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(id) || ids.has(id)) throw new Error("OIDC client IDs must be unique URL-safe identifiers.");
+    if (id === immichOAuthClient.id) throw new Error(`The OIDC client ID ${id} is reserved for the Immich app.`);
     ids.add(id);
     if (p.enabled !== undefined && typeof p.enabled !== "boolean") throw new Error("Invalid OIDC client enabled setting.");
     if (Object.keys(p).some(key => !["id", "name", "type", "redirectUris", "postLogoutRedirectUris", "scopes", "enabled", "secretFile", "requirePkce"].includes(key))) throw new Error("Unknown OIDC client setting; use secretFile for secrets.");

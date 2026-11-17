@@ -1,15 +1,24 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { Provider, errors, type Configuration, type KoaContextWithOIDC } from "oidc-provider";
+import { hash, timingSafeEqual } from "node:crypto";
+import { Provider, errors, type ClientMetadata, type Configuration, type KoaContextWithOIDC } from "oidc-provider";
 import type { Database } from "../database.ts";
 import type { Authenticated, authService } from "../auth/service.ts";
 import { AppError } from "../errors.ts";
 import { providerStore, providerContext } from "./store.ts";
 import { providerKeys } from "./keys.ts";
 import type { Document } from "./scim-model.ts";
+import { immichOAuthClient } from "../../shared/photos.ts";
 
 const escape=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]!);
 const page=(title:string,content:string)=>`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/app.css"><title>${escape(title)} · Dar</title></head><body><main class="identity-protocol"><a class="brand" href="/">Dar</a><h1>${escape(title)}</h1>${content}</main></body></html>`;
 function formPolicy(ctx:{set(name:string,value:string):unknown},...destinations:unknown[]){const origins=destinations.filter((d):d is string=>typeof d==="string").map(d=>new URL(d).origin);ctx.set("Content-Security-Policy",`default-src 'none'; script-src 'self'; style-src 'self'; form-action 'self' ${[...new Set(origins)].join(" ")}; base-uri 'none'; frame-ancestors 'none'`);}
+/** Built-in clients, not stored or administered: the Immich mobile app's "Sign in with Dar". */
+const builtInClients:Record<string,{metadata:ClientMetadata;permissions:{scope:string;label:string}[]}>={
+  [immichOAuthClient.id]:{
+    metadata:{client_id:immichOAuthClient.id,client_name:immichOAuthClient.name,application_type:"native",redirect_uris:[immichOAuthClient.redirectUri],post_logout_redirect_uris:[],response_types:["code"],grant_types:["authorization_code"],scope:"openid",token_endpoint_auth_method:"none",id_token_signed_response_alg:"RS256"},
+    permissions:[{scope:"photos",label:"Back up, browse and change your photos (a Photos app password for this device)"}],
+  },
+};
 export const permissionNames:Record<string,string>={openid:"Identify your account",profile:"Read your name and username",email:"Read your email address",groups:"Read your directory group IDs",offline_access:"Keep access with a refresh token while your Dar session remains active"};
 
 export async function identityProvider(db:Database,auth:Awaited<ReturnType<typeof authService>>,directory:string,origin:string,development:boolean){
@@ -17,7 +26,7 @@ export async function identityProvider(db:Database,auth:Awaited<ReturnType<typeo
   function create(){
     const state=keys.current();
     const configuration:Configuration={
-      adapter:store.Adapter,clients:[],jwks:{keys:[state.active,...state.retired.filter(k=>k.retireAt>Date.now()).map(k=>k.jwk)]},
+      adapter:store.Adapter,clients:Object.values(builtInClients).map(c=>structuredClone(c.metadata)),jwks:{keys:[state.active,...state.retired.filter(k=>k.retireAt>Date.now()).map(k=>k.jwk)]},
       cookies:{keys:[state.cookieKey],names:{session:"dar_oidc",interaction:"dar_oidc_interaction",resume:"dar_oidc_resume"},long:{httpOnly:true,secure:!development,sameSite:"lax",signed:true},short:{httpOnly:true,secure:!development,sameSite:"lax",signed:true}},
       responseTypes:["code"],scopes:Object.keys(permissionNames),subjectTypes:["public"],
       claims:{openid:["sub"],profile:["name","preferred_username","given_name","family_name"],email:["email","email_verified"],groups:["groups"]},
@@ -61,7 +70,8 @@ export async function identityProvider(db:Database,auth:Awaited<ReturnType<typeo
   async function interaction(req:IncomingMessage,res:ServerResponse,uid:string){
     validateTransport(req);
     let detail;try{detail=await provider.interactionDetails(req,res);}catch(error){if(error instanceof errors.SessionNotFound)throw new AppError("interactionExpired",410,"This sign-in request expired. Return to the application and try again.");throw error;}if(detail.uid!==uid)throw new AppError("invalidInteraction",400);
-    const clientId=String(detail.params.client_id),client=await store.call<{metadata:string;enabled:boolean}|null>("client",{id:clientId});if(!client?.enabled)throw new AppError("invalidClient",400);
+    const clientId=String(detail.params.client_id),builtIn=builtInClients[clientId];if(builtIn)return {detail,client:builtIn.metadata};
+    const client=await store.call<{metadata:string;enabled:boolean}|null>("client",{id:clientId});if(!client?.enabled)throw new AppError("invalidClient",400);
     return {detail,client:JSON.parse(client.metadata) as Document};
   }
   return {
@@ -91,7 +101,7 @@ export async function identityProvider(db:Database,auth:Awaited<ReturnType<typeo
       return providerContext.run({nativeSessionId:authenticated.session.id,authenticatedSessionId:authenticated.session.id},async()=>{
         const {detail,client}=await interaction(req,res,uid);
         const session=await store.call<{createdAt:number}|null>("session",{id:authenticated.session.id});
-        return {uid,prompt:detail.prompt.name,client:{id:client.client_id,name:client.client_name,redirectUri:detail.params.redirect_uri},permissions:String(detail.params.scope??"openid").split(" ").map(scope=>({scope,label:permissionNames[scope]??scope})),account:authenticated.user,requiresPassword:detail.prompt.name==="login"&&(!session||session.createdAt<detail.iat*1000),providerAccountId:detail.session?.accountId};
+        return {uid,prompt:detail.prompt.name,client:{id:client.client_id,name:client.client_name,redirectUri:detail.params.redirect_uri},permissions:[...String(detail.params.scope??"openid").split(" ").map(scope=>({scope,label:permissionNames[scope]??scope})),...builtInClients[String(client.client_id)]?.permissions??[]],account:authenticated.user,requiresPassword:detail.prompt.name==="login"&&(!session||session.createdAt<detail.iat*1000),providerAccountId:detail.session?.accountId};
       });
     },
     async decide(req:IncomingMessage,res:ServerResponse,uid:string,authenticated:Authenticated,input:Document){
@@ -115,6 +125,29 @@ export async function identityProvider(db:Database,auth:Awaited<ReturnType<typeo
         const redirect=await provider.interactionResult(req,res,result,{mergeWithLastSubmission:input.action==="approve"});
         if(!redirect.startsWith(`${origin}/oidc/`))throw new AppError("invalidRedirect",500);
         return {redirect};
+      });
+    },
+    /**
+     * Redeem an authorization code for a built-in client inside Dar, with the token endpoint's
+     * checks (client, redirect, PKCE S256, grant, session, replay) but no tokens issued.
+     * Returns the account ID.
+     */
+    async redeemBuiltInCode(clientId:string,code:string,redirectUri:string,verifier:string){
+      if(!builtInClients[clientId])throw new AppError("invalidClient",400);
+      return providerContext.run({},async()=>{
+        const refuse=():never=>{throw new AppError("invalidGrant",401,"This sign-in request expired or was already used. Try again.");};
+        const source=/^[A-Za-z0-9_-]{1,128}$/.test(code)?await provider.AuthorizationCode.find(code,{ignoreExpiration:true}).catch(()=>undefined):undefined;
+        if(!source||source.clientId!==clientId||source.isExpired||source.redirectUri!==redirectUri||!source.grantId||!source.accountId)return refuse();
+        const expected=Buffer.from(String(source.codeChallenge??"")),actual=Buffer.from(/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)?hash("sha256",verifier,"base64url"):"");
+        if(source.codeChallengeMethod!=="S256"||!expected.length||expected.length!==actual.length||!timingSafeEqual(expected,actual))return refuse();
+        const grant=await provider.Grant.find(source.grantId,{ignoreExpiration:true});
+        if(!grant||grant.isExpired||grant.clientId!==clientId||grant.accountId!==source.accountId)return refuse();
+        // A replayed code revokes what its grant issued, as the token endpoint does.
+        if((source as {consumed?:unknown}).consumed){await new store.Adapter("Grant").revokeByGrantId(source.grantId);return refuse();}
+        if(source.expiresWithSession){const session=source.sessionUid?await provider.Session.findByUid(source.sessionUid):undefined;if(!session||session.accountId!==source.accountId)return refuse();}
+        await source.consume();
+        const account=await store.call<Document|null>("account",{id:source.accountId});if(!account?.active)return refuse();
+        return source.accountId;
       });
     },
     async rotate(){await keys.rotate();provider=create();callback=provider.callback();keyIds=keys.status().retained.map(k=>k.kid).join(",");return keys.status();},

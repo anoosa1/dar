@@ -26,9 +26,14 @@ export async function identityAdmin(base:string){
 export async function authorize(base:string,session:Pick<Awaited<ReturnType<typeof login>>,"headers">,client:Pick<Awaited<ReturnType<Awaited<ReturnType<typeof identityAdmin>>["client"]>>,"config"|"redirect">,options:{pkce?:boolean;deny?:boolean;scope?:string;prompt?:string;params?:Record<string,string>;jar?:CookieJar;onInteraction?:(detail:{prompt:string;requiresPassword:boolean})=>void}={}){
   const verifier=oidc.randomPKCECodeVerifier(),challenge=await oidc.calculatePKCECodeChallenge(verifier),state=oidc.randomState(),nonce=oidc.randomNonce();
   const url=oidc.buildAuthorizationUrl(client.config,{redirect_uri:client.redirect,response_type:"code",scope:options.scope??"openid profile email groups offline_access",...(options.pkce===false?{}:{code_challenge:challenge,code_challenge_method:"S256"}),state,nonce,prompt:options.prompt??"consent",...options.params});
-  const jar=options.jar??new CookieJar(session.headers.cookie);let next=url.href;
+  const jar=options.jar??new CookieJar(session.headers.cookie);
+  return {...await follow(base,session,url.href,{...options,jar}),verifier,state,nonce};
+}
+/** Follow an authorization request through Dar's sign-in and consent until it leaves Dar. */
+export async function follow(base:string,session:Pick<Awaited<ReturnType<typeof login>>,"headers">,start:string,options:{deny?:boolean;jar?:CookieJar;onInteraction?:(detail:{prompt:string;requiresPassword:boolean})=>void}={}){
+  const jar=options.jar??new CookieJar(session.headers.cookie);let next=start;
   for(let i=0;i<12;i++){
-    const target=new URL(next);if(target.origin!==base)return {url:target,verifier,state,nonce,jar};
+    const target=new URL(next);if(target.origin!==base)return {url:target,jar};
     const match=/^\/identity\/interaction\/([^/]+)$/.exec(target.pathname);
     if(match){
       const endpoint=`${base}/api/v1/identity/interactions/${match[1]}`,headers={origin:base,"x-csrf-token":session.headers["x-csrf-token"],"content-type":"application/json"};

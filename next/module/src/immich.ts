@@ -244,6 +244,12 @@ export function immichSessions(ctx:Ctx,userId:string){
 export function deleteImmichSession(ctx:Ctx,session:Session){
   for(const row of [...ctx.db.immichCheckpoints.immichId.filter(session.id)])ctx.db.immichCheckpoints.id.delete(row.id);
   ctx.db.immichSessions.digest.delete(session.digest);
+  // A device signed in with Dar has its own app password, with the device's ID; it ends with the device.
+  const password=ctx.db.appPasswords.id.find(session.id);
+  if(password&&password.sessionId===session.sessionId&&password.userId===session.userId&&!password.revoked){
+    ctx.db.appPasswords.id.update({...password,revoked:true});
+    const protocol=ctx.db.sessions.id.find(password.sessionId);if(protocol)ctx.db.sessions.id.update({...protocol,active:false});
+  }
 }
 function base64(bytes:number[]){
   const chars="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";let out="";

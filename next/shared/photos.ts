@@ -89,3 +89,8 @@ export const photoLinkLimits={links:200,members:100,passwordDays:0.5,expiryDays:
 export const validLinkPassword=(value:string)=>[...value].length>=4&&value.length<=200;
 /** A running Immich import (waiting: more to import, the next run starts shortly). */
 export interface PhotoImmichProgress {phase:"connecting"|"comparing"|"importing"|"albums"|"waiting";done:number;total:number;imported:number;file:string;startedAt:number}
+/**
+ * Dar's built-in OIDC client for the Immich mobile app's OAuth button ("Sign in with Dar").
+ * A public native client with PKCE; the redirect is the app's own callback scheme.
+ */
+export const immichOAuthClient={id:"immich-app",name:"Immich",redirectUri:"app.immich:///oauth-callback"} as const;

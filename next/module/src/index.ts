@@ -10,7 +10,7 @@ import {photoFileEvent,touchAsset,currentSeq} from "./photo-sync.ts";
 import {immichSession,immichUser,immichSyncStart,immichSyncPage,immichAcks,immichSetAcks,immichDeleteAcks,immichBulkCheck,immichDuplicate,checksumToBase64,immichSessions,deleteImmichSession,immichConnectionView,saveImmichConnection,deleteImmichConnection,immichDue,immichReport,immichKnown,immichMap,immichApply,immichAlbum} from "./immich.ts";
 import {photosOperation,photosWorker,photosSnapshot,restorePhotos,photosLinkOperation,openPhotoLink,addLinkUpload,photosReadOperations,type PhotoFiles} from "./photos.ts";
 import {lockedFolderType,lockedFolderName,lockedUnlockMinutes} from "../../shared/locked-folder.ts";
-import {defaultPhotoFolder,photoFolderParts,nameParts,photoKind} from "../../shared/photos.ts";
+import {defaultPhotoFolder,photoFolderParts,nameParts,photoKind,immichOAuthClient} from "../../shared/photos.ts";
 import {defaultNotesFolder,isNoteFile} from "../../shared/workspace.ts";
 import {defaultBooksFolder,bookFormat} from "../../shared/books.ts";
 import {booksTables} from "./books-tables.ts";
@@ -940,6 +940,21 @@ export const serviceImmichLogin=db.procedure({username:t.string(),digest:t.strin
   const id=unusedUuid(tx);tx.db.immichSessions.insert({digest:p.tokenDigest,id,userId:user.id,sessionId:password.sessionId,deviceType:p.deviceType,deviceOS:p.deviceOS,createdAt:now(tx),usedAt:now(tx),epochSeen:currentSeq(tx)});
   return JSON.stringify({...immichUser(tx,user),sessionId:id});
 }));
+/**
+ * Immich app sign-in with Dar (the app's OAuth button), after the runtime redeemed the
+ * authorization code for this account. The device gets its own Photos app password, with
+ * the device's ID and no usable secret; it is revoked when the device signs out.
+ */
+export const serviceImmichOauthLogin=db.procedure({userId:t.string(),passwordDigest:t.string(),tokenDigest:t.string(),deviceType:t.string(),deviceOS:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=tx.db.accounts.id.find(p.userId);
+  if(!user?.enabled)fail("unauthenticated");
+  if(!appEnabled(tx,"photos"))fail("forbidden");
+  if(!/^[a-f0-9]{64}$/.test(p.tokenDigest)||p.deviceType.length>100||p.deviceOS.length>100)fail("invalidInput");
+  if([...tx.db.immichSessions.userId.filter(user.id)].length>=50)fail("quotaExceeded");
+  const id=unusedUuid(tx),sessionId=insertAppPassword(tx,user.id,id,p.passwordDigest,`Immich on ${p.deviceOS.trim()||p.deviceType.trim()||"a phone"}`.slice(0,100),"v2 photos:read photos:write");
+  tx.db.immichSessions.insert({digest:p.tokenDigest,id,userId:user.id,sessionId,deviceType:p.deviceType,deviceOS:p.deviceOS,createdAt:now(tx),usedAt:now(tx),epochSeen:currentSeq(tx)});
+  return JSON.stringify({...immichUser(tx,user),sessionId:id});
+}));
 /** Requests from the Immich app, by the digest of its access token. */
 export const serviceImmich=db.procedure({tokenDigest:t.string(),operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
   service(tx);if(p.document.length>2*1024*1024)fail("operationTooLarge");
@@ -1235,19 +1250,24 @@ export const serviceConnectedApplications = db.procedure({sessionId:t.string(),r
   service(tx);const user=fromSession(tx,p.sessionId);
   const grants=[...tx.db.providerModels.accountId.filter(user.id)].filter(m=>m.model==="Grant"&&m.expiresAt>now(tx));
   if(p.revoke){const matching=grants.filter(g=>g.clientId===p.revoke);if(!matching.length)fail("notFound");for(const grant of matching)providerOperation(tx,"revokeGrant",{id:grant.id});}
-  return JSON.stringify([...new Set(grants.filter(g=>g.clientId!==p.revoke).map(g=>g.clientId))].map(id=>({id,clientId:id,name:JSON.parse(tx.db.identityClients.id.find(id)?.metadata??"{}").client_name})));
+  return JSON.stringify([...new Set(grants.filter(g=>g.clientId!==p.revoke).map(g=>g.clientId))].map(id=>({id,clientId:id,name:JSON.parse(tx.db.identityClients.id.find(id)?.metadata??"{}").client_name??(id===immichOAuthClient.id?immichOAuthClient.name:undefined)})));
 }));
-export const serviceCreateAppPassword = db.reducer({ sessionId: t.string(), id: t.string(), digest: t.string(), label: t.string(), scope: t.string() }, (ctx, p) => {
-  service(ctx); const user = fromSession(ctx, p.sessionId);
-  if (!p.label.trim() || p.label.length > 100 || !validPasswordScope(p.scope) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("invalidInput");
+/** An app password and its protocol session; returns the session ID. */
+function insertAppPassword(ctx: Ctx, userId: string, id: string, digest: string, label: string, scope: string): string {
+  if (!label.trim() || label.length > 100 || !validPasswordScope(scope) || !/^[a-f0-9]{64}$/.test(digest)) fail("invalidInput");
   // The internal principal cannot be authenticated by a browser token. Only the
   // service-owned protocol adapter can invoke domain functions on its behalf.
   const protocolSession = unusedUuid(ctx);
   const identity = new Identity(BigInt(`0x${unusedUuid(ctx).replaceAll("-", "")}`));
   const expiresAt = now(ctx) + 365 * 86400_000;
-  ctx.db.sessions.insert({ id: protocolSession, userId: user.id, digest: `protocol:${p.id}`, csrfDigest: "", expiresAt, active: true, createdAt: now(ctx) });
+  ctx.db.sessions.insert({ id: protocolSession, userId, digest: `protocol:${id}`, csrfDigest: "", expiresAt, active: true, createdAt: now(ctx) });
   ctx.db.principals.insert({ identity, sessionId: protocolSession });
-  ctx.db.appPasswords.insert({ id: p.id, userId: user.id, digest: p.digest, label: p.label.trim(), scope: p.scope, sessionId: protocolSession, principal: identity, expiresAt, revoked: false });
+  ctx.db.appPasswords.insert({ id, userId, digest, label: label.trim(), scope, sessionId: protocolSession, principal: identity, expiresAt, revoked: false });
+  return protocolSession;
+}
+export const serviceCreateAppPassword = db.reducer({ sessionId: t.string(), id: t.string(), digest: t.string(), label: t.string(), scope: t.string() }, (ctx, p) => {
+  service(ctx); const user = fromSession(ctx, p.sessionId);
+  insertAppPassword(ctx, user.id, p.id, p.digest, p.label, p.scope);
 });
 export const serviceAppPasswords = db.procedure({ sessionId: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); const user = fromSession(tx, p.sessionId);

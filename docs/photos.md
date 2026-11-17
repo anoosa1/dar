@@ -101,10 +101,15 @@ in phases.
   toward the owner's storage. Photos settings › Privacy lists every link. Up to 200
   links per account; deleting an album ends its links.
 - **Immich mobile app** (protocol of Immich server 3.4.1): enter the Dar address as the
-  server URL; `/.well-known/immich` points the app to `/dav/immich/api`. Sign in with
-  your username followed by `@` and anything (the app requires an email shape, for
-  example `anas@dar`) and an app password with Photos access (read to browse,
-  write to back up and change). Backups go to the Photos folder by the file's
+  server URL; `/.well-known/immich` points the app to `/dav/immich/api`. **Sign in with
+  Dar** (the app's OAuth button) opens Dar's own OIDC sign-in in a browser tab (built-in
+  public client `immich-app`, PKCE, redirect `app.immich:///oauth-callback`; not listed or
+  editable in Administration). After your password and Allow access, the device gets its
+  own Photos app password, "Immich on <model>", with no secret anyone holds; signing the
+  device out (in the app or Photos settings) revokes it, and revoking it signs the device
+  out. Otherwise sign in with your username followed by `@` and anything (the app
+  requires an email shape, for example `anas@dar`) and an app password with Photos
+  access (read to browse, write to back up and change). Backups go to the Photos folder by the file's
   creation month; files Dar already has (same SHA-1, also in the trash) are reported
   as duplicates. The app's sync stream sends your library (favorites, archive, trash
   with its date, Live Photo motion parts hidden), EXIF, albums you own or share with
