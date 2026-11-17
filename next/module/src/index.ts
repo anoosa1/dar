@@ -653,12 +653,13 @@ export const serviceUpload = db.procedure({ sessionId: t.string(), id: t.string(
   if (!upload || upload.sessionId !== p.sessionId || upload.expiresAt <= now(tx)) fail("notFound");
   return JSON.stringify(upload);
 }));
-export const serviceFinishUpload = db.reducer({ sessionId: t.string(), id: t.string(), digest: t.string() }, (ctx, p) => {
+/** fileTime (0 for none) is the modified time a WebDAV client sends with the content. */
+export const serviceFinishUpload = db.reducer({ sessionId: t.string(), id: t.string(), digest: t.string(), fileTime: t.f64() }, (ctx, p) => {
   service(ctx); const user = fromSession(ctx, p.sessionId);
-  finishUploadFor(ctx, user.id, p.sessionId, p.id, p.digest, p.sessionId);
+  finishUploadFor(ctx, user.id, p.sessionId, p.id, p.digest, p.sessionId, p.fileTime);
 });
 /** Completes an upload into a file entry; returns its file ID (also when it was already complete). */
-/** fileTime, from Immich clients, becomes the modified time: it dates photos without EXIF dates. */
+/** fileTime, from Immich and WebDAV clients, becomes the modified time: it dates photos without EXIF dates and lets sync tools compare times. */
 function finishUploadFor(ctx: Ctx, userId: string, uploadKey: string, id: string, digest: string, sessionId?: Unlock, fileTime?: number): string {
   const user = { id: userId }, p = { digest }, upload = ctx.db.uploads.id.find(id);
   if (!upload || upload.sessionId !== uploadKey || upload.expiresAt <= now(ctx) || !/^[a-f0-9]{64}$/.test(p.digest)) fail("notFound");
@@ -1397,7 +1398,7 @@ export const serviceProtocolAuthenticate = db.procedure({ username: t.string(), 
   return JSON.stringify({ sessionId: password.sessionId, username: user.username });
 }));
 
-export const serviceDav = db.procedure({ sessionId: t.string(), method: t.string(), path: t.string(), destination: t.string(), expectedRevision: t.u32(), overwrite: t.bool(), depth: t.u32() }, t.string(), (ctx, p) => ctx.withTx(tx => {
+export const serviceDav = db.procedure({ sessionId: t.string(), method: t.string(), path: t.string(), destination: t.string(), expectedRevision: t.u32(), overwrite: t.bool(), depth: t.u32(), modifiedAt: t.f64() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); const user = fromSession(tx, p.sessionId), password = tx.db.appPasswords.sessionId.find(p.sessionId);
   if (!password || password.revoked || password.expiresAt <= now(tx)) fail("unauthenticated");
   const permission = ["STAT", "PROPFIND"].includes(p.method) ? "read" : "write";
@@ -1423,7 +1424,8 @@ export const serviceDav = db.procedure({ sessionId: t.string(), method: t.string
   function parent(value: string) {
     const parts = value.split("/").filter(Boolean), name = nameOf(parts.pop() ?? "");
     const directory = parts.length ? resolve(parts.join("/")) : undefined;
-    if (parts.length && (!directory || directory.kind !== "folder")) fail("notFound");
+    // WebDAV answers a missing parent with 409, which clients take as "create the parents first".
+    if (parts.length && (!directory || directory.kind !== "folder")) fail("conflict");
     return { parentId: directory?.id ?? "", name };
   }
   const entry = resolve(p.path);
@@ -1445,11 +1447,20 @@ export const serviceDav = db.procedure({ sessionId: t.string(), method: t.string
     return JSON.stringify({ root, children });
   }
   if (p.method === "MKCOL") {
-    if (entry) fail("conflict");
+    if (entry) return JSON.stringify({ created: false });
     const target = parent(p.path); createFolder(actor, { id: unusedUuid(tx), ...target });
     return JSON.stringify({ created: true });
   }
   if (!entry) fail("forbidden");
+  if (p.method === "TOUCH") {
+    // The modified time a client keeps for its copy (PROPPATCH); the content does not change.
+    const target = writable(tx, entry.id, user.id);
+    if (isLockedRoot(target)) fail("forbidden");
+    if (!Number.isFinite(p.modifiedAt) || p.modifiedAt <= 0 || p.modifiedAt >= now(tx) + 86400_000) fail("invalidInput");
+    tx.db.fileEntries.id.update({ ...target, modifiedAt: Math.floor(p.modifiedAt), revision: target.revision + 1 });
+    touchFolder(tx, target.ownerId, target.parentId);
+    return JSON.stringify({ revision: target.revision + 1 });
+  }
   revision(entry, p.expectedRevision);
   if (p.method === "DELETE") trashEntry(actor, { id: entry.id, expectedRevision: entry.revision });
   else if (p.method === "MOVE" || p.method === "COPY") {
@@ -1461,6 +1472,7 @@ export const serviceDav = db.procedure({ sessionId: t.string(), method: t.string
     }
     if (p.method === "MOVE") moveEntry(actor, { id: entry.id, ...target, expectedRevision: entry.revision });
     else copyEntry(actor, { id: entry.id, newId: unusedUuid(tx), ...target, expectedRevision: entry.revision });
+    return JSON.stringify({ replaced: !!existing });
   } else fail("invalidInput");
   return JSON.stringify({ ok: true });
 }));

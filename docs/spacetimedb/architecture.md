@@ -83,6 +83,9 @@ flowchart LR
   one transaction switches every reference, then the upload-ID names go (Photos
   and Books caches follow). Each step repeats safely after a crash; startup stops
   if referenced content is missing.
+- WebDAV (`/dav/files/<username>/`) uses the same checked operations; `If-Match` is
+  optional (a replaced file keeps its versions), locks are advisory and clients may set
+  modified times. See [WebDAV](../webdav.md).
 - Downloads go through the runtime with current permission checks, safe
   Content-Disposition, range/HEAD and attachment-only active content. Public links
   are hashed capability URLs with expiry and revocation.

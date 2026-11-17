@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { SaxesParser } from "saxes";
+import { xml, children, readBody, type Xml } from "../dav-xml.ts";
 import type { Database } from "../database.ts";
 import { digestToken } from "../auth/session.ts";
 import { AppError } from "../errors.ts";
@@ -11,30 +11,6 @@ import {isTask,taskMatchesRange} from "./tasks.ts";
 
 const D = "DAV:", A = "urn:ietf:params:xml:ns:carddav", C = "urn:ietf:params:xml:ns:caldav";
 const escape = (value: unknown) => String(value).replace(/[<>&"']/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]!);
-interface Xml { uri: string; name: string; attrs: Record<string, string>; text: string; children: Xml[] }
-function xml(text: string): Xml {
-  const stack: Xml[] = []; let root: Xml | undefined, nodes = 0;
-  const parser = new SaxesParser({ xmlns: true });
-  parser.on("doctype", () => { throw new AppError("invalidXml"); });
-  parser.on("error", () => { throw new AppError("invalidXml"); });
-  parser.on("opentag", tag => {
-    if (++nodes > 10000 || stack.length > 32) throw new AppError("requestTooLarge", 413);
-    const node = { uri: tag.uri, name: tag.local, attrs: Object.fromEntries(Object.values(tag.attributes).filter(a => !a.uri).map(a => [a.local, a.value])), text: "", children: [] } as Xml;
-    if (stack.length) stack.at(-1)!.children.push(node); else { if (root) throw new AppError("invalidXml"); root = node; }
-    stack.push(node);
-  });
-  parser.on("text", text => { if (stack.length) stack.at(-1)!.text += text; });
-  parser.on("cdata", text => { if (stack.length) stack.at(-1)!.text += text; });
-  parser.on("closetag", () => { stack.pop(); });
-  try { parser.write(text).close(); } catch (error) { if (error instanceof AppError) throw error; throw new AppError("invalidXml"); }
-  if (!root) throw new AppError("invalidXml"); return root;
-}
-const children = (node: Xml | undefined, uri: string, name: string) => node?.children.filter(n => n.uri === uri && n.name === name) ?? [];
-async function readBody(req: IncomingMessage, limit = 262144) {
-  const chunks: Buffer[] = []; let size = 0;
-  for await (const chunk of req.iterator({ destroyOnReturn: false })) { size += chunk.length; if (size > limit) { req.resume(); throw new AppError("requestTooLarge", 413); } chunks.push(chunk); }
-  return Buffer.concat(chunks).toString("utf8");
-}
 function davDate(value: string | undefined): Date {
   if (!value || !/^\d{8}T\d{6}Z$/.test(value)) throw new AppError("invalidTimeRange");
   const date = new Date(value.replace(/^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z$/, "$1-$2-$3T$4:$5:$6Z"));

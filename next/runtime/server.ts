@@ -379,7 +379,7 @@ export async function startServer(config: ServerConfig) {
             if (upload.state === "complete") { req.resume(); return json(res, { id: upload.fileId }); }
             if (upload.state !== "uploading") throw new AppError("conflict", 409);
             const digest = await blobs.receive(req, upload.id, upload.size);
-            await db.call("service_finish_upload", [authenticated.session.id, upload.id, digest]);
+            await db.call("service_finish_upload", [authenticated.session.id, upload.id, digest, 0]);
             return json(res, { id: upload.fileId });
           }
         }
