@@ -1076,7 +1076,7 @@ export const serviceImmich=db.procedure({tokenDigest:t.string(),operation:t.stri
     case "session":return JSON.stringify({user:immichUser(tx,user),sessionId:session.id,protocolSessionId:session.sessionId});
     case "logout":deleteImmichSession(tx,session);return JSON.stringify({ok:true});
     case "syncStart":return JSON.stringify(immichSyncStart(tx,session,q.reset===true));
-    case "syncPage":{const after=typeof q.after==="number"&&Number.isFinite(q.after)?q.after:-1,limit=typeof q.limit==="number"?Math.min(Math.max(1,q.limit),2000):500;return JSON.stringify(immichSyncPage(tx,session,user,String(q.channel),after,limit));}
+    case "syncPage":{const after=typeof q.after==="number"&&Number.isFinite(q.after)?q.after:-1,limit=typeof q.limit==="number"?Math.min(Math.max(1,q.limit),2000):500;const upTo=typeof q.upTo==="number"&&Number.isFinite(q.upTo)?q.upTo:Infinity;return JSON.stringify(immichSyncPage(tx,session,user,String(q.channel),after,limit,upTo));}
     case "acks":return JSON.stringify(immichAcks(tx,session));
     case "setAcks":immichSetAcks(tx,session,q.acks);return JSON.stringify({ok:true});
     case "deleteAcks":immichDeleteAcks(tx,session,q.types);return JSON.stringify({ok:true});

@@ -11,6 +11,8 @@ import {startServer} from "../runtime/server.ts";
 import {login,connect} from "./integration-helpers.ts";
 import {follow,identityAdmin} from "./identity-helpers.ts";
 import {readProcedure} from "../client/api.ts";
+import {database} from "../runtime/database.ts";
+import {digestToken} from "../runtime/auth/session.ts";
 import type {PhotoDetail,PhotoOverview,PhotoPage} from "../shared/photos.ts";
 
 const run=promisify(execFile);
@@ -179,6 +181,17 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
     await lockOrUnlock("lock");lines=await stream();assert.ok(lines.some(l=>l.type==="AssetDeleteV1"&&l.data.assetId===soloPhoto.id));assert.ok(!lines.some(l=>l.type==="AlbumToAssetV1"));
     await call("/sync/ack",{method:"DELETE",body:{}});lines=await stream();assert.ok(!lines.some(l=>l.type==="AlbumToAssetV1"&&l.data.assetId===soloPhoto.id||l.data.thumbnailAssetId===soloPhoto.id));
     await lockOrUnlock("unlock");lines=await stream();assert.ok(lines.some(l=>l.type==="AlbumToAssetV1"&&l.data.assetId===soloPhoto.id));
+    // A photo backed up while a stream runs waits for the next one: no later channel (EXIF, albums) names it.
+    const service=await database(process.env.DAR_DATABASE_URL!,name,process.env.DAR_DATABASE_TOKEN_FILE!);
+    const immichOp=<T,>(operation:string,value:object)=>service.call<T>("service_immich",[digestToken(accessToken),operation,JSON.stringify(value)]);
+    await call("/sync/ack",{method:"DELETE",body:{}});
+    const begun=await immichOp<{upTo:number}>("syncStart",{reset:false});
+    const during=await upload(Buffer.concat([solo,Buffer.from([2])]),"during.jpg","image/jpeg");assert.equal(during.http,201);
+    for(const channel of ["assets","exifs","albumToAssets","albums"]){
+      const page=await immichOp<{lines:Line[]}>("syncPage",{channel,after:-1,limit:500,upTo:begun.upTo});
+      assert.ok(!page.lines.some(l=>l.data.id===during.id||l.data.assetId===during.id),channel);
+    }
+    assert.ok((await stream()).some(l=>l.type==="AssetExifV1"&&l.data.assetId===during.id));
     // The web app sees the devices; signing out ends the token.
     const devices=(await (await fetch(base+"/api/v1/photos/immich",{headers})).json() as {devices:{id:string}[]}).devices;assert.equal(devices.length,1);
     await call("/auth/logout",{body:{}});assert.equal((await fetch(api+"/users/me",{headers:auth})).status,401);

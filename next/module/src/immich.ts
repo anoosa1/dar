@@ -127,7 +127,7 @@ export function immichSyncStart(ctx:Ctx,session:Session,reset:boolean){
   const checkpoints=[...ctx.db.immichCheckpoints.immichId.filter(session.id)];
   if(reset){for(const row of checkpoints)ctx.db.immichCheckpoints.id.delete(row.id);checkpoints.length=0;}
   const complete=checkpoints.find(c=>c.type==="SyncCompleteV1");
-  if(checkpoints.length&&(epochOf(ctx,session.userId)>session.epochSeen||complete&&now-ackTime(complete.ack)>30*86400_000))return {reset:true,checkpoints:{},nowId:"",backfilling:false};
+  if(checkpoints.length&&(epochOf(ctx,session.userId)>session.epochSeen||complete&&now-ackTime(complete.ack)>30*86400_000))return {reset:true,checkpoints:{},nowId:"",backfilling:false,upTo:0};
   // Rows from before the upgrade have no sequence yet: number them, in bounded batches.
   let numbered=0;const budget=2000;
   for(const row of ctx.db.photoAssets.ownerId.filter(session.userId)){if(numbered>=budget)break;if(!row.syncKey){updateAsset(ctx,row);numbered++;}}
@@ -142,13 +142,18 @@ export function immichSyncStart(ctx:Ctx,session:Session,reset:boolean){
     }
   }
   for(const stack of ctx.db.photoStacks.ownerId.filter(session.userId))if(!stack.syncSeq&&numbered<budget){updateStack(ctx,stack);numbered++;}
-  if(numbered>=budget)return {reset:false,checkpoints:{},nowId:"",backfilling:true};
+  if(numbered>=budget)return {reset:false,checkpoints:{},nowId:"",backfilling:true,upTo:0};
   if(!checkpoints.length)ctx.db.immichSessions.digest.update({...ctx.db.immichSessions.digest.find(session.digest)!,epochSeen:currentSeq(ctx)});
-  return {reset:false,checkpoints:Object.fromEntries(checkpoints.map(c=>[c.type,c.ack])),nowId:updateId(now,currentSeq(ctx)),backfilling:false};
+  return {reset:false,checkpoints:Object.fromEntries(checkpoints.map(c=>[c.type,c.ack])),nowId:updateId(now,currentSeq(ctx)),backfilling:false,upTo:currentSeq(ctx)};
 }
 
-/** One page of a sync channel: lines after the given sequence, at most limit. */
-export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:string,after:number,limit:number):{lines:Line[];last:number;more:boolean}{
+/**
+ * One page of a sync channel: lines after the given sequence, at most limit. Every channel
+ * stops at upTo, the sequence when the stream started: a photo added while the stream runs
+ * (a backup in progress) waits for the next sync, or a later channel (EXIF, albums) would
+ * name an asset the device never received, and its database refuses the row.
+ */
+export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:string,after:number,limit:number,upTo=Infinity):{lines:Line[];last:number;more:boolean}{
   const now=Number(ctx.timestamp.toMillis()),userId=user.id,ackType=channelAck[channel];if(!ackType)fail("invalidInput");
   const lines:Line[]=[];let last=after;
   const emit=(type:string,data:Record<string,unknown>,seq:number,ack=ackType)=>{lines.push({type,data,ack:`${ack}|${updateId(now,seq)}`});last=seq;};
@@ -171,7 +176,7 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
   if(deletes[channel]){
     const [kind,shape]=deletes[channel];
     for(const row of ctx.db.photoSyncDeletes.key.filter(new Range<string>({tag:"excluded",value:String(Math.max(0,after)).padStart(16,"0")},{tag:"unbounded"}))){
-      if(lines.length>=limit)return {lines,last,more:true};
+      if(row.seq>upTo)break;if(lines.length>=limit)return {lines,last,more:true};
       if(row.kind!==kind||!row.audience.split(",").includes(userId))continue;
       emit(ackType,shape(row),row.seq);
     }
@@ -179,7 +184,7 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
   }
   // The user's own assets (and their EXIF), by syncKey.
   if(channel==="assets"||channel==="exifs"){
-    const range=new Range<string>({tag:"excluded",value:syncKey(userId,Math.max(0,after))},{tag:"excluded",value:userId+"0"});
+    const range=new Range<string>({tag:"excluded",value:syncKey(userId,Math.max(0,after))},Number.isFinite(upTo)?{tag:"included",value:syncKey(userId,upTo)}:{tag:"excluded",value:userId+"0"});
     for(const asset of ctx.db.photoAssets.syncKey.filter(range)){
       if(lines.length>=limit)return {lines,last,more:true};
       const entry=fileOf(ctx,asset),state=entry?place(entry):"gone";
@@ -198,7 +203,8 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
    */
   const held=(asset:Asset|null|undefined):asset is Asset=>{
     const entry=asset&&fileOf(ctx,asset),state=entry?place(entry):"gone";
-    return asset?.ownerId===userId?state==="library"||state==="trash":state==="library"&&!!asset&&people.has(asset.ownerId);
+    if(!asset||asset.syncSeq>upTo)return false;
+    return asset.ownerId===userId?state==="library"||state==="trash":state==="library"&&people.has(asset.ownerId);
   };
   if(channel==="albums")for(const a of albums)if(a.syncSeq>after){
     let cover=a.coverId&&held(ctx.db.photoAssets.fileId.find(a.coverId))?a.coverId:null;
@@ -227,9 +233,9 @@ export function immichSyncPage(ctx:Ctx,session:Session,user:Account,channel:stri
     }
   }
   if(channel==="stacks")for(const s of ctx.db.photoStacks.ownerId.filter(userId))if(s.syncSeq>after)pending.push({seq:s.syncSeq,type:"StackV1",data:{id:s.id,ownerId:s.ownerId,primaryAssetId:s.primaryId,createdAt:iso(s.createdAt),updatedAt:iso(s.updatedAt)}});
-  pending.sort((x,y)=>x.seq-y.seq);
-  for(const row of pending.slice(0,limit))emit(row.type,row.data,row.seq);
-  return {lines,last,more:pending.length>limit};
+  const due=pending.filter(row=>row.seq<=upTo).sort((x,y)=>x.seq-y.seq);
+  for(const row of due.slice(0,limit))emit(row.type,row.data,row.seq);
+  return {lines,last,more:due.length>limit};
 }
 
 export function immichSetAcks(ctx:Ctx,session:Session,acks:unknown){

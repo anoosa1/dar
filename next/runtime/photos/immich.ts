@@ -156,7 +156,7 @@ export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,ur
       const order=["AuthUsersV1","AuthUsersV2","UsersV1","PartnersV1","AssetsV2","StacksV1","PartnerAssetsV2","PartnerStacksV1","AlbumAssetsV2","AlbumsV2","AlbumUsersV1","AlbumToAssetsV1","AssetExifsV1","AlbumAssetExifsV1"];
       const channels:Record<string,string[]>={AuthUsersV1:["authUserV1"],AuthUsersV2:["authUser"],UsersV1:["users"],AssetsV2:["assetDeletes","assets"],StacksV1:["stackDeletes","stacks"],AlbumAssetsV2:["albumAssets"],AlbumsV2:["albumDeletes","albums"],AlbumUsersV1:["albumUserDeletes","albumUsers"],AlbumToAssetsV1:["albumToAssetDeletes","albumToAssets"],AssetExifsV1:["exifs"],AlbumAssetExifsV1:["albumAssetExifs"]};
       const acks:Record<string,string>={authUserV1:"AuthUserV1",authUser:"AuthUserV2",users:"UserV1",assetDeletes:"AssetDeleteV1",assets:"AssetV2",stackDeletes:"StackDeleteV1",stacks:"StackV1",albumAssets:"AlbumAssetCreateV2",albumDeletes:"AlbumDeleteV1",albums:"AlbumV2",albumUserDeletes:"AlbumUserDeleteV1",albumUsers:"AlbumUserV1",albumToAssetDeletes:"AlbumToAssetDeleteV1",albumToAssets:"AlbumToAssetV1",exifs:"AssetExifV1",albumAssetExifs:"AlbumAssetExifCreateV1"};
-      let start:{reset:boolean;checkpoints:Record<string,string>;nowId:string;backfilling:boolean};let rounds=0;
+      let start:{reset:boolean;checkpoints:Record<string,string>;nowId:string;backfilling:boolean;upTo:number};let rounds=0;
       do{start=await immich("syncStart",{reset:p.reset===true&&rounds===0});}while(start.backfilling&&++rounds<200);
       res.writeHead(200,{"content-type":"application/jsonlines+json; charset=utf-8","cache-control":"no-store"});
       const line=(value:unknown)=>new Promise<void>(resolve=>{if(res.write(JSON.stringify(value)+"\n"))resolve();else res.once("drain",resolve);});
@@ -168,7 +168,7 @@ export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,ur
           let after=seqOf(start.checkpoints[acks[channel]]);
           for(let page=0;page<10_000;page++){
             if(res.destroyed)return;
-            const result=await immich<{lines:unknown[];last:number;more:boolean}>("syncPage",{channel,after,limit:500});
+            const result=await immich<{lines:unknown[];last:number;more:boolean}>("syncPage",{channel,after,limit:500,upTo:start.upTo});
             for(const value of result.lines)await line(value);
             after=result.last;if(!result.more)break;
           }

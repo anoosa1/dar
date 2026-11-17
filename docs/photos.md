@@ -121,7 +121,8 @@ in phases.
   empty. The app's database refuses rows that name an asset it does not hold, so album
   memberships and covers are sent only for assets the device has (a photo that leaves, for example into the
   Locked folder, takes its album rows with it and brings them back when it returns), and others' photos
-  travel with the album rows that add them. Changes travel incrementally by Dar's change sequence; a trashed, restored
+  travel with the album rows that add them. A stream stops at the change sequence it started at; anything
+  added meanwhile (a backup in progress) waits for the next sync. Changes travel incrementally by Dar's change sequence; a trashed, restored
   or moved folder of photos, joining or leaving a shared album, or 30 days without a
   sync make the device start over. Locked photos never sync. Videos play converted
   copies once ready, otherwise the original. Photos settings › Immich lists
