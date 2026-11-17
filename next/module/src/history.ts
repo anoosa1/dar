@@ -1,5 +1,6 @@
 import {SenderError,Range} from "spacetimedb/server";
 import type {Ctx} from "./index.ts";
+import {storeBlob,releaseBlob} from "./blobs.ts";
 import {historyReadOperations} from "../../shared/read-operations.ts";
 import {historyLimits,historyBranchName,type HistoryChange,type HistoryChangeKind,type HistoryChangeset,type HistoryBranch} from "../../shared/history.ts";
 
@@ -226,7 +227,7 @@ function dropBranch(ctx:Ctx,repo:Repo,branch:Branch){
   const set=ctx.db.fileChangesets.id.find(branch.changesetId);
   if(set){for(const change of [...ctx.db.fileChanges.changesetId.filter(set.id)])ctx.db.fileChanges.id.delete(change.id);ctx.db.fileChangesets.id.delete(set.id);}
   let bytes=0;
-  for(const version of [...ctx.db.versions.fileId.filter(`staged:${branch.id}`)])if(!referenced(ctx,version.id)){bytes+=version.size;ctx.db.versions.id.delete(version.id);}
+  for(const version of [...ctx.db.versions.fileId.filter(`staged:${branch.id}`)])if(!referenced(ctx,version.id)){bytes+=version.size;ctx.db.versions.id.delete(version.id);releaseBlob(ctx,version.blobId);}
   release(ctx,repo.ownerId,bytes);ctx.db.fileBranches.id.delete(branch.id);
 }
 /**
@@ -251,7 +252,7 @@ export function dropRepo(ctx:Ctx,repo:Repo){
   for(const versionId of versionIds){
     const version=ctx.db.versions.id.find(versionId);
     if(!version||referenced(ctx,versionId)||ctx.db.fileEntries.id.find(version.fileId))continue;
-    bytes+=version.size;ctx.db.versions.id.delete(versionId);
+    bytes+=version.size;ctx.db.versions.id.delete(versionId);releaseBlob(ctx,version.blobId);
   }
   release(ctx,repo.ownerId,bytes);ctx.db.fileRepos.id.delete(repo.id);
 }
@@ -408,7 +409,8 @@ export function historyOperation(ctx:Ctx,files:HistoryFiles,userId:string,upload
           if(!upload||upload.sessionId!==uploadKey||upload.state!=="uploading"||upload.ownerId!==root.ownerId||typeof row.digest!=="string"||!/^[a-f0-9]{64}$/.test(row.digest))fail("notFound");
           ctx.db.uploads.id.update({...upload,state:"complete",digest:row.digest});
           const meter=ctx.db.usage.userId.find(upload.ownerId)!;ctx.db.usage.userId.update({...meter,reserved:Math.max(0,meter.reserved-upload.size),used:meter.used+upload.size});
-          ctx.db.versions.insert({id:upload.id,fileId:`staged:${branchId}`,blobId:upload.id,size:upload.size,mediaType:upload.mediaType,createdAt:now(ctx)});
+          storeBlob(ctx,row.digest,upload.size);
+          ctx.db.versions.insert({id:upload.id,fileId:`staged:${branchId}`,blobId:row.digest,size:upload.size,mediaType:upload.mediaType,createdAt:now(ctx)});
           versionId=upload.id;
         }
         changes.push({id:`${changesetId}/${index}`,changesetId,path,previousPath:"",kind,fileId,versionId,previousVersionId,expectRevision,mode:"",previousMode:""});

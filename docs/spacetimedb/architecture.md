@@ -20,7 +20,7 @@ flowchart LR
 - **Node 24 / Cordis** owns login, credential checks, token issuance, blob
   transfers, DAV, OIDC/SCIM, reminders, backups, News feed fetching and Agent runs. Every effect is
   owned by a Cordis context and disposed deterministically.
-- **Local disk** holds immutable opaque-keyed blobs, temporary uploads and
+- **Local disk** holds immutable blobs named by the SHA-256 of their content, temporary uploads and
   protected keys. No SQLite, search server, ORM, broker or object store.
 - A reverse proxy terminates HTTPS. Unknown non-empty roots and symlinked managed
   storage fail closed.
@@ -52,21 +52,35 @@ flowchart LR
 ## Files
 
 - Private tables: entries (opaque ID, owner, parent, name, kind, current version,
-  revision, trash), versions (immutable blob, size, digest, media type), uploads,
-  grants, public shares, favorites, backup pins, usage, root revisions, activity.
+  revision, trash), versions (blob, size, media type), blobs (digest, size, state,
+  next check), uploads (transfers, kept an hour), grants, public shares, favorites,
+  backup pins, usage, root revisions, activity.
 - Folders are records; rename and move never touch blobs. Reducers check names,
   duplicates, cycles, grants, quotas and expected revisions. Lists use opaque
   cursors and never carry file content.
-- **Upload:** reserve → stream to a private temp file within limits → hash, fsync,
-  finalize without overwriting, fsync the directory → a service call verifies the
-  reservation, authorization, revision, size, digest and quota → commit version,
+- **Content addressing** (maintainer decision, November 17, 2026): a blob's name is
+  its SHA-256, so identical content is stored once across files, versions, accounts,
+  Photos and Git. Quotas still count each version's full size. Blob names reach only
+  people who can read the content.
+- **Upload:** reserve → stream to a private temp file within limits → hash, fsync →
+  link under the digest and fsync the directory, or keep identical content already
+  stored and mark it used now → a service call verifies the reservation,
+  authorization, revision, size, digest and quota → commit version, blob record,
   revision and activity together. Retries return the same result.
 - Request bodies (uploads, WebDAV writes, Git pushes) have no total time limit: one is
   dropped after a minute without new bytes, below 16 KiB a minute, or after 6 hours.
   Headers must arrive within 15 seconds.
-- Old versions keep their blobs; trash keeps references; permanent deletion marks
-  content reclaimable. Cleanup claims expired uploads transactionally, respects
-  live versions and backup pins, and acknowledges deletions idempotently.
+- Old versions keep their blobs; trash keeps references. Removing a version or pin
+  schedules a check of its blob; new blobs are checked after a two-hour grace.
+  Maintenance claims blobs no version or backup pin uses, the runtime removes only
+  content nothing linked or reused within the grace, and acknowledgement deletes
+  only blobs still claimed (an upload may have reused one). A daily sweep removes
+  content an upload stored but never recorded.
+- **Migration:** content stored by upload ID (before content addressing) is renamed
+  at startup, before anything is served: hard links give each blob its digest name,
+  one transaction switches every reference, then the upload-ID names go (Photos
+  and Books caches follow). Each step repeats safely after a crash; startup stops
+  if referenced content is missing.
 - Downloads go through the runtime with current permission checks, safe
   Content-Disposition, range/HEAD and attachment-only active content. Public links
   are hashed capability URLs with expiry and revocation.
@@ -94,7 +108,8 @@ connection per page (`client/live.ts`), kept a minute after the last of them clo
 
 ## Backups and upgrades
 
-Backups (format v10 with Books reading state, reading v1–v9) snapshot database state and referenced blobs
+Backups (format v11, content named by digest; reading v1–v10, whose upload-ID names the
+next start migrates) snapshot database state and referenced blobs
 with pins; restore needs an empty root and invalidates sessions and bearer
 credentials. Schema changes are additive numbered migrations tested against
 older databases. Verification: `npm --prefix next run verify` (typechecks,

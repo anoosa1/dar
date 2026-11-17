@@ -1,4 +1,5 @@
 import type {Ctx} from "./index.ts";
+import {storeBlob,releaseBlob} from "./blobs.ts";
 import {historyLimits,gitLimits} from "../../shared/history.ts";
 import {fail,now,first,keys,charge,release,fresh,folderOf,scan,headTree,status,trash,setContent,createFile,moveFile,type HistoryFiles} from "./history.ts";
 
@@ -243,9 +244,9 @@ function push(ctx:Ctx,files:HistoryFiles,userId:string,uploadKey:string,p:Record
       const upload=ctx.db.uploads.id.find(row.uploadId);
       if(!upload||upload.sessionId!==uploadKey||upload.state!=="uploading"||upload.ownerId!==root.ownerId||upload.size!==size||typeof row.digest!=="string"||!/^[a-f0-9]{64}$/.test(row.digest))fail("notFound");
       ctx.db.uploads.id.update({...upload,state:"complete",digest:row.digest});reservedBytes+=size;
-      blobs.set(objectId,{blobId:upload.id,size});
+      storeBlob(ctx,row.digest,size);blobs.set(objectId,{blobId:row.digest,size});
       const existing=ctx.db.fileGitBlobs.id.find(`${repo.id}/${objectId}`);
-      if(existing)ctx.db.fileGitBlobs.id.update({...existing,blobId:upload.id,size});else ctx.db.fileGitBlobs.insert({id:`${repo.id}/${objectId}`,repoId:repo.id,sha:objectId,blobId:upload.id,size});
+      if(existing)ctx.db.fileGitBlobs.id.update({...existing,blobId:row.digest,size});else ctx.db.fileGitBlobs.insert({id:`${repo.id}/${objectId}`,repoId:repo.id,sha:objectId,blobId:row.digest,size});
     }else{
       const known=knownBlob(ctx,repo,objectId);
       if(!known||known.blobId!==row.blobId||known.size!==size)fail("conflict");
@@ -455,7 +456,7 @@ function collect(ctx:Ctx,repo:Repo){
     ctx.db.fileGitObjects.id.delete(row.id);
   }
   let bytes=0;
-  for(const version of [...ctx.db.versions.fileId.filter(pseudoFile(repo.id))])if(!referenced(ctx,version.id)){bytes+=version.size;ctx.db.versions.id.delete(version.id);}
+  for(const version of [...ctx.db.versions.fileId.filter(pseudoFile(repo.id))])if(!referenced(ctx,version.id)){bytes+=version.size;ctx.db.versions.id.delete(version.id);releaseBlob(ctx,version.blobId);}
   release(ctx,repo.ownerId,bytes);
   for(const row of [...ctx.db.fileGitBlobs.repoId.filter(repo.id)])if(!first(ctx.db.versions.blobId.filter(row.blobId)))ctx.db.fileGitBlobs.id.delete(row.id);
 }

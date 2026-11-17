@@ -37,5 +37,10 @@ test("auth/Files module upgrades in place; old backup imports and unknown format
   await assert.rejects(restored.call("service_restore",[JSON.stringify({...snapshot,format:"dar-backup-v999"})]));
   await restored.call("service_restore",[JSON.stringify(snapshot)]);
   const account=await restored.call<{id:string;verifier:string}>("service_account",["upgrade-user"]);assert.equal(account.id,userId);assert.equal(account.verifier,verifier);
-  const recovered=await restored.call<{format:string;files:{id:string}[];pim:{collections:unknown[]}}>("service_backup",[randomUUID()]);assert.equal(recovered.format,"dar-backup-v10");assert.ok(recovered.files.some(row=>row.id===fileId));assert.equal(recovered.pim.collections.length,0);
+  // A v1 backup names content by upload ID; the blob migration switches it to the digest its upload recorded.
+  const empty="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+  const plan=await restored.call<{done:boolean;blobs:{id:string;size:number;digest:string}[]}>("service_blob_migration_plan");assert.deepEqual(plan,{done:false,blobs:[{id:uploadId,size:0,digest:empty,required:true}]});
+  await restored.call("service_migrate_blobs",["{}"]);assert.deepEqual(await restored.call("service_blob_migration_plan"),{done:true,blobs:[]});
+  const recovered=await restored.call<{format:string;files:{id:string;blobId:string}[];blobs:{id:string;digest:string}[];pim:{collections:unknown[]}}>("service_backup",[randomUUID()]);assert.equal(recovered.format,"dar-backup-v11");
+  assert.equal(recovered.files.find(row=>row.id===fileId)?.blobId,empty);assert.deepEqual(recovered.blobs.map(blob=>[blob.id,blob.digest]),[[empty,empty]]);assert.ok(recovered.files.some(row=>row.id===fileId));assert.equal(recovered.pim.collections.length,0);
 });

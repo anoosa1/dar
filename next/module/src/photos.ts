@@ -159,7 +159,7 @@ function duplicateGroups(ctx:Ctx,r:Reader,userId:string,cursor:string,maxGroups:
     const members=rows.map(asset=>({asset,entry:r.fileOf(asset)})).filter((m):m is {asset:Asset;entry:Entry}=>!!m.entry&&r.stateOf(m.entry)==="library"&&!(m.asset.kind==="video"&&r.livePartner(m.asset,m.entry)));
     // A RAW+JPEG pair or a burst already grouped in a stack is not a duplicate of itself.
     if(new Set(members.map(m=>m.asset.stackId||m.asset.fileId)).size<2)return;
-    const digests=new Set(members.map(m=>ctx.db.uploads.id.find(m.entry.blobId)?.digest||m.entry.blobId));
+    const digests=new Set(members.map(m=>m.entry.blobId));
     groups.push({key:current,identical:digests.size===1,items:members.sort((a,b)=>b.entry.size-a.entry.size||newest(a.asset,b.asset)).map(m=>({...r.expose(m.asset,m.entry,"library"),path:r.folderPath(m.entry)}))});
   };
   for(const row of ctx.db.photoAssets.dupKey.filter(ownerRange(userId,cursor||undefined))){

@@ -28,7 +28,8 @@ import { pimOperation, pimSnapshot, restorePim, reminderWork, commitReminders, d
 import { identityTables } from "./identity-tables.ts";
 import {workspaceTables} from "./workspace-tables.ts";
 import {historyTables} from "./history-tables.ts";
-import {historyOperation,dropRepo,historyKeeps,historySnapshot,historyVersionOwners,restoreHistory,type HistoryFiles} from "./history.ts";
+import {isBlobId,isLegacyBlobId,checkKeyAt,storeBlob,releaseBlob} from "./blobs.ts";
+import {historyOperation,dropRepo,first,historyKeeps,historySnapshot,historyVersionOwners,restoreHistory,type HistoryFiles} from "./history.ts";
 import {gitOperation} from "./git.ts";
 import {workspaceSnapshot,restoreWorkspace,noteTrashOperation,validateTaskParent} from "./workspace.ts";
 import { identityActor, directoryOperation, providerOperation, revokeProvider, revokeUser, identitySnapshot, restoreIdentity, touchProfile,profile as directoryProfile } from "./identity.ts";
@@ -62,13 +63,22 @@ const usage = table({}, { userId: t.string().primaryKey(), used: t.f64(), reserv
 const fitsQuota = (meter: { used: number; reserved: number; quota: number }, bytes: number) => !meter.quota || meter.used + meter.reserved + bytes <= meter.quota;
 const favorites = table({}, { id: t.string().primaryKey(), fileId: t.string(), listKey: t.string().index("btree") });
 const backupPins = table({}, { id: t.string().primaryKey(), backupId: t.string().index("btree"), blobId: t.string().index("btree") });
+/**
+ * Stored content, by the SHA-256 of its bytes (module/src/blobs.ts). state is "stored" or
+ * "deleting" (claimed by maintenance); checkKey is when maintenance should next see whether
+ * versions or backup pins still use it, "" for never.
+ */
+const fileBlobs = table({}, { id: t.string().primaryKey(), size: t.f64(), state: t.string(), checkKey: t.string().index("btree") });
+/** Applied Files storage migrations; 1 is content-addressed blobs. */
+const fileMigrations = table({}, { id: t.u32().primaryKey(), appliedAt: t.f64() });
+const blobMigration = 1;
 const appPasswords = table({}, { id: t.string().primaryKey(), userId: t.string().index("btree"), digest: t.string().unique(), label: t.string(), scope: t.string(), sessionId: t.string().unique(), principal: t.identity(), expiresAt: t.f64(), revoked: t.bool() });
 const rootRevisions = table({}, { userId: t.string().primaryKey(), revision: t.u32(), modifiedAt: t.f64() });
 const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().index("btree"), fileId: t.string(), action: t.string(), at: t.f64() });
 // A browser session that confirmed the account password may open the Locked folder until expiresAt.
 const fileUnlocks = table({}, { sessionId: t.string().primaryKey(), userId: t.string().index("btree"), expiresAt: t.f64() });
 const fileUnlockExpiry = table({}, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), sessionId: t.string() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, fileBlobs, fileMigrations, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -503,7 +513,7 @@ function deleteFor(ctx: Ctx, userId: string, p: { id: string; expectedRevision: 
     // A tracked folder's history goes with it; versions another folder's history uses stay (and stay counted).
     const repo = item.kind === "folder" ? ctx.db.fileRepos.id.find(item.id) : undefined;
     if (repo) dropRepo(ctx, repo);
-    for (const version of [...ctx.db.versions.fileId.filter(item.id)]) { if (historyKeeps(ctx, version.id)) continue; bytes += version.size; ctx.db.versions.id.delete(version.id); }
+    for (const version of [...ctx.db.versions.fileId.filter(item.id)]) { if (historyKeeps(ctx, version.id)) continue; bytes += version.size; ctx.db.versions.id.delete(version.id); releaseBlob(ctx, version.blobId); }
     for (const grant of ctx.db.grants.fileId.filter(item.id)) ctx.db.grants.id.delete(grant.id);
     for (const share of ctx.db.publicShares.fileId.filter(item.id)) ctx.db.publicShares.id.delete(share.id);
     if (item.kind === "file") touchAsset(ctx, item.id);
@@ -652,11 +662,13 @@ function finishUploadFor(ctx: Ctx, userId: string, uploadKey: string, id: string
   // Replacements require current access to the file; creating a child requires
   // access to its destination. A direct file grant need not grant its parent.
   if (!upload.expectedRevision && destination(ctx, upload.parentId, user.id, sessionId) !== upload.ownerId) fail("forbidden");
-  const entry = { id: upload.fileId, ownerId: upload.ownerId, parentId: upload.parentId, name: upload.name, kind: "file", blobId: upload.id,
+  // The runtime stored the bytes under their digest before this call (runtime/files/blobs.ts).
+  storeBlob(ctx, p.digest, upload.size);
+  const entry = { id: upload.fileId, ownerId: upload.ownerId, parentId: upload.parentId, name: upload.name, kind: "file", blobId: p.digest,
     size: upload.size, mediaType: upload.mediaType, revision: (existing?.revision ?? 0) + 1, modifiedAt: fileTime && fileTime > 0 && fileTime < now(ctx) + 86400_000 ? fileTime : now(ctx), trashed: false, favorite: existing?.favorite ?? false,
     listKey: key(upload.ownerId, upload.parentId, upload.name) };
   if (existing) ctx.db.fileEntries.id.update(entry); else ctx.db.fileEntries.insert(entry);
-  ctx.db.versions.insert({ id: upload.id, fileId: entry.id, blobId: upload.id, size: upload.size, mediaType: upload.mediaType, createdAt: now(ctx) });
+  ctx.db.versions.insert({ id: upload.id, fileId: entry.id, blobId: p.digest, size: upload.size, mediaType: upload.mediaType, createdAt: now(ctx) });
   ctx.db.uploads.id.update({ ...upload, state: "complete", digest: p.digest });
   const meter = ctx.db.usage.userId.find(upload.ownerId)!;
   ctx.db.usage.userId.update({ ...meter, reserved: meter.reserved - upload.size, used: meter.used + upload.size });
@@ -716,53 +728,126 @@ export const servicePublicDownload = db.procedure({ digest: t.string() }, t.stri
 
 export const serviceMaintenance = db.procedure(t.string(), ctx => ctx.withTx(tx => {
   service(tx); const candidates: string[] = [];
-  for (const upload of tx.db.uploads.expiresKey.filter(new Range({ tag: "unbounded" }, { tag: "excluded", value: String(now(tx)).padStart(16, "0") }))) {
+  // Transfers end an hour after they begin: unfinished ones give back their reserved quota. Their
+  // content, if any, belongs to its blob, which the checks below keep or reclaim.
+  let expired = 0;
+  for (const upload of [...tx.db.uploads.expiresKey.filter(new Range({ tag: "unbounded" }, { tag: "excluded", value: String(now(tx)).padStart(16, "0") }))]) {
     if (upload.expiresAt > now(tx)) continue;
-    if (candidates.length >= 100) break;
+    if (++expired > 500) break;
     if (upload.state === "uploading") {
       const meter = tx.db.usage.userId.find(upload.ownerId);
       if (meter) tx.db.usage.userId.update({ ...meter, reserved: Math.max(0, meter.reserved - upload.size) });
-      tx.db.uploads.id.update({ ...upload, state: "cancelled" });
     }
-    if (tx.db.versions.blobId.filter(upload.id)[Symbol.iterator]().next().done && tx.db.backupPins.blobId.filter(upload.id)[Symbol.iterator]().next().done) {
-      tx.db.uploads.id.update({ ...upload, state: "deleting" }); candidates.push(upload.id);
-    }
+    tx.db.uploads.id.delete(upload.id);
+  }
+  // Blobs due a check (their last version or pin may have gone); claimed ones stay due until acknowledged.
+  for (const blob of [...tx.db.fileBlobs.checkKey.filter(new Range({ tag: "included", value: checkKeyAt(0) }, { tag: "included", value: checkKeyAt(now(tx)) }))]) {
+    if (candidates.length >= 100) break;
+    if (first(tx.db.versions.blobId.filter(blob.id)) || first(tx.db.backupPins.blobId.filter(blob.id))) { tx.db.fileBlobs.id.update({ ...blob, state: "stored", checkKey: "" }); continue; }
+    if (blob.state !== "deleting") tx.db.fileBlobs.id.update({ ...blob, state: "deleting" });
+    candidates.push(blob.id);
   }
   return JSON.stringify(candidates);
 }));
+/** The runtime removed a claimed blob; one an upload used again meanwhile is "stored" and stays. */
 export const serviceAcknowledgeGc = db.reducer({ id: t.string() }, (ctx, { id }) => {
   service(ctx);
-  const upload = ctx.db.uploads.id.find(id);
-  if (upload?.state === "deleting") ctx.db.uploads.id.delete(id);
+  const blob = ctx.db.fileBlobs.id.find(id);
+  if (blob?.state === "deleting") ctx.db.fileBlobs.id.delete(id);
+});
+/** The subset of these blob IDs the database has no record of (runtime/files/maintenance.ts). */
+export const serviceUnknownBlobs = db.procedure({ ids: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
+  service(tx); const ids = JSON.parse(p.ids) as unknown;
+  if (!Array.isArray(ids) || ids.length > 1000 || ids.some(id => typeof id !== "string" || !isBlobId(id))) fail("invalidInput");
+  return JSON.stringify((ids as string[]).filter(id => !tx.db.fileBlobs.id.find(id)));
+}));
+/**
+ * Content stored under upload IDs (before content addressing) that anything still references, with
+ * the digest and size its upload recorded ("" and -1 when unknown). runtime/files/migrate.ts links
+ * each under its digest before serviceMigrateBlobs switches the references. Content versions and
+ * files use is required; Photos assets, Git blob IDs and backup pins may name content already gone.
+ */
+export const serviceBlobMigrationPlan = db.procedure(t.string(), ctx => ctx.withTx(tx => {
+  service(tx);
+  if (tx.db.fileMigrations.id.find(blobMigration)) return JSON.stringify({ done: true, blobs: [] });
+  const blobs = new Map<string, { id: string; size: number; digest: string; required: boolean }>();
+  const add = (id: string, size: number, required: boolean) => {
+    if (!isLegacyBlobId(id)) return;
+    const known = blobs.get(id);
+    if (known) { known.required ||= required; return; }
+    const upload = tx.db.uploads.id.find(id);
+    blobs.set(id, { id, size: upload?.size ?? size, digest: upload?.digest ?? "", required });
+  };
+  for (const row of tx.db.versions.iter()) add(row.blobId, row.size, true);
+  for (const row of tx.db.fileEntries.iter()) if (row.kind === "file") add(row.blobId, row.size, true);
+  for (const row of tx.db.fileGitBlobs.iter()) add(row.blobId, row.size, false);
+  for (const row of tx.db.photoAssets.iter()) add(row.blobId, -1, false);
+  for (const row of tx.db.backupPins.iter()) add(row.blobId, -1, false);
+  return JSON.stringify({ done: false, blobs: [...blobs.values()] });
+}));
+/**
+ * Switches every reference from upload IDs to digests in one transaction, records each blob,
+ * and drops finished transfers. hashed holds digests the runtime computed for content whose
+ * upload had none. Every reference from versions and files must map, or nothing changes; other
+ * references to content already gone are dropped (Git blob IDs, pins) or follow their file (Photos).
+ */
+export const serviceMigrateBlobs = db.reducer({ hashed: t.string() }, (ctx, p) => {
+  service(ctx);
+  if (ctx.db.fileMigrations.id.find(blobMigration)) return;
+  const hashed = JSON.parse(p.hashed) as Record<string, { digest: string; size: number }>, sizes = new Map<string, number>();
+  const mapped = (id: string) => {
+    if (!isLegacyBlobId(id)) return id;
+    const upload = ctx.db.uploads.id.find(id), digest = upload?.digest || hashed[id]?.digest, size = upload?.digest ? upload.size : hashed[id]?.size;
+    if (!digest || !isBlobId(digest) || typeof size !== "number") return undefined;
+    sizes.set(digest, size); return digest;
+  };
+  const digestOf = (id: string) => mapped(id) ?? fail("contentUnavailable");
+  const used = new Set<string>();
+  for (const row of [...ctx.db.versions.iter()]) { const blobId = digestOf(row.blobId); used.add(blobId); if (!sizes.has(blobId)) sizes.set(blobId, row.size); if (blobId !== row.blobId) ctx.db.versions.id.update({ ...row, blobId }); }
+  for (const row of [...ctx.db.fileEntries.iter()]) if (row.kind === "file" && isLegacyBlobId(row.blobId)) ctx.db.fileEntries.id.update({ ...row, blobId: digestOf(row.blobId) });
+  for (const row of [...ctx.db.backupPins.iter()]) {
+    if (!isLegacyBlobId(row.blobId)) { used.add(row.blobId); continue; }
+    const blobId = mapped(row.blobId);
+    if (blobId) { used.add(blobId); ctx.db.backupPins.id.update({ ...row, blobId }); } else ctx.db.backupPins.id.delete(row.id);
+  }
+  for (const row of [...ctx.db.fileGitBlobs.iter()]) if (isLegacyBlobId(row.blobId)) { const blobId = mapped(row.blobId); if (blobId) ctx.db.fileGitBlobs.id.update({ ...row, blobId }); else ctx.db.fileGitBlobs.id.delete(row.id); }
+  for (const row of [...ctx.db.photoAssets.iter()]) if (isLegacyBlobId(row.blobId)) ctx.db.photoAssets.fileId.update({ ...row, blobId: mapped(row.blobId) ?? ctx.db.fileEntries.id.find(row.fileId)?.blobId ?? "" });
+  // Everything recorded here is in use; content nothing used is left behind under its upload ID.
+  for (const id of used) {
+    const size = sizes.get(id);
+    if (size === undefined) fail("contentUnavailable");
+    if (!ctx.db.fileBlobs.id.find(id)) ctx.db.fileBlobs.insert({ id, size, state: "stored", checkKey: "" });
+  }
+  for (const upload of [...ctx.db.uploads.iter()]) if (upload.state !== "uploading") ctx.db.uploads.id.delete(upload.id);
+  ctx.db.fileMigrations.insert({ id: blobMigration, appliedAt: now(ctx) });
 });
 export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, { id }) => ctx.withTx(tx => {
   service(tx);
   const history = [...tx.db.versions.iter()], blobIds = [...new Set(history.map(version => version.blobId))];
   const blobs = blobIds.map(blobId => {
-    const upload = tx.db.uploads.id.find(blobId);
-    if (!upload || upload.state === "deleting" || !upload.digest) fail("contentUnavailable");
+    const blob = tx.db.fileBlobs.id.find(blobId);
+    if (!blob || blob.state === "deleting") fail("contentUnavailable");
     tx.db.backupPins.insert({ id: `${id}/${blobId}`, backupId: id, blobId });
-    return { id: blobId, size: upload.size, digest: upload.digest };
+    return { id: blobId, size: blob.size, digest: blobId };
   });
-  return JSON.stringify({ format: "dar-backup-v10", books:booksSnapshot(tx), history:historySnapshot(tx), photos:photosSnapshot(tx), news:newsSnapshot(tx), agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
+  return JSON.stringify({ format: "dar-backup-v11", books:booksSnapshot(tx), history:historySnapshot(tx), photos:photosSnapshot(tx), news:newsSnapshot(tx), agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
     accounts: [...tx.db.accounts.iter()], quotas: [...tx.db.usage.iter()].filter(row => row.quota).map(row => ({ userId: row.userId, quota: row.quota })), files: [...tx.db.fileEntries.iter()], versions: history,
     grants: [...tx.db.grants.iter()], publicShares: [...tx.db.publicShares.iter()], favorites: [...tx.db.favorites.iter()],
-    uploads: blobIds.map(blobId => tx.db.uploads.id.find(blobId)),
     activity: [...tx.db.activity.iter()].map(row => ({ ...row, id: row.id.toString() })),
   });
 }));
 export const serviceReleaseBackup = db.reducer({ id: t.string() }, (ctx, { id }) => {
-  service(ctx); for (const pin of ctx.db.backupPins.backupId.filter(id)) ctx.db.backupPins.id.delete(pin.id);
+  service(ctx); for (const pin of [...ctx.db.backupPins.backupId.filter(id)]) { ctx.db.backupPins.id.delete(pin.id); releaseBlob(ctx, pin.blobId); }
 });
 export const serviceExport = db.procedure({ id: t.string(), username: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
   service(tx); const user = tx.db.accounts.username.find(p.username.toLowerCase());
   if (!user) fail("notFound");
   const files = [...tx.db.fileEntries.ownerId.filter(user.id)].filter(entry => access(tx, entry, user.id, true));
   const blobs = [...new Set(files.filter(entry => entry.kind === "file").map(entry => entry.blobId))].map(id => {
-    const upload = tx.db.uploads.id.find(id);
-    if (!upload || !upload.digest || upload.state === "deleting") fail("contentUnavailable");
+    const blob = tx.db.fileBlobs.id.find(id);
+    if (!blob || blob.state === "deleting") fail("contentUnavailable");
     tx.db.backupPins.insert({ id: `${p.id}/${id}`, backupId: p.id, blobId: id });
-    return { id, size: upload.size, digest: upload.digest };
+    return { id, size: blob.size, digest: id };
   });
   return JSON.stringify({ username: user.username, files, blobs });
 }));
@@ -771,9 +856,9 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   service(ctx);
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
   const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; quotas?: { userId: string; quota: number }[]; files: FileEntry[]; versions: Row<"versions">[];
-    grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads: Row<"uploads">[];
+    grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads?: Row<"uploads">[]; blobs: { id: string; size: number; digest: string }[];
     activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot>;agent?:ReturnType<typeof agentSnapshot>;news?:ReturnType<typeof newsSnapshot>;photos?:ReturnType<typeof photosSnapshot>;history?:ReturnType<typeof historySnapshot>;books?:ReturnType<typeof booksSnapshot> };
-  const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6","dar-backup-v7","dar-backup-v8","dar-backup-v9","dar-backup-v10"],version=formats.indexOf(value.format)+1;
+  const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6","dar-backup-v7","dar-backup-v8","dar-backup-v9","dar-backup-v10","dar-backup-v11"],version=formats.indexOf(value.format)+1;
   if (!version||version>=2&&!value.pim||version>=3&&!value.identity||version>=4&&!value.workspace||version>=5&&!value.apps||version>=6&&!value.agent||version>=7&&!value.news||version>=8&&!value.photos||version>=9&&!value.history||version>=10&&!value.books) fail("invalidInput");
   for (const row of value.accounts) {
     ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0, quota: 0 });
@@ -810,7 +895,20 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   }
   for (const row of value.publicShares) ctx.db.publicShares.insert(row);
   for (const row of value.favorites) ctx.db.favorites.insert(row);
-  for (const row of value.uploads) ctx.db.uploads.insert({ ...row, state: "complete" });
+  // v11 names content by digest. Older backups name it by upload ID; their uploads carry each
+  // digest, and the runtime's blob migration renames them on its next start.
+  if (version >= 11) {
+    for (const row of value.blobs) {
+      if (row.id !== row.digest || !isBlobId(row.id) || !Number.isSafeInteger(row.size) || row.size < 0 || ctx.db.fileBlobs.id.find(row.id)) fail("invalidInput");
+      ctx.db.fileBlobs.insert({ id: row.id, size: row.size, state: "stored", checkKey: "" });
+    }
+    if (!ctx.db.fileMigrations.id.find(blobMigration)) ctx.db.fileMigrations.insert({ id: blobMigration, appliedAt: now(ctx) });
+  } else {
+    for (const row of value.uploads ?? []) ctx.db.uploads.insert({ ...row, state: "complete" });
+    // Content already named by its digest needs no migration.
+    for (const row of value.blobs ?? []) if (row.id === row.digest && isBlobId(row.id) && Number.isSafeInteger(row.size) && row.size >= 0 && !ctx.db.fileBlobs.id.find(row.id)) ctx.db.fileBlobs.insert({ id: row.id, size: row.size, state: "stored", checkKey: "" });
+    ctx.db.fileMigrations.id.delete(blobMigration);
+  }
   for (const row of value.activity) ctx.db.activity.insert(row);
   restoreHistory(ctx, value.history);
   restorePim(ctx, value.pim);

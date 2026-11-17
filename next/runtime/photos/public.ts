@@ -72,8 +72,7 @@ export async function handlePhotoLinkHttp(req:IncomingMessage,res:ServerResponse
       const reserved=await call<{id:string;size:number;state:string;fileId:string}>("upload",{id:upload[1]});
       if(reserved.state==="complete"){req.resume();return send({id:reserved.fileId});}
       if(reserved.state!=="uploading")throw new AppError("conflict",409);
-      const existing=await blobs.existingDigest(reserved.id,reserved.size);if(existing)req.resume();
-      const contentDigest=existing??await blobs.receive(req,reserved.id,reserved.size);
+      const contentDigest=await blobs.receive(req,reserved.id,reserved.size);
       const {fileId,job}=await call<{fileId:string;job:PhotoJob}>("finishUpload",{id:reserved.id,digest:contentDigest});
       await runtime.indexNow(job).catch(()=>false);
       return send({id:fileId});

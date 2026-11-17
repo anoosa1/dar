@@ -3,7 +3,7 @@ import {lstat,mkdir,mkdtemp,readFile,readdir,rename,rm,stat,writeFile,open} from
 import {constants} from "node:fs";
 import path from "node:path";
 import type {Database} from "../database.ts";
-import {blobPath} from "../files/blobs.ts";
+import {blobPath,isBlobId} from "../files/blobs.ts";
 import {openZip,type Zip} from "./zip.ts";
 import {readEpub,comicPages,readComicInfo,emptyMeta} from "./formats.ts";
 import {bookFormat,bookPosition,type BookFormat,type BookItem,type BookLibrary,type BookMeta,type BookState,type BookTocEntry} from "../../shared/books.ts";
@@ -36,7 +36,7 @@ export interface BookFile {id:string;parentId:string;name:string;blobId:string;s
  */
 export async function createBooksRuntime(db:Database,root:string){
   const cache=path.join(root,"book-cache");await mkdir(cache,{recursive:true,mode:0o700});
-  const file=(blobId:string,suffix:string)=>{if(!/^[a-f0-9-]{36}$/.test(blobId))throw new Error("Unexpected blob ID.");return path.join(cache,blobId.slice(0,2),`${blobId}-${suffix}`);};
+  const file=(blobId:string,suffix:string)=>{if(!isBlobId(blobId))throw new Error("Unexpected blob ID.");return path.join(cache,blobId.slice(0,2),`${blobId}-${suffix}`);};
   let active=0;const waiting:(()=>void)[]=[];
   async function slot<T>(work:()=>Promise<T>){if(active>=2)await new Promise<void>(resolve=>waiting.push(resolve));active++;try{return await work();}finally{active--;waiting.shift()?.();}}
   const infos=new Map<string,Promise<Info>>(),tasks=new Map<string,Promise<unknown>>();

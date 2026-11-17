@@ -14,7 +14,8 @@ import { blobStore, type BlobFile } from "./files/blobs.ts";
 import { lockRoot } from "./lock.ts";
 import { handleDav } from "./files/dav.ts";
 import { createOpaqueToken } from "./auth/session.ts";
-import { reconcileStorage } from "./files/maintenance.ts";
+import { reconcileStorage, sweepOrphans } from "./files/maintenance.ts";
+import { migrateBlobs } from "./files/migrate.ts";
 import { handleHistoryHttp } from "./files/history.ts";
 import { gitRepositories, handleGitHttp } from "./files/git.ts";
 import { gitApi } from "./git/api.ts";
@@ -139,6 +140,9 @@ export async function startServer(config: ServerConfig) {
   // Independent Cordis effects can dispose concurrently. One ordered disposer
   // keeps the storage lock held until HTTP handlers and maintenance have drained.
   ctx.effect(() => () => disposeResources(), "runtime-resources");
+  // Before anything reads stored content by its database name (files/migrate.ts).
+  const blobMigration = await migrateBlobs(db, root);
+  if (blobMigration.migrated || blobMigration.removed) console.info(`Stored content is now named by digest: ${blobMigration.migrated} blobs linked, ${blobMigration.removed} upload-ID names removed.`);
   agentRuntime=await createAgentRuntime(db,root,config.codexFile??path.join(root,"codex.json"),config.claudeFile??path.join(root,"claude.json"));
   newsRuntime=createNewsRuntime(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
   calendarSubscriptions=createCalendarSubscriptions(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
@@ -374,9 +378,7 @@ export async function startServer(config: ServerConfig) {
             const upload = await db.call<{ id: string; size: number; state: string; fileId: string }>("service_upload", [authenticated.session.id, uploadRoute[1]]);
             if (upload.state === "complete") { req.resume(); return json(res, { id: upload.fileId }); }
             if (upload.state !== "uploading") throw new AppError("conflict", 409);
-            const existing = await blobs.existingDigest(upload.id, upload.size);
-            if (existing) req.resume();
-            const digest = existing ?? await blobs.receive(req, upload.id, upload.size);
+            const digest = await blobs.receive(req, upload.id, upload.size);
             await db.call("service_finish_upload", [authenticated.session.id, upload.id, digest]);
             return json(res, { id: upload.fileId });
           }
@@ -421,12 +423,14 @@ export async function startServer(config: ServerConfig) {
   server.headersTimeout = 15_000;
   server.maxConnections = 256;
   let maintenance: Promise<void> | undefined;
-  let stopping = false;
+  let stopping = false, swept = 0;
   const maintain = () => {
     if (maintenance || stopping) return;
     maintenance = (async () => {
       for (const [key, attempt] of attempts) if (attempt.until <= Date.now()) attempts.delete(key);
       await reconcileStorage(db, blobs);
+      // Content no upload recorded reads the whole blob directory: once a day, from the first run.
+      if (Date.now() - swept >= 86400_000) { swept = Date.now(); await sweepOrphans(db, blobs); }
       await repositories.prune();
       await deliverReminders(db);
       await identity.maintain();

@@ -6,7 +6,7 @@ import path from "node:path";
 import { openRoot } from "../runtime/root.ts";
 import { lockRoot } from "../runtime/lock.ts";
 import { blobStore } from "../runtime/files/blobs.ts";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 
 test("managed storage refuses unknown roots and symlinked roots without modifying their targets", async t => {
   const directory = await mkdtemp(path.join(tmpdir(), "dar-storage-proof-"));
@@ -55,7 +55,11 @@ test("a root has one owner; blob reads fail closed on symlinks", async () => {
   await assert.rejects(lockRoot(root), /Another runtime/);
   await release(); const again = await lockRoot(root); await again();
   const target = path.join(root, "keep.txt"); await writeFile(target, "do not read through the blob symlink");
-  const id = randomUUID(); await symlink(target, path.join(root, "blobs", id));
-  await assert.rejects(blobStore(root).existingDigest(id, 36));
+  // A symlink under the digest of incoming content is neither followed nor replaced nor removed.
+  const content = "content whose digest names the symlink", id = createHash("sha256").update(content).digest("hex");
+  await symlink(target, path.join(root, "blobs", id));
+  const blobs = blobStore(root, { graceMs: 0 });
+  await assert.rejects(blobs.receive((async function* () { yield Buffer.from(content); })(), randomUUID(), Buffer.byteLength(content)));
+  await assert.rejects(blobs.remove(id));
   assert.equal(await readFile(target, "utf8"), "do not read through the blob symlink");
 });
