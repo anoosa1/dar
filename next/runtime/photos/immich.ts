@@ -165,7 +165,12 @@ export async function handleImmichHttp(req:IncomingMessage,res:ServerResponse,ur
       for(const type of order){
         if(!types.includes(type)||!channels[type])continue;
         for(const channel of channels[type]){
+          // EXIF rows need their asset on the device. Where the EXIF checkpoint is behind (a stream that
+          // failed before reaching it), assets are sent again from there; the app upserts them.
+          const exifs:Record<string,[string,string]>={assets:["AssetExifsV1","exifs"],albumAssets:["AlbumAssetExifsV1","albumAssetExifs"]};
+          const exif=exifs[channel];
           let after=seqOf(start.checkpoints[acks[channel]]);
+          if(exif&&types.includes(exif[0]))after=Math.min(after,seqOf(start.checkpoints[acks[exif[1]]]));
           for(let page=0;page<10_000;page++){
             if(res.destroyed)return;
             const result=await immich<{lines:unknown[];last:number;more:boolean}>("syncPage",{channel,after,limit:500,upTo:start.upTo});

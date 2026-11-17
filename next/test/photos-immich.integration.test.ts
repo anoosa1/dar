@@ -192,6 +192,11 @@ test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the
       assert.ok(!page.lines.some(l=>l.data.id===during.id||l.data.assetId===during.id),channel);
     }
     assert.ok((await stream()).some(l=>l.type==="AssetExifV1"&&l.data.assetId===during.id));
+    // A device whose EXIF checkpoint lags its asset checkpoint (an earlier stream failed before EXIF) and that
+    // lacks an asset gets the assets again before their EXIF, instead of failing on every sync.
+    device.assets.delete(during.id);await call("/sync/ack",{method:"DELETE",body:{types:["AssetExifV1"]}});
+    lines=await stream();assert.ok(lines.findIndex(l=>l.type==="AssetV2"&&l.data.id===during.id)<lines.findIndex(l=>l.type==="AssetExifV1"&&l.data.assetId===during.id));
+    assert.ok(!(await stream()).some(l=>l.type==="AssetV2"));
     // The web app sees the devices; signing out ends the token.
     const devices=(await (await fetch(base+"/api/v1/photos/immich",{headers})).json() as {devices:{id:string}[]}).devices;assert.equal(devices.length,1);
     await call("/auth/logout",{body:{}});assert.equal((await fetch(api+"/users/me",{headers:auth})).status,401);
