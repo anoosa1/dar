@@ -55,7 +55,7 @@ try {
   run(["node_modules/typescript/bin/tsc", "-p", "module/tsconfig.json"]);
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
-  if(gitOnly){run(["--test","--test-concurrency=1","test/git.integration.test.ts","test/git-app.integration.test.ts","test/git-interop.integration.test.ts"],600_000);if(existsSync(path.join(project,"test/git-browser.mjs")))run(["test/git-browser.mjs"],300_000);console.info(`PASS Git acceptance. Isolated artifacts: ${root}`);}
+  if(gitOnly){run(["--test","--test-concurrency=1","test/git.integration.test.ts","test/git-app.integration.test.ts","test/git-interop.integration.test.ts","test/upload-pace.test.ts","test/upload-timeout.integration.test.ts"],600_000);if(existsSync(path.join(project,"test/git-browser.mjs")))run(["test/git-browser.mjs"],300_000);console.info(`PASS Git acceptance. Isolated artifacts: ${root}`);}
   else if(booksOnly){run(["--test","test/books.integration.test.ts"],300_000);run(["test/books-browser.mjs"],300_000);console.info(`PASS Books acceptance. Isolated artifacts: ${root}`);}
   else if(historyOnly){run(["--test","--test-concurrency=1","test/history.integration.test.ts","test/git.integration.test.ts"],300_000);if(existsSync(path.join(project,"test/history-browser.mjs")))run(["test/history-browser.mjs"],300_000);console.info(`PASS history acceptance. Isolated artifacts: ${root}`);}
   else{
@@ -95,6 +95,8 @@ try {
   if(!identityOnly&&!pimOnly)run(["test/shared-ui-browser.mjs"]);
   if(!identityOnly&&!workspaceOnly){
   if(!pimOnly){run(["--test", "--test-concurrency=1", "test/auth-primitives.test.ts", "test/auth-security.integration.test.ts", "test/files.integration.test.ts", "test/history.integration.test.ts", "test/git.integration.test.ts", "test/git-app.integration.test.ts", "test/git-interop.integration.test.ts", "test/dav.integration.test.ts", "test/backup.integration.test.ts", "test/gc.integration.test.ts", "test/keyring.test.ts", "test/pagination.integration.test.ts", "test/storage.test.ts"]);
+    // A 75-second upload proves bodies are timed by progress, not by a total.
+    run(["--test","test/upload-pace.test.ts","test/upload-timeout.integration.test.ts"],240_000);
   run(["test/browser.mjs"]);}
   run(["test/pim-browser.mjs"]);
   run(["test/contacts-layout-browser.mjs"]);

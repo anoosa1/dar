@@ -18,6 +18,7 @@ import { reconcileStorage } from "./files/maintenance.ts";
 import { handleHistoryHttp } from "./files/history.ts";
 import { gitRepositories, handleGitHttp } from "./files/git.ts";
 import { gitApi } from "./git/api.ts";
+import { watchBody } from "./upload-pace.ts";
 import { handlePimHttp } from "./pim/http.ts";
 import { pimService } from "./pim/service.ts";
 import { deliverReminders } from "./pim/reminders.ts";
@@ -409,10 +410,12 @@ export async function startServer(config: ServerConfig) {
   };
   const inflight = new Set<Promise<void>>();
   const server = http.createServer((req, res) => {
+    watchBody(req, res);
     const work = handle(req, res).catch(() => { res.destroy(); });
     inflight.add(work); void work.finally(() => inflight.delete(work));
   });
-  server.requestTimeout = 60_000;
+  // Bodies are timed by their progress (upload-pace.ts), not by a total, so slow links can finish.
+  server.requestTimeout = 0;
   server.headersTimeout = 15_000;
   server.maxConnections = 256;
   let maintenance: Promise<void> | undefined;

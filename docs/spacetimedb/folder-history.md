@@ -85,8 +85,10 @@ an app password: Files read access clones and fetches, Files write access pushes
   differences), shallow pushes, packs over 4 GiB, objects over 256 KiB, and more
   than 5,000 commits or 50,000 changed paths in one push (push in parts). Pushed
   objects are checked with `git index-pack --strict`.
-- **Uploads:** like Files uploads, a push must reach the server within the HTTP
-  request timeout.
+- **Uploads:** like Files uploads, a push may take as long as it keeps moving: a body is
+  dropped after a minute without new bytes, below 16 KiB a minute, or after 6 hours
+  (`runtime/upload-pace.ts`). While Dar checks and stores a push it sends Git keep-alive
+  packets, so proxies do not time out.
 
 ## API
 

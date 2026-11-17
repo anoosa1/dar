@@ -410,6 +410,14 @@ async function receivePack(req:IncomingMessage,res:ServerResponse,db:Database,re
   const {dir}=await repositories.sync(sessionId,folderId);
   const quarantine=path.join(dir,"objects",`incoming-${randomUUID()}`),env={GIT_DIR:dir,GIT_OBJECT_DIRECTORY:quarantine,GIT_ALTERNATE_OBJECT_DIRECTORIES:path.join(dir,"objects"),GIT_QUARANTINE_PATH:quarantine};
   let unpack="ok";const results=new Map<string,string|undefined>(),messages:string[]=[];
+  // Checking and storing a large push can take a while with nothing to say: once the pack is in, an
+  // empty side-band packet every few seconds keeps proxies (nginx waits 120 s) from giving up.
+  let keepAlive:ReturnType<typeof setInterval>|undefined;
+  const keep=pkt(Buffer.from([1])),startKeepAlive=()=>{
+    if(!sideBand||!report||res.headersSent)return;
+    res.writeHead(200,{"content-type":"application/x-git-receive-pack-result"});res.write(keep);
+    keepAlive=setInterval(()=>{if(!res.destroyed)res.write(keep);},10_000);keepAlive.unref();
+  };
   try{
     await mkdir(path.join(quarantine,"pack"),{recursive:true});
     if(commands.some(command=>command.new!==zero)){
@@ -422,15 +430,16 @@ async function receivePack(req:IncomingMessage,res:ServerResponse,db:Database,re
     }else for await(const _ of reader.rest()){/* No pack follows deletions. */}
     if(unpack!=="ok")for(const command of commands)results.set(command.name,"unpacker error");
     else{
+      startKeepAlive();
       const outcome=await repositories.locked(folderId,()=>applyPush(db,repositories,blobs,sessionId,folderId,dir,env,commands,capabilities.has("atomic"),quarantine));
       for(const [name,error] of outcome.results)results.set(name,error);messages.push(...outcome.messages);
     }
   }catch(error){
     const message=error instanceof AppError&&error.status<500?pushFailures[error.code]??error.message:error instanceof AppError&&error.code==="quotaExceeded"?pushFailures.quotaExceeded:"the push could not be stored";
     for(const command of commands)results.set(command.name,message);messages.push(`Dar: ${message}`);
-  }finally{await rm(quarantine,{recursive:true,force:true});}
+  }finally{clearInterval(keepAlive);await rm(quarantine,{recursive:true,force:true});}
 
-  res.writeHead(200,{"content-type":"application/x-git-receive-pack-result"});
+  if(!res.headersSent)res.writeHead(200,{"content-type":"application/x-git-receive-pack-result"});
   const status=Buffer.concat([pkt(`unpack ${unpack}\n`),...commands.map(command=>{const error=results.get(command.name);return pkt(error?`ng ${command.name} ${error.replace(/\n/g," ")}\n`:`ok ${command.name}\n`);}),flush]);
   if(!report){res.end();return;}
   if(!sideBand){res.end(status);return;}
