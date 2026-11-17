@@ -28,6 +28,7 @@ import "./agent/workspace.css";
 import "./news/news.css";
 import "./photos/photos.css";
 import "./books/books.css";
+import "./git/git.css";
 // The shared frame is last so it supersedes the earlier per-surface frame rules.
 import "./frame.css";
 import "./settings-sheet.css";
@@ -60,24 +61,25 @@ const AgentWorkspace=page(()=>import("./agent/workspace.tsx").then(m=>m.AgentWor
 const NewsWorkspace=page(()=>import("./news/workspace.tsx").then(m=>m.NewsWorkspace));
 const PhotosWorkspace=page(()=>import("./photos/workspace.tsx").then(m=>m.PhotosWorkspace));
 const BooksWorkspace=page(()=>import("./books/workspace.tsx").then(m=>m.BooksWorkspace));
+const GitWorkspace=page(()=>import("./git/workspace.tsx").then(m=>m.GitWorkspace));
 const PublicPhotos=page(()=>import("./photos/public.tsx").then(m=>m.PublicPhotos));
 
 function pageFor(path:string){
   return path.startsWith("/s/")?PublicPhotos:path.startsWith("/identity/interaction/")?IdentityInteraction:path.startsWith("/apps/")?InstalledAppPage
-    :["/identity","/settings"].includes(path)?IdentitySettings:path==="/news"?NewsWorkspace:path==="/photos"?PhotosWorkspace:path==="/books"?BooksWorkspace:path==="/agent"?AgentWorkspace
+    :["/identity","/settings"].includes(path)?IdentitySettings:path==="/news"?NewsWorkspace:path==="/photos"?PhotosWorkspace:path==="/books"?BooksWorkspace:path==="/git"?GitWorkspace:path==="/agent"?AgentWorkspace
     :["/notes","/tasks"].includes(path)?Workspace:path==="/contacts"?Contacts:path==="/calendar"?Calendar:Files;
 }
 /** Built-in and installed apps open in place; shared links and sign-in pages load normally. */
-const inPlace=new Set(["/","/contacts","/calendar","/notes","/tasks","/news","/photos","/books","/agent","/settings","/identity"]);
+const inPlace=new Set(["/","/contacts","/calendar","/notes","/tasks","/news","/photos","/books","/git","/agent","/settings","/identity"]);
 const opensInPlace=(path:string)=>inPlace.has(path)||/^\/apps\/[^/]+$/.test(path);
 const path=location.pathname;
 // Start downloading this page's code while the session is checked.
 pageFor(path).preload();
 
 const opening=<main className="startup-state" aria-busy="true"><div className="brand-mark" /><p role="status">Opening your space…</p></main>;
-function OptionalWorkspace({kind,session,onSignedOut}:{kind:"notes"|"tasks"|"agent"|"news"|"photos"|"books";session:BrowserSession;onSignedOut:()=>void}){
+function OptionalWorkspace({kind,session,onSignedOut}:{kind:"notes"|"tasks"|"agent"|"news"|"photos"|"books"|"git";session:BrowserSession;onSignedOut:()=>void}){
   const {settings,error}=useAppSettings();
-  if(settings&&!settings.disabled.includes(kind))return kind==="agent"?<AgentWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="news"?<NewsWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="photos"?<PhotosWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="books"?<BooksWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="notes"?<Notes session={session} onSignedOut={onSignedOut}/>:<Workspace kind={kind} session={session} onSignedOut={onSignedOut}/>;
+  if(settings&&!settings.disabled.includes(kind))return kind==="agent"?<AgentWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="news"?<NewsWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="photos"?<PhotosWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="books"?<BooksWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="git"?<GitWorkspace session={session} onSignedOut={onSignedOut}/>:kind==="notes"?<Notes session={session} onSignedOut={onSignedOut}/>:<Workspace kind={kind} session={session} onSignedOut={onSignedOut}/>;
   return <div className="app-shell"><WorkspaceHeader app={kind} session={session} onSignedOut={onSignedOut} query="" onQuery={()=>{}}/><main className="startup-state">{error?<><h1>Unable to load apps</h1><p role="alert">{error}</p><button className="primary-button" onClick={()=>location.reload()}>Try again</button></>:settings?<><h1>App disabled</h1><p>This app has been disabled by an administrator.</p></>:<p role="status">Opening app…</p>}<a href="/">Return to Files</a></main></div>;
 }
 function App() {
@@ -136,6 +138,7 @@ function screen(path: string, status: { initialized: boolean }, session: Browser
   if(path==="/news")return <OptionalWorkspace kind="news" session={session} onSignedOut={signedOut}/>;
   if(path==="/photos")return <OptionalWorkspace kind="photos" session={session} onSignedOut={signedOut}/>;
   if(path==="/books")return <OptionalWorkspace kind="books" session={session} onSignedOut={signedOut}/>;
+  if(path==="/git")return <OptionalWorkspace kind="git" session={session} onSignedOut={signedOut}/>;
   if(path==="/agent")return <OptionalWorkspace kind="agent" session={session} onSignedOut={signedOut}/>;
   if(["/notes","/tasks"].includes(path))return <OptionalWorkspace kind={path==="/notes"?"notes":"tasks"} session={session} onSignedOut={signedOut}/>;
   return path === "/contacts" ? <Contacts session={session} onSignedOut={signedOut} /> : path === "/calendar" ? <Calendar session={session} onSignedOut={signedOut} /> : <Files session={session} onSignedOut={signedOut} />;

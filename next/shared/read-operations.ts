@@ -11,4 +11,6 @@ export const agentReadOperations:ReadonlySet<string>=new Set(["source","folders"
 export const workspaceReadOperations:ReadonlySet<string>=new Set(["trash"]);
 export const identityReadOperations:ReadonlySet<string>=new Set(["users","user","groups","group","clients","tokens","storage"]);
 export const booksReadOperations:ReadonlySet<string>=new Set(["detail"]);
-export const historyReadOperations:ReadonlySet<string>=new Set(["overview","changeset","content","export","branch"]);
+export const historyReadOperations:ReadonlySet<string>=new Set(["overview","changeset","content","branch"]);
+/** Git reads (refs and history for a clone or fetch, the Git app's list, clone aliases); pin, pushBegin and push write. */
+export const gitReadOperations:ReadonlySet<string>=new Set(["state","export","repositories","resolve","changesetOf"]);

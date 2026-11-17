@@ -69,7 +69,11 @@ flowchart LR
   are hashed capability URLs with expiry and revocation.
 - Folder history: repos, changesets, changes, head trees and branches reference
   versions, so history adds no bytes; permanent deletion keeps versions history
-  uses. See [folder history](folder-history.md).
+  uses. Git clients clone, fetch and push tracked folders at `/dav/git/<folderId>.git`
+  (or the alias `/dav/git/<username>/<path>.git`) with an app password; the runtime
+  keeps a rebuildable bare repository per folder under `<root>/git`. The Git app reads
+  those caches through `/api/v1/git`. See [folder history](folder-history.md) and
+  [Git](../git.md).
 
 ## Client
 

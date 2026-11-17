@@ -29,6 +29,7 @@ import { identityTables } from "./identity-tables.ts";
 import {workspaceTables} from "./workspace-tables.ts";
 import {historyTables} from "./history-tables.ts";
 import {historyOperation,dropRepo,historyKeeps,historySnapshot,historyVersionOwners,restoreHistory,type HistoryFiles} from "./history.ts";
+import {gitOperation} from "./git.ts";
 import {workspaceSnapshot,restoreWorkspace,noteTrashOperation,validateTaskParent} from "./workspace.ts";
 import { identityActor, directoryOperation, providerOperation, revokeProvider, revokeUser, identitySnapshot, restoreIdentity, touchProfile,profile as directoryProfile } from "./identity.ts";
 import { maxFileBytes } from "../../shared/limits.ts";
@@ -188,7 +189,7 @@ function unusedUuid(ctx: Ctx): string {
   // produce the same first UUID. Advance the generator past retained IDs in
   // every namespace where the module generates identifiers.
   let id = ctx.newUuidV4().toString();
-  while (ctx.db.activity.id.find(id) || ctx.db.fileEntries.id.find(id) || ctx.db.versions.id.find(id) || ctx.db.sessions.id.find(id)
+  while (ctx.db.activity.id.find(id) || ctx.db.fileEntries.id.find(id) || ctx.db.versions.id.find(id) || ctx.db.sessions.id.find(id) || ctx.db.uploads.id.find(id)
     || ctx.db.principals.identity.find(new Identity(BigInt(`0x${id.replaceAll("-", "")}`)))) id = ctx.newUuidV4().toString();
   return id;
 }
@@ -535,7 +536,13 @@ export const revokeGrant = db.reducer({ id: t.string() }, (ctx, { id }) => {
 /** Files' checks for folder history, acting for one account and (for the Locked folder) one browser session. */
 function historyFiles(ctx: Ctx, userId: string, sessionId?: Unlock): HistoryFiles {
   return { role: entry => access(ctx, entry, userId, sessionId), inLocked: entry => !!lockedRoot(ctx, entry), uuid: () => unusedUuid(ctx),
-    event: (ownerId, fileId, action, parentId) => event(ctx, ownerId, fileId, action, parentId), key, findKey: value => findKey(ctx, value), nameOf, fitsQuota };
+    event: (ownerId, fileId, action, parentId) => event(ctx, ownerId, fileId, action, parentId), key, findKey: value => findKey(ctx, value), nameOf, fitsQuota,
+    move: (entry, parentId, name) => {
+      ctx.db.fileEntries.id.update({ ...entry, name, parentId, listKey: key(entry.ownerId, parentId, name), revision: entry.revision + 1, modifiedAt: now(ctx) });
+      if (entry.favorite) ctx.db.favorites.id.update({ id: entry.id, fileId: entry.id, listKey: `${entry.ownerId}/${name.toLowerCase()}/${entry.id}` });
+      renameGrants(ctx, entry.id, name); event(ctx, entry.ownerId, entry.id, "moved");
+      if (entry.parentId !== parentId) touchFolder(ctx, entry.ownerId, entry.parentId);
+    } };
 }
 /** Folder history (docs/spacetimedb/folder-history.md) for browser sessions; app passwords have no history scope. */
 export const serviceHistory = db.procedure({ sessionId: t.string(), operation: t.string(), document: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
@@ -544,6 +551,20 @@ export const serviceHistory = db.procedure({ sessionId: t.string(), operation: t
   const value: unknown = JSON.parse(p.document); if (!value || typeof value !== "object" || Array.isArray(value)) fail("invalidInput");
   return JSON.stringify(historyOperation(tx, historyFiles(tx, user.id, p.sessionId), user.id, `history:${p.sessionId}`, p.operation, value as Record<string, unknown>));
 }));
+/**
+ * Git over HTTPS for tracked folders (docs/spacetimedb/folder-history.md#git): app passwords with Files
+ * access (read to clone and fetch, write to push) and browser sessions (bundle downloads).
+ */
+export const serviceGit = db.procedure({ sessionId: t.string(), operation: t.string(), document: t.string() }, t.string(), (ctx, p) => ctx.withTx(tx => {
+  service(tx); const user = fromSession(tx, p.sessionId), password = tx.db.appPasswords.sessionId.find(p.sessionId);
+  const write = p.operation === "pushBegin" || p.operation === "push";
+  if (password && (password.revoked || password.expiresAt <= now(tx) || !passwordAllows(password.scope, "files", write ? "write" : "read"))) fail("forbidden");
+  if (p.document.length > 64 * 1024 * 1024) fail("operationTooLarge");
+  const value: unknown = JSON.parse(p.document); if (!value || typeof value !== "object" || Array.isArray(value)) fail("invalidInput");
+  return JSON.stringify(gitOperation(tx, historyFiles(tx, user.id, p.sessionId), user.id, `git:${p.sessionId}`, p.operation, value as Record<string, unknown>));
+}));
+/** Tracked folders, so the runtime can drop Git caches of folders that stopped keeping history. */
+export const serviceGitRepos = db.procedure(t.string(), ctx => ctx.withTx(tx => { service(tx); return JSON.stringify([...tx.db.fileRepos.iter()].map(repo => ({ id: repo.id, generation: repo.createdAt }))); }));
 export const fileDetails = db.procedure({ id: t.string() }, t.string(), (ctx, { id }) => readResult(() => ctx.withTx(tx => {
   const user = activeUser(tx), entry = tx.db.fileEntries.id.find(id);
   if (!entry || !(entry.ownerId === user.id && entry.trashed) && !access(tx, entry, user.id)) fail("notFound");
@@ -815,7 +836,7 @@ export const serviceAppSettings=db.procedure({sessionId:t.string(),appId:t.strin
   const user=fromSession(tx,p.sessionId);
   if(!user.administrator||tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
   if((essentialApps as readonly string[]).includes(p.appId))fail("forbidden");
-  if(!["notes","tasks","agent","news","photos","books"].includes(p.appId)&&!validAppId(p.appId))fail("invalidInput");
+  if(!["notes","tasks","agent","news","photos","books","git"].includes(p.appId)&&!validAppId(p.appId))fail("invalidInput");
   if(settings.revision!==p.revision)fail("conflict");
   const disabled=settings.disabled.filter(id=>id!==p.appId);if(!p.enabled)disabled.push(p.appId);
   if(disabled.length>200)fail("operationTooLarge");

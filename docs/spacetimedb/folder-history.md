@@ -1,9 +1,9 @@
 # Folder history
 
 Git-like history for a Files folder, built on Files' own entries, versions and
-blobs (maintainer decision, November 16, 2026). Scion-shaped rather than a Git
-server: the server owns history, commits are reducers and there is no clone.
-A Git bundle export keeps the data portable.
+blobs (maintainer decision, November 16, 2026). Scion-shaped: the server owns
+history and commits are reducers. Git clients clone, fetch and push over HTTPS
+(see Git below; maintainer decision, November 16).
 
 ## Model
 
@@ -51,14 +51,49 @@ the safety net for anything not committed.
   Merge checks each file still has the revision the agent started from.
 - Limits: 2,000 files and depth 32 per tracked folder, 2,000 paths per changeset,
   10,000 changesets, 50 tracked folders per account, 2 KiB messages.
-- Backups (format v9) include history; restores accept versions kept by history.
+- Backups (format v9) include history and its Git objects and refs; restores accept
+  versions kept by history. Backups from before Git support restore without them.
+
+## Git
+
+Each tracked folder is a Git repository at `/dav/git/<folderId>.git` (smart HTTP,
+protocol v0 and v2; shallow and partial clones). It is also reachable by alias at
+`/dav/git/<username>/<path from the root>.git` (each part URL-encoded), which follows
+the folder's current path; only its owner can use it. The ID address never changes. Git signs in with the username and
+an app password: Files read access clones and fetches, Files write access pushes.
+
+- **Same IDs everywhere:** a Dar commit becomes a Git commit (author name and
+  `<username@dar.invalid>`, UTC) the first time Git sees it, and its exact bytes are
+  stored, as are pushed commits and annotated tags. Clones, bundles and rebuilt
+  caches always give the same IDs.
+- **Cache:** `<root>/git/<folderId>.git` is a bare repository rebuilt from the
+  database when missing; maintenance removes those of folders that stopped keeping
+  history. It is not backed up.
+- **Pushing main:** fast-forward only and never deleted, like a protected branch.
+  Its new commits (first-parent line) join the history, keeping their authors,
+  times and messages, and change the live folder in the same transaction: renames
+  move files, deletions go to deleted files. A push is refused when a file it
+  changes has uncommitted changes in Dar (commit them, pull, push again); other
+  uncommitted edits stay as they are.
+- **Other branches, tags and notes** (`refs/heads`, `refs/tags`, `refs/notes`) are
+  kept without changing the folder; force pushes and deletions work. Their content
+  belongs to no file and counts against the quota until nothing reaches it.
+  `refs/heads/agent/*` belongs to Agent.
+- **Kept from Git:** executable files and symbolic links keep their Git modes in
+  history; in Files a link is a regular file holding its target.
+- **Refused:** submodules, names Dar cannot keep (a backslash, case-only
+  differences), shallow pushes, packs over 4 GiB, objects over 256 KiB, and more
+  than 5,000 commits or 50,000 changed paths in one push (push in parts). Pushed
+  objects are checked with `git index-pack --strict`.
+- **Uploads:** like Files uploads, a push must reach the server within the HTTP
+  request timeout.
 
 ## API
 
 Under `/api/v1/files/history/<folderId>`: `GET` overview (repository, status,
 branches, changesets in pages of 50), `POST` track or untrack, `POST /commits`,
 `GET /commits/<id>`, `POST /restore`, `GET /versions/<id>/content`,
-`GET /bundle` (Git bundle of `main`) and `POST /branches/merge|discard` with the
+`GET /bundle` (Git bundle of every branch and tag) and `POST /branches/merge|discard` with the
 branch name and repository revision. Agent: `GET|POST /api/v1/agent/threads/<id>/branch`.
 
 ## UI
@@ -67,4 +102,5 @@ Folder details replace the empty Versions tab with History: Track history, the
 uncommitted changes with Commit and Snapshot, agent branches with Merge and
 Discard, and the changeset list. A changeset or the commit form opens in the
 right editing pane with per-file diffs (shared with Agent's review). Agent's
-review offers Commit to branch for tracked folders.
+review offers Commit to branch for tracked folders. A Git card shows the clone
+address and the pushed branches and tags; commits Git has seen show their short ID.

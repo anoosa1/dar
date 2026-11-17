@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import {chromium} from "@playwright/test";
 import {randomUUID} from "node:crypto";
 import path from "node:path";
+import {mkdtemp,rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {spawnSync} from "node:child_process";
 import {login,upload,connect} from "./integration-helpers.ts";
 import {fileDetails} from "./ui-helpers.mjs";
 const base=process.env.DAR_INTEGRATION_ORIGIN;if(!base)throw Error("Use an isolated instance.");
@@ -35,6 +38,17 @@ try{
   await details.getByText("Committed 2 changes.",{exact:true}).waitFor();await details.getByText("Everything is committed.",{exact:true}).waitFor();
   await details.getByRole("button",{name:/^Start the project/}).waitFor();
 
+  // Git: the clone address, and a tag pushed with Git listed with the branches and tags.
+  const git=details.locator(".history-git");
+  assert.equal(await git.getByLabel("Clone address",{exact:true}).inputValue(),`${base}/dav/git/${folderId}.git`);
+  const secret=(await (await fetch(base+"/api/v1/auth/app-passwords",{method:"POST",headers:{...native.headers,"content-type":"application/json"},body:JSON.stringify({label:"Git",scope:"write"})})).json()).secret;
+  const work=await mkdtemp(path.join(tmpdir(),"dar-git-ui-")),gitEnv={...process.env,GIT_CONFIG_GLOBAL:"/dev/null",GIT_CONFIG_NOSYSTEM:"1",HOME:work,GIT_TERMINAL_PROMPT:"0",GIT_COMMITTER_NAME:"Tester",GIT_COMMITTER_EMAIL:"t@example.com"};
+  const gitRun=(...args)=>{const result=spawnSync("git",["-c",`http.extraHeader=Authorization: Basic ${Buffer.from(`${username}:${secret}`).toString("base64")}`,...args],{cwd:work,env:gitEnv,encoding:"utf8"});assert.equal(result.status,0,result.stderr);};
+  gitRun("clone","-q",`${base}/dav/git/${folderId}.git`,"repo");gitRun("-C","repo","tag","-a","v1.0","-m","First release");gitRun("-C","repo","push","-q","origin","v1.0");
+  await details.getByRole("tab",{name:"Details",exact:true}).click();await details.getByRole("tab",{name:"History",exact:true}).click();
+  await details.getByRole("list",{name:"Branches and tags",exact:true}).getByText("v1.0",{exact:true}).waitFor();
+  await rm(work,{recursive:true,force:true});
+
   // A change made elsewhere shows up; a snapshot commits it without a message.
   await upload(base,native,"README.md","# Project\n\nSecond line\n",folderId,readme.fileId,1);
   await details.getByRole("button",{name:"Snapshot",exact:true}).waitFor();
@@ -43,6 +57,7 @@ try{
   // Restoring the first commit brings back its content and records a restore.
   await details.getByRole("button",{name:/^Start the project/}).click();
   const changeset=page.getByRole("complementary",{name:"Commit",exact:true});
+  assert.match(await changeset.locator(".history-sha").textContent(),/^[0-9a-f]{7}$/,"a commit Git has seen shows its ID");
   await changeset.getByRole("button",{name:"README.md",exact:true}).click();await changeset.getByRole("region",{name:"Changes in README.md",exact:true}).waitFor();
   await changeset.getByRole("button",{name:"Restore folder to this point",exact:true}).click();
   const confirm=page.getByRole("dialog",{name:"Restore this folder?",exact:true});await confirm.getByRole("button",{name:"Restore folder",exact:true}).click();
@@ -59,6 +74,7 @@ try{
     await page.evaluate(value=>{document.documentElement.dataset.theme=value;},theme);await page.setViewportSize({width,height:844});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${theme} ${width}`);
     await page.screenshot({animations:"disabled",path:path.join(process.env.DAR_TEST_ROOT,`history-${theme}-${width}.png`)});
+    await git.scrollIntoViewIfNeeded();await page.screenshot({animations:"disabled",path:path.join(process.env.DAR_TEST_ROOT,`history-git-${theme}-${width}.png`)});
   }
   await page.setViewportSize({width:1440,height:1000});
 

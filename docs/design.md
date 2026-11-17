@@ -153,7 +153,8 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   Versions ([folder history](spacetimedb/folder-history.md)): Track history, uncommitted
   changes with Review and commit (right pane with per-file diffs) and Snapshot, agent
   branches, the commit list (a commit opens in the right pane with Restore folder to
-  this point), Download as Git bundle and Stop keeping history. Moving to deleted files
+  this point), a Git card (clone address with Copy, pushed branches and tags, Open in Git), Download
+  as Git bundle and Stop keeping history. Moving to deleted files
   shows a toast with Undo. The Locked folder is a sidebar section: a password form
   (shared with Photos) until unlocked, then a normal folder with a Lock button whose
   Delete is permanent; Move to Locked folder asks for the password when needed. Storage is a meter card at the bottom of the sidebar.
@@ -241,6 +242,19 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   font, size, spacing and Pages/Scroll, saved to the account. A newer place from another device
   asks Go there / Stay here. Phones show the reader and details below the search bar with Back.
   See [Books](books.md).
+- **Git:** selected [mock B](spacetimedb/git-mocks.html) over A (November 16): its own app.
+  Every Files folder that keeps history is a repository. Sidebar views (Overview,
+  Repositories, Agent branches), then the repositories, with an app password card at the
+  bottom; New repository (right pane) creates a folder with a README and first commit, or
+  keeps history on an existing folder. Overview: a year of commits per day, repository cards
+  (README's first paragraph, counts, 12 weeks of activity) and recent commits labelled by
+  source (Git push, Dar, Agent). A repository has a header (mark, name, Files path, Clone
+  menu with the alias and permanent addresses, ZIP, bundle and app password links) and
+  Code (branch or tag, path, files with their last commit, README), Commits (branch, author
+  and source filters; Graph or List), Branches (behind/ahead of main, Compare, ZIP, delete
+  with confirmation; Agent branches open in Agent) and Tags tabs. Commits (with Restore folder
+  to this point for main), comparisons (with Merge: fast-forward or a merge commit, optionally
+  deleting the branch) and files open in the right sheet. Files are not edited here. See [Git](git.md).
 - **Agent:** the settings sheet and editing panes sit beside the Agent's sheets
   (which make room), as in other apps; choosing and adding a project both use the
   right pane. Threads on the left, conversation and docked composer in the center,

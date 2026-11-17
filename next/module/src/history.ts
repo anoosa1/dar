@@ -9,7 +9,7 @@ type Repo=NonNullable<ReturnType<Ctx["db"]["fileRepos"]["id"]["find"]>>;
 type Changeset=NonNullable<ReturnType<Ctx["db"]["fileChangesets"]["id"]["find"]>>;
 type Change=NonNullable<ReturnType<Ctx["db"]["fileChanges"]["id"]["find"]>>;
 type Branch=NonNullable<ReturnType<Ctx["db"]["fileBranches"]["id"]["find"]>>;
-type TreeItem={fileId:string;versionId:string};
+type TreeItem={fileId:string;versionId:string;mode:string};
 /** A path that differs between the live folder and main's head tree. */
 interface Pending {path:string;previousPath:string;kind:HistoryChangeKind;entry?:FileEntry;previous?:TreeItem}
 
@@ -23,14 +23,16 @@ export interface HistoryFiles {
   findKey(listKey:string):FileEntry|undefined;
   nameOf(name:string):string;
   fitsQuota(meter:{used:number;reserved:number;quota:number},bytes:number):boolean;
+  /** Moves or renames a file the caller may write, keeping its favorite and share listings in step. */
+  move(entry:FileEntry,parentId:string,name:string):void;
 }
 
-function fail(code:string):never{throw new SenderError(code);}
-const now=(ctx:Ctx)=>Number(ctx.timestamp.toMillis());
+export function fail(code:string):never{throw new SenderError(code);}
+export const now=(ctx:Ctx)=>Number(ctx.timestamp.toMillis());
 const uuid=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
-const first=<T>(rows:Iterable<T>)=>rows[Symbol.iterator]().next().value as T|undefined;
-function id(value:unknown){if(typeof value!=="string"||!uuid.test(value))fail("invalidInput");return value;}
-function keys(p:Record<string,unknown>,allowed:string[]){if(Object.keys(p).some(k=>!allowed.includes(k)))fail("invalidInput");}
+export const first=<T>(rows:Iterable<T>)=>rows[Symbol.iterator]().next().value as T|undefined;
+export function id(value:unknown){if(typeof value!=="string"||!uuid.test(value))fail("invalidInput");return value;}
+export function keys(p:Record<string,unknown>,allowed:string[]){if(Object.keys(p).some(k=>!allowed.includes(k)))fail("invalidInput");}
 function text(value:unknown,required:boolean){
   if(value===undefined&&!required)return "";
   if(typeof value!=="string"||value.includes("\0")||[...value].some(c=>c.codePointAt(0)!>=0xd800&&c.codePointAt(0)!<=0xdfff))fail("invalidInput");
@@ -40,15 +42,15 @@ function text(value:unknown,required:boolean){
 }
 function revision(repo:Repo,value:unknown){if(typeof value!=="number"||repo.revision!==value)fail("conflict");}
 const referenced=(ctx:Ctx,versionId:string)=>!!first(ctx.db.fileChanges.versionId.filter(versionId));
-function charge(ctx:Ctx,files:HistoryFiles,ownerId:string,bytes:number){
+export function charge(ctx:Ctx,files:HistoryFiles,ownerId:string,bytes:number){
   const meter=ctx.db.usage.userId.find(ownerId)??ctx.db.usage.insert({userId:ownerId,used:0,reserved:0,quota:0});
   if(!files.fitsQuota(meter,bytes))fail("quotaExceeded");ctx.db.usage.userId.update({...meter,used:meter.used+bytes});
 }
-function release(ctx:Ctx,ownerId:string,bytes:number){const meter=ctx.db.usage.userId.find(ownerId);if(meter&&bytes)ctx.db.usage.userId.update({...meter,used:Math.max(0,meter.used-bytes)});}
-function fresh(ctx:Ctx,files:HistoryFiles){let value=files.uuid();while(ctx.db.fileChangesets.id.find(value)||ctx.db.fileBranches.id.find(value))value=files.uuid();return value;}
+export function release(ctx:Ctx,ownerId:string,bytes:number){const meter=ctx.db.usage.userId.find(ownerId);if(meter&&bytes)ctx.db.usage.userId.update({...meter,used:Math.max(0,meter.used-bytes)});}
+export function fresh(ctx:Ctx,files:HistoryFiles){let value=files.uuid();while(ctx.db.fileChangesets.id.find(value)||ctx.db.fileBranches.id.find(value))value=files.uuid();return value;}
 
 /** A folder the caller can read (or write); never a trashed one or the Locked folder root. */
-function folderOf(ctx:Ctx,files:HistoryFiles,value:unknown,write:boolean){
+export function folderOf(ctx:Ctx,files:HistoryFiles,value:unknown,write:boolean){
   const entry=ctx.db.fileEntries.id.find(id(value));
   if(!entry||entry.kind!=="folder"||entry.trashed)fail("notFound");
   const role=files.role(entry);if(!role)fail("notFound");
@@ -62,7 +64,7 @@ function trackedAncestor(ctx:Ctx,entry:FileEntry){
 }
 
 /** Live files under a tracked folder by path. Tracked folders inside it keep their own history. */
-function scan(ctx:Ctx,root:FileEntry){
+export function scan(ctx:Ctx,root:FileEntry){
   const result=new Map<string,FileEntry>(),queue=[{id:root.id,path:"",depth:0}];
   for(let i=0;i<queue.length;i++){
     const folder=queue[i],prefix=`${root.ownerId}/${folder.id}/`,range=new Range<string>({tag:"included",value:prefix},{tag:"excluded",value:prefix.slice(0,-1)+"0"});
@@ -78,14 +80,14 @@ function scan(ctx:Ctx,root:FileEntry){
   }
   return result;
 }
-function headTree(ctx:Ctx,repoId:string){
+export function headTree(ctx:Ctx,repoId:string){
   const result=new Map<string,TreeItem>();
-  for(const row of ctx.db.fileTrees.repoId.filter(repoId))result.set(row.path,{fileId:row.fileId,versionId:row.versionId});
+  for(const row of ctx.db.fileTrees.repoId.filter(repoId))result.set(row.path,{fileId:row.fileId,versionId:row.versionId,mode:row.mode});
   return result;
 }
 const byPath=(a:{path:string},b:{path:string})=>a.path<b.path?-1:a.path>b.path?1:0;
 /** Uncommitted changes: the live folder against main's head, by content. A file that moved is a rename. */
-function status(ctx:Ctx,repo:Repo,root:FileEntry){
+export function status(ctx:Ctx,repo:Repo,root:FileEntry){
   const live=scan(ctx,root),head=headTree(ctx,repo.id),changes:Pending[]=[],added=new Map<string,Pending>(),deleted:Pending[]=[];
   for(const [path,entry] of live){
     const old=head.get(path);
@@ -120,8 +122,10 @@ function changeView(ctx:Ctx,change:Change):HistoryChange{
     ...next?{versionId:next.id,size:next.size,mediaType:next.mediaType}:{},...old?{previousVersionId:old.id,previousSize:old.size,previousMediaType:old.mediaType}:{}};
 }
 function author(ctx:Ctx,userId:string){const account=ctx.db.accounts.id.find(userId);return account?account.displayName||account.username:"Removed account";}
-function changesetView(ctx:Ctx,row:Changeset):HistoryChangeset{
-  return {id:row.id,sequence:row.sequence,kind:row.kind as HistoryChangeset["kind"],message:row.message,author:author(ctx,row.authorId),createdAt:row.createdAt,fileCount:row.fileCount};
+/** Commits Git has seen show their Git ID and author, which for pushed commits is not the Dar account that pushed. */
+export function changesetView(ctx:Ctx,row:Changeset):HistoryChangeset{
+  const git=first(ctx.db.fileGitObjects.changesetId.filter(row.id));
+  return {id:row.id,sequence:row.sequence,kind:row.kind as HistoryChangeset["kind"],message:row.message,author:git?.author||author(ctx,row.authorId),createdAt:row.createdAt,fileCount:row.fileCount,...git?{sha:git.sha}:{}};
 }
 function branchView(ctx:Ctx,branch:Branch):HistoryBranch{
   const set=ctx.db.fileChangesets.id.find(branch.changesetId);
@@ -137,19 +141,22 @@ function currentVersion(ctx:Ctx,files:HistoryFiles,entry:FileEntry):Version{
   charge(ctx,files,entry.ownerId,entry.size);
   return ctx.db.versions.insert({id:files.uuid(),fileId:entry.id,blobId:entry.blobId,size:entry.size,mediaType:entry.mediaType,createdAt:now(ctx)});
 }
-/** Appends a changeset to main and moves the head tree. */
-function record(ctx:Ctx,files:HistoryFiles,repo:Repo,userId:string,items:Pending[],kind:HistoryChangeset["kind"],message:string){
+/**
+ * Appends a changeset to main and moves the head tree. A file keeps its Git mode (executable,
+ * symbolic link) through edits and renames; `modes` sets them explicitly, as restore does.
+ */
+function record(ctx:Ctx,files:HistoryFiles,repo:Repo,userId:string,items:Pending[],kind:HistoryChangeset["kind"],message:string,modes?:Map<string,string>){
   if(!items.length)fail("nothingToCommit");
   if(items.length>historyLimits.changes||repo.sequence>=historyLimits.changesets)fail("operationTooLarge");
   const changesetId=fresh(ctx,files),sequence=repo.sequence+1;
   ctx.db.fileChangesets.insert({id:changesetId,repoId:repo.id,branch:"",parentId:repo.headId,sequence,kind,message,authorId:userId,fileCount:items.length,createdAt:now(ctx)});
   items.forEach((item,index)=>{
-    const version=item.entry?currentVersion(ctx,files,item.entry):undefined;
-    ctx.db.fileChanges.insert({id:`${changesetId}/${index}`,changesetId,path:item.path,previousPath:item.previousPath,kind:item.kind,fileId:item.entry?.id??item.previous?.fileId??"",versionId:version?.id??"",previousVersionId:item.previous?.versionId??"",expectRevision:0});
+    const version=item.entry?currentVersion(ctx,files,item.entry):undefined,previousMode=item.previous?.mode??"",mode=item.kind==="deleted"?"":modes?.get(item.path)??previousMode;
+    ctx.db.fileChanges.insert({id:`${changesetId}/${index}`,changesetId,path:item.path,previousPath:item.previousPath,kind:item.kind,fileId:item.entry?.id??item.previous?.fileId??"",versionId:version?.id??"",previousVersionId:item.previous?.versionId??"",expectRevision:0,mode,previousMode});
     if(item.kind==="deleted")ctx.db.fileTrees.id.delete(`${repo.id}/${item.path}`);
     if(item.kind==="renamed")ctx.db.fileTrees.id.delete(`${repo.id}/${item.previousPath}`);
     if(version){
-      const row={id:`${repo.id}/${item.path}`,repoId:repo.id,path:item.path,fileId:item.entry!.id,versionId:version.id};
+      const row={id:`${repo.id}/${item.path}`,repoId:repo.id,path:item.path,fileId:item.entry!.id,versionId:version.id,mode};
       if(ctx.db.fileTrees.id.find(row.id))ctx.db.fileTrees.id.update(row);else ctx.db.fileTrees.insert(row);
     }
   });
@@ -164,12 +171,12 @@ function treeAt(ctx:Ctx,repo:Repo,target:Changeset){
     const changes=[...ctx.db.fileChanges.changesetId.filter(set.id)];
     // Removals first: a path can be renamed away and another file added there in one changeset.
     for(const change of changes)if(change.kind==="added"||change.kind==="renamed")result.delete(change.path);
-    for(const change of changes)if(change.kind!=="added")result.set(change.kind==="renamed"?change.previousPath:change.path,{fileId:change.fileId,versionId:change.previousVersionId});
+    for(const change of changes)if(change.kind!=="added")result.set(change.kind==="renamed"?change.previousPath:change.path,{fileId:change.fileId,versionId:change.previousVersionId,mode:change.previousMode});
   }
   return result;
 }
 
-function trash(ctx:Ctx,files:HistoryFiles,entry:FileEntry){
+export function trash(ctx:Ctx,files:HistoryFiles,entry:FileEntry){
   ctx.db.fileEntries.id.update({...entry,trashed:true,listKey:`${entry.ownerId}/trash/${entry.name.toLowerCase()}/${entry.id}`,revision:entry.revision+1,modifiedAt:now(ctx)});
   files.event(entry.ownerId,entry.id,"trashed");
 }
@@ -177,15 +184,15 @@ function trash(ctx:Ctx,files:HistoryFiles,entry:FileEntry){
  * Gives a file a version's content. A version from another file is copied and counted, as
  * Restore version does; `adopt` hands over a staged branch version that is already counted.
  */
-function setContent(ctx:Ctx,files:HistoryFiles,entry:FileEntry,version:Version,adopt:boolean){
+export function setContent(ctx:Ctx,files:HistoryFiles,entry:FileEntry,version:Version,adopt:boolean){
   if(adopt)ctx.db.versions.id.update({...version,fileId:entry.id});
   else if(version.fileId!==entry.id){charge(ctx,files,entry.ownerId,version.size);ctx.db.versions.insert({...version,id:files.uuid(),fileId:entry.id,createdAt:now(ctx)});}
   ctx.db.fileEntries.id.update({...entry,blobId:version.blobId,size:version.size,mediaType:version.mediaType,revision:entry.revision+1,modifiedAt:now(ctx)});
   files.event(entry.ownerId,entry.id,"updated");
 }
-/** Creates a file at a path under the tracked folder, with any missing folders. */
-function createFile(ctx:Ctx,files:HistoryFiles,root:FileEntry,path:string,version:Version,adopt:boolean){
-  const parts=path.split("/"),name=parts.pop()!;let parentId=root.id;
+/** The folder at a path under the tracked folder, created with any missing parents. */
+function folderFor(ctx:Ctx,files:HistoryFiles,root:FileEntry,parts:string[]){
+  let parentId=root.id;
   for(const part of parts){
     const existing=files.findKey(files.key(root.ownerId,parentId,part));
     if(existing){if(existing.kind!=="folder")fail("conflict");parentId=existing.id;continue;}
@@ -193,6 +200,17 @@ function createFile(ctx:Ctx,files:HistoryFiles,root:FileEntry,path:string,versio
     ctx.db.fileEntries.insert({id:folderId,ownerId:root.ownerId,parentId,name:part,kind:"folder",blobId:"",size:0,mediaType:"inode/directory",revision:1,modifiedAt:now(ctx),trashed:false,favorite:false,listKey:files.key(root.ownerId,parentId,part)});
     files.event(root.ownerId,folderId,"created");parentId=folderId;
   }
+  return parentId;
+}
+/** Moves a file to a path under the tracked folder. */
+export function moveFile(ctx:Ctx,files:HistoryFiles,root:FileEntry,entry:FileEntry,path:string){
+  const parts=path.split("/"),name=parts.pop()!,parentId=folderFor(ctx,files,root,parts);
+  if(files.findKey(files.key(root.ownerId,parentId,name)))fail("conflict");
+  files.move(entry,parentId,name);
+}
+/** Creates a file at a path under the tracked folder, with any missing folders. */
+export function createFile(ctx:Ctx,files:HistoryFiles,root:FileEntry,path:string,version:Version,adopt:boolean){
+  const parts=path.split("/"),name=parts.pop()!,parentId=folderFor(ctx,files,root,parts);
   const listKey=files.key(root.ownerId,parentId,name);
   if(files.findKey(listKey))fail("conflict");
   // A file deleted for good comes back with its own ID, and so with its kept versions.
@@ -226,6 +244,9 @@ export function dropRepo(ctx:Ctx,repo:Repo){
     ctx.db.fileChangesets.id.delete(set.id);
   }
   for(const row of [...ctx.db.fileTrees.repoId.filter(repo.id)])ctx.db.fileTrees.id.delete(row.id);
+  for(const row of [...ctx.db.fileGitObjects.repoId.filter(repo.id)])ctx.db.fileGitObjects.id.delete(row.id);
+  for(const row of [...ctx.db.fileGitRefs.repoId.filter(repo.id)])ctx.db.fileGitRefs.id.delete(row.id);
+  for(const row of [...ctx.db.fileGitBlobs.repoId.filter(repo.id)])ctx.db.fileGitBlobs.id.delete(row.id);
   let bytes=0;
   for(const versionId of versionIds){
     const version=ctx.db.versions.id.find(versionId);
@@ -265,12 +286,13 @@ export function historyOperation(ctx:Ctx,files:HistoryFiles,userId:string,upload
     }
     keys(p,["folderId","before"]);
     const base={folder:{id:root.id,name:root.name},tracked:!!repo,canWrite:role!=="read",owner:role==="owner"};
-    if(!repo)return {...base,...blocked?{blocked}:{},branches:[],changesets:[],nextBefore:null};
+    if(!repo)return {...base,...blocked?{blocked}:{},branches:[],gitRefs:[],changesets:[],nextBefore:null};
     const before=p.before===undefined?Infinity:typeof p.before==="number"&&Number.isInteger(p.before)&&p.before>0?p.before:fail("invalidInput");
     const current=status(ctx,repo,root),rows=[...ctx.db.fileChangesets.repoId.filter(repo.id)].filter(row=>!row.branch&&row.sequence<before).sort((a,b)=>b.sequence-a.sequence),page=rows.slice(0,historyLimits.page);
     return {...base,repo:{revision:repo.revision,headId:repo.headId,sequence:repo.sequence,createdAt:repo.createdAt},
       status:{changes:current.changes.map(item=>pendingView(ctx,item)),token:current.token},
       branches:[...ctx.db.fileBranches.repoId.filter(repo.id)].map(branch=>branchView(ctx,branch)).sort((a,b)=>b.modifiedAt-a.modifiedAt),
+      gitRefs:[...ctx.db.fileGitRefs.repoId.filter(repo.id)].map(row=>({name:row.name,sha:row.target})).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0),
       changesets:page.map(row=>changesetView(ctx,row)),nextBefore:rows.length>page.length?page.at(-1)!.sequence:null};
   }
   if(!repo)fail("notFound");
@@ -307,19 +329,6 @@ export function historyOperation(ctx:Ctx,files:HistoryFiles,userId:string,upload
       if(!path)fail("notFound");
       return {id:version.id,name:path.split("/").at(-1),blobId:version.blobId,size:version.size,mediaType:version.mediaType,revision:0};
     }
-    case "export":{
-      keys(p,["folderId"]);
-      const sets=[...ctx.db.fileChangesets.repoId.filter(repo.id)].filter(row=>!row.branch).sort((a,b)=>a.sequence-b.sequence);
-      const people=new Map<string,{name:string;username:string}>();
-      return {name:root.name,changesets:sets.map(set=>{
-        if(!people.has(set.authorId)){const account=ctx.db.accounts.id.find(set.authorId);people.set(set.authorId,{name:account?.displayName||account?.username||"Removed account",username:account?.username??"removed"});}
-        return {sequence:set.sequence,message:set.message,createdAt:set.createdAt,author:people.get(set.authorId),changes:[...ctx.db.fileChanges.changesetId.filter(set.id)].map(change=>{
-          const version=change.versionId?ctx.db.versions.id.find(change.versionId):undefined;
-          if(change.versionId&&!version)fail("contentUnavailable");
-          return {path:change.path,previousPath:change.previousPath,kind:change.kind,...version?{blobId:version.blobId,size:version.size}:{}};
-        })};
-      })};
-    }
     case "restore":{
       keys(p,["folderId","id","revision"]);revision(repo,p.revision);
       const target=ctx.db.fileChangesets.id.find(id(p.id));if(!target||target.repoId!==repo.id||target.branch)fail("notFound");
@@ -332,8 +341,11 @@ export function historyOperation(ctx:Ctx,files:HistoryFiles,userId:string,upload
         if(!entry)createFile(ctx,files,root,path,version,false);
         else if(entry.blobId!==version.blobId)setContent(ctx,files,entry,version,false);
       }
-      const label=target.message.length>120?target.message.slice(0,119)+"…":target.message;
-      return record(ctx,files,ctx.db.fileRepos.id.find(repo.id)!,userId,status(ctx,repo,root).changes,"restore",`Restore to “${label}”`);
+      const label=target.message.length>120?target.message.slice(0,119)+"…":target.message,after=status(ctx,repo,root),items=after.changes,head=headTree(ctx,repo.id);
+      // Same content with another Git mode (an executable bit) is a change too.
+      for(const [path,item] of want){const old=head.get(path),entry=after.live.get(path);if(old&&entry&&old.mode!==item.mode&&!items.some(change=>change.path===path))items.push({path,previousPath:"",kind:"modified",entry,previous:old});}
+      items.sort(byPath);
+      return record(ctx,files,ctx.db.fileRepos.id.find(repo.id)!,userId,items,"restore",`Restore to “${label}”`,new Map([...want].map(([path,item])=>[path,item.mode])));
     }
     case "branch":{
       keys(p,["folderId","threadId"]);const thread=agentThread(ctx,userId,p.threadId,root.id);
@@ -399,7 +411,7 @@ export function historyOperation(ctx:Ctx,files:HistoryFiles,userId:string,upload
           ctx.db.versions.insert({id:upload.id,fileId:`staged:${branchId}`,blobId:upload.id,size:upload.size,mediaType:upload.mediaType,createdAt:now(ctx)});
           versionId=upload.id;
         }
-        changes.push({id:`${changesetId}/${index}`,changesetId,path,previousPath:"",kind,fileId,versionId,previousVersionId,expectRevision});
+        changes.push({id:`${changesetId}/${index}`,changesetId,path,previousPath:"",kind,fileId,versionId,previousVersionId,expectRevision,mode:"",previousMode:""});
       }
       if(!changes.length)return {revision:repo.revision,branch:null};
       ctx.db.fileChangesets.insert({id:changesetId,repoId:repo.id,branch:name,parentId:repo.headId,sequence:0,kind:"branch",message:title,authorId:userId,fileCount:changes.length,createdAt:now(ctx)});
@@ -415,7 +427,8 @@ export function historyOperation(ctx:Ctx,files:HistoryFiles,userId:string,upload
 
 /** Backup rows; restore validates references after Files and versions are back. */
 export function historySnapshot(ctx:Ctx){
-  return {repos:[...ctx.db.fileRepos.iter()],changesets:[...ctx.db.fileChangesets.iter()],changes:[...ctx.db.fileChanges.iter()],trees:[...ctx.db.fileTrees.iter()],branches:[...ctx.db.fileBranches.iter()]};
+  return {repos:[...ctx.db.fileRepos.iter()],changesets:[...ctx.db.fileChangesets.iter()],changes:[...ctx.db.fileChanges.iter()],trees:[...ctx.db.fileTrees.iter()],branches:[...ctx.db.fileBranches.iter()],
+    gitObjects:[...ctx.db.fileGitObjects.iter()],gitRefs:[...ctx.db.fileGitRefs.iter()],gitBlobs:[...ctx.db.fileGitBlobs.iter()]};
 }
 /** The owner of each version only history keeps, so restore can count it against the right quota. */
 export function historyVersionOwners(value:ReturnType<typeof historySnapshot>|undefined){
@@ -428,7 +441,11 @@ export function restoreHistory(ctx:Ctx,value:ReturnType<typeof historySnapshot>|
   if(!value)return;
   for(const repo of value.repos){const folder=ctx.db.fileEntries.id.find(repo.id);if(!folder||folder.kind!=="folder"||folder.ownerId!==repo.ownerId)fail("invalidInput");ctx.db.fileRepos.insert(repo);}
   for(const set of value.changesets){if(!ctx.db.fileRepos.id.find(set.repoId))fail("invalidInput");ctx.db.fileChangesets.insert(set);}
-  for(const change of value.changes){if(!ctx.db.fileChangesets.id.find(change.changesetId)||change.versionId&&!ctx.db.versions.id.find(change.versionId))fail("invalidInput");ctx.db.fileChanges.insert(change);}
-  for(const row of value.trees){if(!ctx.db.fileRepos.id.find(row.repoId)||!ctx.db.versions.id.find(row.versionId))fail("invalidInput");ctx.db.fileTrees.insert(row);}
+  for(const change of value.changes){if(!ctx.db.fileChangesets.id.find(change.changesetId)||change.versionId&&!ctx.db.versions.id.find(change.versionId))fail("invalidInput");ctx.db.fileChanges.insert({...change,mode:change.mode??"",previousMode:change.previousMode??""});}
+  for(const row of value.trees){if(!ctx.db.fileRepos.id.find(row.repoId)||!ctx.db.versions.id.find(row.versionId))fail("invalidInput");ctx.db.fileTrees.insert({...row,mode:row.mode??""});}
   for(const row of value.branches){if(!ctx.db.fileRepos.id.find(row.repoId)||!ctx.db.fileChangesets.id.find(row.changesetId))fail("invalidInput");ctx.db.fileBranches.insert(row);}
+  // Backups from before Git support (format v9 too) have no Git rows.
+  for(const row of value.gitObjects??[]){if(!ctx.db.fileRepos.id.find(row.repoId)||row.changesetId&&ctx.db.fileChangesets.id.find(row.changesetId)?.repoId!==row.repoId)fail("invalidInput");ctx.db.fileGitObjects.insert(row);}
+  for(const row of value.gitRefs??[]){if(!ctx.db.fileRepos.id.find(row.repoId)||!ctx.db.fileGitObjects.id.find(`${row.repoId}/${row.target}`))fail("invalidInput");ctx.db.fileGitRefs.insert(row);}
+  for(const row of value.gitBlobs??[]){if(!ctx.db.fileRepos.id.find(row.repoId))fail("invalidInput");ctx.db.fileGitBlobs.insert(row);}
 }

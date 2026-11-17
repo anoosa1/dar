@@ -1,11 +1,11 @@
-import {useEffect,useRef,useState,type FormEvent} from "react";
+import {useEffect,useId,useRef,useState,type FormEvent} from "react";
 import {request,formatBytes,type BrowserSession} from "./api.ts";
 import {localDateTime} from "./dates.ts";
 import {Icon} from "./icons.tsx";
 import {EditorPane} from "./pane.tsx";
 import {Dialog} from "./dialog.tsx";
 import {Diff,DiffStat,unifiedHunks,countLines,textLines} from "./diff.tsx";
-import {historyLimits,type HistoryOverview,type HistoryChange,type HistoryChangeset,type HistoryDetail,type HistoryBranch} from "../shared/history.ts";
+import {historyLimits,gitPath,type HistoryOverview,type HistoryChange,type HistoryChangeset,type HistoryDetail,type HistoryBranch} from "../shared/history.ts";
 
 /** Folder history in the folder details sheet (docs/spacetimedb/folder-history.md). */
 const base=(folderId:string)=>`/api/v1/files/history/${folderId}`;
@@ -94,7 +94,7 @@ function ChangesetPane({folderId,changeset,revision,canWrite,session,onClose,onD
     catch(cause){setError(historyFailure(cause));setConfirm(false);}finally{setBusy(false);}
   }
   return <EditorPane title={changesetLabel(changeset)} onClose={onClose}>
-    <div className="history-summary"><h3>{changeset.message}</h3><p className="muted">{changeset.author} · {when(changeset.createdAt)} · {plural(changeset.fileCount,"file")}</p></div>
+    <div className="history-summary"><h3>{changeset.message}</h3><p className="muted">{changeset.author} · {when(changeset.createdAt)} · {plural(changeset.fileCount,"file")}{changeset.sha&&<> · <code className="history-sha" title={changeset.sha}>{changeset.sha.slice(0,7)}</code></>}</p></div>
     {error&&<div className="error" role="alert">{error}{!detail&&<button type="button" className="text-button" onClick={()=>setAttempt(value=>value+1)}>Retry</button>}</div>}
     {!detail&&!error?<p className="history-note" role="status">Loading changes…</p>:detail&&<div className="history-changes">{detail.changes.map(change=><ChangeRow key={change.path} folderId={folderId} change={change} live={false}/>)}</div>}
     {canWrite&&<div className="dialog-actions"><button type="button" className="secondary-button" disabled={busy} onClick={()=>setConfirm(true)}><Icon name="history"/>Restore folder to this point</button></div>}
@@ -120,6 +120,19 @@ function BranchPane({folderId,branch,revision,canWrite,session,onClose,onDone}:{
     {canWrite&&<div className="dialog-actions"><button type="button" className="text-button danger" disabled={busy} onClick={()=>setConfirm(true)}>Discard</button><button type="button" className="primary-button" disabled={busy} onClick={()=>{void act("merge");}}>{busy?"Merging…":"Merge into folder"}</button></div>}
     {confirm&&<Dialog title="Discard this branch?" onClose={()=>setConfirm(false)}><p>The agent’s proposed changes to {plural(branch.changes.length,"file")} are deleted. The folder is not changed.</p><div className="dialog-actions"><button className="text-button" onClick={()=>setConfirm(false)}>Cancel</button><button className="danger-button" disabled={busy} onClick={()=>{void act("discard");}}>Discard branch</button></div></Dialog>}
   </EditorPane>;
+}
+
+/** Clone address and the branches and tags pushed besides main (docs/spacetimedb/folder-history.md#git). */
+function GitCard({folderId,refs,username}:{folderId:string;refs:HistoryOverview["gitRefs"];username:string}){
+  const url=`${location.origin}${gitPath(folderId)}`,[copied,setCopied]=useState(""),field=useId();
+  return <div className="property-card history-git">
+    <h3>Git</h3>
+    <div className="history-clone"><label htmlFor={field}>Clone address</label><span className="history-clone-row"><input id={field} readOnly value={url} onFocus={event=>event.target.select()}/><button type="button" className="secondary-button" onClick={()=>{void navigator.clipboard.writeText(url).then(()=>setCopied("Address copied."),()=>setCopied("Select the address and copy it."));}}><Icon name="copy"/>Copy</button></span></div>
+    {copied&&<p className="muted small" role="status">{copied}</p>}
+    <p className="muted small">Sign in as {username} with an app password that has Files access. Pushing to main changes this folder; other branches and tags are kept without changing it.</p>
+    {refs.length>0&&<ul className="history-refs" aria-label="Branches and tags">{refs.map(ref=>{const tag=ref.name.startsWith("refs/tags/");return <li key={ref.name}><Icon name={tag?"bookmark":"share"}/><span title={ref.name}>{ref.name.replace(/^refs\/(heads|tags)\//,"")}</span><small>{tag?"Tag":"Branch"}</small><code>{ref.sha.slice(0,7)}</code></li>;})}</ul>}
+    <a className="text-button history-open-git" href={`/git?repo=${folderId}`}><Icon name="branch"/>Open in Git</a>
+  </div>;
 }
 
 type Pane={type:"commit"}|{type:"changeset";row:HistoryChangeset}|{type:"branch";branch:HistoryBranch};
@@ -164,6 +177,7 @@ export function FolderHistory({folderId,revision,session}:{folderId:string;revis
     <h3 className="history-heading">History</h3>
     {changesets.length?<ol className="history-log">{changesets.map(row=><li key={row.id}><button className="history-entry" onClick={()=>setPane({type:"changeset",row})}><Icon name={row.kind==="restore"?"history":row.kind==="merge"?"agent":row.kind==="snapshot"?"clock":"check"}/><span><strong>{row.message}</strong><small>{row.author} · {when(row.createdAt)} · {plural(row.fileCount,"file")}</small></span></button></li>)}</ol>:<p className="muted">No commits yet. Commit the current files to start the history.</p>}
     {next!==null&&<button className="text-button" onClick={()=>{void more();}}>Show older</button>}
+    <GitCard folderId={folderId} refs={data.gitRefs} username={session.user.username}/>
     <div className="history-footer">{changesets.length>0&&<a className="text-button" href={`${base(folderId)}/bundle`} download><Icon name="download"/>Download as Git bundle</a>}{data.owner&&<button className="text-button danger" disabled={busy} onClick={()=>setUntrack(true)}>Stop keeping history</button>}</div>
     {pane?.type==="commit"&&<CommitPane folderId={folderId} status={status} session={session} onClose={()=>setPane(null)} onDone={done}/>}
     {pane?.type==="changeset"&&<ChangesetPane key={pane.row.id} folderId={folderId} changeset={pane.row} revision={data.repo!.revision} canWrite={data.canWrite} session={session} onClose={()=>setPane(null)} onDone={done}/>}

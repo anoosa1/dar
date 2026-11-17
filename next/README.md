@@ -1,6 +1,6 @@
 # Dar application
 
-Files, Photos, Books, Contacts, Calendar, Notes, Tasks, Agent and installed apps, with a native
+Files, Photos, Books, Contacts, Calendar, Notes, Tasks, Agent, Git and installed apps, with a native
 identity provider. Architecture: [docs/spacetimedb/architecture.md](../docs/spacetimedb/architecture.md).
 
 ## Run locally

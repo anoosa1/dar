@@ -16,6 +16,8 @@ import { handleDav } from "./files/dav.ts";
 import { createOpaqueToken } from "./auth/session.ts";
 import { reconcileStorage } from "./files/maintenance.ts";
 import { handleHistoryHttp } from "./files/history.ts";
+import { gitRepositories, handleGitHttp } from "./files/git.ts";
+import { gitApi } from "./git/api.ts";
 import { handlePimHttp } from "./pim/http.ts";
 import { pimService } from "./pim/service.ts";
 import { deliverReminders } from "./pim/reminders.ts";
@@ -119,7 +121,7 @@ export async function startServer(config: ServerConfig) {
   // Keep revisioned writes and hook disposal/activation in the same order.
   let appUpdate:Promise<unknown>=Promise.resolve();
   const managedApps=(settings:AppSettings):ManagedApp[]=>[
-    ...["files","photos","books","contacts","calendar","notes","tasks","news","agent"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","news","photos","books","agent"].includes(id)})),
+    ...["files","photos","books","contacts","calendar","notes","tasks","news","agent","git"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","news","photos","books","agent","git"].includes(id)})),
     ...appRegistry.inventory.map(item=>({...item,enabled:appRegistry.apps.has(item.id)&&!settings.disabled.includes(item.id),canToggle:hostEnabledApps.has(item.id)})),
   ];
   const databasePublicUrl = `${(config.databasePublicUrl ?? (config.development ? config.databaseUrl : `${config.origin}/spacetime`)).replace(/\/$/, "")}/`;
@@ -139,6 +141,7 @@ export async function startServer(config: ServerConfig) {
   newsRuntime=createNewsRuntime(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
   calendarSubscriptions=createCalendarSubscriptions(db,{allowPrivate:!!config.newsAllowPrivateNetworks});
   const blobs = blobStore(root), client = staticAssets(new URL("../dist/", import.meta.url)), notesLibrary = createNotesLibrary(db, root);
+  const repositories = gitRepositories(db, root), handleGitApi = gitApi(db, repositories, blobs, config.origin);
   photosRuntime=await createPhotosRuntime(db,root);
   booksRuntime=await createBooksRuntime(db,root);
   immichConnector=createImmichConnector(db,root,blobs,photosRuntime,{allowLoopback:!!config.development||!!config.immichAllowLocalHost});
@@ -194,6 +197,8 @@ export async function startServer(config: ServerConfig) {
           limit: key => { const scoped = `${key}:${peer(req)}`, previous = attempts.get(scoped), attempt = previous && previous.until > Date.now() ? previous : { count: 0, until: Date.now() + 60_000 };
             if (++attempt.count > 10 || (!previous && attempts.size >= 10_000)) throw new AppError("rateLimited", 429, "Too many attempts. Wait a minute and try again."); attempts.set(scoped, attempt); } });
       }
+      // Git clients (no browser): folder history over smart HTTP, signed in with an app password.
+      if (url.pathname.startsWith("/dav/git/")) return await handleGitHttp(req, res, url, db, repositories, blobs, config.origin);
       if (url.pathname.startsWith("/dav/") && !url.pathname.startsWith("/dav/files/")) return await handlePimDav(req, res, db, config.origin);
       if (url.pathname.startsWith("/dav/")) return await handleDav(req, res, db, blobs, config.origin);
       if (url.pathname === "/auth/issuer/.well-known/openid-configuration") return json(res, { issuer: issuer.issuer, jwks_uri: `${issuer.issuer}/jwks`, id_token_signing_alg_values_supported: ["ES256"], subject_types_supported: ["public"] });
@@ -274,9 +279,10 @@ export async function startServer(config: ServerConfig) {
           return json(res,await agentRuntime!.connect(authenticated.user.id,input.provider==="claude"?"claude":"codex"));
         }
         if(/^\/api\/v1\/agent(\/|$)/.test(url.pathname))return await handleAgentHttp(req,res,url,db,authenticated.session.id,authenticated.user.id,agentRuntime!,()=>body(req,128*1024),(data,id)=>blobs.receive((async function*(){yield data;})(),id,data.length));
-        const optionalApp=/^\/api\/v1\/(notes|tasks|news|photos|books)(\/|$)/.exec(url.pathname);
+        const optionalApp=/^\/api\/v1\/(notes|tasks|news|photos|books|git)(\/|$)/.exec(url.pathname);
         if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);
         if(/^\/api\/v1\/news(\/|$)/.test(url.pathname))return await handleNewsHttp(req,res,url,db,authenticated.session.id,authenticated.user.username,newsRuntime!,()=>body(req,3*1024*1024));
+        if(/^\/api\/v1\/git\//.test(url.pathname))return await handleGitApi(req,res,url,authenticated.session.id,authenticated.user,()=>body(req,16*1024));
         if(/^\/api\/v1\/books(\/|$)/.test(url.pathname))return await handleBooksHttp(req,res,url,db,authenticated.session.id,booksRuntime!,()=>body(req,64*1024));
         if(/^\/api\/v1\/photos(\/|$)/.test(url.pathname))return await handlePhotosHttp(req,res,url,db,authenticated.session.id,photosRuntime!,root,config.origin,{userId:authenticated.user.id,immich:immichConnector!},(entry,inline=true)=>blobs.download(req,res,entry,inline),()=>body(req,128*1024));
         // The Locked folder opens for this browser session after the account password is confirmed.
@@ -350,7 +356,7 @@ export async function startServer(config: ServerConfig) {
           const p = await body(req); const id = await auth.createAccount(string(p.username, 64), string(p.displayName, 100), string(p.password), false);
           return json(res, { id }, 201);
         }
-        if (url.pathname.startsWith("/api/v1/files/history/")) return await handleHistoryHttp(req, res, url, db, authenticated.session.id, root, blobs, () => body(req, 1024 * 1024));
+        if (url.pathname.startsWith("/api/v1/files/history/")) return await handleHistoryHttp(req, res, url, db, authenticated.session.id, repositories, blobs, () => body(req, 1024 * 1024));
         if (url.pathname === "/api/v1/files/uploads" && method === "POST") {
           const p = await body(req), id = randomUUID();
           const upload = await db.call("service_begin_upload", [authenticated.session.id, id,
@@ -416,6 +422,7 @@ export async function startServer(config: ServerConfig) {
     maintenance = (async () => {
       for (const [key, attempt] of attempts) if (attempt.until <= Date.now()) attempts.delete(key);
       await reconcileStorage(db, blobs);
+      await repositories.prune();
       await deliverReminders(db);
       await identity.maintain();
     })().catch(() => { console.warn("Storage maintenance will retry."); }).finally(() => { maintenance = undefined; });

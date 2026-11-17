@@ -2,6 +2,7 @@ import {constants} from "node:fs";
 import {mkdir,lstat,open,readdir,writeFile,rm} from "node:fs/promises";
 import {spawn} from "node:child_process";
 import {isUtf8} from "node:buffer";
+import {mediaTypeOf} from "../files/media-types.ts";
 import path from "node:path";
 import type {Database} from "../database.ts";
 import type {AgentProject,AgentChange} from "../../shared/agent.ts";
@@ -123,9 +124,7 @@ export async function prepareWorkspace(root:string,userId:string,threadId:string
   }};
 }
 
-const textTypes:Record<string,string>={md:"text/markdown",markdown:"text/markdown",txt:"text/plain",csv:"text/csv",html:"text/html",css:"text/css",js:"text/javascript",mjs:"text/javascript",ts:"text/plain",tsx:"text/plain",json:"application/json",xml:"application/xml",svg:"image/svg+xml",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",gif:"image/gif",webp:"image/webp",pdf:"application/pdf"};
 /** A media type for a file the agent added: by extension, else text or binary by content. */
-function typeOf(name:string,data:Buffer){const extension=/\.([A-Za-z0-9]+)$/.exec(name)?.[1].toLowerCase();return extension&&textTypes[extension]||(isUtf8(data)?"text/plain":"application/octet-stream");}
 export interface BranchChange {path:string;kind:"added"|"modified"|"deleted";data?:Buffer;mediaType?:string;fileId?:string;expectRevision?:number}
 /** Everything a Files thread changed against its baseline, with full contents, for its history branch. */
 export async function branchChanges(root:string,userId:string,threadId:string):Promise<BranchChange[]>{
@@ -139,7 +138,7 @@ export async function branchChanges(root:string,userId:string,threadId:string):P
     const file=baseline.source.files.find(row=>row.path===name);
     if(old&&!file)continue;
     const kind=old?next?"modified":"deleted":"added";
-    result.push({path:name,kind,...next?{data:next,mediaType:file?.mediaType??typeOf(name,next)}:{},...file?{fileId:file.id,expectRevision:file.revision}:{}});
+    result.push({path:name,kind,...next?{data:next,mediaType:file?.mediaType??mediaTypeOf(name,next)}:{},...file?{fileId:file.id,expectRevision:file.revision}:{}});
   }
   return result;
 }
