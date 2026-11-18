@@ -30,6 +30,8 @@ try{
   // A conversation: history with a quote, then a sent message with its tick and a live incoming one.
   await list.getByRole("button",{name:/Sara Haddad/}).click();const chat=page.getByRole("complementary",{name:"Sara Haddad"});
   const log=chat.getByRole("log",{name:"Messages with Sara Haddad"});await log.getByText("Are we still on for dinner?").waitFor();await log.locator(".chat-quote").getByText("Yes!").waitFor();
+  // The imported photo downloads through the bridge when shown.
+  await page.waitForFunction(()=>document.querySelector(".chat-photo img")?.naturalWidth===4);
   const box=chat.getByLabel("Message Sara Haddad");await box.fill("See you at 7");await box.press("Enter");
   const sent=log.locator(".chat-message.is-out").filter({hasText:"See you at 7"});await sent.getByText("Sent").waitFor();assert.equal(await box.inputValue(),"");
   await writeFile(path.join(control,`${account.id}.incoming.json`),JSON.stringify({messages:[{id:"LIVE1",chat:"15550002222@s.whatsapp.net",sender:"15550002222@s.whatsapp.net",fromMe:false,at:Date.now(),kind:"text",text:"Perfect, see you at 7 then"}]}));
@@ -39,6 +41,13 @@ try{
   await log.locator(".chat-message.is-in").filter({hasText:"Perfect, see you at 7 then"}).getByRole("button",{name:"Message actions"}).click();await page.getByRole("menuitem",{name:"Reply"}).click();
   await chat.getByText("Replying to Sara Haddad").waitFor();await box.press("Escape");assert.equal(await chat.getByText("Replying to Sara Haddad").count(),0);
   await page.screenshot({path:path.join(root,"chat-desktop.png")});
+  // A document in the group: Save to Files from the message menu, into the shared folder picker.
+  await page.getByRole("list",{name:"Chats"}).getByRole("button",{name:/Family/}).click();const group=page.getByRole("complementary",{name:"Family"});
+  const document=group.locator(".chat-message").filter({hasText:"Eid lunch menu.pdf"});await document.waitFor();await document.hover();
+  await document.getByRole("button",{name:"Message actions"}).click();await page.getByRole("menuitem",{name:"Save to Files…"}).click();
+  const save=page.locator("[data-editor-pane]");await save.getByRole("heading",{name:"Save to Files"}).waitFor();await save.getByRole("button",{name:/^Save to/}).click();
+  await page.getByText("Saved to Files as Eid lunch menu.pdf").waitFor();await save.waitFor({state:"detached"});
+  await page.getByRole("list",{name:"Chats"}).getByRole("button",{name:/Sara Haddad/}).click();await chat.getByLabel("Message Sara Haddad").waitFor();
   // Settings sheet lists the account.
   await page.getByRole("button",{name:"Chat settings",exact:true}).first().click();const sheet=page.getByRole("dialog",{name:"Chat settings"});await sheet.getByText("Linked accounts").waitFor();await sheet.getByText("Personal",{exact:true}).waitFor();
   await sheet.getByRole("button",{name:"Close settings"}).click();await sheet.waitFor({state:"detached"});

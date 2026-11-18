@@ -31,6 +31,10 @@ export async function handleChatHttp(req:IncomingMessage,res:ServerResponse,url:
       return send(await runtime.call(sessionId,"messages",{threadId:p.get("threadId")??"",...p.get("before")?{before:p.get("before")}:{}}));
     }
     if(path==="/chats"&&method==="POST"){const v=await input(["accountId","phone"]);return send(await runtime.call(sessionId,"openDirect",{accountId:str(v.accountId,64),phone:str(v.phone,40)}),201);}
+    if(path==="/media"&&(method==="GET"||method==="HEAD")){
+      const p=url.searchParams;return await runtime.serveMedia(req,res,sessionId,str(p.get("threadId")??"",300)!,str(p.get("messageId")??"",128)!,p.get("download")==="1");
+    }
+    if(path==="/save"&&method==="POST"){const v=await input(["threadId","messageId","folderId"]);return send(await runtime.saveMedia(sessionId,str(v.threadId,300)!,str(v.messageId,128)!,str(v.folderId??"",100)!),201);}
     if(path==="/read"&&method==="POST"){const v=await input(["threadId"]);return send(await runtime.markRead(sessionId,str(v.threadId,300)!));}
     if(path==="/send"&&method==="POST"){
       const v=await input(["threadId","text","quotedId"]);

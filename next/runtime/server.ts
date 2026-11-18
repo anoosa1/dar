@@ -156,7 +156,7 @@ export async function startServer(config: ServerConfig) {
   const checksums = checksumWorker(db, root);
   photosRuntime=await createPhotosRuntime(db,root);
   booksRuntime=await createBooksRuntime(db,root);
-  chatRuntime=await createChatRuntime(db,root,{executable:config.chatBridge,enabled:!initialAppSettings.disabled.includes("chat")});
+  chatRuntime=await createChatRuntime(db,root,{executable:config.chatBridge,enabled:!initialAppSettings.disabled.includes("chat"),blobs});
   immichConnector=createImmichConnector(db,root,blobs,photosRuntime,{allowLoopback:!!config.development||!!config.immichAllowLocalHost});
   await blobs.recover();
   const attempts = new Map<string, { count: number; until: number }>();

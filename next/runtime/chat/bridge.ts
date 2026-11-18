@@ -15,7 +15,7 @@ interface Pending {resolve:(value:unknown)=>void;reject:(error:Error)=>void;time
  * The process restarts with backoff after a crash; onReady runs after every start so
  * accounts reconnect. close() stops it and fails anything still waiting.
  */
-export function startBridge(executable:string|undefined,{request,event,onReady}:{request:BridgeRequest;event:BridgeEvent;onReady:()=>void}){
+export function startBridge(executable:string|undefined,{request,event,onReady,env={}}:{request:BridgeRequest;event:BridgeEvent;onReady:()=>void;env?:Record<string,string>}){
   let child:ChildProcessWithoutNullStreams|undefined,closing=false,ready=false,restarts=0,restartTimer:ReturnType<typeof setTimeout>|undefined,next=0;
   const status:BridgeStatus={available:false,detail:executable?"Starting the chat bridge…":"The chat bridge is not installed on this server."};
   const pending=new Map<string,Pending>();
@@ -38,7 +38,7 @@ export function startBridge(executable:string|undefined,{request,event,onReady}:
   function start(){
     if(closing||!executable)return;
     let proc:ChildProcessWithoutNullStreams;
-    try{proc=spawn(executable,[],{stdio:["pipe","pipe","pipe"],env:{PATH:process.env.PATH??"",DAR_CHAT_BRIDGE_LOG:process.env.DAR_CHAT_BRIDGE_LOG??"warn",TZ:"UTC"}});}
+    try{proc=spawn(executable,[],{stdio:["pipe","pipe","pipe"],env:{PATH:process.env.PATH??"",DAR_CHAT_BRIDGE_LOG:process.env.DAR_CHAT_BRIDGE_LOG??"warn",TZ:"UTC",...env}});}
     catch{status.detail="The chat bridge could not be started.";return;}
     child=proc;ready=false;
     proc.on("error",error=>{

@@ -72,7 +72,7 @@ test("a backup from before content addressing restores, and the next start names
     for (const [file, text] of [[first, shared], [second, shared], [third, single]] as const)
       assert.equal(await (await fetch(`${newOrigin}/api/v1/files/${file.fileId}/content`, { headers: recovered.headers })).text(), text);
     const after = await target.call<{ format: string; files: { id: string; blobId: string }[]; blobs: { id: string; digest: string }[] }>("service_backup", [randomUUID()]);
-    assert.equal(after.format, "dar-backup-v11");
+    assert.equal(after.format, "dar-backup-v12");
     assert.deepEqual([first, second, third].map(file => after.files.find(row => row.id === file.fileId)?.blobId), [sha256(shared), sha256(shared), sha256(single)]);
     assert.ok(after.blobs.every(blob => blob.id === blob.digest));
   } finally { await runtime.close(); }

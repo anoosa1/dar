@@ -5,7 +5,7 @@ import {agentOperation,agentSnapshot,restoreAgent} from "./agent.ts";
 import {agentWorker} from "./agent-runs.ts";
 import {newsTables} from "./news-tables.ts";
 import {chatTables,chatChanges} from "./chat-tables.ts";
-import {chatOperation,chatWorker} from "./chat.ts";
+import {chatOperation,chatWorker,chatSnapshot,chatBlobIds,restoreChat} from "./chat.ts";
 import {newsOperation,newsWorker,newsReadOperations,newsSnapshot,restoreNews} from "./news.ts";
 import {photosTables,immichTables} from "./photos-tables.ts";
 import {photoFileEvent,touchAsset,currentSeq} from "./photo-sync.ts";
@@ -759,7 +759,7 @@ export const serviceMaintenance = db.procedure(t.string(), ctx => ctx.withTx(tx 
   // Blobs due a check (their last version or pin may have gone); claimed ones stay due until acknowledged.
   for (const blob of [...tx.db.fileBlobs.checkKey.filter(new Range({ tag: "included", value: checkKeyAt(0) }, { tag: "included", value: checkKeyAt(now(tx)) }))]) {
     if (candidates.length >= 100) break;
-    if (first(tx.db.versions.blobId.filter(blob.id)) || first(tx.db.backupPins.blobId.filter(blob.id))) { tx.db.fileBlobs.id.update({ ...blob, state: "stored", checkKey: "" }); continue; }
+    if (first(tx.db.versions.blobId.filter(blob.id)) || first(tx.db.backupPins.blobId.filter(blob.id)) || first(tx.db.chatMedia.blobId.filter(blob.id))) { tx.db.fileBlobs.id.update({ ...blob, state: "stored", checkKey: "" }); continue; }
     if (blob.state !== "deleting") tx.db.fileBlobs.id.update({ ...blob, state: "deleting" });
     candidates.push(blob.id);
   }
@@ -856,7 +856,7 @@ export const serviceMigrateBlobs = db.reducer({ hashed: t.string() }, (ctx, p) =
 });
 export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, { id }) => ctx.withTx(tx => {
   service(tx);
-  const history = [...tx.db.versions.iter()], blobIds = [...new Set(history.map(version => version.blobId))];
+  const history = [...tx.db.versions.iter()], blobIds = [...new Set([...history.map(version => version.blobId), ...chatBlobIds(tx)])];
   const blobs = blobIds.map(blobId => {
     const blob = tx.db.fileBlobs.id.find(blobId);
     if (!blob || blob.state === "deleting") fail("contentUnavailable");
@@ -864,7 +864,7 @@ export const serviceBackup = db.procedure({ id: t.string() }, t.string(), (ctx, 
     const sums = tx.db.blobChecksums.id.find(blobId);
     return { id: blobId, size: blob.size, digest: blobId, sha1: sums?.sha1, md5: sums?.md5 };
   });
-  return JSON.stringify({ format: "dar-backup-v11", books:booksSnapshot(tx), history:historySnapshot(tx), photos:photosSnapshot(tx), news:newsSnapshot(tx), agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
+  return JSON.stringify({ format: "dar-backup-v12", chat:chatSnapshot(tx), books:booksSnapshot(tx), history:historySnapshot(tx), photos:photosSnapshot(tx), news:newsSnapshot(tx), agent:agentSnapshot(tx), apps:appSnapshot(tx), workspace:workspaceSnapshot(tx), identity: identitySnapshot(tx), pim: pimSnapshot(tx), id, createdAt: now(tx), blobs,
     accounts: [...tx.db.accounts.iter()], quotas: [...tx.db.usage.iter()].filter(row => row.quota).map(row => ({ userId: row.userId, quota: row.quota })), files: [...tx.db.fileEntries.iter()], versions: history,
     grants: [...tx.db.grants.iter()], publicShares: [...tx.db.publicShares.iter()], favorites: [...tx.db.favorites.iter()],
     activity: [...tx.db.activity.iter()].map(row => ({ ...row, id: row.id.toString() })),
@@ -891,9 +891,9 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   if (ctx.db.accounts.count() !== 0n || ctx.db.fileEntries.count() !== 0n) fail("conflict");
   const value = JSON.parse(snapshot) as { format: string; accounts: Row<"accounts">[]; quotas?: { userId: string; quota: number }[]; files: FileEntry[]; versions: Row<"versions">[];
     grants: Row<"grants">[]; publicShares: Row<"publicShares">[]; favorites: Row<"favorites">[]; uploads?: Row<"uploads">[]; blobs: { id: string; size: number; digest: string; sha1?: string; md5?: string }[];
-    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot>;agent?:ReturnType<typeof agentSnapshot>;news?:ReturnType<typeof newsSnapshot>;photos?:ReturnType<typeof photosSnapshot>;history?:ReturnType<typeof historySnapshot>;books?:ReturnType<typeof booksSnapshot> };
-  const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6","dar-backup-v7","dar-backup-v8","dar-backup-v9","dar-backup-v10","dar-backup-v11"],version=formats.indexOf(value.format)+1;
-  if (!version||version>=2&&!value.pim||version>=3&&!value.identity||version>=4&&!value.workspace||version>=5&&!value.apps||version>=6&&!value.agent||version>=7&&!value.news||version>=8&&!value.photos||version>=9&&!value.history||version>=10&&!value.books) fail("invalidInput");
+    activity: { id: string; ownerId: string; fileId: string; action: string; at: number }[]; pim?: ReturnType<typeof pimSnapshot>; identity?: ReturnType<typeof identitySnapshot>;workspace?:ReturnType<typeof workspaceSnapshot>;apps?:ReturnType<typeof appSnapshot>;agent?:ReturnType<typeof agentSnapshot>;news?:ReturnType<typeof newsSnapshot>;photos?:ReturnType<typeof photosSnapshot>;history?:ReturnType<typeof historySnapshot>;books?:ReturnType<typeof booksSnapshot>;chat?:ReturnType<typeof chatSnapshot> };
+  const formats=["dar-backup-v1", "dar-backup-v2", "dar-backup-v3","dar-backup-v4","dar-backup-v5","dar-backup-v6","dar-backup-v7","dar-backup-v8","dar-backup-v9","dar-backup-v10","dar-backup-v11","dar-backup-v12"],version=formats.indexOf(value.format)+1;
+  if (!version||version>=2&&!value.pim||version>=3&&!value.identity||version>=4&&!value.workspace||version>=5&&!value.apps||version>=6&&!value.agent||version>=7&&!value.news||version>=8&&!value.photos||version>=9&&!value.history||version>=10&&!value.books||version>=12&&!value.chat) fail("invalidInput");
   for (const row of value.accounts) {
     ctx.db.accounts.insert(row); ctx.db.usage.insert({ userId: row.id, used: 0, reserved: 0, quota: 0 });
   }
@@ -954,6 +954,7 @@ export const serviceRestore = db.reducer({ snapshot: t.string() }, (ctx, { snaps
   restoreNews(ctx,value.news);
   restorePhotos(ctx,value.photos);
   restoreBooks(ctx,value.books);
+  restoreChat(ctx,value.chat);
 });
 
 export const serviceInstalledApps=db.reducer({document:t.string()},(ctx,p)=>{

@@ -113,6 +113,6 @@ test("books: library, metadata, covers, readers' content, reading state, bookmar
 
     // Backups carry reading state.
     const pin=randomUUID(),snapshot=await (await import("../runtime/database.ts")).database(process.env.DAR_DATABASE_URL!,process.env.DAR_DATABASE_NAME!,process.env.DAR_DATABASE_TOKEN_FILE!).then(d=>d.call<{format:string;books:{states:{fileId:string}[]}}>("service_backup",[pin]).finally(()=>d.call("service_release_backup",[pin])));
-    assert.equal(snapshot.format,"dar-backup-v11");assert.ok(snapshot.books.states.some(s=>s.fileId===voyage.fileId));
+    assert.equal(snapshot.format,"dar-backup-v12");assert.ok(snapshot.books.states.some(s=>s.fileId===voyage.fileId));
   }finally{db.disconnect();}
 });

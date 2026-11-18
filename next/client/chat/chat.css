@@ -160,3 +160,24 @@ body.has-editing-pane .chat-shell :is(.chat-details,.chat-placeholder){display:n
   .chat-toast-region{bottom:calc(var(--bottom-bar-height,72px) + 24px)}
 }
 @media(prefers-reduced-motion:reduce){.chat-spinner{animation:none}}
+
+/* Attachments. */
+.chat-bubble.has-photo{padding:4px 4px 6px}
+.chat-photo{display:block;margin-bottom:2px;border-radius:14px;overflow:hidden;background:var(--hover);line-height:0}
+.chat-photo img{display:block;max-width:100%;height:auto}
+.chat-photo.is-sticker{background:none}
+.chat-photo:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.chat-bubble.has-photo :is(.chat-text,.chat-sender,.chat-quote){margin-left:8px;margin-right:8px}
+.chat-bubble.has-photo .chat-meta{margin-right:8px}
+.chat-video{display:block;max-width:100%;width:320px;max-height:360px;border-radius:12px;background:#000}
+.chat-audio{display:flex;align-items:center;gap:8px}.chat-audio audio{width:260px;max-width:100%;height:36px}.chat-audio small{font-size:11.5px;color:var(--muted)}
+.chat-file{display:flex;align-items:center;gap:10px;width:280px;max-width:100%;margin:0 -6px 4px;padding:8px;border:0;border-radius:12px;background:color-mix(in srgb,var(--text) 5%,transparent);color:inherit;font:inherit;text-align:left;text-decoration:none;cursor:pointer}
+.chat-message.is-out .chat-file{background:color-mix(in srgb,var(--on-tonal) 9%,transparent)}
+.chat-file:hover{background:color-mix(in srgb,var(--text) 9%,transparent)}.chat-file:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.chat-file.is-static{margin:0;cursor:default;background:var(--hover)}
+.chat-file>.icon{flex:none;width:16px;height:16px;color:var(--muted)}
+.chat-file-icon{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:18px;background:var(--accent);color:var(--on-accent)}.chat-file-icon .icon{width:16px;height:16px}
+.chat-file-name{flex:1;display:flex;flex-direction:column;min-width:0}
+.chat-file-name b{font-size:13px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chat-file-name small{font-size:11.5px;color:var(--muted)}
+.chat-media.is-missing{gap:6px;color:var(--muted);font-weight:500;font-style:italic}.chat-media.is-missing .text-button{margin-left:4px;padding:0;font-style:normal}
+@media(max-width:800px){.chat-video{width:100%}.chat-audio audio{width:200px}}

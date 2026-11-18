@@ -28,6 +28,7 @@ type chatMessage struct {
 	QuotedSender string `json:"quotedSender,omitempty"`
 	QuotedText   string `json:"quotedText,omitempty"`
 	Status       string `json:"status,omitempty"`
+	Media        *mediaInfo `json:"media,omitempty"`
 }
 
 // chatInfo is what the runtime stores about a chat.

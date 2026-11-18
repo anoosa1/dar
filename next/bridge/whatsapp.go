@@ -399,11 +399,16 @@ func (a *account) handle(raw any) bool {
 		if !ok {
 			return true
 		}
+		if err := a.rememberMedia(ctx, evt, &msg); err != nil {
+			return false
+		}
 		chat := chatInfo{ID: msg.Chat, Kind: kindOfChat(evt.Info.Chat)}
 		if chatJID, err := types.ParseJID(msg.Chat); err == nil && chat.Kind == "direct" && !msg.FromMe {
 			chat.Name = a.personName(ctx, chatJID, evt.Info.PushName)
 		}
 		return a.ingest(ctx, map[string]any{"kind": "messages", "chats": []chatInfo{chat}, "messages": []chatMessage{msg}})
+	case *events.MediaRetry:
+		return a.mediaRetried(ctx, evt)
 	case *events.HistorySync:
 		return a.history(ctx, evt.Data)
 	case *events.Receipt:
@@ -494,16 +499,31 @@ const historyBatch = 400
 func (a *account) history(ctx context.Context, data *waHistorySync.HistorySync) bool {
 	var chats []chatInfo
 	var messages []chatMessage
+	var media []*events.Message // parallel to messages
 	flush := func(final bool) bool {
 		if len(chats) == 0 && len(messages) == 0 && !final {
 			return true
+		}
+		// Attachment descriptions are stored in one transaction before the messages that use them.
+		err := a.kv.transaction(ctx, func(ctx context.Context) error {
+			for i, evt := range media {
+				if evt != nil {
+					if err := a.rememberMedia(ctx, evt, &messages[i]); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return false
 		}
 		payload := map[string]any{"kind": "history", "chats": chats, "messages": messages, "syncType": data.GetSyncType().String(), "final": final}
 		if final {
 			payload["progress"] = data.GetProgress()
 		}
 		ok := a.ingest(ctx, payload)
-		chats, messages = nil, nil
+		chats, messages, media = nil, nil, nil
 		return ok
 	}
 	for _, conv := range data.GetConversations() {
@@ -540,6 +560,7 @@ func (a *account) history(ctx context.Context, data *waHistorySync.HistorySync) 
 			}
 			if msg, ok := a.convert(ctx, evt, status); ok {
 				messages = append(messages, msg)
+				media = append(media, evt)
 			}
 			if len(messages) >= historyBatch && !flush(false) {
 				return false

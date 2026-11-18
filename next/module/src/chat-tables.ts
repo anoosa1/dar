@@ -18,5 +18,9 @@ export const chatTables={
   // threadKey is "<thread>/<newest-first time>/<message>" for paging a conversation.
   chatMessages:table({}, {id:t.string().primaryKey(),accountId:t.string().index("btree"),threadKey:t.string().index("btree"),messageId:t.string(),sender:t.string(),senderName:t.string(),
     fromMe:t.bool(),at:t.f64(),kind:t.string(),text:t.string(),fileName:t.string(),quotedId:t.string(),quotedSender:t.string(),quotedText:t.string(),status:t.string(),edited:t.bool(),deleted:t.bool()}),
+  // One attachment per message (id is the message row id). blobId is set once it is downloaded; it keeps
+  // the blob through maintenance and puts it in backups. state: remote, stored, retrying, expired, failed.
+  chatMedia:table({}, {id:t.string().primaryKey(),accountId:t.string().index("btree"),blobId:t.string().index("btree"),kind:t.string(),mime:t.string(),size:t.f64(),
+    fileName:t.string(),seconds:t.u32(),width:t.u32(),height:t.u32(),state:t.string(),at:t.f64()}),
   chatChanges,
 };

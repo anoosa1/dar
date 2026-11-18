@@ -93,6 +93,7 @@ func main() {
 	p.handle("logout", b.logout)
 	p.handle("send", b.send)
 	p.handle("markRead", b.markRead)
+	p.handle("download", b.download)
 	done := make(chan error, 1)
 	go func() { done <- p.serve(os.Stdin) }()
 	select {

@@ -4,6 +4,9 @@ import type {Database} from "../database.ts";
 import {AppError} from "../errors.ts";
 import {keyringBox} from "../auth/keyring.ts";
 import {startBridge} from "./bridge.ts";
+import {createChatMedia} from "./media.ts";
+import type {blobStore} from "../files/blobs.ts";
+import type {IncomingMessage,ServerResponse} from "node:http";
 import {chatReadOperations} from "../../shared/read-operations.ts";
 import type {ChatLinkState,ChatMessage,ChatOverview} from "../../shared/chat.ts";
 
@@ -23,7 +26,7 @@ const reasons:Record<string,string>={
  * Owns Chat's effects: the bridge process, its encrypted key store, account states,
  * linking and sending. The database checks every account and thread belongs to the caller.
  */
-export async function createChatRuntime(db:Database,root:string,{executable,enabled}:{executable?:string;enabled:boolean}){
+export async function createChatRuntime(db:Database,root:string,{executable,enabled,blobs}:{executable?:string;enabled:boolean;blobs:ReturnType<typeof blobStore>}){
   const box=await keyringBox(path.join(root,"secrets"),"chat-keys");
   const links=new Map<string,ChatLinkState>();
   let closing=false,active=enabled,purgeTimer:ReturnType<typeof setInterval>|undefined;
@@ -70,7 +73,9 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
         if(method==="ingest"){
           // History can follow pairing within milliseconds; store the link first.
           await queues.get(accountId)?.catch(()=>{});
-          const {account:_,...rest}=params;return await worker("ingest",{accountId,...rest});
+          const {account:_,...rest}=params,result=await worker<{ok:boolean;download?:string[]}>("ingest",{accountId,...rest});
+          if(result.download?.length)media.queue(result.download);
+          return {ok:true};
         }
       }catch(error){
         // The account was deleted; let the bridge stop instead of retrying forever.
@@ -99,9 +104,12 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       if(event==="replaced"){void setState(accountId,"failed",{detail:"replaced"});return;}
       if(event==="banned"){void setState(accountId,"failed",{detail:"banned"});return;}
       if(event==="outdated"){void setState(accountId,"failed",{detail:"outdated"});return;}
+      if(event==="mediaRetried"){void media.retried(accountId,String(data.chat),String(data.id),data.ok===true).catch(()=>{});return;}
     },
     onReady(){void connectAll();},
+    env:{DAR_CHAT_DOWNLOADS:path.join(root,"chat-downloads")},
   });
+  const media=await createChatMedia({db,root,blobs,bridge,worker,call});
 
   const retries=new Map<string,ReturnType<typeof setTimeout>>();
   async function connect(accountId:string,attempt=0){
@@ -199,7 +207,9 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       const {accounts}=await worker<{accounts:{id:string}[]}>("accounts",{}).catch(()=>({accounts:[]}));
       await Promise.all(accounts.map(item=>bridge.call("disconnect",{account:item.id}).catch(()=>{})));
     },
-    async close(){closing=true;clearInterval(purgeTimer);for(const timer of retries.values())clearTimeout(timer);await bridge.close();},
+    serveMedia:(req:IncomingMessage,res:ServerResponse,sessionId:string,threadId:string,messageId:string,attachment:boolean)=>media.serve(req,res,sessionId,threadId,messageId,attachment),
+    saveMedia:(sessionId:string,threadId:string,messageId:string,folderId:string)=>media.save(sessionId,threadId,messageId,folderId),
+    async close(){closing=true;media.close();clearInterval(purgeTimer);for(const timer of retries.values())clearTimeout(timer);await bridge.close();},
   };
 }
 export type ChatRuntime=Awaited<ReturnType<typeof createChatRuntime>>;

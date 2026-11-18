@@ -24,11 +24,17 @@ data is kept and every account disconnects.
 - **Chats:** account tabs; Chats (pinned first, newest first), Unread, Groups and
   Archived; previews with sender, media label, ticks, pin, mute and unread counts.
   New chat by phone number.
-- **Messages:** text with replies, edits and deletions; photos, videos, voice notes,
-  documents, stickers, locations, contacts and polls show as labelled placeholders
-  with their caption. Sending is stored first as pending under WhatsApp's own message
+- **Messages:** text with replies, edits and deletions; locations, contacts and polls show
+  as labelled placeholders. Sending is stored first as pending under WhatsApp's own message
   ID, so a retry can never duplicate it; failures offer Retry and Delete. Delivered and
   read ticks follow receipts. Opening a chat sends read receipts.
+- **Attachments:** photos and stickers show inline, videos play on request, voice notes
+  and audio in a player, documents as cards. Each downloads from WhatsApp the first time
+  it is shown (new photos, stickers and voice notes up to 16 MiB as they arrive), once,
+  into the content-addressed blob store; HTML and other active types only download.
+  Expired media is requested from the phone again. Download and Save to Files (shared
+  folder picker; a taken name gets a number) are in the message menu. Deleting a message
+  for everyone removes its attachment.
 - **History:** Dar asks for a full sync with no day or size limit; the phone decides
   what it sends. Progress shows on the account card.
 - **States:** connecting, reconnecting, unlinked (history stays, read-only), and lasting
@@ -48,22 +54,27 @@ data is kept and every account disconnects.
   value with the identity keyring (`keyringBox`, bound to its account and key) into
   the service-only `chat_keys` table; expiring keys are purged hourly.
 - **Data:** `module/src/chat.ts` keeps accounts, chats and messages in private tables
-  with newest-first range keys. Incoming messages are stored before whatsmeow
+  with newest-first range keys. Attachments are `chat_media` rows; their blob IDs keep the blobs
+  through maintenance and put them in backups. The bridge keeps each attachment's download
+  keys in its encrypted store and decrypts into `<root>/chat-downloads`. Incoming messages are stored before whatsmeow
   acknowledges them, so a failed write means WhatsApp delivers again.
 - **Privacy:** WhatsApp is end-to-end encrypted, but Dar is a linked device, so the
   server stores messages decrypted, like the rest of Dar's data. Account deletion
-  removes Chat data; backups do not include Chat yet.
+  removes Chat data. Backups (v12) include accounts, chats, messages and downloaded
+  attachments but not keys: a restored account is unlinked and links again, so two
+  servers never share a WhatsApp device.
 
 ## Limits
 
 - 10 accounts per person, 500,000 stored messages per account, 64 KiB per message.
-- Media is not downloaded yet; passkey-protected WhatsApp accounts cannot link yet.
+- Attachments do not count toward Files quotas (a copy saved to Files does).
+  View-once media is not downloaded. Passkey-protected WhatsApp accounts cannot link yet.
 - A chat known first by its LID and later by its phone number may appear twice.
 
 ## Phases
 
 1. Done: bridge, key store, link/unlink, text in and out, history, account tabs.
-2. Media (photos, voice notes, documents) into blobs, Save to Files; backups.
+2. Done: attachments into blobs, download, Save to Files, backups.
 3. Reactions, chat info, archive/pin/mute from Dar, typing, older history on demand.
 4. Message search in the shared search, linking chats to Dar contacts.
 5. Discord, after deciding between a bot (only servers that add it, no personal

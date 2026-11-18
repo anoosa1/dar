@@ -1,5 +1,7 @@
 import {Fragment,useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState,type FormEvent,type KeyboardEvent,type ReactNode} from "react";
-import {request,type BrowserSession} from "../api.ts";
+import {request,formatBytes,type BrowserSession} from "../api.ts";
+import {FileTile} from "../file-types.tsx";
+import {DarFilePicker,type DarFileSelection} from "../file-picker.tsx";
 import {WorkspaceHeader,useMobileNavigation} from "../shell.tsx";
 import {ActionMenu,NewItemButton,type MenuAction} from "../controls.tsx";
 import {EditorPane} from "../pane.tsx";
@@ -10,11 +12,11 @@ import {useLiveConnection,subscribe} from "../live.ts";
 import {avatarHue} from "../pim/common.tsx";
 import {localDate,localDateTime,localTime} from "../dates.ts";
 import {qrMatrix,qrPath} from "../../shared/qr.ts";
-import {chatKindLabels,chatLimits,type ChatAccount,type ChatLinkState,type ChatMessage,type ChatMessagePage,type ChatOverview,type ChatThread,type ChatThreadPage,type ChatView} from "../../shared/chat.ts";
+import {chatKindLabels,chatLimits,localName,type ChatAccount,type ChatLinkState,type ChatMessage,type ChatMessagePage,type ChatOverview,type ChatThread,type ChatThreadPage,type ChatView} from "../../shared/chat.ts";
 
 const base="/api/v1/chat";
 const views:{id:ChatView;label:string;icon:IconName}[]=[{id:"chats",label:"Chats",icon:"chat"},{id:"unread",label:"Unread",icon:"unread"},{id:"groups",label:"Groups",icon:"contacts"},{id:"archived",label:"Archived",icon:"archive"}];
-type Pane={kind:"link";accountId?:string}|{kind:"newChat"}|{kind:"settings"}|{kind:"rename";account:ChatAccount};
+type Pane={kind:"link";accountId?:string}|{kind:"newChat"}|{kind:"settings"}|{kind:"rename";account:ChatAccount}|{kind:"save";threadId:string;message:ChatMessage};
 interface Confirm {title:string;text:string;action:string;run:()=>Promise<void>}
 const kindIcon:Partial<Record<string,IconName>>={image:"image",video:"media",audio:"media",voice:"media",document:"file",sticker:"image",location:"location",contact:"user",poll:"checklist",unsupported:"info"};
 const stateText:Record<string,string>={
@@ -149,12 +151,13 @@ export function ChatWorkspace({session,onSignedOut}:{session:BrowserSession;onSi
         </div>
       </main>
       {selected&&account&&<aside className="pim-details chat-details" aria-label={current?.name??"Conversation"}>
-        <Conversation key={selected} threadId={selected} account={account} session={session} epoch={epoch} onClose={closeThread} onNotice={setNotice}/>
+        <Conversation key={selected} threadId={selected} account={account} session={session} epoch={epoch} onClose={closeThread} onNotice={setNotice} onSave={message=>setPane({kind:"save",threadId:selected,message})}/>
       </aside>}
       {!selected&&account&&<div className="chat-placeholder" aria-hidden="true"><span className="chat-empty-icon"><Icon name="chat"/></span><p>Choose a chat</p></div>}
     </div>
     {pane?.kind==="link"&&<LinkPane session={session} accountId={pane.accountId} onClose={()=>{setPane(undefined);void loadOverview();}} onLinked={id=>{setPane(undefined);chooseAccount(id);void loadOverview();setNotice("Linked. Your chats are on their way.");}}/>}
     {pane?.kind==="newChat"&&account&&<NewChatPane session={session} account={account} onClose={()=>setPane(undefined)} onOpened={thread=>{setPane(undefined);setView("chats");void loadThreads(true);setSelected(thread.id);}}/>}
+    {pane?.kind==="save"&&<SaveMediaPane session={session} threadId={pane.threadId} message={pane.message} onClose={()=>setPane(undefined)} onSaved={name=>{setPane(undefined);setNotice(`Saved to Files as ${name}`);}}/>}
     {pane?.kind==="rename"&&<RenamePane session={session} account={pane.account} onClose={()=>setPane(undefined)} onSaved={()=>{setPane(undefined);void loadOverview();}}/>}
     {pane?.kind==="settings"&&<ChatSettings accounts={accounts} onClose={()=>setPane(undefined)} onLink={()=>setPane({kind:"link"})} actions={accountActions}/>}
     {confirm&&<ConfirmAction {...confirm} onClose={()=>setConfirm(undefined)}/>}
@@ -190,7 +193,7 @@ function ThreadRow({thread,selected,onOpen}:{thread:ChatThread;selected:boolean;
   </div>;
 }
 
-function Conversation({threadId,account,session,epoch,onClose,onNotice}:{threadId:string;account:ChatAccount;session:BrowserSession;epoch:number;onClose:()=>void;onNotice:(text:string)=>void}){
+function Conversation({threadId,account,session,epoch,onClose,onNotice,onSave}:{threadId:string;account:ChatAccount;session:BrowserSession;epoch:number;onClose:()=>void;onNotice:(text:string)=>void;onSave:(message:ChatMessage)=>void}){
   const [page,setPage]=useState<ChatMessagePage>(),[error,setError]=useState(""),[older,setOlder]=useState<{messages:ChatMessage[];before:string|null}>({messages:[],before:null}),[loadingOlder,setLoadingOlder]=useState(false);
   const [text,setText]=useState(""),[reply,setReply]=useState<ChatMessage>(),[sending,setSending]=useState(false);
   const scroller=useRef<HTMLDivElement>(null),input=useRef<HTMLTextAreaElement>(null),stick=useRef(true),heading=useRef<HTMLHeadingElement>(null),first=useRef(true);
@@ -242,7 +245,7 @@ function Conversation({threadId,account,session,epoch,onClose,onNotice}:{threadI
         const day=dayLabel(m.at),next=messages[i+1],tail=!next||next.fromMe!==m.fromMe||next.sender!==m.sender||dayLabel(next.at)!==day,prev=messages[i-1];
         const showName=group&&!m.fromMe&&(!prev||prev.sender!==m.sender||prev.fromMe||dayLabel(prev.at)!==day);
         const heading=day!==lastDay?(lastDay=day,<div className="chat-day" key={`day-${m.id}`}><span>{day}</span></div>):null;
-        return <Fragment key={m.id}>{heading}<Bubble message={m} tail={tail} showName={showName} canReply={canSend} onReply={()=>{setReply(m);input.current?.focus();}} onCopy={()=>{void navigator.clipboard?.writeText(m.text);onNotice("Copied");}}
+        return <Fragment key={m.id}>{heading}<Bubble threadId={threadId} onSave={()=>onSave(m)} message={m} tail={tail} showName={showName} canReply={canSend} onReply={()=>{setReply(m);input.current?.focus();}} onCopy={()=>{void navigator.clipboard?.writeText(m.text);onNotice("Copied");}}
           onRetry={()=>{void act("retry",m);}} onDiscard={()=>{void act("discard",m);}}/></Fragment>;
       })}
     </div>
@@ -257,21 +260,71 @@ function Conversation({threadId,account,session,epoch,onClose,onNotice}:{threadI
   </section>;
 }
 
-function Bubble({message:m,tail,showName,canReply,onReply,onCopy,onRetry,onDiscard}:{message:ChatMessage;tail:boolean;showName:boolean;canReply:boolean;onReply:()=>void;onCopy:()=>void;onRetry:()=>void;onDiscard:()=>void}){
+function Bubble({threadId,onSave,message:m,tail,showName,canReply,onReply,onCopy,onRetry,onDiscard}:{threadId:string;onSave:()=>void;message:ChatMessage;tail:boolean;showName:boolean;canReply:boolean;onReply:()=>void;onCopy:()=>void;onRetry:()=>void;onDiscard:()=>void}){
   const label=m.kind!=="text"?chatKindLabels[m.kind]:"",icon=kindIcon[m.kind];
-  const actions:MenuAction[]=[...canReply&&!m.deleted?[{label:"Reply",icon:"reply" as IconName,run:onReply}]:[],...m.text&&!m.deleted?[{label:"Copy text",icon:"copy" as IconName,run:onCopy}]:[]];
+  const file=m.media&&m.media.state!=="expired"?mediaUrl(threadId,m.messageId):"";
+  const actions:MenuAction[]=[...canReply&&!m.deleted?[{label:"Reply",icon:"reply" as IconName,run:onReply}]:[],...m.text&&!m.deleted?[{label:"Copy text",icon:"copy" as IconName,run:onCopy}]:[],
+    ...file?[{label:"Download",icon:"download" as IconName,href:`${file}&download=1`,download:true,separator:true},{label:"Save to Files…",icon:"folder" as IconName,run:onSave}]:[]];
+  const photo=!m.deleted&&!!m.media&&(m.kind==="image"||m.kind==="sticker")&&m.media.state!=="expired"&&m.media.state!=="retrying";
   return <div className={`chat-message ${m.fromMe?"is-out":"is-in"}${tail?" is-tail":""}${m.status==="failed"?" is-failed":""}`}>
-    <div className="chat-line"><div className="chat-bubble">
+    <div className="chat-line"><div className={`chat-bubble${photo?" has-photo":""}`}>
       {showName&&<span className={`chat-sender ${avatarHue(m.sender)}`}>{m.senderName||phoneOf(m.sender)||"Unknown"}</span>}
       {m.quotedId&&<span className="chat-quote"><b>{m.quotedSender||"Message"}</b><span>{m.quotedText||"Message"}</span></span>}
       {m.deleted?<span className="chat-text is-deleted"><Icon name="close"/>This message was deleted</span>:<>
-        {label&&<span className="chat-media"><Icon name={icon??"file"}/>{m.kind==="document"&&m.fileName?m.fileName:label}</span>}
+        {m.media?<MediaView threadId={threadId} message={m}/>:label&&<span className="chat-media"><Icon name={icon??"file"}/>{m.kind==="document"&&m.fileName?m.fileName:label}</span>}
         {m.text&&<span className="chat-text">{m.text}</span>}</>}
       <span className="chat-meta">{m.edited&&!m.deleted&&"edited · "}<time dateTime={new Date(m.at).toISOString()} title={localDateTime(m.at,{dateStyle:"medium",timeStyle:"short"})}>{localTime(m.at,{hour:"numeric",minute:"2-digit"})}</time>{m.fromMe&&<Ticks status={m.status}/>}</span>
     </div>
     {actions.length>0&&<ActionMenu label="Message actions" className="chat-message-menu" actions={actions}><Icon name="more"/></ActionMenu>}</div>
     {m.status==="failed"&&<span className="chat-failed"><Icon name="alert"/>Not sent · <button type="button" className="text-button" onClick={onRetry}>Retry</button> · <button type="button" className="text-button" onClick={onDiscard}>Delete</button></span>}
   </div>;
+}
+
+const mediaUrl=(threadId:string,messageId:string)=>`${base}/media?${new URLSearchParams({threadId,messageId})}`;
+const clock=(seconds:number)=>`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,"0")}`;
+/** Display size within a box, keeping the photo's shape; sent as width/height attributes so the space is kept while it loads. */
+function fit(width:number,height:number,maxWidth:number,maxHeight:number){
+  if(!width||!height)return {width:maxWidth,height:Math.round(maxWidth*.75)};
+  const scale=Math.min(1,maxWidth/width,maxHeight/height);return {width:Math.max(80,Math.round(width*scale)),height:Math.max(60,Math.round(height*scale))};
+}
+
+/** An attachment in a bubble. Opening it downloads it from WhatsApp first if Dar does not have it yet. */
+function MediaView({threadId,message:m}:{threadId:string;message:ChatMessage}){
+  const media=m.media!,[attempt,setAttempt]=useState(0),[failed,setFailed]=useState(false),[play,setPlay]=useState(false);
+  const url=mediaUrl(threadId,m.messageId)+(attempt?`&attempt=${attempt}`:""),label=chatKindLabels[m.kind],name=localName({kind:m.kind,mime:media.mime,fileName:m.fileName,at:m.at});
+  const retry=()=>{setFailed(false);setAttempt(n=>n+1);};
+  if(media.state==="expired")return <span className="chat-media is-missing"><Icon name="alert"/>{label} is no longer on WhatsApp</span>;
+  if(media.state==="retrying")return <span className="chat-media is-missing"><span className="chat-spinner" aria-hidden="true"/>{label}: waiting for your phone to send it again</span>;
+  if(failed)return <span className="chat-media is-missing"><Icon name="alert"/>{label} could not be loaded<button type="button" className="text-button" onClick={retry}>Retry</button></span>;
+  if(m.kind==="image"||m.kind==="sticker"){
+    const sticker=m.kind==="sticker",size=fit(media.width,media.height,sticker?160:280,sticker?160:320);
+    return <a className={`chat-photo${sticker?" is-sticker":""}`} href={url} target="_blank" rel="noopener" aria-label={`Open ${label.toLowerCase()}`}>
+      <img src={url} alt={m.text||label} width={size.width} height={size.height} loading="lazy" decoding="async" onError={()=>setFailed(true)}/></a>;
+  }
+  if(m.kind==="video"){
+    if(play)return <video className="chat-video" src={url} controls autoPlay playsInline preload="metadata" onError={()=>setFailed(true)}/>;
+    return <button type="button" className="chat-file" onClick={()=>setPlay(true)}><span className="chat-file-icon"><Icon name="media"/></span>
+      <span className="chat-file-name"><b>Play video</b><small>{[media.seconds?clock(media.seconds):"",media.size?formatBytes(media.size):""].filter(Boolean).join(" · ")}</small></span></button>;
+  }
+  if(m.kind==="audio"||m.kind==="voice")return <span className="chat-audio"><audio controls preload="none" src={url} aria-label={label} onError={()=>setFailed(true)}/>{media.seconds>0&&<small>{clock(media.seconds)}</small>}</span>;
+  return <a className="chat-file" href={`${url}&download=1`} download={name}><FileTile entry={{kind:"file",name,mediaType:media.mime}}/>
+    <span className="chat-file-name"><b>{name}</b><small>{formatBytes(media.size)}</small></span><Icon name="download"/></a>;
+}
+
+function SaveMediaPane({session,threadId,message,onClose,onSaved}:{session:BrowserSession;threadId:string;message:ChatMessage;onClose:()=>void;onSaved:(name:string)=>void}){
+  const [folder,setFolder]=useState<DarFileSelection>(),[busy,setBusy]=useState(false),[error,setError]=useState("");
+  const media=message.media!,name=localName({kind:message.kind,mime:media.mime,fileName:message.fileName,at:message.at});
+  async function save(event:FormEvent){
+    event.preventDefault();if(!folder)return;setBusy(true);setError("");
+    try{onSaved((await request<{name:string}>(`${base}/save`,{method:"POST",body:JSON.stringify({threadId,messageId:message.messageId,folderId:folder.id})},session.csrfToken)).name);}
+    catch(cause){setError((cause as Error).message);setBusy(false);}
+  }
+  return <EditorPane title="Save to Files" onClose={onClose}><form className="chat-link" onSubmit={save}>
+    <div className="chat-file is-static"><FileTile entry={{kind:"file",name,mediaType:media.mime}}/><span className="chat-file-name"><b>{name}</b><small>{formatBytes(media.size)}</small></span></div>
+    <DarFilePicker mode="folder" allowRoot disabled={busy} onChange={setFolder}/>
+    {error&&<p role="alert" className="error">{error}</p>}
+    <div className="dialog-actions"><button type="button" className="text-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy||!folder}>{busy?"Saving…":folder?`Save to ${folder.name}`:"Save"}</button></div>
+  </form></EditorPane>;
 }
 
 function LinkPane({session,accountId,onClose,onLinked}:{session:BrowserSession;accountId?:string;onClose:()=>void;onLinked:(id:string)=>void}){

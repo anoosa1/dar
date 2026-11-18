@@ -5,7 +5,7 @@ import {blobGraceMs} from "../../shared/limits.ts";
 /**
  * Stored content is named by the SHA-256 of its bytes (lowercase hex), so a file uploaded twice
  * is kept once. fileBlobs records each blob's size and state; versions and backup pins are what
- * keep it. See docs/spacetimedb/architecture.md.
+ * keep it (and Chat attachments, chat_media). See docs/spacetimedb/architecture.md.
  */
 export const isBlobId=(value:string)=>/^[a-f0-9]{64}$/.test(value);
 /** Content stored under its upload ID, before content addressing (November 17, 2026). */

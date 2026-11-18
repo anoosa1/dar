@@ -1,11 +1,13 @@
 import {SenderError,Range} from "spacetimedb/server";
 import type {Ctx} from "./index.ts";
 import {appEnabled} from "./app-settings.ts";
-import {chatLimits,chatTimeKey,type ChatAccountState,type ChatView} from "../../shared/chat.ts";
+import {storeBlob,releaseBlob,isBlobId} from "./blobs.ts";
+import {chatLimits,chatAutoDownloadBytes,chatTimeKey,type ChatAccountState,type ChatView} from "../../shared/chat.ts";
 
 type Account=NonNullable<ReturnType<Ctx["db"]["chatAccounts"]["id"]["find"]>>;
 type Thread=NonNullable<ReturnType<Ctx["db"]["chatThreads"]["id"]["find"]>>;
 type Message=NonNullable<ReturnType<Ctx["db"]["chatMessages"]["id"]["find"]>>;
+type Media=NonNullable<ReturnType<Ctx["db"]["chatMedia"]["id"]["find"]>>;
 
 function fail(code:string):never{throw new SenderError(code);}
 function text(value:unknown,max:number,allowEmpty=true){
@@ -38,10 +40,12 @@ function exposeThread(row:Thread){
   return {id:row.id,accountId:row.accountId,jid:row.jid,kind:row.kind,name:row.name,at:row.at,preview:row.preview,previewKind:row.previewKind,previewFromMe:row.previewFromMe,
     previewSender:row.previewSender,previewStatus:row.previewStatus,unread:row.unread,archived:row.archived,pinned:row.pinned,mutedUntil:row.mutedUntil};
 }
-function exposeMessage(row:Message){
+function exposeMessage(row:Message,media?:Media|null){
   return {id:row.id,messageId:row.messageId,sender:row.sender,senderName:row.senderName,fromMe:row.fromMe,at:row.at,kind:row.kind,text:row.deleted?"":row.text,fileName:row.fileName,
-    quotedId:row.quotedId,quotedSender:row.quotedSender,quotedText:row.quotedText,status:row.status,edited:row.edited,deleted:row.deleted};
+    quotedId:row.quotedId,quotedSender:row.quotedSender,quotedText:row.quotedText,status:row.status,edited:row.edited,deleted:row.deleted,
+    media:media&&!row.deleted?{kind:media.kind,mime:media.mime,size:media.size,seconds:media.seconds,width:media.width,height:media.height,state:media.state}:null};
 }
+const mediaOf=(ctx:Ctx,row:Message)=>ctx.db.chatMedia.id.find(row.id);
 function exposeAccount(ctx:Ctx,row:Account){
   const counts={chats:0,unread:0,groups:0,archived:0};let unread=0;
   for(const thread of ctx.db.chatThreads.accountId.filter(row.id)){
@@ -53,9 +57,15 @@ function exposeAccount(ctx:Ctx,row:Account){
     historyProgress:row.historyProgress,importing:row.importing,unread,counts};
 }
 
+function deleteChats(ctx:Ctx,accountId:string){
+  for(const row of [...ctx.db.chatMessages.accountId.filter(accountId)])ctx.db.chatMessages.id.delete(row.id);
+  for(const row of [...ctx.db.chatThreads.accountId.filter(accountId)])ctx.db.chatThreads.id.delete(row.id);
+  for(const row of [...ctx.db.chatMedia.accountId.filter(accountId)])dropMedia(ctx,row);
+}
+/** Maintenance removes the blob once nothing else (another message, a file, a backup) uses it. */
+function dropMedia(ctx:Ctx,row:Media){ctx.db.chatMedia.id.delete(row.id);if(row.blobId)releaseBlob(ctx,row.blobId);}
 function deleteAccountRows(ctx:Ctx,account:Account){
-  for(const row of [...ctx.db.chatMessages.accountId.filter(account.id)])ctx.db.chatMessages.id.delete(row.id);
-  for(const row of [...ctx.db.chatThreads.accountId.filter(account.id)])ctx.db.chatThreads.id.delete(row.id);
+  deleteChats(ctx,account.id);
   clearKeys(ctx,account.id);
   ctx.db.chatAccounts.id.delete(account.id);
 }
@@ -80,13 +90,20 @@ function validChat(value:unknown){
 }
 function validMessage(value:unknown){
   if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");const m=value as Record<string,unknown>;
-  keys(m,["id","chat","sender","senderName","fromMe","at","kind","text","fileName","target","quotedId","quotedSender","quotedText","status"]);
+  keys(m,["id","chat","sender","senderName","fromMe","at","kind","text","fileName","target","quotedId","quotedSender","quotedText","status","media"]);
   const kind=text(m.kind,20);if(!kinds.has(kind)&&kind!=="edit"&&kind!=="revoke")fail("invalidInput");
   const status=optional(m.status,20);if(!(status in statusRank))fail("invalidInput");
   if(typeof m.fromMe!=="boolean")fail("invalidInput");
   return {id:messageId(m.id),chat:jid(m.chat),sender:optional(m.sender,120),senderName:optional(m.senderName,200),fromMe:m.fromMe,at:Math.max(0,num(m.at)),kind,
     text:optional(m.text,chatLimits.text),fileName:optional(m.fileName,500),target:m.target===undefined?"":messageId(m.target),quotedId:m.quotedId===undefined?"":messageId(m.quotedId),
-    quotedSender:optional(m.quotedSender,200),quotedText:optional(m.quotedText,2000),status};
+    quotedSender:optional(m.quotedSender,200),quotedText:optional(m.quotedText,2000),status,media:validMedia(m.media)};
+}
+function validMedia(value:unknown){
+  if(value===undefined||value===null)return undefined;
+  if(typeof value!=="object"||Array.isArray(value))fail("invalidInput");const v=value as Record<string,unknown>;keys(v,["mime","size","seconds","width","height"]);
+  const count=(n:unknown,max:number)=>n===undefined?0:Math.min(max,Math.max(0,Math.floor(num(n))));
+  const mime=optional(v.mime,150).toLowerCase();// An odd type never blocks the message; the file is then only offered as a download.
+  return {mime:/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(mime)?mime:"application/octet-stream",size:count(v.size,Number.MAX_SAFE_INTEGER),seconds:count(v.seconds,1e7),width:count(v.width,1e5),height:count(v.height,1e5)};
 }
 
 /** Stores chats and messages from the bridge; history keeps the phone's unread counts, live messages add to them. */
@@ -94,7 +111,7 @@ function ingest(ctx:Ctx,account:Account,p:Record<string,unknown>){
   const kind=text(p.kind,20),live=kind==="messages";
   const chats=Array.isArray(p.chats)?p.chats.map(validChat):[],messages=Array.isArray(p.messages)?p.messages.map(validMessage):[];
   if(chats.length>5000||messages.length>2000)fail("operationTooLarge");
-  let stored=account.messages;
+  let stored=account.messages;const download:string[]=[];
   const thread=(id:string,kindOf:string,create:boolean)=>{
     const found=ctx.db.chatThreads.id.find(`${account.id}/${id}`);if(found||!create)return found;
     const row=newThread(account,id,kindOf,0);ctx.db.chatThreads.insert(row);return row;
@@ -117,6 +134,8 @@ function ingest(ctx:Ctx,account:Account,p:Record<string,unknown>){
       const target=ctx.db.chatMessages.id.find(`${t.id}/${m.target}`);if(!target)continue;
       const next=m.kind==="edit"?{...target,text:m.text,edited:true}:{...target,deleted:true,text:""};
       ctx.db.chatMessages.id.update(next);
+      // Deleted for everyone: the attachment goes too.
+      const media=next.deleted?ctx.db.chatMedia.id.find(target.id):undefined;if(media)dropMedia(ctx,media);
       if(t.preview!==""&&t.at===target.at&&t.previewFromMe===target.fromMe){setThread(ctx,t,{...current,preview:next.deleted?"":next.text,previewKind:next.deleted?"deleted":current.previewKind});}
       continue;
     }
@@ -130,6 +149,11 @@ function ingest(ctx:Ctx,account:Account,p:Record<string,unknown>){
     ctx.db.chatMessages.insert({id,accountId:account.id,threadKey:threadKey(t.id,m.at,m.id),messageId:m.id,sender:m.sender,senderName:m.senderName,fromMe:m.fromMe,at:m.at,kind:m.kind,
       text:m.text,fileName:m.fileName,quotedId:m.quotedId,quotedSender:m.quotedSender,quotedText:m.quotedText,status:m.fromMe?(m.status||"sent"):"",edited:false,deleted:false});
     stored++;
+    if(m.media){
+      ctx.db.chatMedia.insert({id,accountId:account.id,blobId:"",kind:m.kind,mime:m.media.mime,size:m.media.size,fileName:m.fileName,seconds:m.media.seconds,width:m.media.width,height:m.media.height,state:"remote",at:m.at});
+      // New photos, stickers and voice notes download right away; the rest when opened.
+      if(live&&["image","sticker","voice"].includes(m.kind)&&m.media.size<=chatAutoDownloadBytes)download.push(id);
+    }
     const next={...current};
     if(m.at>=t.at){
       Object.assign(next,{at:m.at,listKey:listKey(account.id,m.at,t.jid),preview:m.text||m.fileName,previewKind:m.kind,previewFromMe:m.fromMe,previewSender:t.kind==="group"&&!m.fromMe?m.senderName:"",
@@ -157,7 +181,7 @@ function ingest(ctx:Ctx,account:Account,p:Record<string,unknown>){
   ctx.db.chatAccounts.id.update({...account,messages:stored,syncedAt:now(ctx),importing:kind==="history"?!final||Number(p.progress??100)<100:account.importing,
     historyProgress:final&&typeof p.progress==="number"?Math.min(100,Math.max(0,Math.floor(p.progress))):account.historyProgress});
   changed(ctx,account.ownerId);
-  return {ok:true};
+  return {ok:true,download};
 }
 
 /** Pages a chat list newest first; pinned chats lead the first page of Chats. */
@@ -178,7 +202,7 @@ function messagePage(ctx:Ctx,thread:Thread,before:string,limit:number){
     if(rows.length===limit){more=rows[rows.length-1].threadKey;break;}
     rows.push(row);
   }
-  return {thread:exposeThread(thread),messages:rows.reverse().map(exposeMessage),before:more};
+  return {thread:exposeThread(thread),messages:rows.reverse().map(row=>exposeMessage(row,mediaOf(ctx,row))),before:more};
 }
 
 export {chatReadOperations} from "../../shared/read-operations.ts";
@@ -275,6 +299,12 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
     ctx.db.chatMessages.id.update({...row,status:"pending"});changed(ctx,userId);
     return {accountId:t.accountId,chat:t.jid,message:exposeMessage({...row,status:"pending"}),quoted:row.quotedId?{id:row.quotedId,sender:"",text:row.quotedText}:null};
   }
+  if(operation==="media"){
+    // What the runtime needs to serve, fetch or save one attachment.
+    keys(p,["threadId","messageId"]);const t=thread(p.threadId),row=ctx.db.chatMessages.id.find(`${t.id}/${messageId(p.messageId)}`),media=row&&!row.deleted?ctx.db.chatMedia.id.find(row.id):undefined;
+    if(!row||!media)fail("notFound");
+    return {id:media.id,accountId:t.accountId,chat:t.jid,messageId:row.messageId,kind:media.kind,mime:media.mime,size:media.size,fileName:media.fileName,blobId:media.blobId,state:media.state,at:media.at,chatName:t.name};
+  }
   if(operation==="deleteFailed"){
     keys(p,["threadId","messageId"]);const t=thread(p.threadId),row=ctx.db.chatMessages.id.find(`${t.id}/${messageId(p.messageId)}`);
     if(!row||!row.fromMe||row.status!=="failed")fail("conflict");
@@ -335,10 +365,27 @@ export function chatWorker(ctx:Ctx,operation:string,p:Record<string,unknown>){
     if(p.jid!==undefined){
       next.jid=jid(p.jid);next.linkedAt=now(ctx);
       // Linking a different WhatsApp number to this account starts its chats afresh.
-      if(a.jid&&a.jid!==next.jid){for(const row of [...ctx.db.chatMessages.accountId.filter(a.id)])ctx.db.chatMessages.id.delete(row.id);for(const row of [...ctx.db.chatThreads.accountId.filter(a.id)])ctx.db.chatThreads.id.delete(row.id);next.messages=0;next.historyProgress=0;}
+      if(a.jid&&a.jid!==next.jid){deleteChats(ctx,a.id);next.messages=0;next.historyProgress=0;}
     }
     if(state==="loggedOut")next.importing=false;
     ctx.db.chatAccounts.id.update(next);changed(ctx,a.ownerId);return {ok:true,ownerId:a.ownerId};
+  }
+  if(operation==="mediaStored"){
+    keys(p,["accountId","id","blobId","size"]);const a=account(p.accountId),row=ctx.db.chatMedia.id.find(text(p.id,400));
+    if(!row||row.accountId!==a.id)fail("notFound");const blobId=text(p.blobId,64),size=num(p.size);if(!isBlobId(blobId))fail("invalidInput");
+    storeBlob(ctx,blobId,size);
+    if(row.blobId&&row.blobId!==blobId)releaseBlob(ctx,row.blobId);
+    ctx.db.chatMedia.id.update({...row,blobId,size,state:"stored"});changed(ctx,a.ownerId);return {ok:true};
+  }
+  if(operation==="mediaState"){
+    keys(p,["accountId","id","state"]);const a=account(p.accountId),row=ctx.db.chatMedia.id.find(text(p.id,400));
+    if(!row||row.accountId!==a.id)fail("notFound");const state=["remote","retrying","expired","failed"].includes(String(p.state))?String(p.state):fail("invalidInput");
+    if(row.state!=="stored"){ctx.db.chatMedia.id.update({...row,state});changed(ctx,a.ownerId);}return {ok:true};
+  }
+  if(operation==="mediaFind"){
+    // The phone sent expired media again: which attachment, so the runtime downloads it.
+    keys(p,["accountId","chat","messageId"]);const a=account(p.accountId),row=ctx.db.chatMedia.id.find(`${a.id}/${jid(p.chat)}/${messageId(p.messageId)}`);
+    return row?{id:row.id,state:row.state,chat:jid(p.chat),messageId:String(p.messageId)}:{id:""};
   }
   if(operation==="ingest"){
     const a=account(p.accountId);if(!a.jid)fail("conflict");
@@ -349,3 +396,18 @@ export function chatWorker(ctx:Ctx,operation:string,p:Record<string,unknown>){
 
 /** Removes a deleted Dar account's Chat data. The runtime unlinks its devices first when it can. */
 export function deleteChatAccount(ctx:Ctx,ownerId:string){for(const row of [...ctx.db.chatAccounts.ownerId.filter(ownerId)])deleteAccountRows(ctx,row);}
+
+/** Chats, messages and downloaded attachments for backups. Keys are left out: a restored account
+ * comes back unlinked, so two servers never use the same WhatsApp device. */
+export function chatSnapshot(ctx:Ctx){
+  return {accounts:[...ctx.db.chatAccounts.iter()],threads:[...ctx.db.chatThreads.iter()],messages:[...ctx.db.chatMessages.iter()],
+    media:[...ctx.db.chatMedia.iter()].map(row=>row.state==="stored"?row:{...row,blobId:"",state:row.state==="retrying"?"remote":row.state})};
+}
+export function chatBlobIds(ctx:Ctx){return [...new Set([...ctx.db.chatMedia.iter()].filter(row=>row.blobId&&row.state==="stored").map(row=>row.blobId))];}
+export function restoreChat(ctx:Ctx,value?:ReturnType<typeof chatSnapshot>){
+  if(!value)return;
+  for(const row of value.accounts)ctx.db.chatAccounts.insert({...row,state:row.jid?"loggedOut":"failed",detail:"restored",importing:false});
+  for(const row of value.threads)ctx.db.chatThreads.insert(row);
+  for(const row of value.messages)ctx.db.chatMessages.insert(row);
+  for(const row of value.media)ctx.db.chatMedia.insert(row.blobId&&!ctx.db.fileBlobs.id.find(row.blobId)?{...row,blobId:"",state:"expired"}:row);
+}

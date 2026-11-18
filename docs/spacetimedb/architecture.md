@@ -74,7 +74,7 @@ flowchart LR
   Headers must arrive within 15 seconds.
 - Old versions keep their blobs; trash keeps references. Removing a version or pin
   schedules a check of its blob; new blobs are checked after a two-hour grace.
-  Maintenance claims blobs no version or backup pin uses, the runtime removes only
+  Maintenance claims blobs no version, backup pin or Chat attachment uses, the runtime removes only
   content nothing linked or reused within the grace, and acknowledgement deletes
   only blobs still claimed (an upload may have reused one). A daily sweep removes
   content an upload stored but never recorded.

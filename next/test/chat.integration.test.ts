@@ -7,6 +7,7 @@ import {createServer} from "node:net";
 import {spawnSync} from "node:child_process";
 import {startServer} from "../runtime/server.ts";
 import {login} from "./integration-helpers.ts";
+import {database} from "../runtime/database.ts";
 import type {ChatAccount,ChatLinkState,ChatMessage,ChatMessagePage,ChatOverview,ChatThread,ChatThreadPage} from "../shared/chat.ts";
 
 const fake=path.resolve(import.meta.dirname,"fixtures/fake-chat-bridge.mjs");
@@ -105,6 +106,37 @@ test("Chat: link, import, send, receive, receipts, encrypted keys, restart, isol
     assert.equal(changed.messages[4].text,"Perfect, see you at 7:30 then");assert.equal(changed.messages[0].text,"");assert.equal(changed.messages.length,5,"edits and deletions are not messages");
     assert.equal(changed.thread.preview,"Perfect, see you at 7:30 then");
 
+    // Attachments download through the bridge on first use, once, into the blob store.
+    const messagesOf=(threadId:string)=>call<ChatMessagePage>(`/messages?threadId=${encodeURIComponent(threadId)}`);
+    const media=(threadId:string,messageId:string,extra="")=>raw(`/media?${new URLSearchParams({threadId,messageId})}${extra}`);
+    const photo=(await messagesOf(sara.id)).messages.find(m=>m.messageId==="H3")!;
+    assert.deepEqual(photo.media,{kind:"image",mime:"image/png",size:photo.media!.size,seconds:0,width:1200,height:900,state:"remote"});
+    let response=await media(sara.id,"H3");assert.equal(response.status,200);assert.equal(response.headers.get("content-type"),"image/png");
+    assert.equal(Buffer.from(await response.arrayBuffer()).subarray(1,4).toString(),"PNG");
+    assert.equal((await messagesOf(sara.id)).messages.find(m=>m.messageId==="H3")!.media!.state,"stored");
+    assert.match(sql("SELECT blob_id FROM chat_media"),/[a-f0-9]{64}/);
+    assert.equal((await media(sara.id,"H3")).status,200);assert.equal((await bridgeLog()).filter(e=>e.method==="download"&&e.id==="H3").length,1,"a stored attachment is not downloaded again");
+    // Documents download as attachments; HTML never renders inline.
+    response=await media(family.id,"D1","&download=1");assert.equal(response.status,200);await response.arrayBuffer();
+    assert.match(response.headers.get("content-disposition")!,/^attachment; filename\*=UTF-8''Eid%20lunch%20menu\.pdf/);
+    response=await media(family.id,"X1");assert.equal(response.headers.get("content-type"),"application/octet-stream");assert.match(response.headers.get("content-disposition")!,/^attachment/);await response.arrayBuffer();
+    // Expired media: the phone is asked to send it again, then it downloads.
+    const old=(await call<ChatThreadPage>(`/threads?accountId=${accountId}&view=archived`)).threads[0];
+    response=await media(old.id,"EXP1");assert.equal(response.status,409);assert.match((await response.json() as {error:{message:string}}).error.message,/asked to send it again/);
+    assert.equal((await messagesOf(old.id)).messages.find(m=>m.messageId==="EXP1")!.media!.state,"retrying");
+    await writeFile(path.join(control,`${accountId}.resend.json`),JSON.stringify({chat:"15550003333@s.whatsapp.net",id:"EXP1"}));
+    await until(()=>messagesOf(old.id),p=>p.messages.find(m=>m.messageId==="EXP1")!.media!.state==="stored","the resent attachment");
+    // Save to Files; a second copy gets a numbered name.
+    const saved=await call<{fileId:string;name:string}>("/save",{threadId:family.id,messageId:"D1",folderId:""});assert.equal(saved.name,"Eid lunch menu.pdf");
+    assert.equal((await call<{name:string}>("/save",{threadId:family.id,messageId:"D1",folderId:""})).name,"Eid lunch menu (2).pdf");
+    assert.equal(await (await fetch(`${base}/api/v1/files/${saved.fileId}/content`,{headers:session.headers})).text(),"%PDF-1.4 fake menu");
+    // New voice notes download as they arrive; deleting a message for everyone removes its attachment.
+    await writeFile(path.join(control,`${accountId}.incoming.json`),JSON.stringify({messages:[{id:"V1",chat:"120363000000000001@g.us",sender:"15550005555@s.whatsapp.net",senderName:"Baba",fromMe:false,at:Date.now(),kind:"voice",media:{mime:"audio/ogg",size:20,seconds:3}}]}));
+    await until(()=>messagesOf(family.id),p=>p.messages.find(m=>m.messageId==="V1")?.media?.state==="stored","the automatic voice note download");
+    await writeFile(path.join(control,`${accountId}.incoming.json`),JSON.stringify({messages:[{id:"R2",chat:"120363000000000001@g.us",sender:"15550004444@s.whatsapp.net",fromMe:false,at:Date.now(),kind:"revoke",target:"X1"}]}));
+    await until(()=>messagesOf(family.id),p=>p.messages.find(m=>m.messageId==="X1")!.deleted,"the deletion");
+    assert.equal((await messagesOf(family.id)).messages.find(m=>m.messageId==="X1")!.media,null);assert.doesNotMatch(sql("SELECT id FROM chat_media"),/\/X1/);
+
     // A new chat by phone number.
     const direct=await call<ChatThread>("/chats",{accountId,phone:"+1 555 000 9999"});
     assert.equal(direct.jid,"15550009999@s.whatsapp.net");assert.equal(direct.name,"+15550009999");
@@ -127,6 +159,20 @@ test("Chat: link, import, send, receive, receipts, encrypted keys, restart, isol
       assert.equal((await as("/send",{method:"POST",body:JSON.stringify({threadId:sara.id,text:"hi"})})).status,404);
       assert.equal((await as(`/accounts/${accountId}`,{method:"DELETE"})).status,404);
     }
+
+    // Backups carry chats, messages and attachments but no keys; a restored account comes back unlinked.
+    const service=await database(process.env.DAR_DATABASE_URL!,name,process.env.DAR_DATABASE_TOKEN_FILE!),pin=randomUUID();
+    const snapshot=await service.call<{format:string;chat:{accounts:unknown[];messages:{id:string}[];media:{blobId:string}[]};blobs:{id:string}[]}>("service_backup",[pin]);
+    await service.call("service_release_backup",[pin]);
+    assert.equal(snapshot.format,"dar-backup-v12");assert.equal(snapshot.chat.accounts.length,1);assert.ok(snapshot.chat.messages.length>=9);
+    const kept=snapshot.chat.media.filter(m=>m.blobId).map(m=>m.blobId);assert.ok(kept.length>=3);for(const id of kept)assert.ok(snapshot.blobs.some(b=>b.id===id),"attachment blobs are in the backup");
+    assert.doesNotMatch(JSON.stringify(snapshot),/fake-device-secret|ZmFrZS1kZXZpY2Ut/);
+    const second=name+"-restore",republished=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",second,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});
+    assert.equal(republished.status,0,republished.stderr);
+    const restored=await database(process.env.DAR_DATABASE_URL!,second,process.env.DAR_DATABASE_TOKEN_FILE!);await restored.call("service_restore",[JSON.stringify(snapshot)]);
+    const restoredSql=(query:string)=>spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"sql",second,query,"--server",process.env.DAR_DATABASE_URL!,"--yes"],{encoding:"utf8"}).stdout;
+    assert.match(restoredSql("SELECT state, detail FROM chat_accounts"),/loggedOut.*restored/);assert.doesNotMatch(restoredSql("SELECT id FROM chat_keys"),new RegExp(accountId));
+    assert.match(restoredSql("SELECT blob_id FROM chat_media"),new RegExp(kept[0]));
 
     // Unlinking keeps history, read-only, and removes the keys.
     const unlinked=await call<{confirmed:boolean}>(`/accounts/${accountId}/unlink`,{});

@@ -27,7 +27,7 @@ type backend interface {
 
 // Namespaces that grow with every message or app state change stay in the
 // database and are read when needed; everything else is held in memory.
-var lazyPrefixes = []string{"mac/", "secret/", "evbuf/", "out/"}
+var lazyPrefixes = []string{"mac/", "secret/", "evbuf/", "out/", "media/"}
 
 func isLazy(key string) bool {
 	for _, prefix := range lazyPrefixes {
