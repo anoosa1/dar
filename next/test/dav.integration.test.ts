@@ -79,11 +79,11 @@ test("WebDAV clients: parent folders, modified times, advisory locks and streame
   assert.equal(await modified(dated), 1600000000_000);
   // Windows sets its file times and attributes after each save.
   patched = await proppatch("<z:Win32LastModifiedTime>Wed, 02 Mar 2022 10:00:00 GMT</z:Win32LastModifiedTime><z:Win32FileAttributes>00000020</z:Win32FileAttributes>");
-  assert.doesNotMatch(await patched.text(), /403|424/);
+  assert.doesNotMatch(await patched.text(), /HTTP\/1\.1 (403|424)/);
   assert.equal(await modified(dated), Date.UTC(2022, 2, 2, 10));
   // rclone sends back the checksums it read with the time; they are accepted and ignored.
   patched = await proppatch(`<d:lastmodified>1650000000</d:lastmodified><oc:checksums xmlns:oc="http://owncloud.org/ns"><oc:checksum>SHA1:${"0".repeat(40)}</oc:checksum></oc:checksums>`);
-  assert.doesNotMatch(await patched.text(), /403|424/);
+  assert.doesNotMatch(await patched.text(), /HTTP\/1\.1 (403|424)/);
   assert.equal(await modified(dated), 1650000000_000);
   patched = await proppatch("<z:Win32LastModifiedTime>Wed, 02 Mar 2022 10:00:00 GMT</z:Win32LastModifiedTime>");
   // Properties apply together: an unsupported one fails the request and changes nothing.
