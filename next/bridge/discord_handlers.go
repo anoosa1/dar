@@ -476,3 +476,84 @@ func fetchTo(ctx context.Context, client *http.Client, link, path string) (int, 
 	}
 	return resp.StatusCode, err
 }
+
+// ---- voice ----
+
+type dcVoiceParams struct {
+	Account  string   `json:"account"`
+	Chat     string   `json:"chat"`
+	Muted    bool     `json:"muted"`
+	Deafened bool     `json:"deafened"`
+	Frames   [][]byte `json:"frames"`
+}
+
+func (b *bridge) dcVoice(raw json.RawMessage) (*dcAccount, dcVoiceParams, error) {
+	p, err := decode[dcVoiceParams](raw)
+	if err != nil {
+		return nil, p, err
+	}
+	a, err := b.discordRunning(p.Account)
+	return a, p, err
+}
+
+// dcVoiceJoin joins a voice channel; how the call goes arrives as voiceCall events.
+func (b *bridge) dcVoiceJoin(ctx context.Context, raw json.RawMessage) (any, error) {
+	a, p, err := b.dcVoice(raw)
+	if err != nil {
+		return nil, err
+	}
+	if !validSnowflake(p.Chat) {
+		return nil, fail("invalidInput", "Unknown channel.")
+	}
+	return map[string]any{}, a.voiceJoin(ctx, p.Chat, p.Muted, p.Deafened)
+}
+
+func (b *bridge) dcVoiceLeave(_ context.Context, raw json.RawMessage) (any, error) {
+	a, _, err := b.dcVoice(raw)
+	if err != nil {
+		return nil, err
+	}
+	a.mu.Lock()
+	call := a.call
+	a.mu.Unlock()
+	if call != nil {
+		call.end("left", true)
+	}
+	return map[string]any{}, nil
+}
+
+func (b *bridge) dcVoiceSet(ctx context.Context, raw json.RawMessage) (any, error) {
+	a, p, err := b.dcVoice(raw)
+	if err != nil {
+		return nil, err
+	}
+	a.mu.Lock()
+	call := a.call
+	a.mu.Unlock()
+	if call == nil {
+		return nil, fail("conflict", "You are not in a call.")
+	}
+	return map[string]any{}, call.set(ctx, p.Muted, p.Deafened)
+}
+
+// dcVoiceAudio takes microphone frames; the runtime sends it without waiting for an answer.
+func (b *bridge) dcVoiceAudio(_ context.Context, raw json.RawMessage) (any, error) {
+	a, p, err := b.dcVoice(raw)
+	if err != nil {
+		return nil, err
+	}
+	a.sendAudio(p.Frames)
+	return nil, nil
+}
+
+func (b *bridge) dcVoiceCode(ctx context.Context, raw json.RawMessage) (any, error) {
+	a, _, err := b.dcVoice(raw)
+	if err != nil {
+		return nil, err
+	}
+	code, err := a.callCode(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"code": code}, nil
+}

@@ -7,7 +7,10 @@ const dist = path.join(root, "dist");
 // Hashed names are cached forever by browsers, so stale outputs are removed on every build.
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
-const result = await build({ absWorkingDir: root, entryPoints: {app:path.join(root,"client/main.tsx"),sdk:path.join(root,"sdk/client.tsx")}, bundle: true, outdir: dist, splitting:true, entryNames:"[name]-[hash]", chunkNames:"chunks/[name]-[hash]", assetNames:"chunks/[name]-[hash]", metafile:true, format: "esm", platform: "browser", target: "es2023", minify: true, sourcemap: false, jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
+// Chat's microphone runs in an AudioWorklet, which loads its own module by URL.
+const worklet = await build({ absWorkingDir: root, entryPoints: { "mic-worklet": path.join(root, "client/chat/mic-worklet.ts") }, bundle: true, outdir: path.join(dist, "chunks"), entryNames: "[name]-[hash]", metafile: true, format: "esm", platform: "browser", target: "es2023", minify: true });
+const micWorklet = "/chunks/" + path.basename(Object.keys(worklet.metafile.outputs).find(file => file.endsWith(".js")));
+const result = await build({ absWorkingDir: root, entryPoints: {app:path.join(root,"client/main.tsx"),sdk:path.join(root,"sdk/client.tsx")}, bundle: true, outdir: dist, splitting:true, entryNames:"[name]-[hash]", chunkNames:"chunks/[name]-[hash]", assetNames:"chunks/[name]-[hash]", metafile:true, format: "esm", platform: "browser", target: "es2023", minify: true, sourcemap: false, jsx: "automatic", define: { "process.env.NODE_ENV": '"production"', __DAR_MIC_WORKLET__: JSON.stringify(micWorklet) },
   // pdf.js loads a native canvas only under Node; browsers never reach it.
   external: ["@napi-rs/canvas"] });
 // pdf.js runs its parser in a worker and reads fonts, character maps, colour profiles and image

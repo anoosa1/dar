@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import {writeFile} from "node:fs/promises";
+import {readFile,writeFile} from "node:fs/promises";
 import {chromium} from "@playwright/test";
 const base=process.env.DAR_INTEGRATION_ORIGIN,root=process.env.DAR_TEST_ROOT,control=process.env.DAR_CHAT_CONTROL;if(!base||!root||!control)throw Error("Use the isolated Chat fixture.");
-const browser=await chromium.launch({executablePath:process.env.DAR_CHROMIUM,headless:true}),context=await browser.newContext({viewport:{width:1440,height:950}}),page=await context.newPage(),errors=[];
+// Chrome's fake microphone (a beeping tone) stands in for a person speaking in a call.
+const browser=await chromium.launch({executablePath:process.env.DAR_CHROMIUM,headless:true,args:["--use-fake-device-for-media-stream","--use-fake-ui-for-media-stream","--autoplay-policy=no-user-gesture-required"]}),
+  context=await browser.newContext({viewport:{width:1440,height:950},permissions:["microphone"]}),page=await context.newPage(),errors=[];
 page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()==="error"&&!/Failed to load resource/.test(m.text()))errors.push(m.text());});
 page.setDefaultTimeout(15000);
 const overview=()=>page.evaluate(async()=>(await fetch("/api/v1/chat/overview")).json());
@@ -98,7 +100,7 @@ try{
   const dcTab=page.getByRole("tab",{name:/Discord/});await dcTab.waitFor();assert.equal(await dcTab.getAttribute("aria-selected"),"true");
   // Servers with their channels in the sidebar; direct messages in the list.
   const servers=page.getByRole("navigation",{name:"Servers"});await servers.getByRole("button",{name:/Homelab Club/}).waitFor();
-  await servers.getByRole("button",{name:"Voice channel Lounge"}).waitFor();await servers.getByRole("button",{name:/Channel off-topic.*muted/}).waitFor();
+  await servers.getByRole("button",{name:/^Voice channel Lounge/}).waitFor();await servers.getByRole("button",{name:/Channel off-topic.*muted/}).waitFor();
   await page.getByRole("list",{name:"Direct messages"}).getByRole("button",{name:/Lina K/}).waitFor();
   // A channel replaces the list sheet; messages are flat rows.
   await servers.getByRole("button",{name:/Channel general, 1 mentions/}).click();
@@ -121,12 +123,45 @@ try{
   await servers.getByRole("button",{name:/Homelab Club/}).click();assert.equal(await servers.getByRole("button",{name:/Channel general/}).count(),0);
   await page.getByRole("navigation",{name:"Direct messages"}).getByRole("button",{name:/Direct messages/}).click();await page.locator(".chat-main").waitFor();
   await page.getByRole("list",{name:"Direct messages"}).getByRole("button",{name:/Lina K/}).click();await page.getByRole("log",{name:"Messages in Lina K"}).getByText("Hopping into Lounge later?").waitFor();
+  // Voice: who is in Lounge shows under it; opening it shows the call view, and joining sends the
+  // microphone as Opus and plays the others (the fake bridge echoes it back as Lina).
+  await servers.getByRole("button",{name:/Homelab Club/}).click();
+  await servers.getByRole("button",{name:"Voice channel Lounge, 2 in voice"}).click();
+  await servers.getByRole("list",{name:"In voice"}).getByText("Lina K").waitFor();
+  const stage=page.getByRole("region",{name:"Voice channel Lounge"});
+  await stage.getByRole("heading",{name:"2 people are in Lounge"}).waitFor();await page.screenshot({path:path.join(root,"chat-voice-join.png")});
+  await stage.getByRole("button",{name:"Join voice"}).click();
+  const dock=page.locator(".chat-sidebar").getByRole("region",{name:"Voice call"});await dock.getByText("Voice connected").waitFor();
+  await stage.getByRole("list",{name:"In the call"}).getByText("Anas (you)").waitFor();
+  await servers.getByRole("button",{name:"Voice channel Lounge, you are in this call"}).waitFor();
+  const bridgeLog=async()=>(await readFile(path.join(control,"log.jsonl"),"utf8")).split("\n").filter(Boolean).map(line=>JSON.parse(line));
+  for(let i=0;i<100&&!(await bridgeLog()).some(e=>e.method==="voiceAudio");i++)await page.waitForTimeout(100);
+  assert.ok((await bridgeLog()).some(e=>e.method==="voiceAudio"&&e.bytes>0),"the microphone reached the bridge as Opus");
+  await stage.locator(".chat-voice-tile.is-speaking").filter({hasText:"Lina K"}).waitFor();
+  await page.screenshot({path:path.join(root,"chat-voice-call.png")});
+  // The call code of an encrypted call; mute and deafen; the dock stays while reading a text channel.
+  await stage.getByRole("button",{name:"End-to-end encrypted"}).click();const code=page.getByRole("dialog",{name:"Verify the call is private"});
+  await code.getByText("48312").waitFor();await code.getByRole("button",{name:"Close",exact:true}).click();
+  await dock.getByRole("button",{name:"Mute"}).click();await page.waitForFunction(()=>document.querySelector(".chat-sidebar .chat-voice-dock [aria-label=Mute]")?.getAttribute("aria-pressed")==="true");
+  assert.ok((await bridgeLog()).some(e=>e.method==="voiceSet"&&e.muted===true));
+  await stage.locator(".chat-voice-tile").filter({hasText:"Anas (you)"}).getByTitle("Muted").waitFor();
+  await servers.getByRole("button",{name:/Channel general/}).click();await page.getByRole("log",{name:"Messages in #general"}).waitFor();await dock.getByText("Lounge · Homelab Club").waitFor();
+  await page.screenshot({path:path.join(root,"chat-voice-dock.png")});
   for(const theme of ["latte","mocha"]){await page.evaluate(value=>{document.documentElement.dataset.theme=value;},theme);
     for(const width of [1440,390]){await page.setViewportSize({width,height:844});await page.waitForTimeout(300);
       const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth?[...document.querySelectorAll("body *")].filter(e=>e.getBoundingClientRect().right>innerWidth+1&&!e.closest(".sidebar")).slice(0,8).map(e=>e.tagName+"."+[...e.classList].join(".")):[]);
       assert.deepEqual(overflow,[],`Discord ${theme} ${width} overflow`);
       await page.screenshot({path:path.join(root,`chat-discord-${width}-${theme}.png`)});
     }}
+  // On a phone the call view fills the screen and the dock sits under the list.
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole("button",{name:"Back to chats"}).click();const phoneDock=page.locator(".chat-main").getByRole("region",{name:"Voice call"});await phoneDock.waitFor();
+  await page.screenshot({path:path.join(root,"chat-voice-phone-dock.png")});
+  await phoneDock.getByRole("button",{name:/Voice connected/}).click();await stage.getByRole("button",{name:"Leave voice"}).waitFor();
+  await page.screenshot({path:path.join(root,"chat-voice-phone-call.png")});
+  await stage.getByRole("button",{name:"Leave voice"}).click();await stage.getByRole("button",{name:"Join voice"}).waitFor();
+  assert.equal(await page.getByRole("region",{name:"Voice call"}).count(),0);
+  assert.ok((await bridgeLog()).some(e=>e.method==="voiceLeave"));
   assert.deepEqual(errors,[]);
-  console.log("PASS Chat browser: link by QR code, account tab and views, imported chats, conversation with quotes, send with ticks, live incoming message, reply menu, settings sheet, phone layout and both themes; Discord sign-in with the terms notice, server tree, flat channel rows, reactions as counts, channel info and DMs.");
+  console.log("PASS Chat browser: link by QR code, account tab and views, imported chats, conversation with quotes, send with ticks, live incoming message, reply menu, settings sheet, phone layout and both themes; Discord sign-in with the terms notice, server tree, flat channel rows, reactions as counts, channel info and DMs; voice members, call view, joining with the microphone as Opus, others' audio with speaking rings, call code, mute, the dock while reading, the phone dock and leaving.");
 }finally{await browser.close();}

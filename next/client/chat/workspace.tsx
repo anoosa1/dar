@@ -12,7 +12,8 @@ import {useLiveConnection,subscribe} from "../live.ts";
 import {avatarHue} from "../pim/common.tsx";
 import {localDate,localDateTime,localTime} from "../dates.ts";
 import {qrMatrix,qrPath} from "../../shared/qr.ts";
-import {chatKindLabels,chatLimits,chatPlatformNames,chatTimeKey,localName,chatQuickReactions,chatMuteChoices,type ChatInfo,type ChatAccount,type ChatFriend,type ChatLinkState,type ChatMessage,type ChatMessagePage,type ChatOverview,type ChatPlatform,type ChatServer,type ChatThread,type ChatThreadPage,type ChatView} from "../../shared/chat.ts";
+import {useVoice,VoiceMembers,VoiceDock,VoiceStage,CallCodeDialog} from "./voice.tsx";
+import {chatKindLabels,chatLimits,chatPlatformNames,chatTimeKey,localName,chatQuickReactions,chatMuteChoices,type ChatInfo,type ChatAccount,type ChatFriend,type ChatLinkState,type ChatMessage,type ChatMessagePage,type ChatOverview,type ChatPlatform,type ChatServer,type ChatThread,type ChatThreadPage,type ChatView,type ChatVoiceCall,type ChatVoiceServers} from "../../shared/chat.ts";
 
 const base="/api/v1/chat";
 const views:{id:ChatView;label:string;icon:IconName}[]=[{id:"chats",label:"Chats",icon:"chat"},{id:"unread",label:"Unread",icon:"unread"},{id:"groups",label:"Groups",icon:"contacts"},{id:"archived",label:"Archived",icon:"archive"}];
@@ -74,6 +75,9 @@ export function ChatWorkspace({session,onSignedOut}:{session:BrowserSession;onSi
   const accounts=overview?.accounts??[],account=accounts.find(a=>a.id===accountId)??accounts[0],discord=account?.platform==="discord";
   const [servers,setServers]=useState<ChatServer[]>(),[collapsed,setCollapsed]=useState<ReadonlySet<string>>(new Set());
   const fail=(cause:unknown)=>setNotice((cause as Error).message||"The request could not be completed.");
+  // Discord voice: a live socket per account, and the call this tab carries.
+  const {hub:voice,snapshot:voiceState}=useVoice(session,accounts),[codeFor,setCodeFor]=useState("");
+  useEffect(()=>{if(voiceState.ended)setNotice(voiceState.ended.message);},[voiceState.ended?.at]);
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(""),5000);return()=>clearTimeout(timer);},[notice]);
 
   const loadOverview=useCallback(async()=>{try{setOverview(await request<ChatOverview>(`${base}/overview`));setLoadError("");}catch(cause){setLoadError((cause as Error).message);}},[]);
@@ -124,6 +128,17 @@ export function ChatWorkspace({session,onSignedOut}:{session:BrowserSession;onSi
   }
   function closeThread(){setSelected("");requestAnimationFrame(()=>{const target=origin.current;if(target?.isConnected)target.focus();});}
   const all=page?[...page.pinned,...page.threads]:[],channel=servers?.flatMap(s=>s.channels).find(t=>t.id===selected),current=channel??all.find(t=>t.id===selected);
+  const myVoice=account?voiceState.accounts[account.id]:undefined;
+  // The dock shows the call this tab carries, or else the current account's call.
+  const callEntry=Object.entries(voiceState.accounts).find(([,v])=>v.here&&v.call)??(account&&myVoice?.call?[account.id,myVoice] as const:undefined);
+  const callAccount=callEntry?.[0]??"",theCall=callEntry?.[1].call??null;
+  const callServer=callAccount===account?.id?servers?.find(s=>s.serverId===theCall?.serverId):undefined,callThread=callServer?.channels.find(c=>c.jid===theCall?.channelId);
+  const callChannel=callThread?.name??"Voice",callServerName=callServer?.name??accounts.find(a=>a.id===callAccount)?.name??"Discord";
+  const voiceRun=(work:Promise<unknown>)=>{void work.catch(fail);};
+  const setSelf=(id:string)=>(muted:boolean,deafened:boolean)=>voiceRun(voice.setSelf(id,muted,deafened));
+  const openCall=()=>{if(callAccount!==account?.id){chooseAccount(callAccount);return;}if(callThread)openThread(callThread);};
+  const dock=(className="")=>theCall&&callEntry&&<VoiceDock call={theCall} channel={callChannel} server={callServerName} here={callEntry[1].here} elsewhere={callEntry[1].elsewhere} mic={voiceState.mic} className={className}
+    onSet={setSelf(callAccount)} onLeave={()=>voiceRun(voice.leave(callAccount))} onUseHere={()=>voiceRun(voice.useHere(callAccount))} onOpen={openCall} onCode={()=>setCodeFor(callAccount)}/>;
 
   const accountActions=(a:ChatAccount):MenuAction[]=>[
     {label:"Rename",icon:"pencil",run:()=>setPane({kind:"rename",account:a})},
@@ -148,7 +163,9 @@ export function ChatWorkspace({session,onSignedOut}:{session:BrowserSession;onSi
     </div>
     {account&&discord&&<nav aria-label="Direct messages"><button type="button" className={`nav-item chat-view${!channel?" active":""}`} aria-current={!channel?"page":undefined} onClick={()=>{setView("chats");if(channel)setSelected("");setNavigation(false);}}>
       <Icon name="contacts"/><span className="chat-row-title">Direct messages</span>{account.counts.unread>0&&<span className="chat-count">{account.counts.unread}</span>}</button></nav>}
-    {account&&discord&&<ServerTree servers={servers} selected={selected} collapsed={collapsed} onToggle={toggleServer} onOpen={(thread,el)=>openThread(thread,el)}/>}
+    {account&&discord&&<ServerTree servers={servers} selected={selected} collapsed={collapsed} onToggle={toggleServer} onOpen={(thread,el)=>openThread(thread,el)}
+      voice={myVoice?.servers??{}} call={myVoice?.call??null} speaking={voiceState.speaking} me={account.jid}/>}
+    {dock()}
     {account&&!discord&&<nav aria-label="Chat views">{views.map(v=><button key={v.id} type="button" className={`nav-item chat-view${v.id===view?" active":""}`} aria-current={v.id===view?"page":undefined} onClick={()=>{setView(v.id);setNavigation(false);}}>
       <Icon name={v.icon}/><span className="chat-row-title">{v.label}</span>{account.counts[v.id]>0&&<span className="chat-count">{account.counts[v.id]}</span>}</button>)}</nav>}
     {status}
@@ -174,8 +191,15 @@ export function ChatWorkspace({session,onSignedOut}:{session:BrowserSession;onSi
           {all.map(thread=><ThreadRow key={thread.id} thread={thread} selected={thread.id===selected} onOpen={el=>openThread(thread,el)}/>)}
           {page?.cursor&&<div className="chat-more"><button className="text-button" disabled={more} onClick={()=>{void loadMore();}}>{more?"Loading…":"Load more"}</button></div>}
         </div>
+        {dock(" is-phone")}
       </main>
-      {selected&&account&&<aside className="pim-details chat-details" aria-label={current?.name??"Conversation"}>
+      {selected&&account&&discord&&current?.kind==="voice"&&<aside className="pim-details chat-details" aria-label={current.name}>
+        <VoiceStage key={selected} thread={current} server={servers?.find(s=>s.channels.some(c=>c.id===current.id))?.name??""} members={myVoice?.servers[servers?.find(s=>s.channels.some(c=>c.id===current.id))?.serverId??""]?.[current.jid]??[]}
+          call={myVoice?.call??null} inOther={theCall&&!(callAccount===account.id&&theCall.channelId===current.jid)?callChannel:""} speaking={voiceState.speaking} me={account.jid} mic={voiceState.mic} here={!!myVoice?.here}
+          onJoin={muted=>voice.join(account.id,current,muted)} onSet={setSelf(account.id)} onLeave={()=>voiceRun(voice.leave(account.id))} onCode={()=>setCodeFor(account.id)}
+          onUseHere={()=>voiceRun(voice.useHere(account.id))} onClose={closeThread}/>
+      </aside>}
+      {selected&&account&&!(discord&&current?.kind==="voice")&&<aside className="pim-details chat-details" aria-label={current?.name??"Conversation"}>
         <Conversation key={selected} threadId={selected} focusMessage={selected===start.chat?start.message:""} account={account} session={session} epoch={epoch} info={info} onClose={closeThread} onNotice={setNotice}
           onSave={message=>setPane({kind:"save",threadId:selected,message})} onInfo={()=>setInfo(!info)} onSetting={change=>setChat(selected,change)}/>
       </aside>}
@@ -190,6 +214,7 @@ export function ChatWorkspace({session,onSignedOut}:{session:BrowserSession;onSi
     {pane?.kind==="rename"&&<RenamePane session={session} account={pane.account} onClose={()=>setPane(undefined)} onSaved={()=>{setPane(undefined);void loadOverview();}}/>}
     {pane?.kind==="settings"&&<ChatSettings accounts={accounts} onClose={()=>setPane(undefined)} onLink={()=>setPane({kind:"link"})} actions={accountActions}/>}
     {confirm&&<ConfirmAction {...confirm} onClose={()=>setConfirm(undefined)}/>}
+    {codeFor&&<CallCodeDialog load={()=>voice.code(codeFor)} onClose={()=>setCodeFor("")}/>}
     <div className="chat-toast-region" role="status" aria-live="polite">{notice&&<div className="settings-toast chat-toast"><span>{notice}</span><button type="button" className="text-button" onClick={()=>setNotice("")}>Dismiss</button></div>}</div>
   </div>;
 }
@@ -607,7 +632,8 @@ function ChatSettings({accounts,onClose,onLink,actions}:{accounts:ChatAccount[];
 }
 
 /** Discord servers in the sidebar: each opens to its channels, grouped by category (mock B). */
-function ServerTree({servers,selected,collapsed,onToggle,onOpen}:{servers?:ChatServer[];selected:string;collapsed:ReadonlySet<string>;onToggle:(id:string)=>void;onOpen:(thread:ChatThread,el:HTMLElement)=>void}){
+function ServerTree({servers,selected,collapsed,onToggle,onOpen,voice,call,speaking,me}:{servers?:ChatServer[];selected:string;collapsed:ReadonlySet<string>;onToggle:(id:string)=>void;onOpen:(thread:ChatThread,el:HTMLElement)=>void;
+  voice:ChatVoiceServers;call:ChatVoiceCall|null;speaking:ReadonlySet<string>;me:string}){
   if(!servers)return <p className="chat-hint chat-tree-hint" role="status">Loading servers…</p>;
   if(!servers.length)return <p className="chat-hint chat-tree-hint">No servers yet.</p>;
   return <nav className="chat-servers" aria-label="Servers"><h2 className="chat-tree-heading">Servers</h2>
@@ -618,10 +644,11 @@ function ServerTree({servers,selected,collapsed,onToggle,onOpen}:{servers?:ChatS
           {s.mentions>0&&<span className="chat-mentions">{s.mentions}<span className="sr-only"> mentions</span></span>}<Icon name="chevron" className={`chat-server-chevron${open?" is-open":""}`}/></button>
         {open&&<ul className="chat-channels" aria-label={`Channels in ${s.name}`}>{s.channels.map(c=>{
           const heading=c.section!==section?(section=c.section,c.section?<li key={`section-${c.id}`} className="chat-section" aria-hidden="true">{c.section}</li>:null):null;
-          const current=c.id===selected,muted=quietUntil(c.mutedUntil);
-          return <Fragment key={c.id}>{heading}<li><button type="button" className={`nav-item chat-channel${current?" active":""}${c.unread>0&&!muted?" is-unread":""}${muted?" is-muted":""}`} aria-current={current?"page":undefined}
-            aria-label={`${c.kind==="voice"?"Voice channel":"Channel"} ${c.name}${c.mentions?`, ${c.mentions} mentions`:c.unread>0&&!muted?", unread":""}${muted?", muted":""}`} onClick={event=>onOpen(c,event.currentTarget)}>
-            <Icon name={c.kind==="voice"?"speaker":"hash"}/><span className="chat-row-title">{c.name}</span>{c.mentions>0&&<span className="chat-mentions">{c.mentions}</span>}{muted&&<Icon name="bell" className="chat-channel-muted"/>}</button></li></Fragment>;
+          const current=c.id===selected,muted=quietUntil(c.mutedUntil),members=c.kind==="voice"?voice[s.serverId]?.[c.jid]??[]:[],live=c.kind==="voice"&&call?.channelId===c.jid;
+          return <Fragment key={c.id}>{heading}<li><button type="button" className={`nav-item chat-channel${current?" active":""}${c.unread>0&&!muted&&c.kind!=="voice"?" is-unread":""}${muted?" is-muted":""}${live?" is-live":""}`} aria-current={current?"page":undefined}
+            aria-label={`${c.kind==="voice"?"Voice channel":"Channel"} ${c.name}${live?", you are in this call":members.length?`, ${members.length} in voice`:""}${c.mentions?`, ${c.mentions} mentions`:c.unread>0&&!muted&&c.kind!=="voice"?", unread":""}${muted?", muted":""}`} onClick={event=>onOpen(c,event.currentTarget)}>
+            <Icon name={c.kind==="voice"?"speaker":"hash"}/><span className="chat-row-title">{c.name}</span>{c.mentions>0&&<span className="chat-mentions">{c.mentions}</span>}{muted&&<Icon name="bell" className="chat-channel-muted"/>}</button>
+            {members.length>0&&<VoiceMembers members={members} speaking={speaking} me={me}/>}</li></Fragment>;
         })}{!s.channels.length&&<li className="chat-section">No channels you can see</li>}</ul>}
       </div>;})}
   </nav>;

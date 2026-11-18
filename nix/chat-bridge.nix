@@ -4,7 +4,7 @@ buildGoModule {
   pname = "dar-chat-bridge";
   version = "0.1.0";
   src = lib.cleanSourceWith { src = ../next/bridge; filter = path: type: !(lib.hasSuffix "_test.go" (baseNameOf path)); };
-  vendorHash = "sha256-nPda8UhA6MpQ9oY7g9bUZolTcPBtZEMO6kN561bOfpc=";
+  vendorHash = "sha256-0Zl7X+mCztoG1ZFXBcKkLJygGHLnpmlsjU/nAyatocw=";
   env.CGO_ENABLED = "0";
   ldflags = [ "-s" "-w" ];
   postInstall = ''mv $out/bin/chat-bridge $out/bin/dar-chat-bridge'';

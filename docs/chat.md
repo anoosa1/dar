@@ -22,8 +22,8 @@ data is kept and every account disconnects.
   bridge (QR sign-in, gateway, REST). Discord's terms forbid this and can lead to the
   account being limited or closed; the maintainer accepted that, and Link Discord says so.
 - Voice is wanted, and Discord requires its DAVE end-to-end encryption for calls (since
-  March 2026): the bridge will use dave-go (pure Go, Apache-2.0)
-  for it, with the browser's microphone and playback.
+  March 2026): the bridge uses [dave-go](https://github.com/thomas-vilte/dave-go) (pure Go,
+  Apache-2.0, not independently audited) for it, with the browser's microphone and playback.
 - Layout: mock B (a voice dock in the sidebar while text channels stay usable), with A's
   full call view when the voice channel itself is opened.
 
@@ -89,6 +89,31 @@ data is kept and every account disconnects.
 - **Other:** New message opens a DM with a friend. Mute syncs to Discord (per channel or
   DM); pin and archive are WhatsApp's. Attachment links Discord has expired are refreshed.
 
+## Discord (voice)
+
+- **Who is where:** people in each voice channel show under it in the tree (muted and
+  deafened marked, a green ring while they speak). Opening a voice channel shows the call
+  view: who is in it and Join voice (optionally muted).
+- **In a call:** the dock at the bottom of the sidebar (under the list on a phone) shows the
+  channel, mute, deafen and leave while you keep reading and writing; the call view shows a
+  tile per person. An end-to-end encrypted call shows a lock; it opens the 30-digit call
+  code to compare with others. Unmuting also undeafens, as in Discord. A blocked microphone
+  still lets you listen. Calls in direct messages, video, screen share and stage channels
+  are not supported.
+- **One tab carries the audio:** the tab that joined sends the microphone and plays the
+  call; others show "Use this tab". A call nobody hears for 15 seconds (the tab closed or
+  left Chat) is left, as when Discord's app closes.
+- **How:** the bridge joins through the gateway (voice state), opens the voice gateway (v8),
+  finds its address over UDP, and sends and receives Opus in RTP with transport encryption
+  (`aead_aes256_gcm_rtpsize`, else XChaCha20) and DAVE (`bridge/discord_voice.go`). Audio is
+  held while DAVE agrees keys; a dropped voice connection reconnects up to five times. The
+  browser encodes and decodes Opus with WebCodecs; the microphone runs in an AudioWorklet
+  (`client/chat/mic-worklet.ts`) and sends only while you speak (a level threshold plus
+  300 ms). Between them, `/api/v1/chat/live?accountId=` is a WebSocket (`runtime/chat/live.ts`,
+  RFC 6455 without extensions) carrying voice states and the call as JSON and audio as
+  binary; it needs the session cookie and Dar's Origin, and the session is checked again
+  every minute. Microphone frames reach the bridge as one-way messages (no answer).
+
 ## How it is built
 
 - **Bridge:** `next/bridge` is one Go binary (`dar-chat-bridge`, built by
@@ -119,8 +144,8 @@ data is kept and every account disconnects.
   View-once media is not downloaded. Passkey-protected WhatsApp accounts cannot link yet.
 - A chat known first by its LID and later by its phone number may appear twice.
 - Discord: messages up to 4,000 characters; no threads, forums, stage channels, member
-  lists, typing or presence yet; voice is the next phase. Behaviour against Discord itself
-  is verified by hand (tests use local fakes).
+  lists, typing or presence yet. Voice only in server voice channels, audio only. Behaviour
+  against Discord itself is verified by hand (tests use local fakes).
 
 ## Phases
 
@@ -133,7 +158,8 @@ data is kept and every account disconnects.
    in the shared search (newest first, up to three messages per chat, 40,000 messages per
    search), and a result opens the chat at its message.
 5. Done: Discord text through the person's own account (above).
-6. Next: Discord voice (dock, call view, DAVE, browser audio over a socket).
+6. Done: Discord voice in server voice channels (dock, call view, DAVE, browser audio over
+   the live socket).
 
 Verify with `nix develop -c node next/scripts/verify.mjs --chat` (Go tests with local fake
 Discord servers, a fake bridge for the integration and browser tests; never a real

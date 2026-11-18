@@ -427,7 +427,7 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
   if(operation==="chatTarget"){
     // The chat and its newest message, which WhatsApp wants when archiving.
     keys(p,["threadId"]);const t=thread(p.threadId),a=account(t.accountId),latest=first(ctx.db.chatMessages.threadKey.filter(prefix(t.id)));
-    return {accountId:a.id,platform:a.platform,serverId:t.serverId,state:a.state,chat:t.jid,lastAt:latest?.at??0,lastId:latest?.messageId??"",lastSender:latest&&!latest.fromMe?latest.sender:"",lastFromMe:latest?.fromMe??false};
+    return {accountId:a.id,platform:a.platform,serverId:t.serverId,kind:t.kind,state:a.state,chat:t.jid,lastAt:latest?.at??0,lastId:latest?.messageId??"",lastSender:latest&&!latest.fromMe?latest.sender:"",lastFromMe:latest?.fromMe??false};
   }
   if(operation==="applyChatSetting"){
     keys(p,["threadId","pinned","archived","mutedUntil"]);const t=thread(p.threadId),next={...t};

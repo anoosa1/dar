@@ -18,7 +18,7 @@ async function until<T>(read:()=>Promise<T>,ok:(value:T)=>boolean,what:string,ti
   throw new Error(`Timed out waiting for ${what}: ${JSON.stringify(last)}`);
 }
 
-test("Chat Discord: QR sign-in, servers and channels, DMs, send with nonce, reactions, live changes, history, mute, restart, backups and sign-out",{skip:!process.env.DAR_INTEGRATION_ORIGIN,timeout:240000},async()=>{
+test("Chat Discord: QR sign-in, servers and channels, DMs, send with nonce, reactions, live changes, history, mute, voice, restart, backups and sign-out",{skip:!process.env.DAR_INTEGRATION_ORIGIN,timeout:240000},async()=>{
   const root=await mkdtemp("/tmp/dar-chat-discord-"),control=await mkdtemp("/tmp/dar-chat-discord-control-"),name="dar-discord-"+randomUUID().slice(0,8),listener=createServer();
   await new Promise<void>(r=>listener.listen(0,"127.0.0.1",r));const port=(listener.address() as import("node:net").AddressInfo).port;await new Promise<void>(r=>listener.close(()=>r()));const base=`http://127.0.0.1:${port}`;
   const publish=(db:string)=>spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",db,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});
@@ -149,6 +149,61 @@ test("Chat Discord: QR sign-in, servers and channels, DMs, send with nonce, reac
     const friends=await call<{friends:{id:string;name:string}[]}>(`/friends?accountId=${accountId}`);assert.deepEqual(friends.friends.map(f=>f.name),["Lina K","tarek"]);
     const opened=await call<ChatThread>("/chats",{accountId,user:"300"});assert.equal(opened.name,"tarek");assert.equal(opened.kind,"direct");
     assert.equal((await raw("/chats",{method:"POST",body:JSON.stringify({accountId,phone:"+15550009999"})})).status,400);
+
+    // Voice: a live socket per account brings who is in each voice channel and the call. It needs
+    // the session and this origin; the socket that owns the call carries its audio both ways.
+    const liveUrl=`ws://127.0.0.1:${port}/api/v1/chat/live?accountId=${accountId}`;
+    const refused=(headers:Record<string,string>,url=liveUrl)=>new Promise<boolean>(resolve=>{const ws=new WebSocket(url,{headers} as never);ws.onopen=()=>{ws.close();resolve(false);};ws.onerror=()=>resolve(true);});
+    assert.ok(await refused({origin:base}),"a socket without the session");
+    assert.ok(await refused({cookie:session.headers.cookie,origin:"http://127.0.0.1:1"}),"a socket from another origin");
+    assert.ok(await refused({cookie:session.headers.cookie,origin:base},liveUrl.replace(accountId,randomUUID())),"a socket for someone else's account");
+    type Live=Record<string,unknown>&{type:string};
+    const openLive=async()=>{
+      const ws=new WebSocket(liveUrl,{headers:{cookie:session.headers.cookie,origin:base}} as never),texts:Live[]=[],audio:Uint8Array[]=[];
+      ws.binaryType="arraybuffer";
+      ws.onmessage=event=>{if(event.data instanceof ArrayBuffer)audio.push(new Uint8Array(event.data));else texts.push(JSON.parse(String(event.data)));};
+      await new Promise<void>((resolve,reject)=>{ws.onopen=()=>resolve();ws.onerror=()=>reject(new Error("the live socket was refused"));});
+      return {ws,texts,audio,last:(type:string)=>texts.filter(t=>t.type===type).at(-1)};
+    };
+    const tab=await openLive(),other=await openLive();
+    const hello=await until(async()=>tab.last("hello"),h=>!!h,"hello") as unknown as {servers:Record<string,Record<string,{id:string}[]>>;call:unknown};
+    assert.deepEqual(hello.servers["900"]["921"].map(p=>p.id),["200","300"]);assert.equal(hello.call,null);
+    assert.equal((await raw("/voice/join",{method:"POST",body:JSON.stringify({threadId:general.id})})).status,400,"a text channel cannot be joined");
+    await call("/voice/join",{threadId:lounge.id,muted:false});
+    assert.deepEqual((await bridgeLog()).find(e=>e.method==="voiceJoin"),{method:"voiceJoin",account:accountId,chat:"921",muted:false,deafened:false});
+    tab.ws.send(JSON.stringify({type:"claim"}));
+    const connectedCall=await until(async()=>tab.last("call"),c=>(c?.call as {state?:string}|null)?.state==="connected","the call to connect") as unknown as {call:{channelId:string;e2ee:boolean}};
+    assert.equal(connectedCall.call.channelId,"921");assert.equal(connectedCall.call.e2ee,true);
+    await until(async()=>other.last("owner"),o=>o?.elsewhere===true,"the other tab to see the call is elsewhere");
+    assert.equal(tab.last("owner")!.here,true);
+    await until(async()=>tab.last("voice"),v=>(v?.servers as Record<string,Record<string,unknown[]>>|undefined)?.["900"]?.["921"]?.length===3,"me in Lounge");
+    // Microphone frames from the owning tab reach the bridge; another tab's are ignored. Lina's audio comes back as binary.
+    const opus=new Uint8Array([2,0xfc,0xff,0xfe,1,2,3]);
+    other.ws.send(opus);await sleep(200);assert.ok(!(await bridgeLog()).some(e=>e.method==="voiceAudio"),"audio from a tab that does not own the call");
+    for(let i=0;i<3;i++)tab.ws.send(opus);
+    await until(bridgeLog,log=>log.some(e=>e.method==="voiceAudio"&&e.bytes===6),"microphone audio at the bridge");
+    await until(async()=>tab.audio.length,n=>n>=3,"Lina's audio");
+    const frame=tab.audio[0];assert.equal(frame[0],1);assert.equal(new DataView(frame.buffer).getBigUint64(1),200n);assert.deepEqual([...frame.subarray(9)],[...opus.subarray(1)]);
+    assert.equal(other.audio.length,0,"only the owning tab hears the call");
+    // Mute and deafen go to Discord; the call code shows for an encrypted call.
+    await call("/voice/set",{accountId,muted:true,deafened:false});
+    await until(async()=>tab.last("call"),c=>(c?.call as {selfMute?:boolean}|null)?.selfMute===true,"muted");
+    assert.equal((await call<{code:string}>(`/voice/code?accountId=${accountId}`)).code.length,30);
+    assert.equal((await raw("/voice/set",{method:"POST",body:JSON.stringify({accountId,muted:"yes",deafened:false})})).status,400);
+    // Discord ending the call says why; leaving ends it too.
+    await controlFile(accountId,"voiceend");
+    const ended=await until(async()=>tab.last("call"),c=>c?.call===null,"the call to end") as unknown as {ended:{reason:string;message:string}};
+    assert.equal(ended.ended.reason,"disconnected");assert.match(ended.ended.message,/disconnected/);
+    await call("/voice/join",{threadId:lounge.id,muted:true});tab.ws.send(JSON.stringify({type:"claim"}));
+    await until(async()=>tab.last("call"),c=>(c?.call as {state?:string}|null)?.state==="connected","joining again");
+    await call("/voice/leave",{accountId});
+    await until(async()=>tab.last("call"),c=>c?.call===null,"leaving");
+    // A call nobody hears any more is left after a while, as when Discord's app closes.
+    await call("/voice/join",{threadId:lounge.id,muted:true});tab.ws.send(JSON.stringify({type:"claim"}));
+    await until(async()=>tab.last("owner"),o=>o?.here===true,"owning the call");
+    tab.ws.close();
+    await until(bridgeLog,log=>log.filter(e=>e.method==="voiceLeave").length===2,"the orphaned call to be left",25000);
+    other.ws.close();
 
     // Search finds channel messages under the channel's name.
     type Found={items:{group:string;title:string;detail:string;href:string}[]};

@@ -122,6 +122,10 @@ func (p *peer) serve(r io.Reader) error {
 			}
 			continue
 		}
+		if f.ID == "" {
+			p.dispatch(f) // notifications (microphone audio) keep their order
+			continue
+		}
 		go p.dispatch(f)
 	}
 	if err := scanner.Err(); err != nil {
@@ -132,6 +136,13 @@ func (p *peer) serve(r io.Reader) error {
 
 func (p *peer) dispatch(f frame) {
 	h, ok := p.handlers[f.Method]
+	if f.ID == "" {
+		// A notification ({method, params} without an id) is never answered.
+		if ok {
+			_, _ = h(p.ctx, f.Params)
+		}
+		return
+	}
 	if !ok {
 		_ = p.write(frame{ID: f.ID, Error: &wireError{"unknownMethod", "Unknown method " + f.Method}})
 		return

@@ -47,6 +47,7 @@ async function discordReady(account){
     {id:"921",kind:"voice",name:"Lounge",serverId:"900",section:"Voice channels",order:"000002/1/000000/921",topic:"",unread:0,mentions:0,mutedUntil:0,at:0}]});
   await call("ingest",{account,kind:"channels",serverId:"950",complete:true,chats:[{id:"951",kind:"channel",name:"welcome",serverId:"950",section:"",order:"000000/0/000000/951",unread:0,mentions:0,mutedUntil:0,at:dcAt}]});
   await call("ingest",{account,kind:"chats",chats:[{id:"700",kind:"direct",name:"Lina K",unread:1,mentions:1,mutedUntil:0,at:dcAt+120_000}]});
+  voiceStates(account);
   await call("ingest",{account,kind:"history",messages:[
     {id:"1300000000000000011",chat:"911",sender:"200",senderName:"lina.k",fromMe:false,at:dcAt,kind:"text",text:"Anyone moved to the new caddy module?"},
     {id:"1300000000000000012",chat:"911",sender:"300",senderName:"tarek",fromMe:false,at:dcAt+30_000,kind:"text",text:"Yes, painless",reactions:[{emoji:"👍",count:3,me:true},{emoji:"party:55",count:1,me:false}]},
@@ -54,6 +55,13 @@ async function discordReady(account){
     {id:"1300000000000000021",chat:"700",sender:"200",senderName:"Lina K",fromMe:false,at:dcAt+120_000,kind:"text",text:"Hopping into Lounge later?"}]});
 }
 const dcError=(message,code)=>Object.assign(new Error(message),{code});
+// Voice: Lina and tarek are in Lounge; a call echoes the microphone back as Lina speaking.
+const lounge=[{id:"200",name:"Lina K"},{id:"300",name:"tarek",muted:true}],calls=new Map();
+function voiceStates(account){
+  const call=calls.get(account),people=call?[...lounge,{id:me,name:"Anas",...call.muted?{muted:true}:{},...call.deafened?{deafened:true}:{}}]:lounge;
+  emit(account,"voiceStates",{servers:{"900":{"921":people}},complete:true});
+}
+function callState(account){const c=calls.get(account);emit(account,"voiceCall",{state:c.state,serverId:"900",channelId:c.chat,selfMute:c.muted,selfDeaf:c.deafened,canSpeak:true,e2ee:c.state==="connected",protocol:1});}
 
 async function pair(account){
   linking.delete(account);
@@ -144,6 +152,30 @@ const handlers={
       messages:[{id:"H0",chat:params.chat,sender:params.chat,fromMe:false,at:params.at-86_400_000,kind:"text",text:"Hello from last week"}]});},50);
     return {};
   },
+  voiceJoin({account,chat,muted,deafened}){
+    log({method:"voiceJoin",account,chat,muted,deafened});
+    if(!connected.has(account))throw dcError("Discord is not connected.","notConnected");
+    if(chat!=="921")throw dcError("This voice channel no longer exists.","notFound");
+    calls.set(account,{chat,muted,deafened,state:"connecting",frames:0});callState(account);
+    setTimeout(()=>{const c=calls.get(account);if(!c)return;c.state="connected";callState(account);voiceStates(account);},60);
+    return {};
+  },
+  voiceSet({account,muted,deafened}){
+    log({method:"voiceSet",account,muted,deafened});const c=calls.get(account);if(!c)throw dcError("You are not in a call.","conflict");
+    c.muted=muted;c.deafened=deafened;callState(account);voiceStates(account);return {};
+  },
+  voiceLeave({account}){
+    log({method:"voiceLeave",account});const c=calls.get(account);if(!c)return {};
+    calls.delete(account);emit(account,"voiceCall",{state:"ended",serverId:"900",channelId:c.chat,reason:"left"});voiceStates(account);return {};
+  },
+  voiceAudio({account,frames}){
+    const c=calls.get(account);if(!c||c.muted)return;
+    for(const frame of frames){
+      if(++c.frames===1||c.frames%25===0)log({method:"voiceAudio",account,frames:c.frames,bytes:Buffer.from(frame,"base64").length});
+      if(!c.deafened)emit(account,"voiceAudio",{user:"200",seq:c.frames,data:frame});
+    }
+  },
+  voiceCode({account}){if(!calls.get(account))throw dcError("You are not in a call.","conflict");return {code:"483122207906411751234567890123"};},
   friends({account}){if(!discord.has(account))throw dcError("This is not available for this account.","unsupported");return {friends:[{id:"200",name:"Lina K",username:"lina"},{id:"300",name:"tarek",username:"tarek"}]};},
   async openDirect({account,user}){
     log({method:"openDirect",account,user});
@@ -167,6 +199,8 @@ const handlers={
 createInterface({input:process.stdin}).on("line",async line=>{
   const frame=JSON.parse(line);
   if(!frame.method){const item=pending.get(frame.id);if(!item)return;pending.delete(frame.id);if(frame.error)item.reject(new Error(frame.error.message));else item.resolve(frame.result);return;}
+  // Notifications (microphone audio) carry no id and get no answer.
+  if(!frame.id){try{await handlers[frame.method]?.(frame.params??{});}catch{}return;}
   try{write({id:frame.id,result:await handlers[frame.method](frame.params??{})});}
   catch(error){write({id:frame.id,error:{code:error.code??"bridgeError",message:error.message}});}
 }).on("close",()=>process.exit(0));
@@ -174,7 +208,7 @@ createInterface({input:process.stdin}).on("line",async line=>{
 // Control files: <account>.<action>[.json]; each is handled once.
 setInterval(async()=>{
   for(const name of readdirSync(control)){
-    const match=/^([0-9a-f-]{36})\.(pair|incoming|receipt|loggedout|resend|scan|ingest)(\.json)?$/.exec(name);if(!match)continue;
+    const match=/^([0-9a-f-]{36})\.(pair|incoming|receipt|loggedout|resend|scan|ingest|voiceend)(\.json)?$/.exec(name);if(!match)continue;
     const file=path.join(control,name),done=file+".done";renameSync(file,done);
     const [,account,action]=match,data=match[3]?JSON.parse(readFileSync(done,"utf8")):{};
     try{
@@ -184,6 +218,7 @@ setInterval(async()=>{
       if(action==="incoming")await call("ingest",{account,kind:"messages",chats:data.chats??[],messages:data.messages});
       if(action==="receipt")await call("ingest",{account,kind:"receipts",...data});
       if(action==="resend"){resent.add(data.id);emit(account,"mediaRetried",{chat:data.chat,id:data.id,ok:true});}
+      if(action==="voiceend"&&calls.has(account)){const c=calls.get(account);calls.delete(account);emit(account,"voiceCall",{state:"ended",serverId:"900",channelId:c.chat,reason:"disconnected"});voiceStates(account);}
       if(action==="loggedout"){connected.delete(account);emit(account,"loggedOut",{reason:"logged out from another device"});}
       log({method:"control",action,account,ok:true});
     }catch(error){log({method:"control",action,account,ok:false,error:error.message});}

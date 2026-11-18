@@ -31,6 +31,8 @@ export function startBridge(executable:string|undefined,{request,event,onReady,e
       write({id,method,params});
     });
   }
+  /** A one-way message the bridge never answers (microphone audio); dropped while it is down. */
+  function notify(method:string,params:Record<string,unknown>){if(child&&ready)write({method,params});}
   async function answer(frame:{id:string;method:string;params?:Record<string,unknown>}){
     try{write({id:frame.id,result:await request(frame.method,frame.params??{})??{}});}
     catch(error){write({id:frame.id,error:{code:error instanceof AppError?error.code:"runtimeError",message:error instanceof Error?error.message:"Request failed."}});}
@@ -73,7 +75,7 @@ export function startBridge(executable:string|undefined,{request,event,onReady,e
   }
   start();
   return {
-    call,status,
+    call,notify,status,
     async close(){
       closing=true;clearTimeout(restartTimer);failAll("Dar is stopping.");
       const proc=child;if(!proc)return;

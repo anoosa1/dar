@@ -139,6 +139,14 @@ in {
             proxy_buffering off;
             proxy_read_timeout 120s;
           ''; };
+          # Chat's live socket: voice call state and audio.
+          "= /api/v1/chat/live" = {
+            proxyPass = "http://127.0.0.1:${toString cfg.port}";
+            proxyWebsockets = true; recommendedProxySettings = false; extraConfig = proxyHeaders + ''
+              proxy_buffering off;
+              proxy_read_timeout 120s;
+            '';
+          };
           "= /spacetime/v1/database/${cfg.databaseName}/subscribe" = {
             proxyPass = "http://127.0.0.1:${toString cfg.databasePort}/v1/database/${cfg.databaseName}/subscribe";
             proxyWebsockets = true; recommendedProxySettings = false; extraConfig = proxyHeaders;

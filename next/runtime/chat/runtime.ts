@@ -8,7 +8,8 @@ import {createChatMedia} from "./media.ts";
 import type {blobStore} from "../files/blobs.ts";
 import type {IncomingMessage,ServerResponse} from "node:http";
 import {chatReadOperations} from "../../shared/read-operations.ts";
-import {chatPlatformNames,type ChatLinkState,type ChatMessage,type ChatOverview,type ChatPlatform} from "../../shared/chat.ts";
+import {chatPlatformNames,type ChatLinkState,type ChatMessage,type ChatOverview,type ChatPlatform,type ChatVoiceCall,type ChatVoiceServers} from "../../shared/chat.ts";
+import type {LiveSocket} from "./live.ts";
 
 interface Entry {key:string;value:string;lazy?:boolean;expiresAt?:number}
 interface SendTarget {accountId:string;platform:ChatPlatform;chat:string;message:ChatMessage;quoted:{id:string;sender:string;text:string}|null}
@@ -24,6 +25,11 @@ const reasons:Record<string,string>={
   captcha:"Discord asked for a check that Dar cannot show. Sign in to Discord in its app or website first, then try again.",
   connectFailed:"Dar could not reach the service. Check the server's internet connection.",
 };
+const voiceEnds:Record<string,string>={
+  left:"",moved:"",stopped:"Discord disconnected.",disconnected:"You were disconnected from the call.",timeout:"Discord did not connect the call in time.",
+  connectionLost:"The call's connection was lost.",failed:"Discord ended the call.",connectFailed:"Discord is not connected.",
+};
+interface Voice {servers:ChatVoiceServers;call:ChatVoiceCall|null;sockets:Set<LiveSocket>;owner?:LiveSocket;orphan?:ReturnType<typeof setTimeout>}
 /** A Discord nonce: a snowflake for now, which Discord uses to recognise a resent message. */
 function discordNonce(){return ((BigInt(Date.now()-1420070400000)<<22n)|BigInt(randomBytes(3).readUIntBE(0,3)&0x3fffff)).toString();}
 
@@ -106,10 +112,11 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       if(event==="connected"){void setState(accountId,"connected");return;}
       if(event==="disconnected"){void setState(accountId,"disconnected",{detail:String(data.reason??"")});return;}
       if(event==="connectFailure"){void setState(accountId,"disconnected",{detail:String(data.reason??"")});return;}
-      if(event==="loggedOut"){void setState(accountId,"loggedOut",{detail:String(data.reason??"")}).then(()=>worker("kvClear",{accountId})).catch(()=>{});return;}
+      if(event==="loggedOut"){const v=voices.get(accountId);if(v){v.servers={};push(v,{type:"voice",servers:{},complete:true});}void setState(accountId,"loggedOut",{detail:String(data.reason??"")}).then(()=>worker("kvClear",{accountId})).catch(()=>{});return;}
       if(event==="replaced"){void setState(accountId,"failed",{detail:"replaced"});return;}
       if(event==="banned"){void setState(accountId,"failed",{detail:"banned"});return;}
       if(event==="outdated"){void setState(accountId,"failed",{detail:"outdated"});return;}
+      if(event==="voiceStates"||event==="voiceCall"||event==="voiceAudio"){voiceEvent(accountId,event,data);return;}
       if(event==="mediaRetried"){void media.retried(accountId,String(data.chat),String(data.id),data.ok===true).catch(()=>{});return;}
     },
     onReady(){void connectAll();},
@@ -151,6 +158,48 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
     const row=await call<{platform:ChatPlatform}>(sessionId,"account",{accountId});platforms.set(accountId,row.platform);return row.platform;
   }
   const accountOf=(threadId:string)=>threadId.slice(0,36);
+
+  // Voice: who is in each voice channel and this account's call, kept here and pushed to
+  // the account's live sockets. One socket owns the call: it sends the microphone and hears it.
+  const voices=new Map<string,Voice>();
+  const voiceOf=(accountId:string)=>{let v=voices.get(accountId);if(!v){v={servers:{},call:null,sockets:new Set()};voices.set(accountId,v);}return v;};
+  const push=(v:Voice,value:unknown)=>{for(const socket of v.sockets)socket.sendText(value);};
+  const ownership=(v:Voice)=>{for(const socket of v.sockets)socket.sendText({type:"owner",here:socket===v.owner,elsewhere:!!v.owner&&socket!==v.owner});};
+  function voiceEvent(accountId:string,event:string,data:Record<string,unknown>){
+    const v=voices.get(accountId)??(event==="voiceAudio"?undefined:voiceOf(accountId));if(!v)return;
+    if(event==="voiceStates"){
+      const servers=(data.servers??{}) as ChatVoiceServers;
+      if(data.complete===true)v.servers={};
+      for(const [id,channels] of Object.entries(servers)){if(Object.keys(channels).length)v.servers[id]=channels;else delete v.servers[id];}
+      push(v,{type:"voice",servers,complete:data.complete===true});return;
+    }
+    if(event==="voiceCall"){
+      const state=String(data.state);
+      if(state==="ended"){
+        const reason=String(data.reason??"");v.call=null;clearTimeout(v.orphan);v.owner=undefined;
+        push(v,{type:"call",call:null,ended:{channelId:String(data.channelId??""),reason,message:voiceEnds[reason]??voiceEnds.failed}});ownership(v);return;
+      }
+      v.call={state:state as ChatVoiceCall["state"],serverId:String(data.serverId??""),channelId:String(data.channelId??""),selfMute:data.selfMute===true,
+        selfDeaf:data.selfDeaf===true,canSpeak:data.canSpeak!==false,e2ee:data.e2ee===true,protocol:Number(data.protocol??0)};
+      push(v,{type:"call",call:v.call});return;
+    }
+    if(event==="voiceAudio"&&v.owner&&typeof data.user==="string"&&/^\d{1,20}$/.test(data.user)&&typeof data.data==="string"){
+      const opus=Buffer.from(data.data,"base64"),frame=Buffer.alloc(9+opus.length);
+      frame[0]=1;frame.writeBigUInt64BE(BigInt(data.user),1);opus.copy(frame,9);v.owner.sendAudio(frame);
+    }
+  }
+  /** Leaves a call nobody hears any more, as Discord does when its app closes. */
+  function watchOwner(accountId:string,v:Voice){
+    clearTimeout(v.orphan);
+    if(v.owner||!v.call)return;
+    v.orphan=setTimeout(()=>{if(!v.owner&&v.call)void bridge.call("voiceLeave",{account:accountId}).catch(()=>{});},15_000);
+  }
+  async function discordAccount(sessionId:string,accountId:string){
+    if(!accountPattern.test(accountId))throw new AppError("invalidInput");
+    await call(sessionId,"account",{accountId});
+    if(await platformOf(sessionId,accountId)!=="discord")throw new AppError("invalidInput",400,"Voice is available for Discord accounts.");
+    return accountId;
+  }
 
   return {
     call,
@@ -298,10 +347,43 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       const opened=await bridge.call<{chat:string}>("openDirect",{account:accountId,user:user??""},30_000);
       return await call(sessionId,"find",{accountId,chat:opened.chat});
     },
+    /** Checks a live socket may follow this Discord account, before it is accepted. */
+    authorizeLive:(sessionId:string,accountId:string)=>discordAccount(sessionId,accountId),
+    /** Serves one browser's live socket for an account it was authorized for. */
+    attachLive(accountId:string,socket:LiveSocket){
+      const v=voiceOf(accountId);v.sockets.add(socket);
+      socket.sendText({type:"hello",servers:v.servers,call:v.call});ownership(v);
+      socket.onText=value=>{
+        if(value.type==="claim"&&v.call){v.owner=socket;clearTimeout(v.orphan);ownership(v);}
+        else if(value.type==="release"&&v.owner===socket){v.owner=undefined;ownership(v);watchOwner(accountId,v);}
+      };
+      // Microphone frames: 2, then one Opus packet; only from the socket that owns the call.
+      socket.onBinary=data=>{
+        if(v.owner!==socket||!v.call||v.call.selfMute||data.length<2||data.length>1300||data[0]!==2)return;
+        bridge.notify("voiceAudio",{account:accountId,frames:[data.subarray(1).toString("base64")]});
+      };
+      socket.onClose=()=>{v.sockets.delete(socket);if(v.owner===socket){v.owner=undefined;ownership(v);watchOwner(accountId,v);}};
+    },
+    /** Joins a Discord voice channel; the call's progress arrives on the live socket. */
+    async voiceJoin(sessionId:string,threadId:string,muted:boolean,deafened:boolean){
+      const target=await call<{accountId:string;platform:ChatPlatform;kind:string;serverId:string;chat:string}>(sessionId,"chatTarget",{threadId});
+      if(target.platform!=="discord"||!target.serverId||target.kind!=="voice")throw new AppError("invalidInput",400,"Only Discord voice channels can be joined.");
+      await bridge.call("voiceJoin",{account:target.accountId,chat:target.chat,muted,deafened},30_000);
+      return {ok:true};
+    },
+    async voiceLeave(sessionId:string,accountId:string){
+      await bridge.call("voiceLeave",{account:await discordAccount(sessionId,accountId)},15_000);return {ok:true};
+    },
+    async voiceSet(sessionId:string,accountId:string,muted:boolean,deafened:boolean){
+      await bridge.call("voiceSet",{account:await discordAccount(sessionId,accountId),muted,deafened},15_000);return {ok:true};
+    },
+    async voiceCode(sessionId:string,accountId:string){
+      return await bridge.call<{code:string}>("voiceCode",{account:await discordAccount(sessionId,accountId)},15_000);
+    },
     platformName:(platform:ChatPlatform)=>chatPlatformNames[platform],
     serveMedia:(req:IncomingMessage,res:ServerResponse,sessionId:string,threadId:string,messageId:string,attachment:boolean)=>media.serve(req,res,sessionId,threadId,messageId,attachment),
     saveMedia:(sessionId:string,threadId:string,messageId:string,folderId:string)=>media.save(sessionId,threadId,messageId,folderId),
-    async close(){closing=true;media.close();clearInterval(purgeTimer);for(const timer of retries.values())clearTimeout(timer);await bridge.close();},
+    async close(){closing=true;media.close();for(const v of voices.values()){clearTimeout(v.orphan);for(const socket of v.sockets)socket.close(1001,"stopping");}clearInterval(purgeTimer);for(const timer of retries.values())clearTimeout(timer);await bridge.close();},
   };
 }
 export type ChatRuntime=Awaited<ReturnType<typeof createChatRuntime>>;

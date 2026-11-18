@@ -63,6 +63,7 @@ type dcChannel struct {
 	LastMessageID flexID        `json:"last_message_id"`
 	Overwrites    []dcOverwrite `json:"permission_overwrites"`
 	RecipientIDs  []string      `json:"recipient_ids"`
+	UserLimit     int           `json:"user_limit"`
 	Recipients    []dcUser      `json:"recipients"`
 }
 
@@ -106,6 +107,7 @@ type dcGuild struct {
 	Roles       []dcRole    `json:"roles"`
 	Channels    []dcChannel `json:"channels"`
 	Members     []dcMember  `json:"members"`
+	VoiceStates []dcVoiceState `json:"voice_states"`
 	Properties  *struct {
 		Name    string `json:"name"`
 		OwnerID string `json:"owner_id"`

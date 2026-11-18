@@ -15,7 +15,7 @@ interaction rules; app-specific code must not drift from that contract.
   PDF preview, November 16) and `bsdtar` (libarchive, Nix) for comic archives;
   Go and `go.mau.fi/whatsmeow` for the Chat bridge (November 17, `../docs/chat.md`); its
   Discord client uses `github.com/coder/websocket` (already in the bridge) and, for voice,
-  dave-go (November 18).
+  `github.com/thomas-vilte/dave-go` with its `godave` interface and `mls-go` (November 18).
 - Do not treat passing primitive tests as completion; verify end-to-end behavior.
 
 ## Selected designs

@@ -15,9 +15,9 @@ import (
 // servers, channels, roles and friends it needs in memory and hands chats and messages to
 // the runtime like WhatsApp's.
 
-type discordURLs struct{ api, gateway, remoteAuth string }
+type discordURLs struct{ api, gateway, remoteAuth, voiceScheme string }
 
-var defaultDiscordURLs = discordURLs{api: discordAPIBase, gateway: discordGatewayURL, remoteAuth: remoteAuthURL}
+var defaultDiscordURLs = discordURLs{api: discordAPIBase, gateway: discordGatewayURL, remoteAuth: remoteAuthURL, voiceScheme: "wss"}
 
 const (
 	keyDiscordToken = "discord/token"
@@ -33,6 +33,8 @@ type guildState struct {
 	myRoles           []string
 	channels          map[string]*dcChannel
 	mutedUntil        int64
+	voice             map[string]dcVoiceState // by user
+	nicks             map[string]string
 }
 
 type readState struct {
@@ -57,6 +59,8 @@ type dcAccount struct {
 	friends     map[string]bool
 	reads       map[string]readState
 	channelMute map[string]int64
+	call        *dcCall
+	gw          atomic.Pointer[gateway]
 }
 
 func (b *bridge) newDiscordAccount(id string) *dcAccount {
@@ -78,6 +82,12 @@ func (a *dcAccount) ingest(ctx context.Context, data map[string]any) bool {
 }
 
 func (a *dcAccount) stop() {
+	a.mu.Lock()
+	call := a.call
+	a.mu.Unlock()
+	if call != nil {
+		call.end("stopped", true)
+	}
 	a.stopped.Store(true)
 	if a.cancel != nil {
 		a.cancel()
@@ -103,6 +113,7 @@ func (a *dcAccount) start(token string) {
 			go a.bridge.stop(a.id)
 		}
 	}}
+	a.gw.Store(g)
 	go g.run(ctx)
 }
 
@@ -170,7 +181,8 @@ func (a *dcAccount) applySettings(list []guildSettings) {
 }
 
 func newGuildState(g dcGuild, order int) *guildState {
-	s := &guildState{id: g.ID, name: g.Name, ownerID: g.OwnerID, order: order, roles: map[string]dcRole{}, channels: map[string]*dcChannel{}}
+	s := &guildState{id: g.ID, name: g.Name, ownerID: g.OwnerID, order: order, roles: map[string]dcRole{}, channels: map[string]*dcChannel{},
+		voice: map[string]dcVoiceState{}, nicks: map[string]string{}}
 	if g.Properties != nil {
 		if g.Properties.Name != "" {
 			s.name = g.Properties.Name
@@ -226,6 +238,10 @@ func (a *dcAccount) ready(ctx context.Context, raw json.RawMessage) {
 				s.myRoles = m.Roles
 			}
 		}
+		for _, vs := range g.VoiceStates {
+			vs.GuildID = g.ID
+			a.setVoiceState(s, vs)
+		}
 		a.guilds[g.ID] = s
 	}
 	a.privates = map[string]*dcChannel{}
@@ -265,7 +281,15 @@ func (a *dcAccount) ready(ctx context.Context, raw json.RawMessage) {
 		a.syncGuild(ctx, id)
 	}
 	a.syncPrivates(ctx, nil)
+	a.emitVoice(true)
 	a.emit("connected", map[string]any{"name": r.User.name()})
+	// A new gateway session drops any voice connection of the old one.
+	a.mu.Lock()
+	call := a.call
+	a.mu.Unlock()
+	if call != nil {
+		go call.rejoin()
+	}
 }
 
 func (a *dcAccount) storeUser(ctx context.Context) {
@@ -748,6 +772,10 @@ func (a *dcAccount) dispatch(ctx context.Context, event string, raw json.RawMess
 	switch event {
 	case "READY":
 		a.ready(ctx, raw)
+	case "VOICE_STATE_UPDATE":
+		a.voiceStateUpdate(raw)
+	case "VOICE_SERVER_UPDATE":
+		a.voiceServerUpdate(raw)
 	case "MESSAGE_CREATE":
 		var m dcMessage
 		if json.Unmarshal(raw, &m) != nil {
@@ -842,6 +870,7 @@ func (a *dcAccount) dispatch(ctx context.Context, event string, raw json.RawMess
 		a.mu.Unlock()
 		if g != nil {
 			a.syncGuild(ctx, g.id)
+			a.emitVoice(false, g.id)
 		} else if event != "CHANNEL_DELETE" {
 			a.syncPrivates(ctx, []string{c.ID})
 		}
@@ -858,6 +887,13 @@ func (a *dcAccount) dispatch(ctx context.Context, event string, raw json.RawMess
 			if event == "GUILD_UPDATE" {
 				s.channels = old.channels
 			}
+			if event == "GUILD_UPDATE" || g.VoiceStates == nil {
+				s.voice, s.nicks = old.voice, old.nicks
+			}
+		}
+		for _, vs := range g.VoiceStates {
+			vs.GuildID = g.ID
+			a.setVoiceState(s, vs)
 		}
 		for _, m := range g.Members {
 			if m.id() == a.me.ID {
@@ -868,6 +904,7 @@ func (a *dcAccount) dispatch(ctx context.Context, event string, raw json.RawMess
 		a.mu.Unlock()
 		a.ingest(ctx, map[string]any{"kind": "servers", "servers": a.serversOut()})
 		a.syncGuild(ctx, g.ID)
+		a.emitVoice(false, g.ID)
 	case "GUILD_DELETE":
 		var g dcGuild
 		if json.Unmarshal(raw, &g) != nil || g.Unavailable {
@@ -875,8 +912,13 @@ func (a *dcAccount) dispatch(ctx context.Context, event string, raw json.RawMess
 		}
 		a.mu.Lock()
 		delete(a.guilds, g.ID)
+		call := a.call
 		a.mu.Unlock()
+		if call != nil && call.guildID == g.ID {
+			call.end("disconnected", false)
+		}
 		a.ingest(ctx, map[string]any{"kind": "servers", "servers": a.serversOut(), "complete": true})
+		a.emitVoice(false, g.ID)
 	case "GUILD_ROLE_CREATE", "GUILD_ROLE_UPDATE", "GUILD_ROLE_DELETE":
 		var d struct {
 			GuildID string `json:"guild_id"`
@@ -898,6 +940,7 @@ func (a *dcAccount) dispatch(ctx context.Context, event string, raw json.RawMess
 		a.mu.Unlock()
 		if g != nil {
 			a.syncGuild(ctx, d.GuildID)
+			a.emitVoice(false, d.GuildID)
 		}
 	case "GUILD_MEMBER_UPDATE":
 		var d struct {
@@ -916,6 +959,7 @@ func (a *dcAccount) dispatch(ctx context.Context, event string, raw json.RawMess
 		a.mu.Unlock()
 		if g != nil {
 			a.syncGuild(ctx, d.GuildID)
+			a.emitVoice(false, d.GuildID)
 		}
 	case "USER_GUILD_SETTINGS_UPDATE":
 		var s guildSettings

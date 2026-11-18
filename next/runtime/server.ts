@@ -46,6 +46,7 @@ import {handleBooksHttp} from "./books/http.ts";
 import {handleNewsHttp} from "./news/http.ts";
 import {createChatRuntime,type ChatRuntime} from "./chat/runtime.ts";
 import {handleChatHttp} from "./chat/http.ts";
+import {acceptWebSocket,refuseUpgrade} from "./chat/live.ts";
 import {createPhotosRuntime,type PhotosRuntime} from "./photos/runtime.ts";
 import {handlePhotosHttp,sendFile} from "./photos/http.ts";
 import {handlePhotoLinkHttp} from "./photos/public.ts";
@@ -178,7 +179,7 @@ export async function startServer(config: ServerConfig) {
     const databaseOrigin = new URL(databasePublicUrl).origin;
     // The pinned SDK generates binary codecs with Function(). Keep inline
     // scripts forbidden and document this SDK-specific CSP limitation.
-    res.setHeader("content-security-policy", `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' blob:; media-src 'self' https:; connect-src 'self' ${databaseOrigin} ${databaseOrigin.replace(/^http/, "ws")}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
+    res.setHeader("content-security-policy", `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' blob:; media-src 'self' https:; connect-src 'self' ${config.origin.replace(/^http/, "ws")} ${databaseOrigin} ${databaseOrigin.replace(/^http/, "ws")}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
     try {
       const url = new URL(req.url ?? "/", config.origin);
       const method = req.method ?? "GET";
@@ -434,6 +435,31 @@ export async function startServer(config: ServerConfig) {
       if (req.method !== "GET" && req.method !== "HEAD" && res.statusCode < 400 && /^\/api\/v1\/(files|notes)\//.test(req.url ?? "")) texts.nudge();
     });
   });
+  // Chat's live socket (voice). The cookie and Origin are checked as for a write, and the
+  // session again every minute so a browser that signed out is dropped.
+  // Upgraded sockets stay counted by server.close(), so stopping ends them first.
+  const upgraded = new Set<import("node:stream").Duplex>();
+  server.on("upgrade", (req: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
+    socket.on("error", () => { socket.destroy(); });
+    upgraded.add(socket); socket.once("close", () => { upgraded.delete(socket); });
+    void (async () => {
+      const url = new URL(req.url ?? "/", config.origin);
+      if (url.pathname !== "/api/v1/chat/live" || !chatRuntime) return refuseUpgrade(socket, 404, "Not Found");
+      if (req.headers.origin !== config.origin) return refuseUpgrade(socket, 403, "Forbidden");
+      const secret = req.headers.cookie?.split(";").map(part => part.trim()).find(part => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
+      const authenticated = await auth.authenticate(secret);
+      if (!authenticated) return refuseUpgrade(socket, 401, "Unauthorized");
+      if ((await readAppSettings()).disabled.includes("chat")) return refuseUpgrade(socket, 404, "Not Found");
+      const accountId = url.searchParams.get("accountId") ?? "";
+      try { await chatRuntime.authorizeLive(authenticated.session.id, accountId); } catch { return refuseUpgrade(socket, 404, "Not Found"); }
+      const live = acceptWebSocket(req, socket, head);
+      if (!live) return;
+      chatRuntime.attachLive(accountId, live);
+      const check = setInterval(() => { void auth.authenticate(secret).then(still => { if (!still) live.close(1008, "signed out"); }).catch(() => {}); }, 60_000);
+      const closed = live.onClose;
+      live.onClose = () => { clearInterval(check); closed(); };
+    })().catch(() => { socket.destroy(); });
+  });
   // Bodies are timed by their progress (upload-pace.ts), not by a total, so slow links can finish.
   server.requestTimeout = 0;
   server.headersTimeout = 15_000;
@@ -458,7 +484,7 @@ export async function startServer(config: ServerConfig) {
   disposeResources = async () => {
     stopping = true; clearInterval(timer);
     try {
-      await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
+      await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); for (const socket of upgraded) socket.destroy(); });
       await Promise.allSettled([...inflight]);
       await maintenance;
       await checksums.close();

@@ -122,6 +122,11 @@ func main() {
 	p.handle("requestHistory", b.route(b.requestHistory, b.dcHistory))
 	p.handle("friends", b.route(nil, b.dcFriends))
 	p.handle("openDirect", b.route(nil, b.dcOpenDM))
+	p.handle("voiceJoin", b.route(nil, b.dcVoiceJoin))
+	p.handle("voiceLeave", b.route(nil, b.dcVoiceLeave))
+	p.handle("voiceSet", b.route(nil, b.dcVoiceSet))
+	p.handle("voiceAudio", b.route(nil, b.dcVoiceAudio))
+	p.handle("voiceCode", b.route(nil, b.dcVoiceCode))
 	done := make(chan error, 1)
 	go func() { done <- p.serve(os.Stdin) }()
 	select {
@@ -131,6 +136,9 @@ func main() {
 	b.mu.Lock()
 	ids := make([]string, 0, len(b.accounts))
 	for id := range b.accounts {
+		ids = append(ids, id)
+	}
+	for id := range b.discord {
 		ids = append(ids, id)
 	}
 	b.mu.Unlock()

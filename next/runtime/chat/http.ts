@@ -31,6 +31,13 @@ export async function handleChatHttp(req:IncomingMessage,res:ServerResponse,url:
       return send(await runtime.call(sessionId,"messages",{threadId:p.get("threadId")??"",...p.get("before")?{before:p.get("before")}:{}}));
     }
     if(path==="/chats"&&method==="POST"){const v=await input(["accountId","phone","user"]);return send(await runtime.openChat(sessionId,str(v.accountId,64)!,{phone:str(v.phone,40,true),user:str(v.user,25,true)}),201);}
+    if(path==="/voice/join"&&method==="POST"){const v=await input(["threadId","muted","deafened"]);return send(await runtime.voiceJoin(sessionId,str(v.threadId,300)!,v.muted===true,v.deafened===true));}
+    if(path==="/voice/leave"&&method==="POST"){const v=await input(["accountId"]);return send(await runtime.voiceLeave(sessionId,str(v.accountId,64)!));}
+    if(path==="/voice/set"&&method==="POST"){
+      const v=await input(["accountId","muted","deafened"]);if(typeof v.muted!=="boolean"||typeof v.deafened!=="boolean")throw new AppError("invalidInput");
+      return send(await runtime.voiceSet(sessionId,str(v.accountId,64)!,v.muted,v.deafened));
+    }
+    if(path==="/voice/code"&&method==="GET")return send(await runtime.voiceCode(sessionId,str(url.searchParams.get("accountId")??"",64)!));
     if(path==="/servers"&&method==="GET")return send(await runtime.servers(sessionId,str(url.searchParams.get("accountId")??"",64)!));
     if(path==="/friends"&&method==="GET")return send(await runtime.friends(sessionId,str(url.searchParams.get("accountId")??"",64)!));
     if(path==="/catchUp"&&method==="POST"){const v=await input(["threadId"]);return send(await runtime.catchUp(sessionId,str(v.threadId,300)!));}

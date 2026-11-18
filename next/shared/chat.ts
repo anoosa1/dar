@@ -18,6 +18,15 @@ export interface ChatThread {id:string;accountId:string;jid:string;kind:"direct"
 /** A Discord server with its channels. */
 export interface ChatServer {id:string;serverId:string;name:string;mutedUntil:number;unread:boolean;mentions:number;channels:ChatThread[]}
 export interface ChatFriend {id:string;name:string;username:string}
+/** Someone in a Discord voice channel. */
+export interface ChatVoiceMember {id:string;name:string;muted?:boolean;deafened?:boolean;video?:boolean;streaming?:boolean}
+/** Who is in each voice channel, by server ID (Discord's) then channel ID. */
+export type ChatVoiceServers=Record<string,Record<string,ChatVoiceMember[]>>;
+/** This account's Discord call; serverId and channelId are Discord's IDs. */
+export interface ChatVoiceCall {state:"connecting"|"connected"|"reconnecting";serverId:string;channelId:string;selfMute:boolean;selfDeaf:boolean;canSpeak:boolean;e2ee:boolean;protocol:number}
+/** What the live socket sends: voice states, the call, which tab owns it. Audio is binary: 1, the user ID (8 bytes), Opus. */
+export type ChatLiveMessage={type:"hello";servers:ChatVoiceServers;call:ChatVoiceCall|null}|{type:"voice";servers:ChatVoiceServers;complete:boolean}
+  |{type:"call";call:ChatVoiceCall|null;ended?:{channelId:string;reason:string;message:string}}|{type:"owner";here:boolean;elsewhere:boolean};
 export interface ChatThreadPage {pinned:ChatThread[];threads:ChatThread[];cursor:string|null}
 export interface ChatMessage {id:string;messageId:string;sender:string;senderName:string;fromMe:boolean;at:number;kind:ChatMessageKind;text:string;fileName:string;
   quotedId:string;quotedSender:string;quotedText:string;status:ChatMessageStatus;edited:boolean;deleted:boolean;media:ChatMedia|null;reactions:ChatReaction[]}

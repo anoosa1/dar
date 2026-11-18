@@ -279,8 +279,10 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   [mock B](spacetimedb/discord-mocks.html) (November 18): Direct messages then servers in
   the sidebar, each opening to channels by category (mentions as counts, muted dimmed); a
   channel replaces the list sheet; messages are flat rows (avatar and name start a run);
-  Link Discord shows the terms notice with the QR code. Voice will run in a dock at the
-  bottom of the sidebar, with A's call view when the voice channel is opened. See
+  Link Discord shows the terms notice with the QR code. Voice: people under each voice
+  channel with a speaking ring; a dock at the bottom of the sidebar (under the list on a
+  phone) during a call; A's call view (tiles, round controls, the encryption badge opening
+  the call code) when the voice channel is opened. See
   [Chat](chat.md).
 - **Agent:** the settings sheet and editing panes sit beside the Agent's sheets
   (which make room), as in other apps; choosing and adding a project both use the
