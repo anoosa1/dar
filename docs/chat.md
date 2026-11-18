@@ -8,6 +8,8 @@ Layout follows the selected [mock A with account tabs](spacetimedb/chat-mocks.ht
 
 - WhatsApp first, through [whatsmeow](https://github.com/tulir/whatsmeow) in a Go
   bridge. Go is approved for this bridge; more of Dar may move to Go later.
+- No Postgres or SQLite: whatsmeow's device keys and all chat data live in
+  SpacetimeDB through a custom whatsmeow store.
 - On linking, import as much history as WhatsApp provides.
 - Accounts never mix: each linked account is a tab with its own chats, views,
   counts, notifications and media settings.
