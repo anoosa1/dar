@@ -43,7 +43,8 @@ try{
   for(const name of ["Notes","Tasks",external.name]){await page.getByRole("button",{name:`Disable ${name}`,exact:true}).click();await page.getByRole("button",{name:`Enable ${name}`,exact:true}).waitFor();}
   assert.equal((await change("notes",true,stale)).status,409);
   await page.reload();await page.getByRole("button",{name:"Enable Notes",exact:true}).waitFor();
-  const rail=page.getByRole("navigation",{name:"Applications",exact:true});await rail.getByRole("link",{name:"Files",exact:true}).waitFor();for(const name of ["Notes","Tasks",external.name])assert.equal(await rail.getByRole("link",{name,exact:true}).count(),0);
+  const rail=page.getByRole("navigation",{name:"Applications",exact:true});await rail.getByRole("link",{name:"Files",exact:true}).waitFor();// The rail lists every app until the app settings load, then drops the disabled ones.
+  for(const name of ["Notes","Tasks",external.name])await rail.getByRole("link",{name,exact:true}).waitFor({state:"detached"});
   for(const route of ["/api/v1/notes/notebooks","/api/v1/tasks/items",`/api/v1/apps/${external.id}/userData/${marker}`])assert.equal((await fetch(base+route,{headers})).status,404);
   for(const q of ["Notes","Tasks",external.name]){const r=await(await fetch(base+`/api/v1/search?q=${encodeURIComponent(q)}`,{headers})).json();assert.ok(!r.items.some(item=>["/notes","/tasks",`/apps/${external.id}`].includes(item.href)));}
   await page.goto(base+"/notes");await page.getByRole("heading",{name:"App disabled",exact:true}).waitFor();
