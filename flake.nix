@@ -9,13 +9,14 @@
       runtimeFor = system: import ./nix/runtime.nix { pkgs = pkgsFor system; };
     in {
       packages = eachSystem (system: let pkgs = pkgsFor system; in {
-        dar = pkgs.callPackage ./nix/package.nix { runtime = runtimeFor system; };
+        chat-bridge = pkgs.callPackage ./nix/chat-bridge.nix { };
+        dar = pkgs.callPackage ./nix/package.nix { runtime = runtimeFor system; chatBridge = self.packages.${system}.chat-bridge; };
         prayer-times = pkgs.callPackage ./nix/prayer-times.nix { runtime = runtimeFor system; };
         default = self.packages.${system}.dar;
       });
       apps = eachSystem (system: { default = { type = "app"; program = "${self.packages.${system}.dar}/bin/dar"; }; });
       devShells = eachSystem (system: let pkgs = pkgsFor system; runtime = runtimeFor system; in {
-        default = pkgs.mkShell { packages = [ runtime.node runtime.npm runtime.spacetime pkgs.chromium pkgs.curl pkgs.git pkgs.vdirsyncer pkgs.exiftool pkgs.vips pkgs.ffmpeg-headless pkgs.libarchive ]; };
+        default = pkgs.mkShell { packages = [ runtime.node runtime.npm runtime.spacetime pkgs.go pkgs.chromium pkgs.curl pkgs.git pkgs.vdirsyncer pkgs.exiftool pkgs.vips pkgs.ffmpeg-headless pkgs.libarchive ]; };
       });
       nixosModules.default = import ./nix/module.nix { inherit self; };
       nixosModules.dar = self.nixosModules.default;

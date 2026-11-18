@@ -74,6 +74,12 @@ try {
   catch (error) { if (error.code !== "ENOENT") throw error; await createDurableFile(serviceFile, token); }
   if (restorePath) await restore(await connectDatabase(databaseUrl, environment.DAR_DATABASE_NAME, serviceFile), path.resolve(restorePath), root);
   if(process.env.DAR_PREBUILT!=="1")run(process.execPath, ["scripts/build-client.mjs"]);
+  // The Chat bridge is Go (bridge/). Without Go, Chat reports WhatsApp as unavailable.
+  if (process.env.DAR_PREBUILT !== "1" && !environment.DAR_CHAT_BRIDGE) {
+    const output = path.join(root, "bin", "dar-chat-bridge");
+    const built = spawnSync("go", ["build", "-trimpath", "-o", output, "."], { cwd: path.join(project, "bridge"), env: { ...environment, CGO_ENABLED: "0", GOTOOLCHAIN: "local" }, stdio: "inherit" });
+    if (built.status === 0) environment.DAR_CHAT_BRIDGE = output; else console.warn("The Chat bridge was not built (Go is missing or the build failed); Chat will show WhatsApp as unavailable.");
+  }
   const runtime = start(process.execPath, ["runtime/main.ts"]);
   await writeFile(path.join(root, "service-pids.json"), JSON.stringify({ database: database.pid, runtime: runtime.pid }), { mode: 0o600 });
   await waitFor(`${localOrigin}/api/v1/auth/status`, runtime);

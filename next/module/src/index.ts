@@ -4,6 +4,8 @@ import {agentTables} from "./agent-tables.ts";
 import {agentOperation,agentSnapshot,restoreAgent} from "./agent.ts";
 import {agentWorker} from "./agent-runs.ts";
 import {newsTables} from "./news-tables.ts";
+import {chatTables,chatChanges} from "./chat-tables.ts";
+import {chatOperation,chatWorker} from "./chat.ts";
 import {newsOperation,newsWorker,newsReadOperations,newsSnapshot,restoreNews} from "./news.ts";
 import {photosTables,immichTables} from "./photos-tables.ts";
 import {photoFileEvent,touchAsset,currentSeq} from "./photo-sync.ts";
@@ -82,7 +84,7 @@ const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().in
 // A browser session that confirmed the account password may open the Locked folder until expiresAt.
 const fileUnlocks = table({}, { sessionId: t.string().primaryKey(), userId: t.string().index("btree"), expiresAt: t.f64() });
 const fileUnlockExpiry = table({}, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), sessionId: t.string() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, fileBlobs, blobChecksums, fileMigrations, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...trackerTables,...appTables,...agentTables,...newsTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, fileBlobs, blobChecksums, fileMigrations, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...trackerTables,...appTables,...agentTables,...newsTables,...chatTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -967,7 +969,7 @@ export const serviceAppSettings=db.procedure({sessionId:t.string(),appId:t.strin
   const user=fromSession(tx,p.sessionId);
   if(!user.administrator||tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
   if((essentialApps as readonly string[]).includes(p.appId))fail("forbidden");
-  if(!["notes","tasks","agent","news","photos","books","git"].includes(p.appId)&&!validAppId(p.appId))fail("invalidInput");
+  if(!["notes","tasks","agent","news","chat","photos","books","git"].includes(p.appId)&&!validAppId(p.appId))fail("invalidInput");
   if(settings.revision!==p.revision)fail("conflict");
   const disabled=settings.disabled.filter(id=>id!==p.appId);if(!p.enabled)disabled.push(p.appId);
   if(disabled.length>200)fail("operationTooLarge");
@@ -1505,3 +1507,21 @@ export const serviceDav = db.procedure({ sessionId: t.string(), method: t.string
   } else fail("invalidInput");
   return JSON.stringify({ ok: true });
 }));
+
+/** Chat for browser sessions only; app passwords get no Chat scope. */
+export const serviceChat=db.procedure({sessionId:t.string(),operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);const user=fromSession(tx,p.sessionId);if(tx.db.appPasswords.sessionId.find(p.sessionId))fail("forbidden");
+  if(p.document.length>256*1024)fail("operationTooLarge");
+  const value:unknown=JSON.parse(p.document);if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");
+  return JSON.stringify(chatOperation(tx,user.id,p.operation,value as Record<string,unknown>));
+}));
+/** The chat bridge's key store and incoming chats, through the runtime. */
+export const serviceChatWorker=db.procedure({operation:t.string(),document:t.string()},t.string(),(ctx,p)=>ctx.withTx(tx=>{
+  service(tx);if(p.document.length>24*1024*1024)fail("operationTooLarge");
+  const value:unknown=JSON.parse(p.document);if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");
+  return JSON.stringify(chatWorker(tx,p.operation,value as Record<string,unknown>));
+}));
+export const myChatChanges=db.view({public:true},t.option(chatChanges.rowType),ctx=>{
+  const user=userFor(ctx);
+  return user?ctx.db.chatChanges.userId.find(user.id)??{userId:user.id,revision:0}:undefined;
+});

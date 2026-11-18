@@ -1,10 +1,10 @@
-{ lib, buildNpmPackage, makeWrapper, runtime, git, coreutils, exiftool, vips, ffmpeg-headless, libarchive }:
+{ lib, buildNpmPackage, makeWrapper, runtime, chatBridge, git, coreutils, exiftool, vips, ffmpeg-headless, libarchive }:
 buildNpmPackage {
   pname = "dar";
   version = "0.1.0";
   src = lib.cleanSourceWith {
     src = ../next;
-    filter = path: type: !(lib.hasPrefix ".env" (baseNameOf path)) && !(builtins.elem (baseNameOf path) [ "node_modules" "dist" "module_bindings" "state" ".git" ".npmrc" "test" "flake.nix" "flake.lock" "README.md" "AGENTS.md" ]);
+    filter = path: type: !(lib.hasPrefix ".env" (baseNameOf path)) && !(builtins.elem (baseNameOf path) [ "node_modules" "dist" "module_bindings" "state" ".git" ".npmrc" "test" "bridge" "flake.nix" "flake.lock" "README.md" "AGENTS.md" ]);
   };
   nodejs = runtime.nodeWithNpm;
   npmDepsHash = "sha256-evPAqQcIAkxckxx7FI5mVU2oIa8o6zKFK3nX1qckHok=";
@@ -31,7 +31,8 @@ buildNpmPackage {
       --add-flags "$out/lib/dar/scripts/serve.mjs" \
       --set DAR_PREBUILT 1 \
       --prefix PATH : ${lib.makeBinPath [ git coreutils runtime.node exiftool vips ffmpeg-headless libarchive ]} \
-      --set DAR_SPACETIME_BIN ${runtime.spacetime}/bin/spacetime
+      --set DAR_SPACETIME_BIN ${runtime.spacetime}/bin/spacetime \
+      --set DAR_CHAT_BRIDGE ${chatBridge}/bin/dar-chat-bridge
     makeWrapper ${runtime.node}/bin/node $out/bin/dar-operator \
       --add-flags "$out/lib/dar/scripts/operator.ts"
     runHook postInstall

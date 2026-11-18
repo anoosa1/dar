@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, chmod } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import net from "node:net";
@@ -15,6 +15,7 @@ const newsOnly=process.argv.includes("--news");
 const photosOnly=process.argv.includes("--photos");
 const historyOnly=process.argv.includes("--history");
 const booksOnly=process.argv.includes("--books");
+const chatOnly=process.argv.includes("--chat");
 const gitOnly=process.argv.includes("--git");
 const storageOnly=process.argv.includes("--storage");
 const root = await mkdtemp(path.join(tmpdir(), "dar-acceptance-"));
@@ -31,7 +32,11 @@ const port = await freePort(); let databasePort;
 do { databasePort = await freePort(); } while (port === databasePort);
 const chromium = process.env.DAR_CHROMIUM ?? process.env.PATH.split(path.delimiter).map(directory => path.join(directory, "chromium")).find(existsSync);
 if (!chromium) throw new Error("Chromium is required. Use the next/ Nix shell or set DAR_CHROMIUM.");
-const environment = { ...process.env, DAR_ROOT: root, DAR_TEST_ROOT: root, DAR_PORT: String(port), DAR_DATABASE_PORT: String(databasePort),
+// Chat runs against a fake bridge (test/fixtures/fake-chat-bridge.mjs) that the browser test drives through control files.
+const chatControl = path.join(root, "chat-control"), chatBridge = path.join(chatControl, "bridge.sh");
+await mkdir(chatControl, { recursive: true, mode: 0o700 });
+await writeFile(chatBridge, `#!/bin/sh\nDAR_FAKE_CHAT_CONTROL=${JSON.stringify(chatControl)} exec node ${JSON.stringify(path.join(project, "test/fixtures/fake-chat-bridge.mjs"))}\n`); await chmod(chatBridge, 0o700);
+const environment = { ...process.env, DAR_ROOT: root, DAR_CHAT_BRIDGE: chatBridge, DAR_CHAT_CONTROL: chatControl, DAR_TEST_ROOT: root, DAR_PORT: String(port), DAR_DATABASE_PORT: String(databasePort),
   DAR_INTEGRATION_ORIGIN: `http://127.0.0.1:${port}`, DAR_DATABASE_URL: `http://127.0.0.1:${databasePort}`, DAR_DATABASE_NAME: "dar-acceptance",
   DAR_SPACETIME_BIN: process.env.DAR_SPACETIME_BIN ?? "spacetime", DAR_SPACETIME_CLI_ROOT: path.join(root, "cli"),
   DAR_DATABASE_TOKEN_FILE: path.join(root, "secrets/database-token"), DAR_BOOTSTRAP_TOKEN_FILE: path.join(root, "secrets/bootstrap-token"), DAR_CHROMIUM: chromium };
@@ -54,15 +59,19 @@ try {
   if (!ready) throw new Error(`Fixture readiness timed out.\n${output}`);
   run(["node_modules/typescript/bin/tsc", "-p", "tsconfig.json"]);
   run(["node_modules/typescript/bin/tsc", "-p", "module/tsconfig.json"]);
+  // The Chat bridge (Go): its whatsmeow store and protocol, without WhatsApp.
+  if(!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly){const go=spawnSync("go",["test","./..."],{cwd:path.join(project,"bridge"),env:{...process.env,CGO_ENABLED:"0",GOTOOLCHAIN:"local",GOFLAGS:"-mod=readonly"},stdio:"inherit",timeout:600_000});if(go.error||go.status!==0)throw new Error("Verification failed: go test (bridge)");}
   // Setup race verification must run before the other tests create users.
   run(["--test", "test/auth.integration.test.ts"]);
   if(storageOnly){run(["--test","--test-concurrency=1","test/blobs.test.ts","test/storage.test.ts","test/files.integration.test.ts","test/dav.integration.test.ts","test/backup.integration.test.ts","test/gc.integration.test.ts","test/blob-migration.integration.test.ts","test/history.integration.test.ts","test/git.integration.test.ts","test/pim-upgrade.integration.test.ts"],600_000);console.info(`PASS Storage acceptance. Isolated artifacts: ${root}`);}
   else if(gitOnly){run(["--test","--test-concurrency=1","test/git.integration.test.ts","test/git-app.integration.test.ts","test/git-interop.integration.test.ts","test/git-tracker.integration.test.ts","test/storage.test.ts","test/upload-pace.test.ts","test/upload-timeout.integration.test.ts"],600_000);if(existsSync(path.join(project,"test/git-browser.mjs")))run(["test/git-browser.mjs"],300_000);run(["test/git-tracker-browser.mjs"],300_000);console.info(`PASS Git acceptance. Isolated artifacts: ${root}`);}
+  else if(chatOnly){run(["--test","test/chat.integration.test.ts"],300_000);run(["test/chat-browser.mjs"],300_000);console.info(`PASS Chat acceptance. Isolated artifacts: ${root}`);}
   else if(booksOnly){run(["--test","test/books.integration.test.ts"],300_000);run(["test/books-browser.mjs"],300_000);console.info(`PASS Books acceptance. Isolated artifacts: ${root}`);}
   else if(historyOnly){run(["--test","--test-concurrency=1","test/history.integration.test.ts","test/git.integration.test.ts"],300_000);if(existsSync(path.join(project,"test/history-browser.mjs")))run(["test/history-browser.mjs"],300_000);console.info(`PASS history acceptance. Isolated artifacts: ${root}`);}
   else{
   if(!photosOnly&&(newsOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly)){
     run(["--test","--test-concurrency=1","test/news.test.ts","test/news.integration.test.ts"],300_000);
+    run(["--test","test/chat.integration.test.ts"],300_000);run(["test/chat-browser.mjs"],300_000);
   }
   if(!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly&&!newsOnly&&!photosOnly){run(["--test","test/books.integration.test.ts"],300_000);run(["test/books-browser.mjs"],300_000);run(["test/git-browser.mjs"],300_000);run(["test/git-tracker-browser.mjs"],300_000);}
   if(photosOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly&&!newsOnly)run(["--test","--test-concurrency=1","test/photos.integration.test.ts","test/photos-library.integration.test.ts","test/photos-sharing.integration.test.ts","test/photos-immich.integration.test.ts"],600_000);

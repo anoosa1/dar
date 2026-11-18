@@ -70,6 +70,13 @@ Optional built-in feed reader at `/news` with account-scoped storage, OPML
 import/export and Nextcloud News API sync for mobile clients at `/dav/news`. See
 [News](news.md).
 
+## Chat
+
+Optional built-in client at `/chat` for WhatsApp (Discord later): link an account as a
+WhatsApp linked device with a QR or pairing code, then read and send messages; each
+account keeps its own chats. The Dar package includes the Go bridge
+(`dar-chat-bridge`). See [Chat](chat.md).
+
 ## Photos
 
 Optional built-in gallery at `/photos` for the pictures and videos you keep in

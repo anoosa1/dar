@@ -1,0 +1,22 @@
+import {table,t} from "spacetimedb/server";
+
+/**
+ * Private Chat tables; browsers reach them only through serviceChat and are told
+ * about changes through myChatChanges. Keys are the bridge's whatsmeow store,
+ * encrypted by the runtime: scanKey is "<account>/c/<key>" for keys loaded at
+ * start and "<account>/l/<key>" for keys read on demand; expiryKey orders keys
+ * that expire (empty when they never do).
+ */
+export const chatChanges=table({}, {userId:t.string().primaryKey(),revision:t.u32()});
+export const chatTables={
+  chatAccounts:table({}, {id:t.string().primaryKey(),ownerId:t.string().index("btree"),platform:t.string(),name:t.string(),jid:t.string(),state:t.string(),detail:t.string(),
+    createdAt:t.f64(),linkedAt:t.f64(),syncedAt:t.f64(),historyProgress:t.u32(),importing:t.bool(),messages:t.u32()}),
+  chatKeys:table({}, {id:t.string().primaryKey(),scanKey:t.string().index("btree"),expiryKey:t.string().index("btree"),value:t.string()}),
+  // listKey is "<account>/<newest-first time>/<jid>" for paging a chat list.
+  chatThreads:table({}, {id:t.string().primaryKey(),accountId:t.string().index("btree"),listKey:t.string().index("btree"),jid:t.string(),kind:t.string(),name:t.string(),at:t.f64(),
+    preview:t.string(),previewKind:t.string(),previewFromMe:t.bool(),previewSender:t.string(),previewStatus:t.string(),unread:t.u32(),archived:t.bool(),pinned:t.bool(),mutedUntil:t.f64()}),
+  // threadKey is "<thread>/<newest-first time>/<message>" for paging a conversation.
+  chatMessages:table({}, {id:t.string().primaryKey(),accountId:t.string().index("btree"),threadKey:t.string().index("btree"),messageId:t.string(),sender:t.string(),senderName:t.string(),
+    fromMe:t.bool(),at:t.f64(),kind:t.string(),text:t.string(),fileName:t.string(),quotedId:t.string(),quotedSender:t.string(),quotedText:t.string(),status:t.string(),edited:t.bool(),deleted:t.bool()}),
+  chatChanges,
+};

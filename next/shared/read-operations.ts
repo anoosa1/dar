@@ -16,3 +16,5 @@ export const historyReadOperations:ReadonlySet<string>=new Set(["overview","chan
 export const gitReadOperations:ReadonlySet<string>=new Set(["state","export","repositories","resolve","changesetOf"]);
 /** Issues and pull requests: lists, one item and labels; everything else writes. */
 export const gitTrackerReadOperations:ReadonlySet<string>=new Set(["list","issue","labels"]);
+/** Chat: accounts, chat lists and messages for the browser; key loads and the account list for the bridge. */
+export const chatReadOperations:ReadonlySet<string>=new Set(["access","overview","threads","messages","account","kvLoad","kvGet","accounts"]);

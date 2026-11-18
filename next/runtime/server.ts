@@ -43,6 +43,8 @@ import {createNotesLibrary} from "./notes/library.ts";
 import {createBooksRuntime,type BooksRuntime} from "./books/runtime.ts";
 import {handleBooksHttp} from "./books/http.ts";
 import {handleNewsHttp} from "./news/http.ts";
+import {createChatRuntime,type ChatRuntime} from "./chat/runtime.ts";
+import {handleChatHttp} from "./chat/http.ts";
 import {createPhotosRuntime,type PhotosRuntime} from "./photos/runtime.ts";
 import {handlePhotosHttp,sendFile} from "./photos/http.ts";
 import {handlePhotoLinkHttp} from "./photos/public.ts";
@@ -67,6 +69,8 @@ export interface ServerConfig {
   newsAllowPrivateNetworks?:boolean;
   /** Let the Immich connector reach a server on this machine (loopback), for Immich running beside Dar. */
   immichAllowLocalHost?:boolean;
+  /** The Chat bridge executable (dar-chat-bridge); Chat reports it missing when unset. */
+  chatBridge?:string;
 }
 function json(res: ServerResponse, value: unknown, status = 200) {
   writeJson(res, status, JSON.stringify(value));
@@ -108,7 +112,7 @@ export async function startServer(config: ServerConfig) {
   let appRuntime:Awaited<ReturnType<typeof activateApps>>|undefined;
   let agentRuntime:AgentRuntime|undefined;
   let newsRuntime:NewsRuntime|undefined,calendarSubscriptions:CalendarSubscriptions|undefined;
-  let photosRuntime:PhotosRuntime|undefined,immichConnector:ImmichConnector|undefined,booksRuntime:BooksRuntime|undefined;
+  let photosRuntime:PhotosRuntime|undefined,immichConnector:ImmichConnector|undefined,booksRuntime:BooksRuntime|undefined,chatRuntime:ChatRuntime|undefined;
   try {
   const db = await database(config.databaseUrl, config.databaseName, config.serviceTokenFile);
   await db.call("service_startup", [`${config.origin}/auth/issuer`]);
@@ -125,7 +129,7 @@ export async function startServer(config: ServerConfig) {
   // Keep revisioned writes and hook disposal/activation in the same order.
   let appUpdate:Promise<unknown>=Promise.resolve();
   const managedApps=(settings:AppSettings):ManagedApp[]=>[
-    ...["files","photos","books","contacts","calendar","notes","tasks","news","agent","git"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","news","photos","books","agent","git"].includes(id)})),
+    ...["files","photos","books","contacts","calendar","notes","tasks","news","chat","agent","git"].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),version:"",permissions:[],status:"",enabled:!settings.disabled.includes(id),canToggle:["notes","tasks","news","chat","photos","books","agent","git"].includes(id)})),
     ...appRegistry.inventory.map(item=>({...item,enabled:appRegistry.apps.has(item.id)&&!settings.disabled.includes(item.id),canToggle:hostEnabledApps.has(item.id)})),
   ];
   const databasePublicUrl = `${(config.databasePublicUrl ?? (config.development ? config.databaseUrl : `${config.origin}/spacetime`)).replace(/\/$/, "")}/`;
@@ -152,6 +156,7 @@ export async function startServer(config: ServerConfig) {
   const checksums = checksumWorker(db, root);
   photosRuntime=await createPhotosRuntime(db,root);
   booksRuntime=await createBooksRuntime(db,root);
+  chatRuntime=await createChatRuntime(db,root,{executable:config.chatBridge,enabled:!initialAppSettings.disabled.includes("chat")});
   immichConnector=createImmichConnector(db,root,blobs,photosRuntime,{allowLoopback:!!config.development||!!config.immichAllowLocalHost});
   await blobs.recover();
   const attempts = new Map<string, { count: number; until: number }>();
@@ -274,6 +279,7 @@ export async function startServer(config: ServerConfig) {
             if(!managedApps(await readAppSettings()).some(app=>app.id===id&&app.canToggle))throw new AppError("forbidden",403);
             const settings=await db.call<AppSettings>("service_app_settings",[authenticated.session.id,id,p.enabled,revision]);
             if(id==="agent"&&!p.enabled)agentRuntime!.cancelAll();
+            if(id==="chat")await chatRuntime!.setEnabled(p.enabled as boolean);
             await appRuntime!.setEnabled(id,p.enabled as boolean);
             await db.call("service_installed_apps",[JSON.stringify([...appRegistry.apps.values()].map(a=>a.descriptor))]);
             return {...settings,items:managedApps(settings)};
@@ -288,8 +294,9 @@ export async function startServer(config: ServerConfig) {
           return json(res,await agentRuntime!.connect(authenticated.user.id,input.provider==="claude"?"claude":"codex"));
         }
         if(/^\/api\/v1\/agent(\/|$)/.test(url.pathname))return await handleAgentHttp(req,res,url,db,authenticated.session.id,authenticated.user.id,agentRuntime!,()=>body(req,128*1024),(data,id)=>blobs.receive((async function*(){yield data;})(),id,data.length));
-        const optionalApp=/^\/api\/v1\/(notes|tasks|news|photos|books|git)(\/|$)/.exec(url.pathname);
+        const optionalApp=/^\/api\/v1\/(notes|tasks|news|chat|photos|books|git)(\/|$)/.exec(url.pathname);
         if(optionalApp&&(await readAppSettings()).disabled.includes(optionalApp[1]))throw new AppError("notFound",404);
+        if(/^\/api\/v1\/chat(\/|$)/.test(url.pathname))return await handleChatHttp(req,res,url,authenticated.session.id,chatRuntime!,()=>body(req,512*1024));
         if(/^\/api\/v1\/news(\/|$)/.test(url.pathname))return await handleNewsHttp(req,res,url,db,authenticated.session.id,authenticated.user.username,newsRuntime!,()=>body(req,3*1024*1024));
         if(/^\/api\/v1\/git\//.test(url.pathname))return await handleGitApi(req,res,url,authenticated.session.id,authenticated.user,()=>body(req,256*1024));
         if(/^\/api\/v1\/books(\/|$)/.test(url.pathname))return await handleBooksHttp(req,res,url,db,authenticated.session.id,booksRuntime!,()=>body(req,64*1024));
@@ -448,10 +455,10 @@ export async function startServer(config: ServerConfig) {
       await Promise.allSettled([...inflight]);
       await maintenance;
       await checksums.close();
-    } finally { attempts.clear();await newsRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await booksRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
+    } finally { attempts.clear();await newsRuntime?.close();await chatRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await booksRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
   };
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(config.port, config.host, resolve); });
   checksums.nudge();
   return { server, ctx, close: () => ctx.fiber.dispose() };
-  } catch (error) {await newsRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await booksRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
+  } catch (error) {await newsRuntime?.close();await chatRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await booksRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
 }

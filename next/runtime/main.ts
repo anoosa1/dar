@@ -15,6 +15,7 @@ const runtime = await startServer({
   claudeFile:process.env.DAR_CLAUDE_FILE,
   newsAllowPrivateNetworks:process.env.DAR_NEWS_ALLOW_PRIVATE_NETWORKS==="1",
   immichAllowLocalHost:process.env.DAR_IMMICH_ALLOW_LOCAL_HOST==="1",
+  chatBridge:process.env.DAR_CHAT_BRIDGE,
   bootstrapTokenFile: required("DAR_BOOTSTRAP_TOKEN_FILE"), development: process.env.DAR_DEVELOPMENT === "1",
 });
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { void runtime.close(); });
