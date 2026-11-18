@@ -165,6 +165,20 @@ test("Chat: link, import, send, receive, receipts, encrypted keys, restart, isol
     const groupInfo=await call<ChatInfo>(`/info?threadId=${encodeURIComponent(family.id)}`);
     assert.deepEqual(groupInfo.group!.members.map(m=>m.name),["Me","Mama","Baba"]);assert.equal(groupInfo.group!.topic,"Eid plans");assert.ok(groupInfo.media.some(m=>m.messageId==="D1"));
     assert.equal((await call<ChatInfo>(`/info?threadId=${encodeURIComponent(sara.id)}`)).group,null);
+    // Dar contacts name chats and group senders; nothing about them is sent to WhatsApp.
+    const contacts=(route:string,init:RequestInit={})=>fetch(base+"/api/v1/contacts"+route,{...init,headers:{...session.headers,"content-type":"application/json",...init.headers}});
+    let books=(await (await contacts("/books")).json() as {items:{id:string}[]}).items;
+    if(!books.length)books=[await (await contacts("/books",{method:"POST",body:JSON.stringify({name:"Contacts",color:"#2563eb"})})).json() as {id:string}];
+    const addContact=async(displayName:string,phone:string)=>{const r=await contacts(`/books/${books[0].id}/items`,{method:"POST",headers:{"if-none-match":"*"},body:JSON.stringify({data:{displayName,phones:[{value:phone,label:"cell"}]}})});assert.equal(r.status,201,await r.clone().text());return await r.json() as {href:string};};
+    const saraCard=await addContact("Sara H. (Dar)","+1 555 000 2222");await addContact("Mom","555-000-4444");
+    const named=(await call<ChatThreadPage>(`/threads?accountId=${accountId}&view=chats`)).pinned.find(t=>t.id===sara.id)!;
+    assert.equal(named.name,"Sara H. (Dar)");assert.equal(named.whatsappName,"Sara Haddad");assert.deepEqual(named.contact,{name:"Sara H. (Dar)",book:books[0].id,href:saraCard.href});
+    assert.equal((await messagesOf(family.id)).messages.find(m=>m.messageId==="D1")!.senderName,"Mom","a national number takes the account's country");
+    assert.deepEqual((await call<ChatInfo>(`/info?threadId=${encodeURIComponent(family.id)}`)).group!.members.map(m=>m.name),["Me","Mom","Baba"]);
+    const found=await call<{items:{name:string;phone:string}[]}>(`/contacts?accountId=${accountId}&q=mom`);assert.deepEqual(found.items.map(c=>[c.name,c.phone]),[["Mom","+15550004444"]]);
+    assert.equal((await call<{items:unknown[]}>(`/contacts?accountId=${accountId}&q=4444`)).items.length,1,"search matches numbers too");
+    assert.equal((await bridgeLog()).some(e=>/contact/i.test(String(e.method))),false,"contacts never reach the bridge");
+
     // Earlier messages from the phone: asked from the oldest one here, they arrive as history.
     await call("/history",{threadId:sara.id});
     const asked=(await bridgeLog()).find(e=>e.method==="requestHistory")!;assert.equal(asked.chat,"15550002222@s.whatsapp.net");

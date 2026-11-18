@@ -3,7 +3,7 @@ import {request,formatBytes,type BrowserSession} from "../api.ts";
 import {FileTile} from "../file-types.tsx";
 import {DarFilePicker,type DarFileSelection} from "../file-picker.tsx";
 import {WorkspaceHeader,useMobileNavigation} from "../shell.tsx";
-import {ActionMenu,NewItemButton,type MenuAction} from "../controls.tsx";
+import {ActionMenu,NewItemButton,Select,type MenuAction} from "../controls.tsx";
 import {EditorPane} from "../pane.tsx";
 import {Dialog} from "../dialog.tsx";
 import {Icon,type IconName} from "../icons.tsx";
@@ -16,7 +16,7 @@ import {chatKindLabels,chatLimits,localName,chatQuickReactions,chatMuteChoices,t
 
 const base="/api/v1/chat";
 const views:{id:ChatView;label:string;icon:IconName}[]=[{id:"chats",label:"Chats",icon:"chat"},{id:"unread",label:"Unread",icon:"unread"},{id:"groups",label:"Groups",icon:"contacts"},{id:"archived",label:"Archived",icon:"archive"}];
-type Pane={kind:"link";accountId?:string}|{kind:"newChat"}|{kind:"settings"}|{kind:"rename";account:ChatAccount}|{kind:"save";threadId:string;message:ChatMessage};
+type Pane={kind:"link";accountId?:string}|{kind:"newChat"}|{kind:"settings"}|{kind:"rename";account:ChatAccount}|{kind:"save";threadId:string;message:ChatMessage}|{kind:"addContact";thread:ChatThread};
 interface Confirm {title:string;text:string;action:string;run:()=>Promise<void>}
 const kindIcon:Partial<Record<string,IconName>>={image:"image",video:"media",audio:"media",voice:"media",document:"file",sticker:"image",location:"location",contact:"user",poll:"checklist",unsupported:"info"};
 const stateText:Record<string,string>={
@@ -97,8 +97,10 @@ export function ChatWorkspace({session,onSignedOut}:{session:BrowserSession;onSi
     const changed=()=>{if(disposed)return;let next=0;for(const row of c.db.myChatChanges.iter())next=row.revision;if(revision>=0&&next!==revision)bump();revision=next;};
     const gone=()=>{if(!disposed)onSignedOut();};
     c.db.myChatChanges.onInsert(changed);c.db.myChatChanges.onUpdate(changed);c.db.me.onDelete(gone);
-    const stop=subscribe(c,["SELECT * FROM me","SELECT * FROM my_chat_changes"],()=>{if(!disposed){if(revision>=0)setEpoch(n=>n+1);changed();}},()=>{});
-    return()=>{disposed=true;clearTimeout(timer);c.db.myChatChanges.removeOnInsert(changed);c.db.myChatChanges.removeOnUpdate(changed);c.db.me.removeOnDelete(gone);stop();};
+    // Dar contacts name chats, so a contact change reloads them too.
+    const contactsChanged=()=>{if(!disposed&&revision>=0)bump();};c.db.myPimChanges.onUpdate(contactsChanged);
+    const stop=subscribe(c,["SELECT * FROM me","SELECT * FROM my_chat_changes","SELECT * FROM my_pim_changes"],()=>{if(!disposed){if(revision>=0)setEpoch(n=>n+1);changed();}},()=>{});
+    return()=>{disposed=true;clearTimeout(timer);c.db.myPimChanges.removeOnUpdate(contactsChanged);c.db.myChatChanges.removeOnInsert(changed);c.db.myChatChanges.removeOnUpdate(changed);c.db.me.removeOnDelete(gone);stop();};
   },[live.connection]);
 
   function chooseAccount(id:string){setAccountId(id);setSelected("");setView("chats");}
@@ -161,12 +163,13 @@ export function ChatWorkspace({session,onSignedOut}:{session:BrowserSession;onSi
         <Conversation key={selected} threadId={selected} account={account} session={session} epoch={epoch} info={info} onClose={closeThread} onNotice={setNotice}
           onSave={message=>setPane({kind:"save",threadId:selected,message})} onInfo={()=>setInfo(!info)} onSetting={change=>setChat(selected,change)}/>
       </aside>}
-      {selected&&account&&info&&<aside className="chat-info-sheet" aria-label="Chat info"><ChatInfoSheet threadId={selected} session={session} epoch={epoch} onClose={()=>setInfo(false)} onSetting={change=>setChat(selected,change)}/></aside>}
+      {selected&&account&&info&&<aside className="chat-info-sheet" aria-label="Chat info"><ChatInfoSheet threadId={selected} session={session} epoch={epoch} onClose={()=>setInfo(false)} onSetting={change=>setChat(selected,change)} onAddContact={thread=>setPane({kind:"addContact",thread})}/></aside>}
       {!selected&&account&&<div className="chat-placeholder" aria-hidden="true"><span className="chat-empty-icon"><Icon name="chat"/></span><p>Choose a chat</p></div>}
     </div>
     {pane?.kind==="link"&&<LinkPane session={session} accountId={pane.accountId} onClose={()=>{setPane(undefined);void loadOverview();}} onLinked={id=>{setPane(undefined);chooseAccount(id);void loadOverview();setNotice("Linked. Your chats are on their way.");}}/>}
     {pane?.kind==="newChat"&&account&&<NewChatPane session={session} account={account} onClose={()=>setPane(undefined)} onOpened={thread=>{setPane(undefined);setView("chats");void loadThreads(true);setSelected(thread.id);}}/>}
     {pane?.kind==="save"&&<SaveMediaPane session={session} threadId={pane.threadId} message={pane.message} onClose={()=>setPane(undefined)} onSaved={name=>{setPane(undefined);setNotice(`Saved to Files as ${name}`);}}/>}
+    {pane?.kind==="addContact"&&<AddContactPane session={session} thread={pane.thread} onClose={()=>setPane(undefined)} onSaved={name=>{setPane(undefined);setNotice(`${name} added to Contacts`);setEpoch(n=>n+1);}}/>}
     {pane?.kind==="rename"&&<RenamePane session={session} account={pane.account} onClose={()=>setPane(undefined)} onSaved={()=>{setPane(undefined);void loadOverview();}}/>}
     {pane?.kind==="settings"&&<ChatSettings accounts={accounts} onClose={()=>setPane(undefined)} onLink={()=>setPane({kind:"link"})} actions={accountActions}/>}
     {confirm&&<ConfirmAction {...confirm} onClose={()=>setConfirm(undefined)}/>}
@@ -332,7 +335,7 @@ function Bubble({threadId,message:m,tail,showName,canChange,onSave,onReply,onCop
 
 type ChatSetting={pinned?:boolean;archived?:boolean;mutedUntil?:number};
 /** Chat info (mock A2): who it is, mute/pin/archive, attachments and, for groups, members. */
-function ChatInfoSheet({threadId,session,epoch,onClose,onSetting}:{threadId:string;session:BrowserSession;epoch:number;onClose:()=>void;onSetting:(change:ChatSetting)=>Promise<void>}){
+function ChatInfoSheet({threadId,session,epoch,onClose,onSetting,onAddContact}:{threadId:string;session:BrowserSession;epoch:number;onClose:()=>void;onSetting:(change:ChatSetting)=>Promise<void>;onAddContact:(thread:ChatThread)=>void}){
   const [info,setInfo]=useState<ChatInfo>(),[error,setError]=useState("");
   useEffect(()=>{let gone=false;void request<ChatInfo>(`${base}/info?${new URLSearchParams({threadId})}`).then(value=>{if(!gone){setInfo(value);setError("");}},cause=>{if(!gone)setError((cause as Error).message);});return()=>{gone=true;};},[threadId,epoch]);
   const thread=info?.thread,name=thread?.name||phoneOf(thread?.jid??"")||"Chat",quiet=thread?muted(thread):false,group=thread?.kind==="group";
@@ -353,6 +356,9 @@ function ChatInfoSheet({threadId,session,epoch,onClose,onSetting}:{threadId:stri
           <button type="button" onClick={()=>{void onSetting({archived:!thread.archived});}}><span><Icon name="archive"/></span>{thread.archived?"Unarchive":"Archive"}</button>
         </div>}
         {info.group?.topic&&<p className="chat-info-topic">{info.group.topic}</p>}
+        {!group&&<div className="chat-contact">{thread.contact?<><Avatar name={thread.contact.name} group={false} size="is-small"/><div><b>{thread.contact.name}</b><small>Dar contact{thread.whatsappName&&thread.whatsappName!==thread.contact.name&&thread.whatsappName!==phoneOf(thread.jid)?` · on WhatsApp “${thread.whatsappName}”`:""}</small></div>
+          <a className="text-button" href={`/contacts?${new URLSearchParams({book:thread.contact.book,contact:thread.contact.href})}`}>Open</a></>
+          :<><span className="chat-empty-icon is-small"><Icon name="contacts"/></span><div><b>Not in your contacts</b><small>Save this number in Dar Contacts.</small></div><button type="button" className="text-button" onClick={()=>onAddContact(thread)}>Add</button></>}</div>}
         <dl className="chat-info-card">
           <div><dt><Icon name="chat"/>Account</dt><dd>{info.account.name}</dd></div>
           <div><dt><Icon name="clock"/>Messages in Dar</dt><dd>{info.messages.toLocaleString()}{info.complete?"":"+"}</dd></div>
@@ -461,15 +467,47 @@ function LinkPane({session,accountId,onClose,onLinked}:{session:BrowserSession;a
   </EditorPane>;
 }
 
+interface ContactChoice {name:string;phone:string;label:string;book:string;href:string}
+/** New chat: pick a Dar contact with a phone number, or type a number. */
 function NewChatPane({session,account,onClose,onOpened}:{session:BrowserSession;account:ChatAccount;onClose:()=>void;onOpened:(thread:ChatThread)=>void}){
-  const [phone,setPhone]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
-  async function open(event:FormEvent){event.preventDefault();setBusy(true);setError("");
+  const [query,setQuery]=useState(""),[choices,setChoices]=useState<ContactChoice[]>(),[busy,setBusy]=useState(false),[error,setError]=useState("");
+  useEffect(()=>{
+    const timer=setTimeout(()=>{void request<{items:ContactChoice[]}>(`${base}/contacts?${new URLSearchParams({accountId:account.id,q:query})}`).then(r=>setChoices(r.items),()=>setChoices([]));},query?200:0);
+    return()=>clearTimeout(timer);
+  },[query,account.id]);
+  const typed=query.replace(/[^\d+]/g,""),number=/^\+?\d{7,15}$/.test(typed)?typed:"";
+  async function open(phone:string){setBusy(true);setError("");
     try{onOpened(await request<ChatThread>(`${base}/chats`,{method:"POST",body:JSON.stringify({accountId:account.id,phone})},session.csrfToken));}
     catch(cause){setError((cause as Error).message==="invalidInput"?"Enter the full number with its country code.":(cause as Error).message);setBusy(false);}}
-  return <EditorPane title="New chat" onClose={onClose}><form className="chat-link" onSubmit={open}>
-    <label>Phone number<input type="tel" inputMode="tel" autoFocus required value={phone} placeholder="+966 55 123 4567" onChange={e=>setPhone(e.target.value)}/><small className="chat-hint">With its country code. The chat starts from {account.name}.</small></label>
+  return <EditorPane title="New chat" onClose={onClose}><form className="chat-link" onSubmit={event=>{event.preventDefault();if(number)void open(number);else if(choices?.length===1)void open(choices[0].phone);}}>
+    <label>Contact or phone number<input type="search" autoFocus value={query} placeholder="Name or +966 55 123 4567" onChange={e=>setQuery(e.target.value)}/>
+      <small className="chat-hint">Your Dar contacts with a phone number. The chat starts from {account.name}.</small></label>
+    {number&&<button type="button" className="chat-pick" disabled={busy} onClick={()=>{void open(number);}}><span className="chat-avatar contact-initials avatar-hue-0 is-small" aria-hidden="true"><Icon name="phone"/></span><span><b>Chat with {number.startsWith("+")?number:`+${number}`}</b><small>Number as typed</small></span></button>}
+    {choices&&<div className="chat-picks" role="list" aria-label="Dar contacts">{choices.map(c=><div key={`${c.href}/${c.phone}`} role="listitem"><button type="button" className="chat-pick" disabled={busy} onClick={()=>{void open(c.phone);}}>
+      <Avatar name={c.name} group={false} size="is-small"/><span><b>{c.name}</b><small>{c.phone}{c.label?` · ${c.label}`:""}</small></span></button></div>)}
+      {!choices.length&&!number&&<p className="chat-hint">{query?"No Dar contact with a phone number matches.":"None of your Dar contacts has a phone number yet."}</p>}</div>}
     {error&&<p role="alert" className="error">{error}</p>}
-    <div className="dialog-actions"><button type="button" className="text-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy||!phone.trim()}>{busy?"Opening…":"Start chat"}</button></div>
+    <div className="dialog-actions"><button type="button" className="text-button" onClick={onClose}>Cancel</button></div>
+  </form></EditorPane>;
+}
+
+/** Saves a WhatsApp number as a Dar contact; nothing is written to WhatsApp. */
+function AddContactPane({session,thread,onClose,onSaved}:{session:BrowserSession;thread:ChatThread;onClose:()=>void;onSaved:(name:string)=>void}){
+  const phone=phoneOf(thread.jid),[name,setName]=useState(thread.whatsappName&&thread.whatsappName!==phone?thread.whatsappName:""),[books,setBooks]=useState<{id:string;name:string;role:string}[]>(),[book,setBook]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
+  useEffect(()=>{void request<{items:{id:string;name:string;role:string}[]}>("/api/v1/contacts/books").then(r=>{const writable=r.items.filter(b=>b.role!=="read");setBooks(writable);setBook(writable[0]?.id??"");},cause=>setError((cause as Error).message));},[]);
+  async function save(event:FormEvent){
+    event.preventDefault();if(!book||!name.trim())return;setBusy(true);setError("");
+    try{await request(`/api/v1/contacts/books/${book}/items`,{method:"POST",headers:{"if-none-match":"*"},body:JSON.stringify({data:{displayName:name.trim(),phones:[{value:phone,label:"cell"}]}})},session.csrfToken);onSaved(name.trim());}
+    catch(cause){setError((cause as Error).message);setBusy(false);}
+  }
+  return <EditorPane title="Add to Contacts" onClose={onClose}><form className="chat-link" onSubmit={save}>
+    <label>Name<input autoFocus required maxLength={1024} value={name} onChange={e=>setName(e.target.value)}/></label>
+    <label>Phone<input readOnly value={phone}/></label>
+    {books&&books.length>1&&<label>Address book<Select value={book} onChange={e=>setBook(e.target.value)}>{books.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</Select></label>}
+    {books&&!books.length&&<p className="chat-hint">You have no address book you can add to. Create one in Contacts first.</p>}
+    <p className="chat-hint">The contact is saved in Dar only; WhatsApp and your phone are not changed.</p>
+    {error&&<p role="alert" className="error">{error}</p>}
+    <div className="dialog-actions"><button type="button" className="text-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={busy||!book||!name.trim()}>{busy?"Saving…":"Add contact"}</button></div>
   </form></EditorPane>;
 }
 

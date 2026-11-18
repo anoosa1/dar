@@ -225,3 +225,12 @@ body.has-editing-pane .chat-shell .chat-info-sheet{display:none}
 @media(max-width:800px){
   .chat-info-sheet{position:fixed;inset:var(--topbar-height) 0 0;z-index:121;border:0;border-radius:0}
 }
+
+/* Dar contacts in Chat. */
+.chat-contact{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px}
+.chat-contact>div{flex:1;min-width:0;display:flex;flex-direction:column}.chat-contact b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chat-contact small{font-size:11.5px;color:var(--muted)}
+.chat-empty-icon.is-small{width:36px;height:36px;margin:0}.chat-empty-icon.is-small .icon{width:18px;height:18px}
+.chat-picks{display:flex;flex-direction:column;gap:2px;max-height:420px;overflow-y:auto}
+.chat-pick{display:flex;align-items:center;gap:12px;width:100%;padding:8px 10px;border:0;border-radius:14px;background:none;color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.chat-pick:hover{background:var(--hover)}.chat-pick:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}.chat-pick:disabled{opacity:.6;cursor:default}
+.chat-pick>span:last-child{display:flex;flex-direction:column;min-width:0}.chat-pick b{font-weight:550}.chat-pick small{font-size:12px;color:var(--muted)}

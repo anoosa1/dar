@@ -42,6 +42,13 @@ data is kept and every account disconnects.
   Expired media is requested from the phone again. Download and Save to Files (shared
   folder picker; a taken name gets a number) are in the message menu. Deleting a message
   for everyone removes its attachment.
+- **Dar contacts:** a chat whose number is in any address book you can read (owned or
+  shared) takes the contact's name, in the list, the conversation, group senders and
+  group members. Numbers saved without a country code (a trunk 0, or a short number) take
+  the country of the account's own WhatsApp number. Chat info shows the contact with Open,
+  or Add to Contacts, which saves the number in a Dar address book. New chat lists Dar
+  contacts with phone numbers. Contacts are only read: nothing is written to WhatsApp or
+  the phone. Names follow contact changes live.
 - **History:** Dar asks for a full sync with no day or size limit; the phone decides
   what it sends. Progress shows on the account card. At the start of a chat, "Get earlier messages
   from your phone" asks for 50 more before the oldest one Dar has; they arrive as history.
@@ -86,7 +93,8 @@ data is kept and every account disconnects.
 3. Done: reactions, edits and deletions from Dar, chat info, mute/pin/archive, older
    history on demand. Typing indicators are left out: they would need a push channel
    beside the database change feed.
-4. Message search in the shared search, linking chats to Dar contacts.
+4. Done: Dar contacts name chats (read-only towards WhatsApp). Next: message search in the
+   shared search.
 5. Discord, after deciding between a bot (only servers that add it, no personal
    DMs) and automating a personal account, which Discord's terms forbid.
 

@@ -228,7 +228,12 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       const info=await call<Record<string,unknown>&{thread:{kind:string;jid:string};account:{id:string}}>(sessionId,"chatInfo",{threadId});
       let group=null,groupError="";
       if(info.thread.kind==="group"){
-        try{group=await bridge.call("groupInfo",{account:info.account.id,chat:info.thread.jid},20_000);}
+        try{
+          const value=await bridge.call<{name:string;topic:string;created:number;members:{jid:string;name:string;admin?:boolean}[]}>("groupInfo",{account:info.account.id,chat:info.thread.jid},20_000);
+          // Members who are Dar contacts go by their contact name.
+          const names=await call<Record<string,{name:string}>>(sessionId,"names",{accountId:info.account.id,jids:value.members.map(m=>m.jid)});
+          group={...value,members:value.members.map(m=>names[m.jid]?{...m,name:names[m.jid].name}:m)};
+        }
         catch(error){groupError=error instanceof AppError&&error.code!=="bridgeError"?error.message:"Members are shown when WhatsApp is connected.";}
       }
       return {...info,group,groupError};

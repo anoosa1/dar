@@ -47,6 +47,7 @@ export async function handleChatHttp(req:IncomingMessage,res:ServerResponse,url:
     }
     if(path==="/info"&&method==="GET")return send(await runtime.info(sessionId,str(url.searchParams.get("threadId")??"",300)!));
     if(path==="/history"&&method==="POST"){const v=await input(["threadId"]);return send(await runtime.requestHistory(sessionId,str(v.threadId,300)!));}
+    if(path==="/contacts"&&method==="GET")return send(await runtime.call(sessionId,"contactSearch",{accountId:url.searchParams.get("accountId")??"",q:url.searchParams.get("q")??""}));
     if(path==="/read"&&method==="POST"){const v=await input(["threadId"]);return send(await runtime.markRead(sessionId,str(v.threadId,300)!));}
     if(path==="/send"&&method==="POST"){
       const v=await input(["threadId","text","quotedId"]);

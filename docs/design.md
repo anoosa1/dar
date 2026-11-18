@@ -272,7 +272,8 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   bubbles with read ticks, replies, reactions, edits, photos, voice notes and documents, the
   composer docked below. Chat info opens as a right sheet; Link WhatsApp uses the right
   editing pane (QR code on desktop, pairing code on phones). Phones put the account tabs
-  above the view chips. See [Chat](chat.md).
+  above the view chips. Dar contacts name chats by phone number (never written to
+  WhatsApp); chat info offers Open or Add to Contacts. See [Chat](chat.md).
 - **Agent:** the settings sheet and editing panes sit beside the Agent's sheets
   (which make room), as in other apps; choosing and adding a project both use the
   right pane. Threads on the left, conversation and docked composer in the center,

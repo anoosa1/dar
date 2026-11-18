@@ -46,6 +46,13 @@ try{
   const chip=incoming.getByRole("button",{name:/Remove your reaction/});await chip.waitFor();
   // Chat info opens beside the conversation; mute goes through its menu.
   await chat.getByRole("button",{name:"Chat info"}).click();const infoSheet=page.getByRole("region",{name:"Chat info"});await infoSheet.getByRole("heading",{name:"Contact info"}).waitFor();
+  // Add to Contacts saves the number in a Dar address book (created here through the API) and names the chat.
+  const signIn=await fetch(base+"/api/v1/auth/login",{method:"POST",headers:{"content-type":"application/json",origin:base},body:JSON.stringify({username:"admin",password:"a long isolated test password"})});
+  const api={cookie:signIn.headers.get("set-cookie").split(";")[0],origin:base,"x-csrf-token":(await signIn.json()).csrfToken,"content-type":"application/json"};
+  assert.equal((await fetch(base+"/api/v1/contacts/books",{method:"POST",headers:api,body:JSON.stringify({name:"Chat test book",color:"#2563eb"})})).status,201);
+  await infoSheet.getByText("Not in your contacts").waitFor();await infoSheet.getByRole("button",{name:"Add",exact:true}).click();
+  const add=page.locator("[data-editor-pane]");await add.getByRole("heading",{name:"Add to Contacts"}).waitFor();assert.equal(await add.getByLabel("Name").inputValue(),"Sara Haddad");
+  await add.getByRole("button",{name:"Add contact"}).click();await page.getByText("Sara Haddad added to Contacts").waitFor();await infoSheet.getByText("Dar contact").waitFor();
   await infoSheet.getByRole("button",{name:"Mute"}).click();await page.getByRole("menuitem",{name:"8 hours"}).click();await page.getByText("Chat muted").waitFor();await infoSheet.getByRole("button",{name:"Unmute"}).waitFor();
   await page.screenshot({path:path.join(root,"chat-desktop.png")});
   await chip.click();await chip.waitFor({state:"detached"});

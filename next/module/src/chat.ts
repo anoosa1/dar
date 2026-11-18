@@ -2,7 +2,7 @@ import {SenderError,Range} from "spacetimedb/server";
 import type {Ctx} from "./index.ts";
 import {appEnabled} from "./app-settings.ts";
 import {storeBlob,releaseBlob,isBlobId} from "./blobs.ts";
-import {chatLimits,chatAutoDownloadBytes,chatTimeKey,type ChatAccountState,type ChatView} from "../../shared/chat.ts";
+import {chatLimits,chatAutoDownloadBytes,chatTimeKey,internationalDigits,type ChatContact,type ChatAccountState,type ChatView} from "../../shared/chat.ts";
 
 type Account=NonNullable<ReturnType<Ctx["db"]["chatAccounts"]["id"]["find"]>>;
 type Thread=NonNullable<ReturnType<Ctx["db"]["chatThreads"]["id"]["find"]>>;
@@ -37,9 +37,31 @@ const first=<T,>(rows:Iterable<T>):T|undefined=>{for(const row of rows)return ro
 const listKey=(accountId:string,at:number,id:string)=>`${accountId}/${chatTimeKey(at)}/${id}`;
 const threadKey=(threadId:string,at:number,id:string)=>`${threadId}/${chatTimeKey(at)}/${id}`;
 
-function exposeThread(row:Thread){
-  return {id:row.id,accountId:row.accountId,jid:row.jid,kind:row.kind,name:row.name,at:row.at,preview:row.preview,previewKind:row.previewKind,previewFromMe:row.previewFromMe,
-    previewSender:row.previewSender,previewStatus:row.previewStatus,unread:row.unread,archived:row.archived,pinned:row.pinned,mutedUntil:row.mutedUntil};
+function exposeThread(row:Thread,names?:ContactNames){
+  const contact=row.kind==="direct"?names?.find(row.jid)??null:null,sender=row.previewSenderJid?names?.find(row.previewSenderJid):undefined;
+  return {id:row.id,accountId:row.accountId,jid:row.jid,kind:row.kind,name:contact?.name??row.name,whatsappName:row.name,contact,at:row.at,preview:row.preview,previewKind:row.previewKind,previewFromMe:row.previewFromMe,
+    previewSender:row.previewSender,previewStatus:row.previewStatus,unread:row.unread,archived:row.archived,pinned:row.pinned,mutedUntil:row.mutedUntil,
+    ...sender?{previewSender:sender.name}:{}};
+}
+/** Dar contacts by phone number, read from every address book the person can see. Never sent to WhatsApp. */
+type ContactNames=ReturnType<typeof contactNames>;
+function contactNames(ctx:Ctx,userId:string,ownJid:string){
+  const own=ownJid.split("@")[0],numbers=new Map<string,ChatContact>();let built=false;
+  const build=()=>{
+    built=true;let scanned=0;
+    const books=[...ctx.db.pimCollections.ownerId.filter(userId)].filter(c=>c.kind==="contacts");
+    for(const grant of ctx.db.pimGrants.userId.filter(userId)){const book=ctx.db.pimCollections.id.find(grant.collectionId);if(book?.kind==="contacts")books.push(book);}
+    for(const book of books)for(const row of ctx.db.pimResources.collectionId.filter(book.id)){
+      if(++scanned>20000)return;
+      let data:{displayName?:unknown;phones?:{value?:unknown}[]};try{data=JSON.parse(row.projection);}catch{continue;}
+      const name=typeof data.displayName==="string"?data.displayName.trim():"";if(!name||!Array.isArray(data.phones))continue;
+      for(const phone of data.phones){const digits=internationalDigits(String(phone?.value??""),own);if(digits&&!numbers.has(digits))numbers.set(digits,{name,book:book.id,href:row.href});}
+    }
+  };
+  return {find(jid:string):ChatContact|undefined{
+    if(!jid.endsWith("@s.whatsapp.net"))return undefined;
+    if(!built)build();return numbers.get(jid.split("@")[0]);
+  }};
 }
 function exposeMessage(row:Message,media?:Media|null,reactions:ReturnType<typeof reactionsOf>=[]){
   return {id:row.id,messageId:row.messageId,sender:row.sender,senderName:row.senderName,fromMe:row.fromMe,at:row.at,kind:row.kind,text:row.deleted?"":row.text,fileName:row.fileName,
@@ -109,7 +131,7 @@ function setThread(ctx:Ctx,old:Thread,next:Thread){
 }
 function newThread(account:Account,id:string,kind:string,at:number):Thread{
   return {id:`${account.id}/${id}`,accountId:account.id,listKey:listKey(account.id,at,id),jid:id,kind,name:"",at,preview:"",previewKind:"",previewFromMe:false,previewSender:"",previewStatus:"",
-    unread:0,archived:false,pinned:false,mutedUntil:0};
+    unread:0,archived:false,pinned:false,mutedUntil:0,previewSenderJid:""};
 }
 
 /** Validated chat changes from the bridge. */
@@ -190,7 +212,7 @@ function ingest(ctx:Ctx,account:Account,p:Record<string,unknown>){
     }
     const next={...current};
     if(m.at>=t.at){
-      Object.assign(next,{at:m.at,listKey:listKey(account.id,m.at,t.jid),preview:m.text||m.fileName,previewKind:m.kind,previewFromMe:m.fromMe,previewSender:t.kind==="group"&&!m.fromMe?m.senderName:"",
+      Object.assign(next,{at:m.at,listKey:listKey(account.id,m.at,t.jid),preview:m.text||m.fileName,previewKind:m.kind,previewFromMe:m.fromMe,previewSender:t.kind==="group"&&!m.fromMe?m.senderName:"",previewSenderJid:t.kind==="group"&&!m.fromMe?m.sender:"",
         previewStatus:m.fromMe?(m.status||"sent"):""});
     }
     if(live)next.unread=m.fromMe?0:Math.min(1_000_000,t.unread+1);
@@ -219,24 +241,26 @@ function ingest(ctx:Ctx,account:Account,p:Record<string,unknown>){
 }
 
 /** Pages a chat list newest first; pinned chats lead the first page of Chats. */
-function threadPage(ctx:Ctx,account:Account,view:ChatView,cursor:string,limit:number){
+function threadPage(ctx:Ctx,account:Account,view:ChatView,cursor:string,limit:number,names:ContactNames){
   const matches=(row:Thread)=>view==="archived"?row.archived:!row.archived&&(view==="chats"?!row.pinned:view==="unread"?row.unread>0:row.kind==="group");
-  const pinned=view==="chats"&&!cursor?[...ctx.db.chatThreads.accountId.filter(account.id)].filter(row=>row.pinned&&!row.archived).sort((a,b)=>b.at-a.at).map(exposeThread):[];
+  const pinned=view==="chats"&&!cursor?[...ctx.db.chatThreads.accountId.filter(account.id)].filter(row=>row.pinned&&!row.archived).sort((a,b)=>b.at-a.at).map(row=>exposeThread(row,names)):[];
   const threads:Thread[]=[];let next:string|null=null;
   for(const row of ctx.db.chatThreads.listKey.filter(cursor?after(cursor,account.id):prefix(account.id))){
     if(!matches(row))continue;
     if(threads.length===limit){next=threads[threads.length-1].listKey;break;}
     threads.push(row);
   }
-  return {pinned,threads:threads.map(exposeThread),cursor:next};
+  return {pinned,threads:threads.map(row=>exposeThread(row,names)),cursor:next};
 }
-function messagePage(ctx:Ctx,thread:Thread,before:string,limit:number){
+function messagePage(ctx:Ctx,thread:Thread,before:string,limit:number,names:ContactNames){
   const rows:Message[]=[];let more:string|null=null;
   for(const row of ctx.db.chatMessages.threadKey.filter(before?after(before,thread.id):prefix(thread.id))){
     if(rows.length===limit){more=rows[rows.length-1].threadKey;break;}
     rows.push(row);
   }
-  return {thread:exposeThread(thread),messages:rows.reverse().map(row=>exposeMessage(row,mediaOf(ctx,row),reactionsOf(ctx,row.id))),before:more};
+  // A Dar contact names group senders too.
+  const named=(row:Message)=>{const contact=thread.kind==="group"&&!row.fromMe?names.find(row.sender):undefined;return contact?{...row,senderName:contact.name}:row;};
+  return {thread:exposeThread(thread,names),messages:rows.reverse().map(row=>exposeMessage(named(row),mediaOf(ctx,row),reactionsOf(ctx,row.id))),before:more};
 }
 
 export {chatReadOperations} from "../../shared/read-operations.ts";
@@ -257,12 +281,12 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
     keys(p,["accountId","view","cursor","limit"]);
     const view=["chats","unread","groups","archived"].includes(String(p.view))?p.view as ChatView:fail("invalidInput");
     const a=account(p.accountId),cursor=optional(p.cursor,400);if(cursor&&!cursor.startsWith(a.id+"/"))fail("invalidInput");
-    return threadPage(ctx,a,view,cursor,limit(p.limit,chatLimits.page));
+    return threadPage(ctx,a,view,cursor,limit(p.limit,chatLimits.page),contactNames(ctx,userId,a.jid));
   }
   if(operation==="messages"){
     keys(p,["threadId","before","limit"]);
     const t=thread(p.threadId),before=optional(p.before,500);if(before&&!before.startsWith(t.id+"/"))fail("invalidInput");
-    return messagePage(ctx,t,before,limit(p.limit,chatLimits.messagePage));
+    return messagePage(ctx,t,before,limit(p.limit,chatLimits.messagePage),contactNames(ctx,userId,account(t.accountId).jid));
   }
   if(operation==="markRead"){
     // Returns the newest incoming messages so the runtime can send read receipts.
@@ -303,8 +327,8 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
     // A one-to-one chat by phone number, created if it is not in the list yet.
     keys(p,["accountId","phone"]);const a=account(p.accountId),digits=text(p.phone,40).replace(/[^0-9]/g,"");
     if(digits.length<7||digits.length>15||digits.startsWith("0"))fail("invalidInput");
-    const chat=`${digits}@s.whatsapp.net`,old=ctx.db.chatThreads.id.find(`${a.id}/${chat}`);if(old)return exposeThread(old);
-    const row={...newThread(a,chat,"direct",now(ctx)),name:`+${digits}`};ctx.db.chatThreads.insert(row);changed(ctx,userId);return exposeThread(row);
+    const chat=`${digits}@s.whatsapp.net`,old=ctx.db.chatThreads.id.find(`${a.id}/${chat}`);if(old)return exposeThread(old,contactNames(ctx,userId,a.jid));
+    const row={...newThread(a,chat,"direct",now(ctx)),name:`+${digits}`};ctx.db.chatThreads.insert(row);changed(ctx,userId);return exposeThread(row,contactNames(ctx,userId,a.jid));
   }
   if(operation==="prepareSend"){
     // Stores the outgoing message as pending under the ID the bridge will send it with.
@@ -316,7 +340,7 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
     const row={id:`${t.id}/${id}`,accountId:a.id,threadKey:threadKey(t.id,at,id),messageId:id,sender:a.jid,senderName:"",fromMe:true,at,kind:"text",text:body,fileName:"",
       quotedId:quoted?.messageId??"",quotedSender:quoted?(quoted.fromMe?"You":quoted.senderName||t.name):"",quotedText:quoted?(quoted.text||quoted.fileName):"",status:"pending",edited:false,deleted:false};
     ctx.db.chatMessages.insert(row);
-    setThread(ctx,t,{...t,at,listKey:listKey(a.id,at,t.jid),preview:body,previewKind:"text",previewFromMe:true,previewSender:"",previewStatus:"pending",unread:0});
+    setThread(ctx,t,{...t,at,listKey:listKey(a.id,at,t.jid),preview:body,previewKind:"text",previewFromMe:true,previewSender:"",previewSenderJid:"",previewStatus:"pending",unread:0});
     ctx.db.chatAccounts.id.update({...a,messages:a.messages+1});changed(ctx,userId);
     return {accountId:a.id,chat:t.jid,message:exposeMessage(row),quoted:quoted?{id:quoted.messageId,sender:quoted.fromMe?a.jid:quoted.sender,text:quoted.text}:null};
   }
@@ -365,7 +389,7 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
     ctx.db.chatMessages.id.delete(row.id);
     const latest=first(ctx.db.chatMessages.threadKey.filter(prefix(t.id)));
     if(t.at===row.at)setThread(ctx,t,latest?{...t,preview:latest.deleted?"":latest.text||latest.fileName,previewKind:latest.deleted?"deleted":latest.kind,previewFromMe:latest.fromMe,
-      previewSender:t.kind==="group"&&!latest.fromMe?latest.senderName:"",previewStatus:latest.fromMe?latest.status:""}:{...t,preview:"",previewKind:"",previewSender:"",previewStatus:""});
+      previewSender:t.kind==="group"&&!latest.fromMe?latest.senderName:"",previewSenderJid:t.kind==="group"&&!latest.fromMe?latest.sender:"",previewStatus:latest.fromMe?latest.status:""}:{...t,preview:"",previewKind:"",previewSender:"",previewSenderJid:"",previewStatus:""});
     changed(ctx,userId);return {ok:true};
   }
   if(operation==="chatTarget"){
@@ -378,7 +402,7 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
     if(typeof p.pinned==="boolean")next.pinned=p.pinned;
     if(typeof p.archived==="boolean"){next.archived=p.archived;if(p.archived)next.pinned=false;}
     if(p.mutedUntil!==undefined)next.mutedUntil=num(p.mutedUntil);
-    setThread(ctx,t,next);changed(ctx,userId);return exposeThread(next);
+    setThread(ctx,t,next);changed(ctx,userId);return exposeThread(next,contactNames(ctx,userId,account(t.accountId).jid));
   }
   if(operation==="chatInfo"){
     // The chat with its recent attachments (newest first) and how many messages Dar keeps.
@@ -388,13 +412,38 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
       const m=media.length<60?ctx.db.chatMedia.id.find(row.id):undefined;
       if(m&&!row.deleted)media.push({messageId:row.messageId,kind:m.kind,mime:m.mime,state:m.state,fileName:m.fileName,size:m.size,at:m.at});
     }
-    return {thread:exposeThread(t),account:{id:a.id,name:a.name,state:a.state},media,messages,complete:scanned<=20000};
+    return {thread:exposeThread(t,contactNames(ctx,userId,a.jid)),account:{id:a.id,name:a.name,state:a.state},media,messages,complete:scanned<=20000};
   }
   if(operation==="oldest"){
     // The oldest message Dar has, from which the phone can send earlier ones.
     keys(p,["threadId"]);const t=thread(p.threadId),a=account(t.accountId);let oldest:Message|undefined;
     for(const row of ctx.db.chatMessages.threadKey.filter(prefix(t.id)))oldest=row;
     return {accountId:a.id,state:a.state,chat:t.jid,message:oldest?{id:oldest.messageId,fromMe:oldest.fromMe,at:oldest.at}:null};
+  }
+  if(operation==="names"){
+    // Dar contact names for WhatsApp numbers (group members), keyed by JID.
+    keys(p,["accountId","jids"]);const a=account(p.accountId);if(!Array.isArray(p.jids)||p.jids.length>2000)fail("invalidInput");
+    const names=contactNames(ctx,userId,a.jid),result:Record<string,ChatContact>={};
+    for(const value of p.jids){const id=text(value,120),found=names.find(id);if(found)result[id]=found;}
+    return result;
+  }
+  if(operation==="contactSearch"){
+    // Dar contacts with a phone number, for starting a chat; numbers come back international.
+    keys(p,["accountId","q"]);const a=account(p.accountId),q=optional(p.q,100).normalize("NFC").toLocaleLowerCase().trim(),own=a.jid.split("@")[0],qDigits=q.replace(/\D/g,"");
+    const books=[...ctx.db.pimCollections.ownerId.filter(userId)].filter(c=>c.kind==="contacts");
+    for(const grant of ctx.db.pimGrants.userId.filter(userId)){const book=ctx.db.pimCollections.id.find(grant.collectionId);if(book?.kind==="contacts")books.push(book);}
+    const found:{name:string;phone:string;label:string;book:string;href:string}[]=[];let scanned=0;
+    outer:for(const book of books)for(const row of ctx.db.pimResources.collectionId.filter(book.id)){
+      if(++scanned>20000)break outer;
+      let data:{displayName?:unknown;phones?:{value?:unknown;label?:unknown}[]};try{data=JSON.parse(row.projection);}catch{continue;}
+      const name=typeof data.displayName==="string"?data.displayName.trim():"";if(!name||!Array.isArray(data.phones))continue;
+      for(const phone of data.phones){
+        const digits=internationalDigits(String(phone?.value??""),own);if(!digits)continue;
+        if(q&&!name.toLocaleLowerCase().includes(q)&&!(qDigits.length>=3&&digits.includes(qDigits)))continue;
+        found.push({name,phone:`+${digits}`,label:typeof phone.label==="string"?phone.label:"",book:book.id,href:row.href});
+      }
+    }
+    return {items:found.sort((x,y)=>x.name.localeCompare(y.name)).slice(0,30)};
   }
   if(operation==="deleteFailed"){
     keys(p,["threadId","messageId"]);const t=thread(p.threadId),row=ctx.db.chatMessages.id.find(`${t.id}/${messageId(p.messageId)}`);

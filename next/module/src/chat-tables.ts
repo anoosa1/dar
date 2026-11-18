@@ -14,7 +14,9 @@ export const chatTables={
   chatKeys:table({}, {id:t.string().primaryKey(),scanKey:t.string().index("btree"),expiryKey:t.string().index("btree"),value:t.string()}),
   // listKey is "<account>/<newest-first time>/<jid>" for paging a chat list.
   chatThreads:table({}, {id:t.string().primaryKey(),accountId:t.string().index("btree"),listKey:t.string().index("btree"),jid:t.string(),kind:t.string(),name:t.string(),at:t.f64(),
-    preview:t.string(),previewKind:t.string(),previewFromMe:t.bool(),previewSender:t.string(),previewStatus:t.string(),unread:t.u32(),archived:t.bool(),pinned:t.bool(),mutedUntil:t.f64()}),
+    preview:t.string(),previewKind:t.string(),previewFromMe:t.bool(),previewSender:t.string(),previewStatus:t.string(),unread:t.u32(),archived:t.bool(),pinned:t.bool(),mutedUntil:t.f64(),
+    // Who sent the previewed group message, so a Dar contact can name them.
+    previewSenderJid:t.string().default("")}),
   // threadKey is "<thread>/<newest-first time>/<message>" for paging a conversation.
   chatMessages:table({}, {id:t.string().primaryKey(),accountId:t.string().index("btree"),threadKey:t.string().index("btree"),messageId:t.string(),sender:t.string(),senderName:t.string(),
     fromMe:t.bool(),at:t.f64(),kind:t.string(),text:t.string(),fileName:t.string(),quotedId:t.string(),quotedSender:t.string(),quotedText:t.string(),status:t.string(),edited:t.bool(),deleted:t.bool()}),

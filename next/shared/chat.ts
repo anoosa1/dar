@@ -11,7 +11,8 @@ export interface ChatAccount {id:string;platform:ChatPlatform;name:string;jid:st
   createdAt:number;linkedAt:number;syncedAt:number;historyProgress:number;importing:boolean;unread:number;counts:Record<ChatView,number>}
 export interface ChatOverview {accounts:ChatAccount[];bridge:{available:boolean;detail:string}}
 export interface ChatThread {id:string;accountId:string;jid:string;kind:"direct"|"group";name:string;at:number;preview:string;previewKind:ChatMessageKind|"deleted"|"";
-  previewFromMe:boolean;previewSender:string;previewStatus:ChatMessageStatus;unread:number;archived:boolean;pinned:boolean;mutedUntil:number}
+  previewFromMe:boolean;previewSender:string;previewStatus:ChatMessageStatus;unread:number;archived:boolean;pinned:boolean;mutedUntil:number;
+  /** The name WhatsApp gives, when a Dar contact names the chat instead. */whatsappName:string;contact:ChatContact|null}
 export interface ChatThreadPage {pinned:ChatThread[];threads:ChatThread[];cursor:string|null}
 export interface ChatMessage {id:string;messageId:string;sender:string;senderName:string;fromMe:boolean;at:number;kind:ChatMessageKind;text:string;fileName:string;
   quotedId:string;quotedSender:string;quotedText:string;status:ChatMessageStatus;edited:boolean;deleted:boolean;media:ChatMedia|null;reactions:ChatReaction[]}
@@ -45,3 +46,28 @@ export interface ChatInfo {thread:ChatThread;account:{id:string;name:string;stat
   group:{name:string;topic:string;members:ChatMember[];created:number}|null;groupError:string}
 /** Mute choices as WhatsApp offers them; -1 is always. */
 export const chatMuteChoices=[["8 hours",8*3600_000],["1 week",7*86400_000],["Always",-1]] as const;
+/** A chat's Dar contact, matched by phone number; Dar never writes contacts to WhatsApp. */
+export interface ChatContact {name:string;book:string;href:string}
+// ITU country calling codes: one digit for 1 and 7, these two-digit ones, otherwise three digits.
+const twoDigitCodes=new Set(["20","27","30","31","32","33","34","36","39","40","41","43","44","45","46","47","48","49","51","52","53","54","55","56","57","58",
+  "60","61","62","63","64","65","66","81","82","84","86","90","91","92","93","94","95","98"]);
+/** The country calling code at the start of an international number, without "+". */
+export function callingCode(digits:string){
+  if(digits.startsWith("1")||digits.startsWith("7"))return digits[0];
+  return twoDigitCodes.has(digits.slice(0,2))?digits.slice(0,2):digits.slice(0,3);
+}
+/**
+ * The international digits a contact's number stands for. "+…" and "00…" are international;
+ * a national number with a trunk 0 takes the country of the account's own number. Other bare
+ * numbers are taken as international when they are long enough, otherwise as national.
+ */
+export function internationalDigits(value:string,ownDigits:string):string{
+  const trimmed=value.trim();let digits=trimmed.replace(/\D/g,"");
+  if(digits.length<6||digits.length>18)return "";
+  if(trimmed.startsWith("+"))return digits;
+  if(digits.startsWith("00"))return digits.slice(2);
+  const code=ownDigits?callingCode(ownDigits):"";
+  if(digits.startsWith("0"))return code?code+digits.replace(/^0+/,""):"";
+  if(digits.length>=11)return digits;
+  return code&&!digits.startsWith(code)?code+digits:digits;
+}
