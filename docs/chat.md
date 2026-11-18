@@ -93,8 +93,9 @@ data is kept and every account disconnects.
 3. Done: reactions, edits and deletions from Dar, chat info, mute/pin/archive, older
    history on demand. Typing indicators are left out: they would need a push channel
    beside the database change feed.
-4. Done: Dar contacts name chats (read-only towards WhatsApp). Next: message search in the
-   shared search.
+4. Done: Dar contacts name chats (read-only towards WhatsApp); chat names and message text
+   in the shared search (newest first, up to three messages per chat, 40,000 messages per
+   search), and a result opens the chat at its message.
 5. Discord, after deciding between a bot (only servers that add it, no personal
    DMs) and automating a personal account, which Discord's terms forbid.
 

@@ -64,6 +64,11 @@ try{
   const save=page.locator("[data-editor-pane]");await save.getByRole("heading",{name:"Save to Files"}).waitFor();await save.getByRole("button",{name:/^Save to/}).click();
   await page.getByText("Saved to Files as Eid lunch menu.pdf").waitFor();await save.waitFor({state:"detached"});
   await page.getByRole("list",{name:"Chats"}).getByRole("button",{name:/Sara Haddad/}).click();await chat.getByLabel("Message Sara Haddad").waitFor();
+  // The shared search finds the message; its result opens the chat with the message outlined.
+  await page.getByRole("button",{name:"Close chat",exact:true}).click();await page.keyboard.press("Control+k");
+  const search=page.getByRole("combobox",{name:"Search all apps",exact:true});await search.fill("see you at 7 then");
+  const results=page.getByRole("listbox",{name:"Search results",exact:true});await results.getByRole("option",{name:/Sara Haddad/}).click();
+  await page.locator(".chat-message.is-found").filter({hasText:"Perfect, see you at 7 then"}).waitFor();
   // Settings sheet lists the account.
   await page.getByRole("button",{name:"Chat settings",exact:true}).first().click();const sheet=page.getByRole("dialog",{name:"Chat settings"});await sheet.getByText("Linked accounts").waitFor();await sheet.getByText("Personal",{exact:true}).waitFor();
   await sheet.getByRole("button",{name:"Close settings"}).click();await sheet.waitFor({state:"detached"});

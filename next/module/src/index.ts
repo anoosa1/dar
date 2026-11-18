@@ -5,6 +5,7 @@ import {agentOperation,agentSnapshot,restoreAgent} from "./agent.ts";
 import {agentWorker} from "./agent-runs.ts";
 import {newsTables} from "./news-tables.ts";
 import {chatTables,chatChanges} from "./chat-tables.ts";
+import {blobTexts,blobsWithoutText,recordTexts} from "./text-index.ts";
 import {chatOperation,chatWorker,chatSnapshot,chatBlobIds,restoreChat} from "./chat.ts";
 import {newsOperation,newsWorker,newsReadOperations,newsSnapshot,restoreNews} from "./news.ts";
 import {photosTables,immichTables} from "./photos-tables.ts";
@@ -84,7 +85,7 @@ const activity = table({}, { id: t.string().primaryKey(), ownerId: t.string().in
 // A browser session that confirmed the account password may open the Locked folder until expiresAt.
 const fileUnlocks = table({}, { sessionId: t.string().primaryKey(), userId: t.string().index("btree"), expiresAt: t.f64() });
 const fileUnlockExpiry = table({}, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), sessionId: t.string() });
-const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, fileBlobs, blobChecksums, fileMigrations, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...trackerTables,...appTables,...agentTables,...newsTables,...chatTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
+const db = schema({ instance, accounts, sessions, principals, sessionExpiry, fileEntries, navigation, versions, grants, publicShares, uploads, usage, activity, favorites, backupPins, fileBlobs, blobChecksums, fileMigrations, blobTexts, appPasswords, rootRevisions, fileUnlocks, fileUnlockExpiry, ...pimTables, ...identityTables, ...workspaceTables,...historyTables,...trackerTables,...appTables,...agentTables,...newsTables,...chatTables,...photosTables,...immichTables,...booksTables }, { env: { DAR_ISSUER: t.string() } });
 export default db;
 export type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type VCtx = ViewCtx<InferSchema<typeof db>>;
@@ -769,7 +770,7 @@ export const serviceMaintenance = db.procedure(t.string(), ctx => ctx.withTx(tx 
 export const serviceAcknowledgeGc = db.reducer({ id: t.string() }, (ctx, { id }) => {
   service(ctx);
   const blob = ctx.db.fileBlobs.id.find(id);
-  if (blob?.state === "deleting") { ctx.db.fileBlobs.id.delete(id); ctx.db.blobChecksums.id.delete(id); }
+  if (blob?.state === "deleting") { ctx.db.fileBlobs.id.delete(id); ctx.db.blobChecksums.id.delete(id); ctx.db.blobTexts.id.delete(id); }
 });
 /** Stored blobs without checksums, in ID order after `after`, at most `limit` (runtime/files/checksums.ts). */
 export const serviceBlobsWithoutChecksum = db.procedure({ after: t.string(), limit: t.u32() }, t.string(), (ctx, p) => ctx.withTx(tx => {
@@ -1526,3 +1527,6 @@ export const myChatChanges=db.view({public:true},t.option(chatChanges.rowType),c
   const user=userFor(ctx);
   return user?ctx.db.chatChanges.userId.find(user.id)??{userId:user.id,revision:0}:undefined;
 });
+/** Text-like content current files use that has no searchable text yet (runtime/files/text-index.ts). */
+export const serviceBlobsWithoutText=db.procedure({after:t.string(),limit:t.u32()},t.string(),(ctx,p)=>ctx.withTx(tx=>{service(tx);return JSON.stringify(blobsWithoutText(tx,p.after,p.limit));}));
+export const serviceRecordTexts=db.reducer({items:t.string()},(ctx,p)=>{service(ctx);recordTexts(ctx,JSON.parse(p.items));});

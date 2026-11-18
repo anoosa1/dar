@@ -9,8 +9,8 @@ import {navigate} from "./navigation.ts";
 
 export function navigateSearchResult(href:string){navigate(href);}
 
-const order:SearchGroup[]=["Photos","Files","Contacts","Calendar","Notes","Tasks","News","Applications"];
-const groupIcon:Record<string,IconName>={Photos:"image",Files:"file",Contacts:"contacts",Calendar:"calendar",Notes:"file",Tasks:"check",News:"rss",Applications:"grid",Actions:"chevron",Recent:"undo"};
+const order:SearchGroup[]=["Photos","Files","Contacts","Calendar","Notes","Tasks","News","Chat","Applications"];
+const groupIcon:Record<string,IconName>={Photos:"image",Files:"file",Contacts:"contacts",Calendar:"calendar",Notes:"file",Tasks:"check",News:"rss",Chat:"chat",Applications:"grid",Actions:"chevron",Recent:"undo"};
 const isMac=typeof navigator!=="undefined"&&/Mac|iP(hone|ad)/.test(navigator.platform);
 
 /** One selectable palette row: a search result, a recently opened result or a command. */

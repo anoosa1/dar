@@ -17,6 +17,7 @@ import { createOpaqueToken } from "./auth/session.ts";
 import { reconcileStorage, sweepOrphans } from "./files/maintenance.ts";
 import { migrateBlobs } from "./files/migrate.ts";
 import { checksumWorker } from "./files/checksums.ts";
+import { textIndexWorker } from "./files/text-index.ts";
 import { handleHistoryHttp } from "./files/history.ts";
 import { gitRepositories, handleGitHttp } from "./files/git.ts";
 import { gitApi } from "./git/api.ts";
@@ -154,6 +155,7 @@ export async function startServer(config: ServerConfig) {
   const blobs = blobStore(root), client = staticAssets(new URL("../dist/", import.meta.url)), notesLibrary = createNotesLibrary(db, root);
   const repositories = gitRepositories(db, root), handleGitApi = gitApi(db, repositories, blobs, config.origin);
   const checksums = checksumWorker(db, root);
+  const texts = textIndexWorker(db, root);
   photosRuntime=await createPhotosRuntime(db,root);
   booksRuntime=await createBooksRuntime(db,root);
   chatRuntime=await createChatRuntime(db,root,{executable:config.chatBridge,enabled:!initialAppSettings.disabled.includes("chat"),blobs});
@@ -214,7 +216,7 @@ export async function startServer(config: ServerConfig) {
       // Git clients (no browser): folder history over smart HTTP, signed in with an app password.
       if (url.pathname.startsWith("/dav/git/")) return await handleGitHttp(req, res, url, db, repositories, blobs, config.origin);
       if (url.pathname.startsWith("/dav/") && !url.pathname.startsWith("/dav/files/")) return await handlePimDav(req, res, db, config.origin);
-      if (url.pathname.startsWith("/dav/")) return await handleDav(req, res, db, blobs, config.origin, checksums.nudge);
+      if (url.pathname.startsWith("/dav/")) return await handleDav(req, res, db, blobs, config.origin, () => { checksums.nudge(); texts.nudge(); });
       if (url.pathname === "/auth/issuer/.well-known/openid-configuration") return json(res, { issuer: issuer.issuer, jwks_uri: `${issuer.issuer}/jwks`, id_token_signing_alg_values_supported: ["ES256"], subject_types_supported: ["public"] });
       if (url.pathname === "/auth/issuer/jwks") return json(res, issuer.jwks);
       if (url.pathname === "/api/v1/auth/status" && method === "GET") return json(res, await auth.status());
@@ -426,7 +428,11 @@ export async function startServer(config: ServerConfig) {
   const server = http.createServer({ connectionsCheckingInterval: 5_000 }, (req, res) => {
     watchBody(req, res);
     const work = handle(req, res).catch(() => { res.destroy(); });
-    inflight.add(work); void work.finally(() => inflight.delete(work));
+    inflight.add(work); void work.finally(() => {
+      inflight.delete(work);
+      // A saved note or text file becomes searchable by its text within moments.
+      if (req.method !== "GET" && req.method !== "HEAD" && res.statusCode < 400 && /^\/api\/v1\/(files|notes)\//.test(req.url ?? "")) texts.nudge();
+    });
   });
   // Bodies are timed by their progress (upload-pace.ts), not by a total, so slow links can finish.
   server.requestTimeout = 0;
@@ -445,6 +451,7 @@ export async function startServer(config: ServerConfig) {
       await deliverReminders(db);
       await identity.maintain();
       checksums.nudge();
+      texts.nudge();
     })().catch(() => { console.warn("Storage maintenance will retry."); }).finally(() => { maintenance = undefined; });
   };
   const timer = setInterval(maintain, 60_000);
@@ -455,10 +462,11 @@ export async function startServer(config: ServerConfig) {
       await Promise.allSettled([...inflight]);
       await maintenance;
       await checksums.close();
+      await texts.close();
     } finally { attempts.clear();await newsRuntime?.close();await chatRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await booksRuntime?.close();await agentRuntime?.close();await appRuntime?.close(); await releaseRoot(); }
   };
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(config.port, config.host, resolve); });
-  checksums.nudge();
+  checksums.nudge(); texts.nudge();
   return { server, ctx, close: () => ctx.fiber.dispose() };
   } catch (error) {await newsRuntime?.close();await chatRuntime?.close();await calendarSubscriptions?.close();await immichConnector?.close();await photosRuntime?.close();await booksRuntime?.close();await agentRuntime?.close();await appRuntime?.close();if (ownedContext) await ownedContext.fiber.dispose(); else await releaseRoot(); throw error; }
 }

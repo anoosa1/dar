@@ -553,3 +553,29 @@ export function restoreChat(ctx:Ctx,value?:ReturnType<typeof chatSnapshot>){
   for(const row of value.media)ctx.db.chatMedia.insert(row.blobId&&!ctx.db.fileBlobs.id.find(row.blobId)?{...row,blobId:"",state:"expired"}:row);
   for(const row of value.reactions??[])ctx.db.chatReactions.insert(row);
 }
+
+/**
+ * Chat in the shared search: chat names and message text, newest chats and messages first, at
+ * most three messages per chat. Returns false when it stopped at its own work limit.
+ */
+export function chatSearch(ctx:Ctx,userId:string,q:string,matches:(value:string)=>boolean,add:(result:{id:string;title:string;detail:string;href:string})=>void){
+  let budget=40000;
+  for(const a of ctx.db.chatAccounts.ownerId.filter(userId)){
+    const names=contactNames(ctx,userId,a.jid);
+    for(const row of ctx.db.chatThreads.listKey.filter(prefix(a.id))){
+      const thread=exposeThread(row,names),href=`/chat?account=${encodeURIComponent(a.id)}&chat=${encodeURIComponent(row.id)}`;
+      if(matches(thread.name)||matches(thread.whatsappName))add({id:row.id,title:thread.name||thread.whatsappName,detail:`${row.kind==="group"?"Group":"Chat"} · ${a.name}`,href});
+      let hits=0;
+      for(const m of ctx.db.chatMessages.threadKey.filter(prefix(row.id))){
+        if(--budget<0)return false;
+        if(m.deleted||!m.text||!matches(m.text))continue;
+        const at=m.text.normalize("NFC").toLowerCase().indexOf(q),start=Math.max(0,at-40),end=Math.min(m.text.length,at+q.length+60);
+        const snippet=`${start>0?"…":""}${m.text.slice(start,end).replace(/\s+/g," ").trim()}${end<m.text.length?"…":""}`;
+        const who=m.fromMe?"You":row.kind==="group"?(names.find(m.sender)?.name??m.senderName):"";
+        add({id:m.id,title:thread.name||thread.whatsappName,detail:`${who?who+": ":""}${snippet}`,href:`${href}&message=${encodeURIComponent(m.messageId)}`});
+        if(++hits>=3)break;
+      }
+    }
+  }
+  return true;
+}

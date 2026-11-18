@@ -3,6 +3,9 @@ import {pimOperation} from "./pim.ts";
 import {appEnabled} from "./app-settings.ts";
 import {newsSearch} from "./news.ts";
 import {photosSearch} from "./photos.ts";
+import {chatSearch} from "./chat.ts";
+import {excerpt} from "./text-index.ts";
+import {isTextFile} from "../../shared/search.ts";
 import type {Ctx} from "./index.ts";
 import type {SearchGroup,SearchResult,SearchResults} from "../../shared/search.ts";
 type FileEntry=NonNullable<ReturnType<Ctx["db"]["fileEntries"]["id"]["find"]>>;
@@ -15,7 +18,10 @@ export function globalSearch(ctx:Ctx,userId:string,query:string,canRead:(entry:F
   const preferences=JSON.parse(ctx.db.pimPreferences.userId.find(userId)?.value??"{}");
   const seen=new Set<string>();
   function file(entry:FileEntry){if(seen.has(entry.id))return;seen.add(entry.id);if(entry.trashed||!canRead(entry)||preferences.filesShowHidden!==true&&entry.name.startsWith("."))return;
-    if(matches(entry.name)&&entry.ownerId===userId&&isNote(entry))add({id:entry.id,group:"Notes",title:entry.name.replace(/\.(md|markdown)$/i,""),detail:"Note",href:`/notes?note=${entry.id}`});
+    // Notes and text files also match on their text (files/text-index.ts), shown as an excerpt.
+    const text=entry.kind==="file"&&!matches(entry.name)&&isTextFile(entry.name,entry.mediaType)?ctx.db.blobTexts.id.find(entry.blobId)?.text??"":"",inside=text?excerpt(text,q):"";
+    if((matches(entry.name)||inside)&&entry.ownerId===userId&&isNote(entry))add({id:entry.id,group:"Notes",title:entry.name.replace(/\.(md|markdown)$/i,""),detail:inside||"Note",href:`/notes?note=${entry.id}`});
+    else if(inside)add({id:entry.id,group:"Files",title:entry.name,detail:inside,href:entry.ownerId===userId?`/?folder=${entry.parentId}&file=${entry.id}`:`/?section=shared&file=${entry.id}`});
     else if(matches(entry.name))add({id:entry.id,group:"Files",title:entry.name,detail:entry.kind==="folder"?"Folder":"File",href:entry.kind==="folder"?`/?folder=${entry.id}`:entry.ownerId===userId?`/?folder=${entry.parentId}&file=${entry.id}`:`/?section=shared&file=${entry.id}`});
   }
   for(const entry of ctx.db.fileEntries.ownerId.filter(userId)){if(!visit())break;file(entry);}
@@ -46,6 +52,7 @@ export function globalSearch(ctx:Ctx,userId:string,query:string,canRead:(entry:F
   }
   if(appEnabled(ctx,"news"))newsSearch(ctx,userId,matches,visit,result=>add({...result,group:"News"}));
   if(appEnabled(ctx,"photos"))photosSearch(ctx,userId,matches,visit,result=>add({...result,group:"Photos",thumbnail:result.thumbnail||undefined}));
+  if(appEnabled(ctx,"chat")&&!chatSearch(ctx,userId,q,matches,result=>add({...result,group:"Chat"})))truncated=true;
   for(const [name,href]of [["Files","/"],["Contacts","/contacts"],["Calendar","/calendar"],["Notes","/notes"],["Tasks","/tasks"],["Agent","/agent"],["News","/news"],["Photos","/photos"],["Settings","/settings"]])if(appEnabled(ctx,name.toLowerCase())&&matches(name))add({id:href,group:"Applications",title:name,detail:"Open app",href});
   return {items:[...groups.values()].flat(),truncated};
 }

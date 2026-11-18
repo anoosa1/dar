@@ -36,7 +36,7 @@ function listTime(time:number){
   return label==="Today"?localTime(time,{hour:"numeric",minute:"2-digit"}):label==="Yesterday"?label:Date.now()-time<6*86400000?localDate(time,{weekday:"short"}):localDate(time,{month:"short",day:"numeric"});
 }
 const muted=(thread:ChatThread)=>thread.mutedUntil===-1||thread.mutedUntil>Date.now();
-function readView(){const p=new URLSearchParams(location.search),view=p.get("view");return {account:p.get("account")??"",view:(views.some(v=>v.id===view)?view:"chats") as ChatView,chat:p.get("chat")??""};}
+function readView(){const p=new URLSearchParams(location.search),view=p.get("view");return {account:p.get("account")??"",view:(views.some(v=>v.id===view)?view:"chats") as ChatView,chat:p.get("chat")??"",message:p.get("message")??""};}
 function writeView(account:string,view:ChatView,chat:string){
   const p=new URLSearchParams();if(account)p.set("account",account);if(view!=="chats")p.set("view",view);if(chat)p.set("chat",chat);
   const next=`/chat${p.size?"?"+p:""}`;if(next!==location.pathname+location.search)history.replaceState(null,"",next);
@@ -160,7 +160,7 @@ export function ChatWorkspace({session,onSignedOut}:{session:BrowserSession;onSi
         </div>
       </main>
       {selected&&account&&<aside className="pim-details chat-details" aria-label={current?.name??"Conversation"}>
-        <Conversation key={selected} threadId={selected} account={account} session={session} epoch={epoch} info={info} onClose={closeThread} onNotice={setNotice}
+        <Conversation key={selected} threadId={selected} focusMessage={selected===start.chat?start.message:""} account={account} session={session} epoch={epoch} info={info} onClose={closeThread} onNotice={setNotice}
           onSave={message=>setPane({kind:"save",threadId:selected,message})} onInfo={()=>setInfo(!info)} onSetting={change=>setChat(selected,change)}/>
       </aside>}
       {selected&&account&&info&&<aside className="chat-info-sheet" aria-label="Chat info"><ChatInfoSheet threadId={selected} session={session} epoch={epoch} onClose={()=>setInfo(false)} onSetting={change=>setChat(selected,change)} onAddContact={thread=>setPane({kind:"addContact",thread})}/></aside>}
@@ -205,7 +205,7 @@ function ThreadRow({thread,selected,onOpen}:{thread:ChatThread;selected:boolean;
   </div>;
 }
 
-function Conversation({threadId,account,session,epoch,info,onClose,onNotice,onSave,onInfo,onSetting}:{threadId:string;account:ChatAccount;session:BrowserSession;epoch:number;info:boolean;onClose:()=>void;
+function Conversation({threadId,focusMessage,account,session,epoch,info,onClose,onNotice,onSave,onInfo,onSetting}:{threadId:string;focusMessage:string;account:ChatAccount;session:BrowserSession;epoch:number;info:boolean;onClose:()=>void;
   onNotice:(text:string)=>void;onSave:(message:ChatMessage)=>void;onInfo:()=>void;onSetting:(change:ChatSetting)=>Promise<void>}){
   const [page,setPage]=useState<ChatMessagePage>(),[error,setError]=useState(""),[older,setOlder]=useState<{messages:ChatMessage[];before:string|null}>({messages:[],before:null}),[loadingOlder,setLoadingOlder]=useState(false);
   const [text,setText]=useState(""),[reply,setReply]=useState<ChatMessage>(),[editing,setEditing]=useState<ChatMessage>(),[sending,setSending]=useState(false),[asked,setAsked]=useState(false),[confirm,setConfirm]=useState<Confirm>();
@@ -225,6 +225,14 @@ function Conversation({threadId,account,session,epoch,info,onClose,onNotice,onSa
     catch(cause){onNotice((cause as Error).message);}finally{setLoadingOlder(false);}
   }
   const messages=useMemo(()=>{const seen=new Set<string>(),out:ChatMessage[]=[];for(const m of [...older.messages,...page?.messages??[]])if(!seen.has(m.id)){seen.add(m.id);out.push(m);}return out;},[older,page]);
+  // A search result opens the chat at its message: earlier pages load until it is found, then it is shown and outlined.
+  const [seek,setSeek]=useState(focusMessage),[found,setFound]=useState(""),tries=useRef(0);
+  useEffect(()=>{
+    if(!seek||!page)return;
+    const el=scroller.current?.querySelector<HTMLElement>(`[data-message="${CSS.escape(seek)}"]`);
+    if(el){stick.current=false;el.scrollIntoView({block:"center"});setFound(seek);setSeek("");const timer=setTimeout(()=>setFound(""),4000);return()=>clearTimeout(timer);}
+    if(older.before&&!loadingOlder&&tries.current++<40)void loadOlder();else if(!older.before)setSeek("");
+  },[seek,messages,older.before,loadingOlder]);
   useLayoutEffect(()=>{const el=scroller.current;if(el&&stick.current)el.scrollTop=el.scrollHeight;},[messages.length,page]);
   const thread=page?.thread,name=thread?.name||phoneOf(thread?.jid??"")||"Chat",group=thread?.kind==="group";
   const canSend=account.state==="connected"||account.state==="connecting"||account.state==="disconnected";
@@ -277,7 +285,7 @@ function Conversation({threadId,account,session,epoch,info,onClose,onNotice,onSa
         const day=dayLabel(m.at),next=messages[i+1],tail=!next||next.fromMe!==m.fromMe||next.sender!==m.sender||dayLabel(next.at)!==day,prev=messages[i-1];
         const showName=group&&!m.fromMe&&(!prev||prev.sender!==m.sender||prev.fromMe||dayLabel(prev.at)!==day);
         const heading=day!==lastDay?(lastDay=day,<div className="chat-day" key={`day-${m.id}`}><span>{day}</span></div>):null;
-        return <Fragment key={m.id}>{heading}<Bubble threadId={threadId} message={m} tail={tail} showName={showName} canChange={canSend} onSave={()=>onSave(m)}
+        return <Fragment key={m.id}>{heading}<Bubble threadId={threadId} message={m} found={m.messageId===found} tail={tail} showName={showName} canChange={canSend} onSave={()=>onSave(m)}
           onReply={()=>{setEditing(undefined);setReply(m);input.current?.focus();}} onCopy={()=>{void navigator.clipboard?.writeText(m.text);onNotice("Copied");}}
           onReact={emoji=>{void act("react",m,{emoji});}} onEdit={()=>{setReply(undefined);setEditing(m);setText(m.text);input.current?.focus();}}
           onRevoke={()=>setConfirm({title:"Delete for everyone?",text:"This message is removed for everyone in the chat. People may already have seen it.",action:"Delete for everyone",run:()=>act("revoke",m)})}
@@ -301,7 +309,7 @@ function Conversation({threadId,account,session,epoch,info,onClose,onNotice,onSa
 
 /** WhatsApp lets senders edit a message for a short while after sending it. */
 const editWindow=15*60_000;
-function Bubble({threadId,message:m,tail,showName,canChange,onSave,onReply,onCopy,onReact,onEdit,onRevoke,onDeleteForMe,onRetry,onDiscard}:{threadId:string;message:ChatMessage;tail:boolean;showName:boolean;canChange:boolean;
+function Bubble({threadId,message:m,found,tail,showName,canChange,onSave,onReply,onCopy,onReact,onEdit,onRevoke,onDeleteForMe,onRetry,onDiscard}:{threadId:string;message:ChatMessage;found:boolean;tail:boolean;showName:boolean;canChange:boolean;
   onSave:()=>void;onReply:()=>void;onCopy:()=>void;onReact:(emoji:string)=>void;onEdit:()=>void;onRevoke:()=>void;onDeleteForMe:()=>void;onRetry:()=>void;onDiscard:()=>void}){
   const label=m.kind!=="text"?chatKindLabels[m.kind]:"",icon=kindIcon[m.kind];
   const file=m.media&&m.media.state!=="expired"?mediaUrl(threadId,m.messageId):"",mine=m.reactions.find(r=>r.mine)?.emoji??"",live=m.status!=="pending"&&m.status!=="failed";
@@ -315,7 +323,7 @@ function Bubble({threadId,message:m,tail,showName,canChange,onSave,onReply,onCop
     {label:"Delete from Dar…",icon:"trash",danger:true,separator:!(canChange&&live&&m.fromMe),run:onDeleteForMe},
   ];
   const photo=!m.deleted&&!!m.media&&(m.kind==="image"||m.kind==="sticker")&&m.media.state!=="expired"&&m.media.state!=="retrying";
-  return <div className={`chat-message ${m.fromMe?"is-out":"is-in"}${tail?" is-tail":""}${m.status==="failed"?" is-failed":""}`}>
+  return <div data-message={m.messageId} className={`chat-message ${m.fromMe?"is-out":"is-in"}${tail?" is-tail":""}${m.status==="failed"?" is-failed":""}${found?" is-found":""}`}>
     <div className="chat-line"><div className={`chat-bubble${photo?" has-photo":""}`}>
       {showName&&<span className={`chat-sender ${avatarHue(m.sender)}`}>{m.senderName||phoneOf(m.sender)||"Unknown"}</span>}
       {m.quotedId&&<span className="chat-quote"><b>{m.quotedSender||"Message"}</b><span>{m.quotedText||"Message"}</span></span>}

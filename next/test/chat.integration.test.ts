@@ -178,6 +178,13 @@ test("Chat: link, import, send, receive, receipts, encrypted keys, restart, isol
     const found=await call<{items:{name:string;phone:string}[]}>(`/contacts?accountId=${accountId}&q=mom`);assert.deepEqual(found.items.map(c=>[c.name,c.phone]),[["Mom","+15550004444"]]);
     assert.equal((await call<{items:unknown[]}>(`/contacts?accountId=${accountId}&q=4444`)).items.length,1,"search matches numbers too");
     assert.equal((await bridgeLog()).some(e=>/contact/i.test(String(e.method))),false,"contacts never reach the bridge");
+    // The shared search finds chats by name and messages by text, opening the chat at the message.
+    type Found={items:{group:string;title:string;detail:string;href:string}[]};const searched=async(q:string):Promise<Found>=>{const r=await fetch(base+`/api/v1/search?q=${encodeURIComponent(q)}`,{headers:session.headers});const v=await r.json() as Found;return v;};
+    const hit=(await searched("7:30 then")).items.filter(i=>i.group==="Chat");
+    assert.equal(hit.length,1);assert.equal(hit[0].title,"Sara H. (Dar)");assert.match(hit[0].detail,/Perfect, see you at 7:30 then/);
+    assert.equal(hit[0].href,`/chat?account=${encodeURIComponent(accountId)}&chat=${encodeURIComponent(sara.id)}&message=L1`);
+    assert.ok((await searched("Family")).items.some(i=>i.group==="Chat"&&i.href.endsWith(`chat=${encodeURIComponent(family.id)}`)));
+    assert.equal((await searched("Long time")).items.filter(i=>i.group==="Chat").length,1,"archived chats are searched too");
 
     // Earlier messages from the phone: asked from the oldest one here, they arrive as history.
     await call("/history",{threadId:sara.id});

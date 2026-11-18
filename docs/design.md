@@ -66,9 +66,11 @@ Selected [search mock A](spacetimedb/search-palette-mocks.html) (spotlight) over
   account, with Clear) and actions. `>` lists commands (go to an app or settings
   section); matching commands also lead normal results.
 - Escape clears the query, then closes and returns focus to the opener.
-- The search covers all apps: accessible file names, contacts, calendar
-  resources, Notes content, Tasks, Agent projects/threads and enabled installed
-  apps' own-user data. Never another account's or a disabled app's data.
+- The search covers all apps: accessible file names, the text of notes and other
+  text files (indexed in the background, `files/text-index.ts`; shown as an excerpt),
+  contacts, calendar resources, Tasks, Chat (chat names and message text, newest
+  first; a result opens the chat at the message), Agent projects/threads and enabled
+  installed apps' own-user data. Never another account's or a disabled app's data.
 - Group results by app (with a count) with keyboard selection and loading, empty,
   partial-error and retry states. Rows use the app's glyph (initials for contacts,
   file-type tiles) and highlight the match. Bound scans and say when truncated.

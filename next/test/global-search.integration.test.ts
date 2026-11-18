@@ -21,6 +21,13 @@ test("global search spans app data, respects private/granted scopes and revocati
   const search=async(session:typeof admin)=>(await(await fetch(base+`/api/v1/search?q=${marker}`,{headers:session.headers})).json()) as SearchResults;
   const result=await search(admin);for(const group of ["Files","Contacts","Calendar","Notes","Tasks","Applications"])assert.ok(result.items.some(item=>item.group===group),group);
   assert.ok(result.items.some(item=>item.href===`/notes?note=${note.fileId}`&&item.group==="Notes"));assert.equal(result.items.some(item=>item.title.startsWith(".")),false);assert.deepEqual((await search(other)).items,[]);
+  // Notes and text files are also found by their text (indexed in the background), with an excerpt; binary content is not.
+  const inside="inside-"+randomUUID().slice(0,8),textNote=await upload(base!,admin,"Weekly review.md",`# Weekly review\n\nIdeas for the ${inside} garden.\n`,notes.rootId);
+  const textFile=await upload(base!,admin,"shopping.txt",`eggs, ${inside} flour`);await upload(base!,admin,"photo.png",`${inside}`,"",undefined,undefined,"image/png");await upload(base!,admin,"blob.txt",Buffer.from(`${inside}\0\x01\x02`));
+  const byText=async()=>(await(await fetch(base+`/api/v1/search?q=${inside}`,{headers:admin.headers})).json()) as SearchResults;
+  let inner=await byText();for(let i=0;i<100&&inner.items.length<2;i++){await new Promise(r=>setTimeout(r,200));inner=await byText();}
+  assert.deepEqual(inner.items.map(item=>[item.group,item.href]).sort(),[["Files",`/?folder=&file=${textFile.fileId}`],["Notes",`/notes?note=${textNote.fileId}`]].sort());
+  assert.match(inner.items.find(item=>item.group==="Notes")!.detail,new RegExp(`Ideas for the ${inside} garden`));assert.deepEqual((await(await fetch(base+`/api/v1/search?q=${inside}`,{headers:other.headers})).json() as SearchResults).items,[],"text stays private");
   const owner=await connect(other),folder=randomUUID(),grant=randomUUID();
   try{await owner.reducers.createFolder({id:folder,parentId:"",name:marker+" shared"});await upload(base!,other,marker+" nested.txt","Shared file",folder);await owner.reducers.grantAccess({id:grant,fileId:folder,username:"admin",role:"read",expectedRevision:(JSON.parse(await owner.procedures.fileDetails({id:folder})) as {entry:{revision:number}}).entry.revision});assert.ok((await search(admin)).items.some(item=>item.title===marker+" nested.txt"));await owner.reducers.revokeGrant({id:grant});assert.equal((await search(admin)).items.some(item=>item.title===marker+" nested.txt"),false);}finally{owner.disconnect();}
   for(let i=0;i<10;i++)await upload(base!,admin,marker+" note "+i+".md","",notes.rootId);
