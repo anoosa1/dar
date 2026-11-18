@@ -35,6 +35,18 @@ export async function handleChatHttp(req:IncomingMessage,res:ServerResponse,url:
       const p=url.searchParams;return await runtime.serveMedia(req,res,sessionId,str(p.get("threadId")??"",300)!,str(p.get("messageId")??"",128)!,p.get("download")==="1");
     }
     if(path==="/save"&&method==="POST"){const v=await input(["threadId","messageId","folderId"]);return send(await runtime.saveMedia(sessionId,str(v.threadId,300)!,str(v.messageId,128)!,str(v.folderId??"",100)!),201);}
+    if(path==="/react"&&method==="POST"){const v=await input(["threadId","messageId","emoji"]);return send(await runtime.act(sessionId,str(v.threadId,300)!,str(v.messageId,128)!,"react",{emoji:str(v.emoji??"",32)!}));}
+    if(path==="/edit"&&method==="POST"){const v=await input(["threadId","messageId","text"]);const text=str(v.text,chatLimits.text)!;if(!text.trim())throw new AppError("invalidInput",400,"Write the new text first.");return send(await runtime.act(sessionId,str(v.threadId,300)!,str(v.messageId,128)!,"edit",{text}));}
+    if(path==="/revoke"&&method==="POST"){const v=await input(["threadId","messageId"]);return send(await runtime.act(sessionId,str(v.threadId,300)!,str(v.messageId,128)!,"revoke",{}));}
+    if(path==="/deleteForMe"&&method==="POST"){const v=await input(["threadId","messageId"]);return send(await runtime.call(sessionId,"deleteForMe",{threadId:str(v.threadId,300),messageId:str(v.messageId,128)}));}
+    if(path==="/chatSetting"&&method==="POST"){
+      const v=await input(["threadId","pinned","archived","mutedUntil"]),change:{pinned?:boolean;archived?:boolean;mutedUntil?:number}={};
+      if(typeof v.pinned==="boolean")change.pinned=v.pinned;else if(typeof v.archived==="boolean")change.archived=v.archived;
+      else if(typeof v.mutedUntil==="number"&&Number.isSafeInteger(v.mutedUntil)&&v.mutedUntil>=-1)change.mutedUntil=v.mutedUntil;else throw new AppError("invalidInput");
+      return send(await runtime.chatSetting(sessionId,str(v.threadId,300)!,change));
+    }
+    if(path==="/info"&&method==="GET")return send(await runtime.info(sessionId,str(url.searchParams.get("threadId")??"",300)!));
+    if(path==="/history"&&method==="POST"){const v=await input(["threadId"]);return send(await runtime.requestHistory(sessionId,str(v.threadId,300)!));}
     if(path==="/read"&&method==="POST"){const v=await input(["threadId"]);return send(await runtime.markRead(sessionId,str(v.threadId,300)!));}
     if(path==="/send"&&method==="POST"){
       const v=await input(["threadId","text","quotedId"]);

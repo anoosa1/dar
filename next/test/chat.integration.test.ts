@@ -8,7 +8,7 @@ import {spawnSync} from "node:child_process";
 import {startServer} from "../runtime/server.ts";
 import {login} from "./integration-helpers.ts";
 import {database} from "../runtime/database.ts";
-import type {ChatAccount,ChatLinkState,ChatMessage,ChatMessagePage,ChatOverview,ChatThread,ChatThreadPage} from "../shared/chat.ts";
+import type {ChatAccount,ChatInfo,ChatLinkState,ChatMessage,ChatMessagePage,ChatOverview,ChatThread,ChatThreadPage} from "../shared/chat.ts";
 
 const fake=path.resolve(import.meta.dirname,"fixtures/fake-chat-bridge.mjs");
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
@@ -137,6 +137,39 @@ test("Chat: link, import, send, receive, receipts, encrypted keys, restart, isol
     await until(()=>messagesOf(family.id),p=>p.messages.find(m=>m.messageId==="X1")!.deleted,"the deletion");
     assert.equal((await messagesOf(family.id)).messages.find(m=>m.messageId==="X1")!.media,null);assert.doesNotMatch(sql("SELECT id FROM chat_media"),/\/X1/);
 
+    // Reactions: from others as they arrive, and the account's own through the bridge; an empty one removes it.
+    await writeFile(path.join(control,`${accountId}.incoming.json`),JSON.stringify({messages:[{id:"RX1",chat:"15550002222@s.whatsapp.net",sender:"15550002222@s.whatsapp.net",senderName:"Sara Haddad",fromMe:false,at:Date.now(),kind:"reaction",target:sent.messageId,text:"❤️"}]}));
+    const reacted=await until(()=>messagesOf(sara.id),p=>p.messages.find(m=>m.messageId===sent.messageId)!.reactions.length===1,"the incoming reaction");
+    assert.deepEqual(reacted.messages.find(m=>m.messageId===sent.messageId)!.reactions,[{emoji:"❤️",count:1,mine:false,names:["Sara Haddad"]}]);
+    await call("/react",{threadId:sara.id,messageId:"L1",emoji:"👍"});
+    assert.deepEqual((await messagesOf(sara.id)).messages.find(m=>m.messageId==="L1")!.reactions,[{emoji:"👍",count:1,mine:true,names:[]}]);
+    const reaction=(await bridgeLog()).find(e=>e.method==="react")!;assert.equal(reaction.sender,"15550002222@s.whatsapp.net");assert.equal(reaction.id,"L1");assert.equal(reaction.emoji,"👍");
+    await call("/react",{threadId:sara.id,messageId:"L1",emoji:""});assert.deepEqual((await messagesOf(sara.id)).messages.find(m=>m.messageId==="L1")!.reactions,[]);
+    // Edits and deletion for everyone apply to the account's own messages only; "delete from Dar" is local.
+    await call("/edit",{threadId:sara.id,messageId:sent.messageId,text:"See you at 7:30"});
+    let own=(await messagesOf(sara.id)).messages.find(m=>m.messageId===sent.messageId)!;assert.equal(own.text,"See you at 7:30");assert.equal(own.edited,true);
+    assert.equal((await raw("/edit",{method:"POST",body:JSON.stringify({threadId:sara.id,messageId:"L1",text:"Not mine"})})).status,403);
+    await call("/revoke",{threadId:sara.id,messageId:sent.messageId});
+    own=(await messagesOf(sara.id)).messages.find(m=>m.messageId===sent.messageId)!;assert.equal(own.deleted,true);assert.deepEqual(own.reactions,[]);
+    assert.equal((await bridgeLog()).find(e=>e.method==="revoke")!.sender,"15550001111@s.whatsapp.net");
+    await call("/deleteForMe",{threadId:sara.id,messageId:"H2"});assert.equal((await messagesOf(sara.id)).messages.some(m=>m.messageId==="H2"),false);
+    // Mute, pin and archive go to WhatsApp, and the list follows.
+    await call("/chatSetting",{threadId:sara.id,mutedUntil:-1});
+    assert.equal((await call<ChatThreadPage>(`/threads?accountId=${accountId}&view=chats`)).pinned.find(t=>t.id===sara.id)!.mutedUntil,-1);
+    await call("/chatSetting",{threadId:sara.id,archived:true});
+    const archived=(await call<ChatThreadPage>(`/threads?accountId=${accountId}&view=archived`)).threads.find(t=>t.id===sara.id)!;assert.equal(archived.pinned,false,"archiving unpins");
+    const sentSettings=(await bridgeLog()).filter(e=>e.method==="chatSetting");assert.equal(sentSettings.at(-1)!.archived,true);assert.equal(sentSettings.at(-1)!.chat,"15550002222@s.whatsapp.net");assert.ok(sentSettings.at(-1)!.lastId);
+    await call("/chatSetting",{threadId:sara.id,archived:false});await call("/chatSetting",{threadId:sara.id,pinned:true});await call("/chatSetting",{threadId:sara.id,mutedUntil:0});
+    assert.equal((await raw("/chatSetting",{method:"POST",body:JSON.stringify({threadId:sara.id,mutedUntil:-5})})).status,400);
+    // Chat info: groups list their members from WhatsApp.
+    const groupInfo=await call<ChatInfo>(`/info?threadId=${encodeURIComponent(family.id)}`);
+    assert.deepEqual(groupInfo.group!.members.map(m=>m.name),["Me","Mama","Baba"]);assert.equal(groupInfo.group!.topic,"Eid plans");assert.ok(groupInfo.media.some(m=>m.messageId==="D1"));
+    assert.equal((await call<ChatInfo>(`/info?threadId=${encodeURIComponent(sara.id)}`)).group,null);
+    // Earlier messages from the phone: asked from the oldest one here, they arrive as history.
+    await call("/history",{threadId:sara.id});
+    const asked=(await bridgeLog()).find(e=>e.method==="requestHistory")!;assert.equal(asked.chat,"15550002222@s.whatsapp.net");
+    await until(()=>messagesOf(sara.id),p=>p.messages[0]?.messageId==="H0","the earlier message from the phone");
+
     // A new chat by phone number.
     const direct=await call<ChatThread>("/chats",{accountId,phone:"+1 555 000 9999"});
     assert.equal(direct.jid,"15550009999@s.whatsapp.net");assert.equal(direct.name,"+15550009999");
@@ -175,10 +208,11 @@ test("Chat: link, import, send, receive, receipts, encrypted keys, restart, isol
     assert.match(restoredSql("SELECT blob_id FROM chat_media"),new RegExp(kept[0]));
 
     // Unlinking keeps history, read-only, and removes the keys.
+    const keptMessages=(await messagesOf(sara.id)).messages.length;
     const unlinked=await call<{confirmed:boolean}>(`/accounts/${accountId}/unlink`,{});
     assert.equal(unlinked.confirmed,true);
     account=(await overview()).accounts[0];assert.equal(account.state,"loggedOut");
-    assert.equal((await call<ChatMessagePage>(`/messages?threadId=${encodeURIComponent(sara.id)}`)).messages.length,5);
+    assert.equal((await messagesOf(sara.id)).messages.length,keptMessages);
     assert.equal((await raw("/send",{method:"POST",body:JSON.stringify({threadId:sara.id,text:"hello?"})})).status,409);
     assert.doesNotMatch(sql("SELECT id FROM chat_keys"),new RegExp(accountId));
 

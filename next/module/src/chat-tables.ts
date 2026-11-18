@@ -22,5 +22,8 @@ export const chatTables={
   // the blob through maintenance and puts it in backups. state: remote, stored, retrying, expired, failed.
   chatMedia:table({}, {id:t.string().primaryKey(),accountId:t.string().index("btree"),blobId:t.string().index("btree"),kind:t.string(),mime:t.string(),size:t.f64(),
     fileName:t.string(),seconds:t.u32(),width:t.u32(),height:t.u32(),state:t.string(),at:t.f64()}),
+  // One reaction per person per message (id "<message row>|<sender or me>"); an empty emoji removes it.
+  chatReactions:table({}, {id:t.string().primaryKey(),messageRowId:t.string().index("btree"),accountId:t.string().index("btree"),sender:t.string(),senderName:t.string(),
+    fromMe:t.bool(),emoji:t.string(),at:t.f64()}),
   chatChanges,
 };

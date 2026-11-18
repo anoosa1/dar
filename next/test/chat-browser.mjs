@@ -40,7 +40,16 @@ try{
   await log.locator(".chat-message.is-in").filter({hasText:"Perfect, see you at 7 then"}).hover();
   await log.locator(".chat-message.is-in").filter({hasText:"Perfect, see you at 7 then"}).getByRole("button",{name:"Message actions"}).click();await page.getByRole("menuitem",{name:"Reply"}).click();
   await chat.getByText("Replying to Sara Haddad").waitFor();await box.press("Escape");assert.equal(await chat.getByText("Replying to Sara Haddad").count(),0);
+  // React from the message menu; the chip shows, and clicking it removes the reaction.
+  const incoming=log.locator(".chat-message.is-in").filter({hasText:"Perfect, see you at 7 then"});await incoming.hover();
+  await incoming.getByRole("button",{name:"Message actions"}).click();await page.getByRole("menuitem",{name:"React"}).click();await page.getByRole("menuitemradio",{name:"❤️"}).click();
+  const chip=incoming.getByRole("button",{name:/Remove your reaction/});await chip.waitFor();
+  // Chat info opens beside the conversation; mute goes through its menu.
+  await chat.getByRole("button",{name:"Chat info"}).click();const infoSheet=page.getByRole("region",{name:"Chat info"});await infoSheet.getByRole("heading",{name:"Contact info"}).waitFor();
+  await infoSheet.getByRole("button",{name:"Mute"}).click();await page.getByRole("menuitem",{name:"8 hours"}).click();await page.getByText("Chat muted").waitFor();await infoSheet.getByRole("button",{name:"Unmute"}).waitFor();
   await page.screenshot({path:path.join(root,"chat-desktop.png")});
+  await chip.click();await chip.waitFor({state:"detached"});
+  await infoSheet.getByRole("button",{name:"Close chat info"}).click();await infoSheet.waitFor({state:"detached"});
   // A document in the group: Save to Files from the message menu, into the shared folder picker.
   await page.getByRole("list",{name:"Chats"}).getByRole("button",{name:/Family/}).click();const group=page.getByRole("complementary",{name:"Family"});
   const document=group.locator(".chat-message").filter({hasText:"Eid lunch menu.pdf"});await document.waitFor();await document.hover();

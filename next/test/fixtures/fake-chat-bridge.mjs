@@ -78,6 +78,18 @@ const handlers={
     return {id:params.id,at:Date.now()};
   },
   markRead(params){log({method:"markRead",...params});return {};},
+  react(params){log({method:"react",...params});return {id:"R"+Date.now(),at:Date.now()};},
+  edit(params){log({method:"edit",...params});return {id:"E"+Date.now(),at:Date.now()};},
+  revoke(params){log({method:"revoke",...params});return {id:"X"+Date.now(),at:Date.now()};},
+  chatSetting(params){log({method:"chatSetting",...params});return {};},
+  groupInfo({chat}){return {name:"Family",topic:"Eid plans",created:Date.UTC(2020,0,1),members:[{jid:jid,name:"Me",admin:true},{jid:"15550004444@s.whatsapp.net",name:"Mama",admin:true},{jid:"15550005555@s.whatsapp.net",name:"Baba"}]};},
+  requestHistory(params){
+    log({method:"requestHistory",...params});
+    // The phone answers with up to 50 earlier messages, as on-demand history.
+    setTimeout(()=>{void call("ingest",{account:params.account,kind:"history",syncType:"ON_DEMAND",final:true,progress:100,chats:[],
+      messages:[{id:"H0",chat:params.chat,sender:params.chat,fromMe:false,at:params.at-86_400_000,kind:"text",text:"Hello from last week"}]});},50);
+    return {};
+  },
   download({account,chat,id,path:file}){
     log({method:"download",account,chat,id});
     if(!connected.has(account))throw Object.assign(new Error("WhatsApp is not connected."),{code:"notConnected"});

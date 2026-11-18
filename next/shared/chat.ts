@@ -14,7 +14,7 @@ export interface ChatThread {id:string;accountId:string;jid:string;kind:"direct"
   previewFromMe:boolean;previewSender:string;previewStatus:ChatMessageStatus;unread:number;archived:boolean;pinned:boolean;mutedUntil:number}
 export interface ChatThreadPage {pinned:ChatThread[];threads:ChatThread[];cursor:string|null}
 export interface ChatMessage {id:string;messageId:string;sender:string;senderName:string;fromMe:boolean;at:number;kind:ChatMessageKind;text:string;fileName:string;
-  quotedId:string;quotedSender:string;quotedText:string;status:ChatMessageStatus;edited:boolean;deleted:boolean;media:ChatMedia|null}
+  quotedId:string;quotedSender:string;quotedText:string;status:ChatMessageStatus;edited:boolean;deleted:boolean;media:ChatMedia|null;reactions:ChatReaction[]}
 export interface ChatMessagePage {thread:ChatThread;messages:ChatMessage[];before:string|null}
 /** What the browser sees while linking: a QR code to draw, a pairing code to type, or why it stopped. */
 export interface ChatLinkState {accountId:string;state:"starting"|"qr"|"code"|"paired"|"failed";qr?:string;expiresAt?:number;code?:string;reason?:string}
@@ -37,3 +37,11 @@ export function localName(m:{kind:string;mime:string;fileName:string;at:number})
   const d=new Date(m.at),pad=(n:number)=>String(n).padStart(2,"0"),extension=extensions[m.mime];
   return `WhatsApp ${labels[m.kind]??"Attachment"} ${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} at ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}${extension?"."+extension:""}`;
 }
+export interface ChatReaction {emoji:string;count:number;mine:boolean;names:string[]}
+export const chatQuickReactions=["👍","❤️","😂","😮","😢","🙏"] as const;
+export interface ChatMember {jid:string;name:string;admin?:boolean}
+export interface ChatInfo {thread:ChatThread;account:{id:string;name:string;state:ChatAccountState};messages:number;complete:boolean;
+  media:{messageId:string;kind:ChatMessageKind;mime:string;state:ChatMediaState;fileName:string;size:number;at:number}[];
+  group:{name:string;topic:string;members:ChatMember[];created:number}|null;groupError:string}
+/** Mute choices as WhatsApp offers them; -1 is always. */
+export const chatMuteChoices=[["8 hours",8*3600_000],["1 week",7*86400_000],["Always",-1]] as const;

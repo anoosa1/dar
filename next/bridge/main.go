@@ -94,6 +94,12 @@ func main() {
 	p.handle("send", b.send)
 	p.handle("markRead", b.markRead)
 	p.handle("download", b.download)
+	p.handle("react", b.react)
+	p.handle("edit", b.edit)
+	p.handle("revoke", b.revoke)
+	p.handle("chatSetting", b.chatSetting)
+	p.handle("groupInfo", b.groupInfo)
+	p.handle("requestHistory", b.requestHistory)
 	done := make(chan error, 1)
 	go func() { done <- p.serve(os.Stdin) }()
 	select {

@@ -15,7 +15,7 @@ data is kept and every account disconnects.
 - On linking, import as much history as WhatsApp provides.
 - Accounts never mix: each linked account is a tab with its own chats, views and counts.
 
-## What works (phase 1)
+## What works
 
 - **Linking:** Link WhatsApp opens the right editing pane with a QR code (drawn by
   `shared/qr.ts`) or, on phones, a pairing code for the phone number. Dar shows up as
@@ -28,6 +28,13 @@ data is kept and every account disconnects.
   as labelled placeholders. Sending is stored first as pending under WhatsApp's own message
   ID, so a retry can never duplicate it; failures offer Retry and Delete. Delivered and
   read ticks follow receipts. Opening a chat sends read receipts.
+- **Message actions:** the message menu reacts (six quick reactions; chips under the bubble
+  show who and remove yours), replies, copies, edits your text within 15 minutes, deletes
+  for everyone (yours) or from Dar only (local; WhatsApp and the phone keep it). Every
+  change goes to WhatsApp before Dar records it.
+- **Chat info:** a fourth sheet (a full screen on phones) with mute (8 hours, 1 week,
+  always), pin and archive, which sync to the phone through WhatsApp's app state; the
+  messages Dar keeps, recent photos and documents, and a group's description and members.
 - **Attachments:** photos and stickers show inline, videos play on request, voice notes
   and audio in a player, documents as cards. Each downloads from WhatsApp the first time
   it is shown (new photos, stickers and voice notes up to 16 MiB as they arrive), once,
@@ -36,7 +43,8 @@ data is kept and every account disconnects.
   folder picker; a taken name gets a number) are in the message menu. Deleting a message
   for everyone removes its attachment.
 - **History:** Dar asks for a full sync with no day or size limit; the phone decides
-  what it sends. Progress shows on the account card.
+  what it sends. Progress shows on the account card. At the start of a chat, "Get earlier messages
+  from your phone" asks for 50 more before the oldest one Dar has; they arrive as history.
 - **States:** connecting, reconnecting, unlinked (history stays, read-only), and lasting
   failures (another copy using the keys, a temporary ban, an outdated bridge).
 - **Live:** the browser subscribes to `my_chat_changes` and reloads what changed.
@@ -75,7 +83,9 @@ data is kept and every account disconnects.
 
 1. Done: bridge, key store, link/unlink, text in and out, history, account tabs.
 2. Done: attachments into blobs, download, Save to Files, backups.
-3. Reactions, chat info, archive/pin/mute from Dar, typing, older history on demand.
+3. Done: reactions, edits and deletions from Dar, chat info, mute/pin/archive, older
+   history on demand. Typing indicators are left out: they would need a push channel
+   beside the database change feed.
 4. Message search in the shared search, linking chats to Dar contacts.
 5. Discord, after deciding between a bot (only servers that add it, no personal
    DMs) and automating a personal account, which Discord's terms forbid.

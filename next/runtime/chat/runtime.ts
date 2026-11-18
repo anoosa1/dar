@@ -207,6 +207,39 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       const {accounts}=await worker<{accounts:{id:string}[]}>("accounts",{}).catch(()=>({accounts:[]}));
       await Promise.all(accounts.map(item=>bridge.call("disconnect",{account:item.id}).catch(()=>{})));
     },
+    /** Reacts to, edits or deletes a message on WhatsApp, then records the change here. */
+    async act(sessionId:string,threadId:string,messageId:string,action:"react"|"edit"|"revoke",value:{emoji?:string;text?:string}){
+      const target=await call<{accountId:string;state:string;chat:string;id:string;sender:string;fromMe:boolean;deleted:boolean}>(sessionId,"target",{threadId,messageId});
+      if(target.deleted)throw new AppError("conflict",409,"This message was deleted.");
+      if(action!=="react"&&!target.fromMe)throw new AppError("forbidden",403,"Only your own messages can be changed.");
+      await bridge.call(action,{account:target.accountId,chat:target.chat,id:target.id,sender:target.sender,...value},45_000);
+      if(action==="react")return await call(sessionId,"applyReaction",{threadId,messageId,emoji:value.emoji??""});
+      if(action==="edit")return await call(sessionId,"applyEdit",{threadId,messageId,text:value.text??""});
+      return await call(sessionId,"applyRevoke",{threadId,messageId});
+    },
+    /** Mutes, pins or archives a chat on WhatsApp too, so the phone follows. */
+    async chatSetting(sessionId:string,threadId:string,change:{pinned?:boolean;archived?:boolean;mutedUntil?:number}){
+      const target=await call<{accountId:string;chat:string;lastAt:number;lastId:string;lastSender:string;lastFromMe:boolean}>(sessionId,"chatTarget",{threadId});
+      await bridge.call("chatSetting",{account:target.accountId,chat:target.chat,...change,lastAt:target.lastAt,lastId:target.lastId,lastSender:target.lastSender,lastFromMe:target.lastFromMe},45_000);
+      return await call(sessionId,"applyChatSetting",{threadId,...change});
+    },
+    /** Chat info; groups add their members from WhatsApp when it is reachable. */
+    async info(sessionId:string,threadId:string){
+      const info=await call<Record<string,unknown>&{thread:{kind:string;jid:string};account:{id:string}}>(sessionId,"chatInfo",{threadId});
+      let group=null,groupError="";
+      if(info.thread.kind==="group"){
+        try{group=await bridge.call("groupInfo",{account:info.account.id,chat:info.thread.jid},20_000);}
+        catch(error){groupError=error instanceof AppError&&error.code!=="bridgeError"?error.message:"Members are shown when WhatsApp is connected.";}
+      }
+      return {...info,group,groupError};
+    },
+    /** Asks the phone for messages before the oldest one here; they arrive like history. */
+    async requestHistory(sessionId:string,threadId:string){
+      const oldest=await call<{accountId:string;chat:string;message:{id:string;fromMe:boolean;at:number}|null}>(sessionId,"oldest",{threadId});
+      if(!oldest.message)throw new AppError("conflict",409,"There is no message to start from yet.");
+      await bridge.call("requestHistory",{account:oldest.accountId,chat:oldest.chat,...oldest.message},30_000);
+      return {ok:true};
+    },
     serveMedia:(req:IncomingMessage,res:ServerResponse,sessionId:string,threadId:string,messageId:string,attachment:boolean)=>media.serve(req,res,sessionId,threadId,messageId,attachment),
     saveMedia:(sessionId:string,threadId:string,messageId:string,folderId:string)=>media.save(sessionId,threadId,messageId,folderId),
     async close(){closing=true;media.close();clearInterval(purgeTimer);for(const timer of retries.values())clearTimeout(timer);await bridge.close();},

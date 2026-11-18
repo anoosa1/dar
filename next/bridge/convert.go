@@ -163,6 +163,13 @@ func (a *account) convert(ctx context.Context, evt *events.Message, status strin
 		out.SenderName = a.personName(ctx, sender, info.PushName)
 	}
 	msg := evt.Message
+	if reaction := msg.GetReactionMessage(); reaction != nil {
+		out.Kind, out.Target, out.Text = "reaction", reaction.GetKey().GetID(), reaction.GetText()
+		if !info.IsFromMe {
+			out.SenderName = a.personName(ctx, sender, info.PushName)
+		}
+		return out, out.Target != ""
+	}
 	if protocol := msg.GetProtocolMessage(); protocol != nil {
 		switch protocol.GetType() {
 		case waE2E.ProtocolMessage_REVOKE:
