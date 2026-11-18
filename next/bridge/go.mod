@@ -3,6 +3,7 @@ module dar/chat-bridge
 go 1.26.0
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/google/uuid v1.6.0
 	go.mau.fi/whatsmeow v0.0.0-20261116172437-19d61352436f
 	google.golang.org/protobuf v1.36.12
@@ -11,7 +12,6 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect
-	github.com/coder/websocket v1.8.15 // indirect
 	github.com/elliotchance/orderedmap/v3 v3.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

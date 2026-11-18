@@ -8,10 +8,10 @@ import {createChatMedia} from "./media.ts";
 import type {blobStore} from "../files/blobs.ts";
 import type {IncomingMessage,ServerResponse} from "node:http";
 import {chatReadOperations} from "../../shared/read-operations.ts";
-import type {ChatLinkState,ChatMessage,ChatOverview} from "../../shared/chat.ts";
+import {chatPlatformNames,type ChatLinkState,type ChatMessage,type ChatOverview,type ChatPlatform} from "../../shared/chat.ts";
 
 interface Entry {key:string;value:string;lazy?:boolean;expiresAt?:number}
-interface SendTarget {accountId:string;chat:string;message:ChatMessage;quoted:{id:string;sender:string;text:string}|null}
+interface SendTarget {accountId:string;platform:ChatPlatform;chat:string;message:ChatMessage;quoted:{id:string;sender:string;text:string}|null}
 const accountPattern=/^[0-9a-f-]{36}$/;
 const reasons:Record<string,string>={
   timeout:"The code expired before it was used. Start again to get a new one.",
@@ -20,7 +20,12 @@ const reasons:Record<string,string>={
   passkey:"This WhatsApp account asks for a passkey to link a device, which Dar does not support yet.",
   outdated:"WhatsApp no longer accepts this version of the bridge. Update Dar.",
   multidevice:"Turn on linked devices in WhatsApp, then scan again.",
+  cancelled:"Sign-in was cancelled on the phone. Start again to get a new code.",
+  captcha:"Discord asked for a check that Dar cannot show. Sign in to Discord in its app or website first, then try again.",
+  connectFailed:"Dar could not reach the service. Check the server's internet connection.",
 };
+/** A Discord nonce: a snowflake for now, which Discord uses to recognise a resent message. */
+function discordNonce(){return ((BigInt(Date.now()-1420070400000)<<22n)|BigInt(randomBytes(3).readUIntBE(0,3)&0x3fffff)).toString();}
 
 /**
  * Owns Chat's effects: the bridge process, its encrypted key store, account states,
@@ -28,7 +33,7 @@ const reasons:Record<string,string>={
  */
 export async function createChatRuntime(db:Database,root:string,{executable,enabled,blobs}:{executable?:string;enabled:boolean;blobs:ReturnType<typeof blobStore>}){
   const box=await keyringBox(path.join(root,"secrets"),"chat-keys");
-  const links=new Map<string,ChatLinkState>();
+  const links=new Map<string,ChatLinkState>(),platforms=new Map<string,ChatPlatform>();
   let closing=false,active=enabled,purgeTimer:ReturnType<typeof setInterval>|undefined;
   const worker=<T>(operation:string,value:object)=>db.operation<T>("service_chat_worker",operation,chatReadOperations,[operation,JSON.stringify(value)]);
   const call=<T>(sessionId:string,operation:string,value:object)=>db.operation<T>("service_chat",operation,chatReadOperations,[sessionId,operation,JSON.stringify(value)]);
@@ -89,6 +94,7 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       const link=links.get(accountId);
       if(event==="linkCode"){links.set(accountId,{accountId,state:"qr",qr:String(data.code),expiresAt:Date.now()+Number(data.expiresIn??20)*1000});return;}
       if(event==="pairingCode"){links.set(accountId,{accountId,state:"code",code:String(data.code)});return;}
+      if(event==="linkScanned"){links.set(accountId,{accountId,state:"scanned",name:String(data.name??"").slice(0,64)});return;}
       if(event==="linkFailed"){
         const reason=String(data.reason??"pairingFailed");links.set(accountId,{accountId,state:"failed",reason:reasons[reason]??reasons.pairingFailed});
         void setState(accountId,"failed",{detail:reason});return;
@@ -115,7 +121,7 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
   async function connect(accountId:string,attempt=0){
     clearTimeout(retries.get(accountId));retries.delete(accountId);
     if(closing||!active)return;
-    try{await setState(accountId,"connecting");await bridge.call("connect",{account:accountId},120_000);}
+    try{await setState(accountId,"connecting");await bridge.call("connect",{account:accountId,platform:platforms.get(accountId)??"whatsapp"},120_000);}
     catch(error){
       if(error instanceof AppError&&error.code==="notLinked"){await setState(accountId,"loggedOut",{detail:"notLinked"});return;}
       if(closing||!active||!bridge.status.available)return;
@@ -125,20 +131,26 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
   }
   async function connectAll(){
     if(!active)return;
-    const {accounts}=await worker<{accounts:{id:string;state:string}[]}>("accounts",{}).catch(()=>({accounts:[]}));
-    for(const item of accounts)if(item.state!=="failed")void connect(item.id);
+    const {accounts}=await worker<{accounts:{id:string;state:string;platform:ChatPlatform}[]}>("accounts",{}).catch(()=>({accounts:[]}));
+    for(const item of accounts){platforms.set(item.id,item.platform);if(item.state!=="failed")void connect(item.id);}
   }
   purgeTimer=setInterval(()=>{void worker("purge",{}).catch(()=>{});},60*60_000);
 
   async function deliver(sessionId:string,threadId:string,target:SendTarget){
-    let ok=false;
+    let ok=false,id="";
     try{
-      await bridge.call("send",{account:target.accountId,chat:target.chat,text:target.message.text,id:target.message.messageId,
+      const sent=await bridge.call<{id?:string}>("send",{account:target.accountId,chat:target.chat,text:target.message.text,id:target.message.messageId,
         ...target.quoted?{quotedId:target.quoted.id,quotedSender:target.quoted.sender,quotedText:target.quoted.text}:{}},45_000);
-      ok=true;
+      ok=true;if(target.platform==="discord"&&typeof sent?.id==="string")id=sent.id;
     }catch{}
-    return await call<ChatMessage>(sessionId,"sendResult",{threadId,messageId:target.message.messageId,ok});
+    return await call<ChatMessage>(sessionId,"sendResult",{threadId,messageId:target.message.messageId,ok,...id?{id}:{}});
   }
+  /** Which platform an account is on; remembered once read. */
+  async function platformOf(sessionId:string,accountId:string){
+    const known=platforms.get(accountId);if(known)return known;
+    const row=await call<{platform:ChatPlatform}>(sessionId,"account",{accountId});platforms.set(accountId,row.platform);return row.platform;
+  }
+  const accountOf=(threadId:string)=>threadId.slice(0,36);
 
   return {
     call,
@@ -146,11 +158,13 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       const result=await call<Omit<ChatOverview,"bridge">>(sessionId,"overview",{});
       return {...result,bridge:{available:bridge.status.available,detail:active?bridge.status.detail:""}};
     },
-    async link(sessionId:string,{name,phone,accountId}:{name?:string;phone?:string;accountId?:string}){
+    async link(sessionId:string,{name,phone,accountId,platform}:{name?:string;phone?:string;accountId?:string;platform?:ChatPlatform}){
       if(!bridge.status.available)throw new AppError("bridgeUnavailable",503,bridge.status.detail||"The chat bridge is not running.");
-      const begun=await call<{accountId:string}>(sessionId,"beginLink",{...name!==undefined?{name}:{},...accountId?{accountId}:{}});
+      const chosen=accountId?await platformOf(sessionId,accountId):platform??"whatsapp";
+      const begun=await call<{accountId:string}>(sessionId,"beginLink",{...name!==undefined?{name}:{},...accountId?{accountId}:{},platform:chosen});
+      platforms.set(begun.accountId,chosen);
       links.set(begun.accountId,{accountId:begun.accountId,state:"starting"});
-      try{await bridge.call("link",{account:begun.accountId,phone:phone??""},30_000);}
+      try{await bridge.call("link",{account:begun.accountId,phone:chosen==="whatsapp"?phone??"":"",platform:chosen},30_000);}
       catch(error){links.set(begun.accountId,{accountId:begun.accountId,state:"failed",reason:error instanceof AppError?error.message:reasons.pairingFailed});throw error;}
       return begun;
     },
@@ -186,8 +200,11 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       return await call(sessionId,"deleteAccount",{accountId});
     },
     async send(sessionId:string,threadId:string,text:string,quotedId?:string){
-      // WhatsApp's own ID format, chosen before sending so a retry or a crash cannot duplicate the message.
-      const messageId="3EB0"+randomBytes(9).toString("hex").toUpperCase();
+      // Chosen before sending so a retry or a crash cannot duplicate the message: WhatsApp's own ID
+      // format, or for Discord a nonce it recognises when the same message is sent again.
+      const platform=await platformOf(sessionId,accountOf(threadId));
+      if(platform==="discord"&&[...text].length>4000)throw new AppError("invalidInput",400,"Discord messages can be up to 4,000 characters.");
+      const messageId=platform==="discord"?discordNonce():"3EB0"+randomBytes(9).toString("hex").toUpperCase();
       const target=await call<SendTarget>(sessionId,"prepareSend",{threadId,messageId,text,...quotedId?{quotedId}:{}});
       return await deliver(sessionId,threadId,target);
     },
@@ -195,8 +212,9 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       return await deliver(sessionId,threadId,await call<SendTarget>(sessionId,"retry",{threadId,messageId}));
     },
     async markRead(sessionId:string,threadId:string){
-      const result=await call<{accountId:string;chat:string;items:{id:string;sender:string}[]}>(sessionId,"markRead",{threadId});
-      if(result.items.length)void bridge.call("markRead",{account:result.accountId,chat:result.chat,items:result.items}).catch(()=>{});
+      const result=await call<{accountId:string;platform:ChatPlatform;chat:string;items:{id:string;sender:string}[];last:string}>(sessionId,"markRead",{threadId});
+      if(result.platform==="discord"){if(result.last)void bridge.call("markRead",{account:result.accountId,chat:result.chat,last:result.last}).catch(()=>{});}
+      else if(result.items.length)void bridge.call("markRead",{account:result.accountId,chat:result.chat,items:result.items}).catch(()=>{});
       return {ok:true};
     },
     /** Follows Administration → Apps: a disabled Chat disconnects every account and keeps the data. */
@@ -208,26 +226,34 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
       await Promise.all(accounts.map(item=>bridge.call("disconnect",{account:item.id}).catch(()=>{})));
     },
     /** Reacts to, edits or deletes a message on WhatsApp, then records the change here. */
-    async act(sessionId:string,threadId:string,messageId:string,action:"react"|"edit"|"revoke",value:{emoji?:string;text?:string}){
-      const target=await call<{accountId:string;state:string;chat:string;id:string;sender:string;fromMe:boolean;deleted:boolean}>(sessionId,"target",{threadId,messageId});
+    async act(sessionId:string,threadId:string,messageId:string,action:"react"|"edit"|"revoke",value:{emoji?:string;text?:string;remove?:boolean}){
+      const target=await call<{accountId:string;platform:ChatPlatform;state:string;chat:string;id:string;sender:string;fromMe:boolean;deleted:boolean}>(sessionId,"target",{threadId,messageId});
       if(target.deleted)throw new AppError("conflict",409,"This message was deleted.");
       if(action!=="react"&&!target.fromMe)throw new AppError("forbidden",403,"Only your own messages can be changed.");
+      if(target.platform==="discord"&&action==="react"&&!value.emoji)throw new AppError("invalidInput",400,"Choose a reaction.");
+      if(target.platform==="discord"&&action==="edit"&&[...value.text??""].length>4000)throw new AppError("invalidInput",400,"Discord messages can be up to 4,000 characters.");
       await bridge.call(action,{account:target.accountId,chat:target.chat,id:target.id,sender:target.sender,...value},45_000);
+      if(action==="react"&&target.platform==="discord")return await call(sessionId,"applyDiscordReaction",{threadId,messageId,emoji:value.emoji??"",remove:value.remove===true});
       if(action==="react")return await call(sessionId,"applyReaction",{threadId,messageId,emoji:value.emoji??""});
       if(action==="edit")return await call(sessionId,"applyEdit",{threadId,messageId,text:value.text??""});
       return await call(sessionId,"applyRevoke",{threadId,messageId});
     },
     /** Mutes, pins or archives a chat on WhatsApp too, so the phone follows. */
     async chatSetting(sessionId:string,threadId:string,change:{pinned?:boolean;archived?:boolean;mutedUntil?:number}){
-      const target=await call<{accountId:string;chat:string;lastAt:number;lastId:string;lastSender:string;lastFromMe:boolean}>(sessionId,"chatTarget",{threadId});
+      const target=await call<{accountId:string;platform:ChatPlatform;serverId:string;chat:string;lastAt:number;lastId:string;lastSender:string;lastFromMe:boolean}>(sessionId,"chatTarget",{threadId});
+      if(target.platform==="discord"){
+        if(change.mutedUntil===undefined)throw new AppError("invalidInput",400,"Discord chats can be muted, not pinned or archived.");
+        await bridge.call("chatSetting",{account:target.accountId,chat:target.chat,serverId:target.serverId,mutedUntil:change.mutedUntil},45_000);
+        return await call(sessionId,"applyChatSetting",{threadId,mutedUntil:change.mutedUntil});
+      }
       await bridge.call("chatSetting",{account:target.accountId,chat:target.chat,...change,lastAt:target.lastAt,lastId:target.lastId,lastSender:target.lastSender,lastFromMe:target.lastFromMe},45_000);
       return await call(sessionId,"applyChatSetting",{threadId,...change});
     },
     /** Chat info; groups add their members from WhatsApp when it is reachable. */
     async info(sessionId:string,threadId:string){
-      const info=await call<Record<string,unknown>&{thread:{kind:string;jid:string};account:{id:string}}>(sessionId,"chatInfo",{threadId});
+      const info=await call<Record<string,unknown>&{thread:{kind:string;jid:string};account:{id:string;platform:ChatPlatform}}>(sessionId,"chatInfo",{threadId});
       let group=null,groupError="";
-      if(info.thread.kind==="group"){
+      if(info.thread.kind==="group"&&info.account.platform==="whatsapp"){
         try{
           const value=await bridge.call<{name:string;topic:string;created:number;members:{jid:string;name:string;admin?:boolean}[]}>("groupInfo",{account:info.account.id,chat:info.thread.jid},20_000);
           // Members who are Dar contacts go by their contact name.
@@ -240,11 +266,39 @@ export async function createChatRuntime(db:Database,root:string,{executable,enab
     },
     /** Asks the phone for messages before the oldest one here; they arrive like history. */
     async requestHistory(sessionId:string,threadId:string){
-      const oldest=await call<{accountId:string;chat:string;message:{id:string;fromMe:boolean;at:number}|null}>(sessionId,"oldest",{threadId});
+      const oldest=await call<{accountId:string;platform:ChatPlatform;chat:string;message:{id:string;fromMe:boolean;at:number}|null}>(sessionId,"oldest",{threadId});
+      if(oldest.platform==="discord"){
+        // Discord answers right away; the messages are stored before this returns.
+        const result=await bridge.call<{count:number;more?:boolean}>("requestHistory",{account:oldest.accountId,chat:oldest.chat,...oldest.message?{before:oldest.message.id}:{}},60_000);
+        return {ok:true,count:result.count,more:result.more===true};
+      }
       if(!oldest.message)throw new AppError("conflict",409,"There is no message to start from yet.");
       await bridge.call("requestHistory",{account:oldest.accountId,chat:oldest.chat,...oldest.message},30_000);
       return {ok:true};
     },
+    /** Discord: fetches what was said in a chat since the newest message Dar has (or the latest page). */
+    async catchUp(sessionId:string,threadId:string){
+      const newest=await call<{accountId:string;platform:ChatPlatform;state:string;chat:string;message:{id:string}|null}>(sessionId,"newest",{threadId});
+      if(newest.platform!=="discord"||newest.state!=="connected")return {count:0};
+      return await bridge.call<{count:number}>("requestHistory",{account:newest.accountId,chat:newest.chat,...newest.message?{after:newest.message.id}:{}},90_000);
+    },
+    /** Discord: servers with their channels. */
+    servers:(sessionId:string,accountId:string)=>call(sessionId,"servers",{accountId}),
+    /** Discord: friends to start a direct message with. */
+    async friends(sessionId:string,accountId:string){
+      if(await platformOf(sessionId,accountId)!=="discord")throw new AppError("invalidInput");
+      await call(sessionId,"account",{accountId});
+      return await bridge.call<{friends:{id:string;name:string;username:string}[]}>("friends",{account:accountId},20_000);
+    },
+    /** Opens a chat: by phone number on WhatsApp, with a friend on Discord. */
+    async openChat(sessionId:string,accountId:string,{phone,user}:{phone?:string;user?:string}){
+      if(await platformOf(sessionId,accountId)!=="discord")return await call(sessionId,"openDirect",{accountId,phone:phone??""});
+      await call(sessionId,"account",{accountId});
+      if(phone!==undefined||!/^\d{1,25}$/.test(user??""))throw new AppError("invalidInput",400,"Choose a friend to message.");
+      const opened=await bridge.call<{chat:string}>("openDirect",{account:accountId,user:user??""},30_000);
+      return await call(sessionId,"find",{accountId,chat:opened.chat});
+    },
+    platformName:(platform:ChatPlatform)=>chatPlatformNames[platform],
     serveMedia:(req:IncomingMessage,res:ServerResponse,sessionId:string,threadId:string,messageId:string,attachment:boolean)=>media.serve(req,res,sessionId,threadId,messageId,attachment),
     saveMedia:(sessionId:string,threadId:string,messageId:string,folderId:string)=>media.save(sessionId,threadId,messageId,folderId),
     async close(){closing=true;media.close();clearInterval(purgeTimer);for(const timer of retries.values())clearTimeout(timer);await bridge.close();},

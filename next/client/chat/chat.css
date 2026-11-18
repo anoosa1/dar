@@ -235,3 +235,63 @@ body.has-editing-pane .chat-shell .chat-info-sheet{display:none}
 .chat-pick:hover{background:var(--hover)}.chat-pick:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}.chat-pick:disabled{opacity:.6;cursor:default}
 .chat-pick>span:last-child{display:flex;flex-direction:column;min-width:0}.chat-pick b{font-weight:550}.chat-pick small{font-size:12px;color:var(--muted)}
 .chat-message.is-found .chat-bubble{box-shadow:0 0 0 2px var(--accent)}
+
+/* Discord (selected mock B, docs/spacetimedb/discord-mocks.html): servers and channels in the
+   sidebar; a channel takes the list sheet's place; messages are flat rows. */
+.chat-platform.is-discord{background:var(--accent);color:var(--on-accent)}
+.app-shell.chat-shell.is-channel .pim-workspace{grid-template-columns:252px minmax(0,1fr)}
+.app-shell.chat-shell.is-channel.has-chat-info .pim-workspace{grid-template-columns:252px minmax(0,1fr) 300px}
+.app-shell.chat-shell.is-channel .chat-main{display:none}
+.chat-sidebar .chat-servers{flex:1 1 auto;min-height:96px;overflow-y:auto;margin:4px -4px 0;padding:0 4px}
+.chat-tree-heading{margin:10px 12px 4px;font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.chat-tree-hint{margin:10px 12px}
+.chat-server-row{font-weight:600}
+.chat-server-row.is-unread .chat-row-title{color:var(--text)}
+.chat-server-mark{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:7px;font-size:10px;font-weight:700}
+.chat-server-chevron{flex:none;width:14px;height:14px;margin-left:auto;color:var(--muted);transition:transform .15s}
+.chat-mentions+.chat-server-chevron{margin-left:6px}
+.chat-server-chevron.is-open{transform:rotate(90deg)}
+.chat-channels{list-style:none;margin:0 0 6px;padding:0}
+.chat-section{padding:8px 12px 2px 32px;font-size:10.5px;font-weight:650;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.chat-sidebar .nav-item.chat-channel{padding-left:28px;color:var(--muted)}
+.chat-sidebar .nav-item.chat-channel.active{color:inherit}
+.chat-channel.is-unread{color:var(--text)!important;font-weight:650}
+.chat-channel.is-muted{opacity:.6}
+.chat-channel .icon{flex:none;width:16px;height:16px}
+.chat-channel-muted{margin-left:auto}
+.chat-mentions{display:inline-grid;place-items:center;flex:none;min-width:18px;height:18px;margin-left:auto;padding:0 6px;border-radius:9px;background:var(--danger);color:var(--panel);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.chat-mentions+.chat-channel-muted{margin-left:6px}
+.chat-channel-mark{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:12px;background:var(--hover);color:var(--muted)}
+.chat-channel-mark .icon{width:18px;height:18px}
+.chat-channel-mark.is-large{width:80px;height:80px;border-radius:24px}.chat-channel-mark.is-large .icon{width:34px;height:34px}
+.chat-link .chat-banner{margin:0}
+/* Flat rows: an avatar and name start each run of messages from one person. */
+.chat-conversation.is-flat .chat-messages{gap:0;padding-left:12px;padding-right:12px}
+.chat-conversation.is-flat .chat-message,.chat-conversation.is-flat .chat-message.is-out{position:relative;align-self:stretch;align-items:stretch;max-width:none;padding:2px 8px 2px 60px;border-radius:8px}
+.chat-conversation.is-flat .chat-message.is-tail{margin-bottom:0}
+.chat-conversation.is-flat .chat-message.is-first{margin-top:12px}
+.chat-conversation.is-flat .chat-message:is(:hover,:focus-within){background:var(--hover)}
+.chat-message-avatar{position:absolute;left:12px;top:6px}
+.chat-conversation.is-flat .chat-line,.chat-conversation.is-flat .chat-message.is-out .chat-line{flex-direction:row;align-items:flex-start}
+.chat-conversation.is-flat .chat-bubble,.chat-conversation.is-flat .chat-message.is-out .chat-bubble{flex:1;min-width:0;padding:0;border-radius:0;background:none;color:var(--text);box-shadow:none}
+.chat-conversation.is-flat .chat-bubble.has-photo :is(.chat-text,.chat-sender,.chat-quote){margin-left:0;margin-right:0}
+.chat-conversation.is-flat .chat-sender{font-size:14px;margin-bottom:2px}
+.chat-sender-time{margin-left:8px;font-size:11px;font-weight:400;color:var(--muted)}
+.chat-conversation.is-flat .chat-meta{float:none;top:0;margin-left:8px;opacity:0}
+.chat-conversation.is-flat .chat-message:is(:hover,:focus-within,.is-failed) .chat-meta{opacity:1}
+.chat-conversation.is-flat .chat-message.is-first .chat-meta>time{display:none}
+.chat-edited{margin-left:6px;font-size:11px;color:var(--muted)}
+.chat-conversation.is-flat .chat-message.is-out .chat-quote,.chat-conversation.is-flat .chat-message.is-out .chat-file{background:color-mix(in srgb,var(--text) 6%,transparent)}
+.chat-conversation.is-flat .chat-message.is-out .chat-quote span{color:var(--muted)}
+.chat-conversation.is-flat .chat-reactions{margin:4px 0 2px}
+.chat-conversation.is-flat .chat-message.is-found{box-shadow:0 0 0 2px var(--accent)}
+.chat-conversation.is-flat .chat-message.is-found .chat-bubble{box-shadow:none}
+@media(max-width:1100px) and (min-width:801px){
+  .app-shell.chat-shell.is-channel .pim-workspace{grid-template-columns:216px minmax(0,1fr)}
+}
+@media(max-width:800px){
+  .chat-conversation.is-flat .chat-messages{padding:8px 4px 4px}
+  .chat-conversation.is-flat .chat-message,.chat-conversation.is-flat .chat-message.is-out{padding-left:52px}
+  .chat-message-avatar{left:8px}
+}
+@media(prefers-reduced-motion:reduce){.chat-server-chevron{transition:none}}

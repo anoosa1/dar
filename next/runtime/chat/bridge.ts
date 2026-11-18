@@ -26,7 +26,7 @@ export function startBridge(executable:string|undefined,{request,event,onReady,e
     if(!child||(!ready&&method!=="hello"))return Promise.reject(new AppError("bridgeUnavailable",503,status.detail||"The chat bridge is not running."));
     const id=`n${++next}`;
     return new Promise<T>((resolve,reject)=>{
-      const timer=setTimeout(()=>{pending.delete(id);reject(new AppError("bridgeTimeout",504,"WhatsApp did not answer in time."));},timeout);
+      const timer=setTimeout(()=>{pending.delete(id);reject(new AppError("bridgeTimeout",504,"The chat service did not answer in time."));},timeout);
       pending.set(id,{resolve:resolve as (value:unknown)=>void,reject,timer});
       write({id,method,params});
     });
@@ -53,7 +53,7 @@ export function startBridge(executable:string|undefined,{request,event,onReady,e
       const item=typeof frame.id==="string"?pending.get(frame.id):undefined;if(!item)return;
       pending.delete(frame.id as string);clearTimeout(item.timer);
       const error=frame.error as {code?:string;message?:string}|undefined;
-      if(error)item.reject(new AppError(error.code??"bridgeError",error.code==="invalidInput"?400:error.code==="notConnected"?409:502,error.message??"The chat bridge reported an error."));
+      if(error)item.reject(new AppError(error.code??"bridgeError",error.code==="invalidInput"?400:error.code==="notConnected"||error.code==="unsupported"?409:error.code==="forbidden"?403:error.code==="notFound"?404:error.code==="rateLimited"?429:502,error.message??"The chat bridge reported an error."));
       else item.resolve(frame.result);
     });
     // whatsmeow logs at warn and above; keep them, bounded per line.

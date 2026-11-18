@@ -65,13 +65,13 @@ try {
   run(["--test", "test/auth.integration.test.ts"]);
   if(storageOnly){run(["--test","--test-concurrency=1","test/blobs.test.ts","test/storage.test.ts","test/files.integration.test.ts","test/dav.integration.test.ts","test/backup.integration.test.ts","test/gc.integration.test.ts","test/blob-migration.integration.test.ts","test/history.integration.test.ts","test/git.integration.test.ts","test/pim-upgrade.integration.test.ts"],600_000);console.info(`PASS Storage acceptance. Isolated artifacts: ${root}`);}
   else if(gitOnly){run(["--test","--test-concurrency=1","test/git.integration.test.ts","test/git-app.integration.test.ts","test/git-interop.integration.test.ts","test/git-tracker.integration.test.ts","test/storage.test.ts","test/upload-pace.test.ts","test/upload-timeout.integration.test.ts"],600_000);if(existsSync(path.join(project,"test/git-browser.mjs")))run(["test/git-browser.mjs"],300_000);run(["test/git-tracker-browser.mjs"],300_000);console.info(`PASS Git acceptance. Isolated artifacts: ${root}`);}
-  else if(chatOnly){run(["--test","test/chat.test.ts","test/chat.integration.test.ts"],300_000);run(["test/chat-browser.mjs"],300_000);console.info(`PASS Chat acceptance. Isolated artifacts: ${root}`);}
+  else if(chatOnly){run(["--test","test/chat.test.ts","test/chat.integration.test.ts","test/chat-discord.integration.test.ts"],300_000);run(["test/chat-browser.mjs"],300_000);console.info(`PASS Chat acceptance. Isolated artifacts: ${root}`);}
   else if(booksOnly){run(["--test","test/books.integration.test.ts"],300_000);run(["test/books-browser.mjs"],300_000);console.info(`PASS Books acceptance. Isolated artifacts: ${root}`);}
   else if(historyOnly){run(["--test","--test-concurrency=1","test/history.integration.test.ts","test/git.integration.test.ts"],300_000);if(existsSync(path.join(project,"test/history-browser.mjs")))run(["test/history-browser.mjs"],300_000);console.info(`PASS history acceptance. Isolated artifacts: ${root}`);}
   else{
   if(!photosOnly&&(newsOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly)){
     run(["--test","--test-concurrency=1","test/news.test.ts","test/news.integration.test.ts"],300_000);
-    run(["--test","test/chat.test.ts","test/chat.integration.test.ts"],300_000);run(["test/chat-browser.mjs"],300_000);
+    run(["--test","test/chat.test.ts","test/chat.integration.test.ts","test/chat-discord.integration.test.ts"],300_000);run(["test/chat-browser.mjs"],300_000);
   }
   if(!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly&&!newsOnly&&!photosOnly){run(["--test","test/books.integration.test.ts"],300_000);run(["test/books-browser.mjs"],300_000);run(["test/git-browser.mjs"],300_000);run(["test/git-tracker-browser.mjs"],300_000);}
   if(photosOnly||!agentOnly&&!identityOnly&&!workspaceOnly&&!pimOnly&&!newsOnly)run(["--test","--test-concurrency=1","test/photos.integration.test.ts","test/photos-library.integration.test.ts","test/photos-sharing.integration.test.ts","test/photos-immich.integration.test.ts"],600_000);

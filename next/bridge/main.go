@@ -74,6 +74,26 @@ func (r runtimeBackend) commit(ctx context.Context, account string, puts []entry
 	return r.peer.call(ctx, "kv.commit", map[string]any{"account": account, "puts": puts, "deletes": deletes}, nil)
 }
 
+// route sends a request to the account's platform: the one named by "platform" (when linking
+// or connecting), or the one the account is running on.
+func (b *bridge) route(whatsapp, discord handler) handler {
+	return func(ctx context.Context, raw json.RawMessage) (any, error) {
+		var p struct {
+			Account  string `json:"account"`
+			Platform string `json:"platform"`
+		}
+		_ = json.Unmarshal(raw, &p)
+		h := whatsapp
+		if p.Platform == "discord" || p.Platform == "" && b.discordAccount(p.Account) != nil {
+			h = discord
+		}
+		if h == nil {
+			return nil, fail("unsupported", "This is not available for this account.")
+		}
+		return h(ctx, raw)
+	}
+}
+
 func main() {
 	level, ok := levels[strings.ToLower(os.Getenv("DAR_CHAT_BRIDGE_LOG"))]
 	if !ok {
@@ -85,21 +105,23 @@ func main() {
 	p := newPeer(ctx, os.Stdout)
 	b := newBridge(p, runtimeBackend{p}, log)
 	p.handle("hello", func(context.Context, json.RawMessage) (any, error) {
-		return map[string]any{"protocol": protocolVersion, "platforms": []string{"whatsapp"}}, nil
+		return map[string]any{"protocol": protocolVersion, "platforms": []string{"whatsapp", "discord"}}, nil
 	})
-	p.handle("link", b.link)
-	p.handle("connect", b.connect)
+	p.handle("link", b.route(b.link, b.dcLink))
+	p.handle("connect", b.route(b.connect, b.dcConnect))
 	p.handle("disconnect", b.disconnect)
-	p.handle("logout", b.logout)
-	p.handle("send", b.send)
-	p.handle("markRead", b.markRead)
-	p.handle("download", b.download)
-	p.handle("react", b.react)
-	p.handle("edit", b.edit)
-	p.handle("revoke", b.revoke)
-	p.handle("chatSetting", b.chatSetting)
-	p.handle("groupInfo", b.groupInfo)
-	p.handle("requestHistory", b.requestHistory)
+	p.handle("logout", b.route(b.logout, b.dcLogout))
+	p.handle("send", b.route(b.send, b.dcSend))
+	p.handle("markRead", b.route(b.markRead, b.dcMarkRead))
+	p.handle("download", b.route(b.download, b.dcDownload))
+	p.handle("react", b.route(b.react, b.dcReact))
+	p.handle("edit", b.route(b.edit, b.dcEdit))
+	p.handle("revoke", b.route(b.revoke, b.dcRevoke))
+	p.handle("chatSetting", b.route(b.chatSetting, b.dcMute))
+	p.handle("groupInfo", b.route(b.groupInfo, nil))
+	p.handle("requestHistory", b.route(b.requestHistory, b.dcHistory))
+	p.handle("friends", b.route(nil, b.dcFriends))
+	p.handle("openDirect", b.route(nil, b.dcOpenDM))
 	done := make(chan error, 1)
 	go func() { done <- p.serve(os.Stdin) }()
 	select {

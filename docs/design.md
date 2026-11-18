@@ -275,7 +275,13 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   composer docked below. Chat info opens as a right sheet; Link WhatsApp uses the right
   editing pane (QR code on desktop, pairing code on phones). Phones put the account tabs
   above the view chips. Dar contacts name chats by phone number (never written to
-  WhatsApp); chat info offers Open or Add to Contacts. See [Chat](chat.md).
+  WhatsApp); chat info offers Open or Add to Contacts. Discord follows
+  [mock B](spacetimedb/discord-mocks.html) (November 18): Direct messages then servers in
+  the sidebar, each opening to channels by category (mentions as counts, muted dimmed); a
+  channel replaces the list sheet; messages are flat rows (avatar and name start a run);
+  Link Discord shows the terms notice with the QR code. Voice will run in a dock at the
+  bottom of the sidebar, with A's call view when the voice channel is opened. See
+  [Chat](chat.md).
 - **Agent:** the settings sheet and editing panes sit beside the Agent's sheets
   (which make room), as in other apps; choosing and adding a project both use the
   right pane. Threads on the left, conversation and docked composer in the center,

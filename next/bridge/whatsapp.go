@@ -27,6 +27,9 @@ type bridge struct {
 
 	mu       sync.Mutex
 	accounts map[string]*account
+	// Discord accounts, by the same account IDs; an account is on one platform only.
+	discord     map[string]*dcAccount
+	discordURLs discordURLs
 }
 
 type account struct {
@@ -51,7 +54,7 @@ func init() {
 }
 
 func newBridge(p *peer, b backend, log waLog.Logger) *bridge {
-	return &bridge{peer: p, backend: b, log: log, accounts: map[string]*account{}}
+	return &bridge{peer: p, backend: b, log: log, accounts: map[string]*account{}, discord: map[string]*dcAccount{}, discordURLs: defaultDiscordURLs}
 }
 
 type accountParams struct {
@@ -83,7 +86,12 @@ func (b *bridge) stop(id string) {
 	b.mu.Lock()
 	a := b.accounts[id]
 	delete(b.accounts, id)
+	d := b.discord[id]
+	delete(b.discord, id)
 	b.mu.Unlock()
+	if d != nil {
+		d.stop()
+	}
 	if a != nil {
 		a.stopped.Store(true)
 		if a.cancel != nil {

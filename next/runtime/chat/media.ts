@@ -9,13 +9,13 @@ import {blobPath,type blobStore} from "../files/blobs.ts";
 import type {Bridge} from "./bridge.ts";
 import {localName} from "../../shared/chat.ts";
 
-interface MediaRow {id:string;accountId:string;chat:string;messageId:string;kind:string;mime:string;size:number;fileName:string;blobId:string;state:string;at:number;chatName:string}
+interface MediaRow {id:string;accountId:string;chat:string;messageId:string;kind:string;mime:string;size:number;fileName:string;blobId:string;state:string;at:number;chatName:string;platform:string}
 type Blobs=ReturnType<typeof blobStore>;
 type Call=<T>(sessionId:string,operation:string,value:object)=>Promise<T>;
 type Worker=<T>(operation:string,value:object)=>Promise<T>;
 const messages:Record<string,[number,string]>={
   retrying:[409,"WhatsApp no longer has this file. Your phone was asked to send it again; try again in a moment."],
-  expired:[410,"WhatsApp no longer has this file, and your phone could not send it again."],
+  expired:[410,"This file is no longer available from the service, and could not be fetched again."],
   failed:[502,"The attachment could not be downloaded. Try again."],
 };
 
@@ -62,7 +62,7 @@ export async function createChatMedia({db,root,blobs,bridge,worker,call}:{db:Dat
     if(row.state==="stored")return row;
     if(!wait)throw new AppError(row.state,...(messages[row.state]??messages.failed));
     try{await fetch(row.id);}
-    catch(error){if(error instanceof AppError&&messages[error.code])throw new AppError(error.code,...messages[error.code]);if(error instanceof AppError&&error.code==="notConnected")throw new AppError("notConnected",409,"WhatsApp is not connected, so the attachment cannot be downloaded now.");throw new AppError("failed",...messages.failed);}
+    catch(error){if(error instanceof AppError&&messages[error.code])throw new AppError(error.code,...messages[error.code]);if(error instanceof AppError&&error.code==="notConnected")throw new AppError("notConnected",409,`${row.platform==="discord"?"Discord":"WhatsApp"} is not connected, so the attachment cannot be downloaded now.`);throw new AppError("failed",...messages.failed);}
     row=await call<MediaRow>(sessionId,"media",{threadId,messageId});
     if(row.state!=="stored")throw new AppError("failed",...messages.failed);
     return row;

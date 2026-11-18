@@ -1,9 +1,10 @@
 # Chat
 
 Optional built-in app at `/chat`: a client for other platforms, not a network of its
-own. WhatsApp first, Discord later. Layout follows the selected
-[mock A with account tabs](spacetimedb/chat-mocks.html) (November 17, 2026); see Chat in
-the [design guide](design.md). Administrators can disable it in Administration → Apps;
+own: WhatsApp and Discord. Layout follows the selected
+[mock A with account tabs](spacetimedb/chat-mocks.html) (November 17, 2026) and, for
+Discord, [mock B, the voice dock](spacetimedb/discord-mocks.html) (November 18); see Chat
+in the [design guide](design.md). Administrators can disable it in Administration → Apps;
 data is kept and every account disconnects.
 
 ## Decisions (maintainer, November 17)
@@ -14,6 +15,17 @@ data is kept and every account disconnects.
   SpacetimeDB through a custom whatsmeow store.
 - On linking, import as much history as WhatsApp provides.
 - Accounts never mix: each linked account is a tab with its own chats, views and counts.
+
+## Decisions (maintainer, November 18): Discord
+
+- Discord through the person's **own account**, not a bot: Dar is a user client in the Go
+  bridge (QR sign-in, gateway, REST). Discord's terms forbid this and can lead to the
+  account being limited or closed; the maintainer accepted that, and Link Discord says so.
+- Voice is wanted, and Discord requires its DAVE end-to-end encryption for calls (since
+  March 2026): the bridge will use dave-go (pure Go, Apache-2.0)
+  for it, with the browser's microphone and playback.
+- Layout: mock B (a voice dock in the sidebar while text channels stay usable), with A's
+  full call view when the voice channel itself is opened.
 
 ## What works
 
@@ -56,6 +68,27 @@ data is kept and every account disconnects.
   failures (another copy using the keys, a temporary ban, an outdated bridge).
 - **Live:** the browser subscribes to `my_chat_changes` and reloads what changed.
 
+## Discord (text)
+
+- **Sign-in:** Link an account → Discord shows the terms notice and Discord's QR code
+  (remote auth v2: an RSA key made for the sign-in; the phone approves; the token arrives
+  encrypted to that key). Dar never sees the password. The token lives in the encrypted
+  key store; Sign out ends the session on Discord and deletes it.
+- **Servers:** the sidebar lists Direct messages, then servers (in Discord's order) that
+  open to their channels by category, text before voice. Only channels the account can
+  view (roles and overwrites computed in the bridge) are kept; channels and servers it
+  loses go with their messages. Unread channels are bold; mentions show as counts; muted
+  ones are dimmed. A channel takes the list sheet's place.
+- **Messages:** flat rows with replies, attachments (the first in the message; others are
+  named), stickers, mentions shown as names, reactions as counts (several per person,
+  each toggled), edits without a time limit and deletions. Sent messages are stored first
+  under a nonce that Discord recognises when the message is sent again; the copy moves to
+  Discord's ID whichever of the answer and the gateway arrives first. Opening a channel
+  fetches what was said while Dar was away; "Load earlier messages from Discord" fetches
+  50 more at a time. Reading in Dar sends a read mark; reading elsewhere clears it here.
+- **Other:** New message opens a DM with a friend. Mute syncs to Discord (per channel or
+  DM); pin and archive are WhatsApp's. Attachment links Discord has expired are refreshed.
+
 ## How it is built
 
 - **Bridge:** `next/bridge` is one Go binary (`dar-chat-bridge`, built by
@@ -85,6 +118,9 @@ data is kept and every account disconnects.
 - Attachments do not count toward Files quotas (a copy saved to Files does).
   View-once media is not downloaded. Passkey-protected WhatsApp accounts cannot link yet.
 - A chat known first by its LID and later by its phone number may appear twice.
+- Discord: messages up to 4,000 characters; no threads, forums, stage channels, member
+  lists, typing or presence yet; voice is the next phase. Behaviour against Discord itself
+  is verified by hand (tests use local fakes).
 
 ## Phases
 
@@ -96,9 +132,10 @@ data is kept and every account disconnects.
 4. Done: Dar contacts name chats (read-only towards WhatsApp); chat names and message text
    in the shared search (newest first, up to three messages per chat, 40,000 messages per
    search), and a result opens the chat at its message.
-5. Discord, after deciding between a bot (only servers that add it, no personal
-   DMs) and automating a personal account, which Discord's terms forbid.
+5. Done: Discord text through the person's own account (above).
+6. Next: Discord voice (dock, call view, DAVE, browser audio over a socket).
 
-Verify with `nix develop -c node next/scripts/verify.mjs --chat` (Go tests, a fake
-bridge for the integration and browser tests; never a real WhatsApp account). Link a
-real phone by hand to check pairing.
+Verify with `nix develop -c node next/scripts/verify.mjs --chat` (Go tests with local fake
+Discord servers, a fake bridge for the integration and browser tests; never a real
+WhatsApp or Discord account). Link a real phone or Discord account by hand to check
+pairing and sign-in.

@@ -72,8 +72,9 @@ import/export and Nextcloud News API sync for mobile clients at `/dav/news`. See
 
 ## Chat
 
-Optional built-in client at `/chat` for WhatsApp (Discord later): link an account as a
-WhatsApp linked device with a QR or pairing code, then read and send messages; each
+Optional built-in client at `/chat` for WhatsApp and Discord: link WhatsApp as a linked
+device with a QR or pairing code, or sign in to your own Discord account with its QR code
+(against Discord's terms; Link Discord says so), then read and send messages; each
 account keeps its own chats. The Dar package includes the Go bridge
 (`dar-chat-bridge`). See [Chat](chat.md).
 

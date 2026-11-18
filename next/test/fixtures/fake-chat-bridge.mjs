@@ -27,6 +27,34 @@ const png=makePng(4,3);
 const files={H3:png,V1:Buffer.from("OggS fake voice note"),D1:Buffer.from("%PDF-1.4 fake menu"),X1:Buffer.from("<script>alert(1)</script>"),EXP1:png};
 const jid="15550001111@s.whatsapp.net";
 
+// Discord: the same protocol with snowflake IDs, a server with channels and a direct message.
+const discord=new Set(),me="100",dcAt=Date.UTC(2026,10,17,9,0);
+const dcFiles={"1300000000000000013":png};
+async function discordPair(account){
+  linking.delete(account);
+  await call("kv.commit",{account,puts:[{key:"discord/token",value:b64("fake-discord-token")},{key:"discord/user",value:b64(JSON.stringify({id:me,username:"anas"}))}],deletes:[]});
+  emit(account,"paired",{jid:me,name:"Anas"});
+  connected.add(account);
+  await discordReady(account);
+  emit(account,"connected",{name:"Anas"});
+}
+async function discordReady(account){
+  await call("ingest",{account,kind:"servers",complete:true,servers:[{id:"900",name:"Homelab Club",order:"00000",mutedUntil:0},{id:"950",name:"Kernel newbies",order:"00001",mutedUntil:-1}]});
+  await call("ingest",{account,kind:"channels",serverId:"900",complete:true,chats:[
+    {id:"911",kind:"channel",name:"general",serverId:"900",section:"Text channels",order:"000001/0/000001/911",topic:"Say hello",unread:1,mentions:1,mutedUntil:0,at:dcAt+60_000},
+    {id:"912",kind:"channel",name:"nixos",serverId:"900",section:"Text channels",order:"000001/0/000002/912",topic:"",unread:0,mentions:0,mutedUntil:0,at:dcAt},
+    {id:"913",kind:"channel",name:"off-topic",serverId:"900",section:"Text channels",order:"000001/0/000003/913",topic:"",unread:1,mentions:0,mutedUntil:-1,at:dcAt},
+    {id:"921",kind:"voice",name:"Lounge",serverId:"900",section:"Voice channels",order:"000002/1/000000/921",topic:"",unread:0,mentions:0,mutedUntil:0,at:0}]});
+  await call("ingest",{account,kind:"channels",serverId:"950",complete:true,chats:[{id:"951",kind:"channel",name:"welcome",serverId:"950",section:"",order:"000000/0/000000/951",unread:0,mentions:0,mutedUntil:0,at:dcAt}]});
+  await call("ingest",{account,kind:"chats",chats:[{id:"700",kind:"direct",name:"Lina K",unread:1,mentions:1,mutedUntil:0,at:dcAt+120_000}]});
+  await call("ingest",{account,kind:"history",messages:[
+    {id:"1300000000000000011",chat:"911",sender:"200",senderName:"lina.k",fromMe:false,at:dcAt,kind:"text",text:"Anyone moved to the new caddy module?"},
+    {id:"1300000000000000012",chat:"911",sender:"300",senderName:"tarek",fromMe:false,at:dcAt+30_000,kind:"text",text:"Yes, painless",reactions:[{emoji:"👍",count:3,me:true},{emoji:"party:55",count:1,me:false}]},
+    {id:"1300000000000000013",chat:"911",sender:"300",senderName:"tarek",fromMe:false,at:dcAt+60_000,kind:"image",text:"",fileName:"rack.png",media:{mime:"image/png",size:png.length,width:4,height:3}},
+    {id:"1300000000000000021",chat:"700",sender:"200",senderName:"Lina K",fromMe:false,at:dcAt+120_000,kind:"text",text:"Hopping into Lounge later?"}]});
+}
+const dcError=(message,code)=>Object.assign(new Error(message),{code});
+
 async function pair(account){
   linking.delete(account);
   // Device keys go through the runtime: a cached key and a lazy key that expires.
@@ -53,14 +81,23 @@ async function pair(account){
 }
 
 const handlers={
-  hello:()=>({protocol:1,platforms:["whatsapp"]}),
-  async link({account,phone}){
+  hello:()=>({protocol:1,platforms:["whatsapp","discord"]}),
+  async link({account,phone,platform}){
     linking.add(account);
+    if(platform==="discord"){discord.add(account);setTimeout(()=>emit(account,"linkCode",{code:"https://discord.com/ra/fakeFingerprint"+account.slice(0,4),expiresIn:110}),50);return {};}
+    discord.delete(account);
     setTimeout(()=>{emit(account,"linkCode",{code:"2@fakeQrCode,"+account.slice(0,8)+",abc=",expiresIn:20});if(phone)emit(account,"pairingCode",{code:"K7QM2X9D"});},50);
     return {};
   },
-  async connect({account}){
+  async connect({account,platform}){
     const page=await call("kv.load",{account,cursor:""});
+    if(platform==="discord"){
+      discord.add(account);const token=page.entries.find(e=>e.key==="discord/token");
+      if(!token)throw Object.assign(new Error("This account is not linked."),{code:"notLinked"});
+      log({method:"connect",account,platform,token:Buffer.from(token.value,"base64").toString()});
+      connected.add(account);setTimeout(()=>{void discordReady(account).then(()=>emit(account,"connected",{}));},20);
+      return {jid:me};
+    }
     const device=page.entries.find(e=>e.key==="device");
     if(!device)throw Object.assign(new Error("This account is not linked."),{code:"notLinked"});
     log({method:"connect",account,device:Buffer.from(device.value,"base64").toString(),keys:page.entries.map(e=>e.key).sort()});
@@ -71,8 +108,17 @@ const handlers={
   },
   disconnect({account}){linking.delete(account);connected.delete(account);return {};},
   logout({account}){if(!connected.has(account))throw Object.assign(new Error("WhatsApp is not connected."),{code:"notConnected"});connected.delete(account);log({method:"logout",account});return {};},
-  send(params){
+  async send(params){
     log({method:"send",...params});
+    if(discord.has(params.account)){
+      if(!connected.has(params.account))throw dcError("Discord is not connected.","notConnected");
+      if(params.text.includes("fail"))throw dcError("Discord did not accept this.","invalidInput");
+      // Discord gives the message its own ID; with "echo" the gateway's copy arrives before the answer.
+      const id=String(BigInt(params.id)+7n);
+      if(params.text.includes("echo"))await call("ingest",{account:params.account,kind:"messages",messages:[{id,chat:params.chat,sender:me,senderName:"Anas",fromMe:true,at:Date.now(),kind:"text",text:params.text,nonce:params.id,
+        ...params.quotedId?{quotedId:params.quotedId}:{}}]});
+      return {id,at:Date.now()};
+    }
     if(!connected.has(params.account))throw Object.assign(new Error("WhatsApp is not connected."),{code:"notConnected"});
     if(params.text.includes("fail"))throw Object.assign(new Error("WhatsApp did not accept the message."),{code:"sendFailed"});
     return {id:params.id,at:Date.now()};
@@ -83,15 +129,33 @@ const handlers={
   revoke(params){log({method:"revoke",...params});return {id:"X"+Date.now(),at:Date.now()};},
   chatSetting(params){log({method:"chatSetting",...params});return {};},
   groupInfo({chat}){return {name:"Family",topic:"Eid plans",created:Date.UTC(2020,0,1),members:[{jid:jid,name:"Me",admin:true},{jid:"15550004444@s.whatsapp.net",name:"Mama",admin:true},{jid:"15550005555@s.whatsapp.net",name:"Baba"}]};},
-  requestHistory(params){
+  async requestHistory(params){
     log({method:"requestHistory",...params});
+    if(discord.has(params.account)){
+      if(params.before){
+        await call("ingest",{account:params.account,kind:"history",messages:[{id:"1299999999999999990",chat:params.chat,sender:"200",senderName:"lina.k",fromMe:false,at:dcAt-86_400_000,kind:"text",text:"Welcome to the channel"}]});
+        return {count:1,more:false};
+      }
+      if(params.after)return {count:0};
+      return {count:0};
+    }
     // The phone answers with up to 50 earlier messages, as on-demand history.
     setTimeout(()=>{void call("ingest",{account:params.account,kind:"history",syncType:"ON_DEMAND",final:true,progress:100,chats:[],
       messages:[{id:"H0",chat:params.chat,sender:params.chat,fromMe:false,at:params.at-86_400_000,kind:"text",text:"Hello from last week"}]});},50);
     return {};
   },
+  friends({account}){if(!discord.has(account))throw dcError("This is not available for this account.","unsupported");return {friends:[{id:"200",name:"Lina K",username:"lina"},{id:"300",name:"tarek",username:"tarek"}]};},
+  async openDirect({account,user}){
+    log({method:"openDirect",account,user});
+    await call("ingest",{account,kind:"chats",chats:[{id:"7300",kind:"direct",name:"tarek"}]});
+    return {chat:"7300"};
+  },
   download({account,chat,id,path:file}){
     log({method:"download",account,chat,id});
+    if(discord.has(account)){
+      if(!dcFiles[id])throw dcError("This attachment cannot be downloaded.","noMedia");
+      writeFileSync(file,dcFiles[id],{flag:"wx",mode:0o600});return {size:dcFiles[id].length};
+    }
     if(!connected.has(account))throw Object.assign(new Error("WhatsApp is not connected."),{code:"notConnected"});
     if(path.dirname(file)!==process.env.DAR_CHAT_DOWNLOADS||!/^[0-9a-f-]{36}\.part$/.test(path.basename(file)))throw Object.assign(new Error("bad path"),{code:"invalidInput"});
     if(id==="EXP1"&&!resent.has(id))throw Object.assign(new Error("WhatsApp no longer has this file; your phone was asked to send it again."),{code:"retrying"});
@@ -110,11 +174,13 @@ createInterface({input:process.stdin}).on("line",async line=>{
 // Control files: <account>.<action>[.json]; each is handled once.
 setInterval(async()=>{
   for(const name of readdirSync(control)){
-    const match=/^([0-9a-f-]{36})\.(pair|incoming|receipt|loggedout|resend)(\.json)?$/.exec(name);if(!match)continue;
+    const match=/^([0-9a-f-]{36})\.(pair|incoming|receipt|loggedout|resend|scan|ingest)(\.json)?$/.exec(name);if(!match)continue;
     const file=path.join(control,name),done=file+".done";renameSync(file,done);
     const [,account,action]=match,data=match[3]?JSON.parse(readFileSync(done,"utf8")):{};
     try{
-      if(action==="pair"&&linking.has(account))await pair(account);
+      if(action==="scan"&&linking.has(account))emit(account,"linkScanned",{name:"anas"});
+      if(action==="pair"&&linking.has(account))await (discord.has(account)?discordPair(account):pair(account));
+      if(action==="ingest")await call("ingest",{account,...data});
       if(action==="incoming")await call("ingest",{account,kind:"messages",chats:data.chats??[],messages:data.messages});
       if(action==="receipt")await call("ingest",{account,kind:"receipts",...data});
       if(action==="resend"){resent.add(data.id);emit(account,"mediaRetried",{chat:data.chat,id:data.id,ok:true});}

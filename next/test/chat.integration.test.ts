@@ -52,6 +52,8 @@ test("Chat: link, import, send, receive, receipts, encrypted keys, restart, isol
     assert.equal(account.jid,"15550001111@s.whatsapp.net");
     assert.deepEqual(account.counts,{chats:2,unread:2,groups:1,archived:1});
     assert.equal(account.unread,1,"a chat muted forever does not add to the account's unread count");
+    // The fake checks lazy keys right after the import, so wait for its note.
+    await until(bridgeLog,log=>log.some(e=>e.method==="lazyCheck"),"the lazy key check");
     assert.ok((await bridgeLog()).some(e=>e.method==="lazyCheck"&&e.ok===true),"lazy keys round-trip through the runtime");
 
     // Keys are stored encrypted, bound to their account and key.

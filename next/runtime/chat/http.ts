@@ -30,12 +30,15 @@ export async function handleChatHttp(req:IncomingMessage,res:ServerResponse,url:
       const p=url.searchParams;
       return send(await runtime.call(sessionId,"messages",{threadId:p.get("threadId")??"",...p.get("before")?{before:p.get("before")}:{}}));
     }
-    if(path==="/chats"&&method==="POST"){const v=await input(["accountId","phone"]);return send(await runtime.call(sessionId,"openDirect",{accountId:str(v.accountId,64),phone:str(v.phone,40)}),201);}
+    if(path==="/chats"&&method==="POST"){const v=await input(["accountId","phone","user"]);return send(await runtime.openChat(sessionId,str(v.accountId,64)!,{phone:str(v.phone,40,true),user:str(v.user,25,true)}),201);}
+    if(path==="/servers"&&method==="GET")return send(await runtime.servers(sessionId,str(url.searchParams.get("accountId")??"",64)!));
+    if(path==="/friends"&&method==="GET")return send(await runtime.friends(sessionId,str(url.searchParams.get("accountId")??"",64)!));
+    if(path==="/catchUp"&&method==="POST"){const v=await input(["threadId"]);return send(await runtime.catchUp(sessionId,str(v.threadId,300)!));}
     if(path==="/media"&&(method==="GET"||method==="HEAD")){
       const p=url.searchParams;return await runtime.serveMedia(req,res,sessionId,str(p.get("threadId")??"",300)!,str(p.get("messageId")??"",128)!,p.get("download")==="1");
     }
     if(path==="/save"&&method==="POST"){const v=await input(["threadId","messageId","folderId"]);return send(await runtime.saveMedia(sessionId,str(v.threadId,300)!,str(v.messageId,128)!,str(v.folderId??"",100)!),201);}
-    if(path==="/react"&&method==="POST"){const v=await input(["threadId","messageId","emoji"]);return send(await runtime.act(sessionId,str(v.threadId,300)!,str(v.messageId,128)!,"react",{emoji:str(v.emoji??"",32)!}));}
+    if(path==="/react"&&method==="POST"){const v=await input(["threadId","messageId","emoji","remove"]);return send(await runtime.act(sessionId,str(v.threadId,300)!,str(v.messageId,128)!,"react",{emoji:str(v.emoji??"",120)!,...v.remove===true?{remove:true}:{}}));}
     if(path==="/edit"&&method==="POST"){const v=await input(["threadId","messageId","text"]);const text=str(v.text,chatLimits.text)!;if(!text.trim())throw new AppError("invalidInput",400,"Write the new text first.");return send(await runtime.act(sessionId,str(v.threadId,300)!,str(v.messageId,128)!,"edit",{text}));}
     if(path==="/revoke"&&method==="POST"){const v=await input(["threadId","messageId"]);return send(await runtime.act(sessionId,str(v.threadId,300)!,str(v.messageId,128)!,"revoke",{}));}
     if(path==="/deleteForMe"&&method==="POST"){const v=await input(["threadId","messageId"]);return send(await runtime.call(sessionId,"deleteForMe",{threadId:str(v.threadId,300),messageId:str(v.messageId,128)}));}
@@ -57,9 +60,10 @@ export async function handleChatHttp(req:IncomingMessage,res:ServerResponse,url:
     if(path==="/retry"&&method==="POST"){const v=await input(["threadId","messageId"]);return send(await runtime.retry(sessionId,str(v.threadId,300)!,str(v.messageId,128)!));}
     if(path==="/discard"&&method==="POST"){const v=await input(["threadId","messageId"]);return send(await runtime.call(sessionId,"deleteFailed",{threadId:str(v.threadId,300),messageId:str(v.messageId,128)}));}
     if(path==="/accounts/link"&&method==="POST"){
-      const v=await input(["name","phone","accountId"]);
+      const v=await input(["name","phone","accountId","platform"]);
       const phone=str(v.phone,40,true);if(phone!==undefined&&!/^\+?[0-9 ()-]{7,30}$/.test(phone))throw new AppError("invalidInput",400,"Enter the full number with its country code.");
-      return send(await runtime.link(sessionId,{name:str(v.name,chatLimits.name,true),phone,accountId:str(v.accountId,64,true)}),201);
+      if(v.platform!==undefined&&v.platform!=="whatsapp"&&v.platform!=="discord")throw new AppError("invalidInput");
+      return send(await runtime.link(sessionId,{name:str(v.name,chatLimits.name,true),phone,accountId:str(v.accountId,64,true),platform:v.platform as "whatsapp"|"discord"|undefined}),201);
     }
     const match=accountPath.exec(path);
     if(match){

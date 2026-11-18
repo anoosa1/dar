@@ -13,7 +13,9 @@ interaction rules; app-specific code must not drift from that contract.
   `oidc-provider@9.13.3` (with its internal Koa) and `@types/oidc-provider@9.13.1`;
   `openid-client` for tests only; `pdfjs-dist` (bundled into the client for Books and Files'
   PDF preview, November 16) and `bsdtar` (libarchive, Nix) for comic archives;
-  Go and `go.mau.fi/whatsmeow` for the Chat bridge (November 17, `../docs/chat.md`).
+  Go and `go.mau.fi/whatsmeow` for the Chat bridge (November 17, `../docs/chat.md`); its
+  Discord client uses `github.com/coder/websocket` (already in the bridge) and, for voice,
+  dave-go (November 18).
 - Do not treat passing primitive tests as completion; verify end-to-end behavior.
 
 ## Selected designs
@@ -28,8 +30,9 @@ Agent T3 parity A, Photos mock B and spotlight search mock A (November 13; see
 `../docs/photos.md`), News mock A (`../docs/spacetimedb/news-reader-mock-a.html`,
 November 12), Books mock A (`../docs/spacetimedb/books-mocks.html`, November 16;
 see `../docs/books.md`), Git mock B (`../docs/spacetimedb/git-mocks.html`, November 16;
-see `../docs/git.md`) and Chat mock A with account tabs (`../docs/spacetimedb/chat-mocks.html`,
-November 17). App settings, Dar settings and Prayer Times follow settings
+see `../docs/git.md`), Chat mock A with account tabs (`../docs/spacetimedb/chat-mocks.html`,
+November 17) and Discord mock B, the voice dock (`../docs/spacetimedb/discord-mocks.html`,
+November 18). App settings, Dar settings and Prayer Times follow settings
 sheet B (`../docs/spacetimedb/settings-revamp-mock-b.html`, November 12), which
 supersedes the settings modal and explicit settings save. Files, Contacts,
 Calendar, Notes, Tasks and shared menus follow the apps revamp

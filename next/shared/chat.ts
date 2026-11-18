@@ -1,5 +1,5 @@
-/** Chat: a client for other platforms (WhatsApp first). Shared by the module, runtime and browser. */
-export type ChatPlatform="whatsapp";
+/** Chat: a client for other platforms (WhatsApp and Discord). Shared by the module, runtime and browser. */
+export type ChatPlatform="whatsapp"|"discord";
 /** linking: waiting for a QR scan or pairing code; connected/connecting/disconnected: a linked device;
  * loggedOut: unlinked on the phone (history stays, read-only); failed: the bridge reported a lasting problem. */
 export type ChatAccountState="linking"|"connecting"|"connected"|"disconnected"|"loggedOut"|"failed";
@@ -10,17 +10,24 @@ export type ChatMessageStatus=""|"pending"|"sent"|"delivered"|"read"|"failed";
 export interface ChatAccount {id:string;platform:ChatPlatform;name:string;jid:string;state:ChatAccountState;detail:string;
   createdAt:number;linkedAt:number;syncedAt:number;historyProgress:number;importing:boolean;unread:number;counts:Record<ChatView,number>}
 export interface ChatOverview {accounts:ChatAccount[];bridge:{available:boolean;detail:string}}
-export interface ChatThread {id:string;accountId:string;jid:string;kind:"direct"|"group";name:string;at:number;preview:string;previewKind:ChatMessageKind|"deleted"|"";
+export interface ChatThread {id:string;accountId:string;jid:string;kind:"direct"|"group"|"channel"|"voice";name:string;at:number;preview:string;previewKind:ChatMessageKind|"deleted"|"";
   previewFromMe:boolean;previewSender:string;previewStatus:ChatMessageStatus;unread:number;archived:boolean;pinned:boolean;mutedUntil:number;
-  /** The name WhatsApp gives, when a Dar contact names the chat instead. */whatsappName:string;contact:ChatContact|null}
+  /** The name WhatsApp gives, when a Dar contact names the chat instead. */whatsappName:string;contact:ChatContact|null;
+  /** Discord: the server (empty for direct messages), category, list order, topic and mentions since read. */
+  serverId:string;section:string;order:string;topic:string;mentions:number}
+/** A Discord server with its channels. */
+export interface ChatServer {id:string;serverId:string;name:string;mutedUntil:number;unread:boolean;mentions:number;channels:ChatThread[]}
+export interface ChatFriend {id:string;name:string;username:string}
 export interface ChatThreadPage {pinned:ChatThread[];threads:ChatThread[];cursor:string|null}
 export interface ChatMessage {id:string;messageId:string;sender:string;senderName:string;fromMe:boolean;at:number;kind:ChatMessageKind;text:string;fileName:string;
   quotedId:string;quotedSender:string;quotedText:string;status:ChatMessageStatus;edited:boolean;deleted:boolean;media:ChatMedia|null;reactions:ChatReaction[]}
 export interface ChatMessagePage {thread:ChatThread;messages:ChatMessage[];before:string|null}
 /** What the browser sees while linking: a QR code to draw, a pairing code to type, or why it stopped. */
-export interface ChatLinkState {accountId:string;state:"starting"|"qr"|"code"|"paired"|"failed";qr?:string;expiresAt?:number;code?:string;reason?:string}
+export interface ChatLinkState {accountId:string;state:"starting"|"qr"|"code"|"scanned"|"paired"|"failed";qr?:string;expiresAt?:number;code?:string;reason?:string;
+  /** Discord: who scanned the code, while the phone asks them to confirm. */name?:string}
 
-export const chatLimits={accounts:10,name:64,text:65536,page:50,messagePage:60,messagesPerAccount:500_000} as const;
+export const chatLimits={accounts:10,name:64,text:65536,discordText:4000,page:50,messagePage:60,messagesPerAccount:500_000} as const;
+export const chatPlatformNames:Record<ChatPlatform,string>={whatsapp:"WhatsApp",discord:"Discord"};
 export const chatKindLabels:Record<ChatMessageKind,string>={text:"",image:"Photo",video:"Video",audio:"Audio",voice:"Voice message",document:"Document",
   sticker:"Sticker",location:"Location",contact:"Contact",poll:"Poll",unsupported:"Message not supported here yet"};
 /** Fixed-width keys that sort newest first, so lists are range scans. */
@@ -32,16 +39,16 @@ export interface ChatMedia {kind:ChatMessageKind;mime:string;size:number;seconds
 const extensions:Record<string,string>={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","video/mp4":"mp4","video/3gpp":"3gp","audio/ogg":"ogg","audio/mpeg":"mp3","audio/mp4":"m4a","audio/aac":"aac","application/pdf":"pdf"};
 const labels:Record<string,string>={image:"Photo",sticker:"Sticker",video:"Video",audio:"Audio",voice:"Voice message",document:"Document"};
 /** The name an attachment downloads and saves under: the sender's file name, or one from its kind and time. */
-export function localName(m:{kind:string;mime:string;fileName:string;at:number}){
+export function localName(m:{kind:string;mime:string;fileName:string;at:number;platform?:string}){
   const given=m.fileName.replace(/[/\\\0]/g,"_").trim();
   if(given&&given!=="."&&given!=="..")return given.slice(0,200);
   const d=new Date(m.at),pad=(n:number)=>String(n).padStart(2,"0"),extension=extensions[m.mime];
-  return `WhatsApp ${labels[m.kind]??"Attachment"} ${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} at ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}${extension?"."+extension:""}`;
+  return `${m.platform==="discord"?"Discord":"WhatsApp"} ${labels[m.kind]??"Attachment"} ${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} at ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}${extension?"."+extension:""}`;
 }
 export interface ChatReaction {emoji:string;count:number;mine:boolean;names:string[]}
 export const chatQuickReactions=["👍","❤️","😂","😮","😢","🙏"] as const;
 export interface ChatMember {jid:string;name:string;admin?:boolean}
-export interface ChatInfo {thread:ChatThread;account:{id:string;name:string;state:ChatAccountState};messages:number;complete:boolean;
+export interface ChatInfo {thread:ChatThread;account:{id:string;name:string;state:ChatAccountState;platform:ChatPlatform};server:{name:string}|null;messages:number;complete:boolean;
   media:{messageId:string;kind:ChatMessageKind;mime:string;state:ChatMediaState;fileName:string;size:number;at:number}[];
   group:{name:string;topic:string;members:ChatMember[];created:number}|null;groupError:string}
 /** Mute choices as WhatsApp offers them; -1 is always. */

@@ -3,44 +3,48 @@ import type {Ctx} from "./index.ts";
 import {appEnabled} from "./app-settings.ts";
 import {storeBlob,releaseBlob,isBlobId} from "./blobs.ts";
 import {chatLimits,chatAutoDownloadBytes,chatTimeKey,internationalDigits,type ChatContact,type ChatAccountState,type ChatView} from "../../shared/chat.ts";
+import {discordIngest,discordServers,discordId,applyDiscordReaction} from "./chat-discord.ts";
 
-type Account=NonNullable<ReturnType<Ctx["db"]["chatAccounts"]["id"]["find"]>>;
-type Thread=NonNullable<ReturnType<Ctx["db"]["chatThreads"]["id"]["find"]>>;
-type Message=NonNullable<ReturnType<Ctx["db"]["chatMessages"]["id"]["find"]>>;
+export type Account=NonNullable<ReturnType<Ctx["db"]["chatAccounts"]["id"]["find"]>>;
+export type Thread=NonNullable<ReturnType<Ctx["db"]["chatThreads"]["id"]["find"]>>;
+export type Message=NonNullable<ReturnType<Ctx["db"]["chatMessages"]["id"]["find"]>>;
 type Media=NonNullable<ReturnType<Ctx["db"]["chatMedia"]["id"]["find"]>>;
 
-function fail(code:string):never{throw new SenderError(code);}
-function text(value:unknown,max:number,allowEmpty=true){
+export function fail(code:string):never{throw new SenderError(code);}
+export function text(value:unknown,max:number,allowEmpty=true){
   if(typeof value!=="string"||!allowEmpty&&!value.trim()||value.includes("\0")||value.length>max)fail("invalidInput");
   return value;
 }
-const optional=(value:unknown,max:number)=>value===undefined||value===null?"":text(value,max);
-function keys(p:Record<string,unknown>,allowed:string[]){if(Object.keys(p).some(k=>!allowed.includes(k)))fail("invalidInput");}
-const num=(value:unknown)=>{if(typeof value!=="number"||!Number.isFinite(value))fail("invalidInput");return value;};
-const now=(ctx:Ctx)=>Number(ctx.timestamp.toMillis());
-const prefix=(value:string)=>new Range<string>({tag:"included",value:value+"/"},{tag:"excluded",value:value+"0"});
+export const optional=(value:unknown,max:number)=>value===undefined||value===null?"":text(value,max);
+export function keys(p:Record<string,unknown>,allowed:string[]){if(Object.keys(p).some(k=>!allowed.includes(k)))fail("invalidInput");}
+export const num=(value:unknown)=>{if(typeof value!=="number"||!Number.isFinite(value))fail("invalidInput");return value;};
+export const now=(ctx:Ctx)=>Number(ctx.timestamp.toMillis());
+export const prefix=(value:string)=>new Range<string>({tag:"included",value:value+"/"},{tag:"excluded",value:value+"0"});
 const after=(cursor:string,value:string)=>new Range<string>({tag:"excluded",value:cursor},{tag:"excluded",value:value+"0"});
 const jidPattern=/^[0-9A-Za-z.:_-]{1,80}@(s\.whatsapp\.net|g\.us|lid)$/;
 const jid=(value:unknown)=>{const v=text(value,120);if(!jidPattern.test(v))fail("invalidInput");return v;};
 const messageIdPattern=/^[0-9A-Za-z._-]{1,128}$/;
-const messageId=(value:unknown)=>{const v=text(value,128);if(!messageIdPattern.test(v))fail("invalidInput");return v;};
-const kinds=new Set(["text","image","video","audio","voice","document","sticker","location","contact","poll","unsupported"]);
+export const messageId=(value:unknown)=>{const v=text(value,128);if(!messageIdPattern.test(v))fail("invalidInput");return v;};
+export const messageKinds=new Set(["text","image","video","audio","voice","document","sticker","location","contact","poll","unsupported"]);
 const statusRank:Record<string,number>={"":0,failed:0,pending:0,sent:1,delivered:2,read:3};
 const states:ChatAccountState[]=["linking","connecting","connected","disconnected","loggedOut","failed"];
 const keyPattern=/^[\x21-\x7e]{1,600}$/;
 
-function changed(ctx:Ctx,userId:string){
+/** A chat ID on the account's platform: a WhatsApp JID or a Discord channel ID. */
+const chatId=(a:Account,value:unknown)=>a.platform==="discord"?discordId(value):jid(value);
+export function changed(ctx:Ctx,userId:string){
   const old=ctx.db.chatChanges.userId.find(userId),row={userId,revision:((old?.revision??0)+1)>>>0};
   if(old)ctx.db.chatChanges.userId.update(row);else ctx.db.chatChanges.insert(row);
 }
 const first=<T,>(rows:Iterable<T>):T|undefined=>{for(const row of rows)return row;return undefined;};
-const listKey=(accountId:string,at:number,id:string)=>`${accountId}/${chatTimeKey(at)}/${id}`;
-const threadKey=(threadId:string,at:number,id:string)=>`${threadId}/${chatTimeKey(at)}/${id}`;
+export const listKey=(accountId:string,at:number,id:string)=>`${accountId}/${chatTimeKey(at)}/${id}`;
+export const threadKey=(threadId:string,at:number,id:string)=>`${threadId}/${chatTimeKey(at)}/${id}`;
 
 function exposeThread(row:Thread,names?:ContactNames){
   const contact=row.kind==="direct"?names?.find(row.jid)??null:null,sender=row.previewSenderJid?names?.find(row.previewSenderJid):undefined;
   return {id:row.id,accountId:row.accountId,jid:row.jid,kind:row.kind,name:contact?.name??row.name,whatsappName:row.name,contact,at:row.at,preview:row.preview,previewKind:row.previewKind,previewFromMe:row.previewFromMe,
     previewSender:row.previewSender,previewStatus:row.previewStatus,unread:row.unread,archived:row.archived,pinned:row.pinned,mutedUntil:row.mutedUntil,
+    serverId:row.serverId,section:row.section,order:row.order,topic:row.topic,mentions:row.mentions,
     ...sender?{previewSender:sender.name}:{}};
 }
 /** Dar contacts by phone number, read from every address book the person can see. Never sent to WhatsApp. */
@@ -75,7 +79,8 @@ function reactionsOf(ctx:Ctx,rowId:string){
   const groups=new Map<string,{emoji:string;count:number;mine:boolean;names:string[]}>();
   for(const r of ctx.db.chatReactions.messageRowId.filter(rowId)){
     const group=groups.get(r.emoji)??{emoji:r.emoji,count:0,mine:false,names:[]};
-    group.count++;if(r.fromMe)group.mine=true;else if(group.names.length<20)group.names.push(r.senderName||r.sender.split("@")[0]);
+    // Discord's "*" rows count everyone else without names.
+    group.count+=r.count;if(r.fromMe)group.mine=true;else if(r.sender!=="*"&&group.names.length<20)group.names.push(r.senderName||r.sender.split("@")[0]);
     groups.set(r.emoji,group);
   }
   return [...groups.values()].sort((a,b)=>b.count-a.count);
@@ -85,11 +90,11 @@ function setReaction(ctx:Ctx,accountId:string,rowId:string,r:{sender:string;send
   const id=`${rowId}|${r.fromMe?"me":r.sender}`,old=ctx.db.chatReactions.id.find(id);
   if(old&&old.at>r.at)return;
   if(!r.emoji){if(old)ctx.db.chatReactions.id.delete(id);return;}
-  const row={id,messageRowId:rowId,accountId,sender:r.sender,senderName:r.senderName,fromMe:r.fromMe,emoji:r.emoji,at:r.at};
+  const row={id,messageRowId:rowId,accountId,sender:r.sender,senderName:r.senderName,fromMe:r.fromMe,emoji:r.emoji,at:r.at,count:1};
   if(old)ctx.db.chatReactions.id.update(row);else ctx.db.chatReactions.insert(row);
 }
 /** An edit or a deletion for everyone; a deletion takes the attachment and reactions with it. */
-function reviseMessage(ctx:Ctx,t:Thread,target:Message,change:{text?:string;deleted?:boolean}){
+export function reviseMessage(ctx:Ctx,t:Thread,target:Message,change:{text?:string;deleted?:boolean}){
   const next=change.deleted?{...target,deleted:true,text:""}:{...target,text:change.text??target.text,edited:true};
   ctx.db.chatMessages.id.update(next);
   if(next.deleted){
@@ -103,6 +108,8 @@ function reviseMessage(ctx:Ctx,t:Thread,target:Message,change:{text?:string;dele
 function exposeAccount(ctx:Ctx,row:Account){
   const counts={chats:0,unread:0,groups:0,archived:0};let unread=0;
   for(const thread of ctx.db.chatThreads.accountId.filter(row.id)){
+    // Discord server channels count only when they mention the account.
+    if(thread.serverId){if(thread.mentions>0)unread++;continue;}
     if(thread.archived){counts.archived++;continue;}
     counts.chats++;if(thread.kind==="group")counts.groups++;
     if(thread.unread>0){counts.unread++;if(thread.mutedUntil===0||thread.mutedUntil>0&&thread.mutedUntil<now(ctx))unread++;}
@@ -116,9 +123,10 @@ function deleteChats(ctx:Ctx,accountId:string){
   for(const row of [...ctx.db.chatThreads.accountId.filter(accountId)])ctx.db.chatThreads.id.delete(row.id);
   for(const row of [...ctx.db.chatMedia.accountId.filter(accountId)])dropMedia(ctx,row);
   for(const row of [...ctx.db.chatReactions.accountId.filter(accountId)])ctx.db.chatReactions.id.delete(row.id);
+  for(const row of [...ctx.db.chatServers.accountId.filter(accountId)])ctx.db.chatServers.id.delete(row.id);
 }
 /** Maintenance removes the blob once nothing else (another message, a file, a backup) uses it. */
-function dropMedia(ctx:Ctx,row:Media){ctx.db.chatMedia.id.delete(row.id);if(row.blobId)releaseBlob(ctx,row.blobId);}
+export function dropMedia(ctx:Ctx,row:Media){ctx.db.chatMedia.id.delete(row.id);if(row.blobId)releaseBlob(ctx,row.blobId);}
 function deleteAccountRows(ctx:Ctx,account:Account){
   deleteChats(ctx,account.id);
   clearKeys(ctx,account.id);
@@ -126,12 +134,12 @@ function deleteAccountRows(ctx:Ctx,account:Account){
 }
 function clearKeys(ctx:Ctx,accountId:string){for(const row of [...ctx.db.chatKeys.scanKey.filter(prefix(accountId))])ctx.db.chatKeys.id.delete(row.id);}
 
-function setThread(ctx:Ctx,old:Thread,next:Thread){
+export function setThread(ctx:Ctx,old:Thread,next:Thread){
   if(old.listKey!==next.listKey){ctx.db.chatThreads.id.delete(old.id);ctx.db.chatThreads.insert(next);}else ctx.db.chatThreads.id.update(next);
 }
-function newThread(account:Account,id:string,kind:string,at:number):Thread{
+export function newThread(account:Account,id:string,kind:string,at:number):Thread{
   return {id:`${account.id}/${id}`,accountId:account.id,listKey:listKey(account.id,at,id),jid:id,kind,name:"",at,preview:"",previewKind:"",previewFromMe:false,previewSender:"",previewStatus:"",
-    unread:0,archived:false,pinned:false,mutedUntil:0,previewSenderJid:""};
+    unread:0,archived:false,pinned:false,mutedUntil:0,previewSenderJid:"",serverId:"",section:"",order:"",topic:"",mentions:0};
 }
 
 /** Validated chat changes from the bridge. */
@@ -146,14 +154,14 @@ function validChat(value:unknown){
 function validMessage(value:unknown){
   if(!value||typeof value!=="object"||Array.isArray(value))fail("invalidInput");const m=value as Record<string,unknown>;
   keys(m,["id","chat","sender","senderName","fromMe","at","kind","text","fileName","target","quotedId","quotedSender","quotedText","status","media"]);
-  const kind=text(m.kind,20);if(!kinds.has(kind)&&kind!=="edit"&&kind!=="revoke"&&kind!=="reaction")fail("invalidInput");
+  const kind=text(m.kind,20);if(!messageKinds.has(kind)&&kind!=="edit"&&kind!=="revoke"&&kind!=="reaction")fail("invalidInput");
   const status=optional(m.status,20);if(!(status in statusRank))fail("invalidInput");
   if(typeof m.fromMe!=="boolean")fail("invalidInput");
   return {id:messageId(m.id),chat:jid(m.chat),sender:optional(m.sender,120),senderName:optional(m.senderName,200),fromMe:m.fromMe,at:Math.max(0,num(m.at)),kind,
     text:optional(m.text,chatLimits.text),fileName:optional(m.fileName,500),target:m.target===undefined?"":messageId(m.target),quotedId:m.quotedId===undefined?"":messageId(m.quotedId),
     quotedSender:optional(m.quotedSender,200),quotedText:optional(m.quotedText,2000),status,media:validMedia(m.media)};
 }
-function validMedia(value:unknown){
+export function validMedia(value:unknown){
   if(value===undefined||value===null)return undefined;
   if(typeof value!=="object"||Array.isArray(value))fail("invalidInput");const v=value as Record<string,unknown>;keys(v,["mime","size","seconds","width","height"]);
   const count=(n:unknown,max:number)=>n===undefined?0:Math.min(max,Math.max(0,Math.floor(num(n))));
@@ -242,8 +250,8 @@ function ingest(ctx:Ctx,account:Account,p:Record<string,unknown>){
 
 /** Pages a chat list newest first; pinned chats lead the first page of Chats. */
 function threadPage(ctx:Ctx,account:Account,view:ChatView,cursor:string,limit:number,names:ContactNames){
-  const matches=(row:Thread)=>view==="archived"?row.archived:!row.archived&&(view==="chats"?!row.pinned:view==="unread"?row.unread>0:row.kind==="group");
-  const pinned=view==="chats"&&!cursor?[...ctx.db.chatThreads.accountId.filter(account.id)].filter(row=>row.pinned&&!row.archived).sort((a,b)=>b.at-a.at).map(row=>exposeThread(row,names)):[];
+  const matches=(row:Thread)=>row.serverId?false:view==="archived"?row.archived:!row.archived&&(view==="chats"?!row.pinned:view==="unread"?row.unread>0:row.kind==="group");
+  const pinned=view==="chats"&&!cursor?[...ctx.db.chatThreads.accountId.filter(account.id)].filter(row=>row.pinned&&!row.archived&&!row.serverId).sort((a,b)=>b.at-a.at).map(row=>exposeThread(row,names)):[];
   const threads:Thread[]=[];let next:string|null=null;
   for(const row of ctx.db.chatThreads.listKey.filter(cursor?after(cursor,account.id):prefix(account.id))){
     if(!matches(row))continue;
@@ -290,23 +298,25 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
   }
   if(operation==="markRead"){
     // Returns the newest incoming messages so the runtime can send read receipts.
-    keys(p,["threadId"]);const t=thread(p.threadId),items:{id:string;sender:string}[]=[];
-    if(t.unread>0){
+    // Discord takes a read mark at the newest message instead.
+    keys(p,["threadId"]);const t=thread(p.threadId),a=account(t.accountId),items:{id:string;sender:string}[]=[];let last="";
+    if(t.unread>0||t.mentions>0){
       for(const row of ctx.db.chatMessages.threadKey.filter(prefix(t.id))){
-        if(items.length>=Math.min(t.unread,50))break;
+        if(!last)last=row.messageId;
+        if(items.length>=Math.min(t.unread,50)||a.platform==="discord")break;
         if(!row.fromMe&&!row.deleted)items.push({id:row.messageId,sender:row.sender});
       }
-      ctx.db.chatThreads.id.update({...t,unread:0});changed(ctx,userId);
+      ctx.db.chatThreads.id.update({...t,unread:0,mentions:0});changed(ctx,userId);
     }
-    return {accountId:t.accountId,chat:t.jid,items};
+    return {accountId:t.accountId,platform:a.platform,chat:t.jid,items:a.platform==="discord"?[]:items,last};
   }
   if(operation==="beginLink"){
     keys(p,["accountId","name","platform"]);
-    const name=text(p.name??"WhatsApp",chatLimits.name).trim()||"WhatsApp";
-    if(p.platform!==undefined&&p.platform!=="whatsapp")fail("invalidInput");
+    const platform=p.platform===undefined?"whatsapp":p.platform==="whatsapp"||p.platform==="discord"?p.platform:fail("invalidInput"),label=platform==="discord"?"Discord":"WhatsApp";
+    const name=text(p.name??label,chatLimits.name).trim()||label;
     if(p.accountId!==undefined){
       // Linking again keeps the account's history but starts with new device keys.
-      const a=account(p.accountId);if(a.state!=="loggedOut"&&a.state!=="failed"&&a.state!=="linking")fail("conflict");
+      const a=account(p.accountId);if(a.state!=="loggedOut"&&a.state!=="failed"&&a.state!=="linking"||p.platform!==undefined&&p.platform!==a.platform)fail("conflict");
       clearKeys(ctx,a.id);ctx.db.chatAccounts.id.update({...a,state:"linking",detail:""});changed(ctx,userId);return {accountId:a.id};
     }
     const mine=[...ctx.db.chatAccounts.ownerId.filter(userId)];
@@ -314,18 +324,27 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
     // An abandoned link attempt is replaced instead of piling up.
     for(const old of mine)if(old.state==="linking"&&!old.jid)deleteAccountRows(ctx,old);
     let id=ctx.newUuidV4().toString();while(ctx.db.chatAccounts.id.find(id))id=ctx.newUuidV4().toString();
-    ctx.db.chatAccounts.insert({id,ownerId:userId,platform:"whatsapp",name,jid:"",state:"linking",detail:"",createdAt:now(ctx),linkedAt:0,syncedAt:0,historyProgress:0,importing:false,messages:0});
+    ctx.db.chatAccounts.insert({id,ownerId:userId,platform,name,jid:"",state:"linking",detail:"",createdAt:now(ctx),linkedAt:0,syncedAt:0,historyProgress:0,importing:false,messages:0});
     changed(ctx,userId);return {accountId:id};
   }
   if(operation==="rename"){
     keys(p,["accountId","name"]);const a=account(p.accountId),name=text(p.name,chatLimits.name,false).trim();
     ctx.db.chatAccounts.id.update({...a,name});changed(ctx,userId);return exposeAccount(ctx,{...a,name});
   }
-  if(operation==="account"){keys(p,["accountId"]);const a=account(p.accountId);return {id:a.id,state:a.state,jid:a.jid};}
+  if(operation==="account"){keys(p,["accountId"]);const a=account(p.accountId);return {id:a.id,platform:a.platform,state:a.state,jid:a.jid};}
+  if(operation==="servers"){
+    keys(p,["accountId"]);const a=account(p.accountId);if(a.platform!=="discord")return {servers:[]};
+    return {servers:discordServers(ctx,a,row=>exposeThread(row))};
+  }
+  if(operation==="find"){
+    // A chat by its platform ID, after the bridge opened it.
+    keys(p,["accountId","chat"]);const a=account(p.accountId),row=ctx.db.chatThreads.id.find(`${a.id}/${chatId(a,p.chat)}`);if(!row)fail("notFound");
+    return exposeThread(row,contactNames(ctx,userId,a.jid));
+  }
   if(operation==="deleteAccount"){keys(p,["accountId"]);deleteAccountRows(ctx,account(p.accountId));changed(ctx,userId);return {ok:true};}
   if(operation==="openDirect"){
     // A one-to-one chat by phone number, created if it is not in the list yet.
-    keys(p,["accountId","phone"]);const a=account(p.accountId),digits=text(p.phone,40).replace(/[^0-9]/g,"");
+    keys(p,["accountId","phone"]);const a=account(p.accountId);if(a.platform!=="whatsapp")fail("invalidInput");const digits=text(p.phone,40).replace(/[^0-9]/g,"");
     if(digits.length<7||digits.length>15||digits.startsWith("0"))fail("invalidInput");
     const chat=`${digits}@s.whatsapp.net`,old=ctx.db.chatThreads.id.find(`${a.id}/${chat}`);if(old)return exposeThread(old,contactNames(ctx,userId,a.jid));
     const row={...newThread(a,chat,"direct",now(ctx)),name:`+${digits}`};ctx.db.chatThreads.insert(row);changed(ctx,userId);return exposeThread(row,contactNames(ctx,userId,a.jid));
@@ -342,32 +361,45 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
     ctx.db.chatMessages.insert(row);
     setThread(ctx,t,{...t,at,listKey:listKey(a.id,at,t.jid),preview:body,previewKind:"text",previewFromMe:true,previewSender:"",previewSenderJid:"",previewStatus:"pending",unread:0});
     ctx.db.chatAccounts.id.update({...a,messages:a.messages+1});changed(ctx,userId);
-    return {accountId:a.id,chat:t.jid,message:exposeMessage(row),quoted:quoted?{id:quoted.messageId,sender:quoted.fromMe?a.jid:quoted.sender,text:quoted.text}:null};
+    return {accountId:a.id,platform:a.platform,chat:t.jid,message:exposeMessage(row),quoted:quoted?{id:quoted.messageId,sender:quoted.fromMe?a.jid:quoted.sender,text:quoted.text}:null};
   }
   if(operation==="sendResult"){
-    keys(p,["threadId","messageId","ok"]);const t=thread(p.threadId),row=ctx.db.chatMessages.id.find(`${t.id}/${messageId(p.messageId)}`);if(!row)fail("notFound");
+    // Discord gives a sent message its own ID: the pending copy moves there, unless the gateway already did that.
+    keys(p,["threadId","messageId","ok","id"]);const t=thread(p.threadId),realId=p.id===undefined?"":messageId(p.id);
+    let row=ctx.db.chatMessages.id.find(`${t.id}/${messageId(p.messageId)}`);
+    if(!row&&realId){const sent=ctx.db.chatMessages.id.find(`${t.id}/${realId}`);if(sent)return exposeMessage(sent);}
+    if(!row)fail("notFound");
     const status=p.ok===true?"sent":"failed";if(row.status!=="pending")return exposeMessage(row);
-    ctx.db.chatMessages.id.update({...row,status});
+    let next={...row,status};
+    if(p.ok===true&&realId&&realId!==row.messageId){
+      ctx.db.chatMessages.id.delete(row.id);next={...next,id:`${t.id}/${realId}`,messageId:realId,threadKey:threadKey(t.id,row.at,realId)};
+      if(ctx.db.chatMessages.id.find(next.id)){ctx.db.chatAccounts.id.update({...account(t.accountId),messages:Math.max(0,account(t.accountId).messages-1)});changed(ctx,userId);return exposeMessage(ctx.db.chatMessages.id.find(next.id)!);}
+      ctx.db.chatMessages.insert(next);
+    }else ctx.db.chatMessages.id.update(next);
     if(t.previewFromMe&&t.at===row.at)ctx.db.chatThreads.id.update({...t,previewStatus:status});
-    changed(ctx,userId);return exposeMessage({...row,status});
+    changed(ctx,userId);return exposeMessage(next);
   }
   if(operation==="retry"){
     keys(p,["threadId","messageId"]);const t=thread(p.threadId),row=ctx.db.chatMessages.id.find(`${t.id}/${messageId(p.messageId)}`);
     if(!row||!row.fromMe||row.status!=="failed")fail("conflict");
     ctx.db.chatMessages.id.update({...row,status:"pending"});changed(ctx,userId);
-    return {accountId:t.accountId,chat:t.jid,message:exposeMessage({...row,status:"pending"}),quoted:row.quotedId?{id:row.quotedId,sender:"",text:row.quotedText}:null};
+    return {accountId:t.accountId,platform:account(t.accountId).platform,chat:t.jid,message:exposeMessage({...row,status:"pending"}),quoted:row.quotedId?{id:row.quotedId,sender:"",text:row.quotedText}:null};
   }
   if(operation==="media"){
     // What the runtime needs to serve, fetch or save one attachment.
     keys(p,["threadId","messageId"]);const t=thread(p.threadId),row=ctx.db.chatMessages.id.find(`${t.id}/${messageId(p.messageId)}`),media=row&&!row.deleted?ctx.db.chatMedia.id.find(row.id):undefined;
     if(!row||!media)fail("notFound");
-    return {id:media.id,accountId:t.accountId,chat:t.jid,messageId:row.messageId,kind:media.kind,mime:media.mime,size:media.size,fileName:media.fileName,blobId:media.blobId,state:media.state,at:media.at,chatName:t.name};
+    return {id:media.id,accountId:t.accountId,chat:t.jid,messageId:row.messageId,kind:media.kind,mime:media.mime,size:media.size,fileName:media.fileName,blobId:media.blobId,state:media.state,at:media.at,chatName:t.name,platform:account(t.accountId).platform};
   }
   const message=(t:Thread,value:unknown)=>{const row=ctx.db.chatMessages.id.find(`${t.id}/${messageId(value)}`);if(!row)fail("notFound");return row;};
   if(operation==="target"){
     // What the bridge needs to act on a message: its chat and who sent it.
     keys(p,["threadId","messageId"]);const t=thread(p.threadId),a=account(t.accountId),row=message(t,p.messageId);
-    return {accountId:a.id,state:a.state,chat:t.jid,id:row.messageId,sender:row.fromMe?a.jid:row.sender,fromMe:row.fromMe,kind:row.kind,at:row.at,deleted:row.deleted};
+    return {accountId:a.id,platform:a.platform,state:a.state,chat:t.jid,id:row.messageId,sender:row.fromMe?a.jid:row.sender,fromMe:row.fromMe,kind:row.kind,at:row.at,deleted:row.deleted};
+  }
+  if(operation==="applyDiscordReaction"){
+    keys(p,["threadId","messageId","emoji","remove"]);const t=thread(p.threadId),a=account(t.accountId),row=message(t,p.messageId);if(a.platform!=="discord")fail("invalidInput");
+    applyDiscordReaction(ctx,a.id,row.id,text(p.emoji,120,false),p.remove===true);changed(ctx,userId);return {ok:true};
   }
   if(operation==="applyReaction"){
     keys(p,["threadId","messageId","emoji"]);const t=thread(p.threadId),a=account(t.accountId),row=message(t,p.messageId);
@@ -395,7 +427,7 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
   if(operation==="chatTarget"){
     // The chat and its newest message, which WhatsApp wants when archiving.
     keys(p,["threadId"]);const t=thread(p.threadId),a=account(t.accountId),latest=first(ctx.db.chatMessages.threadKey.filter(prefix(t.id)));
-    return {accountId:a.id,state:a.state,chat:t.jid,lastAt:latest?.at??0,lastId:latest?.messageId??"",lastSender:latest&&!latest.fromMe?latest.sender:"",lastFromMe:latest?.fromMe??false};
+    return {accountId:a.id,platform:a.platform,serverId:t.serverId,state:a.state,chat:t.jid,lastAt:latest?.at??0,lastId:latest?.messageId??"",lastSender:latest&&!latest.fromMe?latest.sender:"",lastFromMe:latest?.fromMe??false};
   }
   if(operation==="applyChatSetting"){
     keys(p,["threadId","pinned","archived","mutedUntil"]);const t=thread(p.threadId),next={...t};
@@ -412,13 +444,20 @@ export function chatOperation(ctx:Ctx,userId:string,operation:string,p:Record<st
       const m=media.length<60?ctx.db.chatMedia.id.find(row.id):undefined;
       if(m&&!row.deleted)media.push({messageId:row.messageId,kind:m.kind,mime:m.mime,state:m.state,fileName:m.fileName,size:m.size,at:m.at});
     }
-    return {thread:exposeThread(t,contactNames(ctx,userId,a.jid)),account:{id:a.id,name:a.name,state:a.state},media,messages,complete:scanned<=20000};
+    const server=t.serverId?ctx.db.chatServers.id.find(`${a.id}/${t.serverId}`):undefined;
+    return {thread:exposeThread(t,contactNames(ctx,userId,a.jid)),account:{id:a.id,name:a.name,state:a.state,platform:a.platform},server:server?{name:server.name}:null,media,messages,complete:scanned<=20000};
   }
   if(operation==="oldest"){
     // The oldest message Dar has, from which the phone can send earlier ones.
     keys(p,["threadId"]);const t=thread(p.threadId),a=account(t.accountId);let oldest:Message|undefined;
     for(const row of ctx.db.chatMessages.threadKey.filter(prefix(t.id)))oldest=row;
-    return {accountId:a.id,state:a.state,chat:t.jid,message:oldest?{id:oldest.messageId,fromMe:oldest.fromMe,at:oldest.at}:null};
+    return {accountId:a.id,platform:a.platform,state:a.state,chat:t.jid,message:oldest?{id:oldest.messageId,fromMe:oldest.fromMe,at:oldest.at}:null};
+  }
+  if(operation==="newest"){
+    // The newest message Dar has (a pending one does not count), to catch up after it.
+    keys(p,["threadId"]);const t=thread(p.threadId),a=account(t.accountId);let newest:Message|undefined;
+    for(const row of ctx.db.chatMessages.threadKey.filter(prefix(t.id)))if(row.status!=="pending"&&row.status!=="failed"){newest=row;break;}
+    return {accountId:a.id,platform:a.platform,state:a.state,chat:t.jid,message:newest?{id:newest.messageId,at:newest.at}:null};
   }
   if(operation==="names"){
     // Dar contact names for WhatsApp numbers (group members), keyed by JID.
@@ -458,7 +497,7 @@ export function chatWorker(ctx:Ctx,operation:string,p:Record<string,unknown>){
   const account=(value:unknown):Account=>{const row=ctx.db.chatAccounts.id.find(text(value,64));if(!row)fail("notFound");return row;};
   if(operation==="accounts"){
     keys(p,[]);
-    return {accounts:[...ctx.db.chatAccounts.iter()].filter(row=>row.jid&&row.state!=="loggedOut").map(row=>({id:row.id,ownerId:row.ownerId,state:row.state}))};
+    return {accounts:[...ctx.db.chatAccounts.iter()].filter(row=>row.jid&&row.state!=="loggedOut").map(row=>({id:row.id,ownerId:row.ownerId,state:row.state,platform:row.platform}))};
   }
   if(operation==="kvLoad"){
     keys(p,["accountId","cursor"]);const a=account(p.accountId),cursor=optional(p.cursor,700),base=`${a.id}/c`;
@@ -503,8 +542,8 @@ export function chatWorker(ctx:Ctx,operation:string,p:Record<string,unknown>){
     const state=states.includes(p.state as ChatAccountState)?p.state as ChatAccountState:fail("invalidInput");
     const next={...a,state,detail:optional(p.detail,200)};
     if(p.jid!==undefined){
-      next.jid=jid(p.jid);next.linkedAt=now(ctx);
-      // Linking a different WhatsApp number to this account starts its chats afresh.
+      next.jid=chatId(a,p.jid);next.linkedAt=now(ctx);
+      // Linking a different WhatsApp number or Discord user to this account starts its chats afresh.
       if(a.jid&&a.jid!==next.jid){deleteChats(ctx,a.id);next.messages=0;next.historyProgress=0;}
     }
     if(state==="loggedOut")next.importing=false;
@@ -524,12 +563,12 @@ export function chatWorker(ctx:Ctx,operation:string,p:Record<string,unknown>){
   }
   if(operation==="mediaFind"){
     // The phone sent expired media again: which attachment, so the runtime downloads it.
-    keys(p,["accountId","chat","messageId"]);const a=account(p.accountId),row=ctx.db.chatMedia.id.find(`${a.id}/${jid(p.chat)}/${messageId(p.messageId)}`);
-    return row?{id:row.id,state:row.state,chat:jid(p.chat),messageId:String(p.messageId)}:{id:""};
+    keys(p,["accountId","chat","messageId"]);const a=account(p.accountId),row=ctx.db.chatMedia.id.find(`${a.id}/${chatId(a,p.chat)}/${messageId(p.messageId)}`);
+    return row?{id:row.id,state:row.state,chat:chatId(a,p.chat),messageId:String(p.messageId)}:{id:""};
   }
   if(operation==="ingest"){
     const a=account(p.accountId);if(!a.jid)fail("conflict");
-    const {accountId:_,...rest}=p;return ingest(ctx,a,rest);
+    const {accountId:_,...rest}=p;return a.platform==="discord"?discordIngest(ctx,a,rest):ingest(ctx,a,rest);
   }
   fail("invalidInput");
 }
@@ -542,16 +581,18 @@ export function deleteChatAccount(ctx:Ctx,ownerId:string){for(const row of [...c
 export function chatSnapshot(ctx:Ctx){
   return {accounts:[...ctx.db.chatAccounts.iter()],threads:[...ctx.db.chatThreads.iter()],messages:[...ctx.db.chatMessages.iter()],
     media:[...ctx.db.chatMedia.iter()].map(row=>row.state==="stored"?row:{...row,blobId:"",state:row.state==="retrying"?"remote":row.state}),
-    reactions:[...ctx.db.chatReactions.iter()]};
+    reactions:[...ctx.db.chatReactions.iter()],servers:[...ctx.db.chatServers.iter()]};
 }
 export function chatBlobIds(ctx:Ctx){return [...new Set([...ctx.db.chatMedia.iter()].filter(row=>row.blobId&&row.state==="stored").map(row=>row.blobId))];}
 export function restoreChat(ctx:Ctx,value?:ReturnType<typeof chatSnapshot>){
   if(!value)return;
   for(const row of value.accounts)ctx.db.chatAccounts.insert({...row,state:row.jid?"loggedOut":"failed",detail:"restored",importing:false});
-  for(const row of value.threads)ctx.db.chatThreads.insert(row);
+  // Backups from before Discord lack its columns.
+  for(const row of value.threads)ctx.db.chatThreads.insert(Object.assign({serverId:"",section:"",order:"",topic:"",mentions:0},row));
   for(const row of value.messages)ctx.db.chatMessages.insert(row);
   for(const row of value.media)ctx.db.chatMedia.insert(row.blobId&&!ctx.db.fileBlobs.id.find(row.blobId)?{...row,blobId:"",state:"expired"}:row);
-  for(const row of value.reactions??[])ctx.db.chatReactions.insert(row);
+  for(const row of value.reactions??[])ctx.db.chatReactions.insert(Object.assign({count:1},row));
+  for(const row of value.servers??[])ctx.db.chatServers.insert(row);
 }
 
 /**
@@ -562,17 +603,19 @@ export function chatSearch(ctx:Ctx,userId:string,q:string,matches:(value:string)
   let budget=40000;
   for(const a of ctx.db.chatAccounts.ownerId.filter(userId)){
     const names=contactNames(ctx,userId,a.jid);
+    const servers=new Map([...ctx.db.chatServers.accountId.filter(a.id)].map(s=>[s.serverId,s.name]));
     for(const row of ctx.db.chatThreads.listKey.filter(prefix(a.id))){
       const thread=exposeThread(row,names),href=`/chat?account=${encodeURIComponent(a.id)}&chat=${encodeURIComponent(row.id)}`;
-      if(matches(thread.name)||matches(thread.whatsappName))add({id:row.id,title:thread.name||thread.whatsappName,detail:`${row.kind==="group"?"Group":"Chat"} · ${a.name}`,href});
+      const title=row.serverId?`#${row.name}`:thread.name||thread.whatsappName,kind=row.serverId?servers.get(row.serverId)??"Server":row.kind==="group"?"Group":"Chat";
+      if(matches(thread.name)||matches(thread.whatsappName))add({id:row.id,title,detail:`${kind} · ${a.name}`,href});
       let hits=0;
       for(const m of ctx.db.chatMessages.threadKey.filter(prefix(row.id))){
         if(--budget<0)return false;
         if(m.deleted||!m.text||!matches(m.text))continue;
         const at=m.text.normalize("NFC").toLowerCase().indexOf(q),start=Math.max(0,at-40),end=Math.min(m.text.length,at+q.length+60);
         const snippet=`${start>0?"…":""}${m.text.slice(start,end).replace(/\s+/g," ").trim()}${end<m.text.length?"…":""}`;
-        const who=m.fromMe?"You":row.kind==="group"?(names.find(m.sender)?.name??m.senderName):"";
-        add({id:m.id,title:thread.name||thread.whatsappName,detail:`${who?who+": ":""}${snippet}`,href:`${href}&message=${encodeURIComponent(m.messageId)}`});
+        const who=m.fromMe?"You":row.kind!=="direct"?(names.find(m.sender)?.name??m.senderName):"";
+        add({id:m.id,title,detail:`${who?who+": ":""}${snippet}`,href:`${href}&message=${encodeURIComponent(m.messageId)}`});
         if(++hits>=3)break;
       }
     }

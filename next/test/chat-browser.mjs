@@ -12,7 +12,7 @@ try{
   await page.getByRole("link",{name:"Chat",exact:true}).first().waitFor();
   await page.getByRole("heading",{name:"No accounts linked"}).waitFor();
   // Link with a QR code drawn in the editing pane; the fake bridge "scans" it on request.
-  await page.getByRole("button",{name:"Link WhatsApp"}).click();const pane=page.locator("[data-editor-pane]");
+  await page.getByRole("button",{name:"Link an account"}).first().click();const pane=page.locator("[data-editor-pane]");
   assert.equal(await pane.getByRole("radio",{name:"QR code"}).isChecked(),true);
   await pane.getByLabel("Account name").fill("Personal");await pane.getByRole("button",{name:"Show QR code"}).click();
   const qr=pane.getByRole("img",{name:"QR code to scan with WhatsApp"});await qr.waitFor();
@@ -29,7 +29,7 @@ try{
   await page.getByRole("button",{name:/^Chats/}).click();
   // A conversation: history with a quote, then a sent message with its tick and a live incoming one.
   await list.getByRole("button",{name:/Sara Haddad/}).click();const chat=page.getByRole("complementary",{name:"Sara Haddad"});
-  const log=chat.getByRole("log",{name:"Messages with Sara Haddad"});await log.getByText("Are we still on for dinner?").waitFor();await log.locator(".chat-quote").getByText("Yes!").waitFor();
+  const log=chat.getByRole("log",{name:"Messages in Sara Haddad"});await log.getByText("Are we still on for dinner?").waitFor();await log.locator(".chat-quote").getByText("Yes!").waitFor();
   // The imported photo downloads through the bridge when shown.
   await page.waitForFunction(()=>document.querySelector(".chat-photo img")?.naturalWidth===4);
   const box=chat.getByLabel("Message Sara Haddad");await box.fill("See you at 7");await box.press("Enter");
@@ -85,6 +85,48 @@ try{
         await page.getByRole("tab",{name:/Personal/}).waitFor();await page.screenshot({path:path.join(root,`chat-phone-list-${theme}.png`)});
       }
     }}
+  // Discord: a second account tab, signed in by QR code with the terms notice.
+  await page.evaluate(()=>{document.documentElement.dataset.theme="mocha";});await page.setViewportSize({width:1440,height:950});await page.waitForTimeout(200);
+  await page.getByRole("tablist",{name:"Accounts"}).getByRole("button",{name:"Link an account"}).click();const link=page.locator("[data-editor-pane]");
+  await link.getByRole("radio",{name:"Discord"}).click();await link.getByText("Discord does not allow other apps on your account").waitFor();
+  assert.equal(await link.getByRole("radio",{name:"QR code"}).count(),0,"Discord has no pairing code");
+  await link.getByRole("button",{name:"Show QR code"}).click();await link.getByRole("img",{name:"QR code to scan with Discord"}).waitFor();
+  await link.getByText(/Waiting for the Discord app/).waitFor();await page.screenshot({path:path.join(root,"chat-discord-link.png")});
+  const dc=(await overview()).accounts.find(a=>a.platform==="discord");
+  await writeFile(path.join(control,`${dc.id}.scan`),"");await link.getByText(/Scanned by anas/).waitFor();
+  await writeFile(path.join(control,`${dc.id}.pair`),"");await link.waitFor({state:"detached"});
+  const dcTab=page.getByRole("tab",{name:/Discord/});await dcTab.waitFor();assert.equal(await dcTab.getAttribute("aria-selected"),"true");
+  // Servers with their channels in the sidebar; direct messages in the list.
+  const servers=page.getByRole("navigation",{name:"Servers"});await servers.getByRole("button",{name:/Homelab Club/}).waitFor();
+  await servers.getByRole("button",{name:"Voice channel Lounge"}).waitFor();await servers.getByRole("button",{name:/Channel off-topic.*muted/}).waitFor();
+  await page.getByRole("list",{name:"Direct messages"}).getByRole("button",{name:/Lina K/}).waitFor();
+  // A channel replaces the list sheet; messages are flat rows.
+  await servers.getByRole("button",{name:/Channel general, 1 mentions/}).click();
+  const channel=page.getByRole("complementary",{name:"general"}),rows=channel.getByRole("log",{name:"Messages in #general"});
+  await rows.getByText("Anyone moved to the new caddy module?").waitFor();assert.equal(await page.locator(".chat-main").isVisible(),false);
+  await channel.getByRole("heading",{name:"#general"}).waitFor();await channel.getByText("Say hello").waitFor();
+  await page.waitForFunction(()=>document.querySelector(".chat-conversation.is-flat .chat-photo img")?.naturalWidth===4);
+  // Reactions are counts; the account's own toggles off and others stay.
+  const painless=rows.locator(".chat-message").filter({hasText:"Yes, painless"});
+  await painless.getByRole("button",{name:/^👍 3, You and 2 others\. Remove your reaction/}).click();
+  await painless.getByRole("button",{name:/^👍 2\. React with 👍/}).waitFor();await painless.getByText(":party:").waitFor();
+  const dcBox=channel.getByLabel("Message #general");await dcBox.fill("hello from Dar");await dcBox.press("Enter");
+  await rows.locator(".chat-message").filter({hasText:"hello from Dar"}).waitFor();assert.equal(await dcBox.inputValue(),"");
+  await page.screenshot({path:path.join(root,"chat-discord-channel.png")});
+  // Channel info: topic and server; Discord chats mute but do not pin or archive.
+  await channel.getByRole("button",{name:"Channel info"}).click();const dcInfo=page.getByRole("region",{name:"Chat info"});
+  await dcInfo.getByRole("heading",{name:"Channel info"}).waitFor();await dcInfo.getByText(/Homelab Club · Text channels · Discord/).waitFor();
+  assert.equal(await dcInfo.getByRole("button",{name:"Pin"}).count(),0);await dcInfo.getByRole("button",{name:"Close chat info"}).click();
+  // Servers collapse; Direct messages brings back the list.
+  await servers.getByRole("button",{name:/Homelab Club/}).click();assert.equal(await servers.getByRole("button",{name:/Channel general/}).count(),0);
+  await page.getByRole("navigation",{name:"Direct messages"}).getByRole("button",{name:/Direct messages/}).click();await page.locator(".chat-main").waitFor();
+  await page.getByRole("list",{name:"Direct messages"}).getByRole("button",{name:/Lina K/}).click();await page.getByRole("log",{name:"Messages in Lina K"}).getByText("Hopping into Lounge later?").waitFor();
+  for(const theme of ["latte","mocha"]){await page.evaluate(value=>{document.documentElement.dataset.theme=value;},theme);
+    for(const width of [1440,390]){await page.setViewportSize({width,height:844});await page.waitForTimeout(300);
+      const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth?[...document.querySelectorAll("body *")].filter(e=>e.getBoundingClientRect().right>innerWidth+1&&!e.closest(".sidebar")).slice(0,8).map(e=>e.tagName+"."+[...e.classList].join(".")):[]);
+      assert.deepEqual(overflow,[],`Discord ${theme} ${width} overflow`);
+      await page.screenshot({path:path.join(root,`chat-discord-${width}-${theme}.png`)});
+    }}
   assert.deepEqual(errors,[]);
-  console.log("PASS Chat browser: link by QR code, account tab and views, imported chats, conversation with quotes, send with ticks, live incoming message, reply menu, settings sheet, phone layout and both themes.");
+  console.log("PASS Chat browser: link by QR code, account tab and views, imported chats, conversation with quotes, send with ticks, live incoming message, reply menu, settings sheet, phone layout and both themes; Discord sign-in with the terms notice, server tree, flat channel rows, reactions as counts, channel info and DMs.");
 }finally{await browser.close();}
