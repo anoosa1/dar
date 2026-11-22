@@ -38,6 +38,25 @@ U = unit test of TypeScript code; B = browser test (needs the Rust client to mat
 | Agent | agent, agent-connection(U), codex(I), claude(I), agent-browser(B), agent-codex-browser(B) | passes |
 | Operations | restart, production-proxy(I) | passes |
 
+## Moving an existing instance to the Rust stack
+
+The Rust stack takes over a TypeScript instance in place: the same root (`instance.json`,
+`secrets/`, `blobs/`, uploads, app data) and the same SpacetimeDB database. Stop the TypeScript
+runtime, then run the Rust one on that root: `rust/runtime/dev.sh` publishes the Rust module over
+the database (an in-place upgrade; the schemas are identical, see `tools/schema-diff.mjs`) and
+starts the runtime. Nothing is exported or converted beforehand.
+
+- Sessions, app passwords (DAV, CalDAV, CardDAV), uploads in progress, reminders and their
+  watermarks, installed apps and their data carry over unchanged.
+- OIDC: signing keys and clients are shared state. Codes, access and refresh tokens, grants and
+  provider sessions that oidc-provider stored are read by `runtime/src/oidc_store.rs`
+  (`from_oidc_provider`), and its keygrip-signed `dar_oidc` cookie is accepted and re-signed
+  (`oidc/src/legacy.rs`), so relying parties stay signed in without a new prompt.
+- Proof: on the Rust stack, `next/test/restart.mjs` starts the instance on TypeScript, fills it,
+  crashes it mid-upload, and takes it over with Rust (then restarts on Rust), checking all of the
+  above (`node rust/verify.mjs --only restart`).
+- Not yet: NixOS deployment of the Rust stack (`nix/module.nix` runs the TypeScript one).
+
 ## Progress log
 
 Newest first. Each entry: what passes now on the Rust stack, what was added to the tests.

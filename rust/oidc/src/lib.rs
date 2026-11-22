@@ -9,6 +9,7 @@
 pub mod config;
 mod http;
 pub mod keys;
+mod legacy;
 mod oauth;
 pub mod store;
 
@@ -251,6 +252,11 @@ impl Provider {
 
     pub(crate) fn verify_cookie(&self, signed: &str) -> Option<String> {
         verify_with(&self.lock().keys, signed)
+    }
+
+    /// Whether `<name>.sig` is the TypeScript stack's signature of `<name>=<value>` (see `legacy`).
+    pub(crate) fn legacy_cookie_valid(&self, name: &str, value: &str, signature: &str) -> bool {
+        legacy::valid(self.lock().keys.cookie_key(), name, value, signature)
     }
 
     /// `Set-Cookie` for the sign-in API, scoped to `path` so separate tabs never collide.

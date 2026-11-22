@@ -70,7 +70,14 @@ impl DbStore {
     fn find<T: serde::de::DeserializeOwned>(&self, id: &str) -> Option<(T, Value)> {
         let row = self.call("find", json!({ "id": id })).filter(|r| !r.is_null())?;
         let value = self.seal.decrypt(row["encrypted"].as_str()?)?;
-        Some((serde_json::from_value(value).ok()?, row))
+        match serde_json::from_value::<T>(value.clone()) {
+            Ok(record) => Some((record, row)),
+            // A record the TypeScript stack's oidc-provider wrote before this instance moved over.
+            Err(_) => {
+                let model = id.split('/').next().unwrap_or_default();
+                Some((serde_json::from_value(from_oidc_provider(model, &value, &row)?).ok()?, row))
+            }
+        }
     }
 
     fn upsert<T: serde::Serialize>(&self, id: &str, model: &str, record: &T, row: Row<'_>) {
@@ -217,5 +224,63 @@ impl Store for DbStore {
 
     fn cleanup(&mut self, _now: i64) {
         self.call("cleanup", json!({}));
+    }
+}
+
+/// The Rust record for one that oidc-provider (the TypeScript stack) stored: its payload is
+/// oidc-provider's model, and the row's own columns carry the native session, provider session
+/// and expiry. Codes, tokens, grants and sessions keep working after an instance moves to the
+/// Rust stack; anything else (interactions) is simply started again.
+fn from_oidc_provider(model: &str, payload: &Value, row: &Value) -> Option<Value> {
+    let text = |key: &str| payload[key].as_str().unwrap_or_default().to_owned();
+    let seconds = |key: &str| payload[key].as_i64().unwrap_or(0);
+    let native = row["nativeSessionId"].as_str().unwrap_or_default();
+    let session_key = row["sessionKey"].as_str().unwrap_or_default();
+    let expires_at = row["expiresAt"].as_i64().filter(|e| *e > 0).unwrap_or_else(|| seconds("exp") * 1000);
+    let consumed = row["consumed"].as_f64().unwrap_or(0.0) > 0.0 || payload["consumed"].as_i64().unwrap_or(0) > 0;
+    match model {
+        "AuthorizationCode" => {
+            // oxide-auth keeps a PKCE challenge with its method's letter appended.
+            let pkce = payload["codeChallenge"].as_str().map(|challenge| {
+                let method = if payload["codeChallengeMethod"].as_str() == Some("plain") { "p" } else { "S" };
+                format!("{challenge}{method}")
+            });
+            Some(json!({
+                "client_id": text("clientId"), "account_id": text("accountId"), "redirect_uri": text("redirectUri"),
+                "scope": text("scope"), "pkce": pkce, "nonce": payload["nonce"].as_str(), "auth_time": seconds("authTime"),
+                "grant_id": text("grantId"), "session_key": session_key, "native_session_id": native,
+                "expires_at": expires_at, "consumed": consumed,
+            }))
+        }
+        "AccessToken" | "RefreshToken" => Some(json!({
+            "kind": if model == "AccessToken" { "Access" } else { "Refresh" },
+            "client_id": text("clientId"), "account_id": text("accountId"), "scope": text("scope"),
+            "grant_id": text("grantId"), "session_key": session_key, "native_session_id": native,
+            "auth_time": seconds("authTime"), "issued_at": seconds("iat") * 1000, "expires_at": expires_at, "consumed": consumed,
+        })),
+        "Grant" => {
+            // oidc-provider grants list OpenID scopes, and each resource's scopes, separately.
+            let mut scopes: Vec<String> = payload["openid"]["scope"].as_str().unwrap_or_default().split_whitespace().map(str::to_owned).collect();
+            if let Some(resources) = payload["resources"].as_object() {
+                for scope in resources.values().filter_map(Value::as_str) {
+                    scopes.extend(scope.split_whitespace().map(str::to_owned));
+                }
+            }
+            Some(json!({
+                "id": text("jti"), "account_id": text("accountId"), "client_id": text("clientId"), "scopes": scopes,
+                "native_session_id": native, "session_key": session_key, "expires_at": expires_at,
+            }))
+        }
+        "Session" => {
+            let grants: serde_json::Map<String, Value> = payload["authorizations"]
+                .as_object()
+                .map(|all| all.iter().filter_map(|(client, a)| Some((client.clone(), json!(a["grantId"].as_str()?)))).collect())
+                .unwrap_or_default();
+            Some(json!({
+                "account_id": text("accountId"), "native_session_id": native, "auth_time": seconds("loginTs"),
+                "expires_at": expires_at, "grants": grants,
+            }))
+        }
+        _ => None,
     }
 }

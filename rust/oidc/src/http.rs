@@ -68,6 +68,17 @@ fn pairs(raw: &[u8]) -> Vec<(String, String)> {
     url::form_urlencoded::parse(raw).map(|(k, v)| (k.into_owned(), v.into_owned())).collect()
 }
 
+/// The provider session cookie, also one the TypeScript stack signed before the instance moved to
+/// this one: that is re-signed in this provider's form, so the session simply continues.
+fn session_cookie(headers: &HeaderMap, p: &Provider) -> Option<String> {
+    let value = cookie(headers, "dar_oidc")?;
+    if p.verify_cookie(&value).is_some() {
+        return Some(value);
+    }
+    let signature = cookie(headers, "dar_oidc.sig")?;
+    p.legacy_cookie_valid("dar_oidc", &value, &signature).then(|| p.sign_cookie(&value))
+}
+
 fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get_all(header::COOKIE)
@@ -195,7 +206,7 @@ async fn authorize(State(p): State<Provider>, method: Method, headers: HeaderMap
     if raw.len() > 8192 {
         return error_page("The sign-in request is too large.");
     }
-    let session = cookie(&headers, "dar_oidc");
+    let session = session_cookie(&headers, &p);
     let (outcome, new_session) = p.authorize(Params::parse(pairs(&raw)), session.as_deref(), None);
     p.render(outcome, new_session)
 }
@@ -217,7 +228,7 @@ async fn resume(State(p): State<Provider>, headers: HeaderMap, Path(uid): Path<S
     if interaction.result.is_none() {
         return (StatusCode::SEE_OTHER, [(header::LOCATION, p.config().interaction_url(&uid))]).into_response();
     }
-    let session = cookie(&headers, "dar_oidc");
+    let session = session_cookie(&headers, &p);
     let params = Params::parse(interaction.params.clone());
     let (outcome, new_session) = p.authorize(params, session.as_deref(), Some(interaction));
     let mut response = p.render(outcome, new_session);
@@ -477,7 +488,7 @@ async fn confirm_end_session(State(p): State<Provider>, headers: HeaderMap, body
     if params.get("logout") != Some("yes") {
         return error_page("Sign-out was not confirmed.");
     }
-    if let Some(uid) = cookie(&headers, "dar_oidc").and_then(|c| p.verify_cookie(&c)) {
+    if let Some(uid) = session_cookie(&headers, &p).and_then(|c| p.verify_cookie(&c)) {
         p.revoke(Revoke::Session(key(&uid)));
     }
     let mut response = match params.get("post_logout_redirect_uri") {
@@ -495,7 +506,7 @@ async fn confirm_end_session(State(p): State<Provider>, headers: HeaderMap, body
         }
         None => page(StatusCode::OK, "Signed out", "<p>The provider session has ended.</p><a href=\"/\">Return to Dar</a>", CSP),
     };
-    for (name, path) in [("dar_oidc", "/".to_owned()), ("dar_oidc", p.issuer_path()), ("dar_oidc_logout", format!("{}/session/end", p.issuer_path()))] {
+    for (name, path) in [("dar_oidc", "/".to_owned()), ("dar_oidc.sig", "/".to_owned()), ("dar_oidc", p.issuer_path()), ("dar_oidc_logout", format!("{}/session/end", p.issuer_path()))] {
         if let Ok(value) = HeaderValue::from_str(&format!("{name}=; {}", p.cookie_attributes(&path, 0))) {
             response.headers_mut().append(header::SET_COOKIE, value);
         }

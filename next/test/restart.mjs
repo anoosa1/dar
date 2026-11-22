@@ -23,6 +23,11 @@ const origin = `http://127.0.0.1:${port}`, project = path.resolve(import.meta.di
 await manageApps(root,"apps-install",path.resolve(project,"../apps/prayer-times/dist"));
 const environment = { ...process.env, DAR_ROOT: root, DAR_PORT: String(port), DAR_DATABASE_PORT: String(databasePort), DAR_DATABASE_NAME: "dar-restart" };
 let child;
+// On the Rust stack this is also the transition proof: the instance starts on the TypeScript stack,
+// is filled and crashed there, and every later start takes the same root and database over
+// with the Rust module and runtime (rust/runtime/dev.sh publishes the Rust module in place).
+const transition = process.env.DAR_TEST_STACK === "rust";
+let starts = 0;
 async function until(probe) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
@@ -33,7 +38,9 @@ async function until(probe) {
   throw new Error("Fixture readiness timed out.");
 }
 async function start() {
-  child = spawn(process.execPath, ["scripts/dev.mjs"], { cwd: project, env: environment, stdio: ["ignore", "pipe", "pipe"] });
+  child = transition && starts++ > 0
+    ? spawn("bash", [path.resolve(project, "../rust/runtime/dev.sh")], { cwd: project, env: { ...environment, DAR_PREBUILT: "1", DAR_ORIGIN: origin }, stdio: ["ignore", "pipe", "pipe"] })
+    : spawn(process.execPath, ["scripts/dev.mjs"], { cwd: project, env: environment, stdio: ["ignore", "pipe", "pipe"] });
   let output = ""; child.stdout.on("data", chunk => { output = (output + chunk).slice(-8000); }); child.stderr.on("data", chunk => { output = (output + chunk).slice(-8000); });
   try { await until(async () => (await fetch(`${origin}/api/v1/auth/status`, { signal: AbortSignal.timeout(500) })).ok); }
   catch (error) { throw new Error(`${error.message}\n${output}`); }
@@ -90,6 +97,10 @@ try {
   const owner = await database(`http://127.0.0.1:${databasePort}`, "dar-restart", path.join(root,"secrets/database-token"));
   await deliverReminders(owner);
   const durable = await upload(origin, session, "Durable.txt", "Committed content survives process failure.");
+  // A sync client's app password and a file it wrote over WebDAV.
+  const appPassword=await (await fetch(`${origin}/api/v1/auth/app-passwords`,{method:"POST",headers:{...session.headers,"content-type":"application/json"},body:JSON.stringify({label:"Sync client",scope:"write"})})).json();
+  const davHeaders={authorization:`Basic ${Buffer.from(`admin:${appPassword.secret}`).toString("base64")}`},davFile=`${appPassword.davUrl}Synced.txt`;
+  const davPut=await fetch(davFile,{method:"PUT",headers:davHeaders,body:"Written by a sync client."});assert.equal(davPut.status,201,await davPut.clone().text());const davEtag=davPut.headers.get("etag");
   const reservationResponse = await fetch(`${origin}/api/v1/files/uploads`, { method: "POST", headers: { ...session.headers, "content-type": "application/json" }, body: JSON.stringify({ name: "Interrupted.txt", parentId: "", size: 4096, mediaType: "text/plain" }) });
   assert.equal(reservationResponse.status, 201); const reservation = await reservationResponse.json();
   const request = http.request(`${origin}/api/v1/files/uploads/${reservation.id}`, { method: "PUT", headers: { ...session.headers, "content-length": 4096 } });
@@ -105,10 +116,15 @@ try {
   assert.equal((await fetch(origin+"/api/v1/notes/items",{headers:session.headers})).status,404);assert.equal((await fetch(appEndpoint,{headers:session.headers})).status,404);
   await setApp("notes",true);await setApp("org.dar.prayer-times",true);
   assert.deepEqual(await (await fetch(`${origin}/oidc/jwks`)).json(),providerKeys);
-  const redeemed=await exchange(client,pendingCode);assert.ok(redeemed.id_token);assert.ok((await oidc.refreshTokenGrant(client.config,activeTokens.refresh_token)).access_token);
+  const redeemed=await exchange(client,pendingCode);assert.ok(redeemed.id_token);
+  // The provider session made before the restart (and, on the Rust stack, by the TypeScript stack) still signs the browser in silently.
+  const silent=await authorize(origin,identity.session,client,{prompt:"none",jar:pendingCode.jar});assert.equal(silent.url.searchParams.get("error"),null,silent.url.href);assert.ok((await exchange(client,silent)).id_token);
+assert.ok((await oidc.refreshTokenGrant(client.config,activeTokens.refresh_token)).access_token);
   const restoredDirectory=await fetch(`${origin}/scim/v2/Users/${directoryUser.id}`,{headers:{authorization:`Bearer ${credential.secret}`}});assert.equal(restoredDirectory.status,200);assert.equal((await restoredDirectory.json()).id,directoryUser.id);
   assert.deepEqual(await readdir(path.join(root, "uploads")), []);
   assert.equal(await (await fetch(`${origin}/api/v1/files/${durable.fileId}/content`, { headers: session.headers })).text(), "Committed content survives process failure.");
+  const davGet=await fetch(davFile,{headers:davHeaders});assert.equal(davGet.status,200);assert.equal(await davGet.text(),"Written by a sync client.");assert.equal(davGet.headers.get("etag"),davEtag);
+  assert.equal((await fetch(appPassword.davUrl,{method:"PROPFIND",headers:{...davHeaders,depth:"1"}})).status,207);
   const retry = await fetch(`${origin}/api/v1/files/uploads/${reservation.id}`, { method: "PUT", headers: session.headers, body: Buffer.alloc(4096, "r") });
   assert.equal(retry.status, 200, await retry.clone().text());
   const repeated = await fetch(`${origin}/api/v1/files/uploads/${reservation.id}`, { method: "PUT", headers: session.headers, body: Buffer.alloc(4096, "s") });
@@ -133,5 +149,6 @@ try {
   console.info("PASS Calendar resource and reminder watermark survive the same crash/restart; due delivery resumes without duplication.");
   console.info("PASS exact Notes source/metadata/private trash and recurring VTODO survive the same crash; task reminders catch up exactly once.");
   console.info("PASS Agent project, thread and exact saved message survive the same forced runtime/database restart.");
+  if (transition) console.info("PASS an instance made on the TypeScript stack, crashed mid-upload, is taken over in place by the Rust module and runtime with every check above.");
   console.info("PASS unredeemed OIDC code, active refresh token, client registration, signing keys, native binding and SCIM directory/credential survive the same forced process/database restart.");
 } finally { await stop(); }
