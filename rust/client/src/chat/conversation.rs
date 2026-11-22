@@ -461,6 +461,12 @@ pub(super) fn Conversation(
     let platform = Memo::new(move |_| account.with(|a| a.platform.clone()));
     let account_name = Memo::new(move |_| account.with(|a| a.name.clone()));
     let account_state = Memo::new(move |_| account.with(|a| a.state.clone()));
+    let has_older = Memo::new(move |_| older.with(|o| o.before.is_some()));
+    let show_ask_phone = Memo::new(move |_| !discord.get() && page.with(Option::is_some) && older.with(|o| o.before.is_none()) && !messages.with(Vec::is_empty) && can_send.get());
+    let show_discord_earlier = Memo::new(move |_| discord.get() && page.with(Option::is_some) && older.with(|o| o.before.is_none()) && !messages.with(Vec::is_empty));
+    let has_error = Memo::new(move |_| !error.with(String::is_empty));
+    let show_opening = Memo::new(move |_| page.with(Option::is_none) && error.with(String::is_empty));
+    let show_empty = Memo::new(move |_| page.with(Option::is_some) && messages.with(Vec::is_empty));
 
     view! {
         <section class=move || if discord.get() { "chat-conversation is-flat" } else { "chat-conversation" }>
@@ -516,17 +522,17 @@ pub(super) fn Conversation(
                         }
                     }
                 }>
-                {move || older.with(|o| o.before.is_some()).then(|| view! {
+                {move || has_older.get().then(|| view! {
                     <div class="chat-more"><button class="text-button" disabled=move || loading_older.get() on:click=move |_| load_older()>{move || if loading_older.get() { "Loading\u{2026}" } else { "Load earlier messages" }}</button></div>
                 })}
-                {move || (!discord.get() && page.with(Option::is_some) && older.with(|o| o.before.is_none()) && !messages.with(Vec::is_empty) && can_send.get()).then(|| view! {
+                {move || show_ask_phone.get().then(|| view! {
                     <div class="chat-more">{move || if asked.get() {
                         view! { <span class="chat-hint">"Asked your phone; earlier messages appear here as they arrive."</span> }.into_any()
                     } else {
                         view! { <button class="text-button" on:click=move |_| ask_phone()>"Get earlier messages from your phone"</button> }.into_any()
                     }}</div>
                 })}
-                {move || (discord.get() && page.with(Option::is_some) && older.with(|o| o.before.is_none()) && !messages.with(Vec::is_empty)).then(|| view! {
+                {move || show_discord_earlier.get().then(|| view! {
                     <div class="chat-more">{move || if start.get() {
                         view! { <span class="chat-hint">{format!("This is the start of {}.", shown.get())}</span> }.into_any()
                     } else if can_send.get() && account_state.get() == "connected" {
@@ -535,14 +541,54 @@ pub(super) fn Conversation(
                         ().into_any()
                     }}</div>
                 })}
-                {move || (!error.with(String::is_empty)).then(|| view! {
+                {move || has_error.get().then(|| view! {
                     <div class="chat-empty" role="alert"><h2>"This chat could not be opened"</h2><p>{error.get()}</p><button class="secondary-button" on:click=move |_| spawn_local(load())>"Retry"</button></div>
                 })}
-                {move || (page.with(Option::is_none) && error.with(String::is_empty)).then(|| view! { <p class="chat-empty" role="status">"Opening chat\u{2026}"</p> })}
-                {move || (page.with(Option::is_some) && messages.with(Vec::is_empty)).then(|| view! {
+                {move || show_opening.get().then(|| view! { <p class="chat-empty" role="status">"Opening chat\u{2026}"</p> })}
+                {move || show_empty.get().then(|| view! {
                     <div class="chat-empty"><h2>"No messages yet"</h2><p>{if can_send.get() { format!("Say hello. Messages go out from {}.", account_name.get()) } else { "Messages from this chat appear here.".into() }}</p></div>
                 })}
-                <For each=move || rows.get() key=|row| format!("{row:?}") let:row>
+                <For each=move || rows.get() key=|row| {
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    let m = &row.message;
+                    m.id.hash(&mut h);
+                    m.sender.hash(&mut h);
+                    m.sender_name.hash(&mut h);
+                    m.from_me.hash(&mut h);
+                    m.at.to_bits().hash(&mut h);
+                    m.kind.hash(&mut h);
+                    m.text.hash(&mut h);
+                    m.file_name.hash(&mut h);
+                    m.quoted_id.hash(&mut h);
+                    m.quoted_sender.hash(&mut h);
+                    m.quoted_text.hash(&mut h);
+                    m.status.hash(&mut h);
+                    m.edited.hash(&mut h);
+                    m.deleted.hash(&mut h);
+                    if let Some(ref media) = m.media {
+                        media.kind.hash(&mut h);
+                        media.mime.hash(&mut h);
+                        media.size.to_bits().hash(&mut h);
+                        media.seconds.hash(&mut h);
+                        media.width.hash(&mut h);
+                        media.height.hash(&mut h);
+                        media.state.hash(&mut h);
+                    }
+                    m.reactions.len().hash(&mut h);
+                    for r in &m.reactions {
+                        r.emoji.hash(&mut h);
+                        r.count.hash(&mut h);
+                        r.mine.hash(&mut h);
+                        r.names.hash(&mut h);
+                    }
+                    row.day.hash(&mut h);
+                    row.tail.hash(&mut h);
+                    row.show_name.hash(&mut h);
+                    row.found.hash(&mut h);
+                    row.can_change.hash(&mut h);
+                    (m.message_id.clone(), h.finish())
+                } let:row>
                     {
                         let m = row.message.clone();
                         let m_save = StoredValue::new(m.clone());

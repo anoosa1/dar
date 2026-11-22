@@ -997,7 +997,7 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                         {move || (chat.list_state.get() == "ready" && chat.page.with(Option::is_some) && all.with(Vec::is_empty)).then(empty_text).flatten().map(|(heading, text)| view! {
                             <div class="chat-empty"><h2>{heading}</h2><p>{text}</p></div>
                         })}
-                        <For each=move || all.get() key=|t| format!("{}{:?}", t.id, t) let:thread>
+                        <For each=move || all.get() key=|t| (t.id.clone(), t.name.clone(), t.preview.clone(), t.preview_kind.clone(), t.preview_from_me, t.preview_sender.clone(), t.preview_status.clone(), t.at.to_bits(), t.unread, t.pinned, t.archived, t.muted_until.to_bits()) let:thread>
                             {
                                 let id = thread.id.clone();
                                 let open_id = id.clone();
@@ -1010,73 +1010,82 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                     </div>
                     {dock(" is-phone")}
                 </main>
-                {move || {
-                    let selected = chat.selected.get();
-                    if selected.is_empty() || !is_voice.get() {
-                        return None;
+                {
+                    let voice_selected = Memo::new(move |_| {
+                        let selected = chat.selected.get();
+                        (!selected.is_empty() && is_voice.get()).then_some(selected)
+                    });
+                    move || {
+                        let _selected = voice_selected.get()?;
+                        let a = account.get_untracked()?;
+                        let thread = current.get_untracked()?;
+                        let thread_id = thread.id.clone();
+                        let server_of = move || servers.with(|s| s.as_ref().and_then(|s| s.iter().find(|s| s.channels.iter().any(|c| c.id == thread_id)).cloned()));
+                        let server_of = StoredValue::new(server_of());
+                        let jid = thread.jid.clone();
+                        let jid2 = jid.clone();
+                        let a_id = StoredValue::new(a.id.clone());
+                        let a_jid = a.jid.clone();
+                        let join_thread = StoredValue::new(thread.id.clone());
+                        Some(view! {
+                            <aside class="pim-details chat-details" aria-label=thread.name.clone()>
+                                <VoiceStage thread_name=thread.name.clone() thread_jid=thread.jid.clone()
+                                    server=Signal::derive(move || server_of.with_value(|s| s.as_ref().map(|s| s.name.clone()).unwrap_or_default()))
+                                    members=Signal::derive(move || {
+                                        let server_id = server_of.with_value(|s| s.as_ref().map(|s| s.server_id.clone()).unwrap_or_default());
+                                        my_voice.with(|v| v.as_ref().and_then(|v| v.servers.get(&server_id).and_then(|s| s.get(&jid)).cloned()).unwrap_or_default())
+                                    })
+                                    call=Signal::derive(move || my_voice.with(|v| v.as_ref().and_then(|v| v.call.clone())))
+                                    in_other=Signal::derive(move || {
+                                        let other = the_call.with(|c| c.as_ref().is_some_and(|c| !(call_account.get() == a_id.get_value() && c.channel_id == jid2)));
+                                        if other { call_channel.get() } else { String::new() }
+                                    })
+                                    speaking=Signal::derive(move || voice_state.with(|v| v.speaking.clone()))
+                                    me=Signal::derive(move || a_jid.clone())
+                                    mic=Signal::derive(move || voice_state.with(|v| v.mic))
+                                    here=Signal::derive(move || my_voice.with(|v| v.as_ref().is_some_and(|v| v.here)))
+                                    on_join=Callback::new(move |(muted, done): (bool, Callback<Result<(), String>>)| {
+                                        let (id, thread) = (a_id.get_value(), join_thread.get_value());
+                                        spawn_local(async move { { done.try_run(voice.join(id, thread, muted).await); }; });
+                                    })
+                                    on_set=set_self(a.id.clone())
+                                    on_leave=Callback::new(move |_| voice_run(Box::pin(voice.leave(a_id.get_value()))))
+                                    on_code=Callback::new(move |_| code_for.set(a_id.get_value()))
+                                    on_use_here=Callback::new(move |_| voice_run(Box::pin(voice.use_here(a_id.get_value()))))
+                                    on_close=Callback::new(move |_| chat.close_thread())/>
+                            </aside>
+                        })
                     }
-                    let a = account.get_untracked()?;
-                    let thread = current.get_untracked()?;
-                    let thread_id = thread.id.clone();
-                    let server_of = move || servers.with(|s| s.as_ref().and_then(|s| s.iter().find(|s| s.channels.iter().any(|c| c.id == thread_id)).cloned()));
-                    let server_of = StoredValue::new(server_of());
-                    let jid = thread.jid.clone();
-                    let jid2 = jid.clone();
-                    let a_id = StoredValue::new(a.id.clone());
-                    let a_jid = a.jid.clone();
-                    let join_thread = StoredValue::new(thread.id.clone());
-                    Some(view! {
-                        <aside class="pim-details chat-details" aria-label=thread.name.clone()>
-                            <VoiceStage thread_name=thread.name.clone() thread_jid=thread.jid.clone()
-                                server=Signal::derive(move || server_of.with_value(|s| s.as_ref().map(|s| s.name.clone()).unwrap_or_default()))
-                                members=Signal::derive(move || {
-                                    let server_id = server_of.with_value(|s| s.as_ref().map(|s| s.server_id.clone()).unwrap_or_default());
-                                    my_voice.with(|v| v.as_ref().and_then(|v| v.servers.get(&server_id).and_then(|s| s.get(&jid)).cloned()).unwrap_or_default())
-                                })
-                                call=Signal::derive(move || my_voice.with(|v| v.as_ref().and_then(|v| v.call.clone())))
-                                in_other=Signal::derive(move || {
-                                    let other = the_call.with(|c| c.as_ref().is_some_and(|c| !(call_account.get() == a_id.get_value() && c.channel_id == jid2)));
-                                    if other { call_channel.get() } else { String::new() }
-                                })
-                                speaking=Signal::derive(move || voice_state.with(|v| v.speaking.clone()))
-                                me=Signal::derive(move || a_jid.clone())
-                                mic=Signal::derive(move || voice_state.with(|v| v.mic))
-                                here=Signal::derive(move || my_voice.with(|v| v.as_ref().is_some_and(|v| v.here)))
-                                on_join=Callback::new(move |(muted, done): (bool, Callback<Result<(), String>>)| {
-                                    let (id, thread) = (a_id.get_value(), join_thread.get_value());
-                                    spawn_local(async move { { done.try_run(voice.join(id, thread, muted).await); }; });
-                                })
-                                on_set=set_self(a.id.clone())
-                                on_leave=Callback::new(move |_| voice_run(Box::pin(voice.leave(a_id.get_value()))))
-                                on_code=Callback::new(move |_| code_for.set(a_id.get_value()))
-                                on_use_here=Callback::new(move |_| voice_run(Box::pin(voice.use_here(a_id.get_value()))))
-                                on_close=Callback::new(move |_| chat.close_thread())/>
-                        </aside>
-                    })
-                }}
-                {move || {
-                    let selected = chat.selected.get();
-                    if selected.is_empty() || is_voice.get() || !has_account.get() {
-                        return None;
+                }
+                {
+                    let conv_selected = Memo::new(move |_| {
+                        let selected = chat.selected.get();
+                        (!selected.is_empty() && !is_voice.get() && has_account.get()).then_some(selected)
+                    });
+                    move || {
+                        let selected = conv_selected.get()?;
+                        let a = account.get_untracked()?;
+                        let focus = if selected == start_chat.get_value() { start_message.get_value() } else { String::new() };
+                        let setting_id = selected.clone();
+                        let save_id = selected.clone();
+                        Some(view! {
+                            <aside class="pim-details chat-details" aria-label=move || current.with(|c| c.as_ref().map(|c| c.name.clone())).unwrap_or_else(|| "Conversation".into())>
+                                <Conversation thread_id=selected focus_message=focus account=Signal::derive(move || account.get().unwrap_or_else(|| a.clone())) session=session_sv.get_value() epoch=chat.epoch info=info
+                                    on_close=Callback::new(move |_| chat.close_thread())
+                                    on_notice=Callback::new(move |text: String| chat.notice.set(text))
+                                    on_save=Callback::new(move |message: ChatMessage| chat.pane.set(Some(Pane::Save { thread_id: save_id.clone(), message })))
+                                    on_info=Callback::new(move |_| info.update(|i| *i = !*i))
+                                    on_setting=Callback::new(move |change: ChatSetting| chat.set_chat(setting_id.clone(), change))/>
+                            </aside>
+                        })
                     }
-                    let a = account.get_untracked()?;
-                    let focus = if selected == start_chat.get_value() { start_message.get_value() } else { String::new() };
-                    let setting_id = selected.clone();
-                    let save_id = selected.clone();
-                    Some(view! {
-                        <aside class="pim-details chat-details" aria-label=move || current.with(|c| c.as_ref().map(|c| c.name.clone())).unwrap_or_else(|| "Conversation".into())>
-                            <Conversation thread_id=selected focus_message=focus account=Signal::derive(move || account.get().unwrap_or_else(|| a.clone())) session=session_sv.get_value() epoch=chat.epoch info=info
-                                on_close=Callback::new(move |_| chat.close_thread())
-                                on_notice=Callback::new(move |text: String| chat.notice.set(text))
-                                on_save=Callback::new(move |message: ChatMessage| chat.pane.set(Some(Pane::Save { thread_id: save_id.clone(), message })))
-                                on_info=Callback::new(move |_| info.update(|i| *i = !*i))
-                                on_setting=Callback::new(move |change: ChatSetting| chat.set_chat(setting_id.clone(), change))/>
-                        </aside>
-                    })
-                }}
-                {move || {
-                    let selected = chat.selected.get();
-                    (!selected.is_empty() && has_account.get() && info.get()).then(|| {
+                }
+                {
+                    let info_selected = Memo::new(move |_| {
+                        let selected = chat.selected.get();
+                        (!selected.is_empty() && has_account.get() && info.get()).then_some(selected)
+                    });
+                    move || info_selected.get().map(|selected| {
                         let setting_id = selected.clone();
                         view! {
                             <aside class="chat-info-sheet" aria-label="Chat info">
@@ -1086,10 +1095,13 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                             </aside>
                         }
                     })
-                }}
-                {move || (chat.selected.with(String::is_empty) && has_account.get()).then(|| view! {
-                    <div class="chat-placeholder" aria-hidden="true"><span class="chat-empty-icon"><Icon name="chat"/></span><p>"Choose a chat"</p></div>
-                })}
+                }
+                {
+                    let show_placeholder = Memo::new(move |_| chat.selected.with(String::is_empty) && has_account.get());
+                    move || show_placeholder.get().then(|| view! {
+                        <div class="chat-placeholder" aria-hidden="true"><span class="chat-empty-icon"><Icon name="chat"/></span><p>"Choose a chat"</p></div>
+                    })
+                }
             </div>
             {move || chat.pane.get().map(|pane| {
                 let session = session_sv.get_value();

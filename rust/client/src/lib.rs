@@ -79,6 +79,7 @@ fn base64url(bytes: &[u8]) -> String {
 pub fn start() {
     console_error_panic_hook::set_once();
     let root = web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id("root")).expect("#root");
+    root.set_inner_html("");
     leptos::mount::mount_to(root.unchecked_into(), app::App).forget();
 }
 

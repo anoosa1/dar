@@ -1824,20 +1824,43 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                     tabindex="-1"
                     aria-label=move || current_asset.with(|c| c.as_ref().map(|a| a.name.clone())).unwrap_or_else(|| title.get())
                 >
-                    {move || {
-                        let cur_view = view.get();
-                        if cur_view == View::Duplicates {
-                            let sess = session.get_value();
-                            return view! {
-                                <DuplicatesView
-                                    session=sess
-                                    on_notice=Callback::new(move |n| show_notice(n))
-                                    on_changed=Callback::new(move |_| load_overview())
-                                />
-                            }
-                            .into_any();
+                    {
+                        #[derive(Clone, Copy, PartialEq, Eq)]
+                        enum MainPane {
+                            Duplicates,
+                            Shared,
+                            Viewer,
+                            Missing,
+                            Grid,
                         }
-                        if cur_view == View::Shared {
+                        let main_pane = Memo::new(move |_| {
+                            let cur_view = view.get();
+                            if cur_view == View::Duplicates {
+                                MainPane::Duplicates
+                            } else if cur_view == View::Shared {
+                                MainPane::Shared
+                            } else if has_viewer.get() {
+                                MainPane::Viewer
+                            } else if open.with(Option::is_some) && state.get() == ListState::Ready {
+                                MainPane::Missing
+                            } else {
+                                MainPane::Grid
+                            }
+                        });
+                        move || {
+                            match main_pane.get() {
+                                MainPane::Duplicates => {
+                                    let sess = session.get_value();
+                                    return view! {
+                                        <DuplicatesView
+                                            session=sess
+                                            on_notice=Callback::new(move |n| show_notice(n))
+                                            on_changed=Callback::new(move |_| load_overview())
+                                        />
+                                    }
+                                    .into_any();
+                                }
+                                MainPane::Shared => {
                             return view! {
                                 <div class="photos-list-heading">
                                     <h1>"Shared with me"</h1>
@@ -1894,86 +1917,86 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                     }}
                                 </div>
                             }
-                            .into_any();
-                        }
-                        if has_viewer.get() {
-                            // Closing the viewer clears the asset before this view unmounts; keep showing the last one.
-                            let asset_sig = Signal::from(Memo::new(move |last: Option<&PhotoAsset>| current_asset.get().or_else(|| last.cloned()).expect("viewer asset")));
-                            let shown_sig = Signal::from(Memo::new(move |last: Option<&PhotoAsset>| shown_asset.get().or_else(|| last.cloned()).expect("shown asset")));
-                            let index_sig = Signal::derive(move || current_index.get().unwrap_or(0));
-                            let trash_sig = Signal::derive(move || {
-                                view.get() == View::Trash || shown_asset.with(|s| s.as_ref().is_some_and(has_owner))
-                            });
-                            let sess = session.get_value();
-                            return view! {
-                                <Viewer
-                                    asset=asset_sig
-                                    shown=shown_sig
-                                    items=items.into()
-                                    index=index_sig
-                                    session=sess
-                                    trash=trash_sig
-                                    more=Callback::new(move |a: PhotoAsset| viewer_more(a))
-                                    on_member=Callback::new(move |m: Option<PhotoAsset>| member.set(m))
-                                    on_unstack=Callback::new(move |s: PhotoStack| unstack_photos(s))
-                                    on_cover=Callback::new(move |s: PhotoStack| {
-                                        let Some(shown_now) = shown_asset.get_untracked() else { return };
-                                        let shown_id = shown_now.id;
-                                        let stack_id = s.id;
-                                        run_guarded(folder, unlock_action, notice, "change the cover", move || {
-                                            let stack_id = stack_id.clone();
-                                            let shown_id = shown_id.clone();
-                                            let csrf_tok = csrf();
-                                            async move {
-                                                api::send::<Value>(
-                                                    &format!("{BASE}/stacks/{stack_id}"),
-                                                    "PATCH",
-                                                    Some(json!({ "primaryId": shown_id })),
-                                                    &csrf_tok,
-                                                )
-                                                .await?;
-                                                member.try_set(None);
-                                                refresh();
-                                                open.try_set(Some(shown_id));
-                                                show_notice(PhotosNotice {
-                                                    message: "Stack cover changed".to_owned(),
-                                                    undo: None,
+                                    .into_any()
+                                }
+                                MainPane::Viewer => {
+                                    // Closing the viewer clears the asset before this view unmounts; keep showing the last one.
+                                    let asset_sig = Signal::from(Memo::new(move |last: Option<&PhotoAsset>| current_asset.get().or_else(|| last.cloned()).expect("viewer asset")));
+                                    let shown_sig = Signal::from(Memo::new(move |last: Option<&PhotoAsset>| shown_asset.get().or_else(|| last.cloned()).expect("shown asset")));
+                                    let index_sig = Signal::derive(move || current_index.get().unwrap_or(0));
+                                    let trash_sig = Signal::derive(move || {
+                                        view.get() == View::Trash || shown_asset.with(|s| s.as_ref().is_some_and(has_owner))
+                                    });
+                                    let sess = session.get_value();
+                                    view! {
+                                        <Viewer
+                                            asset=asset_sig
+                                            shown=shown_sig
+                                            items=items.into()
+                                            index=index_sig
+                                            session=sess
+                                            trash=trash_sig
+                                            more=Callback::new(move |a: PhotoAsset| viewer_more(a))
+                                            on_member=Callback::new(move |m: Option<PhotoAsset>| member.set(m))
+                                            on_unstack=Callback::new(move |s: PhotoStack| unstack_photos(s))
+                                            on_cover=Callback::new(move |s: PhotoStack| {
+                                                let Some(shown_now) = shown_asset.get_untracked() else { return };
+                                                let shown_id = shown_now.id;
+                                                let stack_id = s.id;
+                                                run_guarded(folder, unlock_action, notice, "change the cover", move || {
+                                                    let stack_id = stack_id.clone();
+                                                    let shown_id = shown_id.clone();
+                                                    let csrf_tok = csrf();
+                                                    async move {
+                                                        api::send::<Value>(
+                                                            &format!("{BASE}/stacks/{stack_id}"),
+                                                            "PATCH",
+                                                            Some(json!({ "primaryId": shown_id })),
+                                                            &csrf_tok,
+                                                        )
+                                                        .await?;
+                                                        member.try_set(None);
+                                                        refresh();
+                                                        open.try_set(Some(shown_id));
+                                                        show_notice(PhotosNotice {
+                                                            message: "Stack cover changed".to_owned(),
+                                                            undo: None,
+                                                        });
+                                                        Ok(())
+                                                    }
                                                 });
-                                                Ok(())
-                                            }
-                                        });
-                                    })
-                                    on_info=Callback::new(move |_| open_info())
-                                    on_close=Callback::new(move |_| close_viewer())
-                                    on_step=Callback::new(move |d| step(d))
-                                    on_open=Callback::new(move |id| open.set(Some(id)))
-                                    on_favorite=Callback::new(move |_| {
-                                        let Some(shown_now) = shown_asset.get_untracked() else { return };
-                                        let next_fav = !shown_now.favorite;
-                                        update_assets(vec![shown_now.id], Some(next_fav), None, None, false);
-                                        member.update(|m| {
-                                            if let Some(m) = m {
-                                                m.favorite = next_fav;
-                                            }
-                                        });
-                                    })
-                                />
-                            }
-                            .into_any();
-                        }
-                        if open.with(Option::is_some) && state.get() == ListState::Ready {
-                            return view! {
-                                <div class="photos-empty" role="alert">
-                                    <h2>"This photo is not available"</h2>
-                                    <p>"It may have been moved to the trash, archived, locked or removed from this view."</p>
-                                    <button class="secondary-button" on:click=move |_| open.set(None)>
-                                        "Back to "{move || title.get()}
-                                    </button>
-                                </div>
-                            }
-                            .into_any();
-                        }
-
+                                            })
+                                            on_info=Callback::new(move |_| open_info())
+                                            on_close=Callback::new(move |_| close_viewer())
+                                            on_step=Callback::new(move |d| step(d))
+                                            on_open=Callback::new(move |id| open.set(Some(id)))
+                                            on_favorite=Callback::new(move |_| {
+                                                let Some(shown_now) = shown_asset.get_untracked() else { return };
+                                                let next_fav = !shown_now.favorite;
+                                                update_assets(vec![shown_now.id], Some(next_fav), None, None, false);
+                                                member.update(|m| {
+                                                    if let Some(m) = m {
+                                                        m.favorite = next_fav;
+                                                    }
+                                                });
+                                            })
+                                        />
+                                    }
+                                    .into_any()
+                                }
+                                MainPane::Missing => {
+                                    view! {
+                                        <div class="photos-empty" role="alert">
+                                            <h2>"This photo is not available"</h2>
+                                            <p>"It may have been moved to the trash, archived, locked or removed from this view."</p>
+                                            <button class="secondary-button" on:click=move |_| open.set(None)>
+                                                "Back to "{move || title.get()}
+                                            </button>
+                                        </div>
+                                    }
+                                    .into_any()
+                                }
+                                MainPane::Grid => {
                         // Grid header + grid view.
                         view! {
                             {move || {
@@ -2249,16 +2272,19 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                     upload_files(files);
                                 }
                             >
-                                {move || (!overview_error.get().is_empty() || state.get() == ListState::Error).then(|| view! {
-                                    <div class="photos-empty" role="alert">
-                                        <h2>"Photos could not be loaded"</h2>
-                                        <p>{move || {
-                                            let le = list_error.get();
-                                            if !le.is_empty() { le } else { overview_error.get() }
-                                        }}</p>
-                                        <button class="secondary-button" on:click=move |_| refresh()>"Retry"</button>
-                                    </div>
-                                })}
+                                {
+                                    let has_grid_error = Memo::new(move |_| !overview_error.with(String::is_empty) || state.get() == ListState::Error);
+                                    move || has_grid_error.get().then(|| view! {
+                                        <div class="photos-empty" role="alert">
+                                            <h2>"Photos could not be loaded"</h2>
+                                            <p>{move || {
+                                                let le = list_error.get();
+                                                if !le.is_empty() { le } else { overview_error.get() }
+                                            }}</p>
+                                            <button class="secondary-button" on:click=move |_| refresh()>"Retry"</button>
+                                        </div>
+                                    })
+                                }
                                 {move || if locked_closed.get() {
                                     if folder.state.with(Option::is_some) {
                                         view! {
@@ -2279,11 +2305,14 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                         }.into_any()
                                     }
                                 } else {
+                                    let grid_loading_empty = Memo::new(move |_| state.get() == ListState::Loading && items.with(Vec::is_empty));
+                                    let grid_ready_empty = Memo::new(move |_| state.get() == ListState::Ready && items.with(Vec::is_empty));
+                                    let grid_has_more = Memo::new(move |_| !cursor.with(String::is_empty) && state.get() == ListState::Ready);
                                     view! {
-                                        {move || (state.get() == ListState::Loading && items.with(Vec::is_empty)).then(|| view! {
+                                        {move || grid_loading_empty.get().then(|| view! {
                                             <p class="photos-empty" role="status">"Loading photos\u{2026}"</p>
                                         })}
-                                        {move || (state.get() == ListState::Ready && items.with(Vec::is_empty)).then(|| {
+                                        {move || grid_ready_empty.get().then(|| {
                                             let is_indexing = overview.with(|o| o.as_ref().is_some_and(|o| o.indexing));
                                             let upload_folder = overview
                                                 .with(|o| o.as_ref().map(|o| o.upload_folder.clone()).filter(|s| !s.is_empty()))
@@ -2364,7 +2393,7 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                                 }
                                             />
                                         </div>
-                                        {move || (!cursor.get().is_empty() && state.get() == ListState::Ready).then(|| view! {
+                                        {move || grid_has_more.get().then(|| view! {
                                             <div class="photos-more" node_ref=sentinel>
                                                 <button class="text-button" on:click=move |_| load_more()>"Load more"</button>
                                             </div>
@@ -2373,7 +2402,10 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                 }}
                             </div>
                         }.into_any()
-                    }}
+                                }
+                            }
+                        }
+                    }
                 </main>
 
                 <Show when=move || has_viewer.get() && view.get() != View::Duplicates>

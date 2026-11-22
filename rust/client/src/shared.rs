@@ -29,7 +29,7 @@ impl<T: Send + Sync + 'static> Clone for Shared<T> {
 
 impl<T: Send + Sync + 'static> Copy for Shared<T> {}
 
-impl<T: DeserializeOwned + Clone + Send + Sync + 'static> Shared<T> {
+impl<T: DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> Shared<T> {
     /// Fetches now, again on each of `events`, and on focus once stale.
     pub fn new(url: &'static str, events: &'static [&'static str]) -> Self {
         let shared = Self { value: RwSignal::new(None), error: RwSignal::new(String::new()), url, sequence: RwSignal::new(0), fetched_at: RwSignal::new(0.0), received_at: RwSignal::new(0.0) };
@@ -57,8 +57,12 @@ impl<T: DeserializeOwned + Clone + Send + Sync + 'static> Shared<T> {
             match result {
                 Ok(value) => {
                     self.received_at.set(js_sys::Date::now());
-                    self.value.set(Some(value));
-                    self.error.set(String::new());
+                    if self.value.with_untracked(|cur| cur.as_ref() != Some(&value)) {
+                        self.value.set(Some(value));
+                    }
+                    if !self.error.with_untracked(String::is_empty) {
+                        self.error.set(String::new());
+                    }
                 }
                 Err(e) => self.error.set(e.message),
             }

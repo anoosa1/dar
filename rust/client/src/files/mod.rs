@@ -707,23 +707,35 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         Effect::new(move |_| {
             let Some(c) = live.connection.get() else { return };
             let disposed = Arc::new(AtomicBool::new(false));
-            let synchronize = {
+            let sync_files = {
                 let (disposed, navigation_ready) = (disposed.clone(), navigation_ready.clone());
+                move |ctx: &EventContext| {
+                    if disposed.load(Ordering::Relaxed) || !navigation_ready.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    let next = listed(ctx.db.my_files().iter());
+                    if rows.try_with_untracked(|cur| *cur != next).unwrap_or(false) {
+                        rows.try_set(next);
+                    }
+                }
+            };
+            let sync_usage = {
+                let disposed = disposed.clone();
                 move |ctx: &EventContext| {
                     if disposed.load(Ordering::Relaxed) {
                         return;
                     }
-                    if navigation_ready.load(Ordering::Relaxed) {
-                        rows.try_set(listed(ctx.db.my_files().iter()));
+                    let next = ctx.db.my_usage().iter().next();
+                    if usage.try_with_untracked(|cur| *cur != next).unwrap_or(false) {
+                        usage.try_set(next);
                     }
-                    usage.try_set(ctx.db.my_usage().iter().next());
                 }
             };
             let ids = (
-                c.db.my_files().on_insert({ let s = synchronize.clone(); move |ctx, _| s(ctx) }),
-                c.db.my_files().on_delete({ let s = synchronize.clone(); move |ctx, _| s(ctx) }),
-                c.db.my_usage().on_insert({ let s = synchronize.clone(); move |ctx, _| s(ctx) }),
-                c.db.my_usage().on_delete({ let s = synchronize.clone(); move |ctx, _| s(ctx) }),
+                c.db.my_files().on_insert({ let s = sync_files.clone(); move |ctx, _| s(ctx) }),
+                c.db.my_files().on_delete({ let s = sync_files.clone(); move |ctx, _| s(ctx) }),
+                c.db.my_usage().on_insert({ let s = sync_usage.clone(); move |ctx, _| s(ctx) }),
+                c.db.my_usage().on_delete({ let s = sync_usage.clone(); move |ctx, _| s(ctx) }),
                 c.db.me().on_delete({
                     let disposed = disposed.clone();
                     // Another app's unsubscribing also removes the row from the cache; only a real deletion signs out.
@@ -1179,42 +1191,60 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     };
     let row_key = |e: &FileEntry| format!("{}:{}:{}:{}:{}:{}", e.id, e.revision, e.favorite, e.trashed, e.name, e.modified_at);
 
-    let listing = move || {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum ListingMode {
+        LockedForm,
+        LockedChecking,
+        Disconnected,
+        Loading,
+        Empty,
+        Grid,
+        Table,
+    }
+    let listing_mode = Memo::new(move |_| {
         if in_locked.get() && !locked_open.get() {
-            return match locked.state.get() {
-                Some(_) => view! { <UnlockForm folder=locked description="Enter your password to open it. Files here are hidden from All files, search, sharing, WebDAV and other apps, including Photos’ library." on_unlocked=Callback::new(move |_| error.set(String::new()))/> }.into_any(),
-                None => view! { <p class="muted" role="status">{move || { let e = locked.error.get(); if e.is_empty() { "Checking the Locked folder…".to_owned() } else { e } }}</p> }.into_any(),
-            };
-        }
-        if state.get() != ConnectionState::Ready && connection.with(Option::is_none) {
-            return ().into_any();
-        }
-        if loading.get() {
-            return view! { <div class="file-skeleton" aria-busy="true" aria-label="Loading files">{(0..4).map(|_| view! { <div><span></span><span></span></div> }).collect_view()}</div> }.into_any();
-        }
-        if visible.with(Vec::is_empty) {
-            return empty_state().into_any();
-        }
-        if grid.get() {
-            view! { <div class="file-grid"><For each=move || visible.get() key=row_key children=card_view/></div> }.into_any()
+            if locked.state.with(Option::is_some) {
+                ListingMode::LockedForm
+            } else {
+                ListingMode::LockedChecking
+            }
+        } else if state.get() != ConnectionState::Ready && connection.with(Option::is_none) {
+            ListingMode::Disconnected
+        } else if loading.get() {
+            ListingMode::Loading
+        } else if visible.with(Vec::is_empty) {
+            ListingMode::Empty
+        } else if grid.get() {
+            ListingMode::Grid
         } else {
-            view! {
-                <div class="table-scroll"><table class="file-table">
-                    <thead><tr>
-                        <th class="checkbox-cell"><input type="checkbox" aria-label="Select all visible files" prop:checked=move || visible.with(|v| !v.is_empty() && v.iter().all(|e| selected.with(|s| s.contains(&e.id))))
-                            on:change=move |e| selected.set(if event_target_checked(&e) { visible.with_untracked(|v| v.iter().map(|e| e.id.clone()).collect()) } else { HashSet::new() })/></th>
-                        <th>"Name "<span aria-hidden="true">"↑"</span></th><th class="date-cell">"Modified"</th><th class="size-cell">"Size"</th><th><span class="sr-only">"Actions"</span></th>
-                    </tr></thead>
-                    <tbody><For each=move || visible.get() key=row_key children=row_view/></tbody>
-                </table></div>
-            }.into_any()
+            ListingMode::Table
         }
+    });
+
+    let listing = move || match listing_mode.get() {
+        ListingMode::LockedForm => view! { <UnlockForm folder=locked description="Enter your password to open it. Files here are hidden from All files, search, sharing, WebDAV and other apps, including Photos’ library." on_unlocked=Callback::new(move |_| error.set(String::new()))/> }.into_any(),
+        ListingMode::LockedChecking => view! { <p class="muted" role="status">{move || { let e = locked.error.get(); if e.is_empty() { "Checking the Locked folder…".to_owned() } else { e } }}</p> }.into_any(),
+        ListingMode::Disconnected => ().into_any(),
+        ListingMode::Loading => view! { <div class="file-skeleton" aria-busy="true" aria-label="Loading files">{(0..4).map(|_| view! { <div><span></span><span></span></div> }).collect_view()}</div> }.into_any(),
+        ListingMode::Empty => empty_state().into_any(),
+        ListingMode::Grid => view! { <div class="file-grid"><For each=move || visible.get() key=row_key children=card_view/></div> }.into_any(),
+        ListingMode::Table => view! {
+            <div class="table-scroll"><table class="file-table">
+                <thead><tr>
+                    <th class="checkbox-cell"><input type="checkbox" aria-label="Select all visible files" prop:checked=move || visible.with(|v| !v.is_empty() && v.iter().all(|e| selected.with(|s| s.contains(&e.id))))
+                        on:change=move |e| selected.set(if event_target_checked(&e) { visible.with_untracked(|v| v.iter().map(|e| e.id.clone()).collect()) } else { HashSet::new() })/></th>
+                    <th>"Name "<span aria-hidden="true">"↑"</span></th><th class="date-cell">"Modified"</th><th class="size-cell">"Size"</th><th><span class="sr-only">"Actions"</span></th>
+                </tr></thead>
+                <tbody><For each=move || visible.get() key=row_key children=row_view/></tbody>
+            </table></div>
+        }.into_any(),
     };
 
     let details_panel = move || {
         let d = details.get()?;
         let entry = d.entry.clone();
         let e = StoredValue::new(entry.clone());
+        let d_sv = StoredValue::new(d);
         let is_folder = entry.kind == "folder";
         let preview_art = if thumbnail_ok(&entry) {
             view! { <img src=format!("/api/v1/files/{}/thumbnail?size=m&v={}", entry.id, entry.revision) alt="" decoding="async"/> }.into_any()
@@ -1236,74 +1266,78 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 {(owner.get() && !in_locked.get()).then(|| view! { <button class="quick-action" on:click=move |_| tab.set("sharing".into())><span><Icon name="share"/></span>"Share"</button> })}
             }.into_any()
         };
-        let location = std::iter::once("All files".to_owned()).chain(d.ancestors.iter().map(|a| a.name.clone())).collect::<Vec<_>>().join(" › ");
-        let access = if owner.get() { "You own this item" } else if can_write.get() { "You can edit" } else { "You can view" };
         let tabs = ["details", if is_folder { "history" } else { "versions" }, "sharing"];
-        let content = match shown_tab.get().as_str() {
-            "details" => view! {
-                <div class="property-card">
-                    <div class="property"><Icon name="folder"/><div><span>{location}</span><small>"Location"</small></div></div>
-                    <div class="property"><Icon name="clock"/><div><span>{local_date_time(entry.modified_at, &[("dateStyle", "full"), ("timeStyle", "short")])}</span><small>"Modified"</small></div></div>
-                    <div class="property"><Icon name="lock"/><div><span>{access}</span><small>{format!("Access · revision {}", entry.revision)}</small></div></div>
-                </div>
-                {(!entry.trashed && can_write.get() && entry.kind == "file").then(|| view! {
-                    <div class="property-card"><button class="property property-action" on:click=move |_| if let Some(i) = replacement_input.get_untracked() { i.click() }><Icon name="history"/><div><span>"Upload new version"</span><small>"Keeps the current content in Versions"</small></div></button></div>
-                })}
-            }.into_any(),
-            "history" => if entry.trashed {
-                view! { <p class="muted">"Restore this folder to see its history."</p> }.into_any()
-            } else {
-                view! { <crate::history::FolderHistory folder_id=Signal::stored(entry.id.clone()) revision=Signal::stored(entry.revision as u64) session=session.get_value() notice=history_notice/> }.into_any()
-            },
-            "versions" => {
-                if d.versions.is_empty() {
-                    view! { <p class="muted">"Folders don’t have content versions."</p> }.into_any()
+        let content = move || {
+            let d = d_sv.get_value();
+            let entry = d.entry.clone();
+            let location = std::iter::once("All files".to_owned()).chain(d.ancestors.iter().map(|a| a.name.clone())).collect::<Vec<_>>().join(" › ");
+            let access = if owner.get() { "You own this item" } else if can_write.get() { "You can edit" } else { "You can view" };
+            match shown_tab.get().as_str() {
+                "details" => view! {
+                    <div class="property-card">
+                        <div class="property"><Icon name="folder"/><div><span>{location}</span><small>"Location"</small></div></div>
+                        <div class="property"><Icon name="clock"/><div><span>{local_date_time(entry.modified_at, &[("dateStyle", "full"), ("timeStyle", "short")])}</span><small>"Modified"</small></div></div>
+                        <div class="property"><Icon name="lock"/><div><span>{access}</span><small>{format!("Access · revision {}", entry.revision)}</small></div></div>
+                    </div>
+                    {(!entry.trashed && can_write.get() && entry.kind == "file").then(|| view! {
+                        <div class="property-card"><button class="property property-action" on:click=move |_| if let Some(i) = replacement_input.get_untracked() { i.click() }><Icon name="history"/><div><span>"Upload new version"</span><small>"Keeps the current content in Versions"</small></div></button></div>
+                    })}
+                }.into_any(),
+                "history" => if entry.trashed {
+                    view! { <p class="muted">"Restore this folder to see its history."</p> }.into_any()
                 } else {
-                    d.versions.iter().map(|v| {
-                        let current = v.blob_id == entry.blob_id;
-                        let restorable = !entry.trashed && can_write.get() && !current;
-                        let version_id = v.id.clone();
-                        view! {
-                            <div class="version"><Icon name="clock"/><div><strong>{local_date_time(v.created_at, &[])}</strong><span>{format!("{}{}", format_bytes(v.size), if current { " · Current content" } else { "" })}</span></div>
-                                {restorable.then(|| view! { <button class="text-button" disabled=move || busy.get() on:click=move |_| { let (en, vid) = (e.get_value(), version_id.clone()); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.restore_version_then(en.id.clone(), vid, en.revision, replied(tx))).await }), "Version restored."); }>"Restore"</button> })}
-                            </div>
-                        }
-                    }).collect_view().into_any()
-                }
-            }
-            _ => {
-                if in_locked.get() {
-                    view! { <p class="muted">"Items in the Locked folder can’t be shared. Sharing set up before an item was locked pauses until you move it out."</p> }.into_any()
-                } else if owner.get() && !entry.trashed {
-                    view! {
-                        <h3>"Share with a person"</h3>
-                        <form class="share-form" on:submit=share>
-                            <label>"Username"<input name="username" required maxlength="64" placeholder="Enter a username"/></label>
-                            <label>"Permission"<Select name="role" options=vec![("read".to_owned(), "Can view".to_owned()), ("write".to_owned(), "Can edit".to_owned())]/></label>
-                            <button class="primary-button" disabled=move || busy.get()>"Share"</button>
-                        </form>
-                        {d.grants.iter().map(|g| {
-                            let grant_id = g.id.clone();
+                    view! { <crate::history::FolderHistory folder_id=Signal::stored(entry.id.clone()) revision=Signal::stored(entry.revision as u64) session=session.get_value() notice=history_notice/> }.into_any()
+                },
+                "versions" => {
+                    if d.versions.is_empty() {
+                        view! { <p class="muted">"Folders don’t have content versions."</p> }.into_any()
+                    } else {
+                        d.versions.iter().map(|v| {
+                            let current = v.blob_id == entry.blob_id;
+                            let restorable = !entry.trashed && can_write.get() && !current;
+                            let version_id = v.id.clone();
                             view! {
-                                <div class="grant"><span><strong>"@"{g.username.clone()}</strong><small>{if g.role == "write" { "Can edit" } else { "Can view" }}</small></span>
-                                    <button class="icon-button" aria-label=format!("Revoke access for {}", g.username) on:click=move |_| { let (gid, en) = (grant_id.clone(), e.get_value()); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.revoke_grant_then(gid, replied(tx))).await?; show_details(en.id); Ok(()) }), ""); }><Icon name="close"/></button></div>
+                                <div class="version"><Icon name="clock"/><div><strong>{local_date_time(v.created_at, &[])}</strong><span>{format!("{}{}", format_bytes(v.size), if current { " · Current content" } else { "" })}</span></div>
+                                    {restorable.then(|| view! { <button class="text-button" disabled=move || busy.get() on:click=move |_| { let (en, vid) = (e.get_value(), version_id.clone()); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.restore_version_then(en.id.clone(), vid, en.revision, replied(tx))).await }), "Version restored."); }>"Restore"</button> })}
+                                </div>
                             }
-                        }).collect_view()}
-                        {(entry.kind == "file").then(|| view! {
-                            <h3>"Public download link"</h3>
-                            <p class="muted small">"Anyone with the link can download this file. New links expire after seven days."</p>
-                            <button class="secondary-button" disabled=move || busy.get() on:click=move |_| make_public_link()><Icon name="share"/>"Create link"</button>
-                            {move || (!public_link.get().is_empty()).then(|| view! {
-                                <label>"Copy this link"<input readonly prop:value=public_link.get() on:focus=move |ev| { if let Some(i) = ev.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) { i.select() } }/><small class="field-hint">"The secret link is shown only here. Save it before closing."</small></label>
-                            })}
-                            {d.public_shares.iter().map(|link| {
-                                let link_id = link.id.clone();
-                                view! { <div class="grant"><span>{format!("Expires {}", short_date(link.expires_at))}</span><button class="text-button danger" on:click=move |_| { let (lid, en) = (link_id.clone(), e.get_value()); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.revoke_public_share_then(lid, replied(tx))).await?; public_link.set(String::new()); show_details(en.id); Ok(()) }), ""); }>"Revoke"</button></div> }
+                        }).collect_view().into_any()
+                    }
+                }
+                _ => {
+                    if in_locked.get() {
+                        view! { <p class="muted">"Items in the Locked folder can’t be shared. Sharing set up before an item was locked pauses until you move it out."</p> }.into_any()
+                    } else if owner.get() && !entry.trashed {
+                        view! {
+                            <h3>"Share with a person"</h3>
+                            <form class="share-form" on:submit=share>
+                                <label>"Username"<input name="username" required maxlength="64" placeholder="Enter a username"/></label>
+                                <label>"Permission"<Select name="role" options=vec![("read".to_owned(), "Can view".to_owned()), ("write".to_owned(), "Can edit".to_owned())]/></label>
+                                <button class="primary-button" disabled=move || busy.get()>"Share"</button>
+                            </form>
+                            {d.grants.iter().map(|g| {
+                                let grant_id = g.id.clone();
+                                view! {
+                                    <div class="grant"><span><strong>"@"{g.username.clone()}</strong><small>{if g.role == "write" { "Can edit" } else { "Can view" }}</small></span>
+                                        <button class="icon-button" aria-label=format!("Revoke access for {}", g.username) on:click=move |_| { let (gid, en) = (grant_id.clone(), e.get_value()); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.revoke_grant_then(gid, replied(tx))).await?; show_details(en.id); Ok(()) }), ""); }><Icon name="close"/></button></div>
+                                }
                             }).collect_view()}
-                        })}
-                    }.into_any()
-                } else {
-                    view! { <p class="muted">{if entry.trashed { "Restore this item before sharing it." } else { "Only the owner can manage sharing." }}</p> }.into_any()
+                            {(entry.kind == "file").then(|| view! {
+                                <h3>"Public download link"</h3>
+                                <p class="muted small">"Anyone with the link can download this file. New links expire after seven days."</p>
+                                <button class="secondary-button" disabled=move || busy.get() on:click=move |_| make_public_link()><Icon name="share"/>"Create link"</button>
+                                {move || (!public_link.get().is_empty()).then(|| view! {
+                                    <label>"Copy this link"<input readonly prop:value=public_link.get() on:focus=move |ev| { if let Some(i) = ev.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) { i.select() } }/><small class="field-hint">"The secret link is shown only here. Save it before closing."</small></label>
+                                })}
+                                {d.public_shares.iter().map(|link| {
+                                    let link_id = link.id.clone();
+                                    view! { <div class="grant"><span>{format!("Expires {}", short_date(link.expires_at))}</span><button class="text-button danger" on:click=move |_| { let (lid, en) = (link_id.clone(), e.get_value()); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.revoke_public_share_then(lid, replied(tx))).await?; public_link.set(String::new()); show_details(en.id); Ok(()) }), ""); }>"Revoke"</button></div> }
+                                }).collect_view()}
+                            })}
+                        }.into_any()
+                    } else {
+                        view! { <p class="muted">{if entry.trashed { "Restore this item before sharing it." } else { "Only the owner can manage sharing." }}</p> }.into_any()
+                    }
                 }
             }
         };

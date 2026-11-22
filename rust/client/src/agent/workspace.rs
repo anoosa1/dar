@@ -3619,107 +3619,180 @@ fn Conversation(
                             }
                         })
                     }}
-                    {move || {
-                        let Some(hist) = history.get() else { return ().into_any() };
-                        let cur_run = run.get();
-                        let cur_match = match_id.get();
-                        let tid = thread_id_sv.get_value();
-                        let is_running = running.get();
-                        let all_items = hist.items.clone();
-                        let hist_runs = hist.runs.clone();
-                        hist.items.into_iter().map(|message| {
-                            let is_user = message.role == "user";
-                            let is_match = cur_match.as_deref() == Some(message.id.as_str());
-                            let has_run_for_msg = hist_runs.iter().any(|item| {
-                                item.message_id == message.id
-                                    || (message.created_at >= item.created_at
-                                        && message.created_at <= item.modified_at
-                                        && item.message_id != message.id
-                                        && all_items.iter().any(|other| other.id == item.message_id && other.sequence < message.sequence))
-                            });
-                            let steered_here = cur_run.as_ref().and_then(|r| r.document.steered.as_ref()).is_some_and(|s| s.contains(&message.id));
-                            let show_saved_label = is_user && !has_run_for_msg && !steered_here;
-                            let run_matches_msg = cur_run.as_ref().is_some_and(|r| r.message_id == message.id);
-                            let attachments = if is_user && run_matches_msg {
-                                cur_run.as_ref().and_then(|r| r.document.attachments.clone()).unwrap_or_default()
-                            } else {
-                                Vec::new()
-                            };
-                            let is_plan_msg = is_user && run_matches_msg && cur_run.as_ref().and_then(|r| r.document.mode.as_deref()) == Some("plan");
-                            let msg_content_copy = message.content.clone();
-                            let msg_seq = message.sequence;
-                            let time_iso = iso_string(message.created_at);
-                            let time_disp = local_time(message.created_at, &[("hour", "numeric"), ("minute", "2-digit")]);
-                            let earlier_runs: Vec<AgentRunSummary> = if run_matches_msg {
-                                Vec::new()
-                            } else {
-                                hist_runs.iter().filter(|r| r.message_id == message.id).cloned().collect()
-                            };
-                            let tid_att = tid.clone();
-                            view! {
-                                <article data-message-id=message.id.clone() data-match=is_match.then_some("true") class=format!("agent-message agent-message-{}", message.role)>
-                                    <div class="agent-message-body">
-                                        {if message.role == "assistant" {
-                                            view! { <Markdown source=message.content.clone()/> }.into_any()
-                                        } else {
-                                            view! { <p>{message.content.clone()}</p> }.into_any()
-                                        }}
-                                    </div>
-                                    {show_saved_label.then(|| view! { <small class="agent-saved-label">"Saved \u{00b7} not sent to a model"</small> })}
-                                    {(!attachments.is_empty()).then(|| view! {
-                                        <div class="agent-message-images">
-                                            {attachments.into_iter().map(|att| {
-                                                let href = format!("{BASE}/threads/{tid_att}/attachments/{}", att.id);
-                                                view! { <a href=href.clone() target="_blank" rel="noreferrer"><img src=href.clone() alt=att.name loading="lazy"/></a> }
-                                            }).collect_view()}
-                                        </div>
-                                    })}
-                                    {is_plan_msg.then(|| view! { <small class="agent-saved-label">"Plan mode"</small> })}
-                                    <div class="agent-message-meta">
-                                        {is_user.then(|| view! { <time datetime=time_iso.clone()>{time_disp.clone()}</time> })}
-                                        <button class="icon-button" aria-label=if is_user { "Copy message" } else { "Copy response" } title="Copy" on:click=move |_| copy_text(msg_content_copy.clone())><Icon name="copy"/></button>
-                                        <button class="icon-button" aria-label="Fork from here" title="Fork a new thread from this message" disabled=is_running on:click=move |_| fork(msg_seq)><Icon name="share"/></button>
-                                        {(!is_user).then(|| view! { <time datetime=time_iso>{time_disp}</time> })}
-                                    </div>
-                                </article>
-                                {if run_matches_msg {
-                                    let r_sig = Signal::from(Memo::new(move |last| run.get().or_else(|| last.cloned()).expect("run present")));
-                                    view! { <WorkLog run=r_sig on_review=on_review/> }.into_any()
-                                } else {
-                                    earlier_runs.into_iter().map(|s| view! { <EarlierRun summary=s/> }).collect_view().into_any()
-                                }}
-                            }
-                        }).collect_view().into_any()
-                    }}
-                    {move || {
-                        let r = run.get()?;
-                        if r.document.output.is_empty() {
-                            return None;
+                    {
+                        #[derive(Clone, PartialEq)]
+                        struct MessageRow {
+                            message: AgentMessage,
+                            show_saved_label: bool,
+                            run_matches_msg: bool,
+                            attachments: Vec<AgentAttachment>,
+                            is_plan_msg: bool,
+                            earlier_runs: Vec<AgentRunSummary>,
                         }
-                        let is_running = running.get();
-                        let truncated_response = history.with(|h| {
-                            h.as_ref().is_some_and(|h| {
-                                h.items.iter().any(|m| {
-                                    m.role == "assistant"
-                                        && m.content.ends_with(TRUNC_SUFFIX)
-                                        && r.document.output.starts_with(&m.content[..m.content.len() - TRUNC_SUFFIX.len()])
+                        let run_meta = Memo::new(move |_| {
+                            run.with(|r| {
+                                r.as_ref().map(|r| {
+                                    (
+                                        r.message_id.clone(),
+                                        r.document.steered.clone().unwrap_or_default(),
+                                        r.document.attachments.clone().unwrap_or_default(),
+                                        r.document.mode.clone(),
+                                    )
                                 })
                             })
                         });
-                        let response_saved = truncated_response
-                            || history.with(|h| {
-                                h.as_ref().is_some_and(|h| h.items.iter().any(|m| m.role == "assistant" && m.content == r.document.output))
+                        let message_rows = Memo::new(move |_| {
+                            let Some(hist) = history.get() else { return Vec::new() };
+                            let meta = run_meta.get();
+                            let all_items = &hist.items;
+                            let hist_runs = &hist.runs;
+                            all_items
+                                .iter()
+                                .map(|message| {
+                                    let is_user = message.role == "user";
+                                    let has_run_for_msg = hist_runs.iter().any(|item| {
+                                        item.message_id == message.id
+                                            || (message.created_at >= item.created_at
+                                                && message.created_at <= item.modified_at
+                                                && item.message_id != message.id
+                                                && all_items.iter().any(|other| other.id == item.message_id && other.sequence < message.sequence))
+                                    });
+                                    let steered_here = meta.as_ref().is_some_and(|(_, steered, _, _)| steered.contains(&message.id));
+                                    let show_saved_label = is_user && !has_run_for_msg && !steered_here;
+                                    let run_matches_msg = meta.as_ref().is_some_and(|(mid, _, _, _)| mid == &message.id);
+                                    let attachments = if is_user && run_matches_msg {
+                                        meta.as_ref().map(|(_, _, att, _)| att.clone()).unwrap_or_default()
+                                    } else {
+                                        Vec::new()
+                                    };
+                                    let is_plan_msg = is_user
+                                        && run_matches_msg
+                                        && meta.as_ref().and_then(|(_, _, _, mode)| mode.as_deref()) == Some("plan");
+                                    let earlier_runs: Vec<AgentRunSummary> = if run_matches_msg {
+                                        Vec::new()
+                                    } else {
+                                        hist_runs.iter().filter(|r| r.message_id == message.id).cloned().collect()
+                                    };
+                                    MessageRow {
+                                        message: message.clone(),
+                                        show_saved_label,
+                                        run_matches_msg,
+                                        attachments,
+                                        is_plan_msg,
+                                        earlier_runs,
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                        });
+                        view! {
+                            <For
+                                each=move || message_rows.get()
+                                key=|row| {
+                                    use std::hash::{Hash, Hasher};
+                                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                                    row.message.role.hash(&mut h);
+                                    row.message.content.hash(&mut h);
+                                    row.message.sequence.hash(&mut h);
+                                    row.message.created_at.to_bits().hash(&mut h);
+                                    row.show_saved_label.hash(&mut h);
+                                    row.run_matches_msg.hash(&mut h);
+                                    row.is_plan_msg.hash(&mut h);
+                                    row.attachments.len().hash(&mut h);
+                                    for att in &row.attachments {
+                                        att.id.hash(&mut h);
+                                        att.name.hash(&mut h);
+                                    }
+                                    row.earlier_runs.len().hash(&mut h);
+                                    for r in &row.earlier_runs {
+                                        r.id.hash(&mut h);
+                                        r.status.hash(&mut h);
+                                        r.modified_at.to_bits().hash(&mut h);
+                                    }
+                                    (row.message.id.clone(), h.finish())
+                                }
+                                let:row
+                            >
+                                {
+                                    let message = row.message;
+                                    let is_user = message.role == "user";
+                                    let msg_id_match = message.id.clone();
+                                    let msg_content_copy = message.content.clone();
+                                    let msg_seq = message.sequence;
+                                    let time_iso = iso_string(message.created_at);
+                                    let time_disp = local_time(message.created_at, &[("hour", "numeric"), ("minute", "2-digit")]);
+                                    let tid_att = thread_id_sv.get_value();
+                                    view! {
+                                        <article data-message-id=message.id.clone() data-match=move || (match_id.get().as_deref() == Some(msg_id_match.as_str())).then_some("true") class=format!("agent-message agent-message-{}", message.role)>
+                                            <div class="agent-message-body">
+                                                {if message.role == "assistant" {
+                                                    view! { <Markdown source=message.content.clone()/> }.into_any()
+                                                } else {
+                                                    view! { <p>{message.content.clone()}</p> }.into_any()
+                                                }}
+                                            </div>
+                                            {row.show_saved_label.then(|| view! { <small class="agent-saved-label">"Saved \u{00b7} not sent to a model"</small> })}
+                                            {(!row.attachments.is_empty()).then(|| view! {
+                                                <div class="agent-message-images">
+                                                    {row.attachments.into_iter().map(|att| {
+                                                        let href = format!("{BASE}/threads/{tid_att}/attachments/{}", att.id);
+                                                        view! { <a href=href.clone() target="_blank" rel="noreferrer"><img src=href.clone() alt=att.name loading="lazy"/></a> }
+                                                    }).collect_view()}
+                                                </div>
+                                            })}
+                                            {row.is_plan_msg.then(|| view! { <small class="agent-saved-label">"Plan mode"</small> })}
+                                            <div class="agent-message-meta">
+                                                {is_user.then(|| view! { <time datetime=time_iso.clone()>{time_disp.clone()}</time> })}
+                                                <button class="icon-button" aria-label=if is_user { "Copy message" } else { "Copy response" } title="Copy" on:click=move |_| copy_text(msg_content_copy.clone())><Icon name="copy"/></button>
+                                                <button class="icon-button" aria-label="Fork from here" title="Fork a new thread from this message" disabled=move || running.get() on:click=move |_| fork(msg_seq)><Icon name="share"/></button>
+                                                {(!is_user).then(|| view! { <time datetime=time_iso>{time_disp}</time> })}
+                                            </div>
+                                        </article>
+                                        {if row.run_matches_msg {
+                                            let r_sig = Signal::from(Memo::new(move |last| run.get().or_else(|| last.cloned()).expect("run present")));
+                                            view! { <WorkLog run=r_sig on_review=on_review/> }.into_any()
+                                        } else {
+                                            row.earlier_runs.into_iter().map(|s| view! { <EarlierRun summary=s/> }).collect_view().into_any()
+                                        }}
+                                    }
+                                }
+                            </For>
+                        }
+                    }
+                    {
+                        let live_state = Memo::new(move |_| {
+                            let output = run.with(|r| r.as_ref().map(|r| r.document.output.clone()).unwrap_or_default());
+                            if output.is_empty() {
+                                return None;
+                            }
+                            let is_running = running.get();
+                            let truncated_response = history.with(|h| {
+                                h.as_ref().is_some_and(|h| {
+                                    h.items.iter().any(|m| {
+                                        m.role == "assistant"
+                                            && m.content.ends_with(TRUNC_SUFFIX)
+                                            && output.starts_with(&m.content[..m.content.len() - TRUNC_SUFFIX.len()])
+                                    })
+                                })
                             });
-                        let show_live = is_running || !response_saved;
-                        Some(view! {
-                            {show_live.then(|| view! {
-                                <article class="agent-message agent-message-assistant agent-live-output"><Markdown source=r.document.output.clone()/></article>
-                            })}
-                            {truncated_response.then(|| view! {
-                                <details class="agent-full-response"><summary>"Full response"</summary><Markdown source=r.document.output.clone()/></details>
-                            })}
-                        })
-                    }}
+                            let response_saved = truncated_response
+                                || history.with(|h| {
+                                    h.as_ref().is_some_and(|h| h.items.iter().any(|m| m.role == "assistant" && m.content == output))
+                                });
+                            let show_live = is_running || !response_saved;
+                            Some((output, show_live, truncated_response))
+                        });
+                        move || {
+                            let (output, show_live, truncated_response) = live_state.get()?;
+                            Some(view! {
+                                {show_live.then(|| view! {
+                                    <article class="agent-message agent-message-assistant agent-live-output"><Markdown source=output.clone()/></article>
+                                })}
+                                {truncated_response.then(|| view! {
+                                    <details class="agent-full-response"><summary>"Full response"</summary><Markdown source=output.clone()/></details>
+                                })}
+                            })
+                        }
+                    }
                 </div>
             </div>
             <Minimap viewport=viewport content=content version=minimap_version/>
@@ -6165,6 +6238,7 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     });
 
     // Helper to render a list of thread rows.
+    let active_run_created = Memo::new(move |_| run.with(|r| r.as_ref().map(|r| r.created_at)));
     let render_rows = move |items: Vec<AgentThread>| {
         let proj_list = projects.get().unwrap_or_default();
         let cur_tid = thread_id.get();
@@ -6172,7 +6246,7 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         let cur_grouping = grouping.get();
         let cur_pinned = pinned.get();
         let cur_now = now.get();
-        let cur_run = run.get();
+        let cur_run_created = active_run_created.get();
         let cur_settling = settling.get();
         let loaded = prefs_loaded.get();
 
@@ -6270,8 +6344,8 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                     let row_f2 = item.clone();
                     let id_woke = item.id.clone();
                     let row_settle_btn = item.clone();
-                    let working_label = if selected_row && let Some(ref r) = cur_run {
-                        duration(js_sys::Date::now() - r.created_at)
+                    let working_label = if selected_row && let Some(created_at) = cur_run_created {
+                        duration(js_sys::Date::now() - created_at)
                     } else {
                         "Working".into()
                     };
@@ -6804,43 +6878,56 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                                 </div>
                             }
                         })}
-                        {move || {
-                            if drawer_tab.get() != "output" {
-                                return ().into_any();
+                        {
+                            let terminal_output = Memo::new(move |_| {
+                                if drawer_tab.get() != "output" {
+                                    return None;
+                                }
+                                Some(run.with(|cur| {
+                                    let cmd_steps: Vec<AgentStep> = cur
+                                        .as_ref()
+                                        .and_then(|r| r.document.steps.as_ref())
+                                        .map(|s| s.iter().filter(|st| st.kind == "command").cloned().collect())
+                                        .unwrap_or_default();
+                                    let term_txt = cur
+                                        .as_ref()
+                                        .map(|r| r.document.terminal.clone())
+                                        .filter(|t| !t.is_empty());
+                                    (cmd_steps, term_txt)
+                                }))
+                            });
+                            move || {
+                                let Some((cmd_steps, term_txt)) = terminal_output.get() else {
+                                    return ().into_any();
+                                };
+                                if !cmd_steps.is_empty() {
+                                    view! {
+                                        <ol class="agent-terminal-steps">
+                                            {cmd_steps.into_iter().map(|step| {
+                                                let st_label = if step.status == "running" {
+                                                    "running".into()
+                                                } else if let Some(code) = step.exit_code {
+                                                    format!("exit {code}")
+                                                } else {
+                                                    step.status.clone()
+                                                };
+                                                let out = step.output.filter(|o| !o.is_empty());
+                                                view! {
+                                                    <li data-status=step.status>
+                                                        <div><span class="agent-terminal-prompt">"$"</span><code>{step.label}</code><span class="agent-terminal-state">{st_label}</span></div>
+                                                        {out.map(|o| view! { <pre>{o}</pre> })}
+                                                    </li>
+                                                }
+                                            }).collect_view()}
+                                        </ol>
+                                    }.into_any()
+                                } else if let Some(term_txt) = term_txt {
+                                    view! { <pre>{term_txt}</pre> }.into_any()
+                                } else {
+                                    view! { <p>"No command output yet."</p> }.into_any()
+                                }
                             }
-                            let cur = run.get();
-                            let cmd_steps: Vec<AgentStep> = cur
-                                .as_ref()
-                                .and_then(|r| r.document.steps.as_ref())
-                                .map(|s| s.iter().filter(|st| st.kind == "command").cloned().collect())
-                                .unwrap_or_default();
-                            if !cmd_steps.is_empty() {
-                                view! {
-                                    <ol class="agent-terminal-steps">
-                                        {cmd_steps.into_iter().map(|step| {
-                                            let st_label = if step.status == "running" {
-                                                "running".into()
-                                            } else if let Some(code) = step.exit_code {
-                                                format!("exit {code}")
-                                            } else {
-                                                step.status.clone()
-                                            };
-                                            let out = step.output.filter(|o| !o.is_empty());
-                                            view! {
-                                                <li data-status=step.status>
-                                                    <div><span class="agent-terminal-prompt">"$"</span><code>{step.label}</code><span class="agent-terminal-state">{st_label}</span></div>
-                                                    {out.map(|o| view! { <pre>{o}</pre> })}
-                                                </li>
-                                            }
-                                        }).collect_view()}
-                                    </ol>
-                                }.into_any()
-                            } else if let Some(term_txt) = cur.map(|r| r.document.terminal).filter(|t| !t.is_empty()) {
-                                view! { <pre>{term_txt}</pre> }.into_any()
-                            } else {
-                                view! { <p>"No command output yet."</p> }.into_any()
-                            }
-                        }}
+                        }
                     </section>
                 </main>
                 <aside class="agent-review" data-agent-panel="changes" tabindex="-1" aria-label="Changes">

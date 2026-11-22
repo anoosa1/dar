@@ -913,14 +913,27 @@ async fn preferences(runtime: &Runtime, method: &Method, headers: &HeaderMap, bo
 /// The client's static files under `/rust/`, `/pdfjs/`, `/chunks/`, `/sdk.*`, `/app.css`;
 /// every other page is its `index.html`.
 async fn client(runtime: &Runtime, path: &str, headers: &HeaderMap) -> Result<Response> {
+    fn fingerprinted(path: &str) -> bool {
+        let file = path.rsplit('/').next().unwrap_or(path);
+        let mut parts = file.rsplit('.');
+        let Some(ext) = parts.next() else { return false };
+        if !matches!(ext, "wasm" | "js" | "mjs" | "css") {
+            return false;
+        }
+        let Some(hash) = parts.next() else { return false };
+        (8..=64).contains(&hash.len()) && hash.bytes().all(|b| b.is_ascii_hexdigit()) && parts.next().is_some()
+    }
+    const IMMUTABLE: &str = "public, max-age=31536000, immutable";
     let dist = &runtime.config.client_dist;
     let rel = if let Some(rest) = path.strip_prefix("/rust/") {
-        Some((rest, "no-cache"))
+        // Snippet folders are named after the crate, not their contents, so they revalidate.
+        let cache = if fingerprinted(rest) { IMMUTABLE } else { "no-cache" };
+        Some((rest, cache))
     } else if path.starts_with("/pdfjs/") || path.starts_with("/chunks/") {
-        Some((path.trim_start_matches('/'), "public, max-age=31536000, immutable"))
-    } else if matches!(path, "/sdk.js" | "/sdk.css" | "/app.css")
-        || (path.starts_with("/sdk-") && (path.ends_with(".js") || path.ends_with(".css")))
-    {
+        Some((path.trim_start_matches('/'), IMMUTABLE))
+    } else if path.starts_with("/sdk-") && (path.ends_with(".js") || path.ends_with(".css")) {
+        Some((path.trim_start_matches('/'), IMMUTABLE))
+    } else if matches!(path, "/sdk.js" | "/sdk.css" | "/app.css") {
         Some((path.trim_start_matches('/'), "no-cache"))
     } else {
         None

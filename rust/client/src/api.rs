@@ -79,21 +79,26 @@ pub async fn fetch(url: &str, req: Req<'_>) -> Result<web_sys::Response, Request
     }
 }
 
-/// Like `request<T>()`: parses JSON and turns `{error:{message}}` into an error.
-pub async fn request<T: DeserializeOwned>(url: &str, req: Req<'_>) -> Result<T, RequestError> {
+async fn request_text(url: &str, req: Req<'_>) -> Result<(u16, String), RequestError> {
     let response = fetch(url, req).await?;
     let status = response.status();
     note_pim_revision(url, &response);
-    let json = match response.json() {
-        Ok(promise) => JsFuture::from(promise).await.map_err(|_| RequestError::unexpected(status))?,
+    let text = match response.text() {
+        Ok(promise) => JsFuture::from(promise).await.ok().and_then(|v| v.as_string()).ok_or_else(|| RequestError::unexpected(status))?,
         Err(_) => return Err(RequestError::unexpected(status)),
     };
-    let value: serde_json::Value = serde_wasm(&json).ok_or(RequestError::unexpected(status))?;
     if !response.ok() {
+        let value: serde_json::Value = serde_json::from_str(&text).map_err(|_| RequestError::unexpected(status))?;
         let message = value["error"]["message"].as_str().unwrap_or("The request could not be completed.").to_owned();
         return Err(RequestError { status, message });
     }
-    serde_json::from_value(value).map_err(|_| RequestError::unexpected(status))
+    Ok((status, text))
+}
+
+/// Like `request<T>()`: parses JSON and turns `{error:{message}}` into an error.
+pub async fn request<T: DeserializeOwned>(url: &str, req: Req<'_>) -> Result<T, RequestError> {
+    let (status, text) = request_text(url, req).await?;
+    serde_json::from_str(&text).map_err(|_| RequestError::unexpected(status))
 }
 
 pub async fn get<T: DeserializeOwned>(url: &str) -> Result<T, RequestError> {
@@ -105,18 +110,27 @@ pub async fn send<T: DeserializeOwned>(url: &str, method: &str, body: Option<ser
     request(url, Req { method, body: body.map(|b| b.to_string()), csrf: Some(csrf), ..Default::default() }).await
 }
 
-fn serde_wasm(value: &JsValue) -> Option<serde_json::Value> {
-    let text = js_sys::JSON::stringify(value).ok()?.as_string()?;
-    serde_json::from_str(&text).ok()
-}
-
-/// A procedure's JSON result; `{error:{code}}` becomes an error with the code.
-pub fn read_procedure<T: DeserializeOwned>(value: &str) -> Result<T, String> {
+fn check_procedure_error(value: &str) -> Result<(), String> {
+    if !value.contains("\"error\"") {
+        return Ok(());
+    }
     let parsed: serde_json::Value = serde_json::from_str(value).map_err(|_| "The request could not be completed.".to_owned())?;
     if let Some(error) = parsed.get("error").filter(|e| !e.is_null()) {
         return Err(error["code"].as_str().unwrap_or("The request could not be completed.").to_owned());
     }
-    serde_json::from_value(parsed).map_err(|e| e.to_string())
+    Ok(())
+}
+
+/// A procedure's JSON result; `{error:{code}}` becomes an error with the code.
+pub fn read_procedure<T: DeserializeOwned>(value: &str) -> Result<T, String> {
+    check_procedure_error(value)?;
+    serde_json::from_str(value).map_err(|e| {
+        if serde_json::from_str::<serde::de::IgnoredAny>(value).is_err() {
+            "The request could not be completed.".to_owned()
+        } else {
+            e.to_string()
+        }
+    })
 }
 
 pub fn format_bytes(bytes: f64) -> String {

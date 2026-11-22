@@ -40,11 +40,15 @@ pub fn App() -> impl IntoView {
         }
     });
     spawn_local(async move {
-        let signed_in = api::get::<BrowserSession>("/api/v1/auth/session");
-        match api::get::<Status>("/api/v1/auth/status").await {
+        let (status_res, session_res) = futures::future::join(
+            api::get::<Status>("/api/v1/auth/status"),
+            api::get::<BrowserSession>("/api/v1/auth/session"),
+        )
+        .await;
+        match status_res {
             Ok(value) => {
                 if value.initialized {
-                    match signed_in.await {
+                    match session_res {
                         Ok(s) => session.set(Some(s)),
                         Err(e) if e.status == 401 => {}
                         Err(_) => error.set(true),
@@ -128,13 +132,15 @@ fn use_appearance(session: &BrowserSession) {
     let saved = window().local_storage().ok().flatten().and_then(|s| s.get_item(&key).ok().flatten());
     let value = RwSignal::new(saved.unwrap_or_else(|| "system".into()));
     let preferences = context().preferences;
+    let pref_appearance = Memo::new(move |_| preferences.value.with(|p| p.as_ref().map(|p| p.appearance.clone().unwrap_or_else(|| "system".into()))));
     Effect::new(move |_| {
-        if let Some(p) = preferences.value.get() {
-            let next = p.appearance.unwrap_or_else(|| "system".into());
+        if let Some(next) = pref_appearance.get() {
             if let Some(s) = window().local_storage().ok().flatten() {
                 let _ = s.set_item(&key, &next);
             }
-            value.set(next);
+            if value.with_untracked(|cur| *cur != next) {
+                value.set(next);
+            }
         }
     });
     Effect::new(move |_| apply_theme(Some(value.get())));
@@ -226,11 +232,15 @@ fn OptionalWorkspace(kind: String, session: BrowserSession, on_signed_out: Callb
     let settings = context().app_settings;
     let kind = StoredValue::new(kind);
     let session = StoredValue::new(session);
+    let enabled = Memo::new(move |_| {
+        let kind = kind.get_value();
+        settings.value.with(|s| s.as_ref().map(|s| !s.disabled.contains(&kind)))
+    });
     move || {
         let kind = kind.get_value();
         let session = session.get_value();
-        let enabled = settings.value.with(|s| s.as_ref().map(|s| !s.disabled.contains(&kind)));
-        if enabled == Some(true) {
+        let is_enabled = enabled.get();
+        if is_enabled == Some(true) {
             return match kind.as_str() {
                 "news" => view! { <crate::news::NewsWorkspace session=session on_signed_out=on_signed_out/> }.into_any(),
                 "chat" => view! { <crate::chat::ChatWorkspace session=session on_signed_out=on_signed_out/> }.into_any(),
@@ -245,7 +255,7 @@ fn OptionalWorkspace(kind: String, session: BrowserSession, on_signed_out: Callb
         let error = settings.error.get();
         let body = if !error.is_empty() {
             view! { <h1>"Unable to load apps"</h1><p role="alert">{error}</p><button class="primary-button" on:click=|_| { let _ = window().location().reload(); }>"Try again"</button> }.into_any()
-        } else if enabled.is_some() {
+        } else if is_enabled.is_some() {
             view! { <h1>"App disabled"</h1><p>"This app has been disabled by an administrator."</p> }.into_any()
         } else {
             view! { <p role="status">"Opening app\u{2026}"</p> }.into_any()

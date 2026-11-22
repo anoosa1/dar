@@ -55,6 +55,8 @@ spacetimedb-sdk = "=2.14.1"
 opt-level = "z"
 lto = true
 codegen-units = 1
+panic = "abort"
+strip = true
 
 # brotli without its C API (see patch-brotli.sh).
 [patch.crates-io]

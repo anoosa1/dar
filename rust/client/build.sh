@@ -14,11 +14,13 @@ if [[ ! -f src/module_bindings/mod.rs ]]; then
   echo "src/module_bindings is generated (and ignored by Git): run ./generate.sh in Dar's root dev shell first." >&2
   exit 1
 fi
-cargo build --bin dar-client --target wasm32-unknown-unknown "${flags[@]}"
+RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--cfg=erase_components" cargo build --bin dar-client --target wasm32-unknown-unknown "${flags[@]}"
 rm -rf dist && mkdir -p dist
 wasm-bindgen --target web --no-typescript --out-dir dist --out-name dar_client "target/wasm32-unknown-unknown/$profile/dar-client.wasm"
 if [[ $profile == release ]] && command -v wasm-opt >/dev/null; then
-  wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-reference-types -o dist/dar_client_bg.wasm dist/dar_client_bg.wasm
+  wasm-opt -Oz --strip-debug --strip-producers --low-memory-unused --zero-filled-memory \
+    --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-reference-types \
+    -o dist/dar_client_bg.wasm dist/dar_client_bg.wasm
 fi
 # Stylesheets in main.tsx's import order; the shared frame and apps layers come last there too.
 grep -oE '^import "\./[^"]+\.css";' "$client/main.tsx" | sed -E 's/^import "\.\/(.*)";$/\1/' | while read -r sheet; do
@@ -66,9 +68,19 @@ if [[ -f "$next_dist/sdk.js" ]]; then
   cp "$next_dist"/sdk*.js "$next_dist"/sdk*.css dist/ 2>/dev/null || true
   [[ -d "$next_dist/chunks" ]] && cp -r "$next_dist/chunks" dist/chunks
 fi
-printf 'import init from "/rust/dar_client.js";\ninit({module_or_path:"/rust/dar_client_bg.wasm"});\n' > dist/start.js
-cat > dist/index.html <<'EOF'
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Dar</title><link rel="stylesheet" href="/rust/app.css"><script type="module" src="/rust/start.js"></script></head><body><div id="root"></div></body></html>
+# Content-hashed filenames so the runtime can serve JS, CSS and wasm as immutable.
+hash_of() { sha256sum "$1" | cut -c1-12; }
+wasm_file="dar_client_bg.$(hash_of dist/dar_client_bg.wasm).wasm"
+js_file="dar_client.$(hash_of dist/dar_client.js).js"
+css_file="app.$(hash_of dist/app.css).css"
+mv dist/dar_client_bg.wasm "dist/$wasm_file"
+mv dist/dar_client.js "dist/$js_file"
+cp dist/app.css "dist/$css_file"
+printf 'import init from "/rust/%s";\ninit({module_or_path:"/rust/%s"});\n' "$js_file" "$wasm_file" > dist/start.js
+start_file="start.$(hash_of dist/start.js).js"
+mv dist/start.js "dist/$start_file"
+cat > dist/index.html <<EOF
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Dar</title><link rel="stylesheet" href="/rust/$css_file"><link rel="modulepreload" href="/rust/$start_file"><link rel="modulepreload" href="/rust/$js_file"><link rel="preload" href="/rust/$wasm_file" as="fetch" crossorigin="anonymous"><script type="module" src="/rust/$start_file"></script></head><body><div id="root"><main class="startup-state" aria-busy="true"><div class="brand-mark"></div><p role="status">Opening your space…</p></main></div></body></html>
 EOF
 # Precompressed copies, served when the browser accepts them (as next/runtime/static.ts serves next/dist).
 find dist -type f \( -name "*.wasm" -o -name "*.js" -o -name "*.css" -o -name "*.mjs" \) -print0 | while IFS= read -r -d "" file; do
