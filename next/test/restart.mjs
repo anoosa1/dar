@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
 import { mkdtemp, readFile, stat, readdir } from "node:fs/promises";
@@ -12,6 +12,7 @@ import {identityAdmin,authorize,exchange} from "./identity-helpers.ts";
 import * as oidc from "openid-client";
 import {manageApps} from "../runtime/apps/install.ts";
 import {randomUUID} from "node:crypto";
+import {epub,png} from "./books-fixtures.ts";
 
 if (!process.env.DAR_SPACETIME_BIN) throw new Error("DAR_SPACETIME_BIN is required.");
 async function freePort() {
@@ -101,6 +102,23 @@ try {
   const appPassword=await (await fetch(`${origin}/api/v1/auth/app-passwords`,{method:"POST",headers:{...session.headers,"content-type":"application/json"},body:JSON.stringify({label:"Sync client",scope:"write"})})).json();
   const davHeaders={authorization:`Basic ${Buffer.from(`admin:${appPassword.secret}`).toString("base64")}`},davFile=`${appPassword.davUrl}Synced.txt`;
   const davPut=await fetch(davFile,{method:"PUT",headers:davHeaders,body:"Written by a sync client."});assert.equal(davPut.status,201,await davPut.clone().text());const davEtag=davPut.headers.get("etag");
+  // Apps that keep their own state: a tracked folder and its Git repository, a book's reading
+  // position and a photo's description.
+  const repoFolder=randomUUID();{const live=await connect(session);try{await live.reducers.createFolder({id:repoFolder,parentId:"",name:"Durable repository"});}finally{live.disconnect();}}
+  await upload(origin,session,"README.md","# Durable repository\n",repoFolder);
+  const historyUrl=`${origin}/api/v1/files/history/${repoFolder}`;
+  assert.equal((await fetch(historyUrl,{method:"POST",headers:workspaceHeaders,body:JSON.stringify({action:"track"})})).status,200);
+  const tracked=await (await fetch(historyUrl,{headers:session.headers})).json();
+  assert.equal((await fetch(historyUrl+"/commits",{method:"POST",headers:workspaceHeaders,body:JSON.stringify({message:"Durable start",token:tracked.status.token})})).status,201);
+  const book=await upload(origin,session,"durable-voyage.epub",epub({title:"Durable Voyage",author:"Restart Fixture"}),"",undefined,undefined,"application/epub+zip");
+  const bookState=await fetch(`${origin}/api/v1/books/${book.fileId}/state`,{method:"PUT",headers:workspaceHeaders,body:JSON.stringify({revision:0,status:"reading",position:{spine:1,fraction:0.5},progress:0.6,device:"Restart proof"})});
+  assert.equal(bookState.status,200,await bookState.clone().text());
+  const photoTarget=await (await fetch(`${origin}/api/v1/photos/upload-target`,{method:"POST",headers:workspaceHeaders,body:JSON.stringify({year:2024,month:4})})).json();
+  const photo=await upload(origin,session,"durable.png",png(32,20,[20,90,160]),photoTarget.parentId,undefined,undefined,"image/png");
+  assert.equal((await fetch(`${origin}/api/v1/photos/assets/${photo.fileId}/index`,{method:"POST",headers:workspaceHeaders,body:"{}"})).status,200);
+  const photoDetail=await (await fetch(`${origin}/api/v1/photos/assets/${photo.fileId}`,{headers:session.headers})).json();
+  const described=await fetch(`${origin}/api/v1/photos/assets/${photo.fileId}/description`,{method:"PUT",headers:workspaceHeaders,body:JSON.stringify({description:"Durable photo",revision:photoDetail.revision})});
+  assert.equal(described.status,200,await described.clone().text());
   const reservationResponse = await fetch(`${origin}/api/v1/files/uploads`, { method: "POST", headers: { ...session.headers, "content-type": "application/json" }, body: JSON.stringify({ name: "Interrupted.txt", parentId: "", size: 4096, mediaType: "text/plain" }) });
   assert.equal(reservationResponse.status, 201); const reservation = await reservationResponse.json();
   const request = http.request(`${origin}/api/v1/files/uploads/${reservation.id}`, { method: "PUT", headers: { ...session.headers, "content-length": 4096 } });
@@ -124,6 +142,14 @@ assert.ok((await oidc.refreshTokenGrant(client.config,activeTokens.refresh_token
   assert.deepEqual(await readdir(path.join(root, "uploads")), []);
   assert.equal(await (await fetch(`${origin}/api/v1/files/${durable.fileId}/content`, { headers: session.headers })).text(), "Committed content survives process failure.");
   const davGet=await fetch(davFile,{headers:davHeaders});assert.equal(davGet.status,200);assert.equal(await davGet.text(),"Written by a sync client.");assert.equal(davGet.headers.get("etag"),davEtag);
+  const historyAfter=await (await fetch(historyUrl,{headers:session.headers})).text();assert.match(historyAfter,/Durable start/);
+  const repoAlias=(await (await fetch(`${origin}/api/v1/git/repositories/${repoFolder}`,{headers:session.headers})).json()).clone.alias;
+  const cloneRoot=await mkdtemp(path.join(tmpdir(),"dar-restart-clone-"));
+  const cloned=spawnSync("git",["-c",`http.extraHeader=Authorization: Basic ${Buffer.from(`admin:${appPassword.secret}`).toString("base64")}`,"clone","-q",repoAlias,"repo"],{cwd:cloneRoot,encoding:"utf8",env:{...process.env,GIT_CONFIG_GLOBAL:"/dev/null",GIT_CONFIG_NOSYSTEM:"1",HOME:cloneRoot,GIT_TERMINAL_PROMPT:"0"}});
+  assert.equal(cloned.status,0,cloned.stderr);assert.equal(await readFile(path.join(cloneRoot,"repo","README.md"),"utf8"),"# Durable repository\n");
+  const bookAfter=(await (await fetch(`${origin}/api/v1/books/${book.fileId}`,{headers:session.headers})).json()).state;assert.deepEqual(bookAfter.position,{spine:1,fraction:0.5});assert.equal(bookAfter.status,"reading");
+  const photoAfter=await (await fetch(`${origin}/api/v1/photos/assets/${photo.fileId}`,{headers:session.headers})).json();assert.equal(photoAfter.description,"Durable photo");
+  assert.equal((await fetch(`${origin}/api/v1/photos/assets/${photo.fileId}/thumbnail`,{headers:session.headers})).status,200);
   assert.equal((await fetch(appPassword.davUrl,{method:"PROPFIND",headers:{...davHeaders,depth:"1"}})).status,207);
   const retry = await fetch(`${origin}/api/v1/files/uploads/${reservation.id}`, { method: "PUT", headers: session.headers, body: Buffer.alloc(4096, "r") });
   assert.equal(retry.status, 200, await retry.clone().text());
