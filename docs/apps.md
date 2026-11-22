@@ -37,7 +37,7 @@ upload, marketplace, automatic update or hot reload.
 ## Enable and disable
 
 Administration → Apps (also in the account menu as Manage apps) enables or
-disables Notes, Tasks, Agent and host-enabled installed apps immediately for the
+disables Notes, Tasks, Mail, Agent and host-enabled installed apps immediately for the
 whole instance. Files, Contacts and Calendar are always on. A disabled app leaves
 the app rail and search, its APIs stop and external hooks are disposed; its data
 is kept. Calendar's DAV routes, including tasks, stay available. This setting can
@@ -69,6 +69,13 @@ messages can still be saved.
 Optional built-in feed reader at `/news` with account-scoped storage, OPML
 import/export and Nextcloud News API sync for mobile clients at `/dav/news`. See
 [News](news.md).
+
+## Mail
+
+Optional built-in client at `/mail` for IMAP and SMTP, JMAP and OAuth2 (Google, Microsoft)
+accounts from providers the administrator sets up (Nix or Mail settings → Providers). Every
+message is mirrored as an `.eml` file in `docs/mail`, read from there, and changes made to
+those files go back to the server. See [Mail](mail.md).
 
 ## Chat
 

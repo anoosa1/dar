@@ -20,6 +20,7 @@ mod installed;
 mod git;
 mod git_api;
 mod history;
+mod mail;
 mod news;
 mod notes_library;
 mod maintenance;
@@ -158,6 +159,12 @@ async fn main() {
     let claude_file = optional("DAR_CLAUDE_FILE").map(PathBuf::from).unwrap_or_else(|| root.join("claude.json"));
     let chat_bridge = optional("DAR_CHAT_BRIDGE");
     let news = news::NewsRuntime::new(db.clone(), news_allow_private);
+    let mail = mail::MailRuntime::open(db.clone(), blobs.clone(), &auth::secrets_dir(&root), &origin).unwrap_or_else(|e| fail(format!("The mail runtime could not start: {e}")));
+    match mail.publish_providers(optional("DAR_MAIL_PROVIDERS_FILE").map(PathBuf::from).as_deref()).await {
+        Ok(0) => {}
+        Ok(n) => println!("Mail: {n} provider(s) from the host configuration."),
+        Err(e) => fail(format!("The mail providers could not be recorded: {e}")),
+    }
     let books = books::BooksRuntime::open(db.clone(), &root).await.unwrap_or_else(|e| fail(format!("The books runtime could not start: {e}")));
     let photos = Arc::new(photos::PhotosRuntime::open(db.clone(), &root).await.unwrap_or_else(|e| fail(format!("The photos runtime could not start: {e}"))));
     let immich = photos::ImmichConnector::new(db.clone(), &root, blobs.clone(), photos.clone(), immich_allow_local);
@@ -173,6 +180,7 @@ async fn main() {
         &root,
         registry,
         news,
+        mail,
         books,
         photos,
         immich,
@@ -244,6 +252,7 @@ async fn main() {
     }
     let _ = stop_tx.send(true);
     runtime.news.close().await;
+    runtime.mail.close().await;
     runtime.chat.close().await;
     runtime.immich.close().await;
     runtime.photos.close().await;

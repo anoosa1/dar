@@ -10,6 +10,8 @@ pub mod api;
 pub mod books;
 pub mod chat;
 pub mod installed_apps;
+pub mod lazy_apps;
+pub mod mail;
 pub mod news;
 pub mod photos;
 pub mod workspace;

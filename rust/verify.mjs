@@ -104,6 +104,7 @@ try {
     results.push({name: "bridge go test", ok: go.status === 0, seconds: Math.round((Date.now() - started) / 1000), reason: go.error?.message ?? (go.status === 0 ? "" : `exit ${go.status}`)});
   }
   run(t("news.integration.test.ts"));
+  run(t("mail.integration.test.ts")); run(["test/mail-browser.mjs"]);
   run(t("chat.integration.test.ts", "chat-discord.integration.test.ts")); run(["test/chat-browser.mjs"]);
   run(t("books.integration.test.ts")); run(["test/books-browser.mjs"]); run(["test/git-browser.mjs"]); run(["test/git-tracker-browser.mjs"]);
   run(t("photos.integration.test.ts", "photos-library.integration.test.ts", "photos-sharing.integration.test.ts", "photos-immich.integration.test.ts"), 600_000);

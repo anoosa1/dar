@@ -1433,3 +1433,124 @@ pub struct BookMark {
     pub label: String,
     pub created_at: f64,
 }
+
+// Mail (mail.rs). Providers come from the administrator (Nix or Administration); each account's
+// messages are mirrored as .eml files in Files, which these rows index.
+#[table(accessor = mail_providers)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MailProvider {
+    #[primary_key]
+    pub id: String,
+    pub name: String,
+    /// "nix" (the host configuration, replaced at every start) or "admin" (Administration).
+    pub source: String,
+    /// Servers, sign-in kind and OAuth endpoints as JSON; never a secret.
+    pub document: String,
+    /// The OAuth client secret sealed by the runtime (Administration providers only).
+    pub secret: String,
+    pub enabled: bool,
+    pub ordering: u32,
+    pub modified_at: f64,
+}
+
+#[table(accessor = mail_accounts)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MailAccount {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_id: String,
+    #[index(btree)]
+    pub provider_id: String,
+    pub name: String,
+    pub address: String,
+    pub display_name: String,
+    pub username: String,
+    /// The password, token or OAuth grant, sealed by the runtime.
+    pub credential: String,
+    pub color: u32,
+    pub ordering: u32,
+    /// The account's Files folder (`docs/mail/<name>`).
+    #[index(btree)]
+    pub folder_id: String,
+    pub status: String,
+    pub last_error: String,
+    pub error_count: u32,
+    pub synced_at: f64,
+    pub next_sync: f64,
+    #[index(btree)]
+    pub due_key: String,
+    pub signature: String,
+    pub created_at: f64,
+}
+
+#[table(accessor = mail_mailboxes)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MailMailbox {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub account_id: String,
+    pub owner_id: String,
+    /// The IMAP mailbox name or the JMAP mailbox ID.
+    pub remote: String,
+    pub name: String,
+    pub role: String,
+    pub parent_id: String,
+    #[index(btree)]
+    pub folder_id: String,
+    /// IMAP UIDVALIDITY; a change means every UID was reassigned.
+    pub validity: String,
+    pub total: u32,
+    pub unread: u32,
+}
+
+#[table(accessor = mail_messages)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MailMessage {
+    #[primary_key]
+    pub id: String,
+    pub owner_id: String,
+    #[index(btree)]
+    pub account_id: String,
+    #[index(btree)]
+    pub mailbox_id: String,
+    /// The IMAP UID or the JMAP email ID; empty while a message added in Files is on its way.
+    pub remote: String,
+    #[unique]
+    pub remote_key: String,
+    #[index(btree)]
+    pub file_id: String,
+    pub blob_id: String,
+    pub message_id: String,
+    #[index(btree)]
+    pub thread_key: String,
+    pub subject: String,
+    pub from_name: String,
+    pub from_address: String,
+    /// `{to, cc}` as JSON lists of `{name, address}`.
+    pub recipients: String,
+    pub date: f64,
+    pub snippet: String,
+    pub seen: bool,
+    pub flagged: bool,
+    pub answered: bool,
+    pub draft: bool,
+    pub attachments: bool,
+    pub size: f64,
+    /// `<owner>/<newest first>/<id>` and the same per mailbox, role, unread and flagged.
+    #[index(btree)]
+    pub owner_key: String,
+    #[index(btree)]
+    pub mailbox_key: String,
+    #[index(btree)]
+    pub role_key: String,
+    #[index(btree)]
+    pub unread_key: String,
+    #[index(btree)]
+    pub flagged_key: String,
+}

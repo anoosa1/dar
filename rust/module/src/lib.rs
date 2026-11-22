@@ -19,6 +19,7 @@ pub mod global_search;
 pub mod history;
 pub mod identity;
 pub mod immich;
+pub mod mail;
 pub mod news;
 pub mod photo_sync;
 pub mod photos;

@@ -104,16 +104,20 @@ fn SignedIn(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoVi
     intercept_links();
     use_appearance(&session);
     let route = crate::navigation::route_now();
+    // The rail and top bar stay mounted; only the routed app below them is replaced.
+    let frame = crate::shell::Frame::provide();
+    let frame_view = view! { <crate::shell::AppFrame frame=frame session=session.clone() on_signed_out=on_signed_out/> };
     let session = StoredValue::new(session);
-    move || {
+    let routed = move || {
         route.visit.track();
         let path = route.path.get();
         let session = session.get_value();
         match path.as_str() {
-            "/contacts" => view! { <crate::pim::contacts::Contacts session=session on_signed_out=on_signed_out/> }.into_any(),
-            "/calendar" => view! { <crate::pim::calendar::Calendar session=session on_signed_out=on_signed_out/> }.into_any(),
-            "/identity" | "/settings" => view! { <crate::identity::IdentitySettings session=session on_signed_out=on_signed_out/> }.into_any(),
-            "/news" | "/chat" | "/photos" | "/books" | "/git" | "/agent" | "/notes" | "/tasks" => {
+            "/contacts" | "/calendar" | "/identity" | "/settings" => {
+                let app = crate::lazy_apps::LazyApp::from_kind(if path == "/settings" { "identity" } else { &path[1..] });
+                view! { <crate::lazy_apps::LoadApp app=app.expect("listed above") session=session on_signed_out=on_signed_out/> }.into_any()
+            }
+            "/news" | "/mail" | "/chat" | "/photos" | "/books" | "/git" | "/agent" | "/notes" | "/tasks" => {
                 let kind = path[1..].to_owned();
                 view! { <OptionalWorkspace kind=kind session=session on_signed_out=on_signed_out/> }.into_any()
             }
@@ -121,9 +125,13 @@ fn SignedIn(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoVi
                 let id = other.split('/').nth(2).unwrap_or_default().to_owned();
                 view! { <crate::installed_apps::InstalledAppPage id=id session=session on_signed_out=on_signed_out/> }.into_any()
             }
-            _ => view! { <crate::files::Files session=session on_signed_out=on_signed_out/> }.into_any(),
+            _ => {
+                crate::lazy_apps::preload_soon();
+                view! { <crate::files::Files session=session on_signed_out=on_signed_out/> }.into_any()
+            }
         }
-    }
+    };
+    view! { {frame_view}{routed} }
 }
 
 /// The theme follows the account's appearance preference, or the system.
@@ -241,15 +249,9 @@ fn OptionalWorkspace(kind: String, session: BrowserSession, on_signed_out: Callb
         let session = session.get_value();
         let is_enabled = enabled.get();
         if is_enabled == Some(true) {
-            return match kind.as_str() {
-                "news" => view! { <crate::news::NewsWorkspace session=session on_signed_out=on_signed_out/> }.into_any(),
-                "chat" => view! { <crate::chat::ChatWorkspace session=session on_signed_out=on_signed_out/> }.into_any(),
-                "photos" => view! { <crate::photos::PhotosWorkspace session=session on_signed_out=on_signed_out/> }.into_any(),
-                "books" => view! { <crate::books::BooksWorkspace session=session on_signed_out=on_signed_out/> }.into_any(),
-                "git" => view! { <crate::git::GitWorkspace session=session on_signed_out=on_signed_out/> }.into_any(),
-                "agent" => view! { <crate::agent::AgentWorkspace session=session on_signed_out=on_signed_out/> }.into_any(),
-                "notes" => view! { <crate::workspace::Notes session=session on_signed_out=on_signed_out/> }.into_any(),
-                _ => view! { <crate::workspace::TasksWorkspace session=session on_signed_out=on_signed_out/> }.into_any(),
+            return match crate::lazy_apps::LazyApp::from_kind(&kind) {
+                Some(app) => view! { <crate::lazy_apps::LoadApp app=app session=session on_signed_out=on_signed_out/> }.into_any(),
+                None => ().into_any(),
             };
         }
         let error = settings.error.get();

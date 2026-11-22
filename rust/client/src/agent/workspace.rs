@@ -5234,6 +5234,17 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let thread_error = RwSignal::new(String::new());
     let reload = RwSignal::new(0u64);
     let view = RwSignal::new(if is_narrow() && !has_initial_thread { View::Threads } else { View::Conversation });
+    // Phones hide the shared rail and top bar outside the thread list (frame.css).
+    Effect::new(move |_| {
+        if let Some(body) = document().body() {
+            let _ = body.class_list().toggle_with_force("agent-outside-threads", view.get() != View::Threads);
+        }
+    });
+    on_cleanup(|| {
+        if let Some(body) = document().body() {
+            let _ = body.class_list().remove_1("agent-outside-threads");
+        }
+    });
     let editor: RwSignal<Option<&'static str>> = RwSignal::new(None);
     let settings = RwSignal::new(false);
     let settings_section: RwSignal<&'static str> = RwSignal::new("General");

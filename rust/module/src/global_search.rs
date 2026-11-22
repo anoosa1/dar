@@ -261,13 +261,16 @@ pub fn global_search(ctx: &ReducerContext, user_id: &str, query: &str, is_note: 
     if app_enabled(ctx, "news") {
         crate::news::news_search(ctx, user_id, &mut s);
     }
+    if app_enabled(ctx, "mail") {
+        crate::mail::mail_search(ctx, user_id, &mut s);
+    }
     if app_enabled(ctx, "photos") {
         crate::photos::photos_search(ctx, user_id, &mut s);
     }
     if app_enabled(ctx, "chat") && !crate::chat::chat_search(ctx, user_id, &mut s) {
         s.truncated = true;
     }
-    for (name, href) in [("Files", "/"), ("Contacts", "/contacts"), ("Calendar", "/calendar"), ("Notes", "/notes"), ("Tasks", "/tasks"), ("Agent", "/agent"), ("News", "/news"), ("Photos", "/photos"), ("Settings", "/settings")] {
+    for (name, href) in [("Files", "/"), ("Contacts", "/contacts"), ("Calendar", "/calendar"), ("Notes", "/notes"), ("Tasks", "/tasks"), ("Agent", "/agent"), ("News", "/news"), ("Mail", "/mail"), ("Photos", "/photos"), ("Settings", "/settings")] {
         if app_enabled(ctx, &name.to_lowercase()) && s.matches(name) {
             s.add("Applications", hit(href, name, "Open app", href));
         }

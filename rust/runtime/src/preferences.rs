@@ -111,6 +111,9 @@ pub fn merge(previous: &Map<String, Value>, body: &Map<String, Value>) -> Result
     put("newsImages", choice("newsImages", &["proxy", "block"], "proxy")?);
     put("newsRefresh", number("newsRefresh", &[15, 30, 60, 180, 720, 1440], 30)?);
     put("newsKeepDays", number("newsKeepDays", &[7, 30, 90, 365], 30)?);
+    put("mailImages", choice("mailImages", &["block", "load"], "block")?);
+    put("mailMarkRead", choice("mailMarkRead", &["open", "manual"], "open")?);
+    put("mailFolder", folder("mailFolder", "docs/mail", "Choose a Files folder like docs/mail, without control characters.")?);
     put("booksFolder", folder("booksFolder", "docs/books", "Choose a Files folder like docs/books, without control characters.")?);
     put("booksTheme", choice("booksTheme", &["dar", "paper", "sepia", "night"], "dar")?);
     put("booksFont", choice("booksFont", &["serif", "sans", "book"], "serif")?);

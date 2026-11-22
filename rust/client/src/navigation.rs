@@ -16,7 +16,7 @@ pub struct Route {
 
 /// Paths this port renders. Keep in step with `App`'s routing.
 pub fn handles(path: &str) -> bool {
-    matches!(path, "/" | "/contacts" | "/calendar" | "/notes" | "/tasks" | "/news" | "/chat" | "/photos" | "/books" | "/git" | "/agent" | "/settings" | "/identity")
+    matches!(path, "/" | "/contacts" | "/calendar" | "/notes" | "/tasks" | "/news" | "/mail" | "/chat" | "/photos" | "/books" | "/git" | "/agent" | "/settings" | "/identity")
         || path.strip_prefix("/apps/").is_some_and(|id| !id.is_empty() && !id.contains('/'))
 }
 

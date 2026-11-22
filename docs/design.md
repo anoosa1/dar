@@ -214,6 +214,24 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   and share. Read rows fade in place instead of disappearing. Subscribe and Edit
   feed use the right editing pane; News settings is the settings sheet. Phones show
   views and folders as chips and the article full screen with Back. See [News](news.md).
+- **Mail:** selected direction [A](spacetimedb/mail-mocks.html) with B's inline reply (November 22).
+  Sidebar: Compose, unified views (All inboxes, Unread, Flagged, Drafts, Sent, All mail), then
+  each account (colour mark, protocol tag, warning mark, three-dot menu) with its mailboxes
+  nested as on the server. A day-grouped list (unread dot, sender avatar, sender with thread
+  count, attachment/flag/answered marks and time, subject, account dot in unified views and
+  snippet); checking rows turns the header into the tonal selection bar (archive, delete, read,
+  unread, flag, more). The conversation opens in the right sheet: account · mailbox, archive,
+  delete, mark unread, flag and a menu (reply, move, spam, Show in Files, download .eml); the
+  subject, earlier messages as one-line cards that expand, the newest open, remote images
+  blocked behind Show images, attachments as chips, then the inline reply (Reply / Reply all,
+  recipients line, text, open in the sheet, Send). Compose is a floating sheet at the bottom
+  right (From, chips for To/Cc/Bcc, Subject, text, attachments, the Notes formatting bar (plain text
+  until a format is used, then Markdown sent as HTML, with Write/Preview), Save draft, Discard, Send);
+  closing saves a draft; every send waits ten seconds with Undo. Add account and Sign in again
+  use the right editing pane (provider chosen by domain; OAuth goes to the provider's page);
+  Mail settings is the settings sheet (Accounts, Reading, and Providers for administrators).
+  Phones show mailboxes as chips and the conversation full screen with Back; compose fills the
+  screen. See [Mail](mail.md).
 - **Photos:** selected [mock B](spacetimedb/photos-mock-b.html) over
   [mock A](spacetimedb/photos-mock-a.html) (November 13). Sidebar views (Library,
   Favorites, Videos, Archive) then albums as collections with three-dot menus; the
@@ -298,6 +316,9 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   See [Agent workspace](spacetimedb/agent-workspace.md), [Codex](codex.md) and
   [Claude Code](claude-code.md). With both connected, the model menu groups models
   by provider and labels follow the selected model's provider.
+- **Frame between apps:** signed-in pages keep one rail and top bar mounted (`AppFrame` in
+  `shell.rs`); apps register their title and settings button through `WorkspaceHeader`, so
+  switching apps replaces only the app (an app still loading shows its placeholder in the frame).
 - **Sign-in:** Dar logo by default, the saved instance logo when configured, with
   a fallback to Dar if it cannot load.
 
@@ -321,7 +342,7 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
 
 Selected mocks live in `docs/spacetimedb/*-mocks.html` (unified look, Twilight,
 controls, launcher, creation/appearance, sign-in, Contacts/Calendar, Notes/Tasks,
-workspace refinements, Prayer Times, Agent), `settings-revamp-mock-*.html` and `apps-revamp-mock.html`. Scope and limits per area:
+workspace refinements, Prayer Times, Agent, Mail), `settings-revamp-mock-*.html` and `apps-revamp-mock.html`. Scope and limits per area:
 [architecture](spacetimedb/architecture.md),
 [Contacts and Calendar](spacetimedb/contacts-calendar.md),
 [Notes and Tasks](spacetimedb/notes-tasks.md),

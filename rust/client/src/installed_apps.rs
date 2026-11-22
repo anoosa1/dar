@@ -144,6 +144,8 @@ pub fn InstalledAppPage(
         });
     });
 
+    // Once mounted, the app shows the SDK's own rail and top bar in place of the frame's.
+    crate::shell::Frame::own_chrome(Signal::derive(move || !loading.get() && error.with(String::is_empty)));
     view! {
         <Show when=move || loading.get() || !error.with(String::is_empty)>
             <div class="app-shell">

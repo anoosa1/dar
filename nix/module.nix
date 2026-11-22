@@ -18,6 +18,32 @@ let
       // lib.optionalAttrs (client.secretFile != null) { secretFile = "/run/credentials/dar.service/oidc-${id}"; }
     ) cfg.oidc.clients;
   });
+  # Mail providers people may add accounts with. Secrets reach the service as systemd credentials.
+  mailProvidersFile = pkgs.writeText "dar-mail-providers.json" (builtins.toJSON (lib.mapAttrsToList (id: p: {
+    inherit id; inherit (p) name;
+    document = {
+      inherit (p) protocol auth domains saveSent;
+    } // lib.optionalAttrs (p.protocol == "imap") { imap = p.imap; smtp = p.smtp; }
+      // lib.optionalAttrs (p.protocol == "jmap") { jmap = { url = p.jmapUrl; }; }
+      // lib.optionalAttrs (p.auth == "oauth") { oauth = { inherit (p.oauth) authorizeUrl tokenUrl clientId scopes params; }; };
+  } // lib.optionalAttrs (p.auth == "oauth" && p.oauth.clientSecretFile != null) { secretFile = "/run/credentials/dar.service/mail-${id}"; }) cfg.mail.providers));
+  mailServer = lib.types.submodule {
+    options = {
+      host = lib.mkOption { type = lib.types.str; description = "Server host name."; };
+      port = lib.mkOption { type = lib.types.port; description = "Server port."; };
+      security = lib.mkOption { type = lib.types.enum [ "tls" "starttls" ]; default = "tls"; description = "TLS from the start (993, 465) or STARTTLS (143, 587). Plain connections are never used."; };
+    };
+  };
+  mailPresets = {
+    google = { protocol = "imap"; auth = "oauth"; domains = [ "gmail.com" "googlemail.com" ]; saveSent = false;
+      imap = { host = "imap.gmail.com"; port = 993; security = "tls"; }; smtp = { host = "smtp.gmail.com"; port = 465; security = "tls"; };
+      oauth = { authorizeUrl = "https://accounts.google.com/o/oauth2/v2/auth"; tokenUrl = "https://oauth2.googleapis.com/token"; scopes = [ "https://mail.google.com/" ]; params = { access_type = "offline"; prompt = "consent"; }; }; };
+    microsoft = { protocol = "imap"; auth = "oauth"; domains = [ "outlook.com" "hotmail.com" "live.com" ]; saveSent = false;
+      imap = { host = "outlook.office365.com"; port = 993; security = "tls"; }; smtp = { host = "smtp.office365.com"; port = 587; security = "starttls"; };
+      oauth = { authorizeUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"; tokenUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+        scopes = [ "https://outlook.office.com/IMAP.AccessAsUser.All" "https://outlook.office.com/SMTP.Send" "offline_access" ]; params = {}; }; };
+    fastmail = { protocol = "jmap"; auth = "token"; domains = [ "fastmail.com" ]; jmapUrl = "https://api.fastmail.com/jmap/session"; };
+  };
   hostMatch = builtins.match "https://([A-Za-z0-9][A-Za-z0-9.-]*)(:[0-9]+)?" cfg.origin;
   host = if hostMatch == null then "invalid" else builtins.head hostMatch;
   proxyHeaders = ''
@@ -41,6 +67,32 @@ in {
       gitHosts = lib.mkOption { type = lib.types.listOf (lib.types.strMatching "[A-Za-z0-9][A-Za-z0-9.-]*"); default = []; description = "Allowed HTTPS repository hosts. Redirects and credential-bearing URLs are rejected."; };
     };
     news.allowPrivateNetworks = lib.mkOption { type = lib.types.bool; default = false; description = "Let News fetch feeds and images from private, loopback and link-local addresses (for feeds on your own network). Off by default to prevent server-side request forgery."; };
+    mail.providers = lib.mkOption {
+      default = {};
+      example = lib.literalExpression ''{ google = { preset = "google"; name = "Google"; oauth = { clientId = "123.apps.googleusercontent.com"; clientSecretFile = "/run/secrets/dar-google-mail"; }; }; work = { name = "Work"; domains = [ "example.com" ]; imap = { host = "mail.example.com"; port = 993; }; smtp = { host = "mail.example.com"; port = 465; }; }; }'';
+      description = "Mail providers people can add accounts with; Mail reaches no other servers. Applied at every start; providers added in Administration stay. OAuth providers need <origin>/api/v1/mail/oauth/callback registered as a redirect URL.";
+      type = lib.types.attrsOf (lib.types.submodule ({ config, ... }: let preset = if config.preset == null then {} else mailPresets.${config.preset}; in {
+        options = {
+          preset = lib.mkOption { type = lib.types.nullOr (lib.types.enum [ "google" "microsoft" "fastmail" ]); default = null; description = "Fill in a well-known provider's servers and OAuth endpoints; the OAuth client is still yours to give."; };
+          name = lib.mkOption { type = lib.types.str; description = "Name shown when people add an account."; };
+          protocol = lib.mkOption { type = lib.types.enum [ "imap" "jmap" ]; default = preset.protocol or "imap"; description = "IMAP with SMTP submission, or JMAP."; };
+          auth = lib.mkOption { type = lib.types.enum [ "password" "token" "oauth" ]; default = preset.auth or "password"; description = "Password (or app password), API token (JMAP) or OAuth2 (XOAUTH2)."; };
+          domains = lib.mkOption { type = lib.types.listOf lib.types.str; default = preset.domains or []; description = "Email domains this provider is suggested for."; };
+          saveSent = lib.mkOption { type = lib.types.bool; default = preset.saveSent or true; description = "Save sent messages to the Sent mailbox; off for servers that do it themselves (Gmail, Microsoft 365)."; };
+          imap = lib.mkOption { type = lib.types.nullOr mailServer; default = preset.imap or null; description = "IMAP server (protocol imap)."; };
+          smtp = lib.mkOption { type = lib.types.nullOr mailServer; default = preset.smtp or null; description = "SMTP submission server (protocol imap)."; };
+          jmapUrl = lib.mkOption { type = lib.types.nullOr lib.types.str; default = preset.jmapUrl or null; description = "JMAP session URL (protocol jmap)."; };
+          oauth = {
+            authorizeUrl = lib.mkOption { type = lib.types.str; default = preset.oauth.authorizeUrl or ""; description = "OAuth2 authorization endpoint."; };
+            tokenUrl = lib.mkOption { type = lib.types.str; default = preset.oauth.tokenUrl or ""; description = "OAuth2 token endpoint."; };
+            clientId = lib.mkOption { type = lib.types.str; default = ""; description = "OAuth2 client ID registered with the provider."; };
+            clientSecretFile = lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; description = "Absolute runtime path to the OAuth2 client secret, loaded through systemd credentials; never a Nix path or store path. Null for public clients."; };
+            scopes = lib.mkOption { type = lib.types.listOf lib.types.str; default = preset.oauth.scopes or []; description = "OAuth2 scopes."; };
+            params = lib.mkOption { type = lib.types.attrsOf lib.types.str; default = preset.oauth.params or {}; description = "Extra authorization parameters."; };
+          };
+        };
+      }));
+    };
     photos.immichAllowLocalHost = lib.mkOption { type = lib.types.bool; default = false; description = "Let the Photos Immich import reach an Immich server on this machine (http://localhost:2283). Off by default so account owners cannot point the connector at local services. LAN and Tailscale addresses are always allowed."; };
     apps = lib.mkOption { type = lib.types.listOf lib.types.package; default = []; description = "Trusted prebuilt Dar app packages. Changes activate on service restart."; };
     oidc.clients = lib.mkOption {
@@ -73,7 +125,14 @@ in {
       { assertion = hostMatch != null; message = "services.dar.origin must be HTTPS without a path/trailing slash."; }
       { assertion = cfg.port != cfg.databasePort; message = "Dar HTTP and database ports must differ."; }
       { assertion = !cfg.agent.enable || (cfg.agent.package != null || claude.package != null) && !(lib.hasInfix "/../" claude.home) && claude.home != "/var/lib/" && claude.home != cfg.agent.home && builtins.match "[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}" cfg.agent.userId != null && !(lib.hasInfix "/../" cfg.agent.home) && !(lib.hasInfix "/./" cfg.agent.home) && cfg.agent.home != "/var/lib/"; message = "Dar Agent needs an explicit Codex and/or Claude Code package, a Dar account UUID and separate private /var/lib homes."; }
-    ] ++ lib.mapAttrsToList (id: client: {
+    ] ++ lib.mapAttrsToList (id: p: {
+      assertion = builtins.match "[a-z0-9][a-z0-9-]{0,63}" id != null
+        && (if p.protocol == "imap" then p.imap != null && p.smtp != null && p.auth != "token" else p.jmapUrl != null)
+        && (p.auth != "oauth" || (p.oauth.authorizeUrl != "" && p.oauth.tokenUrl != "" && p.oauth.clientId != ""))
+        && (p.oauth.clientSecretFile == null || (lib.hasPrefix "/" p.oauth.clientSecretFile && !(lib.hasPrefix "/nix/store/" p.oauth.clientSecretFile)));
+      message = "services.dar.mail.providers.${id} needs a lowercase ID, IMAP and SMTP servers (or a JMAP URL), the OAuth endpoints and client ID for OAuth, and a non-store absolute clientSecretFile.";
+    }) cfg.mail.providers ++ lib.mapAttrsToList (id: client: {
+
       assertion = builtins.match "[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}" id != null
         && client.name != "" && client.redirectUris != [] && builtins.elem "openid" client.scopes
         && (client.type == "confidential" || client.requirePkce)
@@ -97,6 +156,7 @@ in {
         DAR_PORT = toString cfg.port; DAR_DATABASE_PORT = toString cfg.databasePort;
         DAR_DATABASE_NAME = cfg.databaseName;
         DAR_APPS_FILE = toString appsFile;
+        DAR_MAIL_PROVIDERS_FILE = toString mailProvidersFile;
       } // lib.optionalAttrs cfg.news.allowPrivateNetworks { DAR_NEWS_ALLOW_PRIVATE_NETWORKS = "1"; } // lib.optionalAttrs cfg.photos.immichAllowLocalHost { DAR_IMMICH_ALLOW_LOCAL_HOST = "1"; } // lib.optionalAttrs (cfg.oidc.clients != {}) { DAR_OIDC_FILE = toString oidcFile; }
         // lib.optionalAttrs (cfg.agent.enable && cfg.agent.package != null) { DAR_CODEX_FILE = toString codexFile; }
         // lib.optionalAttrs (cfg.agent.enable && claude.package != null) { DAR_CLAUDE_FILE = toString claudeFile; };
@@ -104,7 +164,9 @@ in {
         Type = "simple"; ExecStart = "${cfg.package}/bin/dar";
         User = "dar"; Group = "dar";
         LoadCredential = lib.mapAttrsToList (id: client: "oidc-${id}:${client.secretFile}")
-          (lib.filterAttrs (_: client: client.secretFile != null) cfg.oidc.clients);
+          (lib.filterAttrs (_: client: client.secretFile != null) cfg.oidc.clients)
+          ++ lib.mapAttrsToList (id: p: "mail-${id}:${p.oauth.clientSecretFile}")
+          (lib.filterAttrs (_: p: p.auth == "oauth" && p.oauth.clientSecretFile != null) cfg.mail.providers);
         StateDirectory = cfg.stateDirectory; StateDirectoryMode = "0700";
         WorkingDirectory = "/var/lib/${cfg.stateDirectory}";
         UMask = "0077"; Restart = "on-failure"; RestartSec = 3;

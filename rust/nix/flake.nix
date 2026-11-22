@@ -10,7 +10,7 @@
         # nixpkgs' rustc ships the wasm32-unknown-unknown standard library the module needs.
         default = pkgs.mkShell {
           # wasm-bindgen-cli matches the client's pinned wasm-bindgen (0.2.121).
-          packages = [ pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.lld pkgs.wasm-bindgen-cli pkgs.binaryen pkgs.brotli pkgs.pkg-config pkgs.openssl ];
+          packages = [ (pkgs.callPackage ./wasm-split.nix { }) pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.lld pkgs.wasm-bindgen-cli pkgs.binaryen pkgs.brotli pkgs.pkg-config pkgs.openssl ];
           # SpacetimeDB's test datastore builds jemalloc at -O0, which glibc's _FORTIFY_SOURCE rejects.
           hardeningDisable = [ "fortify" ];
         };

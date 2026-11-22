@@ -8,7 +8,7 @@ description = "Rust port of Dar's runtime (next/runtime) for Files: sign-in, bro
 
 [dependencies]
 axum = { workspace = true, features = ["ws"] }
-hyper = { version = "1", features = ["http1", "server"] }
+hyper = { version = "1", features = ["http1", "server", "client"] }
 hyper-util = { version = "0.1", features = ["tokio", "http1", "server-graceful"] }
 tower = { version = "0.5", features = ["util"] }
 tokio = { workspace = true, features = ["fs", "io-util", "signal", "process"] }
@@ -33,5 +33,11 @@ scrypt = { version = "0.11", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 chrono-tz = "0.10"
 rrule = "0.14"
+# Mail: TLS for IMAP, SMTP and JMAP (ring, no C toolchain beyond cc), and MIME parsing and building.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-platform-verifier = "0.6"
+mail-parser = "0.11"
+mail-builder = "0.4"
 dar-dav = { path = "../dav" }
 dar-oidc = { path = "../oidc" }

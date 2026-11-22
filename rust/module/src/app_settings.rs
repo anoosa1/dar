@@ -177,7 +177,7 @@ pub fn service_app_settings(ctx: &mut spacetimedb::ProcedureContext, sessionId: 
         if ESSENTIAL_APPS.contains(&appId.as_str()) {
             return fail("forbidden");
         }
-        if !["notes", "tasks", "agent", "news", "chat", "photos", "books", "git"].contains(&appId.as_str()) && !valid_app_id(&appId) {
+        if !["notes", "tasks", "agent", "news", "mail", "chat", "photos", "books", "git"].contains(&appId.as_str()) && !valid_app_id(&appId) {
             return fail("invalidInput");
         }
         if current != revision {

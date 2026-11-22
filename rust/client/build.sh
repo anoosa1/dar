@@ -14,13 +14,28 @@ if [[ ! -f src/module_bindings/mod.rs ]]; then
   echo "src/module_bindings is generated (and ignored by Git): run ./generate.sh in Dar's root dev shell first." >&2
   exit 1
 fi
-RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--cfg=erase_components" cargo build --bin dar-client --target wasm32-unknown-unknown "${flags[@]}"
-rm -rf dist && mkdir -p dist
-wasm-bindgen --target web --no-typescript --out-dir dist --out-name dar_client "target/wasm32-unknown-unknown/$profile/dar-client.wasm"
+if ! command -v wasm-split-cli >/dev/null; then
+  echo "wasm-split-cli is missing: use Dar's dev shell (nix develop), which provides it." >&2
+  exit 1
+fi
+# Relocations let wasm-split-cli move each #[lazy] app (src/lazy_apps.rs) into its own chunk.
+RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--cfg=erase_components -C link-args=--emit-relocs" \
+  cargo build --bin dar-client --target wasm32-unknown-unknown "${flags[@]}"
+rm -rf dist && mkdir -p dist/split dist/app
+wasm-split-cli --target web --out-name dar_client "target/wasm32-unknown-unknown/$profile/dar-client.wasm" dist/split
+# The chunks reach the main module's function table through LLD's exports, which wasm-bindgen
+# drops unless told to keep them.
+wasm-bindgen --target web --no-typescript --keep-lld-exports --out-dir dist/app --out-name dar_client dist/split/dar_client.wasm
+rm dist/split/dar_client.wasm
+# Per-app chunks (split_*) and the code they share (chunk_*).
+mv dist/split/*.wasm dist/split/__wasm_split.js dist/app/
+rm -rf dist/split
 if [[ $profile == release ]] && command -v wasm-opt >/dev/null; then
-  wasm-opt -Oz --strip-debug --strip-producers --low-memory-unused --zero-filled-memory \
-    --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-reference-types \
-    -o dist/dar_client_bg.wasm dist/dar_client_bg.wasm
+  for wasm in dist/app/*.wasm; do
+    wasm-opt -Oz --strip-debug --strip-producers --low-memory-unused --zero-filled-memory \
+      --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-reference-types \
+      --enable-mutable-globals -o "$wasm" "$wasm"
+  done
 fi
 # Stylesheets in cascade order; the shared frame and apps layers come last.
 grep -vE '^(#|$)' styles/order.txt | while read -r sheet; do
@@ -70,11 +85,14 @@ if [[ -f "$sdk_dist/sdk.js" ]]; then
 fi
 # Content-hashed filenames so the runtime can serve JS, CSS and wasm as immutable.
 hash_of() { sha256sum "$1" | cut -c1-12; }
-wasm_file="dar_client_bg.$(hash_of dist/dar_client_bg.wasm).wasm"
-js_file="dar_client.$(hash_of dist/dar_client.js).js"
+# The glue, wasm, app chunks and snippets load each other by relative URL, so they share one
+# folder named after all of their contents (served as immutable, like the hashed files).
+app_hash=$(cd dist/app && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)
+app_dir="app-$app_hash"
+mv dist/app "dist/$app_dir"
+js_file="$app_dir/dar_client.js"
+wasm_file="$app_dir/dar_client_bg.wasm"
 css_file="app.$(hash_of dist/app.css).css"
-mv dist/dar_client_bg.wasm "dist/$wasm_file"
-mv dist/dar_client.js "dist/$js_file"
 cp dist/app.css "dist/$css_file"
 printf 'import init from "/rust/%s";\ninit({module_or_path:"/rust/%s"});\n' "$js_file" "$wasm_file" > dist/start.js
 start_file="start.$(hash_of dist/start.js).js"

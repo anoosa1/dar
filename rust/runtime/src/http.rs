@@ -49,6 +49,7 @@ pub struct Runtime {
     pub texts: crate::maintenance::Worker,
     pub subscriptions: crate::maintenance::Subscriptions,
     pub news: crate::news::NewsRuntime,
+    pub mail: crate::mail::MailRuntime,
     pub books: crate::books::BooksRuntime,
     pub photos: Arc<crate::photos::PhotosRuntime>,
     pub immich: crate::photos::ImmichConnector,
@@ -117,6 +118,7 @@ impl Runtime {
         root: &std::path::Path,
         registry: crate::apps::Registry,
         news: crate::news::NewsRuntime,
+        mail: crate::mail::MailRuntime,
         books: crate::books::BooksRuntime,
         photos: Arc<crate::photos::PhotosRuntime>,
         immich: crate::photos::ImmichConnector,
@@ -143,6 +145,7 @@ impl Runtime {
             texts: crate::maintenance::text_index_worker(db.clone(), blobs.clone()),
             subscriptions: crate::maintenance::Subscriptions::new(db.clone(), std::env::var("DAR_NEWS_ALLOW_PRIVATE_NETWORKS").as_deref() == Ok("1")),
             news,
+            mail,
             books,
             photos,
             immich,
@@ -486,6 +489,15 @@ async fn route(shared: &Shared, peer: SocketAddr, request: Request) -> Result<Re
         response.headers_mut().insert(header::SET_COOKIE, runtime.cookie(&secret, 7 * 86400));
         return Ok(response);
     }
+    // The OAuth provider sends the browser back here from its own site, so the SameSite=Strict
+    // session cookie is absent: the one-time `state` names the session that started it.
+    if path == "/api/v1/mail/oauth/callback" && method == Method::GET {
+        if crate::installed::app_disabled(&runtime.db, "mail").await? {
+            return Err(AppError::not_found());
+        }
+        let target = runtime.mail.oauth_callback(&query).await;
+        return Ok((StatusCode::SEE_OTHER, [(header::LOCATION, target)]).into_response());
+    }
     if path.starts_with("/api/") {
         let authenticated = runtime.authenticate(secret.as_deref()).await?.ok_or(AppError::new("unauthenticated", 401))?;
         if writes {
@@ -562,7 +574,7 @@ fn clear_cookie(runtime: &Runtime, value: Value) -> Response {
 
 /// Optional apps the administrator can switch off; their APIs answer 404 then.
 fn optional_app(path: &str) -> Option<&'static str> {
-    ["notes", "tasks", "news", "chat", "photos", "books", "git"].into_iter().find(|app| {
+    ["notes", "tasks", "news", "mail", "chat", "photos", "books", "git"].into_iter().find(|app| {
         let base = format!("/api/v1/{app}");
         path == base || path.starts_with(&(base + "/"))
     })
@@ -629,6 +641,9 @@ async fn api(r: Api<'_>, body: Body) -> Result<Response> {
     }
     if path == "/api/v1/chat" || path.starts_with("/api/v1/chat/") {
         return crate::chat::handle_http(runtime, method, path, r.query, r.headers, &session_id, &runtime.chat, body).await;
+    }
+    if path == "/api/v1/mail" || path.starts_with("/api/v1/mail/") {
+        return crate::mail::handle_http(runtime, method, path, r.query, r.headers, &session_id, &runtime.mail, body).await;
     }
     if path == "/api/v1/news" || path.starts_with("/api/v1/news/") {
         return crate::news::handle_http(runtime, method, path, r.query, r.headers, &session_id, r.username(), &runtime.news, body).await;
@@ -912,21 +927,28 @@ async fn preferences(runtime: &Runtime, method: &Method, headers: &HeaderMap, bo
 
 /// The client's static files under `/rust/`, `/pdfjs/`, `/chunks/`, `/sdk.*`, `/app.css`;
 /// every other page is its `index.html`.
-async fn client(runtime: &Runtime, path: &str, headers: &HeaderMap) -> Result<Response> {
-    fn fingerprinted(path: &str) -> bool {
-        let file = path.rsplit('/').next().unwrap_or(path);
-        let mut parts = file.rsplit('.');
-        let Some(ext) = parts.next() else { return false };
-        if !matches!(ext, "wasm" | "js" | "mjs" | "css") {
-            return false;
+/// Whether a path under `/rust/` names its contents, so it can be cached for good.
+fn fingerprinted(path: &str) -> bool {
+    // build.sh names the folder of glue, wasm, app chunks and snippets after its contents.
+    if let Some((folder, _)) = path.split_once('/') {
+        if let Some(hash) = folder.strip_prefix("app-") {
+            return (8..=64).contains(&hash.len()) && hash.bytes().all(|b| b.is_ascii_hexdigit());
         }
-        let Some(hash) = parts.next() else { return false };
-        (8..=64).contains(&hash.len()) && hash.bytes().all(|b| b.is_ascii_hexdigit()) && parts.next().is_some()
     }
+    let file = path.rsplit('/').next().unwrap_or(path);
+    let mut parts = file.rsplit('.');
+    let Some(ext) = parts.next() else { return false };
+    if !matches!(ext, "wasm" | "js" | "mjs" | "css") {
+        return false;
+    }
+    let Some(hash) = parts.next() else { return false };
+    (8..=64).contains(&hash.len()) && hash.bytes().all(|b| b.is_ascii_hexdigit()) && parts.next().is_some()
+}
+
+async fn client(runtime: &Runtime, path: &str, headers: &HeaderMap) -> Result<Response> {
     const IMMUTABLE: &str = "public, max-age=31536000, immutable";
     let dist = &runtime.config.client_dist;
     let rel = if let Some(rest) = path.strip_prefix("/rust/") {
-        // Snippet folders are named after the crate, not their contents, so they revalidate.
         let cache = if fingerprinted(rest) { IMMUTABLE } else { "no-cache" };
         Some((rest, cache))
     } else if path.starts_with("/pdfjs/") || path.starts_with("/chunks/") {
@@ -1056,6 +1078,18 @@ async fn thumbnail_response(headers: &HeaderMap, file: &std::path::Path, etag: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_files_named_after_their_contents_are_immutable() {
+        assert!(fingerprinted("dar_client.0123456789ab.js"));
+        assert!(fingerprinted("app.0123456789ab.css"));
+        assert!(fingerprinted("app-0123456789ab/split_agent_app_1.wasm"));
+        assert!(fingerprinted("app-0123456789ab/snippets/dar-client-1/inline0.js"));
+        assert!(!fingerprinted("app.css"));
+        assert!(!fingerprinted("mic-worklet.js"));
+        assert!(!fingerprinted("app-latest/dar_client.js"));
+        assert!(!fingerprinted("snippets/dar-client-86ccece7599fa862/inline0.js"));
+    }
 
     #[test]
     fn query_strings_decode() {

@@ -28,7 +28,7 @@ Pin the flake input to the revision you deploy and point DNS at the host before
 enabling ACME. Options: `package`, `origin`, `port` (4311), `databasePort` (4310),
 `databaseName` (`dar`), `stateDirectory` (`dar` under `/var/lib`), `configureNginx`,
 `openFirewall` (defaults to the nginx choice), `apps` ([installed apps](apps.md)),
-`agent.*` ([Codex](codex.md), [Claude Code](claude-code.md)), `news.allowPrivateNetworks` ([News](news.md)), `photos.immichAllowLocalHost` ([Photos](photos.md)) and `oidc.clients` (below). Keep origin, database
+`agent.*` ([Codex](codex.md), [Claude Code](claude-code.md)), `news.allowPrivateNetworks` ([News](news.md)), `mail.providers` ([Mail](mail.md)), `photos.immichAllowLocalHost` ([Photos](photos.md)) and `oidc.clients` (below). Keep origin, database
 name and state directory stable across upgrades. No credentials go in Nix.
 The package puts `git`, `gzip`, `curl`, `exiftool`, `libvips`, `ffmpeg` and `libarchive` on the service PATH for
 Git, Books and [Photos](photos.md); Photos' regenerable thumbnails and converted videos live in `photo-cache/` under

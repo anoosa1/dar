@@ -292,6 +292,7 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
                 ctx.db.agent_projects().id().delete(r.id);
             }
             crate::news::delete_news_account(ctx, &a.id);
+            crate::mail::delete_mail_account(ctx, &a.id);
             crate::chat::delete_chat_account(ctx, &a.id);
             crate::photos::delete_photos_account(ctx, &a.id);
             let next = DirectoryProfile {

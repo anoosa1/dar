@@ -63,6 +63,35 @@ starts the runtime. Nothing is exported or converted beforehand.
 
 Newest first. Each entry: what passes now on the Rust stack, what was added to the tests.
 
+### 2026-11-22 — Mail
+- New optional app at `/mail` (direction A with B's inline reply, `docs/spacetimedb/mail-mocks.html`;
+  user guide `docs/mail.md`). Module: `mail.rs` and four new tables (`mail_providers`,
+  `mail_accounts`, `mail_mailboxes`, `mail_messages`), `service_mail` and `service_mail_worker`;
+  nothing existing was renamed. Runtime: `mail/` with IMAP, SMTP and JMAP clients written in Dar
+  on tokio-rustls (ring provider) with the platform verifier, mail-parser and mail-builder (the
+  crates the maintainer authorized), OAuth2 with PKCE, and the pass that keeps each account's
+  `.eml` mirror in Files and its server in step in both directions. Client: `mail/` as its own
+  lazy chunk. Nix: `services.dar.mail.providers` (presets, systemd credentials).
+- Tests: `test/mail.integration.test.ts` and `test/mail-browser.mjs` against
+  `test/support/mail-server.mjs` (fake IMAP, SMTP, JMAP and OAuth over TLS, with a CA made
+  in JavaScript and trusted through `SSL_CERT_FILE`); `instance.ts` passes extra environment.
+
+### 2026-11-22 — the client loads per app
+- Apps other than Files are `#[lazy]` functions in `client/src/lazy_apps.rs` (Leptos'
+  wasm-split). `build.sh` links with relocations, splits the wasm with `wasm-split-cli`
+  (`rust/nix/wasm-split.nix`, in both dev shells and the package) before `wasm-bindgen`, and
+  puts the glue, main wasm, chunks and snippets in `dist/app-<hash>/`, served as immutable.
+  The main wasm fell from 6.3 MB to 2.0 MB (606 KB brotli); each app is 39–249 KB brotli.
+- An app's first open shows "Opening app…" until its chunk arrives; 1.5 s after the first
+  page is up the rest are fetched in the background. Loaded apps render at once (the lazy
+  future is polled once synchronously). A chunk returns the app's constructor, called in
+  `LoadApp`'s render: building the app as the chunk arrived would subscribe its effects
+  before its DOM, so effects ran first (Agent's phone panels lost focus on the hidden panel).
+  wasm-bindgen needs `--keep-lld-exports` (the chunks use `__indirect_function_table`), and
+  the split also writes shared `chunk_N.wasm` files.
+- A new app joins the split by adding a line to the `lazy_apps!` list and routing it through
+  `LoadApp`.
+
 ### 2026-11-21 — client complete; the whole suite passes on the Rust stack (39/39)
 - `node rust/verify.mjs` (release client): every suite passes, including all browser tests.
   Unit tests of TypeScript internals still run only on TypeScript; their Rust mirrors are in

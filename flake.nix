@@ -19,7 +19,7 @@
         default = pkgs.mkShell {
           packages = [
             runtime.node runtime.npm runtime.spacetime
-            pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.lld pkgs.wasm-bindgen-cli pkgs.binaryen pkgs.brotli pkgs.pkg-config pkgs.openssl pkgs.perl pkgs.gzip
+            (pkgs.callPackage ./rust/nix/wasm-split.nix { }) pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.lld pkgs.wasm-bindgen-cli pkgs.binaryen pkgs.brotli pkgs.pkg-config pkgs.openssl pkgs.perl pkgs.gzip
             pkgs.go pkgs.chromium pkgs.curl pkgs.git pkgs.vdirsyncer pkgs.exiftool pkgs.vips pkgs.ffmpeg-headless pkgs.libarchive
           ];
           # SpacetimeDB's test datastore builds jemalloc at -O0, which glibc's _FORTIFY_SOURCE rejects.
@@ -55,6 +55,12 @@
           userId = "00000000-0000-0000-0000-000000000000";
         }; } ]; };
         claudeService = claudeOnly.config.systemd.services.dar;
+        mailEnabled = evaluated.extendModules { modules = [ { services.dar.mail.providers = {
+          google = { preset = "google"; name = "Google"; oauth = { clientId = "client.apps.example"; clientSecretFile = "/run/secrets/dar-google-mail"; }; };
+          work = { name = "Work"; domains = [ "example.test" ]; imap = { host = "mail.example.test"; port = 993; }; smtp = { host = "mail.example.test"; port = 587; security = "starttls"; }; };
+        }; } ]; };
+        mailService = mailEnabled.config.systemd.services.dar;
+        invalidMail = evaluated.extendModules { modules = [ { services.dar.mail.providers.broken = { name = "Broken"; auth = "oauth"; imap = { host = "x"; port = 993; }; smtp = { host = "x"; port = 465; }; }; } ]; };
       in { module-evaluation = assert service.serviceConfig.User == "dar";
         assert service.environment.DAR_ROOT == "/var/lib/dar";
         assert service.serviceConfig.ProtectSystem == "strict";
@@ -80,11 +86,18 @@
         assert builtins.elem "AF_NETLINK" claudeService.serviceConfig.RestrictAddressFamilies;
         assert builtins.any (item: !item.assertion && nixpkgs.lib.hasPrefix "services.dar.oidc.clients.public " item.message) invalidPublic.config.assertions;
         assert builtins.hasAttr "DAR_OIDC_FILE" service.environment;
+        assert mailService.serviceConfig.LoadCredential == [ "oidc-gitea:/run/secrets/dar-gitea" "oidc-photos:/run/secrets/dar-photos" "mail-google:/run/secrets/dar-google-mail" ];
+        assert mailEnabled.config.services.dar.mail.providers.google.imap.host == "imap.gmail.com";
+        assert !mailEnabled.config.services.dar.mail.providers.google.saveSent;
+        assert builtins.any (item: !item.assertion && nixpkgs.lib.hasPrefix "services.dar.mail.providers.broken " item.message) invalidMail.config.assertions;
         assert builtins.hasAttr "dar.example.test" evaluated.config.services.nginx.virtualHosts;
         assert builtins.elem "dar.example.test" evaluated.config.networking.hosts."127.0.0.1";
         pkgs.runCommand "dar-module-evaluation" {} ''
           grep -F '/run/credentials/dar.service/oidc-photos' ${service.environment.DAR_OIDC_FILE}
           if grep -F '/run/secrets/dar-photos' ${service.environment.DAR_OIDC_FILE}; then exit 1; fi
+          grep -F '/run/credentials/dar.service/mail-google' ${mailService.environment.DAR_MAIL_PROVIDERS_FILE}
+          grep -F '"host":"mail.example.test"' ${mailService.environment.DAR_MAIL_PROVIDERS_FILE}
+          if grep -F '/run/secrets/dar-google-mail' ${mailService.environment.DAR_MAIL_PROVIDERS_FILE}; then exit 1; fi
           grep -F '127.0.0.1:4311' ${nginxConfig}
           grep -F '127.0.0.1:4310/v1/database/dar/subscribe' ${nginxConfig}
           grep -F '127.0.0.1:4310/v1/identity/websocket-token' ${nginxConfig}

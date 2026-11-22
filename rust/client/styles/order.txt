@@ -20,6 +20,7 @@ diff.css
 history.css
 agent/workspace.css
 news/news.css
+mail/mail.css
 chat/chat.css
 photos/photos.css
 books/books.css

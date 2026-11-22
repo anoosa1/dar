@@ -1,6 +1,7 @@
 { lib, stdenv, stdenvNoCC, fetchurl, runCommand, buildNpmPackage, rustPlatform, cargo, rustc, lld, perl, wasm-bindgen-cli, binaryen, brotli, gzip, bash, coreutils, gnugrep, curl, git, exiftool, vips, ffmpeg-headless, libarchive, makeWrapper, runtime, chatBridge }:
 let
   fs = lib.fileset;
+  wasmSplit = import ../rust/nix/wasm-split.nix { inherit rustPlatform fetchurl; };
 
   sdkSource = lib.cleanSourceWith {
     src = ../sdk;
@@ -99,7 +100,7 @@ let
     src = clientSource;
     sourceRoot = "work/rust/client";
     cargoDeps = rustPlatform.importCargoLock { lockFile = ../rust/client/Cargo.lock; };
-    nativeBuildInputs = [ rustPlatform.cargoSetupHook cargo rustc lld perl wasm-bindgen-cli binaryen brotli gzip runtime.spacetime ];
+    nativeBuildInputs = [ rustPlatform.cargoSetupHook cargo rustc lld perl wasm-bindgen-cli wasmSplit binaryen brotli gzip runtime.spacetime ];
     unpackPhase = ''
       runHook preUnpack
       mkdir -p work/rust

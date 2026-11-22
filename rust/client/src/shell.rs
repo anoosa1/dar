@@ -23,7 +23,7 @@ pub struct AppEntry {
     pub href: String,
 }
 
-const APPS: [(&str, &str, &str, &str); 11] = [
+const APPS: [(&str, &str, &str, &str); 12] = [
     ("files", "Files", "folder", "/"),
     ("photos", "Photos", "image", "/photos"),
     ("books", "Books", "book", "/books"),
@@ -31,6 +31,7 @@ const APPS: [(&str, &str, &str, &str); 11] = [
     ("calendar", "Calendar", "calendar", "/calendar"),
     ("notes", "Notes", "file", "/notes"),
     ("tasks", "Tasks", "check", "/tasks"),
+    ("mail", "Mail", "mail", "/mail"),
     ("news", "News", "rss", "/news"),
     ("chat", "Chat", "chat", "/chat"),
     ("agent", "Agent", "agent", "/agent"),
@@ -67,11 +68,10 @@ pub fn Avatar(#[prop(into)] name: String) -> impl IntoView {
 
 /// The persistent app rail; on phones a bottom bar with four apps and a More menu.
 #[component]
-pub fn AppRail(#[prop(into)] active: String, administrator: bool, account: ChildrenFn) -> impl IntoView {
-    let active = StoredValue::new(active);
+pub fn AppRail(#[prop(into)] active: Signal<String>, administrator: bool, account: ChildrenFn) -> impl IntoView {
     let rail = move || {
         let list = app_list();
-        let active = active.get_value();
+        let active = active.get();
         let active_index = list.iter().position(|a| a.id == active);
         let on_phone: Vec<bool> = (0..list.len()).map(|i| i < PHONE_SLOTS - usize::from(active_index.is_some_and(|a| a >= PHONE_SLOTS)) || Some(i) == active_index).collect();
         let overflow: Vec<AppEntry> = list.iter().zip(&on_phone).filter(|(_, p)| !**p).map(|(a, _)| a.clone()).collect();
@@ -104,7 +104,7 @@ pub fn AppRail(#[prop(into)] active: String, administrator: bool, account: Child
             <a href="/" class="app-rail-brand" aria-label="Dar home"><span aria-hidden="true">"D"</span></a>
             <div class="app-rail-apps">{rail}</div>
             <div class="app-rail-end">
-                <a href="/settings" class="app-rail-item app-rail-settings" aria-label="Settings" title="Settings" aria-current=move || (active.get_value() == "settings").then_some("page")><span class="app-rail-icon"><Icon name="settings"/></span></a>
+                <a href="/settings" class="app-rail-item app-rail-settings" aria-label="Settings" title="Settings" aria-current=move || (active.get() == "settings").then_some("page")><span class="app-rail-icon"><Icon name="settings"/></span></a>
                 {account()}
             </div>
         </nav>
@@ -149,9 +149,98 @@ pub fn WorkspaceAccount(session: BrowserSession, on_signed_out: Callback<()>, #[
     }
 }
 
-/// The app rail and the top bar with the app title, search and app-level tools.
+/// The signed-in frame's state: which app is showing and its settings button. Apps announce
+/// themselves through `WorkspaceHeader`; the rail and top bar stay mounted between apps.
+#[derive(Clone, Copy)]
+pub struct Frame {
+    app: RwSignal<String>,
+    /// The settings button of the app that registered last, with its registration number.
+    settings: RwSignal<(u64, Option<Callback<()>>)>,
+    sequence: StoredValue<u64>,
+    /// An installed app built with the SDK draws its own rail and top bar.
+    own_chrome: RwSignal<bool>,
+}
+
+impl Frame {
+    pub fn provide() -> Self {
+        let frame = Frame { app: RwSignal::new(String::new()), settings: RwSignal::new((0, None)), sequence: StoredValue::new(0), own_chrome: RwSignal::new(false) };
+        provide_context(frame);
+        frame
+    }
+
+    /// While `showing` is true the page draws its own rail and top bar, and the frame steps aside.
+    pub fn own_chrome(showing: Signal<bool>) {
+        let Some(frame) = use_context::<Frame>() else { return };
+        Effect::new(move |_| frame.own_chrome.set(showing.get()));
+        on_cleanup(move || {
+            let _ = frame.own_chrome.try_set(false);
+        });
+    }
+}
+
+/// The persistent app rail and top bar for signed-in pages. Only the app's own content
+/// changes when moving between apps, so search, the rail and the account menu stay put.
+#[component]
+pub fn AppFrame(frame: Frame, session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoView {
+    let label = Memo::new(move |_| { let app = frame.app.get(); if app.is_empty() { String::new() } else { app_label(&app, &app_list()) } });
+    let has_settings = Memo::new(move |_| frame.settings.with(|(_, s)| s.is_some()));
+    let shown = Memo::new(move |_| !frame.own_chrome.get());
+    Effect::new(move |_| {
+        if let Some(body) = document().body() {
+            let _ = body.class_list().toggle_with_force("has-app-frame", shown.get());
+            let _ = body.class_list().toggle_with_force("has-app-settings", shown.get() && has_settings.get());
+        }
+    });
+    on_cleanup(|| {
+        if let Some(body) = document().body() {
+            let _ = body.class_list().remove_2("has-app-frame", "has-app-settings");
+        }
+    });
+    let session = StoredValue::new(session);
+    // Not rendered at all while an installed app shows the SDK's own rail and top bar.
+    move || {
+        shown.get().then(|| {
+            let session = session.get_value();
+            let rail_session = session.clone();
+            let account: ChildrenFn = std::sync::Arc::new(move || view! { <WorkspaceAccount session=rail_session.clone() on_signed_out=on_signed_out class="rail-account"/> }.into_any());
+            view! {
+                <div class="app-frame">
+                    <AppRail active=Signal::derive(move || frame.app.get()) administrator=session.user.administrator account=account/>
+                    <header class=move || if has_settings.get() { "topbar has-settings" } else { "topbar" }>
+                        <span class="topbar-title">{move || label.get()}</span>
+                        <GlobalSearch account=session.user.id.clone()/>
+                        <div class="topbar-tools">
+                            {move || has_settings.get().then(|| view! {
+                                <button type="button" class="icon-button" aria-label=move || format!("{} settings", label.get()) title=move || format!("{} settings", label.get())
+                                    on:click=move |_| { if let Some(open) = frame.settings.get_untracked().1 { open.try_run(()); } }><Icon name="settings"/></button>
+                            })}
+                        </div>
+                        <WorkspaceAccount session=session.clone() on_signed_out=on_signed_out class="topbar-account"/>
+                    </header>
+                </div>
+            }
+        })
+    }
+}
+
+/// The app rail and the top bar with the app title, search and app-level tools. Under the
+/// signed-in frame it only tells the frame which app is showing; elsewhere (identity
+/// interactions) it renders them itself.
 #[component]
 pub fn WorkspaceHeader(#[prop(into)] app: String, session: BrowserSession, on_signed_out: Callback<()>, #[prop(optional, into)] on_settings: Option<Callback<()>>) -> impl IntoView {
+    if let Some(frame) = use_context::<Frame>() {
+        let id = frame.sequence.get_value() + 1;
+        frame.sequence.set_value(id);
+        frame.app.set(app);
+        frame.settings.set((id, on_settings));
+        // The next app replaces this registration; leaving without one clears the button.
+        on_cleanup(move || {
+            if frame.settings.try_with_untracked(|(current, _)| *current == id) == Some(true) {
+                let _ = frame.settings.try_set((id, None));
+            }
+        });
+        return ().into_any();
+    }
     let label = {
         let app = app.clone();
         move || app_label(&app, &app_list())
@@ -160,7 +249,7 @@ pub fn WorkspaceHeader(#[prop(into)] app: String, session: BrowserSession, on_si
     let (rail_session, top_session) = (session.clone(), session.clone());
     let account: ChildrenFn = std::sync::Arc::new(move || view! { <WorkspaceAccount session=rail_session.clone() on_signed_out=on_signed_out class="rail-account"/> }.into_any());
     view! {
-        <AppRail active=app administrator=session.user.administrator account=account/>
+        <AppRail active=Signal::stored(app) administrator=session.user.administrator account=account/>
         <header class=if on_settings.is_some() { "topbar has-settings" } else { "topbar" }>
             <span class="topbar-title">{move || label.get()}</span>
             <GlobalSearch account=session.user.id.clone()/>
@@ -172,6 +261,7 @@ pub fn WorkspaceHeader(#[prop(into)] app: String, session: BrowserSession, on_si
             <WorkspaceAccount session=top_session on_signed_out=on_signed_out class="topbar-account"/>
         </header>
     }
+    .into_any()
 }
 
 fn is_mac() -> bool {

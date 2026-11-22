@@ -37,7 +37,7 @@ Read `rust/PORTING.md` for the stack's history, its Leptos pitfalls and instance
 
 Selected designs: unified look B with Twilight Afterglow/Nightfall; Files Focused explorer
 (C); Contacts/Calendar and Notes/Tasks Focused workspace (A); identity Account settings tabs
-(B); settings sheet B; Photos mock B; spotlight search A; News A; Books A; Git B; Chat A with
+(B); settings sheet B; Photos mock B; spotlight search A; News A; Mail A with B's inline reply; Books A; Git B; Chat A with
 account tabs and Discord B with the voice dock; Agent T3 parity A. Mocks and details are in
 `docs/`. Applying a selected pattern needs no new mock; a new visual direction does.
 

@@ -9,6 +9,8 @@ export type InstanceConfig = {
   origin?: string; root: string; databaseName: string; port?: number; development?: boolean;
   chatBridge?: string; newsAllowPrivateNetworks?: boolean; immichAllowLocalHost?: boolean;
   codexFile?: string; claudeFile?: string; appsFile?: string; oidcFile?: string;
+  /** Further environment for the runtime (Mail tests: DAR_MAIL_PROVIDERS_FILE, SSL_CERT_FILE). */
+  env?: Record<string, string>;
   /** Another database server and its tokens (defaults: the fixture's). */
   databaseUrl?: string; serviceTokenFile?: string; bootstrapTokenFile?: string;
 };
@@ -38,7 +40,7 @@ function environment(config: InstanceConfig, port: number, base: string): NodeJS
     DAR_DATABASE_URL: config.databaseUrl ?? process.env.DAR_DATABASE_URL, DAR_DATABASE_NAME: config.databaseName, DAR_DATABASE_TOKEN_FILE: config.serviceTokenFile ?? process.env.DAR_DATABASE_TOKEN_FILE,
     DAR_BOOTSTRAP_TOKEN_FILE: config.bootstrapTokenFile ?? process.env.DAR_BOOTSTRAP_TOKEN_FILE, DAR_DEVELOPMENT: flag(config.development ?? true),
     DAR_NEWS_ALLOW_PRIVATE_NETWORKS: flag(config.newsAllowPrivateNetworks), DAR_IMMICH_ALLOW_LOCAL_HOST: flag(config.immichAllowLocalHost),
-    DAR_ISSUER: `${base}/auth/issuer`, DAR_CLIENT_DIST: process.env.DAR_RUST_CLIENT};
+    DAR_ISSUER: `${base}/auth/issuer`, DAR_CLIENT_DIST: process.env.DAR_RUST_CLIENT, ...config.env};
 }
 
 async function ready(base: string, child: ChildProcess, log: () => string) {

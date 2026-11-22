@@ -17,8 +17,8 @@ use crate::apps::{InventoryItem, Package, Registry, content_type};
 use crate::db::Database;
 use crate::error::{AppError, Result};
 
-const BUILT_IN: [&str; 11] = ["files", "photos", "books", "contacts", "calendar", "notes", "tasks", "news", "chat", "agent", "git"];
-const TOGGLES: [&str; 8] = ["notes", "tasks", "news", "chat", "photos", "books", "agent", "git"];
+const BUILT_IN: [&str; 12] = ["files", "photos", "books", "contacts", "calendar", "notes", "tasks", "news", "mail", "chat", "agent", "git"];
+const TOGGLES: [&str; 9] = ["notes", "tasks", "news", "mail", "chat", "photos", "books", "agent", "git"];
 const STARTUP_FAILED: &str = "App startup failed. Disable or replace the package, then restart.";
 
 pub struct Installed {
