@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { database } from "../runtime/database.ts";
 import { backup, restore } from "../runtime/backup.ts";
-import { startServer } from "../runtime/server.ts";
+import {publishModule,startInstance} from "./instance.ts";
 import { login, upload } from "./integration-helpers.ts";
 
 const origin = process.env.DAR_INTEGRATION_ORIGIN;
@@ -56,14 +56,12 @@ test("a backup from before content addressing restores, and the next start names
   const port = (listener.address() as import("node:net").AddressInfo).port;
   await new Promise<void>(resolve => listener.close(() => resolve()));
   const newOrigin = `http://127.0.0.1:${port}`, name = `dar-migrate-${randomUUID().slice(0, 8)}`;
-  const publish = spawnSync(process.env.DAR_SPACETIME_BIN!, ["--root-dir", process.env.DAR_SPACETIME_CLI_ROOT!, "publish", name, "--js-path", path.resolve(import.meta.dirname, "../module/dist/bundle.js"), "--server", process.env.DAR_DATABASE_URL!, "--yes", "--no-config"], { env: { ...process.env, DAR_ISSUER: `${newOrigin}/auth/issuer` }, encoding: "utf8" });
-  assert.equal(publish.status, 0, publish.stdout + publish.stderr);
+  publishModule(name, newOrigin);
   const target = await database(process.env.DAR_DATABASE_URL!, name, process.env.DAR_DATABASE_TOKEN_FILE!), root = path.join(temporary, "restored");
   await restore(target, directory, root);
   assert.ok((await readdir(path.join(root, "blobs"))).every(file => /^[a-f0-9-]{36}$/.test(file)));
   assert.equal((await target.call<{ done: boolean }>("service_blob_migration_plan")).done, false);
-  const runtime = await startServer({ host: "127.0.0.1", port, origin: newOrigin, root, databaseUrl: process.env.DAR_DATABASE_URL!, databaseName: name,
-    serviceTokenFile: process.env.DAR_DATABASE_TOKEN_FILE!, bootstrapTokenFile: process.env.DAR_BOOTSTRAP_TOKEN_FILE!, development: true });
+  const runtime = await startInstance({ port, origin: newOrigin, root, databaseName: name, development: true });
   try {
     const names = await readdir(path.join(root, "blobs"));
     assert.ok(names.length && names.every(file => /^[a-f0-9]{64}$/.test(file)), names.join(" "));

@@ -7,13 +7,13 @@ import {spawnSync} from "node:child_process";
 import {randomUUID} from "node:crypto";
 import {request as upstreamRequest} from "node:http";
 import * as oidc from "openid-client";
-import {startServer} from "../runtime/server.ts";
+import {publishModule,startInstance} from "./instance.ts";
 import {authorize,exchange,CookieJar,PASSWORD} from "./identity-helpers.ts";
 test("production OIDC checks local proxy headers, secure cookies and canonical HTTPS issuer throughout a real code exchange",{skip:!process.env.DAR_DATABASE_URL,timeout:40000},async()=>{
   const root=await mkdtemp(path.join(tmpdir(),"dar-provider-proxy-")),origin="https://identity.example.test",name=`dar-proxy-${randomUUID().slice(0,8)}`;
-  const publish=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:`${origin}/auth/issuer`},encoding:"utf8"});assert.equal(publish.status,0,publish.stdout+publish.stderr);
-  const runtime=await startServer({host:"127.0.0.1",port:0,origin,root,databaseUrl:process.env.DAR_DATABASE_URL!,databaseName:name,serviceTokenFile:process.env.DAR_DATABASE_TOKEN_FILE!,bootstrapTokenFile:process.env.DAR_BOOTSTRAP_TOKEN_FILE!,development:false});
-  const port=(runtime.server.address() as import("node:net").AddressInfo).port,backend=`http://127.0.0.1:${port}`,cookieHeaders:string[]=[];
+  publishModule(name, origin);
+  const runtime=await startInstance({port:0,origin,root,databaseName:name,development:false});
+  const port=runtime.port,backend=`http://127.0.0.1:${port}`,cookieHeaders:string[]=[];
   // Model the TLS terminator's request boundary; this never resolves or contacts example.test.
   const proxyFetch:typeof fetch=async(input,init)=>{
     const url=new URL(input instanceof Request?input.url:String(input));assert.equal(url.origin,origin);const headers=new Headers(init?.headers);headers.set("host","identity.example.test");headers.set("x-forwarded-proto","https");

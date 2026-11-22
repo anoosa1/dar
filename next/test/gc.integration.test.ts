@@ -12,6 +12,7 @@ import { lockRoot } from "../runtime/lock.ts";
 import { blobStore, blobPath } from "../runtime/files/blobs.ts";
 import { reconcileStorage, sweepOrphans } from "../runtime/files/maintenance.ts";
 import { connect, login, upload } from "./integration-helpers.ts";
+import {moduleArguments} from "./instance.ts";
 const origin = process.env.DAR_INTEGRATION_ORIGIN;
 
 test("identical files share one blob, kept until no version or backup pin uses it; unrecorded content is swept", { skip: !origin || !process.env.DAR_TEST_ROOT, timeout: 30_000 }, async () => {
@@ -26,7 +27,7 @@ test("identical files share one blob, kept until no version or backup pin uses i
   try {
     for (const blob of snapshot.blobs) await copyFile(blobPath(process.env.DAR_TEST_ROOT!, blob.id), blobPath(root, blob.id));
     const name = `dar-gc-${randomUUID().slice(0, 8)}`;
-    const publish = spawnSync(process.env.DAR_SPACETIME_BIN!, ["--root-dir", process.env.DAR_SPACETIME_CLI_ROOT!, "publish", name, "--js-path", path.resolve(import.meta.dirname, "../module/dist/bundle.js"), "--server", process.env.DAR_DATABASE_URL!, "--yes", "--no-config"], { env: { ...process.env, DAR_ISSUER: `${origin}/auth/issuer` }, encoding: "utf8" });
+    const publish = spawnSync(process.env.DAR_SPACETIME_BIN!, ["--root-dir", process.env.DAR_SPACETIME_CLI_ROOT!, "publish", name, ...moduleArguments(), "--server", process.env.DAR_DATABASE_URL!, "--yes", "--no-config"], { env: { ...process.env, DAR_ISSUER: `${origin}/auth/issuer` }, encoding: "utf8" });
     assert.equal(publish.status, 0, publish.stdout + publish.stderr);
     const target = await database(process.env.DAR_DATABASE_URL!, name, process.env.DAR_DATABASE_TOKEN_FILE!);
     await target.call("service_restore", [JSON.stringify(snapshot)]);

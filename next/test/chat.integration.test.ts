@@ -5,7 +5,7 @@ import path from "node:path";
 import {randomUUID} from "node:crypto";
 import {createServer} from "node:net";
 import {spawnSync} from "node:child_process";
-import {startServer} from "../runtime/server.ts";
+import {publishModule,startInstance} from "./instance.ts";
 import {login} from "./integration-helpers.ts";
 import {database} from "../runtime/database.ts";
 import type {ChatAccount,ChatInfo,ChatLinkState,ChatMessage,ChatMessagePage,ChatOverview,ChatThread,ChatThreadPage} from "../shared/chat.ts";
@@ -21,13 +21,12 @@ async function until<T>(read:()=>Promise<T>,ok:(value:T)=>boolean,what:string,ti
 test("Chat: link, import, send, receive, receipts, encrypted keys, restart, isolation, unlink and delete",{skip:!process.env.DAR_INTEGRATION_ORIGIN,timeout:240000},async()=>{
   const root=await mkdtemp("/tmp/dar-chat-acceptance-"),control=await mkdtemp("/tmp/dar-chat-control-"),name="dar-chat-"+randomUUID().slice(0,8),listener=createServer();
   await new Promise<void>(r=>listener.listen(0,"127.0.0.1",r));const port=(listener.address() as import("node:net").AddressInfo).port;await new Promise<void>(r=>listener.close(()=>r()));const base=`http://127.0.0.1:${port}`;
-  const published=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});
-  assert.equal(published.status,0,published.stdout+published.stderr);
+  publishModule(name, base);
   const sql=(query:string)=>{const r=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"sql",name,query,"--server",process.env.DAR_DATABASE_URL!,"--yes"],{encoding:"utf8",timeout:30000});assert.equal(r.status,0,r.stderr);return r.stdout;};
   // The runtime gives the bridge a minimal environment, so a wrapper tells the fake where its control files are.
   const wrapper=path.join(control,"bridge.sh");await writeFile(wrapper,`#!/bin/sh\nDAR_FAKE_CHAT_CONTROL=${JSON.stringify(control)} exec node ${JSON.stringify(fake)}\n`);await chmod(wrapper,0o755);
-  const config={host:"127.0.0.1",port,origin:base,root:path.join(root,"state"),databaseUrl:process.env.DAR_DATABASE_URL!,databaseName:name,serviceTokenFile:process.env.DAR_DATABASE_TOKEN_FILE!,bootstrapTokenFile:process.env.DAR_BOOTSTRAP_TOKEN_FILE!,development:true,chatBridge:wrapper};
-  let runtime=await startServer(config);
+  const config={port,origin:base,root:path.join(root,"state"),databaseName:name,development:true,chatBridge:wrapper};
+  let runtime=await startInstance(config);
   const bridgeLog=async()=>(await readFile(path.join(control,"log.jsonl"),"utf8").catch(()=>"")).split("\n").filter(Boolean).map(line=>JSON.parse(line) as Record<string,unknown>);
   try{
     const setup=await fetch(base+"/api/v1/auth/setup",{method:"POST",headers:{origin:base,"content-type":"application/json"},body:JSON.stringify({username:"admin",displayName:"Chat fixture",password:"a long isolated test password",bootstrapToken:await readFile(process.env.DAR_BOOTSTRAP_TOKEN_FILE!,"utf8")})});
@@ -199,7 +198,7 @@ test("Chat: link, import, send, receive, receipts, encrypted keys, restart, isol
     assert.equal((await raw("/chats",{method:"POST",body:JSON.stringify({accountId,phone:"0555"})})).status,400);
 
     // After a restart the bridge reconnects from the stored, encrypted keys.
-    await runtime.close();runtime=await startServer(config);session=await login(base);
+    await runtime.restart();session=await login(base);
     await until(overview,o=>o.bridge.available&&o.accounts[0]?.state==="connected","reconnecting after a restart",20000);
     const reconnect=(await bridgeLog()).find(e=>e.method==="connect")!;
     assert.equal(reconnect.device,"fake-device-secret");assert.deepEqual(reconnect.keys,["device","session/1555:0"],"lazy keys are not loaded at start");
@@ -223,8 +222,7 @@ test("Chat: link, import, send, receive, receipts, encrypted keys, restart, isol
     assert.equal(snapshot.format,"dar-backup-v12");assert.equal(snapshot.chat.accounts.length,1);assert.ok(snapshot.chat.messages.length>=9);
     const kept=snapshot.chat.media.filter(m=>m.blobId).map(m=>m.blobId);assert.ok(kept.length>=3);for(const id of kept)assert.ok(snapshot.blobs.some(b=>b.id===id),"attachment blobs are in the backup");
     assert.doesNotMatch(JSON.stringify(snapshot),/fake-device-secret|ZmFrZS1kZXZpY2Ut/);
-    const second=name+"-restore",republished=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",second,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});
-    assert.equal(republished.status,0,republished.stderr);
+    const second=name+"-restore",republished=publishModule(second, base);
     const restored=await database(process.env.DAR_DATABASE_URL!,second,process.env.DAR_DATABASE_TOKEN_FILE!);await restored.call("service_restore",[JSON.stringify(snapshot)]);
     const restoredSql=(query:string)=>spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"sql",second,query,"--server",process.env.DAR_DATABASE_URL!,"--yes"],{encoding:"utf8"}).stdout;
     assert.match(restoredSql("SELECT state, detail FROM chat_accounts"),/loggedOut.*restored/);assert.doesNotMatch(restoredSql("SELECT id FROM chat_keys"),new RegExp(accountId));

@@ -6,7 +6,7 @@ import http from "node:http";
 import {randomUUID} from "node:crypto";
 import {createServer} from "node:net";
 import {spawnSync} from "node:child_process";
-import {startServer} from "../runtime/server.ts";
+import {publishModule,startInstance} from "./instance.ts";
 import {splitSubscription} from "../runtime/pim/subscriptions.ts";
 import {summarize} from "../runtime/notes/library.ts";
 import {login,upload} from "./integration-helpers.ts";
@@ -33,10 +33,10 @@ test("subscription feeds split by UID with overrides and timezones; note summari
 
 test("calendar subscriptions sync by link, stay read-only and show dated tasks; Notes live in Files",{skip:!process.env.DAR_INTEGRATION_ORIGIN,timeout:120000},async()=>{
   const root=await mkdtemp("/tmp/dar-subscriptions-acceptance-"),name="dar-subs-"+randomUUID().slice(0,8),listener=createServer();await new Promise<void>(r=>listener.listen(0,"127.0.0.1",r));const port=(listener.address() as import("node:net").AddressInfo).port;await new Promise<void>(r=>listener.close(()=>r()));const base=`http://127.0.0.1:${port}`;
-  const published=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(published.status,0,published.stdout+published.stderr);
+  publishModule(name, base);
   let retro=true,requests=0;const source=http.createServer((_req,res)=>{requests++;res.writeHead(200,{"content-type":"text/calendar"});res.end(feed(retro));});await new Promise<void>(r=>source.listen(0,"127.0.0.1",r));
   const feedUrl=`webcal://127.0.0.1:${(source.address() as import("node:net").AddressInfo).port}/team.ics`;
-  const runtime=await startServer({host:"127.0.0.1",port,origin:base,root:path.join(root,"state"),databaseUrl:process.env.DAR_DATABASE_URL!,databaseName:name,serviceTokenFile:process.env.DAR_DATABASE_TOKEN_FILE!,bootstrapTokenFile:process.env.DAR_BOOTSTRAP_TOKEN_FILE!,development:true,newsAllowPrivateNetworks:true});
+  const runtime=await startInstance({port,origin:base,root:path.join(root,"state"),databaseName:name,development:true,newsAllowPrivateNetworks:true});
   try{
     assert.equal((await fetch(base+"/api/v1/auth/setup",{method:"POST",headers:{origin:base,"content-type":"application/json"},body:JSON.stringify({username:"admin",displayName:"Subscriptions",password:"a long isolated test password",bootstrapToken:await readFile(process.env.DAR_BOOTSTRAP_TOKEN_FILE!,"utf8")})})).status,200);
     const session=await login(base),headers={...session.headers,"content-type":"application/json"};

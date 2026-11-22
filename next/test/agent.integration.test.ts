@@ -7,6 +7,7 @@ import {login,connect} from "./integration-helpers.ts";
 import {database} from "../runtime/database.ts";
 import {digestToken} from "../runtime/auth/session.ts";
 import type {AgentProject,AgentThread,AgentMessage,AgentHistory} from "../shared/agent.ts";
+import {moduleArguments} from "./instance.ts";
 
 test("Agent sources, account isolation, atomic revisions, replay, pagination, disable and restore",{skip:!process.env.DAR_INTEGRATION_ORIGIN,timeout:60000},async()=>{
   const base=process.env.DAR_INTEGRATION_ORIGIN!,admin=await login(base),db=await database(process.env.DAR_DATABASE_URL!,process.env.DAR_DATABASE_NAME!,process.env.DAR_DATABASE_TOKEN_FILE!);
@@ -67,7 +68,7 @@ test("Agent sources, account isolation, atomic revisions, replay, pagination, di
   }finally{await db.call("service_app_settings",[sid,"agent",true,disabled.revision]);}
   const pin=randomUUID(),snapshot=await db.call<{format:string;agent:{projects:AgentProject[];threads:AgentThread[];messages:AgentMessage[]};accounts:{id:string;username:string;verifier:string}[]}>("service_backup",[pin]);await db.call("service_release_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v12");
   const publish=async()=>{
-    const name="dar-agent-restore-"+randomUUID().slice(0,8),result=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(result.status,0,result.stdout+result.stderr);return database(process.env.DAR_DATABASE_URL!,name,process.env.DAR_DATABASE_TOKEN_FILE!);
+    const name="dar-agent-restore-"+randomUUID().slice(0,8),result=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,...moduleArguments(),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(result.status,0,result.stdout+result.stderr);return database(process.env.DAR_DATABASE_URL!,name,process.env.DAR_DATABASE_TOKEN_FILE!);
   };
   const restored=await publish();await restored.call("service_restore",[JSON.stringify(snapshot)]);
   const restoredPin=randomUUID(),recovered=await restored.call<typeof snapshot>("service_backup",[restoredPin]);await restored.call("service_release_backup",[restoredPin]);assert.deepEqual(recovered.agent,snapshot.agent);

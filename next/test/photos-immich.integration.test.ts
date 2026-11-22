@@ -7,7 +7,7 @@ import http from "node:http";
 import {createServer} from "node:net";
 import {spawnSync,execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {startServer} from "../runtime/server.ts";
+import {publishModule,startInstance} from "./instance.ts";
 import {login,connect} from "./integration-helpers.ts";
 import {follow,identityAdmin} from "./identity-helpers.ts";
 import {readProcedure} from "../client/api.ts";
@@ -53,14 +53,14 @@ async function fakeImmich(assets:{id:string;bytes:Buffer;name:string;type:string
 
 test("Immich: mobile-app API (login, backup, sync stream, albums, media) and the Immich server connector",{skip:!process.env.DAR_INTEGRATION_ORIGIN,timeout:300000},async()=>{
   const root=await mkdtemp("/tmp/dar-photos-immich-"),name="dar-photos-"+randomUUID().slice(0,8),port=await freePort(),base=`http://127.0.0.1:${port}`;
-  const published=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(published.status,0,published.stdout+published.stderr);
+  publishModule(name, base);
   const ffmpeg=(args:string[])=>run("ffmpeg",["-nostdin","-v","error","-y",...args]);
   await ffmpeg(["-f","lavfi","-i","testsrc2=size=320x240","-frames:v","1",path.join(root,"beach.jpg")]);
   await ffmpeg(["-f","lavfi","-i","testsrc=size=320x240:rate=10","-t","2","-pix_fmt","yuv420p",path.join(root,"wave.mp4")]);
   await ffmpeg(["-f","lavfi","-i","mandelbrot=size=320x240","-frames:v","1",path.join(root,"remote.jpg")]);
   await ffmpeg(["-f","lavfi","-i","rgbtestsrc=size=320x240","-frames:v","1",path.join(root,"solo.jpg")]);
   const beach=await readFile(path.join(root,"beach.jpg")),wave=await readFile(path.join(root,"wave.mp4")),remoteBytes=await readFile(path.join(root,"remote.jpg")),solo=await readFile(path.join(root,"solo.jpg"));
-  const runtime=await startServer({host:"127.0.0.1",port,origin:base,root:path.join(root,"state"),databaseUrl:process.env.DAR_DATABASE_URL!,databaseName:name,serviceTokenFile:process.env.DAR_DATABASE_TOKEN_FILE!,bootstrapTokenFile:process.env.DAR_BOOTSTRAP_TOKEN_FILE!,development:true});
+  const runtime=await startInstance({port,origin:base,root:path.join(root,"state"),databaseName:name,development:true});
   let fake:Awaited<ReturnType<typeof fakeImmich>>|undefined;
   try{
     const setup=await fetch(base+"/api/v1/auth/setup",{method:"POST",headers:{origin:base,"content-type":"application/json"},body:JSON.stringify({username:"admin",displayName:"Anas",password:"a long isolated test password",bootstrapToken:await readFile(process.env.DAR_BOOTSTRAP_TOKEN_FILE!,"utf8")})});assert.equal(setup.status,200);

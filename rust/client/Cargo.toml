@@ -1,0 +1,61 @@
+[package]
+name = "dar-client"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Rust (Leptos) port of Dar's browser client; prototype, not wired into Dar."
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+wasm-bindgen = "=0.2.121"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+send_wrapper = "0.6"
+futures = { version = "0.3", default-features = false, features = ["std", "async-await"] }
+console_error_panic_hook = "0.1"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+web-sys = { version = "0.3", features = [
+  "Window", "Document", "Element", "HtmlElement", "HtmlInputElement", "HtmlDialogElement", "HtmlAnchorElement",
+  "HtmlFormElement", "HtmlTextAreaElement", "HtmlSelectElement", "HtmlButtonElement", "HtmlCanvasElement",
+  "CanvasRenderingContext2d", "HtmlImageElement", "HtmlVideoElement", "HtmlAudioElement", "HtmlIFrameElement",
+  "HtmlDetailsElement", "HtmlLabelElement", "HtmlDivElement", "HtmlSpanElement", "HtmlPreElement", "HtmlLinkElement",
+  "Node", "NodeList", "DomRect", "DomTokenList", "CssStyleDeclaration", "DomParser", "SupportedType", "Range",
+  "DocumentFragment", "Attr", "NamedNodeMap", "Text", "CharacterData",
+  "Event", "EventTarget", "KeyboardEvent", "MouseEvent", "PointerEvent", "DragEvent", "DataTransfer", "DomStringList",
+  "FocusEvent", "CustomEvent", "CustomEventInit", "WheelEvent", "TouchEvent", "TouchList", "Touch", "InputEvent",
+  "ClipboardEvent", "MessageEvent", "CloseEvent", "ErrorEvent", "HashChangeEvent", "PopStateEvent",
+  "Location", "History", "Url", "UrlSearchParams", "Storage", "MediaQueryList", "Navigator", "Clipboard",
+  "Crypto", "SubtleCrypto", "Performance",
+  "Request", "RequestInit", "Response", "Headers", "AbortController", "AbortSignal", "FormData",
+  "File", "FileList", "Blob", "BlobPropertyBag", "FileReader", "ReadableStream", "ReadableStreamDefaultReader",
+  "TextDecoder", "XmlHttpRequest", "XmlHttpRequestUpload", "ProgressEvent",
+  "WebSocket", "BinaryType", "MessagePort",
+  "ResizeObserver", "ResizeObserverEntry", "IntersectionObserver", "IntersectionObserverEntry", "IntersectionObserverInit",
+  "MutationObserver", "MutationObserverInit", "MutationRecord",
+  "EventInit", "AddEventListenerOptions", "SubmitEvent", "HtmlProgressElement", "Selection",
+  "ScrollIntoViewOptions", "ScrollLogicalPosition", "ScrollToOptions", "ScrollBehavior", "FocusOptions",
+  "AudioContext", "AudioContextOptions", "AudioContextLatencyCategory", "AudioDestinationNode", "AudioNode",
+  "GainNode", "AudioParam", "AudioWorklet", "AudioWorkletNode", "AudioBuffer", "AudioBufferSourceNode",
+  "MediaStream", "MediaStreamAudioSourceNode", "MediaStreamTrack", "MediaDevices", "MediaStreamConstraints",
+] }
+
+# The SDK's browser transport is for wasm32 only; native builds (unit tests) use the default one.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+spacetimedb-sdk = { version = "=2.14.1", features = ["browser"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+spacetimedb-sdk = "=2.14.1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+
+# brotli without its C API (see patch-brotli.sh).
+[patch.crates-io]
+brotli = { path = "target/patches/brotli-3.5.0" }

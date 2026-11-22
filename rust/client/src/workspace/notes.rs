@@ -1,0 +1,1536 @@
+//! Notes (`notes.tsx`): Markdown files in a Files folder (`docs/notes` by default), with
+//! folder navigation, search, favorites, heading-based naming on close, legacy notebook import,
+//! and the shared Markdown text editor.
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use leptos::html;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use super::{ReactiveSelect, WorkspaceShell, search_params};
+use crate::api::{self, BrowserSession};
+use crate::dates::edited;
+use crate::files::FileEntry;
+use crate::files::editor::{TextFile, editable_text, write_text_file};
+use crate::files::types::{FileTile, file_type_label};
+use crate::icons::Icon;
+use crate::live::{Connection, Live, answered, procedure, reducer, replied};
+use crate::markdown::{Markdown, MarkdownToolbar, format_markdown};
+use crate::module_bindings::{create_folder, favorite_entry, file_details, move_entry, rename_entry, trash_entry};
+use crate::pim::{Collection, use_pim};
+use crate::shared::{context, save_preferences};
+use crate::ui::{ActionMenu, Dialog, EditorPane, MenuAction, listen, window};
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotesFolder {
+    pub id: String,
+    pub parent_id: String,
+    pub name: String,
+    pub path: String,
+    #[serde(default)]
+    pub modified_at: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotesFile {
+    pub id: String,
+    pub parent_id: String,
+    pub name: String,
+    pub title: String,
+    #[serde(default)]
+    pub excerpt: String,
+    #[serde(default)]
+    pub size: f64,
+    pub revision: u32,
+    #[serde(default)]
+    pub modified_at: f64,
+    #[serde(default)]
+    pub favorite: bool,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotesLibrary {
+    pub root_id: String,
+    pub path: String,
+    #[serde(default)]
+    pub folders: Vec<NotesFolder>,
+    #[serde(default)]
+    pub notes: Vec<NotesFile>,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default)]
+    pub legacy: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+struct NoteDetail {
+    entry: FileEntry,
+    role: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum NotesPaneKind {
+    Folder { parent_id: String },
+    RenameFolder(NotesFolder),
+    RenameNote(NotesFile),
+    Move(NotesFile),
+}
+
+#[derive(Clone)]
+enum ConfirmTarget {
+    Note(NotesFile),
+    Folder(NotesFolder),
+}
+
+#[derive(Clone)]
+struct ConfirmState {
+    title: String,
+    text: String,
+    action: String,
+    target: ConfirmTarget,
+}
+
+fn error_message(text: &str) -> String {
+    let lower = text.to_lowercase();
+    if lower.contains("conflict") {
+        "That name is already used here, or the item changed. Refresh and try again.".into()
+    } else if lower.contains("forbidden") || lower.contains("unauthenticated") {
+        "Your access changed. Refresh the page or sign in again.".into()
+    } else if text.is_empty() {
+        "The request could not be completed.".into()
+    } else {
+        text.to_owned()
+    }
+}
+
+pub(super) fn strip_md_ext(name: &str) -> String {
+    let lower = name.to_lowercase();
+    if lower.ends_with(".markdown") {
+        name[..name.len() - 9].to_owned()
+    } else if lower.ends_with(".md") {
+        name[..name.len() - 3].to_owned()
+    } else {
+        name.to_owned()
+    }
+}
+
+fn has_md_ext(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.ends_with(".md") || lower.ends_with(".markdown")
+}
+
+/// File names keep the title readable and drop characters Files does not allow.
+fn file_name(title: &str) -> String {
+    let cleaned: String = title
+        .chars()
+        .map(|c| if (c as u32) < 0x20 || c == '/' || c == '\\' { ' ' } else { c })
+        .collect();
+    let collapsed: String = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed: String = collapsed.chars().take(200).collect();
+    let stem = trimmed.trim();
+    format!("{}.md", if stem.is_empty() { "Untitled" } else { stem })
+}
+
+fn unique_name(name: &str, taken: &HashSet<String>) -> String {
+    if !taken.contains(&name.to_lowercase()) {
+        return name.to_owned();
+    }
+    let lower = name.to_lowercase();
+    let base = if lower.ends_with(".md") { &name[..name.len() - 3] } else { name };
+    for n in 2..1000 {
+        let next = format!("{base} {n}.md");
+        if !taken.contains(&next.to_lowercase()) {
+            return next;
+        }
+    }
+    format!("{base} {}.md", js_sys::Date::now() as u64)
+}
+
+fn is_untitled_md(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    let Some(stem) = lower.strip_suffix(".md") else { return false };
+    let Some(rest) = stem.strip_prefix("untitled") else { return false };
+    if rest.is_empty() {
+        return true;
+    }
+    rest.strip_prefix(' ').is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+}
+
+fn extract_heading(content: &str) -> Option<String> {
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix('#')
+            && rest.starts_with(char::is_whitespace)
+        {
+            let trimmed = rest.trim().trim_end_matches('#').trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_owned());
+            }
+        }
+    }
+    None
+}
+
+async fn fetch_detail(conn: &Connection, id: &str) -> Result<NoteDetail, String> {
+    let id = id.to_owned();
+    procedure(|tx| conn.procedures.file_details_then(id, answered(tx))).await
+}
+
+fn session_storage() -> Option<web_sys::Storage> {
+    window().session_storage().ok().flatten()
+}
+
+async fn read_file_content(id: &str) -> Result<String, String> {
+    let response = api::fetch(&format!("/api/v1/files/{id}/content"), Default::default()).await.map_err(|e| e.message)?;
+    if !response.ok() {
+        return Err("The file could not be loaded.".into());
+    }
+    let text = wasm_bindgen_futures::JsFuture::from(response.text().map_err(|_| "The file could not be loaded.")?)
+        .await
+        .map_err(|_| "The file could not be loaded.")?;
+    Ok(text.as_string().unwrap_or_default())
+}
+
+#[component]
+pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoView {
+    let pim = use_pim(on_signed_out);
+    let live = expect_context::<Live>();
+    let params = web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default()).expect("params");
+    let initial_scope = params.get("folder").unwrap_or_else(|| "all".into());
+    let initial_note: RwSignal<Option<String>> = RwSignal::new(params.get("note").or_else(|| params.get("file")));
+
+    let library: RwSignal<Option<NotesLibrary>> = RwSignal::new(None);
+    let error = RwSignal::new(String::new());
+    let notice = RwSignal::new(String::new());
+    let query = RwSignal::new(String::new());
+    let scope = RwSignal::new(initial_scope);
+    let open: RwSignal<Option<FileEntry>> = RwSignal::new(None);
+    let pane: RwSignal<Option<NotesPaneKind>> = RwSignal::new(None);
+    let confirm: RwSignal<Option<ConfirmState>> = RwSignal::new(None);
+    let busy = RwSignal::new(false);
+    let reload = RwSignal::new(0u32);
+    let last_saved: RwSignal<Option<(String, String)>> = RwSignal::new(None);
+    let load_seq = RwSignal::new(0u32);
+    let session_sv = StoredValue::new(session.clone());
+
+    let shared_prefs = context().preferences;
+    let sort = Memo::new(move |_| {
+        shared_prefs.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| p.rest.get("notesSort").and_then(Value::as_str))
+                .unwrap_or("modified")
+                .to_owned()
+        })
+    });
+    let notes_imported = Memo::new(move |_| {
+        shared_prefs.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| p.rest.get("notesImported").and_then(Value::as_bool))
+                .unwrap_or(false)
+        })
+    });
+    let start_in_preview = Memo::new(move |_| {
+        shared_prefs.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| p.rest.get("notesEditorMode").and_then(Value::as_str))
+                == Some("preview")
+        })
+    });
+
+    // Notes change in Files too (WebDAV, other apps), so the list refreshes on focus and epoch changes.
+    Effect::new(move |_| {
+        let q = query.get();
+        let _r = reload.get();
+        let _e = pim.epoch.get();
+        let seq = load_seq.get_untracked() + 1;
+        load_seq.set(seq);
+        spawn_local(async move {
+            if !q.is_empty() {
+                crate::sleep(200).await;
+                if load_seq.try_get_untracked() != Some(seq) {
+                    return;
+                }
+            }
+            let qs = search_params(&[("q", q)]);
+            match api::get::<NotesLibrary>(&format!("/api/v1/notes/library?{qs}")).await {
+                Ok(value) if load_seq.try_get_untracked() == Some(seq) => {
+                    library.set(Some(value));
+                    error.set(String::new());
+                }
+                Err(cause) if load_seq.try_get_untracked() == Some(seq) => {
+                    error.set(error_message(&cause.message));
+                }
+                _ => {}
+            }
+        });
+    });
+
+    listen(&window(), "focus", false, move |_| reload.update(|n| *n += 1));
+
+    // Keep URL query params (?note=, ?folder=) synchronized.
+    Effect::new(move |_| {
+        let open_id = open.with(|o| o.as_ref().map(|e| e.id.clone()));
+        let current_scope = scope.get();
+        let Ok(url) = web_sys::Url::new(&window().location().href().unwrap_or_default()) else { return };
+        let sp = url.search_params();
+        sp.delete("file");
+        match open_id {
+            Some(id) => sp.set("note", &id),
+            None => sp.delete("note"),
+        }
+        if current_scope == "all" {
+            sp.delete("folder");
+        } else {
+            sp.set("folder", &current_scope);
+        }
+        let search = sp.to_string().as_string().unwrap_or_default();
+        let next = if search.is_empty() { url.pathname() } else { format!("{}?{search}", url.pathname()) };
+        if let Ok(history) = window().history() {
+            let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&next));
+        }
+    });
+
+    // Open initial deep-linked note once the live connection is ready.
+    Effect::new(move |_| {
+        let Some(conn) = live.connection.get() else { return };
+        let Some(id) = initial_note.get_untracked() else { return };
+        initial_note.set(None);
+        spawn_local(async move {
+            match fetch_detail(&conn, &id).await {
+                Ok(detail) => open.set(Some(detail.entry)),
+                Err(cause) => error.set(error_message(&cause)),
+            }
+        });
+    });
+
+    let folder_name = move |id: &str| -> String {
+        library.with(|lib| {
+            let Some(lib) = lib else { return "Notes".into() };
+            if id == lib.root_id {
+                return "Notes".into();
+            }
+            lib.folders.iter().find(|f| f.id == id).map(|f| f.name.clone()).unwrap_or_else(|| "Notes".into())
+        })
+    };
+
+    let siblings = move |parent_id: &str| -> HashSet<String> {
+        library.with_untracked(|lib| {
+            lib.as_ref()
+                .map(|l| l.notes.iter().filter(|n| n.parent_id == parent_id).map(|n| n.name.to_lowercase()).collect())
+                .unwrap_or_default()
+        })
+    };
+
+    let current_target = move || -> String {
+        let s = scope.get_untracked();
+        library.with_untracked(|lib| {
+            let Some(lib) = lib else { return String::new() };
+            if s != "all" && s != "favorites"
+                && let Some(folder) = lib.folders.iter().find(|f| f.id == s)
+            {
+                return folder.id.clone();
+            }
+            lib.root_id.clone()
+        })
+    };
+
+    let new_note = move || {
+        if library.with_untracked(Option::is_none) {
+            return;
+        }
+        let target = current_target();
+        let name = unique_name("Untitled.md", &siblings(&target));
+        let sess = session_sv.get_value();
+        spawn_local(async move {
+            busy.set(true);
+            error.set(String::new());
+            let result: Result<(), String> = async {
+                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let id = write_text_file(
+                    &sess,
+                    TextFile { name: &name, parent_id: &target, content: "", media_type: "text/markdown", file_id: None, expected_revision: None },
+                )
+                .await
+                .map_err(|e| e.message)?;
+                let detail = fetch_detail(&conn, &id).await?;
+                open.set(Some(detail.entry));
+                Ok(())
+            }
+            .await;
+            if let Err(e) = result {
+                error.set(error_message(&e));
+            } else {
+                reload.update(|n| *n += 1);
+            }
+            busy.set(false);
+        });
+    };
+
+    let open_note = move |note_id: String| {
+        spawn_local(async move {
+            let Some(conn) = live.connection.get_untracked() else {
+                error.set("Notes are reconnecting. Try again in a moment.".into());
+                return;
+            };
+            match fetch_detail(&conn, &note_id).await {
+                Ok(detail) => open.set(Some(detail.entry)),
+                Err(cause) => error.set(error_message(&cause)),
+            }
+        });
+    };
+
+    let toggle_favorite = move |note_id: String| {
+        spawn_local(async move {
+            busy.set(true);
+            error.set(String::new());
+            let result: Result<(), String> = async {
+                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let entry = fetch_detail(&conn, &note_id).await?.entry;
+                reducer(|tx| conn.reducers.favorite_entry_then(entry.id, !entry.favorite, entry.revision, replied(tx))).await
+            }
+            .await;
+            if let Err(e) = result {
+                error.set(error_message(&e));
+            } else {
+                reload.update(|n| *n += 1);
+            }
+            busy.set(false);
+        });
+    };
+
+    let request_remove_note = move |note: NotesFile| {
+        confirm.set(Some(ConfirmState {
+            title: "Move note to deleted files?".into(),
+            action: "Move to deleted files".into(),
+            text: format!("\u{201c}{}\u{201d} can be restored from Files \u{203a} Deleted files.", note.title),
+            target: ConfirmTarget::Note(note),
+        }));
+    };
+
+    let request_remove_folder = move |folder: NotesFolder| {
+        let prefix = format!("{}/", folder.path);
+        let count = library.with_untracked(|lib| {
+            lib.as_ref().map(|l| l.notes.iter().filter(|n| n.path.starts_with(&prefix)).count()).unwrap_or(0)
+        });
+        confirm.set(Some(ConfirmState {
+            title: "Move folder to deleted files?".into(),
+            action: "Move to deleted files".into(),
+            text: format!(
+                "\u{201c}{}\u{201d} and its {count} {} can be restored from Files \u{203a} Deleted files.",
+                folder.name,
+                if count == 1 { "note" } else { "notes" }
+            ),
+            target: ConfirmTarget::Folder(folder),
+        }));
+    };
+
+    let build_note_actions = move |note: NotesFile| -> Vec<MenuAction> {
+        let is_busy = busy.get_untracked();
+        let has_folders = library.with_untracked(|lib| lib.as_ref().is_some_and(|l| !l.folders.is_empty()));
+        let n_fav = note.id.clone();
+        let n_ren = note.clone();
+        let n_mov = note.clone();
+        let n_del = note.clone();
+        vec![
+            MenuAction::new(if note.favorite { "Remove from favorites" } else { "Add to favorites" }, "star")
+                .disabled(is_busy)
+                .run(move || toggle_favorite(n_fav.clone())),
+            MenuAction::new("Rename", "pencil")
+                .disabled(is_busy)
+                .run(move || pane.set(Some(NotesPaneKind::RenameNote(n_ren.clone())))),
+            MenuAction::new("Move to\u{2026}", "move")
+                .disabled(is_busy || !has_folders)
+                .run(move || pane.set(Some(NotesPaneKind::Move(n_mov.clone())))),
+            MenuAction::new("Show in Files", "folder")
+                .href(format!("/?folder={}&file={}", note.parent_id, note.id)),
+            MenuAction::new("Move to deleted files", "trash")
+                .danger()
+                .separator()
+                .disabled(is_busy)
+                .run(move || request_remove_note(n_del.clone())),
+        ]
+    };
+
+    let sorted_folders = Memo::new(move |_| {
+        let mut folders = library.with(|lib| lib.as_ref().map(|l| l.folders.clone()).unwrap_or_default());
+        folders.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()).then_with(|| a.path.cmp(&b.path)));
+        folders
+    });
+
+    let rows = Memo::new(move |_| {
+        let s = scope.get();
+        let current_sort = sort.get();
+        library.with(|lib| {
+            let Some(lib) = lib else { return Vec::new() };
+            let current_folder = if s != "all" && s != "favorites" {
+                lib.folders.iter().find(|f| f.id == s)
+            } else {
+                None
+            };
+            let prefix = current_folder.map(|f| format!("{}/", f.path));
+            let mut list: Vec<NotesFile> = lib
+                .notes
+                .iter()
+                .filter(|note| {
+                    if s == "all" {
+                        true
+                    } else if s == "favorites" {
+                        note.favorite
+                    } else if let Some(ref p) = prefix {
+                        note.path.starts_with(p)
+                    } else {
+                        true
+                    }
+                })
+                .cloned()
+                .collect();
+            if current_sort == "title" {
+                list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()).then_with(|| a.title.cmp(&b.title)));
+            } else {
+                list.sort_by(|a, b| b.modified_at.total_cmp(&a.modified_at));
+            }
+            list
+        })
+    });
+
+    let heading_title = Memo::new(move |_| {
+        let s = scope.get();
+        if s == "favorites" {
+            return "Favorites".to_owned();
+        }
+        if s != "all"
+            && let Some(name) = library.with(|lib| lib.as_ref().and_then(|l| l.folders.iter().find(|f| f.id == s).map(|f| f.name.clone())))
+        {
+            return name;
+        }
+        "All notes".to_owned()
+    });
+
+    let current_folder_path = Memo::new(move |_| {
+        let s = scope.get();
+        if s == "all" || s == "favorites" {
+            return None;
+        }
+        library.with(|lib| lib.as_ref().and_then(|l| l.folders.iter().find(|f| f.id == s).map(|f| f.path.clone())))
+    });
+
+    let sidebar: ChildrenFn = Arc::new(move || {
+        view! {
+            <button type="button" class="new-button ui-new" disabled=move || busy.get() || library.with(Option::is_none) on:click=move |_| new_note()>
+                <Icon name="plus"/>"New note"
+            </button>
+            <nav aria-label="Notes views">
+                {[("all", "All notes", "list"), ("favorites", "Favorites", "star")].into_iter().map(|(value, label, icon)| {
+                    view! {
+                        <button class=move || format!("nav-item {}", if scope.get() == value { "active" } else { "" }) aria-current=move || (scope.get() == value).then_some("page") on:click=move |_| scope.set(value.to_owned())>
+                            <Icon name=icon/>{label}
+                        </button>
+                    }
+                }).collect_view()}
+            </nav>
+            <div class="sidebar-heading">
+                "Folders"
+                <button class="text-button" aria-label="New folder" disabled=move || library.with(Option::is_none) on:click=move |_| pane.set(Some(NotesPaneKind::Folder { parent_id: current_target() }))>"\u{ff0b}"</button>
+            </div>
+            <div class="notes-folders" role="list" aria-label="Folders">
+                {move || sorted_folders.get().into_iter().map(|folder| {
+                    let depth = (folder.path.split('/').count().saturating_sub(1)).min(5);
+                    let id_click = folder.id.clone();
+                    let id_active = folder.id.clone();
+                    let id_current = folder.id.clone();
+                    let id_inside = folder.id.clone();
+                    let id_href = folder.id.clone();
+                    let folder_rename = folder.clone();
+                    let folder_del = folder.clone();
+                    let folder_label = format!("Actions for folder {}", folder.name);
+                    view! {
+                        <div role="listitem" class=format!("notes-folder-row depth-{depth}")>
+                            <button class=move || format!("nav-item {}", if scope.get() == id_active { "active" } else { "" }) aria-current=move || (scope.get() == id_current).then_some("page") on:click=move |_| scope.set(id_click.clone())>
+                                <Icon name="folder"/><span>{folder.name.clone()}</span>
+                            </button>
+                            <ActionMenu label=folder_label class="contacts-book-actions" actions=move |_| vec![
+                                MenuAction::new("New folder inside", "plus").run({ let id = id_inside.clone(); move || pane.set(Some(NotesPaneKind::Folder { parent_id: id.clone() })) }),
+                                MenuAction::new("Rename folder", "pencil").run({ let f = folder_rename.clone(); move || pane.set(Some(NotesPaneKind::RenameFolder(f.clone()))) }),
+                                MenuAction::new("Show in Files", "external").href(format!("/?folder={id_href}")),
+                                MenuAction::new("Move to deleted files", "trash").danger().separator().run({ let f = folder_del.clone(); move || request_remove_folder(f.clone()) }),
+                            ]><Icon name="more"/></ActionMenu>
+                        </div>
+                    }
+                }).collect_view()}
+                {move || library.with(|lib| lib.as_ref().filter(|l| l.folders.is_empty()).map(|l| view! {
+                    <p class="muted small notes-folders-empty">"Folders in Files \u{203a} "{l.path.clone()}" appear here."</p>
+                }))}
+            </div>
+        }
+        .into_any()
+    });
+
+    let details: ChildrenFn = Arc::new(move || {
+        view! {
+            <For each=move || open.get().into_iter() key=|e| e.id.clone() let:initial>
+                {
+                    let init_id = initial.id.clone();
+                    let entry_sig = Signal::derive(move || open.get().filter(|e| e.id == init_id).unwrap_or_else(|| initial.clone()));
+                    let ctx_sig = Signal::derive(move || Some(folder_name(&entry_sig.with(|e| e.parent_id.clone()))));
+                    let on_close = Callback::new(move |_| {
+                        let closed = open.get_untracked();
+                        open.set(None);
+                        let saved = last_saved.get_untracked();
+                        last_saved.set(None);
+                        spawn_local(async move {
+                            if let (Some(entry), Some((saved_id, saved_content)), Some(conn)) = (closed, saved, live.connection.get_untracked())
+                                && saved_id == entry.id
+                                && is_untitled_md(&entry.name)
+                                && let Some(heading) = extract_heading(&saved_content)
+                                && let Ok(detail) = fetch_detail(&conn, &entry.id).await
+                            {
+                                let current = detail.entry;
+                                let next_name = unique_name(&file_name(&heading), &siblings(&current.parent_id));
+                                if next_name != current.name {
+                                    let _ = reducer(|tx| conn.reducers.rename_entry_then(current.id, next_name, current.revision, replied(tx))).await;
+                                }
+                            }
+                            reload.update(|n| *n += 1);
+                        });
+                    });
+                    let on_saved = Callback::new(move |(_rev, content): (u32, String)| {
+                        if let Some(id) = open.with_untracked(|o| o.as_ref().map(|e| e.id.clone())) {
+                            last_saved.set(Some((id, content)));
+                        }
+                        reload.update(|n| *n += 1);
+                    });
+                    let editor_actions = Callback::new(move |()| {
+                        let current_id = entry_sig.with_untracked(|e| e.id.clone());
+                        let row = library.with_untracked(|lib| lib.as_ref().and_then(|l| l.notes.iter().find(|n| n.id == current_id).cloned()));
+                        row.map(build_note_actions).unwrap_or_default()
+                    });
+                    view! {
+                        <NoteTextEditor entry=entry_sig session=session_sv.get_value() context=ctx_sig start_in_preview=start_in_preview.get_untracked() on_close=on_close on_saved=on_saved actions=editor_actions/>
+                    }
+                }
+            </For>
+        }
+        .into_any()
+    });
+
+    let has_open = Signal::from(Memo::new(move |_| open.with(Option::is_some)));
+
+    view! {
+        <WorkspaceShell kind="notes" session=session on_signed_out=on_signed_out sidebar=sidebar has_details=has_open note_editor=has_open details=details pim=pim>
+            <div class="workspace-list notes-list">
+                <div class="workspace-heading">
+                    <h1>{move || heading_title.get()}</h1>
+                    <ActionMenu label="Sort notes" class="workspace-sort" actions=move |_| {
+                        let current = sort.get_untracked();
+                        [("modified", "Recently edited"), ("title", "Title")].into_iter().map(|(value, label)| {
+                            MenuAction::plain(label).current(current == value).run(move || {
+                                let rev = shared_prefs.value.with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
+                                let sess = session_sv.get_value();
+                                spawn_local(async move {
+                                    if let Err(cause) = save_preferences(json!({ "revision": rev, "notesSort": value }), rev, &sess).await {
+                                        error.set(error_message(&cause.message));
+                                    }
+                                });
+                            })
+                        }).collect()
+                    }>
+                        <Icon name="sort"/><span>{move || if sort.get() == "title" { "Title" } else { "Edited" }}</span>
+                    </ActionMenu>
+                </div>
+                {move || library.get().filter(|l| l.legacy > 0 && !notes_imported.get()).map(|lib| view! {
+                    <LegacyImport
+                        session=session_sv.get_value()
+                        library=lib
+                        on_done=Callback::new(move |text: String| { notice.set(text); reload.update(|n| *n += 1); })
+                        on_error=Callback::new(move |text: String| error.set(text))
+                    />
+                })}
+                {move || (!error.get().is_empty()).then(|| view! {
+                    <div role="alert" class="error">
+                        {error.get()}
+                        <button class="text-button" on:click=move |_| { error.set(String::new()); reload.update(|n| *n += 1); }>"Reload"</button>
+                    </div>
+                })}
+                {move || (!notice.get().is_empty()).then(|| view! {
+                    <p role="status" class="notes-notice">
+                        {notice.get()}
+                        <button class="icon-button" aria-label="Dismiss" on:click=move |_| notice.set(String::new())><Icon name="close"/></button>
+                    </p>
+                })}
+                {move || (library.with(Option::is_none) && error.with(String::is_empty)).then(|| view! {
+                    <p role="status">"Loading notes\u{2026}"</p>
+                })}
+                {move || {
+                    let lib = library.get();
+                    let list = rows.get();
+                    lib.filter(|_| list.is_empty()).map(|lib| {
+                        let q = query.get();
+                        let s = scope.get();
+                        let icon = if !q.is_empty() { "search" } else if s == "favorites" { "star" } else { "file" };
+                        let heading = if !q.is_empty() { "No matching notes" } else if s == "favorites" { "No favorite notes" } else { "No notes yet" };
+                        let body = if !q.is_empty() {
+                            "Search covers note names, headings and text.".to_owned()
+                        } else if s == "favorites" {
+                            "Star a note to find it here.".to_owned()
+                        } else {
+                            let suffix = current_folder_path.get().map(|p| format!(" \u{203a} {p}")).unwrap_or_default();
+                            format!("Notes are Markdown files in Files \u{203a} {}{suffix}.", lib.path)
+                        };
+                        let show_new = q.is_empty() && s != "favorites";
+                        view! {
+                            <div class="empty-state">
+                                <span class="empty-icon"><Icon name=icon/></span>
+                                <h2>{heading}</h2>
+                                <p>{body}</p>
+                                {show_new.then(|| view! {
+                                    <button class="primary-button" disabled=move || busy.get() on:click=move |_| new_note()><Icon name="plus"/>"New note"</button>
+                                })}
+                            </div>
+                        }
+                    })
+                }}
+                {move || {
+                    let root_id = library.with(|l| l.as_ref().map(|l| l.root_id.clone()).unwrap_or_default());
+                    let folder_names: HashMap<String, String> = library.with(|l| {
+                        l.as_ref().map(|l| l.folders.iter().map(|f| (f.id.clone(), f.name.clone())).collect()).unwrap_or_default()
+                    });
+                    rows.get().into_iter().map(|note| {
+                        let note_id = note.id.clone();
+                        let note_id_sel = note.id.clone();
+                        let note_for_actions = note.clone();
+                        let title_text = if note.title.is_empty() { "Untitled".to_owned() } else { note.title.clone() };
+                        let excerpt_text = if note.excerpt.is_empty() { "No additional text".to_owned() } else { note.excerpt.clone() };
+                        let action_label = format!("Actions for {}", note.title);
+                        let show_folder = note.parent_id != root_id;
+                        let parent_label = folder_names.get(&note.parent_id).cloned().unwrap_or_else(|| "Notes".into());
+                        view! {
+                            <div class="workspace-entry">
+                                <article class=move || format!("workspace-row {}", if open.with(|o| o.as_ref().is_some_and(|e| e.id == note_id_sel)) { "selected" } else { "" })>
+                                    <button class="workspace-row-content" on:click=move |_| {
+                                        if !open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == note_id)) {
+                                            open_note(note_id.clone());
+                                        }
+                                    }>
+                                        <strong>{title_text}{note.favorite.then(|| view! { <Icon name="star" class="row-favorite"/> })}</strong>
+                                        <small class="note-excerpt">{excerpt_text}</small>
+                                        <span class="row-meta">
+                                            <span>{edited(note.modified_at)}</span>
+                                            {show_folder.then(|| view! { <span><Icon name="folder"/>{parent_label}</span> })}
+                                        </span>
+                                    </button>
+                                    <div class="workspace-row-tools">
+                                        <ActionMenu label=action_label class="ui-file-actions" actions=move |_| build_note_actions(note_for_actions.clone())><Icon name="more"/></ActionMenu>
+                                    </div>
+                                </article>
+                            </div>
+                        }
+                    }).collect_view()
+                }}
+                {move || library.with(|l| l.as_ref().is_some_and(|l| l.truncated)).then(|| view! {
+                    <p class="muted small">"This folder is large; only the first notes are shown. Use search to find others."</p>
+                })}
+            </div>
+
+            {move || pane.get().map(|current_pane| {
+                let current_pane_submit = current_pane.clone();
+                view! {
+                    <NotesPane
+                        pane=current_pane
+                        folders=sorted_folders
+                        library=library
+                        busy=busy
+                        on_close=Callback::new(move |_| pane.set(None))
+                        on_submit=Callback::new(move |value: String| {
+                            let p = current_pane_submit.clone();
+                            spawn_local(async move {
+                                busy.set(true);
+                                error.set(String::new());
+                                let done_msg = match &p {
+                                    NotesPaneKind::Move(_) => format!("Moved to {}.", folder_name(&value)),
+                                    _ => String::new(),
+                                };
+                                let result: Result<(), String> = async {
+                                    let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                                    match p {
+                                        NotesPaneKind::Folder { parent_id } => {
+                                            reducer(|tx| conn.reducers.create_folder_then(crate::random_uuid(), parent_id, value, replied(tx))).await?;
+                                        }
+                                        NotesPaneKind::RenameFolder(folder) => {
+                                            let entry = fetch_detail(&conn, &folder.id).await?.entry;
+                                            reducer(|tx| conn.reducers.rename_entry_then(entry.id, value, entry.revision, replied(tx))).await?;
+                                        }
+                                        NotesPaneKind::RenameNote(note) => {
+                                            let entry = fetch_detail(&conn, &note.id).await?.entry;
+                                            let next_name = if has_md_ext(&value) { value } else { format!("{value}.md") };
+                                            reducer(|tx| conn.reducers.rename_entry_then(entry.id.clone(), next_name, entry.revision, replied(tx))).await?;
+                                            if open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == entry.id)) {
+                                                open.set(Some(fetch_detail(&conn, &entry.id).await?.entry));
+                                            }
+                                        }
+                                        NotesPaneKind::Move(note) => {
+                                            let entry = fetch_detail(&conn, &note.id).await?.entry;
+                                            reducer(|tx| conn.reducers.move_entry_then(entry.id.clone(), value, entry.revision, None, replied(tx))).await?;
+                                            if open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == entry.id)) {
+                                                open.set(Some(fetch_detail(&conn, &entry.id).await?.entry));
+                                            }
+                                        }
+                                    }
+                                    Ok(())
+                                }
+                                .await;
+                                match result {
+                                    Ok(()) => {
+                                        if !done_msg.is_empty() {
+                                            notice.set(done_msg);
+                                        }
+                                        reload.update(|n| *n += 1);
+                                        pane.set(None);
+                                    }
+                                    Err(e) => error.set(error_message(&e)),
+                                }
+                                busy.set(false);
+                            });
+                        })
+                    />
+                }
+            })}
+
+            {move || confirm.get().map(|c| {
+                let target = StoredValue::new(c.target.clone());
+                view! {
+                    <Dialog title=c.title on_close=Callback::new(move |_| confirm.set(None))>
+                        <p>{c.text.clone()}</p>
+                        {move || (!error.get().is_empty()).then(|| view! { <p class="error" role="alert">{error.get()}</p> })}
+                        <div class="dialog-actions">
+                            <button class="text-button" on:click=move |_| confirm.set(None)>"Cancel"</button>
+                            <button class="danger-button" disabled=move || busy.get() on:click=move |_| {
+                                let target = target.get_value();
+                                spawn_local(async move {
+                                    busy.set(true);
+                                    error.set(String::new());
+                                    let result: Result<(), String> = async {
+                                        let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                                        match target {
+                                            ConfirmTarget::Note(note) => {
+                                                let entry = fetch_detail(&conn, &note.id).await?.entry;
+                                                reducer(|tx| conn.reducers.trash_entry_then(entry.id, entry.revision, replied(tx))).await?;
+                                                if open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == note.id)) {
+                                                    open.set(None);
+                                                }
+                                            }
+                                            ConfirmTarget::Folder(folder) => {
+                                                let entry = fetch_detail(&conn, &folder.id).await?.entry;
+                                                reducer(|tx| conn.reducers.trash_entry_then(entry.id, entry.revision, replied(tx))).await?;
+                                                if scope.get_untracked() == folder.id {
+                                                    scope.set("all".into());
+                                                }
+                                            }
+                                        }
+                                        Ok(())
+                                    }
+                                    .await;
+                                    match result {
+                                        Ok(()) => {
+                                            notice.set("Moved to deleted files.".into());
+                                            reload.update(|n| *n += 1);
+                                            confirm.set(None);
+                                        }
+                                        Err(e) => error.set(error_message(&e)),
+                                    }
+                                    busy.set(false);
+                                });
+                            }>{c.action.clone()}</button>
+                        </div>
+                    </Dialog>
+                }
+            })}
+        </WorkspaceShell>
+    }
+}
+
+/// New folder, rename and move right-hand editing pane (`NotesPane`).
+#[component]
+fn NotesPane(
+    pane: NotesPaneKind,
+    folders: Memo<Vec<NotesFolder>>,
+    library: RwSignal<Option<NotesLibrary>>,
+    busy: RwSignal<bool>,
+    on_close: Callback<()>,
+    on_submit: Callback<String>,
+) -> impl IntoView {
+    let initial = match &pane {
+        NotesPaneKind::Folder { .. } => String::new(),
+        NotesPaneKind::RenameFolder(f) => f.name.clone(),
+        NotesPaneKind::RenameNote(n) => strip_md_ext(&n.name),
+        NotesPaneKind::Move(n) => n.parent_id.clone(),
+    };
+    let title = match &pane {
+        NotesPaneKind::Folder { .. } => "New folder",
+        NotesPaneKind::RenameFolder(_) => "Rename folder",
+        NotesPaneKind::RenameNote(_) => "Rename note",
+        NotesPaneKind::Move(_) => "Move note",
+    };
+    let submit_label = match &pane {
+        NotesPaneKind::Folder { .. } => "Create folder",
+        NotesPaneKind::Move(_) => "Move here",
+        _ => "Save",
+    };
+    let is_move = matches!(pane, NotesPaneKind::Move(_));
+    let is_rename_note = matches!(pane, NotesPaneKind::RenameNote(_));
+    let value = RwSignal::new(initial.clone());
+    let initial_sv = StoredValue::new(initial);
+
+    let folder_options = Signal::derive(move || {
+        let root_id = library.with(|l| l.as_ref().map(|l| l.root_id.clone()).unwrap_or_default());
+        let mut opts = vec![(root_id, "Notes (top level)".to_owned())];
+        for folder in folders.get() {
+            let label = folder.path.split('/').collect::<Vec<_>>().join(" \u{203a} ");
+            opts.push((folder.id, label));
+        }
+        opts
+    });
+
+    view! {
+        <EditorPane title=title on_close=on_close>
+            <form on:submit=move |e: web_sys::SubmitEvent| {
+                e.prevent_default();
+                let trimmed = value.get_untracked().trim().to_owned();
+                if !trimmed.is_empty() {
+                    { on_submit.try_run(trimmed); };
+                }
+            }>
+                {if is_move {
+                    view! {
+                        <label>"Folder"
+                            <ReactiveSelect options=folder_options value=value/>
+                        </label>
+                    }.into_any()
+                } else {
+                    view! {
+                        <label>"Name"
+                            <input autofocus required maxlength="255" prop:value=move || value.get() on:input=move |e| value.set(event_target_value(&e))/>
+                            {is_rename_note.then(|| view! { <small class="field-hint">"Saved as "{move || file_name(&value.get())}</small> })}
+                        </label>
+                    }.into_any()
+                }}
+                <div class="dialog-actions">
+                    <button type="button" class="text-button">"Cancel"</button>
+                    <button class="primary-button" disabled=move || busy.get() || value.get().trim().is_empty() || value.get() == initial_sv.get_value()>
+                        {move || if busy.get() { "Saving\u{2026}" } else { submit_label }}
+                    </button>
+                </div>
+            </form>
+        </EditorPane>
+    }
+}
+
+#[derive(Deserialize)]
+struct NotebookList {
+    items: Vec<Collection>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyPage {
+    items: Vec<LegacyRowRef>,
+    #[serde(default)]
+    next_cursor: String,
+}
+
+#[derive(Deserialize)]
+struct LegacyRowRef {
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct LegacyNote {
+    #[serde(default)]
+    content: String,
+    data: LegacyNoteData,
+}
+
+#[derive(Deserialize)]
+struct LegacyNoteData {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    favorite: bool,
+}
+
+/// Copies legacy pre-Files notes once into the Notes folder (`LegacyImport`).
+#[component]
+fn LegacyImport(
+    session: BrowserSession,
+    library: NotesLibrary,
+    on_done: Callback<String>,
+    on_error: Callback<String>,
+) -> impl IntoView {
+    let live = expect_context::<Live>();
+    let shared_prefs = context().preferences;
+    let progress: RwSignal<Option<String>> = RwSignal::new(None);
+    let session = StoredValue::new(session);
+    let library = StoredValue::new(library);
+
+    let save_imported = move || {
+        let rev = shared_prefs.value.with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
+        let sess = session.get_value();
+        async move { save_preferences(json!({ "revision": rev, "notesImported": true }), rev, &sess).await }
+    };
+
+    let copy = move || {
+        progress.set(Some("Copying\u{2026}".into()));
+        let sess = session.get_value();
+        let lib = library.get_value();
+        spawn_local(async move {
+            let Some(conn) = live.connection.get_untracked() else {
+                progress.set(None);
+                { on_error.try_run("Notes are reconnecting. Try again in a moment.".into()); };
+                return;
+            };
+            let result: Result<u64, String> = async {
+                let books = api::get::<NotebookList>("/api/v1/notes/notebooks").await.map_err(|e| e.message)?;
+                let mut copied = 0u64;
+                for book in books.items.into_iter().filter(|b| b.role == "owner") {
+                    let cleaned: String = book
+                        .name
+                        .chars()
+                        .map(|c| if (c as u32) < 0x20 || c == '/' || c == '\\' { ' ' } else { c })
+                        .collect();
+                    let folder_name: String = {
+                        let t: String = cleaned.trim().chars().take(200).collect();
+                        if t.is_empty() { "Notebook".into() } else { t }
+                    };
+                    let folder = match lib.folders.iter().find(|r| r.parent_id == lib.root_id && r.name.to_lowercase() == folder_name.to_lowercase()) {
+                        Some(f) => f.id.clone(),
+                        None => {
+                            let id = crate::random_uuid();
+                            reducer(|tx| conn.reducers.create_folder_then(id.clone(), lib.root_id.clone(), folder_name.clone(), replied(tx))).await?;
+                            id
+                        }
+                    };
+                    let mut taken = HashSet::new();
+                    let mut cursor = String::new();
+                    loop {
+                        let qs = search_params(&[("collection", book.id.clone()), ("cursor", cursor.clone())]);
+                        let page = api::get::<LegacyPage>(&format!("/api/v1/notes/items?{qs}")).await.map_err(|e| e.message)?;
+                        for row in page.items {
+                            let item = api::get::<LegacyNote>(&format!("/api/v1/notes/items/{}", row.id)).await.map_err(|e| e.message)?;
+                            let first_line = item.content.split('\n').next().unwrap_or("");
+                            let has_same_heading = !item.data.title.is_empty()
+                                && first_line.strip_prefix('#').is_some_and(|r| r.starts_with(char::is_whitespace) && r.trim() == item.data.title);
+                            let heading = if !item.data.title.is_empty() && !has_same_heading {
+                                format!("# {}\n\n", item.data.title)
+                            } else {
+                                String::new()
+                            };
+                            let front = if !item.data.tags.is_empty() {
+                                let tags_json: Vec<String> = item.data.tags.iter().map(|t| serde_json::to_string(t).unwrap_or_default()).collect();
+                                format!("---\ntags: [{}]\n---\n", tags_json.join(", "))
+                            } else {
+                                String::new()
+                            };
+                            let stem = if item.data.title.is_empty() { "Untitled" } else { &item.data.title };
+                            let name = unique_name(&file_name(stem), &taken);
+                            taken.insert(name.to_lowercase());
+                            let full_content = format!("{front}{heading}{}", item.content);
+                            let id = write_text_file(
+                                &sess,
+                                TextFile { name: &name, parent_id: &folder, content: &full_content, media_type: "text/markdown", file_id: None, expected_revision: None },
+                            )
+                            .await
+                            .map_err(|e| e.message)?;
+                            if item.data.favorite {
+                                let _ = reducer(|tx| conn.reducers.favorite_entry_then(id, true, 1, replied(tx))).await;
+                            }
+                            copied += 1;
+                            progress.set(Some(format!("Copied {copied} of {}\u{2026}", lib.legacy)));
+                        }
+                        if page.next_cursor.is_empty() {
+                            break;
+                        }
+                        cursor = page.next_cursor;
+                    }
+                }
+                save_imported().await.map_err(|e| e.message)?;
+                Ok(copied)
+            }
+            .await;
+            match result {
+                Ok(copied) => { on_done.try_run(format!("Copied {copied} {} into Files \u{203a} {}.", if copied == 1 { "note" } else { "notes" }, lib.path)); },
+                Err(e) => {
+                    progress.set(None);
+                    { on_error.try_run(error_message(&e)); };
+                }
+            }
+        });
+    };
+
+    let legacy_count = library.with_value(|l| l.legacy);
+    let lib_path = library.with_value(|l| l.path.clone());
+    let prompt = format!(
+        "{legacy_count} {} still in the old notes storage. Copy them into Files \u{203a} {lib_path} as Markdown files, one folder per notebook.",
+        if legacy_count == 1 { "note is" } else { "notes are" }
+    );
+    let prompt = StoredValue::new(prompt);
+
+    view! {
+        <div class="notes-legacy" role="status">
+            <p>{move || progress.get().unwrap_or_else(|| prompt.get_value())}</p>
+            {move || progress.with(Option::is_none).then(|| view! {
+                <button class="primary-button" on:click=move |_| copy()>"Copy into Files"</button>
+                <button class="text-button" on:click=move |_| {
+                    spawn_local(async move {
+                        if save_imported().await.is_ok() {
+                            { on_done.try_run("The old notes stay available for export in Notes settings.".into()); };
+                        }
+                    });
+                }>"Not now"</button>
+            })}
+        </div>
+    }
+}
+
+/// Full Markdown text editor for Notes (`text-editor.tsx`), extending `files::editor::TextEditor`
+/// with folder context, `start_in_preview`, `on_saved`, and note actions.
+#[component]
+fn NoteTextEditor(
+    entry: Signal<FileEntry>,
+    session: BrowserSession,
+    #[prop(into)] context: Signal<Option<String>>,
+    start_in_preview: bool,
+    on_close: Callback<()>,
+    on_saved: Callback<(u32, String)>,
+    actions: Callback<(), Vec<MenuAction>>,
+) -> impl IntoView {
+    let live = expect_context::<Live>();
+    let initial = entry.get_untracked();
+    let text = RwSignal::new(String::new());
+    let saved = RwSignal::new(String::new());
+    let status = RwSignal::new("Loading\u{2026}");
+    let error = RwSignal::new(String::new());
+    let ready = RwSignal::new(false);
+    let read_only = RwSignal::new(true);
+    let preview = RwSignal::new(start_in_preview);
+    let discard = RwSignal::new(false);
+    let recovery: RwSignal<Option<String>> = RwSignal::new(None);
+    let conflict: RwSignal<Option<(String, FileEntry)>> = RwSignal::new(None);
+    let modified = RwSignal::new(initial.modified_at);
+    let revision = RwSignal::new(initial.revision);
+    let saving = RwSignal::new(false);
+    let history: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
+    let future: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
+    let input = NodeRef::<html::Textarea>::new();
+    let key = StoredValue::new(format!("dar.file-draft.{}.{}", session.user.id, initial.id));
+    let session = StoredValue::new(session);
+    let alive = Arc::new(AtomicBool::new(true));
+    {
+        let alive = alive.clone();
+        on_cleanup(move || alive.store(false, Ordering::Relaxed));
+    }
+
+    let markdown = Memo::new(move |_| has_md_ext(&entry.with(|e| e.name.clone())));
+    let dirty = Memo::new(move |_| text.with(|t| saved.with(|s| t != s)));
+
+    // Keep revision synchronized if the open note is renamed or moved via the Notes pane.
+    Effect::new(move |_| {
+        let rev = entry.with(|e| e.revision);
+        if ready.get_untracked() && !saving.get_untracked() && rev > revision.get_untracked() {
+            revision.set(rev);
+        }
+    });
+
+    // Initial load.
+    {
+        let alive = alive.clone();
+        let entry_id = initial.id.clone();
+        spawn_local(async move {
+            let conn = match live.connection.get_untracked() {
+                Some(c) => c,
+                None => {
+                    if alive.load(Ordering::Relaxed) {
+                        error.set("Notes are reconnecting. Try again in a moment.".into());
+                    }
+                    return;
+                }
+            };
+            let detail = match fetch_detail(&conn, &entry_id).await {
+                Ok(d) => d,
+                Err(e) => {
+                    if alive.load(Ordering::Relaxed) {
+                        error.set(e);
+                    }
+                    return;
+                }
+            };
+            if !editable_text(&detail.entry) || detail.entry.trashed {
+                if alive.load(Ordering::Relaxed) {
+                    error.set("This file cannot be edited as text.".into());
+                }
+                return;
+            }
+            match read_file_content(&detail.entry.id).await {
+                Ok(content) => {
+                    if !alive.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    revision.set(detail.entry.revision);
+                    modified.set(detail.entry.modified_at);
+                    text.set(content.clone());
+                    saved.set(content.clone());
+                    let read = detail.role == "read";
+                    read_only.set(read);
+                    ready.set(true);
+                    status.set(if read { "Read only" } else { "Saved" });
+                    if let Some(draft) = session_storage()
+                        .and_then(|s| s.get_item(&key.get_value()).ok().flatten())
+                        .filter(|d| *d != content)
+                    {
+                        recovery.set(Some(draft));
+                    }
+                }
+                Err(e) => {
+                    if alive.load(Ordering::Relaxed) {
+                        error.set(e);
+                    }
+                }
+            }
+        });
+    }
+
+    // Recovery draft in sessionStorage + beforeunload protection.
+    Effect::new(move |_| {
+        let (t, d) = (text.get(), dirty.get());
+        if !ready.get() || read_only.get() || recovery.with(Option::is_some) {
+            return;
+        }
+        if let Some(s) = session_storage() {
+            let result = if d { s.set_item(&key.get_value(), &t) } else { s.remove_item(&key.get_value()) };
+            if result.is_err() {
+                error.set("Recovery storage is unavailable. Keep this editor open until the file is saved.".into());
+            }
+        }
+    });
+    listen(&window(), "beforeunload", false, move |event| {
+        if dirty.get_untracked() {
+            event.prevent_default();
+        }
+    });
+
+    let alive_compare = alive.clone();
+    let compare = move || {
+        let alive = alive_compare.clone();
+        spawn_local(async move {
+            let id = entry.with_untracked(|e| e.id.clone());
+            let outcome: Result<(String, FileEntry), String> = async {
+                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let detail = fetch_detail(&conn, &id).await?;
+                let content = read_file_content(&id).await.map_err(|_| "Saved version unavailable.".to_owned())?;
+                Ok((content, detail.entry))
+            }
+            .await;
+            if !alive.load(Ordering::Relaxed) {
+                return;
+            }
+            match outcome {
+                Ok(val) => conflict.set(Some(val)),
+                Err(e) => error.set(e),
+            }
+        });
+    };
+
+    let alive_save = alive.clone();
+    let compare_for_save = compare.clone();
+    let save = move || {
+        if !ready.get_untracked()
+            || read_only.get_untracked()
+            || saving.get_untracked()
+            || recovery.with_untracked(Option::is_some)
+            || conflict.with_untracked(Option::is_some)
+            || !dirty.get_untracked()
+        {
+            return;
+        }
+        let content = text.get_untracked();
+        let expected = revision.get_untracked();
+        saving.set(true);
+        status.set("Saving\u{2026}");
+        error.set(String::new());
+        let alive = alive_save.clone();
+        let compare_now = compare_for_save.clone();
+        spawn_local(async move {
+            let (cur, sess) = (entry.get_untracked(), session.get_value());
+            let result = write_text_file(
+                &sess,
+                TextFile {
+                    name: &cur.name,
+                    parent_id: &cur.parent_id,
+                    content: &content,
+                    media_type: &cur.media_type,
+                    file_id: Some(&cur.id),
+                    expected_revision: Some(expected),
+                },
+            )
+            .await;
+            if alive.load(Ordering::Relaxed) {
+                match result {
+                    Ok(_) => {
+                        revision.set(expected + 1);
+                        saved.set(content.clone());
+                        modified.set(js_sys::Date::now());
+                        status.set("Saved");
+                        { on_saved.try_run((expected + 1, content)); };
+                    }
+                    Err(e) => {
+                        error.set(e.message.clone());
+                        status.set("Save failed");
+                        if [409, 412].contains(&e.status) {
+                            compare_now();
+                        }
+                    }
+                }
+                saving.set(false);
+            }
+        });
+    };
+
+    // Autosave 900 ms after typing stops.
+    let typed = RwSignal::new(0u32);
+    let save_for_auto = save.clone();
+    Effect::new(move |_| {
+        text.track();
+        saved.track();
+        if !dirty.get() || !error.with(String::is_empty) || !ready.get() || recovery.with(Option::is_some) || conflict.with(Option::is_some) {
+            return;
+        }
+        let id = typed.get_untracked() + 1;
+        typed.set(id);
+        let save_now = save_for_auto.clone();
+        spawn_local(async move {
+            crate::sleep(900).await;
+            if typed.try_get_untracked() == Some(id) {
+                save_now();
+            }
+        });
+    });
+
+    Effect::new(move |_| {
+        if ready.get() && !read_only.get() && !preview.get()
+            && let Some(i) = input.get()
+        {
+            let options = web_sys::FocusOptions::new();
+            options.set_prevent_scroll(true);
+            let _ = i.focus_with_options(&options);
+        }
+    });
+
+    let change = move |value: String| {
+        history.update(|h| {
+            h.push(text.get_untracked());
+            if h.len() > 100 {
+                h.remove(0);
+            }
+        });
+        future.set(Vec::new());
+        text.set(value);
+        status.set("Unsaved");
+    };
+
+    let format = Callback::new(move |(before, after): (&'static str, &'static str)| {
+        let Some(field) = input.get_untracked() else { return };
+        let (start, end) = (
+            field.selection_start().ok().flatten().unwrap_or(0),
+            field.selection_end().ok().flatten().unwrap_or(0),
+        );
+        let (next, s, e) = format_markdown(&text.get_untracked(), start, end, before, after);
+        change(next);
+        let field = send_wrapper::SendWrapper::new(field);
+        request_animation_frame(move || {
+            let _ = field.focus();
+            let _ = field.set_selection_range(s, e);
+        });
+    });
+
+    let phase = move || {
+        if read_only.get() {
+            "read"
+        } else if matches!(status.get(), "Saving\u{2026}" | "Loading\u{2026}") {
+            "saving"
+        } else if dirty.get() {
+            if status.get() == "Save failed" { "error" } else { "dirty" }
+        } else {
+            "saved"
+        }
+    };
+
+    let label = move || {
+        let s = status.get();
+        if matches!(s, "Loading\u{2026}" | "Saving\u{2026}") || read_only.get() {
+            s
+        } else if dirty.get() {
+            if s == "Save failed" { "Not saved" } else { "Unsaved changes" }
+        } else {
+            "All changes saved"
+        }
+    };
+
+    let close = move || {
+        if dirty.get_untracked() || saving.get_untracked() {
+            discard.set(true);
+        } else {
+            { on_close.try_run(()); };
+        }
+    };
+
+    let save_for_key = save.clone();
+    let save_for_btn = save.clone();
+    let save_for_retry = save.clone();
+
+    view! {
+        <section
+            class=move || if markdown.get() { "file-text-editor document-editor" } else { "file-text-editor document-editor is-plain-text" }
+            aria-label=move || format!("Editor for {}", entry.with(|e| e.name.clone()))
+            on:keydown=move |e| {
+                if (e.ctrl_key() || e.meta_key()) && e.key().to_lowercase() == "s" {
+                    e.prevent_default();
+                    save_for_key();
+                } else if e.key() == "Escape" && !e.default_prevented() {
+                    e.prevent_default();
+                    close();
+                }
+            }>
+            <div class="workspace-editor-top">
+                <button class="icon-button" aria-label="Close editor" title="Close editor" on:click=move |_| close()><Icon name="close"/></button>
+                <span class="note-notebook">
+                    {move || match context.get() {
+                        Some(ctx) => view! { <Icon name="folder"/>{ctx} }.into_any(),
+                        None => {
+                            let e = entry.get();
+                            view! { <FileTile kind=e.kind.clone() name=e.name.clone() media_type=e.media_type.clone()/>{file_type_label(&e.kind, &e.name, &e.media_type)} }.into_any()
+                        }
+                    }}
+                </span>
+                <span class=move || format!("note-status note-status-{}", phase()) role="status">
+                    {move || (phase() == "saved").then(|| view! { <Icon name="check"/> })}
+                    {label}
+                </span>
+                {move || (dirty.get() && !read_only.get()).then(|| {
+                    let save_btn = save_for_btn.clone();
+                    view! {
+                        <button class="text-button" disabled=move || status.get() == "Saving\u{2026}" || conflict.with(Option::is_some) || recovery.with(Option::is_some) on:click=move |_| save_btn()>"Save now"</button>
+                    }
+                })}
+                {move || markdown.get().then(|| view! {
+                    <div class="segmented" role="group" aria-label="Editor mode">
+                        <button aria-pressed=move || (!preview.get()).to_string() on:click=move |_| preview.set(false)>"Write"</button>
+                        <button aria-pressed=move || preview.get().to_string() on:click=move |_| preview.set(true)>"Preview"</button>
+                    </div>
+                })}
+                <ActionMenu label="File options" actions=move |_| {
+                    let mut list = actions.run(());
+                    let has_sep = !list.is_empty();
+                    let id = entry.with_untracked(|e| e.id.clone());
+                    let mut dl = MenuAction::new("Download", "download").href(format!("/api/v1/files/{id}/content")).download();
+                    if has_sep {
+                        dl = dl.separator();
+                    }
+                    list.push(dl);
+                    list
+                }><Icon name="more"/></ActionMenu>
+            </div>
+            {move || discard.get().then(|| view! {
+                <div class="draft-banner" role="alert">
+                    <p>{if saving.get() { "A save is in progress. Keep the editor open until it completes." } else { "Unsaved changes are retained as a recovery draft in this tab." }}</p>
+                    <button class="text-button" on:click=move |_| discard.set(false)>"Keep editing"</button>
+                    <button class="text-button danger" disabled=move || saving.get() on:click=move |_| { on_close.try_run(()); }>"Close with recovery draft"</button>
+                </div>
+            })}
+            {move || (!error.get().is_empty()).then(|| {
+                let save_retry = save_for_retry.clone();
+                let compare_retry = compare.clone();
+                view! {
+                    <div class="error-banner" role="alert">
+                        <span>{error.get()}</span>
+                        <button class="text-button" on:click=move |_| save_retry()>"Retry save"</button>
+                        <button class="text-button" on:click=move |_| compare_retry()>"Review saved version"</button>
+                    </div>
+                }
+            })}
+            {move || recovery.get().map(|draft| view! {
+                <div class="draft-banner" role="alert">
+                    <p>"A recovery draft is available."</p>
+                    <button class="text-button" on:click=move |_| { change(draft.clone()); recovery.set(None); }>"Restore draft"</button>
+                    <button class="text-button" on:click=move |_| { recovery.set(None); if let Some(s) = session_storage() { let _ = s.remove_item(&key.get_value()); } }>"Discard draft"</button>
+                </div>
+            })}
+            {move || conflict.get().map(|(content, latest)| {
+                let (content2, latest2) = (content.clone(), latest.clone());
+                view! {
+                    <div class="draft-banner" role="alert">
+                        <p>"The saved file changed. Your text has been kept."</p>
+                        <details><summary>"View saved version"</summary><pre>{content.clone()}</pre></details>
+                        <button class="text-button" on:click=move |_| {
+                            revision.set(latest2.revision);
+                            modified.set(latest2.modified_at);
+                            text.set(content2.clone());
+                            saved.set(content2.clone());
+                            conflict.set(None);
+                            error.set(String::new());
+                            status.set("Saved");
+                        }>"Use saved version"</button>
+                        <button class="text-button" on:click=move |_| {
+                            revision.set(latest.revision);
+                            conflict.set(None);
+                            error.set(String::new());
+                            status.set("Unsaved");
+                        }>"Keep my version"</button>
+                    </div>
+                }
+            })}
+            <div class="note-document">
+                <h1 class="note-title">{move || {
+                    let n = entry.with(|e| e.name.clone());
+                    if has_md_ext(&n) { strip_md_ext(&n) } else { n }
+                }}</h1>
+                <div class="note-meta"><span>"Edited "{move || edited(modified.get())}</span></div>
+                {move || (markdown.get() && !preview.get()).then(|| view! {
+                    <MarkdownToolbar on_format=format disabled=Signal::derive(move || read_only.get() || !ready.get())>
+                        <button type="button" class="text-button starts-group" aria-label="Undo" title="Undo" disabled=move || history.with(Vec::is_empty) || read_only.get()
+                            on:click=move |_| {
+                                if let Some(previous) = history.try_update(|h| h.pop()).flatten() {
+                                    future.update(|f| f.push(text.get_untracked()));
+                                    text.set(previous);
+                                }
+                            }><Icon name="undo"/></button>
+                        <button type="button" class="text-button" aria-label="Redo" title="Redo" disabled=move || future.with(Vec::is_empty) || read_only.get()
+                            on:click=move |_| {
+                                if let Some(next) = future.try_update(|f| f.pop()).flatten() {
+                                    history.update(|h| h.push(text.get_untracked()));
+                                    text.set(next);
+                                }
+                            }><Icon name="redo"/></button>
+                    </MarkdownToolbar>
+                })}
+                {move || if preview.get() {
+                    view! { <Markdown source=text.get()/> }.into_any()
+                } else {
+                    view! {
+                        <textarea node_ref=input class="note-source" aria-label="File contents" spellcheck=move || markdown.get().to_string() placeholder=move || ready.get().then_some("Start writing\u{2026}")
+                            readonly=move || read_only.get() || !ready.get() || recovery.with(Option::is_some)
+                            prop:value=move || text.get()
+                            on:input=move |e| change(event_target_value(&e))></textarea>
+                    }.into_any()
+                }}
+            </div>
+        </section>
+    }
+}

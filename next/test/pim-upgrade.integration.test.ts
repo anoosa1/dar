@@ -7,6 +7,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { database } from "../runtime/database.ts";
 import { hashPassword } from "../runtime/auth/password.ts";
+import {moduleArguments} from "./instance.ts";
 
 const databaseUrl=process.env.DAR_DATABASE_URL;
 test("auth/Files module upgrades in place; old backup imports and unknown formats fail closed",{skip:!databaseUrl,timeout:60000},async()=>{
@@ -28,11 +29,11 @@ test("auth/Files module upgrades in place; old backup imports and unknown format
   await db.call("service_begin_upload",[sessionId,uploadId,fileId,"","Existing.txt",0,"text/plain",0]);
   await db.call("service_finish_upload",[sessionId,uploadId,"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"]);
   const pin=randomUUID(),snapshot=await db.call<{format:string;files:{id:string}[]}>("service_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v1");await db.call("service_release_backup",[pin]);
-  run(["publish",name,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",databaseUrl!,"--yes","--no-config"]);
+  run(["publish",name,...moduleArguments(),"--server",databaseUrl!,"--yes","--no-config"]);
   const existing=await db.call<{id:string}>("service_download",[sessionId,fileId,""]);assert.equal(existing.id,fileId);
   const created=(await db.call<{value:{id:string}}>("service_pim",[sessionId,"createCollection",JSON.stringify({id:randomUUID(),kind:"contacts",name:"After upgrade",color:"#2563eb"})])).value;assert.ok(created.id);
   const restoredName=`dar-old-restore-${randomUUID().slice(0,8)}`;
-  run(["publish",restoredName,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",databaseUrl!,"--yes","--no-config"]);
+  run(["publish",restoredName,...moduleArguments(),"--server",databaseUrl!,"--yes","--no-config"]);
   const restored=await database(databaseUrl!,restoredName,process.env.DAR_DATABASE_TOKEN_FILE!);
   await assert.rejects(restored.call("service_restore",[JSON.stringify({...snapshot,format:"dar-backup-v999"})]));
   await restored.call("service_restore",[JSON.stringify(snapshot)]);

@@ -7,6 +7,7 @@ import path from "node:path";
 import {randomUUID} from "node:crypto";
 import {database} from "../runtime/database.ts";
 import {hashPassword} from "../runtime/auth/password.ts";
+import {moduleArguments} from "./instance.ts";
 test("Contacts/Calendar v2 module upgrades and v2 backups restore with stable directory identities",{skip:!process.env.DAR_DATABASE_URL,timeout:60000},async()=>{
   const project=path.resolve(import.meta.dirname,".."),root=await mkdtemp(path.join(tmpdir(),"dar-identity-upgrade-")),old=path.join(root,"old"),issuer=`${process.env.DAR_INTEGRATION_ORIGIN}/auth/issuer`,baseline="d9758fc";
   await mkdir(path.join(old,"src"),{recursive:true});
@@ -22,10 +23,10 @@ test("Contacts/Calendar v2 module upgrades and v2 backups restore with stable di
   await db.call("service_create_account",[id,"old-directory","Old directory",verifier,true]);await db.call("service_create_session",[sid,id,"upgrade-digest","",Date.now()+60000,verifier]);
   await db.call("service_pim",[sid,"createCollection",JSON.stringify({id:collectionId,kind:"contacts",name:"Existing contacts",color:"#2563eb"})]);
   const pin=randomUUID(),snapshot=await db.call<any>("service_backup",[pin]);await db.call("service_release_backup",[pin]);assert.equal(snapshot.format,"dar-backup-v2");
-  run(["publish",name,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",url,"--yes","--no-config"]);await db.call("service_startup",[issuer]);
+  run(["publish",name,...moduleArguments(),"--server",url,"--yes","--no-config"]);await db.call("service_startup",[issuer]);
   const users=await db.call<any[]>("service_identity",[sid,"","","users","{}"]);assert.equal(users[0].id,id);assert.equal(users[0].userName,"old-directory");assert.equal(users[0].revision,1);
   const upgraded=await db.call<any>("service_backup",[randomUUID()]);assert.equal(upgraded.format,"dar-backup-v12");assert.equal(upgraded.pim.collections[0].id,collectionId);
-  const restoredName=`dar-v2-restore-${randomUUID().slice(0,8)}`;run(["publish",restoredName,"--js-path",path.join(project,"module/dist/bundle.js"),"--server",url,"--yes","--no-config"]);
+  const restoredName=`dar-v2-restore-${randomUUID().slice(0,8)}`;run(["publish",restoredName,...moduleArguments(),"--server",url,"--yes","--no-config"]);
   const restored=await database(url,restoredName,process.env.DAR_DATABASE_TOKEN_FILE!);await restored.call("service_restore",[JSON.stringify(snapshot)]);
   const recovered=await restored.call<any>("service_backup",[randomUUID()]);assert.equal(recovered.accounts[0].id,id);assert.equal(recovered.pim.collections[0].id,collectionId);assert.equal(recovered.identity.clients.length,0);
 });

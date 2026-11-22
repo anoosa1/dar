@@ -8,7 +8,7 @@ import net from "node:net";
 import path from "node:path";
 import {randomUUID, randomBytes} from "node:crypto";
 import {chromium} from "@playwright/test";
-import {startServer} from "../runtime/server.ts";
+import {moduleArguments,startInstance} from "./instance.ts";
 
 const project = path.resolve(import.meta.dirname, "../..");
 const cli = process.env.DAR_SPACETIME_BIN ?? "spacetime";
@@ -45,14 +45,14 @@ try {
     try { assert.ok((await fetch(databaseUrl + "/v1/ping")).ok); break; }
     catch (error) { if (attempt >= 100 || database.exitCode !== null) throw Error("Fixture database did not become ready", {cause: error}); await new Promise(resolve => setTimeout(resolve, 100)); }
   }
-  run(cli, ["--root-dir", cliRoot, "publish", name, "--js-path", path.join(project, "next/module/dist/bundle.js"), "--server", databaseUrl, "--yes", "--no-config"], {env: {...process.env, DAR_ISSUER: `${origin}/auth/issuer`}});
+  run(cli, ["--root-dir", cliRoot, "publish", name, ...moduleArguments(), "--server", databaseUrl, "--yes", "--no-config"], {env: {...process.env, DAR_ISSUER: `${origin}/auth/issuer`}});
   const token = (await readFile(path.join(cliRoot, "config/cli.toml"), "utf8")).match(/spacetimedb_token\s*=\s*"([^"]+)"/)?.[1];
   assert.ok(token);
   const serviceTokenFile = path.join(root, "database-token"), bootstrapTokenFile = path.join(root, "bootstrap-token");
   await writeFile(serviceTokenFile, token, {mode: 0o600});
   await writeFile(bootstrapTokenFile, randomBytes(32).toString("base64url"), {mode: 0o600});
-  runtime = await startServer({host: "127.0.0.1", port: 0, origin, root: path.join(root, "state"), databaseUrl, databaseName: name, serviceTokenFile, bootstrapTokenFile, development: false});
-  const backend = `http://127.0.0.1:${runtime.server.address().port}`;
+  runtime = await startInstance({ port: 0, origin, root: path.join(root, "state"), databaseUrl, databaseName: name, serviceTokenFile, bootstrapTokenFile, development: false});
+  const backend = `http://127.0.0.1:${runtime.port}`;
   let config = await readFile(path.join(fixture, "nginx.conf"), "utf8");
   config = config.replace(/    server \{\n        listen 0\.0\.0\.0:80;[\s\S]*?\n    }\n/, "")
     .replace("listen 0.0.0.0:443 ssl;", `listen 127.0.0.1:${port} ssl;`)

@@ -7,7 +7,7 @@ import {randomUUID} from "node:crypto";
 import {createServer} from "node:net";
 import {spawnSync,execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {startServer} from "../runtime/server.ts";
+import {publishModule,startInstance} from "./instance.ts";
 import {login} from "./integration-helpers.ts";
 import type {NewsOverview,NewsFeed,NewsItem,NewsItemDetail,NewsDiscovered,NewsFolder} from "../shared/news.ts";
 
@@ -38,10 +38,10 @@ function feedServer(){
 
 test("News: subscribe, refresh, state, folders, OPML, proxy, isolation and the Nextcloud News API",{skip:!process.env.DAR_INTEGRATION_ORIGIN,timeout:180000},async()=>{
   const root=await mkdtemp("/tmp/dar-news-acceptance-"),name="dar-news-"+randomUUID().slice(0,8),listener=createServer();await new Promise<void>(r=>listener.listen(0,"127.0.0.1",r));const port=(listener.address() as import("node:net").AddressInfo).port;await new Promise<void>(r=>listener.close(()=>r()));const base=`http://127.0.0.1:${port}`;
-  const published=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(published.status,0,published.stdout+published.stderr);
+  publishModule(name, base);
   const fixture=feedServer();await new Promise<void>(r=>fixture.server.listen(0,"127.0.0.1",r));const site=`http://127.0.0.1:${(fixture.server.address() as import("node:net").AddressInfo).port}`;
-  const config={host:"127.0.0.1",port,origin:base,root:path.join(root,"state"),databaseUrl:process.env.DAR_DATABASE_URL!,databaseName:name,serviceTokenFile:process.env.DAR_DATABASE_TOKEN_FILE!,bootstrapTokenFile:process.env.DAR_BOOTSTRAP_TOKEN_FILE!,development:true,newsAllowPrivateNetworks:true};
-  const runtime=await startServer(config);
+  const config={port,origin:base,root:path.join(root,"state"),databaseName:name,development:true,newsAllowPrivateNetworks:true};
+  const runtime=await startInstance(config);
   try{
     const setup=await fetch(base+"/api/v1/auth/setup",{method:"POST",headers:{origin:base,"content-type":"application/json"},body:JSON.stringify({username:"admin",displayName:"News fixture",password:"a long isolated test password",bootstrapToken:await readFile(process.env.DAR_BOOTSTRAP_TOKEN_FILE!,"utf8")})});assert.equal(setup.status,200);
     const session=await login(base),headers={...session.headers,"content-type":"application/json"};

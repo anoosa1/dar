@@ -6,7 +6,7 @@ import {randomUUID} from "node:crypto";
 import {createServer} from "node:net";
 import {spawnSync,execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {startServer} from "../runtime/server.ts";
+import {publishModule,startInstance} from "./instance.ts";
 import {login,connect} from "./integration-helpers.ts";
 import type {PhotoAlbum,PhotoDetail,PhotoOverview,PhotoPage} from "../shared/photos.ts";
 import type {SearchResults} from "../shared/search.ts";
@@ -25,9 +25,9 @@ async function fixtures(dir:string){
 
 test("Photos: indexing, thumbnails, views, albums, descriptions, search, trash and isolation",{skip:!process.env.DAR_INTEGRATION_ORIGIN,timeout:240000},async()=>{
   const root=await mkdtemp("/tmp/dar-photos-acceptance-"),name="dar-photos-"+randomUUID().slice(0,8),listener=createServer();await new Promise<void>(r=>listener.listen(0,"127.0.0.1",r));const port=(listener.address() as import("node:net").AddressInfo).port;await new Promise<void>(r=>listener.close(()=>r()));const base=`http://127.0.0.1:${port}`;
-  const published=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(published.status,0,published.stdout+published.stderr);
+  publishModule(name, base);
   const media=await fixtures(root);
-  const runtime=await startServer({host:"127.0.0.1",port,origin:base,root:path.join(root,"state"),databaseUrl:process.env.DAR_DATABASE_URL!,databaseName:name,serviceTokenFile:process.env.DAR_DATABASE_TOKEN_FILE!,bootstrapTokenFile:process.env.DAR_BOOTSTRAP_TOKEN_FILE!,development:true});
+  const runtime=await startInstance({port,origin:base,root:path.join(root,"state"),databaseName:name,development:true});
   try{
     const setup=await fetch(base+"/api/v1/auth/setup",{method:"POST",headers:{origin:base,"content-type":"application/json"},body:JSON.stringify({username:"admin",displayName:"Photos fixture",password:"a long isolated test password",bootstrapToken:await readFile(process.env.DAR_BOOTSTRAP_TOKEN_FILE!,"utf8")})});assert.equal(setup.status,200);
     const session=await login(base),headers={...session.headers,"content-type":"application/json"};

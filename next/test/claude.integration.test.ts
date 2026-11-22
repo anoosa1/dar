@@ -5,17 +5,17 @@ import path from "node:path";
 import {randomUUID} from "node:crypto";
 import {createServer} from "node:net";
 import {spawnSync} from "node:child_process";
-import {startServer} from "../runtime/server.ts";
+import {publishModule,startInstance} from "./instance.ts";
 import {login,connect,upload} from "./integration-helpers.ts";
 import type {AgentRun,AgentHistory,AgentProvider,AgentLimits} from "../shared/agent.ts";
 
 test("Claude Code CLI runs through stream-json with resume, questions, declines, steering and limits",{skip:!process.env.DAR_INTEGRATION_ORIGIN,timeout:120000},async()=>{
  const root=await mkdtemp("/tmp/dar-claude-acceptance-"),name="dar-claude-"+randomUUID().slice(0,8),listener=createServer();await new Promise<void>(r=>listener.listen(0,"127.0.0.1",r));const port=(listener.address() as import("node:net").AddressInfo).port;await new Promise<void>(r=>listener.close(()=>r()));const base=`http://127.0.0.1:${port}`;
- const published=spawnSync(process.env.DAR_SPACETIME_BIN!,["--root-dir",process.env.DAR_SPACETIME_CLI_ROOT!,"publish",name,"--js-path",path.resolve(import.meta.dirname,"../module/dist/bundle.js"),"--server",process.env.DAR_DATABASE_URL!,"--yes","--no-config"],{env:{...process.env,DAR_ISSUER:base+"/auth/issuer"},encoding:"utf8",timeout:30000});assert.equal(published.status,0,published.stdout+published.stderr);
+ publishModule(name, base);
  const executable=path.join(root,"claude-fixture"),home=path.join(root,"claude-home");await mkdir(home,{mode:0o700});await writeFile(executable,await readFile(new URL("./fixtures/claude-fixture.mjs",import.meta.url)),{mode:0o700});
  const claudeFile=path.join(root,"claude.json");
- const config={host:"127.0.0.1",port,origin:base,root:path.join(root,"state"),databaseUrl:process.env.DAR_DATABASE_URL!,databaseName:name,serviceTokenFile:process.env.DAR_DATABASE_TOKEN_FILE!,bootstrapTokenFile:process.env.DAR_BOOTSTRAP_TOKEN_FILE!,development:true,codexFile:path.join(root,"codex.json"),claudeFile};
- const runtime=await startServer(config);
+ const config={port,origin:base,root:path.join(root,"state"),databaseName:name,development:true,codexFile:path.join(root,"codex.json"),claudeFile};
+ const runtime=await startInstance(config);
  try{
   const setup=await fetch(base+"/api/v1/auth/setup",{method:"POST",headers:{origin:base,"content-type":"application/json"},body:JSON.stringify({username:"admin",displayName:"Claude fixture",password:"a long isolated test password",bootstrapToken:await readFile(process.env.DAR_BOOTSTRAP_TOKEN_FILE!,"utf8")})});assert.equal(setup.status,200);
   const account=await setup.json() as {user:{id:string}};

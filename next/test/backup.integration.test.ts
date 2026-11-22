@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { database } from "../runtime/database.ts";
 import { backup, restore, exportFiles } from "../runtime/backup.ts";
-import { startServer } from "../runtime/server.ts";
+import {publishModule,startInstance} from "./instance.ts";
 import { login, upload } from "./integration-helpers.ts";
 import {identityAdmin,authorize,exchange} from "./identity-helpers.ts";
 import * as oidc from "openid-client";
@@ -71,16 +71,14 @@ test("consistent backup, corruption rejection, empty-root restore, session inval
   await new Promise<void>(resolve => listener.close(() => resolve()));
   const newOrigin = `http://127.0.0.1:${port}`, name = `dar-restore-${randomUUID().slice(0, 8)}`;
   const project = path.resolve(import.meta.dirname, "..");
-  const publish = spawnSync(process.env.DAR_SPACETIME_BIN!, ["--root-dir", process.env.DAR_SPACETIME_CLI_ROOT!, "publish", name, "--js-path", path.join(project, "module/dist/bundle.js"), "--server", process.env.DAR_DATABASE_URL!, "--yes", "--no-config"], { env: { ...process.env, DAR_ISSUER: `${newOrigin}/auth/issuer` }, encoding: "utf8" });
-  assert.equal(publish.status, 0, publish.stdout + publish.stderr);
+  publishModule(name, newOrigin);
   const target = await database(process.env.DAR_DATABASE_URL!, name, process.env.DAR_DATABASE_TOKEN_FILE!);
   const root = path.join(temporary, "restored");
   await writeFile(path.join(directory, "snapshot.json"), `${saved} `);
   await assert.rejects(restore(target, directory, root), /corrupted/);
   await writeFile(path.join(directory, "snapshot.json"), saved);
   await restore(target, directory, root);
-  const runtime = await startServer({ host: "127.0.0.1", port, origin: newOrigin, root, databaseUrl: process.env.DAR_DATABASE_URL!, databaseName: name,
-    serviceTokenFile: process.env.DAR_DATABASE_TOKEN_FILE!, bootstrapTokenFile: process.env.DAR_BOOTSTRAP_TOKEN_FILE!, development: true });
+  const runtime = await startInstance({ port, origin: newOrigin, root, databaseName: name, development: true });
   try {
     assert.equal((await fetch(`${newOrigin}/api/v1/auth/session`, { headers: session.headers })).status, 401);
     const recovered = await login(newOrigin);
