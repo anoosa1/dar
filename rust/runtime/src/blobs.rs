@@ -135,11 +135,20 @@ impl Blobs {
     }
 
     /// Stores exactly `size` bytes from `source`; returns their digest.
-    pub async fn receive<S, E>(&self, mut source: S, size: u64) -> Result<String>
+    pub async fn receive<S, E>(&self, source: S, size: u64) -> Result<String>
     where
         S: Stream<Item = std::result::Result<axum::body::Bytes, E>> + Unpin,
     {
-        let temporary = self.uploads.join(format!("{}.tmp", crate::auth::uuid()));
+        self.receive_named(source, size, None).await
+    }
+
+    /// `receive`, with the temporary file named after an upload reservation (`uploads/<id>.tmp`,
+    /// as the TypeScript runtime named it), so an interrupted upload is identifiable on disk.
+    pub async fn receive_named<S, E>(&self, mut source: S, size: u64, name: Option<&str>) -> Result<String>
+    where
+        S: Stream<Item = std::result::Result<axum::body::Bytes, E>> + Unpin,
+    {
+        let temporary = self.uploads.join(format!("{}.tmp", name.map_or_else(crate::auth::uuid, str::to_owned)));
         let result = async {
             let mut file = tokio::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&temporary).await.map_err(|_| AppError::internal())?;
             let (mut hash, mut written) = (Sha256::new(), 0u64);

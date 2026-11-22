@@ -24,7 +24,7 @@ let
     installPhase = ''install -Dm755 bin/node $out/bin/node'';
   };
   npm = pkgs.writeShellScriptBin "npm" ''exec ${node}/bin/node ${pkgs.nodejs_24}/lib/node_modules/npm/bin/npm-cli.js "$@"'';
-  nodeWithNpm = pkgs.symlinkJoin { name = "dar-node-with-npm-${node.version}"; paths = [ node npm ]; passthru = { inherit (node) version; python = pkgs.python3; }; };
+  nodeWithNpm = pkgs.symlinkJoin { name = "dar-node-with-npm-${node.version}"; paths = [ node npm ]; passthru = { inherit (node) version; python = pkgs.python3; }; meta.platforms = [ "x86_64-linux" "aarch64-linux" ]; };
   spacetime = pkgs.stdenv.mkDerivation {
     pname = "dar-spacetimedb"; version = "2.14.1";
     src = pkgs.fetchurl { url = "https://github.com/clockworklabs/SpacetimeDB/releases/download/v2.14.1/spacetime-${source.spacetimePlatform}-unknown-linux-gnu.tar.gz"; sha256 = source.spacetimeHash; };
@@ -38,4 +38,15 @@ let
       ln -s spacetimedb-cli $out/bin/spacetime
     '';
   };
-in { inherit node npm nodeWithNpm spacetime; }
+  npmSource = pkgs.runCommand "dar-npm-source" { } ''
+    mkdir -p $out/vendor
+    cp ${../package.json} $out/package.json
+    cp ${../package-lock.json} $out/package-lock.json
+    cp -r ${../vendor/no-native-canvas} $out/vendor/no-native-canvas
+  '';
+  npmDeps = pkgs.fetchNpmDeps {
+    name = "dar-npm-deps";
+    src = npmSource;
+    hash = "sha256-f0Nsah/CFvArD+7mMQ3Hfx2V6EGfTptppJTjXdXA6sQ=";
+  };
+in { inherit node npm nodeWithNpm spacetime npmDeps; }

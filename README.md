@@ -26,12 +26,14 @@ provides OIDC sign-in and SCIM provisioning for other applications.
 
 ```sh
 nix develop
-npm ci --prefix next
-npm --prefix next run dev
+npm ci
+rust/runtime/dev.sh
 ```
 
-Open <http://127.0.0.1:4311>. The dev script prints the path to the private setup
-key used to create the first account.
+Open <http://127.0.0.1:4331>. The dev script builds the stack, keeps its data in
+`~/.local/share/dar-rust` and prints the path to the private setup key used to create the
+first account. An existing instance's data folder and database are taken over in place
+(see `rust/PORTING.md`).
 
 ## Deploy
 
@@ -39,6 +41,7 @@ key used to create the first account.
 
 ## Develop
 
-The application is in `next/` ([guide](next/README.md)). Run all checks with
-`nix develop --command npm --prefix next run verify`. UI work follows the
-[design guide](docs/design.md).
+Dar is written in Rust (`rust/`: the SpacetimeDB module, the runtime and the Leptos
+client), with the chat bridge in Go (`bridge/`) and the installed-app SDK in JavaScript
+(`sdk/`). Run all checks with `nix develop --command node rust/verify.mjs`. UI work
+follows the [design guide](docs/design.md); engineering rules are in `AGENTS.md`.

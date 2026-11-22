@@ -1,10 +1,14 @@
 # Deployment
 
-The root flake exports `packages.<system>.dar` (also `default`), `prayer-times`,
-`apps.<system>.default`, `nixosModules.default` (also `dar`) and the dev shell.
-The package pins Node 24.22.1 and SpacetimeDB 2.14.1 and is fully built in Nix;
-the server never installs npm packages or builds code. Startup publishes the
-bundled database module without discarding existing state.
+The root flake exports `packages.<system>.dar` (also `default`), `chat-bridge`,
+`prayer-times`, `apps.<system>.default`, `nixosModules.default` (also `dar`),
+`checks.<system>.module-evaluation`, `checks.<system>.nixos-vm` and the dev shell.
+The package ships the Rust runtime (`dar-runtime`), the Rust SpacetimeDB module
+(`dar_module.wasm`), the Leptos/Wasm browser client (with the installed-app SDK
+bundle and pdf.js), the Go Chat bridge (`dar-chat-bridge`), and SpacetimeDB
+2.14.1. Everything is built offline in Nix; the server never compiles code,
+installs packages or requires a Node.js runtime. Startup publishes the bundled
+database module in place without discarding existing state.
 
 ## NixOS service
 
@@ -26,11 +30,20 @@ enabling ACME. Options: `package`, `origin`, `port` (4311), `databasePort` (4310
 `openFirewall` (defaults to the nginx choice), `apps` ([installed apps](apps.md)),
 `agent.*` ([Codex](codex.md), [Claude Code](claude-code.md)), `news.allowPrivateNetworks` ([News](news.md)), `photos.immichAllowLocalHost` ([Photos](photos.md)) and `oidc.clients` (below). Keep origin, database
 name and state directory stable across upgrades. No credentials go in Nix.
-The package puts exiftool, libvips and ffmpeg on the service PATH for
-[Photos](photos.md); its regenerable thumbnails and converted videos live in `photo-cache/` under
+The package puts `git`, `gzip`, `curl`, `exiftool`, `libvips`, `ffmpeg` and `libarchive` on the service PATH for
+Git, Books and [Photos](photos.md); Photos' regenerable thumbnails and converted videos live in `photo-cache/` under
 the state directory (safe to delete; converted videos can be large). The Immich
 mobile app uses `/.well-known/immich` and `/dav/immich/api`; a reverse proxy must pass
 both through (the generated nginx does) and allow 16 GiB request bodies.
+
+### Upgrading from the TypeScript stack
+
+An existing TypeScript-stack NixOS deployment switches to the Rust stack in place
+when you update the flake input and rebuild: keep the same `stateDirectory`
+(`/var/lib/dar`), `origin` and `databaseName`. Back up first. On restart,
+`bin/dar` starts SpacetimeDB on the existing database, publishes the Rust module
+over it in place, and takes over existing sessions, app passwords, uploads,
+OIDC tokens/keys, blobs and installed apps without exporting or converting data.
 
 ### Proxy
 
@@ -80,7 +93,7 @@ services.dar.oidc.clients.photos = {
 - Changes apply on restart (also after changing secret contents). Listed clients
   override UI edits; omitted ones are kept. Disable with `enabled = false` or
   delete in Administration. With no clients declared, `/var/lib/dar/oidc.json` is
-  read instead ([format](../next/README.md#oidc-clients-from-json)).
+  read instead.
 
 Gitea 28.2.0 does not send PKCE from an OIDC login source:
 
@@ -109,8 +122,12 @@ sudo cat /var/lib/dar/secrets/bootstrap-token
 ```
 
 Enter the setup key on the HTTPS first-administrator screen. Backups and other
-operator tasks use `dar-operator` as the `dar` user; see
-[operator commands](../next/README.md#operator-commands):
+operator tasks use `dar-operator` as the `dar` user (`backup <dir>`, `restore <dir>`,
+`export-files <username> <dir>`, `release-backup <id>`, `enable-user <username>`,
+`disable-user <username>`, `recover-password <username> <password-file>`,
+`configure-oidc <file> [optional]`, `deliver-reminders`, `reconcile-storage`,
+`sweep-orphans`, and offline
+`apps-list|apps-install|apps-enable|apps-disable|apps-uninstall`):
 
 ```sh
 sudo -u dar env DAR_ROOT=/var/lib/dar DAR_DATABASE_URL=http://127.0.0.1:4310 \
@@ -119,20 +136,23 @@ sudo -u dar env DAR_ROOT=/var/lib/dar DAR_DATABASE_URL=http://127.0.0.1:4310 \
 ```
 
 Protect backups like credentials. Back up before upgrading: rolling back the Nix
-package does not roll back a schema migration. Never restore over a live root.
+package does not roll back a schema migration. Never restore over a live root;
+for a cold restore into an empty root, `dar --restore <backup-directory>` starts
+SpacetimeDB, publishes the module, restores the backup and starts the runtime.
 
 ## Checks
 
 ```sh
-nix build .#dar .#checks.x86_64-linux.module-evaluation --no-link -L
-nix develop --command npm --prefix next run verify
-nix develop --command node next/scripts/verify-package.mjs /nix/store/…-dar/bin/dar
+nix build .#dar .#prayer-times .#chat-bridge .#checks.x86_64-linux.module-evaluation --no-link -L
+nix flake check -L
+nix develop --command npm run verify
 ```
 
-The module check builds and lints the generated nginx configuration; `verify`
-also runs it on loopback with a temporary certificate. Package verification starts
-the immutable package on isolated ports and runs DAV round trips. No full NixOS VM
-is booted. x86_64 Linux is exercised; ARM64 is exported but untested.
+The `module-evaluation` check evaluates the NixOS module, assertions, OIDC
+credential indirection and generated nginx configuration. `nixos-vm` boots the
+NixOS module in a VM (requires KVM), verifies `/api/v1/auth/status`, client
+serving, `dar-operator` and service restart persistence. x86_64 Linux is
+exercised; ARM64 is exported but untested.
 
 `dar` defaults to production HTTPS settings. `dar --development` is a
 loopback-only development mode, never for public deployment.

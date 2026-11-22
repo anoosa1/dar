@@ -1,22 +1,23 @@
-# Porting plan: the Rust stack passes Dar's whole test suite
+# Dar in Rust: how the port was done, and what to know
 
-Goal: every test in `next/test` runs against both stacks and passes on both. TypeScript is the
-reference; a test that fails on TypeScript is a test bug, fixed in `next/test`. Application code
-in `next/` is never changed; only `next/test` (tests and helpers) gains files.
+Dar was ported from TypeScript (Node, React, a TypeScript SpacetimeDB module) to Rust. The
+TypeScript stack was the reference until the Rust one passed the whole acceptance suite, then
+was removed; its last state is commit `799b524` (`next/`). This file keeps the port's history,
+the pitfalls worth knowing and how an existing TypeScript instance moves over.
 
-## How the suite runs on each stack
+## How the suite runs
 
-- TypeScript: `npm --prefix next run verify` (unchanged entry point).
-- Rust: `rust/verify.mjs` starts the Rust stack the way `next/scripts/verify.mjs` starts the
-  TypeScript one (same environment variables) and runs the same test files with
-  `DAR_TEST_STACK=rust`.
-- `next/test/instance.ts` starts an isolated instance (its own database and root) on either
-  stack. Tests that used to call `startServer` in-process use it, so they test whichever
-  runtime is selected.
-- Unit tests of TypeScript internals (pure functions) stay TypeScript-only; each gets a Rust
-  mirror with the same cases in the crate that ports it.
+- `node rust/verify.mjs` builds the stack (module, runtime, client, the app SDK bundle),
+  starts it on a throwaway root and ports, generates the tests' TypeScript bindings from the
+  module, runs the bridge's Go tests and every suite in `test/`, and prints a summary.
+- `test/instance.ts` starts further isolated instances (their own database and root).
+- `test/support/` replaces what the tests once imported from the TypeScript runtime: the
+  service credential's database client, credential formats, and the runtime's operator
+  commands (`dar-runtime backup`, `restore`, `export-files`, `configure-oidc`,
+  `deliver-reminders`, `reconcile-storage`, `sweep-orphans`, `apps-*` and the account ones).
+- Unit tests live with the crates (`cargo test`).
 
-## Test inventory
+## Test inventory (at the time of the port)
 
 Kinds: S = HTTP/database against the shared fixture; I = isolated instance (`instance.ts`);
 U = unit test of TypeScript code; B = browser test (needs the Rust client to match React).
@@ -52,10 +53,11 @@ starts the runtime. Nothing is exported or converted beforehand.
   provider sessions that oidc-provider stored are read by `runtime/src/oidc_store.rs`
   (`from_oidc_provider`), and its keygrip-signed `dar_oidc` cookie is accepted and re-signed
   (`oidc/src/legacy.rs`), so relying parties stay signed in without a new prompt.
-- Proof: on the Rust stack, `next/test/restart.mjs` starts the instance on TypeScript, fills it,
-  crashes it mid-upload, and takes it over with Rust (then restarts on Rust), checking all of the
-  above (`node rust/verify.mjs --only restart`).
-- Not yet: NixOS deployment of the Rust stack (`nix/module.nix` runs the TypeScript one).
+- Proven while both stacks were in the tree: `restart.mjs` (commit `d6dd814`) started an
+  instance on TypeScript, filled it, crashed it mid-upload and took it over with Rust, checking
+  all of the above plus Git, folder history, Books and Photos. With the TypeScript stack gone,
+  `test/restart.mjs` checks the same through Rust-to-Rust restarts.
+- On NixOS, rebuilding with the new `dar` package (`nix/`) switches the service in place.
 
 ## Progress log
 

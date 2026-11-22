@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["oidc", "dav", "client-serve", "runtime"]
+members = ["oidc", "dav", "runtime"]
 # The SpacetimeDB module and the browser client target wasm32 and keep their own lockfiles.
 exclude = ["module", "client"]
 

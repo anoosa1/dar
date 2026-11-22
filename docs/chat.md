@@ -116,7 +116,7 @@ data is kept and every account disconnects.
 
 ## How it is built
 
-- **Bridge:** `next/bridge` is one Go binary (`dar-chat-bridge`, built by
+- **Bridge:** `bridge/` is one Go binary (`dar-chat-bridge`, built by
   `nix/chat-bridge.nix`, or by `scripts/dev.mjs` when Go is available). The runtime
   (`runtime/chat`) starts it with a minimal environment and speaks newline-delimited
   JSON over stdio (no port), restarts it with backoff and reconnects linked accounts.
@@ -161,7 +161,7 @@ data is kept and every account disconnects.
 6. Done: Discord voice in server voice channels (dock, call view, DAVE, browser audio over
    the live socket).
 
-Verify with `nix develop -c node next/scripts/verify.mjs --chat` (Go tests with local fake
+Verify with `nix develop -c node rust/verify.mjs --only chat` (Go tests with local fake
 Discord servers, a fake bridge for the integration and browser tests; never a real
 WhatsApp or Discord account). Link a real phone or Discord account by hand to check
 pairing and sign-in.

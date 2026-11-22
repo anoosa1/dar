@@ -1,7 +1,7 @@
 # Installed apps and optional apps
 
 Dar runs trusted, administrator-installed app packages built with SDK API v1
-([author guide](../next/sdk/README.md)). Prayer Times is the bundled example.
+([author guide](../sdk/README.md)). Prayer Times is the bundled example.
 Installed code runs in Dar's process and browser origin: it is trusted, not
 sandboxed. These packages are unrelated to OIDC "registered applications".
 
@@ -19,8 +19,8 @@ generated read-only registry is authoritative; no app is enabled by default.
 Other hosts, from `nix develop` with Dar stopped:
 
 ```sh
-node next/sdk/build.mjs apps/prayer-times
-DAR_ROOT=/path/to/root node next/scripts/operator.ts apps-install apps/prayer-times/dist
+node sdk/build.mjs apps/prayer-times
+dar-runtime apps-install /path/to/root apps/prayer-times/dist
 ```
 
 Operator commands (`dar-operator` when packaged): `apps-install <dir>`,

@@ -36,6 +36,8 @@ fi
 mkdir -p "$root/secrets" "$root/database"
 
 if [[ "${DAR_PREBUILT:-}" != 1 ]]; then
+  # The installed-app SDK bundle goes into the client's dist (needs the root npm install).
+  (cd "$rust/.." && node sdk/build-bundle.mjs >/dev/null)
   nix develop "path:$rust/nix" -c bash -c "
     set -e
     cd '$rust/module' && ./patch-macro.sh && cargo build -q --release --target wasm32-unknown-unknown

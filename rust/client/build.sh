@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Builds the Rust client into dist/: the wasm module and its JS glue, Dar's stylesheet
-# (next/client's CSS files, unchanged, in the cascade order main.tsx imports them) and
-# index.html. Run in the Rust dev shell: nix develop path:../nix -c ./build.sh [--release]
+# (styles/, concatenated in the cascade order of styles/order.txt), the installed-app SDK
+# bundle (sdk/dist, from sdk/build-bundle.mjs), pdf.js and index.html. Run in the Rust dev shell: nix develop path:../nix -c ./build.sh [--release]
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-client="$here/../../next/client"
+repo="$here/../.."
 profile=debug
 flags=()
 if [[ "${1:-}" == "--release" ]]; then profile=release; flags=(--release); fi
@@ -22,9 +22,9 @@ if [[ $profile == release ]] && command -v wasm-opt >/dev/null; then
     --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-reference-types \
     -o dist/dar_client_bg.wasm dist/dar_client_bg.wasm
 fi
-# Stylesheets in main.tsx's import order; the shared frame and apps layers come last there too.
-grep -oE '^import "\./[^"]+\.css";' "$client/main.tsx" | sed -E 's/^import "\.\/(.*)";$/\1/' | while read -r sheet; do
-  cat "$client/$sheet"; echo
+# Stylesheets in cascade order; the shared frame and apps layers come last.
+grep -vE '^(#|$)' styles/order.txt | while read -r sheet; do
+  cat "styles/$sheet"; echo
 done > dist/app.css
 # AudioWorklet for Chat voice capture (served at /rust/mic-worklet.js).
 cat > dist/mic-worklet.js <<'EOF'
@@ -52,7 +52,7 @@ class MicFrames extends AudioWorkletProcessor {
 registerProcessor("dar-mic", MicFrames);
 EOF
 # pdf.js library, worker, cmaps, fonts, wasm and iccs (served at /pdfjs/<version>/...).
-pdfjs_src="$here/../../next/node_modules/pdfjs-dist"
+pdfjs_src="$repo/node_modules/pdfjs-dist"
 if [[ -d "$pdfjs_src" ]]; then
   pdfjs_ver=$(sed -nE 's/.*"version": *"([^"]+)".*/\1/p' "$pdfjs_src/package.json" | head -n 1)
   mkdir -p "dist/pdfjs/$pdfjs_ver"
@@ -62,11 +62,11 @@ if [[ -d "$pdfjs_src" ]]; then
     [[ -d "$pdfjs_src/$folder" ]] && cp -r "$pdfjs_src/$folder" "dist/pdfjs/$pdfjs_ver/$folder"
   done
 fi
-# Installed-app SDK bundle (sdk.js, sdk.css, chunks) if built in next/dist.
-next_dist="$here/../../next/dist"
-if [[ -f "$next_dist/sdk.js" ]]; then
-  cp "$next_dist"/sdk*.js "$next_dist"/sdk*.css dist/ 2>/dev/null || true
-  [[ -d "$next_dist/chunks" ]] && cp -r "$next_dist/chunks" dist/chunks
+# Installed-app SDK bundle (sdk.js, sdk.css, chunks), built by sdk/build-bundle.mjs.
+sdk_dist="$repo/sdk/dist"
+if [[ -f "$sdk_dist/sdk.js" ]]; then
+  cp "$sdk_dist"/sdk*.js "$sdk_dist"/sdk*.css dist/ 2>/dev/null || true
+  [[ -d "$sdk_dist/chunks" ]] && cp -r "$sdk_dist/chunks" dist/chunks
 fi
 # Content-hashed filenames so the runtime can serve JS, CSS and wasm as immutable.
 hash_of() { sha256sum "$1" | cut -c1-12; }
@@ -82,7 +82,7 @@ mv dist/start.js "dist/$start_file"
 cat > dist/index.html <<EOF
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Dar</title><link rel="stylesheet" href="/rust/$css_file"><link rel="modulepreload" href="/rust/$start_file"><link rel="modulepreload" href="/rust/$js_file"><link rel="preload" href="/rust/$wasm_file" as="fetch" crossorigin="anonymous"><script type="module" src="/rust/$start_file"></script></head><body><div id="root"><main class="startup-state" aria-busy="true"><div class="brand-mark"></div><p role="status">Opening your space…</p></main></div></body></html>
 EOF
-# Precompressed copies, served when the browser accepts them (as next/runtime/static.ts serves next/dist).
+# Precompressed copies, served when the browser accepts them (as the TypeScript runtime once did).
 find dist -type f \( -name "*.wasm" -o -name "*.js" -o -name "*.css" -o -name "*.mjs" \) -print0 | while IFS= read -r -d "" file; do
   gzip -9 -k -f "$file"
   if command -v brotli >/dev/null; then brotli -q 11 -k -f "$file"; fi

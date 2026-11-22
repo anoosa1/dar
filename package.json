@@ -1,0 +1,33 @@
+{
+  "name": "dar",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "JavaScript tooling around Dar's Rust stack: the installed-app SDK, pdf.js for the client, and the acceptance suite.",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
+  "scripts": {
+    "build:sdk": "node sdk/build-bundle.mjs",
+    "verify": "node rust/verify.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "file:vendor/no-native-canvas",
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
+    "jose": "6.2.15",
+    "openid-client": "6.8.7",
+    "pdfjs-dist": "6.5.438",
+    "spacetimedb": "2.14.1"
+  },
+  "overrides": {
+    "@napi-rs/canvas": "$@napi-rs/canvas"
+  }
+}

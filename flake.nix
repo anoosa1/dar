@@ -16,7 +16,15 @@
       });
       apps = eachSystem (system: { default = { type = "app"; program = "${self.packages.${system}.dar}/bin/dar"; }; });
       devShells = eachSystem (system: let pkgs = pkgsFor system; runtime = runtimeFor system; in {
-        default = pkgs.mkShell { packages = [ runtime.node runtime.npm runtime.spacetime pkgs.go pkgs.chromium pkgs.curl pkgs.git pkgs.vdirsyncer pkgs.exiftool pkgs.vips pkgs.ffmpeg-headless pkgs.libarchive ]; };
+        default = pkgs.mkShell {
+          packages = [
+            runtime.node runtime.npm runtime.spacetime
+            pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.lld pkgs.wasm-bindgen-cli pkgs.binaryen pkgs.brotli pkgs.pkg-config pkgs.openssl pkgs.perl pkgs.gzip
+            pkgs.go pkgs.chromium pkgs.curl pkgs.git pkgs.vdirsyncer pkgs.exiftool pkgs.vips pkgs.ffmpeg-headless pkgs.libarchive
+          ];
+          # SpacetimeDB's test datastore builds jemalloc at -O0, which glibc's _FORTIFY_SOURCE rejects.
+          hardeningDisable = [ "fortify" ];
+        };
       });
       nixosModules.default = import ./nix/module.nix { inherit self; };
       nixosModules.dar = self.nixosModules.default;
@@ -86,6 +94,37 @@
           ln -s ${pkgs.nginx}/bin/nginx $out/nginx
           ln -s ${pkgs.openssl}/bin/openssl $out/openssl
         '';
+        nixos-vm = pkgs.testers.runNixOSTest {
+          name = "dar-nixos-vm";
+          nodes.machine = { ... }: {
+            imports = [ self.nixosModules.default ];
+            virtualisation.memorySize = 1536;
+            services.dar = {
+              enable = true;
+              origin = "https://dar.example.test";
+              apps = [ self.packages.${system}.prayer-times ];
+            };
+            system.stateVersion = "26.05";
+          };
+          testScript = ''
+            import json
+            machine.wait_for_unit("dar.service")
+            machine.wait_until_succeeds("curl -sf http://127.0.0.1:4311/api/v1/auth/status", timeout=90)
+            status = json.loads(machine.succeed("curl -sf http://127.0.0.1:4311/api/v1/auth/status"))
+            assert status == {"initialized": False}, f"unexpected auth status: {status}"
+            html = machine.succeed("curl -sf http://127.0.0.1:4311/")
+            assert "/rust/start." in html, "expected Rust client HTML"
+            sdk = machine.succeed("curl -sf http://127.0.0.1:4311/sdk.js")
+            assert "export * from" in sdk, "expected SDK bundle"
+            machine.succeed("su -s /bin/sh dar -c 'DAR_ROOT=/var/lib/dar DAR_DATABASE_URL=http://127.0.0.1:4310 DAR_DATABASE_NAME=dar DAR_DATABASE_TOKEN_FILE=/var/lib/dar/secrets/database-token ${self.packages.${system}.dar}/bin/dar-operator reconcile-storage'")
+            machine.succeed("systemctl stop dar.service")
+            machine.succeed("su -s /bin/sh dar -c 'DAR_ROOT=/var/lib/dar ${self.packages.${system}.dar}/bin/dar-operator apps-list'")
+            machine.succeed("systemctl start dar.service")
+            machine.wait_until_succeeds("curl -sf http://127.0.0.1:4311/api/v1/auth/status", timeout=90)
+            status_after = json.loads(machine.succeed("curl -sf http://127.0.0.1:4311/api/v1/auth/status"))
+            assert status_after == {"initialized": False}, f"unexpected auth status after restart: {status_after}"
+          '';
+        };
       });
     };
 }

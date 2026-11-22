@@ -3,20 +3,40 @@ on: [push, pull_request, workflow_dispatch]
 jobs:
   acceptance:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
-      - run: nix develop --command npm ci --prefix next
-      - run: nix develop --command npm --prefix next run verify
+      - run: nix develop --command npm ci
+      - run: nix develop --command npm run build:sdk
+      - run: nix develop --command npm run verify
   package:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
-      - run: nix build .#dar .#checks.x86_64-linux.module-evaluation --no-link -L
-      - run: nix develop --command npm ci --prefix next
+      - run: nix build .#dar .#prayer-times .#chat-bridge .#checks.x86_64-linux.module-evaluation --no-link -L
       - run: |
+          set -euo pipefail
           dar_package=$(nix build .#dar --no-link --print-out-paths)
-          nix develop --command node next/scripts/verify-package.mjs "$dar_package/bin/dar"
+          root=$(mktemp -d)
+          trap '[[ -n "${pid:-}" ]] && kill -TERM "$pid" 2>/dev/null && wait "$pid" 2>/dev/null || true; rm -rf "$root"' EXIT
+          DAR_ROOT="$root" DAR_PORT=14311 DAR_DATABASE_PORT=14310 DAR_DATABASE_NAME=dar-ci \
+            "$dar_package/bin/dar" --development &
+          pid=$!
+          for _ in $(seq 1 300); do
+            kill -0 "$pid"
+            if curl -sf http://127.0.0.1:14311/api/v1/auth/status | grep -q '"initialized":false'; then break; fi
+            sleep 0.1
+          done
+          curl -sf http://127.0.0.1:14311/api/v1/auth/status | grep -q '"initialized":false'
+          curl -sf http://127.0.0.1:14311/ | grep -q '/rust/start\.'
+          curl -sf http://127.0.0.1:14311/sdk.js | grep -q 'export \* from'
+          DAR_ROOT="$root" DAR_DATABASE_URL=http://127.0.0.1:14310 DAR_DATABASE_NAME=dar-ci \
+            DAR_DATABASE_TOKEN_FILE="$root/secrets/database-token" \
+            "$dar_package/bin/dar-operator" reconcile-storage
+          kill -TERM "$pid"
+          wait "$pid"
+          pid=""
+          DAR_ROOT="$root" "$dar_package/bin/dar-operator" apps-list

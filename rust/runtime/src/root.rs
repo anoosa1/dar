@@ -10,7 +10,7 @@ fn other(message: &str) -> io::Error {
     io::Error::other(message.to_owned())
 }
 
-fn sync_directory(directory: &Path) -> io::Result<()> {
+pub(crate) fn sync_directory(directory: &Path) -> io::Result<()> {
     File::open(directory)?.sync_all()
 }
 
@@ -74,7 +74,7 @@ pub fn write_durable_file(filename: &Path, content: &[u8]) -> io::Result<()> {
     }
 }
 
-const fn libc_nofollow() -> i32 {
+pub(crate) const fn libc_nofollow() -> i32 {
     0o400000 // O_NOFOLLOW on Linux
 }
 

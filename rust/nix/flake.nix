@@ -1,5 +1,5 @@
 {
-  description = "Dar Rust prototypes (not part of the Dar package yet)";
+  description = "Dar Rust toolchain dev shell";
   # Kept in its own directory: `nix develop path:rust/nix` copies only this folder to the store, not the build outputs.
   # Same pin as the root flake.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/624af665418d3c65d544145b4d34ad696439570e";

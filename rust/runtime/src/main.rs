@@ -27,6 +27,7 @@ mod net;
 mod digests;
 mod oidc;
 mod oidc_store;
+mod operator;
 mod identity_http;
 mod photos;
 mod scim_model;
@@ -98,6 +99,9 @@ async fn shutdown() {
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(code) = command(&args) {
+        std::process::exit(code);
+    }
+    if let Some(code) = operator::run(&args).await {
         std::process::exit(code);
     }
     let host = optional("DAR_HOST").unwrap_or_else(|| "127.0.0.1".into());

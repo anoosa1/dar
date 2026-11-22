@@ -551,3 +551,38 @@ pub fn start_loop(runtime: crate::http::Shared) {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::split_subscription;
+
+    fn feed() -> String {
+        [
+            "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Test//EN",
+            "BEGIN:VTIMEZONE", "TZID:Europe/Berlin", "BEGIN:STANDARD", "DTSTART:19701025T030000", "TZOFFSETFROM:+0200", "TZOFFSETTO:+0100", "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU", "END:STANDARD", "END:VTIMEZONE",
+            "BEGIN:VEVENT", "UID:offsite@test", "DTSTAMP:20261101T000000Z", "DTSTART;VALUE=DATE:20261117", "DTEND;VALUE=DATE:20261118", "SUMMARY:Company offsite", "END:VEVENT",
+            "BEGIN:VEVENT", "UID:standup@test", "DTSTAMP:20261101T000000Z", "DTSTART;TZID=Europe/Berlin:20261116T100000", "DTEND;TZID=Europe/Berlin:20261116T103000", "RRULE:FREQ=DAILY;COUNT=3", "SUMMARY:Standup", "END:VEVENT",
+            "BEGIN:VEVENT", "UID:standup@test", "DTSTAMP:20261101T000000Z", "RECURRENCE-ID;TZID=Europe/Berlin:20261117T100000", "DTSTART;TZID=Europe/Berlin:20261117T110000", "DTEND;TZID=Europe/Berlin:20261117T113000", "SUMMARY:Standup (moved)", "END:VEVENT",
+            "BEGIN:VEVENT", "DTSTAMP:20261101T000000Z", "DTSTART:20261118T090000Z", "SUMMARY:No UID", "END:VEVENT",
+            "BEGIN:VEVENT", "UID:retro@test", "DTSTAMP:20261101T000000Z", "DTSTART:20261118T170000Z", "DTEND:20261118T180000Z", "SUMMARY:Retro", "END:VEVENT",
+            "END:VCALENDAR", "",
+        ]
+        .join("\r\n")
+    }
+
+    /// Subscription feeds split by UID, keeping overrides with their series and the zones they use.
+    #[test]
+    fn subscriptions_split_by_uid() {
+        let (items, skipped) = split_subscription(&feed()).expect("a calendar");
+        let mut uids: Vec<&str> = items.iter().map(|i| i["uid"].as_str().unwrap_or_default()).collect();
+        uids.sort();
+        assert_eq!(uids, ["offsite@test", "retro@test", "standup@test"]);
+        assert_eq!(skipped, 1);
+        let standup = items.iter().find(|i| i["uid"] == "standup@test").expect("standup");
+        let content = standup["content"].as_str().unwrap_or_default();
+        assert!(content.contains("RECURRENCE-ID") && content.contains("BEGIN:VTIMEZONE"));
+        let href = standup["href"].as_str().unwrap_or_default();
+        assert!(href.len() == 44 && href.ends_with(".ics") && href[..40].bytes().all(|b| b.is_ascii_hexdigit()));
+        assert!(split_subscription("<html>not a calendar</html>").unwrap_err().message.contains("iCalendar"));
+    }
+}

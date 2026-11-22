@@ -843,7 +843,7 @@ async fn api(r: Api<'_>, body: Body) -> Result<Response> {
                 return Err(AppError::new("conflict", 409));
             }
             let size = upload["size"].as_f64().unwrap_or(0.0) as u64;
-            let digest = runtime.blobs.receive(body.into_data_stream(), size).await?;
+            let digest = runtime.blobs.receive_named(body.into_data_stream(), size, Some(id)).await?;
             db.call("service_finish_upload", json!([session_id, id, digest, 0])).await?;
             return ok(json!({ "id": upload["fileId"] }));
         }

@@ -1,24 +1,24 @@
-// Runs Dar's acceptance suite (next/test) against the Rust stack: SpacetimeDB with the Rust
-// module, the Rust runtime and the Rust client, started with the same environment as
-// next/scripts/verify.mjs gives the TypeScript stack, on a throwaway root and ports.
-// Tests run with DAR_TEST_STACK=rust, so isolated instances (next/test/instance.ts) start the
-// Rust runtime too. Unit tests of TypeScript functions are not run here; the Rust crates
-// mirror them. Every suite runs even after a failure, and a summary closes the run.
+// Runs Dar's acceptance suite (test/) against the stack: SpacetimeDB with the Rust module, the
+// Rust runtime and the Rust client, on a throwaway root and ports. Isolated instances
+// (test/instance.ts) start the same runtime. Every suite runs even after a failure, and a
+// summary closes the run. Unit tests live with the crates (cargo test).
 //
 // Usage (from Dar's root dev shell): node rust/verify.mjs [--only <substring>...] [--skip-build]
 // The database and runtime log to database.log and runtime.log in the run's root.
 import {spawn, spawnSync} from "node:child_process";
 import {mkdtemp, mkdir, readFile, writeFile, chmod} from "node:fs/promises";
-import {existsSync, openSync, readFileSync, closeSync} from "node:fs";
+import {existsSync, openSync, readFileSync, closeSync, mkdtempSync} from "node:fs";
 import {tmpdir} from "node:os";
 import net from "node:net";
 import path from "node:path";
 import {randomBytes} from "node:crypto";
 
-const rust = path.resolve(import.meta.dirname), dar = path.dirname(rust), next = path.join(dar, "next");
+const rust = path.resolve(import.meta.dirname), dar = path.dirname(rust);
 const args = process.argv.slice(2), only = args.flatMap((value, index) => args[index - 1] === "--only" ? [value] : []);
 const nixShell = (command) => spawnSync("nix", ["develop", `path:${rust}/nix`, "-c", "bash", "-c", command], {stdio: "inherit"});
 if (!args.includes("--skip-build")) {
+  // The installed-app SDK bundle goes into the client's dist.
+  if (spawnSync(process.execPath, ["sdk/build-bundle.mjs"], {cwd: dar, stdio: "inherit"}).status !== 0) throw new Error("The app SDK bundle did not build.");
   const built = nixShell(`set -e
     cd '${rust}/module' && ./patch-macro.sh && cargo build -q --release --target wasm32-unknown-unknown
     cd '${rust}/client' && ./generate.sh >/dev/null && ./build.sh --release >/dev/null
@@ -26,9 +26,12 @@ if (!args.includes("--skip-build")) {
   if (built.status !== 0) throw new Error("The Rust stack did not build.");
 }
 const module = path.join(rust, "module/target/wasm32-unknown-unknown/release/dar_module.wasm"), runtimeBin = path.join(rust, "target/release/dar-runtime"), client = path.join(rust, "client/dist");
+// The tests' SpacetimeDB TypeScript bindings, generated from the module they run against.
+const bindings = spawnSync(process.env.DAR_SPACETIME_BIN ?? "spacetime", ["--root-dir", mkdtempSync(path.join(tmpdir(), "dar-generate-")), "generate", "--lang", "typescript", "--bin-path", module, "--out-dir", path.join(dar, "test/module_bindings"), "--import-extension", "ts", "--yes", "--no-config"], {encoding: "utf8"});
+if (bindings.status !== 0) throw new Error(`The test bindings were not generated.\n${bindings.stdout}${bindings.stderr}`);
 
 const root = await mkdtemp(path.join(tmpdir(), "dar-rust-acceptance-"));
-const appBuild = spawnSync(process.execPath, ["sdk/build.mjs", "../apps/prayer-times"], {cwd: next, stdio: "inherit"});
+const appBuild = spawnSync(process.execPath, ["sdk/build.mjs", "apps/prayer-times"], {cwd: dar, stdio: "inherit"});
 if (appBuild.status !== 0) throw new Error("Example app build failed.");
 const installed = spawnSync(runtimeBin, ["apps-install", root, path.join(dar, "apps/prayer-times/dist")], {stdio: "inherit"});
 if (installed.status !== 0) throw new Error("The example app was not installed.");
@@ -44,13 +47,13 @@ const chromium = process.env.DAR_CHROMIUM ?? process.env.PATH.split(path.delimit
 if (!chromium) throw new Error("Chromium is required. Use Dar's root Nix shell or set DAR_CHROMIUM.");
 const chatControl = path.join(root, "chat-control"), chatBridge = path.join(chatControl, "bridge.sh");
 await mkdir(chatControl, {recursive: true, mode: 0o700});
-await writeFile(chatBridge, `#!/bin/sh\nDAR_FAKE_CHAT_CONTROL=${JSON.stringify(chatControl)} exec node ${JSON.stringify(path.join(next, "test/fixtures/fake-chat-bridge.mjs"))}\n`); await chmod(chatBridge, 0o700);
+await writeFile(chatBridge, `#!/bin/sh\nDAR_FAKE_CHAT_CONTROL=${JSON.stringify(chatControl)} exec node ${JSON.stringify(path.join(dar, "test/fixtures/fake-chat-bridge.mjs"))}\n`); await chmod(chatBridge, 0o700);
 const origin = `http://127.0.0.1:${port}`, databaseUrl = `http://127.0.0.1:${databasePort}`, cliRoot = path.join(root, "cli");
 const environment = {...process.env, DAR_ROOT: root, DAR_CHAT_BRIDGE: chatBridge, DAR_CHAT_CONTROL: chatControl, DAR_TEST_ROOT: root, DAR_PORT: String(port), DAR_DATABASE_PORT: String(databasePort),
   DAR_INTEGRATION_ORIGIN: origin, DAR_ORIGIN: origin, DAR_DATABASE_URL: databaseUrl, DAR_DATABASE_NAME: "dar-acceptance", DAR_ISSUER: `${origin}/auth/issuer`, DAR_DEVELOPMENT: "1",
   DAR_SPACETIME_BIN: process.env.DAR_SPACETIME_BIN ?? "spacetime", DAR_SPACETIME_CLI_ROOT: cliRoot,
   DAR_DATABASE_TOKEN_FILE: path.join(root, "secrets/database-token"), DAR_BOOTSTRAP_TOKEN_FILE: path.join(root, "secrets/bootstrap-token"), DAR_CHROMIUM: chromium,
-  DAR_TEST_STACK: "rust", DAR_RUST_MODULE: module, DAR_RUST_RUNTIME: runtimeBin, DAR_RUST_CLIENT: client, DAR_CLIENT_DIST: client};
+  DAR_RUST_MODULE: module, DAR_RUST_RUNTIME: runtimeBin, DAR_RUST_CLIENT: client, DAR_CLIENT_DIST: client};
 await mkdir(path.join(root, "secrets"), {recursive: true, mode: 0o700}); await mkdir(path.join(root, "database"), {recursive: true, mode: 0o700});
 await writeFile(environment.DAR_BOOTSTRAP_TOKEN_FILE, randomBytes(32).toString("base64url"), {mode: 0o600});
 
@@ -59,7 +62,7 @@ const children = [];
 // process from reading, and a service blocked on a full pipe stalls every later suite.
 function start(executable, argv, name) {
   const file = path.join(root, `${name}.log`), fd = openSync(file, "a", 0o600);
-  const child = spawn(executable, argv, {cwd: next, env: environment, stdio: ["ignore", fd, fd]});
+  const child = spawn(executable, argv, {cwd: dar, env: environment, stdio: ["ignore", fd, fd]});
   closeSync(fd);
   children.push(child); child.output = () => { try { return readFileSync(file, "utf8").slice(-16_000); } catch { return ""; } }; return child;
 }
@@ -76,7 +79,7 @@ const results = [];
 function run(argv, timeout = 300_000) {
   if (only.length && !only.some(pattern => argv.join(" ").includes(pattern))) return;
   const started = Date.now();
-  const result = spawnSync(process.execPath, argv, {cwd: next, env: environment, stdio: "inherit", timeout});
+  const result = spawnSync(process.execPath, argv, {cwd: dar, env: environment, stdio: "inherit", timeout});
   const ok = !result.error && result.status === 0;
   results.push({name: argv.filter(value => !value.startsWith("--")).join(" "), ok, seconds: Math.round((Date.now() - started) / 1000), reason: result.error?.message ?? (result.signal ? `signal ${result.signal}` : ok ? "" : `exit ${result.status}`)});
 }
@@ -92,9 +95,14 @@ try {
   await writeFile(path.join(root, "service-pids.json"), JSON.stringify({database: database.pid, runtime: runtime.pid}), {mode: 0o600});
   await waitFor(`${origin}/api/v1/auth/status`, runtime);
 
-  // The same order as next/scripts/verify.mjs: setup races first, the login-failure budget and restart last.
+  // Setup races first; the login-failure budget and restart last.
   const t = (...files) => ["--test", "--test-concurrency=1", ...files.map(file => `test/${file}`)];
   run(t("auth.integration.test.ts"));
+  // The chat bridge's own tests (fake Discord servers; never a real account).
+  if (!only.length || only.some(pattern => "bridge go test".includes(pattern))) {
+    const started = Date.now(), go = spawnSync("go", ["test", "./..."], {cwd: path.join(dar, "bridge"), env: {...process.env, CGO_ENABLED: "0", GOTOOLCHAIN: "local", GOFLAGS: "-mod=readonly"}, stdio: "inherit", timeout: 600_000});
+    results.push({name: "bridge go test", ok: go.status === 0, seconds: Math.round((Date.now() - started) / 1000), reason: go.error?.message ?? (go.status === 0 ? "" : `exit ${go.status}`)});
+  }
   run(t("news.integration.test.ts"));
   run(t("chat.integration.test.ts", "chat-discord.integration.test.ts")); run(["test/chat-browser.mjs"]);
   run(t("books.integration.test.ts")); run(["test/books-browser.mjs"]); run(["test/git-browser.mjs"]); run(["test/git-tracker-browser.mjs"]);

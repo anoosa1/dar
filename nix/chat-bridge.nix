@@ -1,9 +1,9 @@
 { lib, buildGoModule }:
-# The Chat bridge (next/bridge): whatsmeow behind a stdio protocol for the Node runtime.
+# The Chat bridge (bridge/): whatsmeow behind a stdio protocol for the Dar runtime.
 buildGoModule {
   pname = "dar-chat-bridge";
   version = "0.1.0";
-  src = lib.cleanSourceWith { src = ../next/bridge; filter = path: type: !(lib.hasSuffix "_test.go" (baseNameOf path)); };
+  src = lib.cleanSourceWith { src = ../bridge; filter = path: type: !(lib.hasSuffix "_test.go" (baseNameOf path)); };
   vendorHash = "sha256-0Zl7X+mCztoG1ZFXBcKkLJygGHLnpmlsjU/nAyatocw=";
   env.CGO_ENABLED = "0";
   ldflags = [ "-s" "-w" ];

@@ -200,6 +200,8 @@ mod tests {
 
     #[test]
     fn summaries() {
+        assert_eq!(summarize("Plan.md", "---\ntitle: Weekly plan\ntags: [a]\n---\n# Ignored heading\n\n- [ ] **Buy** milk\n> [Link](https://x) and [[Page|alias]]"), ("Weekly plan".into(), "Buy milk Link and alias".into()));
+        assert_eq!(summarize("Loose thoughts.md", "Just text, no heading."), ("Loose thoughts".into(), "Just text, no heading.".into()));
         assert_eq!(summarize("Plan.md", "---\ntitle: \"Trip\"\n---\nPack [[Bags|bags]] and [tickets](x).\n"), ("Trip".into(), "Pack bags and tickets.".into()));
         assert_eq!(summarize("Plan.md", "# Groceries\n- [ ] milk\n- [x] **bread**\n"), ("Groceries".into(), "milk bread".into()));
         assert_eq!(summarize("Plan.md", "Just text"), ("Plan".into(), "Just text".into()));

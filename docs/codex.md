@@ -73,11 +73,7 @@ Bubblewrap needs `AF_NETLINK` in `RestrictAddressFamilies` and
 `ProtectKernelTunables=false` on Agent-enabled units (otherwise loopback setup or
 mounting `/proc` fails). The module sets both only when Agent is enabled;
 `ProtectSystem=strict`, `ProtectHome`, private devices and Codex's `/proc`/`/sys`
-denies remain. Custom units need the same. Check a CLI without a login or model:
-
-```sh
-nix develop -c node next/test/codex-sandbox-systemd.mjs /absolute/path/to/codex
-```
+denies remain. Custom units need the same.
 
 Enabling Agent also sets service-wide memory and task limits. Extra project tools
 can be added through `systemd.services.dar.path`; commands have no network.
@@ -95,6 +91,6 @@ can be added through `systemd.services.dar.path`; commands have no network.
   copies; apply or export changes before restoring elsewhere.
 - No parallel agents, remote runners, scheduled runs or automatic publishing.
 
-Tests use an isolated CLI fixture: `nix develop -c node next/scripts/verify.mjs --agent`.
+Tests use an isolated CLI fixture: `nix develop -c node rust/verify.mjs --only agent --only codex --only claude`.
 CLI references: [non-interactive use](https://developers.openai.com/codex/noninteractive)
 and [configuration](https://developers.openai.com/codex/config-reference).

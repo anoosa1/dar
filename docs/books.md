@@ -9,7 +9,7 @@ Apps; data is kept). Layout follows [mock A](spacetimedb/books-mocks.html) (Nove
 - **Layout:** mock A (home shelves, details in the right sheet, the reader in the middle
   sheet with contents and bookmarks on the right).
 - **PDF:** pdf.js (`pdfjs-dist`, bundled into the client; its optional Node canvas is
-  replaced by an empty placeholder in `next/vendor/no-native-canvas`). Files' PDF preview
+  replaced by an empty placeholder in `vendor/no-native-canvas`). Files' PDF preview
   uses the same viewer, since browsers' own viewers do not run in Dar's sandboxed previews.
 - **EPUB:** Dar's own reader, no EPUB library.
 - **Comics:** CBZ is read directly; CBR, CB7 and CBT use `bsdtar` (libarchive) from the
