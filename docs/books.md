@@ -25,10 +25,11 @@ Apps; data is kept). Layout follows [mock A](spacetimedb/books-mocks.html) (Nove
   sharing, deleted files, DAV and backups.
 - **Metadata** (title, authors, series, language, publisher, date, description, subjects,
   pages, cover, reading direction) comes from the EPUB package document, `ComicInfo.xml`
-  or the PDF info (via libvips), else the file name. Results and WebP covers are cached in
-  `book-cache/` under the storage root, keyed by immutable blob ID; the cache is not backed
-  up and can be deleted. A new book shows its file name until it has been read (a few
-  seconds); the library asks again while any are pending.
+  or the PDF info (via `dar-pdf` in an isolated child process, which also renders page 1 for
+  the cover before `libvips` encodes the WebP), else the file name. Results and WebP covers
+  are cached in `book-cache/` under the storage root, keyed by immutable blob ID; the cache
+  is not backed up and can be deleted. A new book shows its file name until it has been read
+  (a few seconds); the library asks again while any are pending.
 - **EPUB reader:** each chapter loads from the archive into a same-origin iframe whose
   document policy is `script-src 'none'` (no forms, popups or other origins). The reader
   styles it (theme, font, size, line spacing) and in Pages layout splits it into CSS columns

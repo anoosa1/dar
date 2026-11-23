@@ -3,8 +3,10 @@
 
 mod formats;
 mod http;
+mod pdf;
 mod runtime;
 mod zip;
 
 pub use http::handle_http;
+pub use pdf::command;
 pub use runtime::BooksRuntime;

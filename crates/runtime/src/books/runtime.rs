@@ -30,6 +30,7 @@ use super::formats::{
     BookFormat, BookMeta, BookTocEntry, SpineItem, book_format, book_position, comic_pages, empty_meta,
     read_comic_info, read_epub, truncate_chars,
 };
+use super::pdf::{PDF_COVER_MAX_PX, PdfInfoOutcome, configure_child_limits, parse_info_output};
 use super::zip::{DEFAULT_MAX_ENTRIES, Zip, ZipError};
 
 #[cfg(target_arch = "aarch64")]
@@ -143,14 +144,8 @@ fn tool_path(name: &str) -> String {
         .unwrap_or_else(|| name.to_owned())
 }
 
-async fn run_tool(name: &str, args: &[String], timeout: Duration, max_buffer: usize) -> RunOutput {
-    let mut cmd = Command::new(tool_path(name));
-    cmd.args(args)
-        .env_clear()
-        .env("PATH", std::env::var("PATH").unwrap_or_default())
-        .env("HOME", "/nonexistent")
-        .env("LC_ALL", "C.UTF-8")
-        .stdin(Stdio::null())
+async fn run_command(mut cmd: Command, timeout: Duration, max_buffer: usize) -> RunOutput {
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
@@ -180,6 +175,29 @@ async fn run_tool(name: &str, args: &[String], timeout: Duration, max_buffer: us
         Ok(out) => out,
         Err(_) => RunOutput { stdout: String::new(), ok: false },
     }
+}
+
+async fn run_tool(name: &str, args: &[String], timeout: Duration, max_buffer: usize) -> RunOutput {
+    let mut cmd = Command::new(tool_path(name));
+    cmd.args(args)
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("HOME", "/nonexistent")
+        .env("LC_ALL", "C.UTF-8");
+    run_command(cmd, timeout, max_buffer).await
+}
+
+async fn run_pdf_helper(args: &[String], timeout: Duration, max_buffer: usize) -> RunOutput {
+    let Ok(exe) = std::env::current_exe() else {
+        return RunOutput { stdout: String::new(), ok: false };
+    };
+    let mut cmd = Command::new(exe);
+    cmd.args(args)
+        .env_clear()
+        .env("HOME", "/nonexistent")
+        .env("LC_ALL", "C.UTF-8");
+    configure_child_limits(&mut cmd);
+    run_command(cmd, timeout, max_buffer).await
 }
 
 async fn exists_nonempty(path: &Path) -> bool {
@@ -537,43 +555,20 @@ impl BooksRuntime {
         };
 
         if format == BookFormat::Pdf {
-            let mut meta = empty_meta(title.clone());
-            let header = {
+            let output = {
                 let Ok(_permit) = self.inner.slots.acquire().await else {
+                    let mut meta = empty_meta(title);
                     meta.error = "damaged".into();
                     return Info { meta, epub: None, pages: None };
                 };
-                run_tool(
-                    "vipsheader",
-                    &["-a".into(), source.to_string_lossy().into_owned()],
+                run_pdf_helper(
+                    &["pdf-info".into(), source.to_string_lossy().into_owned()],
                     Duration::from_secs(60),
                     4 * 1024 * 1024,
                 )
                 .await
             };
-            if !header.ok {
-                meta.error = "damaged".into();
-                return Info { meta, epub: None, pages: None };
-            }
-            let field = |key: &str| -> &str {
-                let prefix = format!("{key}: ");
-                header.stdout.lines().find_map(|line| line.strip_prefix(&prefix)).map(str::trim).unwrap_or("")
-            };
-            meta.pages = field("pdf-n_pages").parse::<u64>().unwrap_or(0);
-            let pdf_title = truncate_chars(field("pdf-title"), 300);
-            meta.title = if pdf_title.is_empty() { title } else { pdf_title };
-            let author = field("pdf-author");
-            if !author.is_empty() {
-                static AUTHOR_SPLIT: OnceLock<Regex> = OnceLock::new();
-                let split = AUTHOR_SPLIT.get_or_init(|| Regex::new(r"\s*[;&]\s*|\s+and\s+").expect("regex"));
-                meta.authors = split
-                    .split(author)
-                    .filter(|a| !a.is_empty())
-                    .take(10)
-                    .map(|a| truncate_chars(a, 200))
-                    .collect();
-            }
-            meta.cover = true;
+            let meta = apply_pdf_info(parse_info_output(output.ok, &output.stdout), title);
             return Info { meta, epub: None, pages: None };
         }
 
@@ -776,7 +771,25 @@ impl BooksRuntime {
         let result = async {
             let input = if format == BookFormat::Pdf {
                 let source = self.blob_path(blob_id).ok()?;
-                format!("{}[page=0]", source.to_string_lossy())
+                let ppm = work.join("cover.ppm");
+                let rendered = {
+                    let _permit = self.inner.slots.acquire().await.ok()?;
+                    run_pdf_helper(
+                        &[
+                            "pdf-cover".into(),
+                            source.to_string_lossy().into_owned(),
+                            ppm.to_string_lossy().into_owned(),
+                            PDF_COVER_MAX_PX.to_string(),
+                        ],
+                        Duration::from_secs(120),
+                        4 * 1024 * 1024,
+                    )
+                    .await
+                };
+                if !rendered.ok || !exists_nonempty(&ppm).await {
+                    return None;
+                }
+                ppm.to_string_lossy().into_owned()
             } else {
                 let (bytes, ext) = if format == BookFormat::Epub
                     && let Some(cover_entry) = book.epub.as_ref().and_then(|e| e.cover.as_deref())
@@ -938,5 +951,82 @@ impl BooksRuntime {
             "truncated": listing.truncated,
             "indexing": indexing,
         }))
+    }
+}
+
+fn apply_pdf_info(outcome: PdfInfoOutcome, fallback_title: String) -> BookMeta {
+    let mut meta = empty_meta(fallback_title.clone());
+    match outcome {
+        PdfInfoOutcome::Ok(info) => {
+            meta.pages = info.pages;
+            let pdf_title = truncate_chars(info.title.trim(), 300);
+            meta.title = if pdf_title.is_empty() { fallback_title } else { pdf_title };
+            let author = info.author.trim();
+            if !author.is_empty() {
+                static AUTHOR_SPLIT: OnceLock<Regex> = OnceLock::new();
+                let split = AUTHOR_SPLIT.get_or_init(|| Regex::new(r"\s*[;&]\s*|\s+and\s+").expect("regex"));
+                meta.authors = split
+                    .split(author)
+                    .map(str::trim)
+                    .filter(|a| !a.is_empty())
+                    .take(10)
+                    .map(|a| truncate_chars(a, 200))
+                    .collect();
+            }
+            meta.cover = meta.pages > 0;
+        }
+        PdfInfoOutcome::Encrypted => {
+            meta.error = "drm".into();
+        }
+        PdfInfoOutcome::Damaged => {
+            meta.error = "damaged".into();
+        }
+    }
+    meta
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::pdf::PdfInfo;
+    use super::*;
+
+    #[test]
+    fn apply_pdf_info_maps_metadata_and_fallback_title() {
+        let meta = apply_pdf_info(
+            PdfInfoOutcome::Ok(PdfInfo {
+                pages: 12,
+                title: "  A Fixture Paper  ".into(),
+                author: "Grace Columns; Ada Page & Alan Ink and Ada Two".into(),
+            }),
+            "paper".into(),
+        );
+        assert_eq!(meta.pages, 12);
+        assert_eq!(meta.title, "A Fixture Paper");
+        assert_eq!(meta.authors, vec!["Grace Columns", "Ada Page", "Alan Ink", "Ada Two"]);
+        assert!(meta.cover);
+        assert!(meta.error.is_empty());
+
+        let untitled = apply_pdf_info(
+            PdfInfoOutcome::Ok(PdfInfo { pages: 0, title: "   ".into(), author: String::new() }),
+            "My Book".into(),
+        );
+        assert_eq!(untitled.title, "My Book");
+        assert!(!untitled.cover);
+        assert!(untitled.error.is_empty());
+    }
+
+    #[test]
+    fn apply_pdf_info_maps_encrypted_to_drm_and_damaged_to_damaged() {
+        let drm = apply_pdf_info(PdfInfoOutcome::Encrypted, "Secret".into());
+        assert_eq!(drm.error, "drm");
+        assert_eq!(drm.title, "Secret");
+        assert!(!drm.cover);
+        assert_eq!(drm.pages, 0);
+
+        let damaged = apply_pdf_info(PdfInfoOutcome::Damaged, "Broken".into());
+        assert_eq!(damaged.error, "damaged");
+        assert_eq!(damaged.title, "Broken");
+        assert!(!damaged.cover);
+        assert_eq!(damaged.pages, 0);
     }
 }

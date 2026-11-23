@@ -66,8 +66,11 @@ fn fail(message: impl std::fmt::Display) -> ! {
     std::process::exit(1);
 }
 
-/// The operator's offline commands.
+/// The operator's offline commands and internal child-process helpers.
 fn command(args: &[String]) -> Option<i32> {
+    if let Some(code) = books::command(args) {
+        return Some(code);
+    }
     let name = args.first()?;
     if !name.starts_with("apps-") {
         return None;
@@ -96,12 +99,19 @@ async fn shutdown() {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(code) = command(&args) {
         std::process::exit(code);
     }
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime")
+        .block_on(async_main(args));
+}
+
+async fn async_main(args: Vec<String>) {
     if let Some(code) = operator::run(&args).await {
         std::process::exit(code);
     }

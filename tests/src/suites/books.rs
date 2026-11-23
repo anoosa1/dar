@@ -22,12 +22,37 @@ async fn books_json(session: &Session, route: &str) -> Result<Value> {
 async fn wait_library(session: &Session) -> Result<Value> {
     for _ in 0..40 {
         let value = books_json(session, "/library").await?;
-        if value["indexing"] != json!(true) {
+        if value["indexing"] != json!(true) && value["indexing"].as_u64().unwrap_or(0) == 0 {
             return Ok(value);
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     bail!("Books never finished reading the library.")
+}
+
+fn encrypted_pdf() -> Vec<u8> {
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+        "<< /Filter /Standard /V 1 /R 2 /O <000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F> /U <1111111111111111111111111111111111111111111111111111111111111111> /P -4 >>",
+    ];
+    let mut body = String::from("%PDF-1.4\n");
+    let mut offsets = Vec::with_capacity(objects.len());
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(body.len());
+        body.push_str(&format!("{} 0 obj\n{object}\nendobj\n", index + 1));
+    }
+    let xref = body.len();
+    body.push_str(&format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1));
+    for offset in offsets {
+        body.push_str(&format!("{offset:010} 00000 n \n"));
+    }
+    body.push_str(&format!(
+        "trailer\n<< /Size {} /Root 1 0 R /Encrypt 4 0 R /ID [<0123456789ABCDEF0123456789ABCDEF> <0123456789ABCDEF0123456789ABCDEF>] >>\nstartxref\n{xref}\n%%EOF\n",
+        objects.len() + 1
+    ));
+    body.into_bytes()
 }
 
 pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
@@ -119,12 +144,16 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
     assert_eq!(paper_book["pages"], 2);
     assert_eq!(paper_book["title"], "A Fixture Paper");
     assert_eq!(paper_book["authors"], json!(["Grace Columns"]));
+    assert_eq!(paper_book["cover"], json!(true));
+    assert_eq!(paper_book["error"], "");
 
     for id in [&voyage.file_id, &comic.file_id, &paper.file_id] {
         let cover = books_get(&session, &format!("/{id}/cover")).await?;
         assert_eq!(cover.status, 200, "cover for {id}");
         assert_eq!(cover.header("content-type"), Some("image/webp"));
         assert!(cover.body.len() > 20);
+        assert_eq!(&cover.body[..4], b"RIFF", "webp RIFF header for {id}");
+        assert_eq!(&cover.body[8..12], b"WEBP", "webp WEBP signature for {id}");
     }
 
     // EPUB: manifest, chapters with a strict policy, no way out of the archive.
@@ -185,6 +214,23 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
     assert_eq!(books_get(&session, &format!("/{}/pages/0", paper.file_id)).await?.status, 404);
     assert_eq!(books_json(&session, &format!("/{}", comic.file_id)).await?["manifest"]["kind"], "comic");
     assert_eq!(books_json(&session, &format!("/{}", paper.file_id)).await?["manifest"]["kind"], "pdf");
+
+    // Damaged and password-protected PDFs are isolated in the child process and reported cleanly.
+    let damaged_pdf = upload_with(&session, "broken_file.pdf", "not a pdf", up_in(&root_id)).await?;
+    let protected_pdf = upload_with(&session, "locked_paper.pdf", encrypted_pdf(), up_in(&root_id)).await?;
+    let after_bad = wait_library(&session).await?;
+    let after_books = after_bad["books"].as_array().context("books array")?;
+    let damaged_entry = after_books.iter().find(|b| b["id"] == damaged_pdf.file_id.as_str()).context("broken_file.pdf")?;
+    assert_eq!(damaged_entry["title"], "broken file");
+    assert_eq!(damaged_entry["error"], "damaged");
+    assert_eq!(damaged_entry["cover"], json!(false));
+    assert_eq!(books_get(&session, &format!("/{}/cover", damaged_pdf.file_id)).await?.status, 404);
+
+    let protected_entry = after_books.iter().find(|b| b["id"] == protected_pdf.file_id.as_str()).context("locked_paper.pdf")?;
+    assert_eq!(protected_entry["title"], "locked paper");
+    assert_eq!(protected_entry["error"], "drm");
+    assert_eq!(protected_entry["cover"], json!(false));
+    assert_eq!(books_get(&session, &format!("/{}/cover", protected_pdf.file_id)).await?.status, 404);
 
     // Reading state: revisions, conflicts carry the newer state, lists.
     let put_state = |id: &str, body: Value| {
