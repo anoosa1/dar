@@ -11,7 +11,7 @@ pub mod runtime;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64_STD;
 
-pub use http::{handle_http, send_file};
+pub use http::handle_http;
 pub use immich::{IMMICH_BASE, handle_immich, immich_well_known};
 pub use immich_connector::ImmichConnector;
 pub use public::handle_public;

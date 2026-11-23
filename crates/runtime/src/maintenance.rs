@@ -83,6 +83,7 @@ impl Worker {
         }
     }
 
+    #[allow(dead_code)]
     pub fn close(&self) {
         self.stopped.store(true, Ordering::Relaxed);
         self.notify.notify_one();

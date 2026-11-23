@@ -3,7 +3,6 @@
 //! environment, time and output limits. Any tool may be missing: facts then fall back to
 //! the file's time and thumbnails fail.
 
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;

@@ -37,7 +37,6 @@ mod preferences;
 mod root;
 mod thumbnails;
 
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 

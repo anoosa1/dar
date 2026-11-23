@@ -39,14 +39,13 @@ let
     '';
   };
   npmSource = pkgs.runCommand "dar-npm-source" { } ''
-    mkdir -p $out/vendor
+    mkdir -p $out
     cp ${../package.json} $out/package.json
     cp ${../package-lock.json} $out/package-lock.json
-    cp -r ${../vendor/no-native-canvas} $out/vendor/no-native-canvas
   '';
   npmDeps = pkgs.fetchNpmDeps {
     name = "dar-npm-deps";
     src = npmSource;
-    hash = "sha256-Dy4YA0XP1u+k6TtpwMxM2uDXQoFIoON9gJHbvNtkUNw=";
+    hash = "sha256-ij8FtmX/md1enebzOIDExamStwKXyjFUa1oZit7s/Mk=";
   };
 in { inherit node npm nodeWithNpm spacetime npmDeps; }

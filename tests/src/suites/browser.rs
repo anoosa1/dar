@@ -132,6 +132,7 @@ pub async fn folder_upload(t: &Ctx) -> Result<()> {
     page.get_by_label("Username").fill("admin").await?;
     page.get_by_label("Password").fill(PASSWORD).await?;
     page.get_by_role("button", "Sign in").click().await?;
+    page.get_by_role("button", "New").wait_for().await?;
     page.wait_for_function("() => !document.body.textContent.includes('Connecting…')").await?;
     ui::open_menu_for(&page, &page.get_by_role("button", "New"), &page.get_by_role("menuitem", "Upload folder")).await?;
     page.get_by_role("menuitem", "Upload files").wait_for().await?;
@@ -169,10 +170,15 @@ pub async fn folder_upload(t: &Ctx) -> Result<()> {
     })
     .await?;
     page.get_by_role("button", &name).wait_for().await?;
+    let uploads = page.get_by_role("region", "Uploads");
+    uploads.get_by_text(&format!("{name}/Photos/a.txt")).wait_for().await?;
+    uploads.get_by_text(&format!("{name}/b.txt")).wait_for().await?;
 
     // The same folder again lands beside it under a new name.
     page.evaluate_with(drop, json!(name)).await?;
     eventually(std::time::Duration::from_secs(15), "second copy", || async { Ok(find(&children(String::new()).await?, &format!("{name} 2")).map(|_| ())) }).await?;
+    uploads.get_by_text(&format!("{name} 2/Photos/a.txt")).wait_for().await?;
+    uploads.get_by_text(&format!("{name} 2/b.txt")).wait_for().await?;
     page.screenshot(t.screenshot("files-folder-upload.png"), true).await?;
     let errors = failures.lock().unwrap().clone();
     assert!(errors.is_empty(), "page errors: {errors:?}");

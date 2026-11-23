@@ -113,6 +113,7 @@ pub async fn git(home: &Path, args: &[&str]) -> Result<Out> {
 pub async fn git_in(home: &Path, args: &[&str], input: &[u8]) -> Result<Out> {
     git_full(home, args, &[], input, false, Duration::from_secs(300)).await
 }
+#[allow(dead_code)]
 pub async fn git_may_fail(home: &Path, args: &[&str]) -> Result<Out> {
     git_full(home, args, &[], b"", true, Duration::from_secs(300)).await
 }

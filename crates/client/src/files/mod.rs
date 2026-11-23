@@ -916,18 +916,20 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     });
 
     // Each file goes to its own folder (a folder upload), else to the folder on screen.
-    let upload_into = move |files: Vec<(web_sys::File, Option<String>)>, replace: Option<FileEntry>| {
+    // The optional label is shown in the Uploads panel (for folder uploads, the path inside the uploaded folder).
+    let upload_into = move |files: Vec<(web_sys::File, Option<String>, Option<String>)>, replace: Option<FileEntry>| {
         let files = send_wrapper::SendWrapper::new(files);
         let csrf_token = csrf();
         spawn_local(async move {
-            for (file, target) in files.take() {
+            for (file, target, label) in files.take() {
                 // Files closed: the remaining uploads do not start.
                 let Some(current) = folder.try_get_untracked() else { break };
                 let here = target.unwrap_or(current);
                 let transfer = crate::random_uuid();
                 let controller = web_sys::AbortController::new().expect("abort controller");
                 RESERVATIONS.with(|r| r.borrow_mut().insert(transfer.clone(), controller.clone()));
-                transfers.update(|t| t.push(Transfer { id: transfer.clone(), name: file.name(), progress: 0.0, status: "uploading", message: String::new() }));
+                let display_name = label.unwrap_or_else(|| file.name());
+                transfers.update(|t| t.push(Transfer { id: transfer.clone(), name: display_name, progress: 0.0, status: "uploading", message: String::new() }));
                 let update = move |id: &str, f: &dyn Fn(&mut Transfer)| {
                     transfers.try_update(|t| {
                         if let Some(t) = t.iter_mut().find(|t| t.id == id) {
@@ -974,7 +976,7 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             }
         });
     };
-    let upload = move |files: Vec<web_sys::File>, replace: Option<FileEntry>| upload_into(files.into_iter().map(|f| (f, None)).collect(), replace);
+    let upload = move |files: Vec<web_sys::File>, replace: Option<FileEntry>| upload_into(files.into_iter().map(|f| (f, None, None)).collect(), replace);
     // A folder upload recreates the folder and its subfolders here, then uploads each file into
     // its folder. A top-level name already used here gets a number, as Files names are unique.
     let upload_folder = move |tree: folder_upload::Tree| {
@@ -987,19 +989,21 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             let Some(here) = folder.try_get_untracked() else { return };
             let mut taken: std::collections::HashSet<String> = visible.with_untracked(|v| v.iter().map(|e| e.name.to_lowercase()).collect());
             let mut ids: HashMap<String, String> = HashMap::from([(String::new(), here.clone())]);
+            let mut top_names: HashMap<String, String> = HashMap::new();
             for path in &tree.folders {
-                let (parent, name) = path.rsplit_once('/').map_or(("", path.as_str()), |(p, n)| (p, n));
+                let (parent, raw_name) = path.rsplit_once('/').map_or(("", path.as_str()), |(p, n)| (p, n));
                 let name = if parent.is_empty() {
-                    let mut unique = name.to_owned();
+                    let mut unique = raw_name.to_owned();
                     let mut n = 1;
                     while taken.contains(&unique.to_lowercase()) {
                         n += 1;
-                        unique = format!("{name} {n}");
+                        unique = format!("{raw_name} {n}");
                     }
                     taken.insert(unique.to_lowercase());
+                    top_names.insert(raw_name.to_owned(), unique.clone());
                     unique
                 } else {
-                    name.to_owned()
+                    raw_name.to_owned()
                 };
                 let Some(parent_id) = ids.get(parent).cloned() else { continue };
                 let id = crate::random_uuid();
@@ -1013,7 +1017,15 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 }
                 ids.insert(path.clone(), id);
             }
-            let files = tree.files.into_iter().map(|(file, dir)| { let target = ids.get(&dir).cloned(); (file, target) }).collect();
+            let files = tree
+                .files
+                .into_iter()
+                .map(|(file, dir)| {
+                    let target = ids.get(&dir).cloned();
+                    let label = folder_upload::display_path(&dir, &file.name(), &top_names);
+                    (file, target, Some(label))
+                })
+                .collect();
             upload_into(files, None);
         });
     };

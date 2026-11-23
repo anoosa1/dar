@@ -9,10 +9,9 @@ let
   };
 
   jsSource = runCommand "dar-js-assets-source" { } ''
-    mkdir -p $out/vendor
+    mkdir -p $out
     cp ${../package.json} $out/package.json
     cp ${../package-lock.json} $out/package-lock.json
-    cp -r ${../vendor/no-native-canvas} $out/vendor/no-native-canvas
     cp -r ${sdkSource} $out/sdk
     mkdir -p $out/crates/client
     cp -r ${../crates/client/editor} $out/crates/client/editor

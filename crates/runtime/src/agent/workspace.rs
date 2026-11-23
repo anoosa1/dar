@@ -432,6 +432,7 @@ pub struct PreparedWorkspace {
 }
 
 impl PreparedWorkspace {
+    #[allow(dead_code)]
     pub async fn validate(&self) -> Result<()> {
         let _ = scan(&self.workspace).await?;
         Ok(())

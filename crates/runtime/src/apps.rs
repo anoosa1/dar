@@ -39,6 +39,7 @@ pub struct Manifest {
 
 #[derive(Clone, Debug)]
 pub struct Package {
+    #[allow(dead_code)]
     pub root: PathBuf,
     pub manifest: Manifest,
     pub manifest_text: Vec<u8>,

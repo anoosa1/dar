@@ -2,11 +2,10 @@
 let
   appSource = lib.cleanSourceWith { src = ../apps/prayer-times; filter = path: type: !(builtins.elem (baseNameOf path) [ "dist" "node_modules" ]); };
   source = runCommand "dar-prayer-times-source" {} ''
-    mkdir -p $out/sdk $out/vendor
+    mkdir -p $out/sdk
     cp ${../package.json} $out/package.json
     cp ${../package-lock.json} $out/package-lock.json
     cp ${../sdk/build.mjs} $out/sdk/build.mjs
-    cp -r ${../vendor/no-native-canvas} $out/vendor/no-native-canvas
     cp -r ${appSource} $out/app
   '';
 in buildNpmPackage {

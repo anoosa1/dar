@@ -3,7 +3,6 @@
 //! KeyBox sealing for shared links and Immich API keys, and serialized link-password hashing.
 
 use std::collections::{HashMap, VecDeque};
-use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};

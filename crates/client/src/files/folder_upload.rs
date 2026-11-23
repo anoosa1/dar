@@ -106,12 +106,33 @@ pub async fn walk(entries: Vec<JsValue>) -> Result<Tree, String> {
     Ok(Tree { folders, files })
 }
 
+/// Path shown in the Uploads panel for a file in `dir`, substituting the created top-level folder
+/// name when a collision renamed it (e.g. `Trip` -> `Trip 2`).
+pub fn display_path(dir: &str, file_name: &str, top_names: &std::collections::HashMap<String, String>) -> String {
+    if dir.is_empty() {
+        return file_name.to_owned();
+    }
+    let (top, rest) = dir.split_once('/').map_or((dir, ""), |(t, r)| (t, r));
+    let top = top_names.get(top).map(String::as_str).unwrap_or(top);
+    if rest.is_empty() { format!("{top}/{file_name}") } else { format!("{top}/{rest}/{file_name}") }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::folders_for;
+    use super::{display_path, folders_for};
+    use std::collections::HashMap;
 
     #[test]
     fn parents_come_first() {
         assert_eq!(folders_for(["Trip/Photos/Day 1", "Trip", "Trip/Notes", ""]), ["Trip", "Trip/Photos", "Trip/Notes", "Trip/Photos/Day 1"]);
+    }
+
+    #[test]
+    fn display_path_uses_created_top_folder() {
+        let renamed = HashMap::from([("Trip".to_owned(), "Trip 2".to_owned())]);
+        assert_eq!(display_path("", "loose.txt", &renamed), "loose.txt");
+        assert_eq!(display_path("Trip", "b.txt", &renamed), "Trip 2/b.txt");
+        assert_eq!(display_path("Trip/Photos", "a.txt", &renamed), "Trip 2/Photos/a.txt");
+        assert_eq!(display_path("Other/Photos", "a.txt", &renamed), "Other/Photos/a.txt");
     }
 }

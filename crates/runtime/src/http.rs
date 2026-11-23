@@ -37,6 +37,7 @@ pub struct Runtime {
     pub bootstrap: String,
     pub oidc: dar_oidc::Provider,
     pub identity: Arc<crate::oidc::Oidc>,
+    #[allow(dead_code)]
     pub thumbnails: crate::thumbnails::Thumbnails,
     /// Sign-in and unlock attempts per peer or account: (count, window end in ms).
     attempts: Mutex<HashMap<String, (u32, f64)>>,

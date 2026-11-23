@@ -8,12 +8,14 @@ use std::time::Duration;
 use tokio::process::Command;
 use tokio::sync::Semaphore;
 
+#[allow(dead_code)]
 pub struct Thumbnails {
     cache: PathBuf,
     /// Image conversions are CPU-heavy; two run at once.
     slots: Semaphore,
 }
 
+#[allow(dead_code)]
 impl Thumbnails {
     pub fn new(root: &Path) -> Thumbnails {
         Thumbnails { cache: root.join("cache").join("thumbnails"), slots: Semaphore::new(2) }

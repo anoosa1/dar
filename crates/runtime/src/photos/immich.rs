@@ -5,7 +5,6 @@
 //! password with Photos access.
 
 use std::collections::{HashMap, HashSet};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
