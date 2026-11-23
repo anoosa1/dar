@@ -9,16 +9,17 @@ use std::sync::{Arc, Mutex};
 
 pub const SUITE: Suite = Suite { name: "books-browser", cases: &[case!(books_journey, 180)] };
 
-/// A two-page PDF with title, author and an outline pointing to both pages.
+/// A two-page PDF with title, author, an outline pointing to both pages and lines of text
+/// ('lighthouse' on both pages, for Find).
 fn pdf_with_outline() -> Vec<u8> {
     let stream = |text: &str| format!("<< /Length {} >>\nstream\n{text}\nendstream", text.len());
     let objects = [
         "<< /Type /Catalog /Pages 2 0 R /Outlines 9 0 R >>".to_owned(),
         "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>".to_owned(),
         "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Contents 4 0 R /Resources << /Font << /F1 7 0 R >> >> >>".to_owned(),
-        stream("BT /F1 24 Tf 40 340 Td (Page one) Tj ET"),
+        stream("BT /F1 24 Tf 40 340 Td (Page one) Tj ET BT /F1 12 Tf 40 300 Td (The lighthouse keeper) Tj 0 -16 Td (counted every wave.) Tj ET"),
         "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>".to_owned(),
-        stream("BT /F1 24 Tf 40 340 Td (Page two) Tj ET"),
+        stream("BT /F1 24 Tf 40 340 Td (Page two) Tj ET BT /F1 12 Tf 40 300 Td (A second lighthouse) Tj 0 -16 Td (stood across the bay.) Tj ET"),
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
         "<< /Title (A Fixture Paper) /Author (Grace Columns) >>".to_owned(),
         "<< /Type /Outlines /First 10 0 R /Last 11 0 R /Count 2 >>".to_owned(),
@@ -205,6 +206,55 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
         "drawn PDF canvas has non-zero pixel dimensions"
     );
     pdf_reader.get_by_text("Page 1 of 2").wait_for().await?;
+
+    // The text layer: the page's lines as invisible, selectable spans over their ink.
+    let first_page = ".pdf-view-page[data-page=\"0\"]";
+    page.wait_for_function("() => document.querySelector('.pdf-view-page[data-page=\"0\"] .pdf-view-text')?.textContent.includes('counted every wave.')").await?;
+    let layer = page
+        .evaluate(
+            "() => { const p = document.querySelector('.pdf-view-page[data-page=\"0\"]'); const spans = [...p.querySelectorAll('.pdf-view-text span')]; \
+             const s = spans.find(e => e.textContent === 'The lighthouse keeper'); const pb = p.getBoundingClientRect(); const r = s.getBoundingClientRect(); \
+             const scale = pb.width / 300; \
+             return { texts: spans.map(e => e.textContent), color: getComputedStyle(s).color, select: getComputedStyle(s).userSelect, \
+               left: (r.left - pb.left) / scale, top: (r.top - pb.top) / scale, width: r.width / scale, height: r.height / scale, role: p.getAttribute('role') }; }",
+        )
+        .await?;
+    assert_eq!(layer["texts"], json!(["Page one", "The lighthouse keeper", "counted every wave."]), "{layer}");
+    assert_eq!(layer["color"], "rgba(0, 0, 0, 0)", "the text layer is invisible");
+    assert_ne!(layer["select"], "none", "the text layer is selectable");
+    assert_eq!(layer["role"], "group");
+    // "The lighthouse keeper" sits at (40, 400 - 300) points, 12 points high, over its ink.
+    let near = |key: &str, want: f64, slack: f64| (layer[key].as_f64().unwrap_or(-1.0) - want).abs() <= slack;
+    assert!(near("left", 40.0, 1.5) && near("top", 100.0 - 9.6, 2.0) && near("height", 12.0, 2.0), "{layer}");
+    assert!(near("width", 118.0, 6.0), "the span is stretched to the run's length: {layer}");
+
+    // Selecting two lines offers Highlight; it lands in Notes › Highlights with a link back.
+    page.evaluate(&format!(
+        "() => {{ const spans = [...document.querySelectorAll('{first_page} .pdf-view-text span')]; \
+         const a = spans.find(e => e.textContent === 'The lighthouse keeper').firstChild; \
+         const b = spans.find(e => e.textContent === 'counted every wave.').firstChild; \
+         const r = document.createRange(); r.setStart(a, 4); r.setEnd(b, 13); \
+         getSelection().removeAllRanges(); getSelection().addRange(r); }}"
+    ))
+    .await?;
+    assert_eq!(page.evaluate("() => getSelection().toString()").await?, json!("lighthouse keeper\ncounted every"));
+    pdf_reader.get_by_role("button", "Highlight").click().await?;
+    pdf_reader.get_by_text(contains("Highlight saved to Notes")).wait_for().await?;
+    page.locator(&format!("{first_page} .pdf-view-highlight")).first().wait_for().await?;
+    let notes = reader.get_json("/api/v1/notes/library").await?;
+    let folder = notes["folders"]
+        .as_array()
+        .and_then(|f| f.iter().find(|f| f["name"] == "Highlights" && f["parentId"] == notes["rootId"]))
+        .context("Highlights folder in Notes")?;
+    let note = notes["notes"]
+        .as_array()
+        .and_then(|n| n.iter().find(|n| n["parentId"] == folder["id"] && n["name"] == "A Fixture Paper.md"))
+        .context("highlights note")?;
+    let text = reader.get(&format!("/api/v1/files/{}/content", note["id"].as_str().unwrap_or_default())).await?.text();
+    let link = format!("/books?book={}&page=1", paper.file_id);
+    assert!(text.starts_with("# Highlights: A Fixture Paper\n\n> lighthouse keeper\n> counted every\n"), "{text}");
+    assert!(text.contains(&format!("> \u{2014} [A Fixture Paper, p. 1]({link}) ^hl-")), "{text}");
+    assert!(text.contains(&format!("]: {link} \"dar-highlight 1:")), "{text}");
     let initial_width = page
         .evaluate("() => document.querySelector('.pdf-view-page').getBoundingClientRect().width")
         .await?
@@ -225,6 +275,49 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     pdf_panel.get_by_role("button", regex("Second section")).click().await?;
     pdf_reader.get_by_text("Page 2 of 2").wait_for().await?;
     page.screenshot(t.screenshot("books-reader-pdf-1440.png"), false).await?;
+
+    // Find (Ctrl+F): counts matches over every page, starts at this page, moves and scrolls.
+    let count_is = |want: &'static str| {
+        let page = page.clone();
+        async move { page.wait_for_function_with("(want) => document.querySelector('.books-find-count')?.textContent === want", json!(want)).await }
+    };
+    pdf_reader.focus().await?;
+    page.keyboard().press("Control+f").await?;
+    let find = pdf_reader.get_by_role("searchbox", "Find in book");
+    find.wait_for().await?;
+    assert_eq!(page.evaluate("() => document.activeElement?.getAttribute('aria-label')").await?, json!("Find in book"));
+    find.fill("LIGHTHOUSE").await?;
+    count_is("2 of 2").await?;
+    page.locator(".pdf-view-page[data-page=\"1\"] .pdf-view-match.is-current").wait_for().await?;
+    find.press("Enter").await?;
+    count_is("1 of 2").await?;
+    pdf_reader.get_by_text("Page 1 of 2").wait_for().await?;
+    page.locator(&format!("{first_page} .pdf-view-match.is-current")).wait_for().await?;
+    page.screenshot(t.screenshot("books-reader-pdf-find-1440.png"), false).await?;
+    pdf_reader.get_by_role("button", "Next match").click().await?;
+    count_is("2 of 2").await?;
+    pdf_reader.get_by_text("Page 2 of 2").wait_for().await?;
+    find.fill("no such words").await?;
+    count_is("No matches").await?;
+    find.press("Escape").await?;
+    find.wait_for_state(State::Detached).await?;
+    assert_eq!(page.locator(".pdf-view-match").count().await?, 0);
+    pdf_reader.wait_for().await?;
+
+    // The note's link opens the book at the highlight's page, with the highlight drawn again.
+    page.wait_for_timeout(1600).await;
+    let saved = reader.get_json(&format!("/api/v1/books/{}", paper.file_id)).await?;
+    assert_eq!(saved["state"]["position"]["page"], 1, "the saved place is page 2");
+    page.goto(&format!("{base}{link}")).await?;
+    let pdf_reader = page.get_by_role("main", "Reading A Fixture Paper");
+    pdf_reader.get_by_text("Page 1 of 2").wait_for().await?;
+    page.locator(&format!("{first_page} .pdf-view-highlight")).first().wait_for().await?;
+    page.locator(&format!("{first_page}.is-drawn")).wait_for().await?;
+    page.screenshot(t.screenshot("books-reader-pdf-highlight-1440.png"), false).await?;
+    page.emulate_media(Some("dark"), None, None).await?;
+    page.wait_for_timeout(300).await;
+    page.screenshot(t.screenshot("books-reader-pdf-highlight-dark-1440.png"), false).await?;
+    page.emulate_media(Some("light"), None, None).await?;
 
     // Files' PDF preview uses the same viewer.
     page.goto(&format!("{base}/?folder={root}")).await?;

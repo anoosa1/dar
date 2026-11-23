@@ -36,7 +36,14 @@ Apps; data is kept). Layout follows [mock A](spacetimedb/books-mocks.html) (Nove
   of at most about 36 em; Scroll layout scrolls each chapter. Malformed XHTML falls back to
   the HTML parser. Links inside the book stay in the reader; others open in a new tab.
 - **PDF reader:** one scrolling column, pages drawn only near the viewport, zoom and fit
-  width, the outline as contents. **Comics:** one page at a time, fitted, with tap zones and
+  width, the outline as contents. Each drawn page has an invisible, selectable text layer
+  (`dar-pdf` reads each glyph's Unicode from the font's `ToUnicode` map or glyph names and
+  groups glyphs into runs on one baseline; one stretched span per run, a line break after each
+  line), so selecting and copying gives the text with its lines. **Find** (the search button or
+  Ctrl/Cmd+F in the reader) reads page text as needed (cached per page), counts matches over the
+  whole book, starts at the current page, and moves with Enter, Shift+Enter or the arrows.
+  Pages that are only images (scans without OCR text) have no text. Files' PDF preview has the
+  text layer too, but no Find or highlights. **Comics:** one page at a time, fitted, with tap zones and
   keys in the reading direction (right to left from `ComicInfo.xml` Manga or settings).
 - **Reading state** (want to read, reading, finished; place; progress; device) and
   bookmarks are per account and per Files entry, so renames and moves keep them. A place
@@ -45,9 +52,18 @@ Apps; data is kept). Layout follows [mock A](spacetimedb/books-mocks.html) (Nove
   Reaching the end marks a book finished. Reader settings are account preferences.
 - **Access** follows Files: every request resolves the file through Files' download check
   (owner or grant, not deleted, Locked folder rules). App passwords cannot reach Books.
+- **Highlights** (PDF): selecting text offers Highlight, which appends the quote to
+  `Highlights/<book title>.md` in the Notes folder (folder and note made on first use, written
+  through Files with the note's revision so edits elsewhere are kept): `> quoted lines`, then
+  `> — [Book title, p. N](/books?book=<id>&page=N) ^hl-…`, then a Markdown link reference
+  definition `[hl-…]: /books?… "dar-highlight N:x,y,w,h …"` holding the boxes as fractions of the
+  page. Markdown shows no unused definition (an HTML comment would show as text in Notes), so
+  the note reads as quotes. Opening the book reads the note and draws its highlights again;
+  editing or deleting a block there changes them. `/books?book=<id>&page=N` opens the reader at
+  page N (PDF and comics) instead of the saved place.
 - Backups (format v10) include reading state and bookmarks.
 
 ## Later
 
-OPDS catalog, highlights and notes, collections, series stacks in the grid, search in a
-book, and Books results in the cross-app search.
+OPDS catalog, EPUB highlights and search, collections, series stacks in the grid, and Books
+results in the cross-app search.

@@ -1,9 +1,11 @@
-//! PDF documents for Dar, on hayro (pure Rust): page sizes, the outline, metadata and pages
-//! rendered to RGBA bitmaps. The browser viewer runs it in a worker (`dar-pdf-worker`); the
-//! runtime uses it for book metadata and covers. Nothing here touches the network or disk.
+//! PDF documents for Dar, on hayro (pure Rust): page sizes, the outline, metadata, pages
+//! rendered to RGBA bitmaps and page text as positioned runs (for selection and search). The
+//! browser viewer runs it in a worker (`dar-pdf-worker`); the runtime uses it for book metadata
+//! and covers. Nothing here touches the network or disk.
 //!
 //! CONTRACT (agreed API; implementations fill it in, signatures stay):
 
+mod extract;
 mod outline;
 mod text;
 
@@ -83,6 +85,46 @@ pub struct Bitmap {
     pub rgba: Vec<u8>,
 }
 
+/// A run of text on one baseline, in page points with the origin at the top left of the page as
+/// [`Document::render`] draws it (after `/Rotate` and the crop box), in the order the page shows it.
+///
+/// A run's box reaches 0.8 em above and 0.2 em below its baseline (glyph outlines are not
+/// measured). Words separated by a gap get a space character covering the gap.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextRun {
+    /// The run's Unicode text: its characters' texts joined.
+    pub text: String,
+    /// The run's axis-aligned box.
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    /// The em size, in points.
+    pub font_size: f32,
+    /// Where the baseline starts.
+    pub baseline_x: f32,
+    pub baseline_y: f32,
+    /// The baseline's direction in radians, clockwise from the page's x axis (0 for
+    /// left-to-right text on an unrotated page, π/2 for text running down the page).
+    pub angle: f32,
+    /// The run's length along its baseline.
+    pub length: f32,
+    /// Each character with its place along the baseline.
+    pub chars: Vec<TextChar>,
+    /// Whether the next run starts a new line (always true for the page's last run).
+    pub ends_line: bool,
+}
+
+/// One character of a [`TextRun`]: usually one Unicode scalar, more for ligatures (`fi`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextChar {
+    pub text: String,
+    /// Distance from the run's baseline start to where this character begins.
+    pub offset: f32,
+    /// How far the character reaches along the baseline.
+    pub advance: f32,
+}
+
 /// An open PDF. Cheap to keep open; pages are interpreted when drawn.
 pub struct Document {
     // SAFETY: `cache` stores font/glyph references borrowed from `pdf`. It MUST be declared
@@ -152,6 +194,18 @@ impl Document {
                 .map(text::decode_pdf_text_string)
                 .unwrap_or_default(),
         }
+    }
+
+    /// The text on page `page` (zero-based) as runs, for selection and search. Pages drawn only
+    /// as images (scans without an OCR layer) have none.
+    pub fn text(&self, page: usize) -> Result<Vec<TextRun>, Error> {
+        let pdf_page = self
+            .pdf
+            .pages()
+            .get(page)
+            .ok_or_else(|| Error::Unsupported(format!("page {page} out of range")))?;
+        catch_unwind(AssertUnwindSafe(|| extract::page_text(pdf_page, &self.interpreter_settings)))
+            .map_err(|_| Error::Unsupported("text extraction failed on this page".into()))
     }
 
     /// Draws page `page` (zero-based) at `scale` device pixels per PDF point.

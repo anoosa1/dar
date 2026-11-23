@@ -428,3 +428,144 @@ fn encrypted_trailer_returns_error_encrypted() {
 
     assert_eq!(Document::open(b.build()).err(), Some(Error::Encrypted));
 }
+
+// ---- Text ------------------------------------------------------------------------------------
+
+/// A one-page PDF whose page dictionary has `page_extra` and whose resources hold the standard
+/// fonts `/F1` (Helvetica) and `/F2` (Times-Bold) plus `fonts_extra`, showing `content`.
+fn text_pdf(page_extra: &str, content: &str, fonts_extra: &str, more: &[(u32, Vec<u8>)]) -> Vec<u8> {
+    let mut b = PdfBuilder::new(1);
+    b.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+        .obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+        .obj(
+            3,
+            format!(
+                "<< /Type /Page /Parent 2 0 R {page_extra} /Resources << /Font << /F1 5 0 R /F2 6 0 R {fonts_extra} >> >> /Contents 4 0 R >>"
+            ),
+        )
+        .obj(4, stream_obj(content.as_bytes()))
+        .obj(5, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+        .obj(6, b"<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>");
+    for (id, body) in more {
+        b.obj(*id, body.clone());
+    }
+    b.build()
+}
+
+fn close(a: f32, b: f32, tolerance: f32) -> bool {
+    (a - b).abs() <= tolerance
+}
+
+#[test]
+fn text_runs_have_unicode_and_page_geometry() {
+    let pdf = text_pdf("/MediaBox [0 0 612 792]", "BT /F1 12 Tf 72 720 Td (Hello world) Tj ET", "", &[]);
+    let doc = Document::open(pdf).expect("valid pdf");
+    let runs = doc.text(0).expect("text");
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    let run = &runs[0];
+    assert_eq!(run.text, "Hello world");
+    assert!(close(run.font_size, 12.0, 0.01), "{run:?}");
+    assert!(close(run.baseline_x, 72.0, 0.01) && close(run.baseline_y, 72.0, 0.01), "{run:?}");
+    assert!(close(run.angle, 0.0, 1e-4));
+    // Helvetica's widths for "Hello world" add up to 4945/1000 em.
+    assert!(close(run.length, 59.34, 0.05), "{run:?}");
+    assert!(close(run.x, 72.0, 0.01) && close(run.y, 72.0 - 9.6, 0.01), "{run:?}");
+    assert!(close(run.width, run.length, 0.01) && close(run.height, 12.0, 0.01), "{run:?}");
+    assert!(run.ends_line);
+    assert_eq!(run.chars.len(), 11);
+    assert_eq!(run.chars.iter().map(|c| c.text.as_str()).collect::<String>(), run.text);
+    // "H" is 722 units wide, so "e" starts 8.664 points along the baseline.
+    assert!(close(run.chars[1].offset, 8.664, 0.01), "{:?}", run.chars[1]);
+    assert!(run.chars.windows(2).all(|w| w[0].offset < w[1].offset));
+    let last = run.chars.last().unwrap();
+    assert!(close(last.offset + last.advance, run.length, 0.01));
+
+    assert!(matches!(doc.text(1), Err(Error::Unsupported(_))));
+}
+
+#[test]
+fn text_joins_fonts_on_a_line_and_separates_words_and_lines() {
+    let content = "BT /F1 12 Tf 72 720 Td (Plain ) Tj /F2 12 Tf (Bold) Tj ET \
+                   BT /F1 12 Tf 72 700 Td [(Word) -600 (Gap)] TJ ET \
+                   BT /F2 10 Tf 400 700 Td (Column) Tj ET \
+                   BT /F1 12 Tf 72 680 Td [(Ke) 40 (rned)] TJ ET";
+    let doc = Document::open(text_pdf("/MediaBox [0 0 612 792]", content, "", &[])).expect("valid pdf");
+    let runs = doc.text(0).expect("text");
+    let texts: Vec<(&str, bool)> = runs.iter().map(|r| (r.text.as_str(), r.ends_line)).collect();
+    assert_eq!(
+        texts,
+        vec![("Plain Bold", true), ("Word Gap", false), ("Column", true), ("Kerned", true)],
+        "{runs:?}"
+    );
+    // The word gap is a space character covering the TJ adjustment.
+    let gap = &runs[1].chars[4];
+    assert_eq!(gap.text, " ");
+    assert!(close(gap.advance, 7.2, 0.05), "{gap:?}");
+    assert!(close(runs[2].font_size, 10.0, 0.01));
+    assert!(close(runs[3].baseline_y, 112.0, 0.01));
+}
+
+/// Whether the bitmap has a dark pixel inside the box (in points at scale 1).
+fn has_ink(bmp: &dar_pdf::Bitmap, x0: f32, y0: f32, x1: f32, y1: f32) -> bool {
+    let (x0, y0) = (x0.max(0.0) as u32, y0.max(0.0) as u32);
+    let (x1, y1) = ((x1.ceil() as u32).min(bmp.width), (y1.ceil() as u32).min(bmp.height));
+    (y0..y1).any(|y| (x0..x1).any(|x| bmp.rgba[((y * bmp.width + x) * 4) as usize] < 128))
+}
+
+#[test]
+fn text_follows_rotate_and_crop_box_like_render() {
+    // Rotated a quarter turn clockwise: text running right in user space runs down the page.
+    let rotated = text_pdf("/MediaBox [0 0 200 400] /Rotate 90", "BT /F1 20 Tf 20 380 Td (MMMM) Tj ET", "", &[]);
+    let doc = Document::open(rotated).expect("valid pdf");
+    let run = doc.text(0).expect("text").remove(0);
+    assert_eq!(run.text, "MMMM");
+    assert!(close(run.angle, std::f32::consts::FRAC_PI_2, 1e-3), "{run:?}");
+    assert!(close(run.baseline_x, 380.0, 0.01) && close(run.baseline_y, 20.0, 0.01), "{run:?}");
+    assert!(close(run.height, run.length, 0.01) && close(run.width, 20.0, 0.01), "{run:?}");
+    let bmp = doc.render(0, 1.0).expect("render");
+    assert!(has_ink(&bmp, run.x, run.y, run.x + run.width, run.y + run.height));
+    assert!(!has_ink(&bmp, 0.0, 0.0, run.x - 2.0, 200.0));
+    assert!(!has_ink(&bmp, run.x + run.width + 2.0, 0.0, 400.0, 200.0));
+
+    // A crop box moves the origin to its own top-left corner.
+    let cropped = text_pdf("/MediaBox [0 0 600 800] /CropBox [100 100 400 500]", "BT /F2 24 Tf 150 450 Td (WW) Tj ET", "", &[]);
+    let doc = Document::open(cropped).expect("valid pdf");
+    let run = doc.text(0).expect("text").remove(0);
+    assert!(close(run.baseline_x, 50.0, 0.01) && close(run.baseline_y, 50.0, 0.01), "{run:?}");
+    let bmp = doc.render(0, 1.0).expect("render");
+    assert!(has_ink(&bmp, run.x, run.y, run.x + run.width, run.y + run.height));
+    assert!(!has_ink(&bmp, run.x + run.width + 2.0, 0.0, 300.0, 400.0));
+    assert!(!has_ink(&bmp, 0.0, run.y + run.height + 2.0, 300.0, 400.0));
+
+    // A scaled and rotated text matrix (45 degrees, 2x) keeps size and angle.
+    let turned = text_pdf("/MediaBox [0 0 300 300]", "BT /F1 10 Tf 1.41421 1.41421 -1.41421 1.41421 100 100 Tm (Up) Tj ET", "", &[]);
+    let run = Document::open(turned).expect("valid pdf").text(0).expect("text").remove(0);
+    assert!(close(run.font_size, 20.0, 0.01), "{run:?}");
+    assert!(close(run.angle, -std::f32::consts::FRAC_PI_4, 1e-3), "{run:?}");
+}
+
+#[test]
+fn text_uses_to_unicode_and_skips_duplicate_and_keeps_invisible_text() {
+    let cmap = b"/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n\
+/CMapName /Test def /CMapType 2 def\n\
+1 begincodespacerange <00> <FF> endcodespacerange\n\
+2 beginbfchar\n<41> <00E9>\n<42> <00660069>\nendbfchar\n\
+endcmap CMapName currentdict /CMap defineresource pop end end";
+    let content = "BT /F3 12 Tf 72 720 Td (AB) Tj ET \
+                   BT 2 Tr /F1 12 Tf 72 700 Td (Twice) Tj ET \
+                   BT 3 Tr /F1 12 Tf 72 680 Td (Hidden OCR) Tj ET";
+    let pdf = text_pdf(
+        "/MediaBox [0 0 612 792]",
+        content,
+        "/F3 7 0 R",
+        &[
+            (7, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 8 0 R >>".to_vec()),
+            (8, stream_obj(cmap)),
+        ],
+    );
+    let runs = Document::open(pdf).expect("valid pdf").text(0).expect("text");
+    let texts: Vec<&str> = runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(texts, vec!["\u{e9}fi", "Twice", "Hidden OCR"], "{runs:?}");
+    assert_eq!(runs[0].chars.len(), 2);
+    assert_eq!(runs[0].chars[1].text, "fi");
+}

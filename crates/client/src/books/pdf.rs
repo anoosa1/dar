@@ -7,10 +7,11 @@
 //! all viewers in the page; closing a viewer closes only its document in the worker.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 
 use js_sys::{Array, ArrayBuffer, Function, Object, Reflect, Uint8ClampedArray};
@@ -21,7 +22,12 @@ use send_wrapper::SendWrapper;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 
-use crate::ui::{document, window, Listener};
+use crate::books::pdf_text::{
+    build_text_layer, current_selection, find_on_page, fold_query, paint_marks, parse_runs, PdfFindState,
+    PdfHighlight, PdfMatch, PdfSelection, PdfTextRun,
+};
+use crate::icons::Icon;
+use crate::ui::{document, listen, window, Listener};
 
 const GAP: f64 = 12.0;
 const PAD: f64 = 16.0;
@@ -129,6 +135,7 @@ struct WorkerPool {
     next_req_id: u32,
     open_waiters: HashMap<u32, OneshotSender<Result<OpenedDoc, String>>>,
     render_waiters: HashMap<u32, OneshotSender<Result<RenderedPage, String>>>,
+    text_waiters: HashMap<u32, OneshotSender<Result<Vec<PdfTextRun>, String>>>,
 }
 
 impl WorkerPool {
@@ -139,6 +146,7 @@ impl WorkerPool {
             next_req_id: 1,
             open_waiters: HashMap::new(),
             render_waiters: HashMap::new(),
+            text_waiters: HashMap::new(),
         }
     }
 
@@ -215,14 +223,18 @@ fn ensure_worker(pool: &mut WorkerPool) -> Result<web_sys::Worker, String> {
 }
 
 fn handle_worker_fatal(message: String) {
-    let (open_waiters, render_waiters) = WORKER_POOL.with(|cell| {
+    let (open_waiters, render_waiters, text_waiters) = WORKER_POOL.with(|cell| {
         let mut pool = cell.borrow_mut();
         // Drop detaches handlers and terminates the broken worker before clearing the slot.
         pool.shared.take();
         let opens: Vec<_> = pool.open_waiters.drain().map(|(_, tx)| tx).collect();
         let renders: Vec<_> = pool.render_waiters.drain().map(|(_, tx)| tx).collect();
-        (opens, renders)
+        let texts: Vec<_> = pool.text_waiters.drain().map(|(_, tx)| tx).collect();
+        (opens, renders, texts)
     });
+    for tx in text_waiters {
+        tx.send(Err(message.clone()));
+    }
     for tx in open_waiters {
         tx.send(Err(message.clone()));
     }
@@ -319,11 +331,22 @@ fn handle_worker_message(data: JsValue) {
                 }
             }
         }
+        "text" => {
+            let Some(request) = get_u32(&data, "request") else { return };
+            let tx = WORKER_POOL.with(|cell| cell.borrow_mut().text_waiters.remove(&request));
+            if let Some(tx) = tx {
+                tx.send(Ok(parse_runs(&data)));
+            }
+        }
         "render-error" => {
             let Some(request) = get_u32(&data, "request") else { return };
             let message = get_str(&data, "message")
                 .filter(|m| !m.is_empty())
                 .unwrap_or_else(|| "This page could not be drawn.".to_owned());
+            if let Some(tx) = WORKER_POOL.with(|cell| cell.borrow_mut().text_waiters.remove(&request)) {
+                tx.send(Err(message));
+                return;
+            }
             let tx = WORKER_POOL.with(|cell| cell.borrow_mut().render_waiters.remove(&request));
             if let Some(tx) = tx {
                 tx.send(Err(message));
@@ -413,6 +436,7 @@ fn cancel_render(req_id: u32) {
     let worker = WORKER_POOL.with(|cell| {
         let mut pool = cell.borrow_mut();
         pool.render_waiters.remove(&req_id);
+        pool.text_waiters.remove(&req_id);
         pool.shared.as_ref().map(|s| s.worker.clone())
     });
     if let Some(worker) = worker {
@@ -420,6 +444,42 @@ fn cancel_render(req_id: u32) {
         set_prop(&msg, "type", &JsValue::from_str("cancel"));
         set_prop(&msg, "request", &JsValue::from_f64(req_id as f64));
         let _ = worker.post_message(&msg);
+    }
+}
+
+/// Asks the worker for the text of `page`.
+fn start_text(doc_id: u32, page: usize) -> Result<(u32, OneshotReceiver<Result<Vec<PdfTextRun>, String>>), String> {
+    let (tx, rx) = oneshot();
+    let (worker, req_id) = WORKER_POOL.with(|cell| {
+        let mut pool = cell.borrow_mut();
+        let worker = pool
+            .shared
+            .as_ref()
+            .map(|s| s.worker.clone())
+            .ok_or_else(|| "The PDF viewer is not running.".to_owned())?;
+        let req_id = pool.alloc_req_id();
+        pool.text_waiters.insert(req_id, tx);
+        Ok::<_, String>((worker, req_id))
+    })?;
+    let msg = Object::new();
+    set_prop(&msg, "type", &JsValue::from_str("text"));
+    set_prop(&msg, "doc", &JsValue::from_f64(doc_id as f64));
+    set_prop(&msg, "page", &JsValue::from_f64(page as f64));
+    set_prop(&msg, "request", &JsValue::from_f64(req_id as f64));
+    if worker.post_message(&msg).is_err() {
+        WORKER_POOL.with(|cell| {
+            cell.borrow_mut().text_waiters.remove(&req_id);
+        });
+        return Err("The page text could not be read.".to_owned());
+    }
+    Ok((req_id, rx))
+}
+
+/// The text of `page`; a failure counts as a page without text.
+async fn page_text(doc_id: u32, page: usize) -> Vec<PdfTextRun> {
+    match start_text(doc_id, page) {
+        Ok((_, rx)) => rx.await.and_then(Result::ok).unwrap_or_default(),
+        Err(_) => Vec::new(),
     }
 }
 
@@ -467,6 +527,8 @@ pub struct PdfHandle {
     go_to: Callback<(usize, f64)>,
     step: Callback<i32>,
     zoom: Callback<PdfZoomChange>,
+    find: Callback<String>,
+    find_step: Callback<i32>,
 }
 
 impl PdfHandle {
@@ -478,6 +540,14 @@ impl PdfHandle {
     }
     pub fn zoom(&self, change: PdfZoomChange) {
         let _ = self.zoom.try_run(change);
+    }
+    /// Searches the document's text for `query` (case-insensitive); empty clears the search.
+    pub fn find(&self, query: &str) {
+        let _ = self.find.try_run(query.to_owned());
+    }
+    /// Moves to the next (1) or previous (-1) match and scrolls it into view.
+    pub fn find_step(&self, direction: i32) {
+        let _ = self.find_step.try_run(direction);
     }
 }
 
@@ -519,9 +589,24 @@ pub fn PdfView(
     #[prop(optional)] on_position: Option<Callback<(usize, f64, usize)>>,
     #[prop(optional)] on_zoom: Option<Callback<PdfZoom>>,
     #[prop(optional)] on_error: Option<Callback<String>>,
+    /// Saved highlights to draw over their pages.
+    #[prop(optional)] highlights: Option<Signal<Vec<PdfHighlight>>>,
+    /// When set, selecting text offers a Highlight action that reports the selection here.
+    #[prop(optional)] on_highlight: Option<Callback<PdfSelection>>,
+    /// Find's progress after each search or step (see [`PdfHandle::find`]).
+    #[prop(optional)] on_find: Option<Callback<PdfFindState>>,
 ) -> impl IntoView {
     let scroller = NodeRef::<html::Div>::new();
     let pages_node = NodeRef::<html::Div>::new();
+    // Each page's text, read once per document when the page is first drawn or searched.
+    let texts: RwSignal<HashMap<usize, Arc<Vec<PdfTextRun>>>> = RwSignal::new(HashMap::new());
+    let text_pending: StoredValue<HashSet<usize>> = StoredValue::new(HashSet::new());
+    let find_query: RwSignal<Vec<char>> = RwSignal::new(Vec::new());
+    let find_current: RwSignal<Option<(usize, usize)>> = RwSignal::new(None);
+    let find_seq = StoredValue::new(0u64);
+    let selection_at: RwSignal<Option<(f64, f64)>> = RwSignal::new(None);
+    let selection: StoredValue<Option<PdfSelection>> = StoredValue::new(None);
+    let highlights = highlights.unwrap_or_else(|| Signal::stored(Vec::new()));
     let doc_id: RwSignal<Option<u32>> = RwSignal::new(None);
     let sizes: RwSignal<Vec<(f64, f64)>> = RwSignal::new(Vec::new());
     let width = RwSignal::new(0.0_f64);
@@ -553,6 +638,9 @@ pub fn PdfView(
         failed.set(String::new());
         doc_id.set(None);
         sizes.set(Vec::new());
+        texts.set(HashMap::new());
+        text_pending.set_value(HashSet::new());
+        find_current.set(None);
         restored.set_value(false);
 
         let (id, rx) = match start_open(&current_url) {
@@ -769,6 +857,168 @@ pub fn PdfView(
         });
     });
 
+    // Page text: asked for once per page and document, kept for the text layer and Find.
+    let ensure_text = Callback::new(move |index: usize| {
+        let Some(current_doc) = doc_id.try_get_untracked().flatten() else { return };
+        if texts.with_untracked(|t| t.contains_key(&index)) {
+            return;
+        }
+        if !text_pending.try_update_value(|p| p.insert(index)).unwrap_or(false) {
+            return;
+        }
+        spawn_local(async move {
+            let runs = page_text(current_doc, index).await;
+            if doc_id.try_get_untracked().flatten() == Some(current_doc) {
+                let _ = texts.try_update(|t| {
+                    t.insert(index, Arc::new(runs));
+                });
+            }
+        });
+    });
+
+    // Find: matches over the pages read so far, in page order.
+    let matches = Memo::new(move |_| {
+        let query = find_query.get();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let page_sizes = sizes.get();
+        texts.with(|t| {
+            let mut pages: Vec<_> = t.iter().collect();
+            pages.sort_by_key(|(page, _)| **page);
+            pages
+                .into_iter()
+                .flat_map(|(page, runs)| {
+                    let size = page_sizes.get(*page).copied().unwrap_or((612.0, 792.0));
+                    find_on_page(*page, runs, &query, size)
+                })
+                .collect::<Vec<PdfMatch>>()
+        })
+    });
+    let current_index = Memo::new(move |_| {
+        let current = find_current.get()?;
+        matches.with(|m| m.iter().position(|x| (x.page, x.ordinal) == current))
+    });
+    let scroll_to_match = move |found: &PdfMatch| {
+        let Some(node) = scroller.try_get_untracked().flatten() else { return };
+        let Some(l) = layout.try_get_untracked() else { return };
+        let Some(top) = l.tops.get(found.page) else { return };
+        let ph = sizes.with_untracked(|s| s.get(found.page).map_or(792.0, |s| s.1));
+        let y = found.rects.first().map_or(0.0, |r| r.y);
+        let target = top + y * ph * l.scale - f64::from(node.client_height()) / 3.0;
+        node.set_scroll_top(target.max(0.0) as i32);
+    };
+    // The first match at or after the current page becomes current, once every page up to it
+    // has been read (so a later page read early never jumps ahead of a nearer match).
+    Effect::new(move |_| {
+        let list = matches.get();
+        if find_current.get_untracked().is_some_and(|c| list.iter().any(|m| (m.page, m.ordinal) == c)) {
+            return;
+        }
+        if list.is_empty() {
+            let _ = find_current.try_set(None);
+            return;
+        }
+        let here = kept.try_get_value().map_or(0, |(p, _)| p);
+        let read = |page: usize| texts.with_untracked(|t| t.contains_key(&page));
+        let chosen = match list.iter().find(|m| m.page >= here) {
+            Some(m) if (here..m.page).all(read) => Some(m.clone()),
+            Some(_) => None,
+            None if (0..sizes.with_untracked(Vec::len)).all(read) => list.first().cloned(),
+            None => None,
+        };
+        let Some(found) = chosen else { return };
+        let _ = find_current.try_set(Some((found.page, found.ordinal)));
+        scroll_to_match(&found);
+    });
+    if let Some(cb) = on_find {
+        Effect::new(move |_| {
+            let count = matches.with(Vec::len);
+            let current = current_index.get().map(|i| i + 1);
+            let searching = !find_query.with(Vec::is_empty);
+            let total = sizes.with(Vec::len);
+            let complete = !searching || texts.with(|t| t.len() >= total);
+            let _ = cb.try_run(PdfFindState { matches: count, current, complete });
+        });
+    }
+    let run_find = move |query: String| {
+        let folded = fold_query(&query);
+        let seq = find_seq.get_value() + 1;
+        find_seq.set_value(seq);
+        let _ = find_current.try_set(None);
+        let _ = find_query.try_set(folded.clone());
+        let Some(current_doc) = doc_id.try_get_untracked().flatten() else { return };
+        if folded.is_empty() {
+            return;
+        }
+        // Read the pages not read yet, one at a time from this page on, so drawing stays ahead
+        // of searching.
+        let here = kept.try_get_value().map_or(0, |(p, _)| p);
+        spawn_local(async move {
+            let total = sizes.try_with_untracked(Vec::len).unwrap_or(0);
+            for index in (here.min(total)..total).chain(0..here.min(total)) {
+                if find_seq.try_get_value() != Some(seq) || doc_id.try_get_untracked().flatten() != Some(current_doc) {
+                    return;
+                }
+                if texts.try_with_untracked(|t| t.contains_key(&index)).unwrap_or(true) {
+                    continue;
+                }
+                let runs = page_text(current_doc, index).await;
+                if doc_id.try_get_untracked().flatten() != Some(current_doc) {
+                    return;
+                }
+                let _ = texts.try_update(|t| {
+                    t.entry(index).or_insert_with(|| Arc::new(runs));
+                });
+            }
+        });
+    };
+    let step_find = move |direction: i32| {
+        let Some(list) = matches.try_get_untracked() else { return };
+        if list.is_empty() {
+            return;
+        }
+        let len = list.len() as i64;
+        let next = match current_index.try_get_untracked().flatten() {
+            Some(i) => (i as i64 + i64::from(direction)).rem_euclid(len) as usize,
+            None if direction < 0 => list.len() - 1,
+            None => 0,
+        };
+        let found = &list[next];
+        let _ = find_current.try_set(Some((found.page, found.ordinal)));
+        scroll_to_match(found);
+    };
+
+    // Selecting text offers Highlight (Books); the action sits under the selection's end.
+    if on_highlight.is_some() {
+        listen(&document(), "selectionchange", false, move |_| {
+            let Some(node) = scroller.try_get_untracked().flatten() else { return };
+            let found = current_selection(&node);
+            let place = found.as_ref().and_then(|_| {
+                let pages = pages_node.try_get_untracked().flatten()?;
+                let frame = pages.get_bounding_client_rect();
+                let sel = window().get_selection().ok().flatten()?;
+                let range = sel.get_range_at(sel.range_count().checked_sub(1)?).ok()?;
+                let end = range.get_bounding_client_rect();
+                Some((end.right() - frame.left(), end.bottom() - frame.top() + 6.0))
+            });
+            let _ = selection.try_set_value(found);
+            if selection_at.try_get_untracked() != Some(place) {
+                let _ = selection_at.try_set(place);
+            }
+        });
+    }
+    let take_highlight = move || {
+        let Some(found) = selection.try_update_value(|s| s.take()).flatten() else { return };
+        if let Some(sel) = window().get_selection().ok().flatten() {
+            let _ = sel.remove_all_ranges();
+        }
+        let _ = selection_at.try_set(None);
+        if let Some(cb) = on_highlight {
+            let _ = cb.try_run(found);
+        }
+    };
+
     // Expose PdfHandle if caller wants imperative control.
     if let Some(slot) = handle {
         let change_zoom = move |next: PdfZoom| {
@@ -810,6 +1060,8 @@ pub fn PdfView(
                     }
                 }
             }),
+            find: Callback::new(run_find),
+            find_step: Callback::new(step_find),
         }));
         on_cleanup(move || {
             let _ = slot.try_set(None);
@@ -855,10 +1107,38 @@ pub fn PdfView(
                                             sizes=sizes
                                             layout=layout
                                             index=index
+                                            texts=texts
+                                            ensure_text=ensure_text
+                                            highlights=highlights
+                                            matches=matches
+                                            current=find_current
                                         />
                                     }
                                 }
                             />
+                            {move || {
+                                let (x, y) = selection_at.get()?;
+                                let place = NodeRef::<html::Button>::new();
+                                Effect::new(move |_| {
+                                    if let Some(button) = place.get() {
+                                        let style = web_sys::HtmlElement::style(&button);
+                                        let _ = style.set_property("--pdf-action-x", &format!("{x}px"));
+                                        let _ = style.set_property("--pdf-action-y", &format!("{y}px"));
+                                    }
+                                });
+                                Some(view! {
+                                    <button
+                                        node_ref=place
+                                        type="button"
+                                        class="pdf-view-action"
+                                        on:pointerdown=|event| event.prevent_default()
+                                        on:click=move |_| take_highlight()
+                                    >
+                                        <Icon name="quote"/>
+                                        "Highlight"
+                                    </button>
+                                })
+                            }}
                         </div>
                     }
                     .into_any()
@@ -892,9 +1172,47 @@ fn PdfPage(
     sizes: RwSignal<Vec<(f64, f64)>>,
     layout: Memo<Layout>,
     index: usize,
+    texts: RwSignal<HashMap<usize, Arc<Vec<PdfTextRun>>>>,
+    ensure_text: Callback<usize>,
+    highlights: Signal<Vec<PdfHighlight>>,
+    matches: Memo<Vec<PdfMatch>>,
+    current: RwSignal<Option<(usize, usize)>>,
 ) -> impl IntoView {
     let box_ref = NodeRef::<html::Div>::new();
     let canvas_ref = NodeRef::<html::Canvas>::new();
+    let text_ref = NodeRef::<html::Div>::new();
+    let marks_ref = NodeRef::<html::Div>::new();
+    let page_runs = Memo::new(move |_| texts.with(|t| t.get(&index).cloned()));
+    let has_text = Memo::new(move |_| page_runs.with(|r| r.as_ref().is_some_and(|r| !r.is_empty())));
+
+    // The text layer: asked for with the page, rebuilt only when the text arrives.
+    Effect::new(move |_| {
+        if doc_id.get().is_some() && page_runs.with_untracked(Option::is_none) {
+            ensure_text.run(index);
+        }
+    });
+    Effect::new(move |_| {
+        let Some(node) = text_ref.get() else { return };
+        page_runs.with(|runs| build_text_layer(&node, runs.as_deref().map_or(&[], Vec::as_slice)));
+    });
+    // Highlights, then search matches (the current one stands out).
+    Effect::new(move |_| {
+        let Some(node) = marks_ref.get() else { return };
+        let mut marks = Vec::new();
+        highlights.with(|list| {
+            for h in list {
+                marks.extend(h.rects.iter().filter(|r| r.page == index).map(|r| (*r, "pdf-view-highlight")));
+            }
+        });
+        let now = current.get();
+        matches.with(|list| {
+            for m in list.iter().filter(|m| m.page == index) {
+                let class = if now == Some((m.page, m.ordinal)) { "pdf-view-match is-current" } else { "pdf-view-match" };
+                marks.extend(m.rects.iter().map(|r| (*r, class)));
+            }
+        });
+        paint_marks(&node, &marks);
+    });
     let drawn = RwSignal::new(false);
     let page_error = RwSignal::new(String::new());
     let drawn_doc: StoredValue<Option<u32>> = StoredValue::new(None);
@@ -909,6 +1227,7 @@ fn PdfPage(
         let _ = style.set_property("--pdf-page-top", &format!("{top}px"));
         let _ = style.set_property("--pdf-page-width", &format!("{}px", pw * l.scale));
         let _ = style.set_property("--pdf-page-height", &format!("{}px", ph * l.scale));
+        let _ = style.set_property("--pdf-scale", &format!("{}", l.scale));
     });
 
     // Request render from the shared worker after 60ms settle; cancel on zoom/doc change or unmount.
@@ -1004,9 +1323,12 @@ fn PdfPage(
             node_ref=box_ref
             class=move || if drawn.get() { "pdf-view-page is-drawn" } else { "pdf-view-page" }
             aria-label=format!("Page {}", index + 1)
-            role="img"
+            role=move || if has_text.get() { "group" } else { "img" }
+            data-page=index.to_string()
         >
-            <canvas node_ref=canvas_ref/>
+            <canvas node_ref=canvas_ref aria-hidden="true"/>
+            <div node_ref=marks_ref class="pdf-view-marks" aria-hidden="true"></div>
+            <div node_ref=text_ref class="pdf-view-text"></div>
             {move || {
                 let err = page_error.get();
                 (!err.is_empty() && !drawn.get()).then(|| {

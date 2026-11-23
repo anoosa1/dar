@@ -24,7 +24,9 @@ use wasm_bindgen_futures::JsFuture;
 use crate::api::{self, format_bytes, BrowserSession, Req};
 use crate::books::comic::{ComicHandle, ComicView};
 use crate::books::epub::{EpubHandle, EpubView, ReaderLook};
+use crate::books::highlights;
 use crate::books::pdf::{PdfHandle, PdfOutlineEntry, PdfReady, PdfView, PdfZoomChange};
+use crate::books::pdf_text::{PdfFindState, PdfHighlight, PdfSelection};
 use crate::books::{
     book_format, book_format_label, is_comic, BookDetail, BookItem, BookLibrary, BookManifest,
     BookMark, BookPosition, BookState, BookTocEntry, DEFAULT_BOOKS_FOLDER,
@@ -190,10 +192,12 @@ fn device_name() -> String {
     }
 }
 
-fn read_view() -> (View, Option<String>, bool) {
+/// The view, the selected book, whether it is open and the page to open it at (`page`, from
+/// 1, as highlight links in Notes carry it; a page opens the reader).
+fn read_view() -> (View, Option<String>, bool, Option<usize>) {
     let search = window().location().search().unwrap_or_default();
     let Ok(params) = web_sys::UrlSearchParams::new_with_str(&search) else {
-        return (View::Home, None, false);
+        return (View::Home, None, false, None);
     };
     let view = if let Some(lib) = params.get("library").filter(|s| !s.is_empty()) {
         View::Library(lib)
@@ -205,8 +209,13 @@ fn read_view() -> (View, Option<String>, bool) {
             .unwrap_or(View::Home)
     };
     let book = params.get("book").filter(|s| !s.is_empty());
-    let read = params.get("read").as_deref() == Some("1");
-    (view, book, read)
+    let page = params
+        .get("page")
+        .and_then(|p| p.parse::<usize>().ok())
+        .and_then(|p| p.checked_sub(1))
+        .filter(|_| book.is_some());
+    let read = params.get("read").as_deref() == Some("1") || page.is_some();
+    (view, book, read, page)
 }
 
 fn status_label(status: &str) -> &'static str {
@@ -420,7 +429,9 @@ async fn upload_blob_xhr(
 
 #[component]
 pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoView {
-    let (start_view, start_book, start_read) = read_view();
+    let (start_view, start_book, start_read, start_page) = read_view();
+    // A page from the address opens the first reader at that page, once.
+    let deep_page: StoredValue<Option<(String, usize)>> = StoredValue::new(start_book.clone().zip(start_page));
     let library: RwSignal<Option<BookLibrary>> = RwSignal::new(None);
     let error = RwSignal::new(String::new());
     let view = RwSignal::new(start_view);
@@ -565,7 +576,7 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
             && let Ok(url) = web_sys::Url::new(&href)
         {
             let params = url.search_params();
-            for key in ["view", "library", "book", "read"] {
+            for key in ["view", "library", "book", "read", "page"] {
                 params.delete(key);
             }
             match &v {
@@ -1091,9 +1102,14 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                         if let Some(book) = book {
                             let id_for_actions = id.clone();
                             let id_for_state = id.clone();
+                            let jump = deep_page
+                                .try_update_value(|slot| slot.take_if(|(b, _)| *b == id))
+                                .flatten()
+                                .map(|(_, page)| page);
                             return view! {
                                 <Reader
                                     book=book
+                                    start_page=jump
                                     session=session_sv.get_value()
                                     on_preferences=save_prefs
                                     on_close=on_close_reader
@@ -1949,8 +1965,36 @@ fn Reader(
     on_close: Callback<()>,
     on_state: Callback<BookState>,
     actions: Callback<(), Vec<MenuAction>>,
+    /// Open at this page (from 0) instead of the saved place (PDF and comics).
+    #[prop(default = None)] start_page: Option<usize>,
 ) -> impl IntoView {
     let shared = context();
+    // Find in a PDF, and its highlights (kept in the book's note in Notes).
+    let find_open = RwSignal::new(false);
+    let find_text = RwSignal::new(String::new());
+    let find_state: RwSignal<PdfFindState> = RwSignal::new(PdfFindState::default());
+    let find_input = NodeRef::<html::Input>::new();
+    let highlights: RwSignal<Vec<PdfHighlight>> = RwSignal::new(Vec::new());
+    let reader_status = RwSignal::new(String::new());
+    let status_seq = StoredValue::new(0u64);
+    let show_status = move |message: String| {
+        let seq = status_seq.try_get_value().unwrap_or(0) + 1;
+        let _ = status_seq.try_set_value(seq);
+        let _ = reader_status.try_set(message);
+        spawn_local(async move {
+            crate::sleep(5000).await;
+            if status_seq.try_get_value() == Some(seq) {
+                let _ = reader_status.try_set(String::new());
+            }
+        });
+    };
+    if book.format == "pdf" {
+        let (bid, title) = (book.id.clone(), book.title.clone());
+        spawn_local(async move {
+            let saved = highlights::load(&bid, &title).await;
+            let _ = highlights.try_set(saved);
+        });
+    }
     let wide = window()
         .match_media("(min-width: 1101px)")
         .ok()
@@ -1974,6 +2018,23 @@ fn Reader(
     let epub_handle: RwSignal<Option<EpubHandle>> = RwSignal::new(None);
     let comic_handle: RwSignal<Option<ComicHandle>> = RwSignal::new(None);
     let pdf_handle: RwSignal<Option<PdfHandle>> = RwSignal::new(None);
+    let open_find = move || {
+        find_open.set(true);
+        spawn_local(async move {
+            crate::sleep(0).await;
+            if let Some(input) = find_input.try_get_untracked().flatten() {
+                let _ = input.focus();
+                input.select();
+            }
+        });
+    };
+    let close_find = move || {
+        find_open.set(false);
+        find_text.set(String::new());
+        if let Some(h) = pdf_handle.get_untracked() {
+            h.find("");
+        }
+    };
     let aa = NodeRef::<html::Button>::new();
     let aa_panel = NodeRef::<html::Div>::new();
 
@@ -1985,6 +2046,7 @@ fn Reader(
 
     let book_sv = StoredValue::new(book.clone());
     let csrf_sv = StoredValue::new(session.csrf_token.clone());
+    let session_sv = StoredValue::new(session.clone());
 
     use_floating(typography.into(), aa, aa_panel, true, 6.0);
 
@@ -2412,6 +2474,12 @@ fn Reader(
         if event.default_prevented() {
             return;
         }
+        let pdf_open = detail.with_untracked(|d| matches!(d.as_ref().map(|d| &d.manifest), Some(BookManifest::Pdf)));
+        if pdf_open && (event.ctrl_key() || event.meta_key()) && !event.alt_key() && event.key().eq_ignore_ascii_case("f") {
+            event.prevent_default();
+            open_find();
+            return;
+        }
         let blocked = event
             .target()
             .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
@@ -2561,6 +2629,15 @@ fn Reader(
                     {move || {
                         let is_pdf = detail.with(|d| matches!(d.as_ref().map(|d| &d.manifest), Some(BookManifest::Pdf)));
                         is_pdf.then(|| view! {
+                            <button
+                                class=move || if find_open.get() { "icon-button is-active" } else { "icon-button" }
+                                aria-label="Find in book"
+                                title="Find in book (Ctrl+F)"
+                                aria-expanded=move || find_open.get().to_string()
+                                on:click=move |_| if find_open.get_untracked() { close_find() } else { open_find() }
+                            >
+                                <Icon name="search"/>
+                            </button>
                             <span class="books-zoom" role="group" aria-label="Zoom">
                                 <button class="icon-button" aria-label="Zoom out" on:click=move |_| { if let Some(h) = pdf_handle.get_untracked() { h.zoom(PdfZoomChange::Out); } }><Icon name="minus"/></button>
                                 <button class="icon-button" aria-label="Fit width" title="Fit width" on:click=move |_| { if let Some(h) = pdf_handle.get_untracked() { h.zoom(PdfZoomChange::Width); } }><Icon name="fitWidth"/></button>
@@ -2615,6 +2692,80 @@ fn Reader(
                     </ActionMenu>
                 </div>
             </div>
+
+            <Show when=move || find_open.get()>
+                <div class="books-find" role="search" aria-label="Find in book">
+                    <Icon name="search"/>
+                    <input
+                        node_ref=find_input
+                        type="search"
+                        aria-label="Find in book"
+                        placeholder="Find in book"
+                        autocomplete="off"
+                        prop:value=move || find_text.get()
+                        on:input=move |ev| {
+                            let value = event_target_value(&ev);
+                            find_text.set(value.clone());
+                            if let Some(h) = pdf_handle.get_untracked() {
+                                h.find(&value);
+                            }
+                        }
+                        on:keydown=move |event: web_sys::KeyboardEvent| {
+                            match event.key().as_str() {
+                                "Enter" => {
+                                    event.prevent_default();
+                                    if let Some(h) = pdf_handle.get_untracked() {
+                                        h.find_step(if event.shift_key() { -1 } else { 1 });
+                                    }
+                                }
+                                "Escape" => {
+                                    event.prevent_default();
+                                    event.stop_propagation();
+                                    close_find();
+                                    if let Some(node) = root.get_untracked() {
+                                        let _ = node.focus();
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    />
+                    <span class="books-find-count" role="status" aria-live="polite">
+                        {move || {
+                            let state = find_state.get();
+                            if find_text.with(|t| t.trim().is_empty()) {
+                                String::new()
+                            } else if state.matches == 0 {
+                                if state.complete { "No matches".into() } else { "Searching\u{2026}".into() }
+                            } else {
+                                let more = if state.complete { "" } else { "+" };
+                                format!("{} of {}{more}", state.current.unwrap_or(0), state.matches)
+                            }
+                        }}
+                    </span>
+                    <button
+                        class="icon-button"
+                        aria-label="Previous match"
+                        title="Previous match (Shift+Enter)"
+                        disabled=move || find_state.with(|s| s.matches == 0)
+                        on:click=move |_| { if let Some(h) = pdf_handle.get_untracked() { h.find_step(-1); } }
+                    >
+                        <span class="books-find-prev"><Icon name="chevron"/></span>
+                    </button>
+                    <button
+                        class="icon-button"
+                        aria-label="Next match"
+                        title="Next match (Enter)"
+                        disabled=move || find_state.with(|s| s.matches == 0)
+                        on:click=move |_| { if let Some(h) = pdf_handle.get_untracked() { h.find_step(1); } }
+                    >
+                        <span class="books-find-next"><Icon name="chevron"/></span>
+                    </button>
+                    <button class="icon-button" aria-label="Close find" title="Close (Escape)" on:click=move |_| close_find()>
+                        <Icon name="close"/>
+                    </button>
+                </div>
+            </Show>
 
             <Show when=move || typography.get() && look_ready.get()>
                 <div
@@ -2790,7 +2941,7 @@ fn Reader(
                                 }.into_any()
                             }
                             BookManifest::Comic { pages, .. } => {
-                                let start_page = start.as_ref().and_then(|p| p.page).unwrap_or(0);
+                                let start_page = start_page.unwrap_or_else(|| start.as_ref().and_then(|p| p.page).unwrap_or(0));
                                 view! {
                                     <ComicView
                                         base=format!("{API}/{}/pages/", b.id)
@@ -2807,8 +2958,14 @@ fn Reader(
                                 }.into_any()
                             }
                             BookManifest::Pdf => {
-                                let start_page = start.as_ref().and_then(|p| p.page).unwrap_or(0);
-                                let start_fraction = start.as_ref().map_or(0.0, |p| p.fraction);
+                                let (start_page, start_fraction) = match start_page {
+                                    Some(page) => (page, 0.0),
+                                    None => (
+                                        start.as_ref().and_then(|p| p.page).unwrap_or(0),
+                                        start.as_ref().map_or(0.0, |p| p.fraction),
+                                    ),
+                                };
+                                let (hl_book, hl_title) = (b.id.clone(), b.title.clone());
                                 view! {
                                     <PdfView
                                         url=format!("/api/v1/files/{}/content?v={}", b.id, b.revision)
@@ -2816,6 +2973,23 @@ fn Reader(
                                         fraction=start_fraction
                                         label=b.title
                                         handle=pdf_handle
+                                        highlights=Signal::from(highlights)
+                                        on_find=Callback::new(move |state: PdfFindState| find_state.set(state))
+                                        on_highlight=Callback::new(move |selection: PdfSelection| {
+                                            let (bid, title) = (hl_book.clone(), hl_title.clone());
+                                            let session = session_sv.get_value();
+                                            spawn_local(async move {
+                                                match highlights::save(&session, &bid, &title, &selection).await {
+                                                    Ok(saved) => {
+                                                        let _ = highlights.try_update(|list| list.push(saved));
+                                                        show_status(format!("Highlight saved to Notes \u{203a} {} \u{203a} {}", highlights::FOLDER, highlights::note_name(&title)));
+                                                    }
+                                                    Err(message) => {
+                                                        let _ = save_error.try_set(message);
+                                                    }
+                                                }
+                                            });
+                                        })
                                         on_ready=Callback::new(move |info: PdfReady| pdf_info.set(Some(info)))
                                         on_error=Callback::new(move |msg: String| failed.set(msg))
                                         on_position=Callback::new(move |(page, frac, count): (usize, f64, usize)| {
@@ -3010,6 +3184,8 @@ fn Reader(
                 let err = save_error.get();
                 (!err.is_empty()).then(|| view! { <p class="books-save-error" role="alert">{err}</p> })
             }}
+
+            <p class="books-reader-status" role="status" aria-live="polite">{move || reader_status.get()}</p>
 
             {move || {
                 let c = conflict.get()?;

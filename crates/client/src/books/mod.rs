@@ -2,7 +2,9 @@
 
 pub mod comic;
 pub mod epub;
+pub mod highlights;
 pub mod pdf;
+pub mod pdf_text;
 pub mod workspace;
 
 pub use pdf::PdfView;

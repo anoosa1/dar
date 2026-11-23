@@ -23,7 +23,14 @@
 //!   between pages so incoming `"cancel"`, `"close"`, `"open"`, and newer `"render"` messages are
 //!   processed before the next page begins. Replies with `"page"` or `"render-error"`.
 //!
-//! - **Cancel a queued render:**
+//! - **Queue a page's text:**
+//!   `{ type: "text", doc: number, page: number, request: number }`
+//!   Queues extracting the text of page `page` (zero-based) with [`dar_pdf::Document::text`]
+//!   in the same LIFO queue as renders (request IDs share one space, so `"cancel"` works for
+//!   both). Text is cheap next to a render; the viewer asks once per page and caches the answer.
+//!   Replies with `"text"` or `"render-error"`.
+//!
+//! - **Cancel a queued render or text request:**
 //!   `{ type: "cancel", request: number }`
 //!   Removes `request` from the pending render queue if it has not started yet. No reply is sent.
 //!
@@ -47,7 +54,15 @@
 //!   `buffer` holds straight RGBA8 pixel bytes (`width * height * 4` bytes on white) and is
 //!   transferred (zero-copy) in the `postMessage` transfer list.
 //!
-//! - **Render failed:**
+//! - **Page text:**
+//!   `{ type: "text", request: number, runs: { text: string, box: Float32Array, chars: string[], offsets: Float32Array, advances: Float32Array, endsLine: boolean }[] }`
+//!   One entry per [`dar_pdf::TextRun`], in the order the page shows them. `box` is
+//!   `[x, y, width, height, fontSize, baselineX, baselineY, angle, length]` in PDF points with
+//!   the origin at the top left of the drawn page (the bitmap's space at scale 1); `angle` is in
+//!   radians, clockwise. `chars[i]` (one or more characters, as for ligatures) starts
+//!   `offsets[i]` points along the baseline and reaches `advances[i]` further.
+//!
+//! - **Render or text failed:**
 //!   `{ type: "render-error", request: number, message: string }`
 //!
 //! - **Startup failure (emitted by `worker.js` bootstrap):**
@@ -56,20 +71,29 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-use dar_pdf::{Document, OutlineEntry, PageSize};
-use js_sys::{Array, ArrayBuffer, Object, Reflect, Uint8Array};
+use dar_pdf::{Document, OutlineEntry, PageSize, TextRun};
+use js_sys::{Array, ArrayBuffer, Float32Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{DedicatedWorkerGlobalScope, RequestCredentials, RequestInit, Response};
 
-/// A queued page render request.
+/// What a queued job produces.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum JobKind {
+    /// The page drawn at this many device pixels per PDF point.
+    Render(f32),
+    /// The page's text runs.
+    Text,
+}
+
+/// A queued page request (a render or the page's text).
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct RenderJob {
     request: u32,
     doc: u32,
     page: usize,
-    scale: f32,
+    kind: JobKind,
 }
 
 /// LIFO render queue supporting cancellation by request ID and pruning by document ID.
@@ -216,6 +240,48 @@ fn post_page(request: u32, width: u32, height: u32, rgba: &[u8]) {
     let _ = scope().post_message_with_transfer(&msg, &transfer);
 }
 
+fn f32_array(values: impl ExactSizeIterator<Item = f32>) -> Float32Array {
+    let array = Float32Array::new_with_length(values.len() as u32);
+    for (i, value) in values.enumerate() {
+        array.set_index(i as u32, value);
+    }
+    array
+}
+
+fn post_text(request: u32, runs: &[TextRun]) {
+    let list = Array::new_with_length(runs.len() as u32);
+    for (i, run) in runs.iter().enumerate() {
+        let item = Object::new();
+        set_prop(&item, "text", &JsValue::from_str(&run.text));
+        let geometry = [
+            run.x,
+            run.y,
+            run.width,
+            run.height,
+            run.font_size,
+            run.baseline_x,
+            run.baseline_y,
+            run.angle,
+            run.length,
+        ];
+        set_prop(&item, "box", &f32_array(geometry.into_iter()));
+        let chars = Array::new_with_length(run.chars.len() as u32);
+        for (j, c) in run.chars.iter().enumerate() {
+            chars.set(j as u32, JsValue::from_str(&c.text));
+        }
+        set_prop(&item, "chars", &chars);
+        set_prop(&item, "offsets", &f32_array(run.chars.iter().map(|c| c.offset)));
+        set_prop(&item, "advances", &f32_array(run.chars.iter().map(|c| c.advance)));
+        set_prop(&item, "endsLine", &JsValue::from_bool(run.ends_line));
+        list.set(i as u32, item.into());
+    }
+    let msg = Object::new();
+    set_prop(&msg, "type", &JsValue::from_str("text"));
+    set_prop(&msg, "request", &JsValue::from_f64(request as f64));
+    set_prop(&msg, "runs", &list);
+    post(&msg);
+}
+
 /// Entry point called by `worker.js` for every message received from the main thread.
 #[wasm_bindgen]
 pub fn handle_message(data: JsValue) {
@@ -254,7 +320,23 @@ pub fn handle_message(data: JsValue) {
                     request,
                     doc,
                     page: page as usize,
-                    scale: scale as f32,
+                    kind: JobKind::Render(scale as f32),
+                });
+            });
+            schedule_drain();
+        }
+        "text" => {
+            let Some(request) = get_u32(&data, "request") else { return };
+            let (Some(doc), Some(page)) = (get_u32(&data, "doc"), get_u32(&data, "page")) else {
+                post_render_error(request, "Invalid text request.");
+                return;
+            };
+            STATE.with(|cell| {
+                cell.borrow_mut().queue.push(RenderJob {
+                    request,
+                    doc,
+                    page: page as usize,
+                    kind: JobKind::Text,
                 });
             });
             schedule_drain();
@@ -395,13 +477,34 @@ fn drain_one() {
         return;
     };
 
+    let scale = match job.kind {
+        JobKind::Render(scale) => scale,
+        JobKind::Text => {
+            let text = STATE.with(|cell| {
+                let state = cell.borrow();
+                let doc = state.docs.get(&job.doc)?;
+                if job.page >= doc.page_count() {
+                    return Some(Err("Page out of range.".to_owned()));
+                }
+                Some(doc.text(job.page).map_err(|e| e.to_string()))
+            });
+            match text {
+                Some(Ok(runs)) => post_text(job.request, &runs),
+                Some(Err(message)) => post_render_error(job.request, &message),
+                None => {}
+            }
+            schedule_drain();
+            return;
+        }
+    };
+
     let rendered = STATE.with(|cell| {
         let state = cell.borrow();
         let doc = state.docs.get(&job.doc)?;
         if job.page >= doc.page_count() {
             return Some(Err("Page out of range.".to_owned()));
         }
-        Some(doc.render(job.page, job.scale).map_err(|e| e.to_string()))
+        Some(doc.render(job.page, scale).map_err(|e| e.to_string()))
     });
 
     match rendered {
@@ -433,10 +536,10 @@ mod tests {
     #[test]
     fn render_queue_is_lifo_and_honors_cancel_and_close() {
         let mut q = RenderQueue::default();
-        q.push(RenderJob { request: 1, doc: 10, page: 0, scale: 1.0 });
-        q.push(RenderJob { request: 2, doc: 10, page: 1, scale: 1.0 });
-        q.push(RenderJob { request: 3, doc: 20, page: 0, scale: 1.5 });
-        q.push(RenderJob { request: 4, doc: 10, page: 2, scale: 1.0 });
+        q.push(RenderJob { request: 1, doc: 10, page: 0, kind: JobKind::Render(1.0) });
+        q.push(RenderJob { request: 2, doc: 10, page: 1, kind: JobKind::Render(1.0) });
+        q.push(RenderJob { request: 3, doc: 20, page: 0, kind: JobKind::Text });
+        q.push(RenderJob { request: 4, doc: 10, page: 2, kind: JobKind::Render(1.0) });
 
         q.cancel(2);
         assert_eq!(q.pop_next().map(|j| j.request), Some(4));

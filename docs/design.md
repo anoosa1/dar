@@ -269,8 +269,11 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   format badge; books without a cover get a typographic cover. Details sit in the right sheet
   (cover, status, Read/Continue, Want to read, Download, Mark as finished, description, series
   strip, facts, Show in Files). A book opens in the middle sheet (the sidebar folds away) with
-  a bar (Back, title, chapter, Aa, bookmark, contents, full screen, more), contents and
-  bookmarks on the right and a footer scrubber; Aa holds theme (Dar, Paper, Sepia, Night),
+  a bar (Back, title, chapter, Find and zoom for PDFs, Aa, bookmark, contents, full screen,
+  more), contents and bookmarks on the right and a footer scrubber. PDFs get a Find bar under
+  the bar (count, previous/next, Escape closes; matches tinted with the accent, the current one
+  outlined) and a Highlight pill under a text selection; highlights are yellow, multiplied over
+  the always-white page so they read in light and dark themes, and saved to Notes; Aa holds theme (Dar, Paper, Sepia, Night),
   font, size, spacing and Pages/Scroll, saved to the account. A newer place from another device
   asks Go there / Stay here. Phones show the reader and details below the search bar with Back.
   See [Books](books.md).
