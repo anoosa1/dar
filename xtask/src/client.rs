@@ -72,10 +72,14 @@ pub fn build(profile: Profile) -> Result {
             .env("RUSTFLAGS", format!("{flags}--cfg=erase_components -C link-args=--emit-relocs")))
     })?;
     step(&format!("pdf worker (wasm32, {wasm_profile})"), || {
-        run(cargo().args(["build", "-q", "-p", "dar-pdf-worker", "--target", "wasm32-unknown-unknown", "--profile", wasm_profile]))
+        // SIMD128 makes hayro faster and its wasm a quarter smaller. Its own target directory
+        // keeps these flags from rebuilding the client's shared dependencies.
+        run(cargo().args(["build", "-q", "-p", "dar-pdf-worker", "--target", "wasm32-unknown-unknown", "--profile", wasm_profile])
+            .env("CARGO_TARGET_DIR", target().join("pdf-worker"))
+            .env("RUSTFLAGS", "-C target-feature=+simd128"))
     })?;
     let wasm = target().join("wasm32-unknown-unknown").join(wasm_profile).join("dar-client.wasm");
-    let worker_wasm = target().join("wasm32-unknown-unknown").join(wasm_profile).join("dar_pdf_worker.wasm");
+    let worker_wasm = target().join("pdf-worker").join("wasm32-unknown-unknown").join(wasm_profile).join("dar_pdf_worker.wasm");
     let sdk = std::env::var_os("DAR_SDK_DIST").map(PathBuf::from).unwrap_or_else(|| repo.join("sdk/dist"));
     let styles = repo.join("crates/client/styles");
     let stylesheet = stylesheet(&styles)?;
@@ -166,7 +170,7 @@ fn assemble(profile: Profile, wasm: &Path, worker_wasm: &Path, sdk: &Path, style
     wasm_files.extend(listing(&pdf_worker).into_iter().filter(|f| f.extension().is_some_and(|e| e == "wasm")));
     if profile == Profile::Release && which("wasm-opt") {
         parallel(&wasm_files, |chunk| run(Command::new("wasm-opt").args(["-Oz", "--strip-debug", "--strip-producers", "--low-memory-unused", "--zero-filled-memory",
-            "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-reference-types", "--enable-mutable-globals", "-o"]).arg(chunk).arg(chunk)))?;
+            "--enable-bulk-memory", "--enable-simd", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-reference-types", "--enable-mutable-globals", "-o"]).arg(chunk).arg(chunk)))?;
     }
     io(std::fs::write(work.join("mic-worklet.js"), MIC_WORKLET), "mic worklet")?;
     // The installed-app SDK bundle (sdk.js, sdk.css, chunks).
