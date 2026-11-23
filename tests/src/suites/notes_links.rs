@@ -9,7 +9,13 @@ use std::time::Duration;
 
 pub const SUITE: Suite = Suite {
     name: "notes-links",
-    cases: &[case!(backlinks_mentions_and_tags, 60), case!(linked_writing_in_the_browser, 180), case!(daily_notes_templates_and_embeds, 120), case!(outliner_keys_and_query_blocks, 120)],
+    cases: &[
+        case!(backlinks_mentions_and_tags, 60),
+        case!(linked_writing_in_the_browser, 180),
+        case!(daily_notes_templates_and_embeds, 120),
+        case!(outliner_keys_and_query_blocks, 120),
+        case!(hover_preview_block_link_and_folder_rename, 180),
+    ],
 };
 
 async fn note(session: &Session, root: &str, name: &str, text: &str) -> Result<String> {
@@ -291,5 +297,124 @@ pub async fn outliner_keys_and_query_blocks(t: &Ctx) -> Result<()> {
     page.screenshot(t.screenshot("notes-query.png"), true).await?;
     results.get_by_role("link", format!("Book B {tag}")).click().await?;
     page.get_by_role("region", format!("Editor for Book B {tag}.md")).wait_for().await?;
+    Ok(())
+}
+
+pub async fn hover_preview_block_link_and_folder_rename(t: &Ctx) -> Result<()> {
+    let base = t.fixture().await?.base.clone();
+    let admin = login(&base).await?;
+    let root = admin.get_json("/api/v1/notes/library").await?["rootId"].as_str().context("rootId")?.to_owned();
+    let tag = &uuid()[..6];
+    let db = admin.connect().await?;
+    let proj = uuid();
+    reducer(|done| db.reducers.create_folder_then(proj.clone(), root.clone(), format!("Proj {tag}"), done)).await?;
+    note(
+        &admin,
+        &proj,
+        "Plan.md",
+        &format!("# Plan {tag}\n\n## Details\nPreview body {tag}.\n\n## Other\nHidden part {tag}.\n"),
+    )
+    .await?;
+    let host_id = note(
+        &admin,
+        &root,
+        &format!("Host {tag}.md"),
+        &format!("# Host {tag}\n\nAnchor line {tag}\n\nSee [[Proj {tag}/Plan#Details|Plan details]], [[Proj {tag}/Plan]] and [p](Proj%20{tag}/Plan.md).\n"),
+    )
+    .await?;
+
+    let browser = Browser::shared().await?;
+    let context = browser.new_context(ContextOptions::sized(1440, 950)).await?;
+    let page = context.new_page().await?;
+    let failures = Arc::new(Mutex::new(Vec::<String>::new()));
+    {
+        let sink = failures.clone();
+        page.on_page_error(move |msg| sink.lock().unwrap().push(msg.clone()));
+    }
+    {
+        let sink = failures.clone();
+        page.on_console(move |msg| {
+            if msg.kind == "error" && !(msg.text.contains("401") && msg.text.contains("Unauthorized")) {
+                sink.lock().unwrap().push(msg.text.clone());
+            }
+        });
+    }
+    page.goto(&format!("{base}/notes")).await?;
+    page.get_by_label("Username").fill("admin").await?;
+    page.get_by_label("Password").fill(PASSWORD).await?;
+    page.get_by_role("button", "Sign in").click().await?;
+    page.get_by_role("heading", "All notes").wait_for().await?;
+
+    page.locator(".workspace-row").filter_has_text(&format!("Host {tag}")).locator(".workspace-row-content").click().await?;
+    let editor = page.get_by_role("region", format!("Editor for Host {tag}.md"));
+    editor.wait_for().await?;
+    let source = editor.get_by_label("File contents");
+    editor.locator(r#"textarea[aria-label="File contents"]:not([readonly])"#).wait_for().await?;
+
+    // Blank line shows the cursor error; non-blank line gets a `^xxxxxx` id and copies the block link.
+    source.evaluate(
+        "el => { const i = el.value.indexOf('\\n\\n'); el.focus(); el.setSelectionRange(i + 1, i + 1); }",
+        Value::Null,
+    )
+    .await?;
+    editor.get_by_role("button", "File options").click().await?;
+    page.get_by_role("menuitem", "Copy block link").click().await?;
+    editor.get_by_text("Put the cursor on a line to link to it.").wait_for().await?;
+
+    source.evaluate(
+        "el => { const i = el.value.indexOf('Anchor line'); el.focus(); el.setSelectionRange(i + 4, i + 4); }",
+        Value::Null,
+    )
+    .await?;
+    editor.get_by_role("button", "File options").click().await?;
+    page.get_by_role("menuitem", "Copy block link").click().await?;
+    let updated_source = source.input_value().await?;
+    let anchor_line = updated_source
+        .lines()
+        .find(|l| l.starts_with(&format!("Anchor line {tag}")))
+        .context("anchor line")?;
+    let block_id = anchor_line
+        .strip_prefix(&format!("Anchor line {tag} ^"))
+        .context("appended ^block id")?
+        .to_owned();
+    assert_eq!(block_id.len(), 6, "{anchor_line}");
+    assert!(block_id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "{block_id}");
+
+    let status_notice = editor.locator(r#".note-editor-notice[role="status"]"#);
+    status_notice.wait_for().await?;
+    let notice_text = status_notice.text_content().await?;
+    let expected_fallback = format!("[[Host {tag}#^{block_id}]]");
+    assert!(
+        notice_text.contains("Block link copied.") || notice_text.contains(&expected_fallback),
+        "unexpected status notice: {notice_text}"
+    );
+    editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
+
+    // Hovering a resolved link in preview opens a top-layer preview card for the target fragment;
+    // moving away hides it.
+    editor.get_by_role("button", "Preview").click().await?;
+    editor.get_by_role("link", "Plan details").hover().await?;
+    let card = page.get_by_role("group", format!("Preview of Plan {tag} \u{203a} Details"));
+    card.get_by_text(format!("Preview body {tag}.")).wait_for().await?;
+    assert_eq!(card.get_by_text(format!("Hidden part {tag}.")).count().await?, 0);
+    page.screenshot(t.screenshot("notes-hover-preview.png"), true).await?;
+    page.mouse().move_to(10.0, 10.0, 2).await?;
+    card.wait_for_state(State::Hidden).await?;
+
+    // Renaming a folder rewrites both wikilinks and Markdown links pointing into it.
+    page.get_by_role("button", format!("Actions for folder Proj {tag}")).click().await?;
+    page.get_by_role("menuitem", "Rename folder").click().await?;
+    let pane = page.locator("[data-editor-pane]");
+    pane.get_by_role("textbox", ()).fill(&format!("Work {tag}")).await?;
+    pane.get_by_role("button", "Save").click().await?;
+    page.get_by_text(contains("Updated links in 1 note")).wait_for().await?;
+
+    let content = admin.get(&format!("/api/v1/files/{host_id}/content")).await?.text();
+    assert!(content.contains(&format!("[[Work {tag}/Plan]]")), "{content}");
+    assert!(content.contains(&format!("[p](Work%20{tag}/Plan.md)")), "{content}");
+    assert!(content.contains(&format!("Anchor line {tag} ^{block_id}")), "{content}");
+
+    let failures = failures.lock().unwrap().clone();
+    assert!(failures.is_empty(), "page errors: {failures:?}");
     Ok(())
 }

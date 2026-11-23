@@ -124,7 +124,7 @@ fn file_embed(id: String, name: String, media_type: String, label: &str) -> AnyV
 }
 
 /// Another note (or one of its sections) shown in place, read-only, with a link to it.
-fn note_embed(id: String, target: String, fragment: Option<String>, label: String, links: NoteLinks) -> AnyView {
+pub(crate) fn note_embed(id: String, target: String, fragment: Option<String>, label: String, links: NoteLinks) -> AnyView {
     let content: RwSignal<Option<Result<String, ()>>> = RwSignal::new(None);
     let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     {
@@ -142,7 +142,7 @@ fn note_embed(id: String, target: String, fragment: Option<String>, label: Strin
         }
         .await;
         if alive.load(std::sync::atomic::Ordering::Relaxed) {
-            content.set(Some(text));
+            content.try_set(Some(text));
         }
     });
     let inner = NoteLinks { nested: true, toggle: None, ..links };
@@ -354,9 +354,13 @@ impl Render {
         let unresolved = resolved.is_none();
         let href = resolved.map(|id| format!("/notes?note={id}")).unwrap_or_else(|| "/notes".into());
         let title = unresolved.then(|| format!("Create \u{201c}{target}\u{201d}"));
+        let data_target = match &fragment {
+            Some(f) => format!("{target}#{f}"),
+            None => target.clone(),
+        };
         let icon = embed.then(|| view! { <Icon name="file"/> });
         view! {
-            <a class=format!("{class}{}", if unresolved { " is-unresolved" } else { "" }) href=href title=title data-target=target.clone()
+            <a class=format!("{class}{}", if unresolved { " is-unresolved" } else { "" }) href=href title=title data-target=data_target
                 on:click=move |e: web_sys::MouseEvent| {
                     if e.ctrl_key() || e.meta_key() || e.shift_key() || e.button() != 0 {
                         return;
@@ -604,7 +608,7 @@ fn plain_html(nodes: &[Node]) -> String {
     nodes.iter().map(|n| if let Node::Html(t) = n { t.as_str() } else { "" }).collect::<String>().trim_end().to_owned()
 }
 
-fn split_fragment(dest: &str) -> (String, Option<String>) {
+pub(crate) fn split_fragment(dest: &str) -> (String, Option<String>) {
     match dest.split_once('#') {
         Some((target, fragment)) => (target.trim().to_owned(), Some(fragment.trim().to_owned()).filter(|f| !f.is_empty())),
         None => (dest.trim().to_owned(), None),

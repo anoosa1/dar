@@ -10,15 +10,16 @@ use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Deserialize;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::{JsCast, JsValue};
 
 use super::notes::{NotesFile, NotesLibrary, fetch_detail, has_md_ext, read_file_content};
 use crate::api::{self, BrowserSession};
 use crate::files::editor::{TextFile, upload_blob, write_text_file};
 use crate::live::{Live, reducer, replied};
 use crate::module_bindings::create_folder;
-use crate::markdown::{Embed, Markdown, NoteLinks};
-use crate::ui::{call_method, document, window};
+use crate::markdown::{Embed, Markdown, NoteLinks, note_embed, split_fragment};
+use crate::ui::{Listener, call_method, document, listen, window};
 
 /// A file in the Notes folder that is not a note (an image, PDF or recording).
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -697,6 +698,246 @@ pub async fn attach(live: Live, session: &BrowserSession, index: &NoteIndex, fil
     Ok(embeds.join("\n"))
 }
 
+/// Target note (and optional `#heading`/`#^block` fragment) for the hover preview card.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreviewTarget {
+    pub id: String,
+    pub target: String,
+    pub fragment: Option<String>,
+    pub title: String,
+    /// Anchor link bounding rect: `(left, top, right, bottom)`.
+    pub rect: (f64, f64, f64, f64),
+}
+
+/// Extracts a resolved note link's preview target from a hovered or focused element inside the
+/// note preview (skipping unresolved links, references and embedded notes).
+pub fn preview_target_from_element(element: &web_sys::Element, index: &NoteIndex) -> Option<PreviewTarget> {
+    let link = element.closest("a.note-link:not(.is-unresolved)").ok().flatten()?;
+    if link.closest(".note-references, .note-transclusion").ok().flatten().is_some() {
+        return None;
+    }
+    let id = link
+        .get_attribute("href")?
+        .strip_prefix("/notes?note=")?
+        .to_owned();
+    if id.is_empty() {
+        return None;
+    }
+    let raw_target = link.get_attribute("data-target").unwrap_or_default();
+    let (parsed_target, fragment) = split_fragment(&raw_target);
+    let (target, base_title) = match index.position(&id) {
+        Some(pos) => {
+            let wt = index.vault.wiki_target(pos);
+            let note_title = &index.notes[pos].title;
+            let title = if note_title.is_empty() { wt.clone() } else { note_title.clone() };
+            (wt, title)
+        }
+        None => {
+            let fallback = if parsed_target.is_empty() { "Note".to_owned() } else { parsed_target.clone() };
+            (parsed_target, fallback)
+        }
+    };
+    let title = match &fragment {
+        Some(f) => format!("{base_title} \u{203a} {}", f.trim_start_matches('^')),
+        None => base_title,
+    };
+    let r = link.get_bounding_client_rect();
+    Some(PreviewTarget { id, target, fragment, title, rect: (r.left(), r.top(), r.right(), r.bottom()) })
+}
+
+/// Clamps the hover preview card position to the viewport, placing it below the link when it fits
+/// or flipping above when near the bottom edge.
+pub fn clamp_preview_position(rect: (f64, f64, f64, f64), card_w: f64, card_h: f64, view_w: f64, view_h: f64) -> (f64, f64) {
+    let (left, top, _right, bottom) = rect;
+    let margin = 8.0;
+    let gap = 6.0;
+    let max_left = (view_w - margin - card_w).max(margin);
+    let x = left.clamp(margin, max_left);
+    let below = bottom + gap;
+    let y = if below + card_h <= view_h - margin || top - gap - card_h < margin {
+        below.clamp(margin, (view_h - margin - card_h).max(margin))
+    } else {
+        (top - gap - card_h).max(margin)
+    };
+    (x.round(), y.round())
+}
+
+/// Floating top-layer hover/focus preview card for resolved note links in the note preview.
+#[component]
+pub fn NoteLinkPreview(
+    target: RwSignal<Option<PreviewTarget>>,
+    links: NoteLinks,
+    on_enter: Callback<()>,
+    on_leave: Callback<()>,
+    on_close: Callback<()>,
+) -> impl IntoView {
+    let panel = NodeRef::<html::Div>::new();
+    let card_links = NoteLinks {
+        follow: links.follow.map(|f| {
+            Callback::new(move |args| {
+                on_close.try_run(());
+                f.try_run(args);
+            })
+        }),
+        tag: links.tag.map(|f| {
+            Callback::new(move |t| {
+                on_close.try_run(());
+                f.try_run(t);
+            })
+        }),
+        toggle: None,
+        nested: true,
+        ..links
+    };
+
+    Effect::new(move |_| {
+        let current = target.get();
+        let Some(element) = panel.get() else { return };
+        let element: web_sys::HtmlElement = element.unchecked_into();
+        let shown = element.matches(":popover-open").unwrap_or(false);
+        let Some(item) = current else {
+            if shown {
+                call_method(&element, "hidePopover");
+            }
+            return;
+        };
+        if !shown {
+            call_method(&element, "showPopover");
+        }
+        let place = {
+            let element = element.clone();
+            let rect = item.rect;
+            move || {
+                let view_w = window().inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let view_h = window().inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let card_w = (element.offset_width() as f64).max(200.0);
+                let card_h = (element.offset_height() as f64).max(60.0);
+                let (x, y) = clamp_preview_position(rect, card_w, card_h, view_w, view_h);
+                let style = element.style();
+                let _ = style.set_property("--float-left", &format!("{x}px"));
+                let _ = style.set_property("--float-top", &format!("{y}px"));
+            }
+        };
+        place();
+        let place = std::rc::Rc::new(place);
+        let observer_cb = {
+            let place = place.clone();
+            Closure::<dyn FnMut()>::new(move || place())
+        };
+        let observer = web_sys::ResizeObserver::new(observer_cb.as_ref().unchecked_ref()).expect("ResizeObserver");
+        observer.observe(&element);
+        let resize = Listener::new(&window(), "resize", false, {
+            let place = place.clone();
+            move |_| place()
+        });
+        let kept = send_wrapper::SendWrapper::new((observer, observer_cb, resize, element));
+        on_cleanup(move || {
+            let (observer, _cb, _resize, element) = kept.take();
+            observer.disconnect();
+            if target.try_with_untracked(Option::is_some) != Some(true) && element.matches(":popover-open").unwrap_or(false) {
+                call_method(&element, "hidePopover");
+            }
+        });
+    });
+
+    listen(&window(), "scroll", true, move |e| {
+        let inside = panel
+            .get_untracked()
+            .zip(e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()))
+            .is_some_and(|(p, n)| p.contains(Some(&n)));
+        if !inside {
+            on_close.try_run(());
+        }
+    });
+
+    listen(&window(), "keydown", true, move |e| {
+        if let Some(ke) = e.dyn_ref::<web_sys::KeyboardEvent>()
+            && ke.key() == "Escape"
+            && target.try_with_untracked(Option::is_some) == Some(true)
+        {
+            ke.prevent_default();
+            ke.stop_propagation();
+            on_close.try_run(());
+        }
+    });
+
+    view! {
+        <div
+            node_ref=panel
+            popover="manual"
+            class="note-preview-card"
+            role="group"
+            aria-label=move || target.with(|t| t.as_ref().map(|t| format!("Preview of {}", t.title)))
+            on:mouseenter=move |_| { on_enter.try_run(()); }
+            on:mouseleave=move |_| { on_leave.try_run(()); }
+            on:focusin=move |_| { on_enter.try_run(()); }
+            on:focusout=move |e: web_sys::FocusEvent| {
+                let stays = panel
+                    .get_untracked()
+                    .zip(e.related_target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()))
+                    .is_some_and(|(p, n)| p.contains(Some(&n)));
+                if !stays {
+                    on_leave.try_run(());
+                }
+            }
+        >
+            {move || target.get().map(|item| note_embed(item.id, item.target, item.fragment, item.title, card_links))}
+        </div>
+    }
+}
+
+/// Six random lowercase alphanumeric characters for a `^block` id.
+pub fn random_block_id() -> String {
+    const ALPHABET: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let mut bytes = [0u8; 6];
+    let _ = getrandom::fill(&mut bytes);
+    bytes.into_iter().map(|b| ALPHABET[(b as usize) % ALPHABET.len()] as char).collect()
+}
+
+/// Ensures the caret's current line carries a `^block` id. Returns `None` if the line is blank,
+/// or `Some((id, updated_source))` where `updated_source` is `None` if the line already had an id.
+pub fn ensure_block_id(source: &str, caret_byte: usize, new_id: impl FnOnce() -> String) -> Option<(String, Option<String>)> {
+    let caret = caret_byte.min(source.len());
+    let line_start = source[..caret].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = source[caret..].find('\n').map_or(source.len(), |i| caret + i);
+    let content_end = if line_end > line_start && source.as_bytes()[line_end - 1] == b'\r' {
+        line_end - 1
+    } else {
+        line_end
+    };
+    let line = &source[line_start..content_end];
+    if line.trim().is_empty() {
+        return None;
+    }
+    if let Some(existing) = dar_notes::block_id(line) {
+        return Some((existing.to_owned(), None));
+    }
+    let id = new_id();
+    let updated = format!("{}{} ^{id}{}", &source[..line_start], line.trim_end(), &source[content_end..]);
+    Some((id, Some(updated)))
+}
+
+/// Writes `text` to `navigator.clipboard.writeText` via Reflect, returning `Err(())` when the
+/// Clipboard API is unavailable or rejects.
+pub async fn copy_to_clipboard(text: &str) -> Result<(), ()> {
+    let nav = window().navigator();
+    let clip = js_sys::Reflect::get(&nav, &JsValue::from_str("clipboard")).map_err(|_| ())?;
+    if clip.is_undefined() || clip.is_null() {
+        return Err(());
+    }
+    let write = js_sys::Reflect::get(&clip, &JsValue::from_str("writeText"))
+        .map_err(|_| ())?
+        .dyn_into::<js_sys::Function>()
+        .map_err(|_| ())?;
+    let promise: js_sys::Promise = write
+        .call1(&clip, &JsValue::from_str(text))
+        .map_err(|_| ())?
+        .dyn_into()
+        .map_err(|_| ())?;
+    wasm_bindgen_futures::JsFuture::from(promise).await.map_err(|_| ())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -770,5 +1011,30 @@ mod tests {
         assert_eq!(trigger("a /tab", 6), Some(Trigger::Slash { start: 2, query: "tab".into() }));
         assert_eq!(trigger("https://x", 9), None);
         assert_eq!(fill_template("---\ntags: [t]\n---\n# {{title}}\n{{date:YYYY}} {{time}} {{other}}", "Plan", "2026-11-22", "09:30"), "# Plan\n2026-11-22 09:30 {{other}}");
+    }
+
+    #[test]
+    fn block_link_ids_and_clamping() {
+        assert_eq!(ensure_block_id("", 0, || "abc123".into()), None);
+        assert_eq!(ensure_block_id("one\n   \ntwo", 5, || "abc123".into()), None);
+        assert_eq!(
+            ensure_block_id("one\ntwo  \nthree", 6, || "abc123".into()),
+            Some(("abc123".into(), Some("one\ntwo ^abc123\nthree".into())))
+        );
+        assert_eq!(
+            ensure_block_id("one\r\ntwo\r\nthree", 6, || "abc123".into()),
+            Some(("abc123".into(), Some("one\r\ntwo ^abc123\r\nthree".into())))
+        );
+        assert_eq!(
+            ensure_block_id("keep ^exist1\nnext", 4, || "unused".into()),
+            Some(("exist1".into(), None))
+        );
+        let id = random_block_id();
+        assert_eq!(id.len(), 6);
+        assert!(id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
+
+        assert_eq!(clamp_preview_position((400.0, 200.0, 480.0, 220.0), 380.0, 240.0, 1440.0, 950.0), (400.0, 226.0));
+        assert_eq!(clamp_preview_position((1200.0, 200.0, 1280.0, 220.0), 380.0, 240.0, 1440.0, 950.0), (1052.0, 226.0));
+        assert_eq!(clamp_preview_position((400.0, 800.0, 480.0, 820.0), 380.0, 240.0, 1440.0, 950.0), (400.0, 554.0));
     }
 }

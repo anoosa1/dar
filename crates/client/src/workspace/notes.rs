@@ -1348,12 +1348,14 @@ fn NoteTextEditor(
     on_mode: Callback<bool>,
     children: Children,
 ) -> impl IntoView {
+    use wasm_bindgen::JsCast;
     let live = expect_context::<Live>();
     let initial = entry.get_untracked();
     let text = RwSignal::new(String::new());
     let saved = RwSignal::new(String::new());
     let status = RwSignal::new("Loading\u{2026}");
     let error = RwSignal::new(String::new());
+    let notice = RwSignal::new(String::new());
     let ready = RwSignal::new(false);
     let read_only = RwSignal::new(true);
     let preview = RwSignal::new(start_in_preview);
@@ -1567,6 +1569,9 @@ fn NoteTextEditor(
             }
         });
         future.set(Vec::new());
+        if error.get_untracked() == "Put the cursor on a line to link to it." {
+            error.set(String::new());
+        }
         text.set(value);
         status.set("Unsaved");
     };
@@ -1655,7 +1660,122 @@ fn NoteTextEditor(
         next.replace_range(offset..offset + 3, replacement);
         change_text(next);
     });
-    let preview_links = NoteLinks { toggle: Some(toggle_task), ..links };
+    // Hover/focus preview card for resolved note links in the preview pane.
+    let hover_preview: RwSignal<Option<note_links::PreviewTarget>> = RwSignal::new(None);
+    let hover_open_seq = RwSignal::new(0u32);
+    let hover_close_seq = RwSignal::new(0u32);
+    let close_hover_now = Callback::new(move |()| {
+        hover_open_seq.try_update(|n| *n += 1);
+        hover_close_seq.try_update(|n| *n += 1);
+        hover_preview.try_set(None);
+    });
+    let cancel_hover_close = Callback::new(move |()| {
+        hover_close_seq.try_update(|n| *n += 1);
+    });
+    let alive_hover_close = alive.clone();
+    let schedule_hover_close = Callback::new(move |()| {
+        let Some(ticket) = hover_close_seq.try_update(|n| {
+            *n += 1;
+            *n
+        }) else {
+            return;
+        };
+        let alive = alive_hover_close.clone();
+        spawn_local(async move {
+            crate::sleep(180).await;
+            if alive.load(Ordering::Relaxed) && hover_close_seq.try_get_untracked() == Some(ticket) {
+                hover_preview.try_set(None);
+            }
+        });
+    });
+    let alive_hover_open = alive.clone();
+    let schedule_hover_open = move |target_el: web_sys::Element| {
+        if !preview.get_untracked() {
+            return;
+        }
+        let Some(next) = index.with_untracked(|ix| note_links::preview_target_from_element(&target_el, ix)) else {
+            return;
+        };
+        hover_close_seq.try_update(|n| *n += 1);
+        let same = hover_preview.try_with_untracked(|cur| cur.as_ref().is_some_and(|c| c.id == next.id && c.fragment == next.fragment)) == Some(true);
+        if same {
+            return;
+        }
+        let Some(ticket) = hover_open_seq.try_update(|n| {
+            *n += 1;
+            *n
+        }) else {
+            return;
+        };
+        let alive = alive_hover_open.clone();
+        spawn_local(async move {
+            crate::sleep(500).await;
+            if alive.load(Ordering::Relaxed)
+                && preview.try_get_untracked() == Some(true)
+                && hover_open_seq.try_get_untracked() == Some(ticket)
+            {
+                hover_preview.try_set(Some(next));
+            }
+        });
+    };
+    Effect::new(move |_| {
+        if !preview.get() {
+            close_hover_now.try_run(());
+        }
+    });
+
+    let alive_copy = alive.clone();
+    let copy_block_link = Callback::new(move |()| {
+        let Some(field) = input.get_untracked() else { return };
+        let source = text.get_untracked();
+        let caret16 = field.selection_start().ok().flatten().unwrap_or(0);
+        let caret = byte_index(&source, caret16);
+        let existing = dar_notes::facts(&source).blocks;
+        let Some((block_id, updated)) = note_links::ensure_block_id(&source, caret, || {
+            for _ in 0..8 {
+                let candidate = note_links::random_block_id();
+                if !existing.iter().any(|b| b.eq_ignore_ascii_case(&candidate)) {
+                    return candidate;
+                }
+            }
+            note_links::random_block_id()
+        }) else {
+            notice.set(String::new());
+            error.set("Put the cursor on a line to link to it.".into());
+            return;
+        };
+        if error.get_untracked() == "Put the cursor on a line to link to it." {
+            error.set(String::new());
+        }
+        if let Some(next) = updated {
+            field.set_value(&next);
+            let _ = field.set_selection_range(caret16, caret16);
+            change_text(next);
+        }
+        let note_id = entry.with_untracked(|e| e.id.clone());
+        let target = index
+            .with_untracked(|ix| ix.position(&note_id).map(|i| ix.vault.wiki_target(i)))
+            .unwrap_or_else(|| strip_md_ext(&entry.with_untracked(|e| e.name.clone())));
+        let link = format!("[[{target}#^{block_id}]]");
+        let alive = alive_copy.clone();
+        spawn_local(async move {
+            let copied = note_links::copy_to_clipboard(&link).await.is_ok();
+            if alive.load(Ordering::Relaxed) {
+                notice.try_set(if copied { "Block link copied.".to_owned() } else { link });
+            }
+        });
+    });
+
+    let preview_links = NoteLinks {
+        toggle: Some(toggle_task),
+        follow: links.follow.map(|f| {
+            Callback::new(move |args| {
+                close_hover_now.try_run(());
+                f.try_run(args);
+            })
+        }),
+        ..links
+    };
 
     // `[[` and `#` suggestions while writing.
     let suggest_id = unique_id();
@@ -1856,6 +1976,7 @@ fn NoteTextEditor(
     let save_for_key = save.clone();
     let save_for_btn = save.clone();
     let save_for_retry = save.clone();
+    let schedule_hover_open_focus = schedule_hover_open.clone();
 
     view! {
         <section node_ref=section
@@ -1906,9 +2027,17 @@ fn NoteTextEditor(
                 <ActionMenu label="File options" actions=move |_| {
                     let mut list = actions.run(());
                     let has_sep = !list.is_empty();
+                    let can_block_link = markdown.get_untracked() && !preview.get_untracked() && !read_only.get_untracked() && ready.get_untracked();
+                    if can_block_link {
+                        let mut item = MenuAction::new("Copy block link", "link").run(move || { copy_block_link.try_run(()); });
+                        if has_sep {
+                            item = item.separator();
+                        }
+                        list.push(item);
+                    }
                     let id = entry.with_untracked(|e| e.id.clone());
                     let mut dl = MenuAction::new("Download", "download").href(format!("/api/v1/files/{id}/content")).download();
-                    if has_sep {
+                    if has_sep && !can_block_link {
                         dl = dl.separator();
                     }
                     list.push(dl);
@@ -1932,6 +2061,12 @@ fn NoteTextEditor(
                         <button class="text-button" on:click=move |_| compare_retry()>"Review saved version"</button>
                     </div>
                 }
+            })}
+            {move || (!notice.get().is_empty()).then(|| view! {
+                <p role="status" class="notes-notice note-editor-notice">
+                    <span>{notice.get()}</span>
+                    <button type="button" class="icon-button" aria-label="Dismiss" on:click=move |_| notice.set(String::new())><Icon name="close"/></button>
+                </p>
             })}
             {move || recovery.get().map(|draft| view! {
                 <div class="draft-banner" role="alert">
@@ -1964,7 +2099,68 @@ fn NoteTextEditor(
                     </div>
                 }
             })}
-            <div class="note-document">
+            <div class="note-document"
+                on:mouseover=move |e: web_sys::MouseEvent| {
+                    if !preview.get_untracked() {
+                        return;
+                    }
+                    let Some(el) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else { return };
+                    if el.closest(".note-preview-card, .note-transclusion, .note-references").ok().flatten().is_some() {
+                        return;
+                    }
+                    let Some(link) = el.closest("a.note-link:not(.is-unresolved)").ok().flatten() else { return };
+                    if let Some(rel) = e.related_target().and_then(|t| t.dyn_into::<web_sys::Node>().ok())
+                        && link.contains(Some(&rel))
+                    {
+                        return;
+                    }
+                    schedule_hover_open(link);
+                }
+                on:mouseout=move |e: web_sys::MouseEvent| {
+                    if !preview.get_untracked() {
+                        return;
+                    }
+                    let Some(el) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else { return };
+                    if el.closest(".note-preview-card, .note-transclusion, .note-references").ok().flatten().is_some() {
+                        return;
+                    }
+                    let Some(link) = el.closest("a.note-link:not(.is-unresolved)").ok().flatten() else { return };
+                    if let Some(rel) = e.related_target().and_then(|t| t.dyn_into::<web_sys::Node>().ok())
+                        && link.contains(Some(&rel))
+                    {
+                        return;
+                    }
+                    hover_open_seq.try_update(|n| *n += 1);
+                    schedule_hover_close.try_run(());
+                }
+                on:focusin=move |e: web_sys::FocusEvent| {
+                    if !preview.get_untracked() {
+                        return;
+                    }
+                    let Some(el) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else { return };
+                    if el.closest(".note-preview-card, .note-transclusion, .note-references").ok().flatten().is_some() {
+                        return;
+                    }
+                    let Some(link) = el.closest("a.note-link:not(.is-unresolved)").ok().flatten() else { return };
+                    schedule_hover_open_focus(link);
+                }
+                on:focusout=move |e: web_sys::FocusEvent| {
+                    if !preview.get_untracked() {
+                        return;
+                    }
+                    let Some(el) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else { return };
+                    if el.closest(".note-preview-card, .note-transclusion, .note-references").ok().flatten().is_some() {
+                        return;
+                    }
+                    let Some(link) = el.closest("a.note-link:not(.is-unresolved)").ok().flatten() else { return };
+                    if let Some(rel) = e.related_target().and_then(|t| t.dyn_into::<web_sys::Node>().ok())
+                        && link.contains(Some(&rel))
+                    {
+                        return;
+                    }
+                    hover_open_seq.try_update(|n| *n += 1);
+                    schedule_hover_close.try_run(());
+                }>
                 <h1 class="note-title">{move || {
                     let n = entry.with(|e| e.name.clone());
                     if has_md_ext(&n) { strip_md_ext(&n) } else { n }
@@ -2027,6 +2223,7 @@ fn NoteTextEditor(
                 <LinkSuggestions id=listbox_id.clone() items=choices active=active point=point on_pick=pick/>
                 {children()}
             </div>
+            <note_links::NoteLinkPreview target=hover_preview links=links on_enter=cancel_hover_close on_leave=schedule_hover_close on_close=close_hover_now/>
         </section>
     }
 }
