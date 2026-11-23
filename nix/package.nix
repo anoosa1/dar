@@ -14,6 +14,8 @@ let
     cp ${../package-lock.json} $out/package-lock.json
     cp -r ${../vendor/no-native-canvas} $out/vendor/no-native-canvas
     cp -r ${sdkSource} $out/sdk
+    mkdir -p $out/crates/client
+    cp -r ${../crates/client/editor} $out/crates/client/editor
   '';
 
   jsAssets = buildNpmPackage {
@@ -26,12 +28,14 @@ let
     buildPhase = ''
       runHook preBuild
       node sdk/build-bundle.mjs
+      node crates/client/editor/build.mjs notes-editor/notes-editor.js
       runHook postBuild
     '';
     installPhase = ''
       runHook preInstall
       mkdir -p $out/sdk
       cp -r sdk/dist $out/sdk/dist
+      install -Dm644 notes-editor/notes-editor.js $out/notes-editor/notes-editor.js
       runHook postInstall
     '';
     meta.platforms = [ "x86_64-linux" "aarch64-linux" ];
@@ -100,9 +104,10 @@ let
       ${prepareWorkspace}
       # The bindings from the built module, then the release client with its dist.
       DAR_MODULE_WASM=${darModule}/dar_module.wasm DAR_SPACETIME_BIN=${runtime.spacetime}/bin/spacetime $XTASK bindings
-      DAR_SDK_DIST=${jsAssets}/sdk/dist $XTASK client --release
+      DAR_SDK_DIST=${jsAssets}/sdk/dist DAR_NOTES_EDITOR=${jsAssets}/notes-editor/notes-editor.js $XTASK client --release
       test -f target/client-release/index.html
       test -f target/client-release/sdk.js
+      test -f target/client-release/notes-editor.*.js
       test -f target/client-release/pdf-worker-*/worker.js
       test -f target/client-release/pdf-worker-*/dar_pdf_worker_bg.wasm
       runHook postBuild

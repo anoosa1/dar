@@ -47,6 +47,6 @@ let
   npmDeps = pkgs.fetchNpmDeps {
     name = "dar-npm-deps";
     src = npmSource;
-    hash = "sha256-9cIwrI5onyEVSuBqwR/DP/zC9oNjUZBNrLdWqKC0dTI=";
+    hash = "sha256-Dy4YA0XP1u+k6TtpwMxM2uDXQoFIoON9gJHbvNtkUNw=";
   };
 in { inherit node npm nodeWithNpm spacetime npmDeps; }

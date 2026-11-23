@@ -59,6 +59,23 @@ runtime. Nothing is exported or converted beforehand.
 
 Newest first. Each entry: what passes now on the Rust stack, what was added to the tests.
 
+### 2026-11-23 — Notes live preview on CodeMirror 6
+- The Notes editor's textarea is CodeMirror 6 (`crates/client/editor/notes-editor.js`, the
+  maintainer-authorized `@codemirror/*`, `@lezer/markdown` and `style-mod`), bundled by
+  `xtask/src/client.rs` with esbuild into `notes-editor.<hash>.js` (its URL in
+  `data-notes-editor` on `<html>`; the Nix package builds it in its npm step,
+  `DAR_NOTES_EDITOR`) and imported from a module snippet the first time a note opens.
+  Files' and Mail's editors keep their textarea.
+- Bridge (`crates/client/src/workspace/note_editor.rs`): `wasm_bindgen` methods on the object
+  `create` returns, `Closure<dyn Fn>` callbacks (`Fn`, so a callback that dispatches into the
+  editor, which calls another callback, never re-enters an `FnMut`). The editor is destroyed
+  before its closures drop. Text crosses whole on each change; a `synced` copy passes each
+  change on once in each direction.
+- Dar's CSP forbids inline `<style>`, which style-mod writes; the bundle mounts CodeMirror's
+  rules in a constructed stylesheet (`adoptedStyleSheets`) instead.
+- Tests read and select through `el.darEditor` on the content element (`ui::note_text`,
+  `ui::note_select`); `fill`, `press` and `press_sequentially` work on it unchanged.
+
 ### 2026-11-23 — PDF viewer on hayro Web Worker (replacing pdf.js)
 - Browser viewer: `crates/pdf-worker` (`dar-pdf-worker`) runs `dar-pdf` (hayro) in a shared
   dedicated ES module Web Worker, fetching PDFs same-origin and returning page sizes, outlines

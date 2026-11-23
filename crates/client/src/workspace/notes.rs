@@ -13,6 +13,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::note_graph::NoteGraph;
+use super::note_editor;
 use super::note_links::{self, LinkSuggestions, NoteIndex, NoteReferences, Suggestion, Trigger, has_tag};
 use super::{ReactiveSelect, WorkspaceShell, search_params};
 use crate::api::{self, BrowserSession};
@@ -1391,8 +1392,8 @@ fn LegacyImport(
     }
 }
 
-/// Full Markdown text editor for Notes (`text-editor.tsx`), extending `files::editor::TextEditor`
-/// with folder context, `start_in_preview`, `on_saved`, and note actions.
+/// The Notes editor: CodeMirror with live preview (Live) or the rendered preview (Reading), with
+/// `files::editor::TextEditor`'s saving, drafts and conflicts, folder context and note actions.
 #[component]
 fn NoteTextEditor(
     entry: Signal<FileEntry>,
@@ -1426,9 +1427,17 @@ fn NoteTextEditor(
     let modified = RwSignal::new(initial.modified_at);
     let revision = RwSignal::new(initial.revision);
     let saving = RwSignal::new(false);
-    let history: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
-    let future: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
-    let input = NodeRef::<html::Textarea>::new();
+    // The CodeMirror editor (note_editor.rs), made once its module has loaded. `synced` is the
+    // text both sides last agreed on, so a change is passed on once in each direction.
+    let host = NodeRef::<html::Div>::new();
+    let editor: StoredValue<Option<note_editor::Editor>, LocalStorage> = StoredValue::new_local(None);
+    let editor_on = RwSignal::new(false);
+    let editor_failed = RwSignal::new(String::new());
+    let synced = StoredValue::new(String::new());
+    let loaded_in_editor = StoredValue::new(false);
+    let can_undo = RwSignal::new(false);
+    let can_redo = RwSignal::new(false);
+    let cm = move || editor.try_with_value(|e| e.as_ref().map(note_editor::Editor::handle)).flatten();
     let key = StoredValue::new(format!("dar.file-draft.{}.{}", session.user.id, initial.id));
     let session = StoredValue::new(session);
     let alive = Arc::new(AtomicBool::new(true));
@@ -1622,14 +1631,8 @@ fn NoteTextEditor(
         });
     });
 
+    // Text from the editor, or from the Reading view and banners (passed to the editor below).
     let change_text = move |value: String| {
-        history.update(|h| {
-            h.push(text.get_untracked());
-            if h.len() > 100 {
-                h.remove(0);
-            }
-        });
-        future.set(Vec::new());
         if error.get_untracked() == "Put the cursor on a line to link to it." {
             error.set(String::new());
         }
@@ -1690,17 +1693,15 @@ fn NoteTextEditor(
             }
             None => headings.get_untracked().into_iter().find(|(_, t, _)| dar_notes::slug(t) == wanted).map(|(_, _, o)| o),
         };
-        if let (Some(offset), Some(field)) = (offset, input.get_untracked()) {
+        if let (Some(offset), Some(cm)) = (offset, cm()) {
             let caret = utf16_len(&source[..offset]);
-            let _ = field.focus();
-            let _ = field.set_selection_range(caret, caret);
-            let _ = field.blur();
-            let _ = field.focus();
+            cm.select(caret, caret, true);
+            cm.focus();
         }
     };
     Effect::new(move |_| {
         let Some((id, fragment)) = anchor.get() else { return };
-        if !ready.get() || id != entry.with_untracked(|e| e.id.clone()) {
+        if !ready.get() || (!preview.get() && !editor_on.get()) || id != entry.with_untracked(|e| e.id.clone()) {
             return;
         }
         anchor.set(None);
@@ -1787,9 +1788,9 @@ fn NoteTextEditor(
 
     let alive_copy = alive.clone();
     let copy_block_link = Callback::new(move |()| {
-        let Some(field) = input.get_untracked() else { return };
-        let source = text.get_untracked();
-        let caret16 = field.selection_start().ok().flatten().unwrap_or(0);
+        let Some(cm) = cm() else { return };
+        let source = cm.text();
+        let caret16 = cm.selection().0;
         let caret = byte_index(&source, caret16);
         let existing = dar_notes::facts(&source).blocks;
         let Some((block_id, updated)) = note_links::ensure_block_id(&source, caret, || {
@@ -1809,9 +1810,7 @@ fn NoteTextEditor(
             error.set(String::new());
         }
         if let Some(next) = updated {
-            field.set_value(&next);
-            let _ = field.set_selection_range(caret16, caret16);
-            change_text(next);
+            cm.replace(&next, caret16, caret16);
         }
         let note_id = entry.with_untracked(|e| e.id.clone());
         let target = index
@@ -1838,7 +1837,7 @@ fn NoteTextEditor(
         ..links
     };
 
-    // `[[` and `#` suggestions while writing.
+    // `[[`, `#` and `/` suggestions while writing, in the list at the caret.
     let suggest_id = unique_id();
     let listbox_id = suggest_id.clone();
     let suggest: RwSignal<Option<Trigger>> = RwSignal::new(None);
@@ -1846,18 +1845,18 @@ fn NoteTextEditor(
     let active = RwSignal::new(0usize);
     let point: RwSignal<Option<(f64, f64)>> = RwSignal::new(None);
     let update_suggestions = move || {
-        let Some(field) = input.get_untracked() else { return };
-        let caret16 = field.selection_start().ok().flatten().unwrap_or(0);
-        if field.selection_end().ok().flatten() != Some(caret16) {
-            choices.set(Vec::new());
+        let Some(cm) = cm() else { return };
+        let (from, to) = cm.selection();
+        if from != to {
+            choices.try_set(Vec::new());
             return;
         }
-        let source = text.get_untracked();
-        let caret = byte_index(&source, caret16);
+        let Some(source) = text.try_get_untracked() else { return };
+        let caret = byte_index(&source, from);
         let found = note_links::trigger(&source, caret);
         let list = found.as_ref().map(|t| index.with_untracked(|ix| note_links::suggestions(ix, t, &entry.with_untracked(|e| e.id.clone())))).unwrap_or_default();
         if !list.is_empty() {
-            point.set(note_links::caret_point(&field, caret16));
+            point.set(cm.point_below(from));
         }
         if suggest.get_untracked() != found {
             active.set(0);
@@ -1872,30 +1871,20 @@ fn NoteTextEditor(
         if !alive_insert.load(Ordering::Relaxed) {
             return;
         }
-        let Some(field) = input.get_untracked() else {
-            change_text(format!("{}{insert}", text.get_untracked()));
-            return;
-        };
-        let source = text.get_untracked();
-        let start = byte_index(&source, field.selection_start().ok().flatten().unwrap_or(u32::MAX));
-        let end = byte_index(&source, field.selection_end().ok().flatten().unwrap_or(u32::MAX)).max(start);
-        let next = format!("{}{insert}{}", &source[..start], &source[end..]);
-        let caret16 = utf16_len(&next[..start + insert.len()]);
-        field.set_value(&next);
-        let _ = field.set_selection_range(caret16, caret16);
-        change_text(next);
+        match cm() {
+            Some(cm) => cm.insert(&insert),
+            None => change_text(format!("{}{insert}", text.get_untracked())),
+        }
     };
     let insert_at_caret = StoredValue::new(insert_at_caret);
     let pick = Callback::new(move |i: usize| {
-        let (Some(trigger), Some(choice), Some(field)) = (suggest.get_untracked(), choices.with_untracked(|c| c.get(i).cloned()), input.get_untracked()) else { return };
-        let source = text.get_untracked();
-        let caret = byte_index(&source, field.selection_start().ok().flatten().unwrap_or(0));
+        let (Some(trigger), Some(choice), Some(cm)) = (suggest.get_untracked(), choices.with_untracked(|c| c.get(i).cloned()), cm()) else { return };
+        let source = cm.text();
+        let caret = byte_index(&source, cm.selection().0);
         let (next, at) = note_links::accept(&source, caret, &trigger, &choice.insert);
         let caret16 = utf16_len(&next[..at]);
-        // The field takes the text and caret at once, so typing that follows lands after the link.
-        field.set_value(&next);
-        let _ = field.set_selection_range(caret16, caret16);
-        change_text(next);
+        // The text and caret change in one edit, so typing that follows lands after the link.
+        cm.replace(&next, caret16, caret16);
         choices.set(Vec::new());
         suggest.set(None);
         if let Some(template) = choice.template {
@@ -1907,7 +1896,9 @@ fn NoteTextEditor(
                         let filled = note_links::fill_template(&body, &title, &date, &time);
                         insert_at_caret.with_value(|f| f(filled));
                     }
-                    Err(e) => error.set(e),
+                    Err(e) => {
+                        error.try_set(e);
+                    }
                 }
             });
         } else {
@@ -1926,24 +1917,31 @@ fn NoteTextEditor(
             match result {
                 Ok(embeds) => insert_at_caret.with_value(|f| f(embeds)),
                 Err(e) => {
-                    error.set(e);
-                    status.set("Unsaved");
+                    error.try_set(e);
+                    status.try_set("Unsaved");
                 }
             }
         });
     };
-    let file_list = |list: Option<web_sys::FileList>| -> Vec<web_sys::File> { list.map(|l| (0..l.length()).filter_map(|i| l.get(i)).collect()).unwrap_or_default() };
+
+    let format = Callback::new(move |(before, after): (&'static str, &'static str)| {
+        let Some(cm) = cm() else { return };
+        let (start, end) = cm.selection();
+        let (next, s, e) = format_markdown(&cm.text(), start, end, before, after);
+        cm.replace(&next, s, e);
+        cm.focus();
+    });
 
     // Outliner keys in lists: Tab/Shift+Tab indent, Alt+Shift+Up/Down move lines, Enter
     // continues the list. Outside lists Tab keeps moving focus.
     let outline_keys = move |e: &web_sys::KeyboardEvent| -> bool {
-        let Some(field) = input.get_untracked() else { return false };
+        let Some(cm) = cm() else { return false };
         if !markdown.get_untracked() || read_only.get_untracked() || e.ctrl_key() || e.meta_key() || e.is_composing() {
             return false;
         }
-        let source = text.get_untracked();
-        let start = byte_index(&source, field.selection_start().ok().flatten().unwrap_or(0));
-        let end = byte_index(&source, field.selection_end().ok().flatten().unwrap_or(0));
+        let source = cm.text();
+        let (from, to) = cm.selection();
+        let (start, end) = (byte_index(&source, from), byte_index(&source, to));
         let edit = match e.key().as_str() {
             "Tab" if !e.alt_key() => crate::outline::indent(&source, start, end, e.shift_key()),
             "ArrowUp" | "ArrowDown" if e.alt_key() && e.shift_key() => crate::outline::move_lines(&source, start, end, e.key() == "ArrowUp"),
@@ -1951,57 +1949,210 @@ fn NoteTextEditor(
             _ => None,
         };
         let Some((next, s, en)) = edit else { return false };
-        let (s16, e16) = (utf16_len(&next[..s]), utf16_len(&next[..en]));
-        field.set_value(&next);
-        let _ = field.set_selection_range(s16, e16);
-        change_text(next);
+        cm.replace(&next, utf16_len(&next[..s]), utf16_len(&next[..en]));
         true
     };
-    let suggest_keys = move |e: web_sys::KeyboardEvent| {
+    // The editor's keys go here first: the suggestion list, Ctrl/Cmd+B and +I, then the outliner.
+    let editor_keys = move |e: web_sys::KeyboardEvent| -> bool {
+        let editable = ready.get_untracked() && !read_only.get_untracked() && recovery.with_untracked(Option::is_none);
+        if (e.ctrl_key() || e.meta_key()) && !e.alt_key() && !e.shift_key() && markdown.get_untracked() && editable {
+            let wrap = match e.key().to_lowercase().as_str() {
+                "b" => Some(("**", "**")),
+                "i" => Some(("*", "*")),
+                _ => None,
+            };
+            if let Some(wrap) = wrap {
+                format.run(wrap);
+                return true;
+            }
+        }
         let count = choices.with_untracked(Vec::len);
         if count == 0 {
-            if outline_keys(&e) {
-                e.prevent_default();
-            }
-            return;
+            return editable && outline_keys(&e);
         }
         match e.key().as_str() {
             "ArrowDown" => active.update(|a| *a = (*a + 1) % count),
             "ArrowUp" => active.update(|a| *a = (*a + count - 1) % count),
             "Enter" | "Tab" => pick.run(active.get_untracked()),
             "Escape" => choices.set(Vec::new()),
-            _ => return,
+            _ => return false,
         }
-        e.prevent_default();
+        // Escape closes the list here, not the editor.
         e.stop_propagation();
+        true
     };
 
+    // The editor, once its module has loaded; it lives as long as this component.
+    let alive_editor = alive.clone();
+    let listbox_for_editor = suggest_id.clone();
+    Effect::new(move |started: Option<bool>| {
+        if started == Some(true) {
+            return true;
+        }
+        let Some(parent) = host.get() else { return false };
+        let alive = alive_editor.clone();
+        let listbox = listbox_for_editor.clone();
+        spawn_local(async move {
+            let module = note_editor::module().await;
+            if !alive.load(Ordering::Relaxed) {
+                return;
+            }
+            let module = match module {
+                Ok(m) => m,
+                Err(e) => {
+                    editor_failed.try_set(e);
+                    return;
+                }
+            };
+            let initial = text.get_untracked();
+            synced.set_value(initial.clone());
+            loaded_in_editor.set_value(ready.get_untracked());
+            let follow = links.follow;
+            let resolve = links.resolve;
+            let tag = links.tag;
+            let callbacks = note_editor::Callbacks {
+                update: Box::new(move |changed, undo, redo, focused| {
+                    can_undo.try_set(undo);
+                    can_redo.try_set(redo);
+                    if let Some(next) = changed
+                        && synced.try_with_value(|s| *s != next) == Some(true)
+                    {
+                        synced.set_value(next.clone());
+                        change_text(next);
+                    }
+                    if focused && markdown.try_get_untracked() == Some(true) {
+                        update_suggestions();
+                    }
+                }),
+                keydown: Box::new(editor_keys),
+                files: Box::new(move |files| {
+                    if files.is_empty() || markdown.try_get_untracked() != Some(true) {
+                        return false;
+                    }
+                    attach_files(files);
+                    true
+                }),
+                link: Box::new(move |dest, wiki| match note_editor::link_action(&dest, wiki) {
+                    note_editor::LinkAction::Note(target, wiki, fragment) => {
+                        if let Some(follow) = follow {
+                            follow.try_run((target, wiki, fragment));
+                        }
+                    }
+                    note_editor::LinkAction::Open(url) => {
+                        let _ = window().open_with_url_and_target_and_features(&url, "_blank", "noopener,noreferrer");
+                    }
+                    note_editor::LinkAction::None => {}
+                }),
+                tag: Box::new(move |name| {
+                    if let Some(tag) = tag {
+                        tag.try_run(name);
+                    }
+                }),
+                blur: Box::new(move || {
+                    choices.try_set(Vec::new());
+                }),
+                resolve: Box::new(move |dest, wiki| match note_editor::link_action(&dest, wiki) {
+                    note_editor::LinkAction::Note(target, wiki, _) => {
+                        let found = resolve.and_then(|r| r.try_run((target, wiki))).flatten();
+                        if found.is_some() { String::new() } else { "is-unresolved".into() }
+                    }
+                    note_editor::LinkAction::Open(_) => "is-external".into(),
+                    note_editor::LinkAction::None if wiki => "is-file".into(),
+                    note_editor::LinkAction::None => "is-plain".into(),
+                }),
+            };
+            let attributes = [("aria-label", "File contents".to_owned()), ("aria-autocomplete", "list".to_owned()), ("aria-controls", listbox)];
+            let options = note_editor::Options {
+                text: &initial,
+                markdown: markdown.get_untracked(),
+                read_only: read_only.get_untracked() || !ready.get_untracked() || recovery.with_untracked(Option::is_some),
+                placeholder: "Start writing\u{2026}",
+                attributes: &attributes,
+            };
+            match note_editor::create(&module, &parent, options, callbacks) {
+                Ok(made) => {
+                    editor.set_value(Some(made));
+                    editor_on.set(true);
+                }
+                Err(e) => {
+                    editor_failed.set(e);
+                }
+            }
+        });
+        true
+    });
+    on_cleanup(move || {
+        // Destroys the editor before its closures go.
+        let _ = editor.try_update_value(|e| e.take());
+    });
+    // Text loaded or changed outside the editor (Reading's checkboxes, banners, reloads).
     Effect::new(move |_| {
-        if ready.get() && !read_only.get() && !preview.get()
-            && let Some(i) = input.get()
+        if !editor_on.get() {
+            return;
+        }
+        let loaded = ready.get();
+        text.with(|t| {
+            let Some(cm) = cm() else { return };
+            if loaded && !loaded_in_editor.get_value() {
+                loaded_in_editor.set_value(true);
+                synced.set_value(t.clone());
+                cm.reset(t);
+            } else if synced.with_value(|s| s != t) {
+                synced.set_value(t.clone());
+                cm.set_text(t, true);
+            }
+        });
+    });
+    Effect::new(move |_| {
+        let locked = read_only.get() || !ready.get() || recovery.with(Option::is_some);
+        if editor_on.get()
+            && let Some(cm) = cm()
         {
-            let options = web_sys::FocusOptions::new();
-            options.set_prevent_scroll(true);
-            let _ = i.focus_with_options(&options);
+            cm.set_read_only(locked);
+        }
+    });
+    // Links show resolved or missing as the note index changes.
+    Effect::new(move |_| {
+        index.track();
+        if editor_on.get()
+            && let Some(cm) = cm()
+        {
+            cm.refresh();
+        }
+    });
+    // The suggestion list's state on the content element (its role is textbox).
+    let listbox_for_aria = suggest_id.clone();
+    Effect::new(move |_| {
+        let open = !choices.with(Vec::is_empty);
+        let current = active.get();
+        if !editor_on.get() {
+            return;
+        }
+        let Some(cm) = cm() else { return };
+        let content = cm.content();
+        let _ = content.set_attribute("aria-expanded", if open { "true" } else { "false" });
+        if open {
+            let _ = content.set_attribute("aria-activedescendant", &format!("{listbox_for_aria}-{current}"));
+        } else {
+            let _ = content.remove_attribute("aria-activedescendant");
         }
     });
 
+    Effect::new(move |_| {
+        let writing = !preview.get();
+        if editor_on.get()
+            && writing
+            && let Some(cm) = cm()
+        {
+            // Hidden while Reading, so it measures again when shown.
+            cm.measure();
+            if ready.get() && !read_only.get() {
+                cm.focus();
+            }
+        }
+    });
 
     let change = change_text;
-    let format = Callback::new(move |(before, after): (&'static str, &'static str)| {
-        let Some(field) = input.get_untracked() else { return };
-        let (start, end) = (
-            field.selection_start().ok().flatten().unwrap_or(0),
-            field.selection_end().ok().flatten().unwrap_or(0),
-        );
-        let (next, s, e) = format_markdown(&text.get_untracked(), start, end, before, after);
-        change(next);
-        let field = send_wrapper::SendWrapper::new(field);
-        request_animation_frame(move || {
-            let _ = field.focus();
-            let _ = field.set_selection_range(s, e);
-        });
-    });
 
     let phase = move || {
         if read_only.get() {
@@ -2075,8 +2226,8 @@ fn NoteTextEditor(
                 })}
                 {move || markdown.get().then(|| view! {
                     <div class="segmented" role="group" aria-label="Editor mode">
-                        <button aria-pressed=move || (!preview.get()).to_string() on:click=move |_| { preview.set(false); on_mode.try_run(false); }>"Write"</button>
-                        <button aria-pressed=move || preview.get().to_string() on:click=move |_| { preview.set(true); on_mode.try_run(true); }>"Preview"</button>
+                        <button aria-pressed=move || (!preview.get()).to_string() on:click=move |_| { preview.set(false); on_mode.try_run(false); }>"Live"</button>
+                        <button aria-pressed=move || preview.get().to_string() on:click=move |_| { preview.set(true); on_mode.try_run(true); }>"Reading"</button>
                     </div>
                 })}
                 {move || (markdown.get() && !headings.with(Vec::is_empty)).then(|| view! {
@@ -2228,59 +2379,27 @@ fn NoteTextEditor(
                 }}</h1>
                 <div class="note-meta"><span>"Edited "{move || edited(modified.get())}</span></div>
                 {move || (markdown.get() && !preview.get()).then(|| view! {
-                    <MarkdownToolbar on_format=format disabled=Signal::derive(move || read_only.get() || !ready.get())>
-                        <button type="button" class="text-button starts-group" aria-label="Undo" title="Undo" disabled=move || history.with(Vec::is_empty) || read_only.get()
+                    <MarkdownToolbar on_format=format disabled=Signal::derive(move || read_only.get() || !ready.get() || !editor_on.get())>
+                        <button type="button" class="text-button starts-group" aria-label="Undo" title="Undo" disabled=move || !can_undo.get() || read_only.get()
                             on:click=move |_| {
-                                if let Some(previous) = history.try_update(|h| h.pop()).flatten() {
-                                    future.update(|f| f.push(text.get_untracked()));
-                                    text.set(previous);
+                                if let Some(cm) = cm() {
+                                    cm.undo();
+                                    cm.focus();
                                 }
                             }><Icon name="undo"/></button>
-                        <button type="button" class="text-button" aria-label="Redo" title="Redo" disabled=move || future.with(Vec::is_empty) || read_only.get()
+                        <button type="button" class="text-button" aria-label="Redo" title="Redo" disabled=move || !can_redo.get() || read_only.get()
                             on:click=move |_| {
-                                if let Some(next) = future.try_update(|f| f.pop()).flatten() {
-                                    history.update(|h| h.push(text.get_untracked()));
-                                    text.set(next);
+                                if let Some(cm) = cm() {
+                                    cm.redo();
+                                    cm.focus();
                                 }
                             }><Icon name="redo"/></button>
                     </MarkdownToolbar>
                 })}
-                {move || if preview.get() {
-                    view! { <Markdown source=text.get() links=preview_links/> }.into_any()
-                } else {
-                    let listbox = suggest_id.clone();
-                    view! {
-                        <textarea node_ref=input class="note-source" aria-label="File contents" spellcheck=move || markdown.get().to_string() placeholder=move || ready.get().then_some("Start writing\u{2026}")
-                            readonly=move || read_only.get() || !ready.get() || recovery.with(Option::is_some)
-                            aria-autocomplete="list" aria-controls=listbox.clone() aria-expanded=move || (!choices.with(Vec::is_empty)).to_string()
-                            aria-activedescendant=move || (!choices.with(Vec::is_empty)).then(|| format!("{listbox}-{}", active.get()))
-                            prop:value=move || text.get()
-                            on:keydown=suggest_keys
-                            on:paste=move |e: web_sys::ClipboardEvent| {
-                                let files = file_list(e.clipboard_data().and_then(|d| d.files()));
-                                if !files.is_empty() && markdown.get_untracked() {
-                                    e.prevent_default();
-                                    attach_files(files);
-                                }
-                            }
-                            on:dragover=move |e: web_sys::DragEvent| {
-                                if e.data_transfer().is_some_and(|d| d.types().includes(&"Files".into(), 0)) && markdown.get_untracked() {
-                                    e.prevent_default();
-                                }
-                            }
-                            on:drop=move |e: web_sys::DragEvent| {
-                                let files = file_list(e.data_transfer().and_then(|d| d.files()));
-                                if !files.is_empty() && markdown.get_untracked() {
-                                    e.prevent_default();
-                                    attach_files(files);
-                                }
-                            }
-                            on:keyup=move |e| if matches!(e.key().as_str(), "ArrowLeft" | "ArrowRight" | "Home" | "End") { update_suggestions() }
-                            on:click=move |_| update_suggestions()
-                            on:blur=move |_| choices.set(Vec::new())
-                            on:input=move |e| { change(event_target_value(&e)); if markdown.get_untracked() { update_suggestions(); } }></textarea>
-                    }.into_any()
-                }}
+                // The editor stays mounted while Reading, keeping its selection and history.
+                {move || (!editor_failed.get().is_empty()).then(|| view! { <p class="note-live-failed" role="alert">{editor_failed.get()}</p> })}
+                <div node_ref=host class=move || if markdown.get() { "note-source note-live" } else { "note-source note-live is-plain" } hidden=move || preview.get()></div>
+                {move || preview.get().then(|| view! { <Markdown source=text.get() links=preview_links/> })}
                 <LinkSuggestions id=listbox_id.clone() items=choices active=active point=point on_pick=pick/>
                 {children()}
             </div>

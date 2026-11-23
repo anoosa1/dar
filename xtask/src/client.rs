@@ -1,12 +1,14 @@
 //! The browser client's dist folder (`target/client-fast` or `target/client-release`): the
-//! wasm split per app, its JS glue, the PDF renderer Web Worker (`dar-pdf-worker`), Dar's
-//! stylesheet in cascade order, the installed-app SDK bundle, the microphone worklet and
-//! index.html, with content-hashed names so the runtime can serve them as immutable. Release
-//! builds also run wasm-opt and write gzip and brotli copies.
+//! wasm split per app, its JS glue, the PDF renderer Web Worker (`dar-pdf-worker`), the Notes
+//! editor (CodeMirror, loaded on first use), Dar's stylesheet in cascade order, the
+//! installed-app SDK bundle, the microphone worklet and index.html, with content-hashed names
+//! so the runtime can serve them as immutable. Release builds also run wasm-opt and write gzip
+//! and brotli copies.
 //!
 //! Sources: `crates/client` (Leptos), `crates/pdf-worker` (`dar-pdf` in wasm32),
-//! `crates/client/styles` (with `order.txt`) and the SDK bundle (`DAR_SDK_DIST`, default
-//! `sdk/dist`).
+//! `crates/client/editor` (bundled with esbuild from `node_modules`, or `DAR_NOTES_EDITOR`, a
+//! bundle built beforehand), `crates/client/styles` (with `order.txt`) and the SDK bundle
+//! (`DAR_SDK_DIST`, default `sdk/dist`).
 
 use crate::{Profile, Result, cargo, client_dist, hash, repo, run, step, target, which};
 use std::path::{Path, PathBuf};
@@ -78,6 +80,17 @@ pub fn build(profile: Profile) -> Result {
             .env("CARGO_TARGET_DIR", target().join("pdf-worker"))
             .env("RUSTFLAGS", "-C target-feature=+simd128"))
     })?;
+    let editor = match std::env::var_os("DAR_NOTES_EDITOR") {
+        Some(bundle) => PathBuf::from(bundle),
+        None => {
+            let bundle = target().join("notes-editor").join("notes-editor.js");
+            if !repo.join("node_modules").exists() {
+                return Err("node_modules is missing: run `npm ci` in Dar's dev shell".into());
+            }
+            step("notes editor (esbuild)", || run(Command::new("node").arg(repo.join("crates/client/editor/build.mjs")).arg(&bundle)))?;
+            bundle
+        }
+    };
     let wasm = target().join("wasm32-unknown-unknown").join(wasm_profile).join("dar-client.wasm");
     let worker_wasm = target().join("pdf-worker").join("wasm32-unknown-unknown").join(wasm_profile).join("dar_pdf_worker.wasm");
     let sdk = std::env::var_os("DAR_SDK_DIST").map(PathBuf::from).unwrap_or_else(|| repo.join("sdk/dist"));
@@ -88,18 +101,19 @@ pub fn build(profile: Profile) -> Result {
     inputs.update(io(hash::file(&wasm), wasm.display())?.as_bytes());
     inputs.update(io(hash::file(&worker_wasm), worker_wasm.display())?.as_bytes());
     inputs.update(hash::bytes(PDF_WORKER_BOOTSTRAP.as_bytes()).as_bytes());
+    inputs.update(io(hash::file(&editor), editor.display())?.as_bytes());
     inputs.update(hash::bytes(stylesheet.as_bytes()).as_bytes());
     for file in listing(&sdk) {
         inputs.update(file.to_string_lossy().as_bytes());
         inputs.update(hash::file(&file).unwrap_or_default().as_bytes());
     }
-    inputs.update(format!("{profile:?} 4").as_bytes());
+    inputs.update(format!("{profile:?} 5").as_bytes());
     let stamp = hash::hex(&inputs.finish());
     let out = client_dist(profile);
     if std::fs::read_to_string(out.join(".dar-inputs")).is_ok_and(|s| s == stamp) && out.join("index.html").exists() {
         return Ok(());
     }
-    step("client dist", || assemble(profile, &wasm, &worker_wasm, &sdk, &stylesheet, &out, &stamp))
+    step("client dist", || assemble(profile, &wasm, &worker_wasm, &editor, &sdk, &stylesheet, &out, &stamp))
 }
 
 /// Dar's stylesheets concatenated in the cascade order of `styles/order.txt`.
@@ -137,7 +151,7 @@ fn dir_hash(dir: &Path) -> Result<String> {
     Ok(hash::hex(&digest.finish()))
 }
 
-fn assemble(profile: Profile, wasm: &Path, worker_wasm: &Path, sdk: &Path, stylesheet: &str, out: &Path, stamp: &str) -> Result {
+fn assemble(profile: Profile, wasm: &Path, worker_wasm: &Path, editor: &Path, sdk: &Path, stylesheet: &str, out: &Path, stamp: &str) -> Result {
     let work = out.with_extension("tmp");
     let _ = std::fs::remove_dir_all(&work);
     let (split, app, pdf_worker) = (work.join("split"), work.join("app"), work.join("pdf-worker"));
@@ -173,6 +187,10 @@ fn assemble(profile: Profile, wasm: &Path, worker_wasm: &Path, sdk: &Path, style
             "--enable-bulk-memory", "--enable-simd", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-reference-types", "--enable-mutable-globals", "-o"]).arg(chunk).arg(chunk)))?;
     }
     io(std::fs::write(work.join("mic-worklet.js"), MIC_WORKLET), "mic worklet")?;
+    // The Notes editor, imported by the client the first time a note opens.
+    let editor_source = io(std::fs::read(editor), editor.display())?;
+    let editor_file = format!("notes-editor.{}.js", &hash::bytes(&editor_source)[..12]);
+    io(std::fs::write(work.join(&editor_file), &editor_source), "notes editor")?;
     // The installed-app SDK bundle (sdk.js, sdk.css, chunks).
     if sdk.join("sdk.js").exists() {
         for file in listing(sdk) {
@@ -201,7 +219,7 @@ fn assemble(profile: Profile, wasm: &Path, worker_wasm: &Path, sdk: &Path, style
     let start_file = format!("start.{}.js", &hash::bytes(start.as_bytes())[..12]);
     io(std::fs::write(work.join(&start_file), &start), "start.js")?;
     io(std::fs::write(work.join("index.html"), format!(
-        "<!doctype html><html lang=\"en\" data-pdf-worker=\"/rust/{worker_file}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"light dark\"><title>Dar</title><link rel=\"stylesheet\" href=\"/rust/{css_file}\"><link rel=\"modulepreload\" href=\"/rust/{start_file}\"><link rel=\"modulepreload\" href=\"/rust/{js_file}\"><link rel=\"preload\" href=\"/rust/{wasm_file}\" as=\"fetch\" crossorigin=\"anonymous\"><script type=\"module\" src=\"/rust/{start_file}\"></script></head><body><div id=\"root\"><main class=\"startup-state\" aria-busy=\"true\"><div class=\"brand-mark\"></div><p role=\"status\">Opening your space…</p></main></div></body></html>\n")), "index.html")?;
+        "<!doctype html><html lang=\"en\" data-pdf-worker=\"/rust/{worker_file}\" data-notes-editor=\"/rust/{editor_file}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"light dark\"><title>Dar</title><link rel=\"stylesheet\" href=\"/rust/{css_file}\"><link rel=\"modulepreload\" href=\"/rust/{start_file}\"><link rel=\"modulepreload\" href=\"/rust/{js_file}\"><link rel=\"preload\" href=\"/rust/{wasm_file}\" as=\"fetch\" crossorigin=\"anonymous\"><script type=\"module\" src=\"/rust/{start_file}\"></script></head><body><div id=\"root\"><main class=\"startup-state\" aria-busy=\"true\"><div class=\"brand-mark\"></div><p role=\"status\">Opening your space…</p></main></div></body></html>\n")), "index.html")?;
     // Precompressed copies (release only; the suite's server sends the files as they are).
     if profile == Profile::Release {
         let compressible: Vec<PathBuf> = listing(&work).into_iter().filter(|f| f.extension().is_some_and(|e| ["wasm", "js", "css", "mjs"].contains(&e.to_string_lossy().as_ref()))).collect();

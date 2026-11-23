@@ -328,9 +328,9 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
 
                 navigate(&page, &base, &format!("/notes?note={}", note.file_id), page.get_by_role("region", format!("Editor for {marker} note.md")))
                     .await?;
-                capture(&page, &output, theme, width, "notes-write", &mut manifest, &mut failures).await?;
-                page.get_by_role("region", format!("Editor for {marker} note.md")).get_by_role("button", "Preview").click().await?;
-                capture(&page, &output, theme, width, "notes-preview", &mut manifest, &mut failures).await?;
+                capture(&page, &output, theme, width, "notes-live", &mut manifest, &mut failures).await?;
+                page.get_by_role("region", format!("Editor for {marker} note.md")).get_by_role("button", "Reading").click().await?;
+                capture(&page, &output, theme, width, "notes-reading", &mut manifest, &mut failures).await?;
                 navigate(&page, &base, "/notes", page.get_by_role("heading", "All notes")).await?;
                 open_settings(&page, "Notes").await?;
                 capture(&page, &output, theme, width, "notes-settings", &mut manifest, &mut failures).await?;

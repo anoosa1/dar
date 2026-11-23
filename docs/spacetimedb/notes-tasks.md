@@ -1,8 +1,9 @@
 # Notes and Tasks
 
 Delivered November 2026 (layout A, Focused workspace). Same runtime, database and
-identity as the other apps; no extra dependency or worker. UI rules are in the
-[design guide](../design.md).
+identity as the other apps; no worker. The Notes editor is CodeMirror 6 (npm packages
+bundled into the client's dist, loaded the first time a note opens). UI rules are in
+the [design guide](../design.md).
 
 ## Notes
 
@@ -17,8 +18,19 @@ identity as the other apps; no extra dependency or worker. UI rules are in the
   3,000 notes and 5,000 entries, 16 folders deep.
 - New notes start as `Untitled.md` and take their first heading as the file name
   when closed. Rename, move between folders, favorite and delete from the row menu.
-- The editor is the shared Markdown editor (autosave with revision checks,
-  tab-local recovery drafts, explicit conflicts, Write/Preview).
+- The editor (autosave 900 ms after typing stops, with revision checks, tab-local recovery
+  drafts, explicit conflicts, Ctrl/Cmd+S, Escape to close) has two modes, remembered per
+  session and defaulting to Notes settings › Open notes in (`notesEditorMode`: `write` is
+  Live, `preview` is Reading). Live is CodeMirror with Obsidian's live preview
+  (`crates/client/editor/notes-editor.js`): the lines the selection touches show their
+  Markdown; elsewhere heading, emphasis, highlight, strike, code, quote and link markers hide,
+  `[[wikilinks]]` and links show as links (resolved or dashed; Ctrl/Cmd+click, Alt+Enter or
+  Ctrl/Cmd+Enter follows), tags are chips, task boxes are checkboxes (click or Ctrl/Cmd+Enter),
+  callouts, code blocks, tables and front matter keep their look. CodeMirror's history backs
+  Undo/Redo (toolbar and keys); Ctrl/Cmd+B and +I bold and italicize. Reading is the rendered
+  preview with references, embeds, hover cards and queries. The Rust side
+  (`crates/client/src/workspace/note_editor.rs`) keeps suggestions, the outliner, formatting,
+  attachments and saving; offsets cross as UTF-16, line endings stay as written.
 - Global search finds notes by file name. Notes from the earlier database storage
   are copied once into the folder (one folder per notebook; title as a heading,
   tags as front matter, favorites kept); the old copies are left untouched and
@@ -91,5 +103,5 @@ identity as the other apps; no extra dependency or worker. UI rules are in the
 - Trash up to 10,000 entries per instance.
 - Moves keep IDs and require the same owner; copies get new IDs.
 
-Verified by the `notes-links` suite, the workspace integration and standards tests, `workspace-browser.mjs`,
+Verified by the `notes-links` and `workspace-browser` suites, the workspace integration and standards tests,
 vdirsyncer round trips and forced restart. Backups include note trash.

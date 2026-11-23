@@ -120,3 +120,54 @@ details.callout>summary{cursor:pointer}
   .note-graph-stage{width:100%;height:240px}
 }
 
+
+/* Notes editor: CodeMirror (crates/client/editor) with Obsidian's live preview. The lines being
+   edited show their Markdown; elsewhere markers hide and the text takes its preview styling. */
+.note-live{display:flex;flex-direction:column;min-width:0;padding:0}
+.note-live[hidden]{display:none}
+.note-document .note-live .cm-editor{flex:1 0 auto;min-height:inherit;background:transparent;color:var(--text)}
+.note-document .note-live .cm-editor.cm-focused{outline:1px solid color-mix(in srgb,var(--accent) 24%,transparent);outline-offset:6px;border-radius:6px}
+.note-document .note-live .cm-scroller{font:inherit;line-height:inherit;overflow:visible}
+.note-document .note-live .cm-content{padding:10px 0 24px;caret-color:var(--text);min-height:100%}
+.note-document .note-live .cm-line{padding:0 2px}
+.note-document .note-live .cm-placeholder{color:var(--muted)}
+.note-document .note-live ::selection{background:color-mix(in srgb,var(--accent) 26%,transparent)}
+.note-live-failed{color:var(--danger);font-size:13px;margin:12px 0}
+.note-live .cm-line.cm-dar-heading{font-weight:650;line-height:1.45;color:var(--text)}
+.note-live .cm-line.cm-dar-h1{font-size:1.6em;padding-top:.5em}
+.note-live .cm-line.cm-dar-h2{font-size:1.38em;padding-top:.4em}
+.note-live .cm-line.cm-dar-h3{font-size:1.18em;padding-top:.3em}
+.note-live .cm-line:is(.cm-dar-h4,.cm-dar-h5,.cm-dar-h6){font-size:1.04em}
+.note-live .cm-line.cm-dar-setext-mark{color:var(--muted)}
+.note-live .cm-dar-strong{font-weight:700}
+.note-live .cm-dar-em{font-style:italic}
+.note-live .cm-dar-strike{text-decoration:line-through;color:var(--muted)}
+.note-live .cm-dar-mark{background:var(--warning-soft);border-radius:3px}
+.note-live .cm-dar-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;background:var(--surface-soft);border-radius:4px;padding:1px 3px}
+.note-live .cm-dar-comment,.note-live .cm-dar-block-id,.note-live .cm-dar-fence{color:var(--muted)}
+.note-live .cm-dar-block-id{font-size:.85em}
+.note-live .cm-dar-link{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+.note-live .cm-dar-link.is-unresolved{opacity:.75;border-bottom-style:dashed}
+.note-live .cm-dar-link:is(.is-file,.is-plain,.is-reference){border-bottom-color:transparent}
+.note-live .cm-dar-link.is-file{color:var(--muted)}
+.note-live .cm-dar-embed{background:var(--surface-soft);border-radius:4px;padding:1px 3px}
+.note-live .cm-dar-tag{padding:0 5px;border-radius:9px;background:var(--tonal);color:var(--on-tonal);font-size:.9em}
+.note-live .cm-line.cm-dar-quote{border-left:3px solid var(--border);padding-left:14px;color:var(--muted)}
+.note-live .cm-line.cm-dar-callout{border-left:3px solid var(--accent);padding-left:14px;background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.note-live .cm-line.cm-dar-callout-title{font-weight:650;color:var(--accent)}
+.note-live .cm-line.cm-dar-callout:is([data-callout=warning],[data-callout=caution],[data-callout=attention]){border-color:var(--warning);background:var(--warning-soft)}
+.note-live .cm-line.cm-dar-callout:is([data-callout=danger],[data-callout=error],[data-callout=bug],[data-callout=failure],[data-callout=fail],[data-callout=missing]){border-color:var(--danger);background:var(--error-soft)}
+.note-live .cm-line.cm-dar-codeblock{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;line-height:1.6;background:var(--panel);padding:0 14px}
+.note-live .cm-line.cm-dar-codeblock.is-first{border-radius:10px 10px 0 0;padding-top:6px}
+.note-live .cm-line.cm-dar-codeblock.is-last{border-radius:0 0 10px 10px;padding-bottom:6px}
+.note-live .cm-line.cm-dar-codeblock.is-first.is-last{border-radius:10px}
+.note-live .cm-line:is(.cm-dar-table,.cm-dar-frontmatter){font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em}
+.note-live .cm-line.cm-dar-frontmatter{color:var(--muted);background:var(--surface-soft)}
+.note-live .cm-line.cm-dar-hr:not(.is-editing){color:transparent;background:linear-gradient(var(--border),var(--border)) center/100% 1px no-repeat}
+.note-live .cm-dar-bullet{display:inline-block;width:1ch;text-align:center;color:var(--muted)}
+.note-live .cm-dar-bullet::before{content:"\2022"}
+.note-live .cm-dar-list-number{color:var(--muted)}
+.note-live .cm-dar-task{position:relative;display:inline-block;box-sizing:border-box;width:15px;height:15px;margin:0 7px 0 1px;vertical-align:-2px;border:1.5px solid var(--control-border);border-radius:4px;background:var(--surface);cursor:pointer}
+.note-live .cm-dar-task.is-done{background:var(--accent);border-color:var(--accent)}
+.note-live .cm-dar-task.is-done::after{content:"";position:absolute;left:3.5px;top:0;width:4px;height:8px;border:solid var(--on-accent);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.note-live .cm-dar-done{color:var(--muted);text-decoration:line-through}

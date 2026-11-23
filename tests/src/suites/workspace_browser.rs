@@ -84,20 +84,11 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
     let editor = page.get_by_role("region", "Editor for Untitled.md");
     editor.wait_for().await?;
 
-    let markdown_input = editor.get_by_label("File contents");
-    editor
-        .locator(r#"textarea[aria-label="File contents"]:not([readonly])"#)
-        .wait_for()
-        .await?;
+    let markdown_input = ui::note_source(&editor).await?;
     markdown_input.fill("selected words").await?;
-    markdown_input
-        .evaluate(
-            "el => { el.focus(); el.setSelectionRange(0, el.value.length); }",
-            Value::Null,
-        )
-        .await?;
+    ui::note_select(&markdown_input, Some(0), None).await?;
     editor.get_by_role("button", "Bold").click().await?;
-    assert_eq!(markdown_input.input_value().await?, "**selected words**");
+    assert_eq!(ui::note_text(&markdown_input).await?, "**selected words**");
 
     let title = format!("Browser writing {}", &uuid()[..6]);
     let source = format!(
@@ -109,8 +100,13 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
         .timeout(Duration::from_secs(10))
         .wait_for()
         .await?;
-    editor.get_by_role("button", "Preview").click().await?;
-    editor.get_by_text("Keep this safe").wait_for().await?;
+    // Live preview styles the Markdown in place; source HTML stays text and unsafe links are inert.
+    editor.locator(".cm-dar-strong").filter_has_text("Keep this safe").wait_for().await?;
+    editor.locator(".cm-dar-link.is-plain").filter_has_text("unsafe").wait_for().await?;
+    editor.locator(".cm-line").filter_has_text("<script>window.noteInjected=true</script>").wait_for().await?;
+    page.screenshot(t.screenshot("notes-editor-live.png"), true).await?;
+    editor.get_by_role("button", "Reading").click().await?;
+    editor.locator(".markdown-preview").get_by_text("Keep this safe").wait_for().await?;
     assert_eq!(page.evaluate("() => window.noteInjected").await?, Value::Null);
     assert_eq!(
         editor.locator(r#"a[href^="javascript:"]"#).count().await?,
@@ -150,9 +146,15 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
 
     // Deep links open the note; an edit made through Files shows after a refresh.
     page.goto(&format!("{base}/notes?note={note_id}")).await?;
-    page.get_by_role("region", format!("Editor for {title}.md"))
-        .wait_for()
-        .await?;
+    let deep_editor = page.get_by_role("region", format!("Editor for {title}.md"));
+    deep_editor.wait_for().await?;
+    // On a phone the live editor fills the sheet without sideways scrolling.
+    page.set_viewport_size(390, 844).await?;
+    ui::note_source(&deep_editor).await?;
+    deep_editor.locator(".cm-line.cm-dar-h1").filter_has_text(&title).wait_for().await?;
+    page.screenshot(t.screenshot("notes-editor-phone.png"), true).await?;
+    assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
+    page.set_viewport_size(1440, 950).await?;
     page.get_by_role("button", "Close editor").click().await?;
 
     let latest = library().await?["notes"]

@@ -127,8 +127,9 @@ pub async fn refinement_journey(t: &Ctx) -> Result<()> {
 
         let note_editor = page.get_by_role("region", format!("Editor for {marker} note.md"));
         note_editor.wait_for().await?;
-        page.wait_for_function("() => [...document.querySelectorAll('textarea')].some(el => /A quieter week/.test(el.value))").await?;
-        assert!(note_editor.get_by_label("File contents").input_value().await?.contains("A quieter week"));
+        let note_source = ui::note_source(&note_editor).await?;
+        page.wait_for_function("() => /A quieter week/.test(document.querySelector('.cm-content')?.darEditor?.text() ?? '')").await?;
+        assert!(ui::note_text(&note_source).await?.contains("A quieter week"));
         assert_eq!(page.get_by_label("Filter by tag").count().await?, 0);
         note_editor.get_by_label("File contents").press("End").await?;
         note_editor.get_by_label("File contents").press_sequentially(" #weekly").await?;

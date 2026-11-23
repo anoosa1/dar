@@ -133,3 +133,39 @@ pub async fn open_dialog(button: &Locator, dialog: &Locator) -> Result<()> {
         }
     }
 }
+
+/// The Notes editor's text field (CodeMirror's content element, a textbox named "File
+/// contents") once the note has loaded and can be edited.
+pub async fn note_source(editor: &Locator) -> Result<Locator> {
+    editor.locator(r#".cm-content[aria-label="File contents"]:not([aria-readonly="true"])"#).wait_for().await?;
+    Ok(editor.get_by_role("textbox", "File contents"))
+}
+
+/// The whole text in the Notes editor, through the hook the editor puts on its content element
+/// for tests (`darEditor`, in `crates/client/editor/notes-editor.js`).
+pub async fn note_text(source: &Locator) -> Result<String> {
+    let text = source.evaluate("el => el.darEditor.text()", serde_json::Value::Null).await?;
+    Ok(text.as_str().unwrap_or_default().to_owned())
+}
+
+/// Focuses the Notes editor and selects from `anchor` to `head` (UTF-16 offsets, as
+/// `setSelectionRange` takes them); `None` means the end of the text.
+pub async fn note_select(source: &Locator, anchor: Option<usize>, head: Option<usize>) -> Result<()> {
+    source
+        .evaluate(
+            "(el, [a, h]) => { const ed = el.darEditor, end = ed.text().length; ed.focus(); ed.select(a ?? end, h ?? end); }",
+            serde_json::json!([anchor, head]),
+        )
+        .await?;
+    Ok(())
+}
+
+/// The offset of `needle` in the Notes editor's text (UTF-16, as JavaScript's `indexOf`).
+pub async fn note_offset(source: &Locator, needle: &str) -> Result<usize> {
+    let at = source.evaluate("(el, needle) => el.darEditor.text().indexOf(needle)", serde_json::json!(needle)).await?;
+    let at = at.as_i64().unwrap_or(-1);
+    if at < 0 {
+        return Err(crate::Error::new(format!("{needle:?} is not in the note")));
+    }
+    Ok(at as usize)
+}

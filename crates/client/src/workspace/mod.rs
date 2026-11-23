@@ -1,6 +1,7 @@
 //! Notes (`notes.tsx`) and Tasks (`pim/workspace.tsx`, `pim/task-occurrences.tsx`) apps,
 //! along with their shared shell, settings sheet, transfers and reactive select control.
 
+pub mod note_editor;
 pub mod note_graph;
 pub mod note_links;
 pub mod note_query;
@@ -475,9 +476,9 @@ fn WorkspaceSettings(app: &'static str, session: BrowserSession, on_close: Callb
                                 })/>
                             </SettingRow>
                             {is_notes.then(|| view! {
-                                <SettingRow label="Open notes in" hint="Editing or reading view" state=saver.state("notesEditorMode")>
-                                    <Segmented label="Open notes in" value=text("notesEditorMode", "write") options=vec![("write", "Write"), ("preview", "Preview")] on_change=Callback::new(move |v: String| {
-                                        let label = if v == "write" { "Write" } else { "Preview" };
+                                <SettingRow label="Open notes in" hint="Live preview or reading view" state=saver.state("notesEditorMode")>
+                                    <Segmented label="Open notes in" value=text("notesEditorMode", "write") options=vec![("write", "Live"), ("preview", "Reading")] on_change=Callback::new(move |v: String| {
+                                        let label = if v == "write" { "Live" } else { "Reading" };
                                         set("notesEditorMode", v.into(), format!("Notes open in {label}"));
                                     })/>
                                 </SettingRow>

@@ -102,8 +102,8 @@ pub async fn linked_writing_in_the_browser(t: &Ctx) -> Result<()> {
     // `[[` suggests notes and `#` suggests tags; Enter accepts.
     page.get_by_role("button", "New note").first().click().await?;
     let editor = page.get_by_role("region", "Editor for Untitled.md");
-    let source = editor.get_by_label("File contents");
-    editor.locator(r#"textarea[aria-label="File contents"]:not([readonly])"#).wait_for().await?;
+    let source = ui::note_source(&editor).await?;
+    assert_eq!(editor.get_by_role("button", "Live").get_attribute("aria-pressed").await?.as_deref(), Some("true"), "Live is the default mode");
     let trip = format!("Trip {tag}");
     source.fill(&format!("# {trip}\n\n- [ ] pack\n\nVisit ")).await?;
     source.press_sequentially("[[Apol").await?;
@@ -113,19 +113,44 @@ pub async fn linked_writing_in_the_browser(t: &Ctx) -> Result<()> {
     source.press_sequentially(" soon #orbit").await?;
     page.get_by_role("option", contains(&format!("#orbit{tag}"))).wait_for().await?;
     source.press("Enter").await?;
-    let written = source.input_value().await?;
+    let written = ui::note_text(&source).await?;
     assert!(written.ends_with(&format!("Visit [[{target}]] soon #orbit{tag} ")), "{written}");
     source.press_sequentially("and [[Fresh idea]]").await?;
     editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
 
-    // The preview links to the note, shows the tag and toggles the checkbox in the source.
-    editor.get_by_role("button", "Preview").click().await?;
+    // Live preview: away from the caret's line the heading drops its `#`, the wikilink its
+    // brackets (dashed while its note is missing), the tag is a chip and the task a checkbox.
+    // The caret's line (here the last) shows its Markdown as written.
+    let heading = editor.locator(".cm-line.cm-dar-h1");
+    assert_eq!(heading.text_content().await?, trip);
+    let link = editor.locator(&format!(r#".cm-dar-link[data-href="{target}"]"#));
+    assert_eq!(link.text_content().await?, format!("[[{target}]]"));
+    source.press("Control+Home").await?;
+    eventually(Duration::from_secs(5), "the heading shows its marker", || async { Ok((heading.text_content().await? == format!("# {trip}")).then_some(())) }).await?;
+    eventually(Duration::from_secs(5), "the link hides its brackets", || async { Ok((link.text_content().await? == target).then_some(())) }).await?;
+    assert!(!link.matches("el => el.classList.contains('is-unresolved')").await?);
+    assert!(editor.locator(r#".cm-dar-link[data-href="Fresh idea"]"#).matches("el => el.classList.contains('is-unresolved')").await?);
+    editor.locator(".cm-dar-tag").filter_has_text(&format!("#orbit{tag}")).wait_for().await?;
+    page.screenshot(t.screenshot("notes-live-preview.png"), true).await?;
+    source.press("Control+End").await?;
+    editor.get_by_role("checkbox", "Open task").click().await?;
+    editor.get_by_role("checkbox", "Completed task").wait_for().await?;
+    assert!(ui::note_text(&source).await?.contains("- [x] pack"));
+    // Undo (the toolbar's, CodeMirror's history) reopens it.
+    editor.get_by_role("button", "Undo").click().await?;
+    editor.get_by_role("checkbox", "Open task").wait_for().await?;
+    assert!(ui::note_text(&source).await?.contains("- [ ] pack"));
+    editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
+
+    // Reading links to the note, shows the tag and toggles the checkbox in the source.
+    editor.get_by_role("button", "Reading").click().await?;
+    assert_eq!(editor.get_by_role("textbox", "File contents").count().await?, 0, "Reading hides the editor");
     editor.get_by_role("checkbox", "Open task").click().await?;
     editor.get_by_role("checkbox", "Completed task").wait_for().await?;
     editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
-    editor.get_by_role("button", "Write").click().await?;
-    assert!(source.input_value().await?.contains("- [x] pack"));
-    editor.get_by_role("button", "Preview").click().await?;
+    editor.get_by_role("button", "Live").click().await?;
+    assert!(ui::note_text(&source).await?.contains("- [x] pack"));
+    editor.get_by_role("button", "Reading").click().await?;
     editor.get_by_role("button", format!("#orbit{tag}")).wait_for().await?;
     page.screenshot(t.screenshot("notes-links-preview.png"), true).await?;
 
@@ -160,10 +185,18 @@ pub async fn linked_writing_in_the_browser(t: &Ctx) -> Result<()> {
     page.locator(".workspace-row").filter_has_text(&renamed).wait_for().await?;
     page.locator(".workspace-row").filter_has_text(&trip).wait_for().await?;
 
-    // A link to a missing note creates it.
+    // A link to a missing note creates it: Ctrl+click in Live preview follows it.
     page.locator(".workspace-row").filter_has_text(&trip).locator(".workspace-row-content").click().await?;
     let trip_editor = page.get_by_role("region", regex("^Editor for "));
-    trip_editor.get_by_role("link", "Fresh idea").click().await?;
+    trip_editor.get_by_role("link", "Fresh idea").wait_for().await?;
+    trip_editor.get_by_role("button", "Live").click().await?;
+    ui::note_source(&trip_editor).await?;
+    let fresh = trip_editor.locator(r#".cm-dar-link[data-href="Fresh idea"]"#);
+    // A plain click edits the link's text instead.
+    fresh.click().await?;
+    trip_editor.locator(".cm-line").filter_has_text("[[Fresh idea]]").wait_for().await?;
+    trip_editor.get_by_role("textbox", "File contents").press("Control+Home").await?;
+    fresh.click_with(ClickOptions { modifiers: vec!["Control"], ..ClickOptions::default() }).await?;
     page.get_by_role("region", "Editor for Fresh idea.md").wait_for().await?;
     let library = admin.get_json("/api/v1/notes/library").await?;
     assert!(library["notes"].as_array().context("notes")?.iter().any(|n| n["path"] == "Fresh idea.md"));
@@ -200,9 +233,8 @@ pub async fn daily_notes_templates_and_embeds(t: &Ctx) -> Result<()> {
     page.get_by_role("button", "Today").click().await?;
     let editor = page.get_by_role("region", format!("Editor for {date}.md"));
     editor.wait_for().await?;
-    let source = editor.get_by_label("File contents");
-    editor.locator(r#"textarea[aria-label="File contents"]:not([readonly])"#).wait_for().await?;
-    let filled = source.input_value().await?;
+    let source = ui::note_source(&editor).await?;
+    let filled = ui::note_text(&source).await?;
     assert_eq!(filled.trim(), format!("# {date}\n\nTemplate line {tag}"));
 
     // Slash commands insert blocks; templates are listed with them.
@@ -210,7 +242,7 @@ pub async fn daily_notes_templates_and_embeds(t: &Ctx) -> Result<()> {
     source.press_sequentially("\n/tab").await?;
     page.get_by_role("option", contains("Table")).wait_for().await?;
     source.press("Enter").await?;
-    assert!(source.input_value().await?.contains("| --- | --- |"));
+    assert!(ui::note_text(&source).await?.contains("| --- | --- |"));
     source.press_sequentially("\n\n/dai").await?;
     page.get_by_role("option", contains("Template: Daily")).wait_for().await?;
     source.press("Escape").await?;
@@ -221,16 +253,16 @@ pub async fn daily_notes_templates_and_embeds(t: &Ctx) -> Result<()> {
     source.evaluate(
         "el => { const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
                 const data = new DataTransfer(); data.items.add(new File([bytes], 'dot.png', { type: 'image/png' }));
-                el.focus(); el.setSelectionRange(el.value.length, el.value.length);
+                el.darEditor.focus(); el.darEditor.select(el.darEditor.text().length);
                 el.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true })); }",
         Value::Null,
     ).await?;
-    eventually(Duration::from_secs(10), "image embed inserted", || async { Ok(source.input_value().await?.contains("![[dot.png]]").then_some(())) }).await?;
+    eventually(Duration::from_secs(10), "image embed inserted", || async { Ok(ui::note_text(&source).await?.contains("![[dot.png]]").then_some(())) }).await?;
     editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
     let files = admin.get_json("/api/v1/notes/attachments").await?;
     assert!(files["files"].as_array().context("files")?.iter().any(|f| f["path"] == "attachments/dot.png" && f["mediaType"] == "image/png"));
 
-    editor.get_by_role("button", "Preview").click().await?;
+    editor.get_by_role("button", "Reading").click().await?;
     let embed = editor.get_by_role("group", format!("Embedded Source {tag} \u{203a} Part"));
     embed.get_by_text(format!("Embedded words {tag}.")).wait_for().await?;
     assert_eq!(embed.get_by_text(format!("Not shown {tag}.")).count().await?, 0);
@@ -267,8 +299,7 @@ pub async fn outliner_keys_and_query_blocks(t: &Ctx) -> Result<()> {
     page.get_by_role("heading", "All notes").wait_for().await?;
     page.get_by_role("button", "New note").first().click().await?;
     let editor = page.get_by_role("region", regex("^Editor for Untitled"));
-    let source = editor.get_by_label("File contents");
-    editor.locator(r#"textarea[aria-label="File contents"]:not([readonly])"#).wait_for().await?;
+    let source = ui::note_source(&editor).await?;
 
     // Enter continues the list, Tab and Shift+Tab change the level, Alt+Shift+Up moves the line.
     source.fill("- one").await?;
@@ -276,19 +307,19 @@ pub async fn outliner_keys_and_query_blocks(t: &Ctx) -> Result<()> {
     source.press("Enter").await?;
     source.press_sequentially("two").await?;
     source.press("Tab").await?;
-    assert_eq!(source.input_value().await?, "- one\n\t- two");
+    assert_eq!(ui::note_text(&source).await?, "- one\n\t- two");
     source.press("Shift+Tab").await?;
     source.press("Alt+Shift+ArrowUp").await?;
-    assert_eq!(source.input_value().await?, "- two\n- one");
+    assert_eq!(ui::note_text(&source).await?, "- two\n- one");
     source.press("End").await?;
     source.press("Enter").await?;
     source.press("Enter").await?;
-    assert_eq!(source.input_value().await?, "- two\n\n- one", "Enter on an empty item ends the list");
+    assert_eq!(ui::note_text(&source).await?, "- two\n\n- one", "Enter on an empty item ends the list");
 
     // A query block lists matching notes with their properties.
     source.fill(&format!("# Shelf {tag}\n\n```query\ntag: #book{tag}\nsort: rating desc\nshow: status, rating\n```\n")).await?;
     editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
-    editor.get_by_role("button", "Preview").click().await?;
+    editor.get_by_role("button", "Reading").click().await?;
     let results = editor.get_by_role("group", "Query results");
     results.get_by_text("2 notes").wait_for().await?;
     let first = results.locator("tbody tr").first();
@@ -348,12 +379,11 @@ pub async fn hover_preview_block_link_and_folder_rename(t: &Ctx) -> Result<()> {
     page.locator(".workspace-row").filter_has_text(&format!("Host {tag}")).locator(".workspace-row-content").click().await?;
     let editor = page.get_by_role("region", format!("Editor for Host {tag}.md"));
     editor.wait_for().await?;
-    let source = editor.get_by_label("File contents");
-    editor.locator(r#"textarea[aria-label="File contents"]:not([readonly])"#).wait_for().await?;
+    let source = ui::note_source(&editor).await?;
 
     // Blank line shows the cursor error; non-blank line gets a `^xxxxxx` id and copies the block link.
     source.evaluate(
-        "el => { const i = el.value.indexOf('\\n\\n'); el.focus(); el.setSelectionRange(i + 1, i + 1); }",
+        "el => { const i = el.darEditor.text().indexOf('\\n\\n'); el.darEditor.focus(); el.darEditor.select(i + 1); }",
         Value::Null,
     )
     .await?;
@@ -362,13 +392,13 @@ pub async fn hover_preview_block_link_and_folder_rename(t: &Ctx) -> Result<()> {
     editor.get_by_text("Put the cursor on a line to link to it.").wait_for().await?;
 
     source.evaluate(
-        "el => { const i = el.value.indexOf('Anchor line'); el.focus(); el.setSelectionRange(i + 4, i + 4); }",
+        "el => { const i = el.darEditor.text().indexOf('Anchor line'); el.darEditor.focus(); el.darEditor.select(i + 4); }",
         Value::Null,
     )
     .await?;
     editor.get_by_role("button", "File options").click().await?;
     page.get_by_role("menuitem", "Copy block link").click().await?;
-    let updated_source = source.input_value().await?;
+    let updated_source = ui::note_text(&source).await?;
     let anchor_line = updated_source
         .lines()
         .find(|l| l.starts_with(&format!("Anchor line {tag}")))
@@ -392,7 +422,7 @@ pub async fn hover_preview_block_link_and_folder_rename(t: &Ctx) -> Result<()> {
 
     // Hovering a resolved link in preview opens a top-layer preview card for the target fragment;
     // moving away hides it.
-    editor.get_by_role("button", "Preview").click().await?;
+    editor.get_by_role("button", "Reading").click().await?;
     editor.get_by_role("link", "Plan details").hover().await?;
     let card = page.get_by_role("group", format!("Preview of Plan {tag} \u{203a} Details"));
     card.get_by_text(format!("Preview body {tag}.")).wait_for().await?;

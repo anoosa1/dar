@@ -19,7 +19,7 @@ use crate::files::editor::{TextFile, upload_blob, write_text_file};
 use crate::live::{Live, reducer, replied};
 use crate::module_bindings::create_folder;
 use crate::markdown::{Embed, Markdown, NoteLinks, note_embed, split_fragment};
-use crate::ui::{Listener, call_method, document, listen, window};
+use crate::ui::{Listener, call_method, listen, window};
 
 /// A file in the Notes folder that is not a note (an image, PDF or recording).
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -306,34 +306,6 @@ pub fn accept(text: &str, caret: usize, trigger: &Trigger, insert: &str) -> (Str
     let insert = insert.replace(CARET, "");
     let next = format!("{}{insert}{}", &text[..start], &text[end..]);
     (next, start + at)
-}
-
-/// The viewport position just below the caret of a textarea (a mirror element measures it).
-pub fn caret_point(area: &web_sys::HtmlTextAreaElement, utf16: u32) -> Option<(f64, f64)> {
-    let style = window().get_computed_style(area).ok().flatten()?;
-    let mirror = document().create_element("div").ok()?.dyn_into::<web_sys::HtmlElement>().ok()?;
-    let copy = [
-        "box-sizing", "width", "padding-top", "padding-right", "padding-bottom", "padding-left", "border-top-width", "border-right-width", "border-bottom-width",
-        "border-left-width", "font-family", "font-size", "font-weight", "font-style", "letter-spacing", "line-height", "text-transform", "text-indent", "tab-size", "word-spacing",
-    ];
-    let target = mirror.style();
-    for name in copy {
-        let _ = target.set_property(name, &style.get_property_value(name).unwrap_or_default());
-    }
-    for (name, value) in [("position", "fixed"), ("visibility", "hidden"), ("white-space", "pre-wrap"), ("overflow-wrap", "break-word"), ("top", "0"), ("left", "0"), ("border-style", "solid")] {
-        let _ = target.set_property(name, value);
-    }
-    let value = area.value();
-    let before: String = String::from_utf16_lossy(&value.encode_utf16().take(utf16 as usize).collect::<Vec<_>>());
-    mirror.set_text_content(Some(&before));
-    let marker = document().create_element("span").ok()?.dyn_into::<web_sys::HtmlElement>().ok()?;
-    marker.set_text_content(Some("\u{200b}"));
-    mirror.append_child(&marker).ok()?;
-    document().body()?.append_child(&mirror).ok()?;
-    let (x, y, h) = (marker.offset_left() as f64, marker.offset_top() as f64, marker.offset_height() as f64);
-    mirror.remove();
-    let rect = area.get_bounding_client_rect();
-    Some((rect.left() + x - area.scroll_left() as f64, rect.top() + y - area.scroll_top() as f64 + h + 4.0))
 }
 
 /// The suggestion list next to the caret (top layer, so the sheet does not clip it).
