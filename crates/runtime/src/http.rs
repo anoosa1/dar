@@ -681,6 +681,9 @@ async fn api(r: Api<'_>, body: Body) -> Result<Response> {
     if path == "/api/v1/notes/attachments" && *method == Method::GET {
         return ok(db.call("service_notes", json!([session_id, "attachments"])).await?);
     }
+    if path == "/api/v1/notes/graph" && *method == Method::GET {
+        return ok(runtime.notes.graph(db, &runtime.blobs, &session_id).await?);
+    }
     if (path == "/api/v1/notes/backlinks" || path == "/api/v1/notes/mentions") && *method == Method::GET {
         let id = r.q("id");
         if id.is_empty() || id.len() > 64 {

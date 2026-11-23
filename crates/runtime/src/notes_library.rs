@@ -363,6 +363,46 @@ impl Library {
         sort_by_title(&mut found);
         Ok(json!({ "id": id, "target": vault.wiki_target(target), "mentions": found, "truncated": truncated }))
     }
+
+    /// Nodes and deduplicated resolved link edges across the whole Notes library.
+    pub async fn graph(&self, db: &Database, blobs: &Blobs, session_id: &str) -> Result<Value> {
+        let (_, notes) = self.notes(db, blobs, session_id).await?;
+        Ok(build_graph(&notes))
+    }
+}
+
+fn build_graph(notes: &[Note]) -> Value {
+    let vault = dar_notes::Vault::new(notes.iter().map(|n| n.path.clone()));
+    let mut nodes: Vec<Value> = notes
+        .iter()
+        .map(|n| json!({ "id": n.id(), "title": n.info.title, "path": n.path, "tags": n.info.tags }))
+        .collect();
+    sort_by_title(&mut nodes);
+    let mut seen = std::collections::HashSet::new();
+    let mut edges: Vec<Value> = Vec::new();
+    for (index, note) in notes.iter().enumerate() {
+        let from_id = note.id();
+        if from_id.is_empty() {
+            continue;
+        }
+        for link in &note.info.links {
+            let hit = if link.wiki {
+                vault.resolve_wiki(&note.path, &link.target)
+            } else {
+                vault.resolve_path(&note.path, &link.target)
+            };
+            if let Some(target) = hit
+                && target != index
+                && seen.insert((index, target))
+            {
+                let to_id = notes[target].id();
+                if !to_id.is_empty() {
+                    edges.push(json!({ "from": from_id, "to": to_id }));
+                }
+            }
+        }
+    }
+    json!({ "nodes": nodes, "edges": edges })
 }
 
 fn sort_by_title(list: &mut [Value]) {
@@ -382,5 +422,30 @@ mod tests {
         assert_eq!(summarize("Plan.md", "Just text"), ("Plan".into(), "Just text".into()));
         assert_eq!(summarize("Shelf.md", "# Shelf\n```query\ntag: #b\n```\nAfter."), ("Shelf".into(), "After.".into()));
         assert_eq!(summarize("Day.md", "Read [[Book#Ch 2]].\n![[Book#Part]]\n![[dot.png]] done"), ("Day".into(), "Read Book. done".into()));
+    }
+
+    #[test]
+    fn graph_edges() {
+        let make = |id: &str, path: &str, text: &str| {
+            let name = path.rsplit('/').next().unwrap_or(path);
+            Note { row: json!({ "id": id, "name": name }), path: path.to_owned(), info: Arc::new(info(name, text)) }
+        };
+        let notes = vec![
+            make("id-a", "A.md", "# Alpha\nSee [[B]], [again](B.md), [[A]], [[#Alpha]], and [[Missing]]. #work\n"),
+            make("id-b", "B.md", "# Beta\nNo outgoing links.\n"),
+            make("id-c", "sub/C.md", "Back to [[A]] and [[B]].\n"),
+        ];
+        let g = build_graph(&notes);
+        let nodes = g["nodes"].as_array().expect("nodes");
+        assert_eq!(nodes.len(), 3);
+        assert_eq!(nodes[0], json!({ "id": "id-a", "title": "Alpha", "path": "A.md", "tags": ["work"] }));
+        assert_eq!(nodes[1], json!({ "id": "id-b", "title": "Beta", "path": "B.md", "tags": [] }));
+        assert_eq!(nodes[2], json!({ "id": "id-c", "title": "C", "path": "sub/C.md", "tags": [] }));
+        let edges = g["edges"].as_array().expect("edges");
+        assert_eq!(edges, &[
+            json!({ "from": "id-a", "to": "id-b" }),
+            json!({ "from": "id-c", "to": "id-a" }),
+            json!({ "from": "id-c", "to": "id-b" }),
+        ]);
     }
 }

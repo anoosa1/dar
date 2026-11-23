@@ -85,3 +85,38 @@ details.callout>summary{cursor:pointer}
 .note-preview-card .markdown-preview p{margin:.45em 0}
 .note-editor-notice{margin:0 12px 8px;padding:8px 12px;border-radius:12px;background:var(--surface-soft);font-size:13px;flex:none}
 @media(prefers-reduced-motion:reduce){.note-preview-card{animation:none;transition:none}}
+
+/* Notes graph view */
+.notes-list.is-graph{display:flex;flex-direction:column;min-height:100%;min-width:0;max-width:100%;box-sizing:border-box}
+.note-graph{container-type:inline-size;display:flex;flex-direction:column;gap:12px;flex:1;min-height:0;min-width:0;max-width:100%}
+.note-graph-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-width:0}
+.note-graph-filter{flex:1 1 180px;min-width:0;width:100%}
+.note-graph-local{display:inline-flex;align-items:center;gap:8px;flex:none;margin:0;font-size:13px;color:var(--text);cursor:pointer;user-select:none}
+.note-graph-local input{width:16px;height:16px;min-height:16px;margin:0;accent-color:var(--accent);flex:none}
+.note-graph-hint{margin:0}
+.note-graph-body{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;flex:1;min-height:0;min-width:0}
+.note-graph-stage{position:relative;width:100%;min-width:0;height:340px;border:1px solid var(--border);border-radius:14px;background:var(--surface-soft);overflow:hidden;touch-action:none}
+.note-graph-canvas{display:block;width:100%;height:100%;cursor:grab}
+.note-graph-canvas.is-dragging{cursor:grabbing}
+.note-graph-canvas.is-hovering{cursor:pointer}
+.note-graph-list-panel{display:flex;flex-direction:column;gap:6px;min-width:0;min-height:0}
+.note-graph-list-heading{margin:0;font-size:12px;font-weight:600;color:var(--muted)}
+.note-graph-list{display:flex;flex-direction:column;gap:4px;min-width:0}
+.note-graph-row{min-width:0}
+.note-graph-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;padding:8px 10px;border:1px solid transparent;border-radius:10px;background:var(--surface-soft);color:var(--text);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.note-graph-item:hover{background:var(--hover)}
+.note-graph-item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note-graph-item.is-selected{background:var(--tonal);color:var(--on-tonal)}
+.note-graph-item-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.note-graph-item-count{flex:none;font-size:11px;color:var(--muted)}
+.note-graph-item.is-selected .note-graph-item-count{color:inherit}
+@container (min-width:680px){
+  .note-graph-body{grid-template-columns:minmax(0,1fr) 240px;align-items:stretch}
+  .note-graph-stage{height:clamp(380px,62vh,640px)}
+  .note-graph-list-panel{max-height:clamp(380px,62vh,640px);overflow-y:auto}
+}
+@media(max-width:800px){
+  .note-graph-body{grid-template-columns:minmax(0,1fr)}
+  .note-graph-stage{width:100%;height:240px}
+}
+

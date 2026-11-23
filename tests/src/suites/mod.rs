@@ -75,6 +75,7 @@ mod themed_controls_browser;
 mod twilight_browser;
 mod ui_settings;
 mod upload_timeout;
+mod notes_graph;
 mod notes_links;
 mod workspace;
 mod workspace_browser;
@@ -85,7 +86,7 @@ pub const SUITES: &[Suite] = &[
     twilight_browser::SUITE, upload_timeout::SUITE, codex::SUITE, mail_browser::SUITE, photos_immich::SUITE, restart::SUITE,
     chat::SUITE, chat_discord::SUITE, shared_ui_browser::SUITE, chat_browser::SUITE, production_proxy::SUITE, pim_browser::SUITE,
     agent::SUITE, claude::SUITE, mail::SUITE, photos::SUITE, photos_library::SUITE, photos_sharing::SUITE, photos_browser::SUITE,
-    identity::SUITE, identity_lifecycle::SUITE, identity_browser::SUITE, oidc_config::SUITE, workspace::SUITE, workspace_browser::SUITE, notes_links::SUITE,
+    identity::SUITE, identity_lifecycle::SUITE, identity_browser::SUITE, oidc_config::SUITE, workspace::SUITE, workspace_browser::SUITE, notes_links::SUITE, notes_graph::SUITE,
     agent_browser::SUITE, news::SUITE, news_browser::SUITE, git_interop::SUITE, git_tracker::SUITE, git::SUITE, git_app::SUITE,
     git_browser::SUITE, git_tracker_browser::SUITE, history::SUITE, history_browser::SUITE, books::SUITE, books_browser::SUITE,
     pim::SUITE, pim_upgrade::SUITE, pim_dav_client::SUITE, calendar_subscriptions::SUITE, davx5::SUITE, dav::SUITE,

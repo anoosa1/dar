@@ -12,6 +12,7 @@ use leptos::task::spawn_local;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::note_graph::NoteGraph;
 use super::note_links::{self, LinkSuggestions, NoteIndex, NoteReferences, Suggestion, Trigger, has_tag};
 use super::{ReactiveSelect, WorkspaceShell, search_params};
 use crate::api::{self, BrowserSession};
@@ -647,6 +648,9 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         if s == "favorites" {
             return "Favorites".to_owned();
         }
+        if s == "graph" {
+            return "Graph".to_owned();
+        }
         if let Some(tag) = s.strip_prefix("tag:") {
             return format!("#{tag}");
         }
@@ -660,7 +664,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     let current_folder_path = Memo::new(move |_| {
         let s = scope.get();
-        if s == "all" || s == "favorites" {
+        if s == "all" || s == "favorites" || s == "graph" {
             return None;
         }
         library.with(|lib| lib.as_ref().and_then(|l| l.folders.iter().find(|f| f.id == s).map(|f| f.path.clone())))
@@ -681,6 +685,9 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 }).collect_view()}
                 <button class="nav-item" disabled=move || busy.get() || library.with(Option::is_none) on:click=move |_| open_today()>
                     <Icon name="calendar"/>"Today"
+                </button>
+                <button class=move || format!("nav-item {}", if scope.get() == "graph" { "active" } else { "" }) aria-current=move || (scope.get() == "graph").then_some("page") on:click=move |_| scope.set("graph".to_owned())>
+                    <Icon name="share"/>"Graph"
                 </button>
             </nav>
             <div class="sidebar-heading">
@@ -823,28 +830,31 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     });
 
     let has_open = Signal::from(Memo::new(move |_| open.with(Option::is_some)));
+    let graph_epoch = pim.epoch;
 
     view! {
         <WorkspaceShell kind="notes" session=session on_signed_out=on_signed_out sidebar=sidebar has_details=has_open note_editor=has_open details=details pim=pim>
-            <div class="workspace-list notes-list">
+            <div class=move || if scope.get() == "graph" { "workspace-list notes-list is-graph" } else { "workspace-list notes-list" }>
                 <div class="workspace-heading">
                     <h1>{move || heading_title.get()}</h1>
-                    <ActionMenu label="Sort notes" class="workspace-sort" actions=move |_| {
-                        let current = sort.get_untracked();
-                        [("modified", "Recently edited"), ("title", "Title")].into_iter().map(|(value, label)| {
-                            MenuAction::plain(label).current(current == value).run(move || {
-                                let rev = shared_prefs.value.with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
-                                let sess = session_sv.get_value();
-                                spawn_local(async move {
-                                    if let Err(cause) = save_preferences(json!({ "revision": rev, "notesSort": value }), rev, &sess).await {
-                                        error.set(error_message(&cause.message));
-                                    }
-                                });
-                            })
-                        }).collect()
-                    }>
-                        <Icon name="sort"/><span>{move || if sort.get() == "title" { "Title" } else { "Edited" }}</span>
-                    </ActionMenu>
+                    <Show when=move || scope.get() != "graph">
+                        <ActionMenu label="Sort notes" class="workspace-sort" actions=move |_| {
+                            let current = sort.get_untracked();
+                            [("modified", "Recently edited"), ("title", "Title")].into_iter().map(|(value, label)| {
+                                MenuAction::plain(label).current(current == value).run(move || {
+                                    let rev = shared_prefs.value.with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
+                                    let sess = session_sv.get_value();
+                                    spawn_local(async move {
+                                        if let Err(cause) = save_preferences(json!({ "revision": rev, "notesSort": value }), rev, &sess).await {
+                                            error.set(error_message(&cause.message));
+                                        }
+                                    });
+                                })
+                            }).collect()
+                        }>
+                            <Icon name="sort"/><span>{move || if sort.get() == "title" { "Title" } else { "Edited" }}</span>
+                        </ActionMenu>
+                    </Show>
                 </div>
                 {move || library.get().filter(|l| l.legacy > 0 && !notes_imported.get()).map(|lib| view! {
                     <LegacyImport
@@ -866,81 +876,132 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         <button class="icon-button" aria-label="Dismiss" on:click=move |_| notice.set(String::new())><Icon name="close"/></button>
                     </p>
                 })}
-                {move || (library.with(Option::is_none) && error.with(String::is_empty)).then(|| view! {
-                    <p role="status">"Loading notes\u{2026}"</p>
-                })}
-                {move || {
-                    let lib = library.get();
-                    let list = rows.get();
-                    lib.filter(|_| list.is_empty()).map(|lib| {
-                        let q = query.get();
-                        let s = scope.get();
-                        let tagged = s.starts_with("tag:");
-                        let icon = if !q.is_empty() { "search" } else if s == "favorites" { "star" } else if tagged { "tag" } else { "file" };
-                        let heading = if !q.is_empty() { "No matching notes" } else if s == "favorites" { "No favorite notes" } else if tagged { "No notes with this tag" } else { "No notes yet" };
-                        let body = if !q.is_empty() {
-                            "Search covers note names, headings and text.".to_owned()
-                        } else if tagged {
-                            "Add the tag in a note\u{2019}s text or its tags property.".to_owned()
-                        } else if s == "favorites" {
-                            "Star a note to find it here.".to_owned()
-                        } else {
-                            let suffix = current_folder_path.get().map(|p| format!(" \u{203a} {p}")).unwrap_or_default();
-                            format!("Notes are Markdown files in Files \u{203a} {}{suffix}.", lib.path)
-                        };
-                        let show_new = q.is_empty() && s != "favorites" && !tagged;
-                        view! {
-                            <div class="empty-state">
-                                <span class="empty-icon"><Icon name=icon/></span>
-                                <h2>{heading}</h2>
-                                <p>{body}</p>
-                                {show_new.then(|| view! {
-                                    <button class="primary-button" disabled=move || busy.get() on:click=move |_| new_note()><Icon name="plus"/>"New note"</button>
-                                })}
-                            </div>
-                        }
-                    })
-                }}
-                {move || {
-                    let root_id = library.with(|l| l.as_ref().map(|l| l.root_id.clone()).unwrap_or_default());
-                    let folder_names: HashMap<String, String> = library.with(|l| {
-                        l.as_ref().map(|l| l.folders.iter().map(|f| (f.id.clone(), f.name.clone())).collect()).unwrap_or_default()
-                    });
-                    rows.get().into_iter().map(|note| {
-                        let note_id = note.id.clone();
-                        let note_id_sel = note.id.clone();
-                        let note_for_actions = note.clone();
-                        let title_text = if note.title.is_empty() { "Untitled".to_owned() } else { note.title.clone() };
-                        let excerpt_text = if note.excerpt.is_empty() { "No additional text".to_owned() } else { note.excerpt.clone() };
-                        let action_label = format!("Actions for {}", note.title);
-                        let show_folder = note.parent_id != root_id;
-                        let parent_label = folder_names.get(&note.parent_id).cloned().unwrap_or_else(|| "Notes".into());
-                        view! {
-                            <div class="workspace-entry">
-                                <article class=move || format!("workspace-row {}", if open.with(|o| o.as_ref().is_some_and(|e| e.id == note_id_sel)) { "selected" } else { "" })>
-                                    <button class="workspace-row-content" on:click=move |_| {
-                                        if !open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == note_id)) {
-                                            open_note(note_id.clone());
-                                        }
-                                    }>
-                                        <strong>{title_text}{note.favorite.then(|| view! { <Icon name="star" class="row-favorite"/> })}</strong>
-                                        <small class="note-excerpt">{excerpt_text}</small>
-                                        <span class="row-meta">
-                                            <span>{edited(note.modified_at)}</span>
-                                            {show_folder.then(|| view! { <span><Icon name="folder"/>{parent_label}</span> })}
-                                        </span>
-                                    </button>
-                                    <div class="workspace-row-tools">
-                                        <ActionMenu label=action_label class="ui-file-actions" actions=move |_| build_note_actions(note_for_actions.clone())><Icon name="more"/></ActionMenu>
+                <Show
+                    when=move || scope.get() == "graph"
+                    fallback=move || view! {
+                        {move || (library.with(Option::is_none) && error.with(String::is_empty)).then(|| view! {
+                            <p role="status">"Loading notes\u{2026}"</p>
+                        })}
+                        {move || {
+                            let lib = library.get();
+                            let list = rows.get();
+                            lib.filter(|_| list.is_empty()).map(|lib| {
+                                let q = query.get();
+                                let s = scope.get();
+                                let tagged = s.starts_with("tag:");
+                                let icon = if !q.is_empty() { "search" } else if s == "favorites" { "star" } else if tagged { "tag" } else { "file" };
+                                let heading = if !q.is_empty() { "No matching notes" } else if s == "favorites" { "No favorite notes" } else if tagged { "No notes with this tag" } else { "No notes yet" };
+                                let body = if !q.is_empty() {
+                                    "Search covers note names, headings and text.".to_owned()
+                                } else if tagged {
+                                    "Add the tag in a note\u{2019}s text or its tags property.".to_owned()
+                                } else if s == "favorites" {
+                                    "Star a note to find it here.".to_owned()
+                                } else {
+                                    let suffix = current_folder_path.get().map(|p| format!(" \u{203a} {p}")).unwrap_or_default();
+                                    format!("Notes are Markdown files in Files \u{203a} {}{suffix}.", lib.path)
+                                };
+                                let show_new = q.is_empty() && s != "favorites" && !tagged;
+                                view! {
+                                    <div class="empty-state">
+                                        <span class="empty-icon"><Icon name=icon/></span>
+                                        <h2>{heading}</h2>
+                                        <p>{body}</p>
+                                        {show_new.then(|| view! {
+                                            <button class="primary-button" disabled=move || busy.get() on:click=move |_| new_note()><Icon name="plus"/>"New note"</button>
+                                        })}
                                     </div>
-                                </article>
-                            </div>
+                                }
+                            })
+                        }}
+                        {
+                            let folder_meta = Memo::new(move |_| {
+                                library.with(|l| {
+                                    let root_id = l.as_ref().map(|l| l.root_id.clone()).unwrap_or_default();
+                                    let names: HashMap<String, String> = l
+                                        .as_ref()
+                                        .map(|l| l.folders.iter().map(|f| (f.id.clone(), f.name.clone())).collect())
+                                        .unwrap_or_default();
+                                    (root_id, names)
+                                })
+                            });
+                            view! {
+                                <For
+                                    each=move || rows.with(|list| list.iter().map(|n| n.id.clone()).collect::<Vec<_>>())
+                                    key=|id| id.clone()
+                                    let:note_id
+                                >
+                                    {
+                                        let id_row = note_id.clone();
+                                        let note_sig = Memo::new(move |_| {
+                                            rows.with(|list| list.iter().find(|n| n.id == id_row).cloned())
+                                        });
+                                        let id_sel = note_id.clone();
+                                        let id_click = note_id.clone();
+                                        let action_label = Signal::derive(move || {
+                                            note_sig.with(|n| format!("Actions for {}", n.as_ref().map(|n| n.title.as_str()).unwrap_or("")))
+                                        });
+                                        view! {
+                                            <div class="workspace-entry">
+                                                <article class=move || format!("workspace-row {}", if open.with(|o| o.as_ref().is_some_and(|e| e.id == id_sel)) { "selected" } else { "" })>
+                                                    <button class="workspace-row-content" on:click=move |_| {
+                                                        if !open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == id_click)) {
+                                                            open_note(id_click.clone());
+                                                        }
+                                                    }>
+                                                        <strong>
+                                                            {move || note_sig.with(|n| {
+                                                                let t = n.as_ref().map(|n| n.title.as_str()).unwrap_or("");
+                                                                if t.is_empty() { "Untitled".to_owned() } else { t.to_owned() }
+                                                            })}
+                                                            {move || note_sig.with(|n| n.as_ref().is_some_and(|n| n.favorite)).then(|| view! { <Icon name="star" class="row-favorite"/> })}
+                                                        </strong>
+                                                        <small class="note-excerpt">
+                                                            {move || note_sig.with(|n| {
+                                                                let e = n.as_ref().map(|n| n.excerpt.as_str()).unwrap_or("");
+                                                                if e.is_empty() { "No additional text".to_owned() } else { e.to_owned() }
+                                                            })}
+                                                        </small>
+                                                        <span class="row-meta">
+                                                            <span>{move || note_sig.with(|n| edited(n.as_ref().map(|n| n.modified_at).unwrap_or(0.0)))}</span>
+                                                            {move || {
+                                                                let parent_id = note_sig.with(|n| n.as_ref().map(|n| n.parent_id.clone()).unwrap_or_default());
+                                                                folder_meta.with(|(root_id, names)| {
+                                                                    (!parent_id.is_empty() && parent_id != *root_id).then(|| {
+                                                                        let parent_label = names.get(&parent_id).cloned().unwrap_or_else(|| "Notes".into());
+                                                                        view! { <span><Icon name="folder"/>{parent_label}</span> }
+                                                                    })
+                                                                })
+                                                            }}
+                                                        </span>
+                                                    </button>
+                                                    <div class="workspace-row-tools">
+                                                        <ActionMenu label=action_label class="ui-file-actions" actions=move |_| {
+                                                            note_sig.with_untracked(|n| n.clone()).map(build_note_actions).unwrap_or_default()
+                                                        }><Icon name="more"/></ActionMenu>
+                                                    </div>
+                                                </article>
+                                            </div>
+                                        }
+                                    }
+                                </For>
+                            }
                         }
-                    }).collect_view()
-                }}
-                {move || library.with(|l| l.as_ref().is_some_and(|l| l.truncated)).then(|| view! {
-                    <p class="muted small">"This folder is large; only the first notes are shown. Use search to find others."</p>
-                })}
+                        {move || library.with(|l| l.as_ref().is_some_and(|l| l.truncated)).then(|| view! {
+                            <p class="muted small">"This folder is large; only the first notes are shown. Use search to find others."</p>
+                        })}
+                    }
+                >
+                    <NoteGraph
+                        open_id=Signal::derive(move || open.with(|o| o.as_ref().map(|e| e.id.clone())))
+                        version=Signal::derive(move || reload.get() + graph_epoch.get())
+                        on_open=Callback::new(move |id: String| {
+                            if !open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == id)) {
+                                open_note(id);
+                            }
+                        })
+                    />
+                </Show>
             </div>
 
             {move || pane.get().map(|current_pane| {
