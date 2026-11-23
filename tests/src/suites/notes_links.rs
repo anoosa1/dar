@@ -1,0 +1,169 @@
+//! Linked notes: the library's tags and aliases, backlinks and unlinked mentions over the API,
+//! and in the browser `[[`/`#` suggestions, following and creating links, linked references,
+//! link updates after a rename, the tag list and checkbox toggling in the preview.
+
+use dar_acceptance::prelude::*;
+use dar_acceptance::session::Upload;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+pub const SUITE: Suite = Suite {
+    name: "notes-links",
+    cases: &[case!(backlinks_mentions_and_tags, 60), case!(linked_writing_in_the_browser, 180)],
+};
+
+async fn note(session: &Session, root: &str, name: &str, text: &str) -> Result<String> {
+    let upload = Upload { parent_id: root, media_type: "text/markdown", ..Upload::default() };
+    Ok(upload_with(session, name, text, upload).await?.file_id)
+}
+
+fn find<'a>(list: &'a Value, key: &str, id: &str) -> Option<&'a Value> {
+    list[key].as_array()?.iter().find(|n| n["id"] == id)
+}
+
+pub async fn backlinks_mentions_and_tags(t: &Ctx) -> Result<()> {
+    let base = t.fixture().await?.base.clone();
+    let admin = login(&base).await?;
+    let root = admin.get_json("/api/v1/notes/library").await?["rootId"].as_str().context("rootId")?.to_owned();
+    let tag = &uuid()[..6];
+    let apollo = note(&admin, &root, &format!("Apollo {tag}.md"), &format!("---\naliases: [Moonshot {tag}]\ntags: [space]\n---\n# Apollo {tag}\n\n## Launch\nPlan. #mission/alpha\n")).await?;
+    let log = note(&admin, &root, &format!("Log {tag}.md"), &format!("Met about [[Apollo {tag}#Launch|the launch]] today.\n\n- [ ] follow up ^task1\n")).await?;
+    let refs = note(&admin, &root, &format!("Refs {tag}.md"), &format!("See [the plan](Apollo%20{tag}.md).\n")).await?;
+    let diary = note(&admin, &root, &format!("Diary {tag}.md"), &format!("Thinking about apollo {tag} and moonshot {tag} again.\n\n```\nApollo {tag}\n```\n")).await?;
+
+    let library = admin.get_json("/api/v1/notes/library").await?;
+    let row = find(&library, "notes", &apollo).context("apollo in the library")?;
+    assert_eq!(row["tags"], json!(["space", "mission/alpha"]));
+    assert_eq!(row["aliases"], json!([format!("Moonshot {tag}")]));
+    // Aliases are searchable.
+    let found = admin.get_json(&format!("/api/v1/notes/library?q=moonshot%20{tag}")).await?;
+    assert!(find(&found, "notes", &apollo).is_some());
+
+    let backlinks = admin.get_json(&format!("/api/v1/notes/backlinks?id={apollo}")).await?;
+    let from_log = find(&backlinks, "backlinks", &log).context("log links to apollo")?;
+    assert_eq!(from_log["title"], format!("Log {tag}"));
+    assert_eq!(from_log["contexts"][0]["line"], 0);
+    assert!(from_log["contexts"][0]["text"].as_str().unwrap_or_default().contains("the launch"));
+    assert!(find(&backlinks, "backlinks", &refs).is_some(), "Markdown links count as links");
+    assert!(find(&backlinks, "backlinks", &diary).is_none());
+
+    let mentions = admin.get_json(&format!("/api/v1/notes/mentions?id={apollo}")).await?;
+    assert_eq!(mentions["target"], format!("Apollo {tag}"));
+    let from_diary = find(&mentions, "mentions", &diary).context("diary mentions apollo")?;
+    let matched: Vec<&str> = from_diary["contexts"].as_array().context("contexts")?.iter().filter_map(|c| c["match"].as_str()).collect();
+    assert_eq!(matched, [format!("apollo {tag}"), format!("moonshot {tag}")], "code is not a mention");
+    let start = from_diary["contexts"][0]["start"].as_u64().context("start")? as usize;
+    assert_eq!(start, "Thinking about ".len());
+    assert!(find(&mentions, "mentions", &log).is_none(), "linking notes are not unlinked mentions");
+
+    // The other direction has nothing; unknown and malformed IDs fail.
+    assert_eq!(admin.get_json(&format!("/api/v1/notes/backlinks?id={diary}")).await?["backlinks"], json!([]));
+    assert_eq!(admin.get(&format!("/api/v1/notes/backlinks?id={}", uuid())).await?.status, 404);
+    assert_eq!(admin.get("/api/v1/notes/mentions?id=").await?.status, 400);
+    Ok(())
+}
+
+pub async fn linked_writing_in_the_browser(t: &Ctx) -> Result<()> {
+    let base = t.fixture().await?.base.clone();
+    let admin = login(&base).await?;
+    let root = admin.get_json("/api/v1/notes/library").await?["rootId"].as_str().context("rootId")?.to_owned();
+    let tag = &uuid()[..6];
+    let target = format!("Apollo {tag}");
+    let apollo = note(&admin, &root, &format!("{target}.md"), &format!("---\ntags: [orbit{tag}]\n---\n# {target}\n\n## Launch\nCountdown.\n")).await?;
+
+    let browser = Browser::shared().await?;
+    let context = browser.new_context(ContextOptions::sized(1440, 950)).await?;
+    let page = context.new_page().await?;
+    let failures = Arc::new(Mutex::new(Vec::<String>::new()));
+    {
+        let sink = failures.clone();
+        page.on_page_error(move |msg| sink.lock().unwrap().push(msg.clone()));
+    }
+    {
+        let sink = failures.clone();
+        page.on_console(move |msg| {
+            if msg.kind == "error" && !(msg.text.contains("401") && msg.text.contains("Unauthorized")) {
+                sink.lock().unwrap().push(msg.text.clone());
+            }
+        });
+    }
+    page.goto(&format!("{base}/notes")).await?;
+    page.get_by_label("Username").fill("admin").await?;
+    page.get_by_label("Password").fill(PASSWORD).await?;
+    page.get_by_role("button", "Sign in").click().await?;
+    page.get_by_role("heading", "All notes").wait_for().await?;
+
+    // `[[` suggests notes and `#` suggests tags; Enter accepts.
+    page.get_by_role("button", "New note").first().click().await?;
+    let editor = page.get_by_role("region", "Editor for Untitled.md");
+    let source = editor.get_by_label("File contents");
+    editor.locator(r#"textarea[aria-label="File contents"]:not([readonly])"#).wait_for().await?;
+    let trip = format!("Trip {tag}");
+    source.fill(&format!("# {trip}\n\n- [ ] pack\n\nVisit ")).await?;
+    source.press_sequentially("[[Apol").await?;
+    page.get_by_role("option", contains(&target)).wait_for().await?;
+    page.screenshot(t.screenshot("notes-links-suggestions.png"), true).await?;
+    source.press("Enter").await?;
+    source.press_sequentially(" soon #orbit").await?;
+    page.get_by_role("option", contains(&format!("#orbit{tag}"))).wait_for().await?;
+    source.press("Enter").await?;
+    let written = source.input_value().await?;
+    assert!(written.ends_with(&format!("Visit [[{target}]] soon #orbit{tag} ")), "{written}");
+    source.press_sequentially("and [[Fresh idea]]").await?;
+    editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
+
+    // The preview links to the note, shows the tag and toggles the checkbox in the source.
+    editor.get_by_role("button", "Preview").click().await?;
+    editor.get_by_role("checkbox", "Open task").click().await?;
+    editor.get_by_role("checkbox", "Completed task").wait_for().await?;
+    editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
+    editor.get_by_role("button", "Write").click().await?;
+    assert!(source.input_value().await?.contains("- [x] pack"));
+    editor.get_by_role("button", "Preview").click().await?;
+    editor.get_by_role("button", format!("#orbit{tag}")).wait_for().await?;
+    page.screenshot(t.screenshot("notes-links-preview.png"), true).await?;
+
+    // Following the link opens the note; its linked references list the new note.
+    editor.get_by_role("link", target.as_str()).click().await?;
+    let apollo_editor = page.get_by_role("region", format!("Editor for {target}.md"));
+    apollo_editor.wait_for().await?;
+    let references = apollo_editor.get_by_role("region", "References");
+    references.get_by_role("button", trip.as_str()).wait_for().await?;
+    references.get_by_text(contains("Visit")).wait_for().await?;
+    page.screenshot(t.screenshot("notes-links-references.png"), true).await?;
+
+    // The outline jumps to a heading.
+    apollo_editor.get_by_role("button", "Outline").click().await?;
+    page.get_by_role("menuitem", contains("Launch")).click().await?;
+
+    // Renaming the note updates the link in the other note.
+    let renamed = format!("Artemis {tag}");
+    ui::item_action(&page, &target, "Rename").await?;
+    let pane = page.locator("[data-editor-pane]");
+    pane.get_by_role("textbox", ()).fill(&renamed).await?;
+    pane.get_by_role("button", "Save").click().await?;
+    page.get_by_text(contains("Updated links in 1 note")).wait_for().await?;
+    let library = admin.get_json("/api/v1/notes/library").await?;
+    let trip_id = library["notes"].as_array().context("notes")?.iter().find(|n| n["title"] == trip.as_str()).and_then(|n| n["id"].as_str()).context("trip note")?.to_owned();
+    let text = admin.get(&format!("/api/v1/files/{trip_id}/content")).await?.text();
+    assert!(text.contains(&format!("[[{renamed}]]")), "{text}");
+
+    // The tag list filters notes by tag.
+    page.get_by_role("list", "Tags").get_by_role("button", contains(&format!("#orbit{tag}"))).click().await?;
+    page.get_by_role("heading", format!("#orbit{tag}")).wait_for().await?;
+    page.locator(".workspace-row").filter_has_text(&renamed).wait_for().await?;
+    page.locator(".workspace-row").filter_has_text(&trip).wait_for().await?;
+
+    // A link to a missing note creates it.
+    page.locator(".workspace-row").filter_has_text(&trip).locator(".workspace-row-content").click().await?;
+    let trip_editor = page.get_by_role("region", regex("^Editor for "));
+    trip_editor.get_by_role("link", "Fresh idea").click().await?;
+    page.get_by_role("region", "Editor for Fresh idea.md").wait_for().await?;
+    let library = admin.get_json("/api/v1/notes/library").await?;
+    assert!(library["notes"].as_array().context("notes")?.iter().any(|n| n["path"] == "Fresh idea.md"));
+    assert!(library["notes"].as_array().context("notes")?.iter().any(|n| n["id"] == apollo.as_str() && n["path"] == format!("{renamed}.md")));
+
+    let failures = failures.lock().unwrap().clone();
+    assert!(failures.is_empty(), "page errors: {failures:?}");
+    Ok(())
+}

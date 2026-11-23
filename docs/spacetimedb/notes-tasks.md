@@ -23,7 +23,21 @@ identity as the other apps; no extra dependency or worker. UI rules are in the
   are copied once into the folder (one folder per notebook; title as a heading,
   tags as front matter, favorites kept); the old copies are left untouched and
   their notebook import/export stays in Notes settings.
-- APIs: `/api/v1/notes/library` (tree and summaries); writes use the Files APIs.
+- Linked notes, in Obsidian's syntax so a vault opens elsewhere unchanged: `[[note]]`,
+  `[[note#heading]]`, `[[note#^block]]`, `[[note|label]]`, `![[embed]]`, relative Markdown links
+  (`[x](Other%20note.md)`), `#tags` (nested as `a/b`), YAML properties (`tags`, `aliases`),
+  `^block` ids, `> [!type]` callouts, `==highlights==`, `%%comments%%`, tables, footnotes and
+  task lists. Links resolve by file name (the linking note's folder first, then the shortest
+  path) or by path; the shared model is `crates/notes` (`dar-notes`).
+- Writing: `[[` suggests notes (title, file name or alias) and `#` suggests tags. The preview
+  follows links, creates a missing note on click, filters by a tag and toggles checkboxes in
+  the source; Outline jumps to a heading. Below each note: linked references (with the
+  linking lines) and, on demand, unlinked references with a Link action.
+- Renaming or moving a note rewrites the links to it in other notes (each write checked
+  against the revision read); a clean open editor reloads. The sidebar lists tags.
+- APIs: `/api/v1/notes/library` (tree, summaries, tags and aliases; search also matches
+  aliases), `/api/v1/notes/backlinks?id=` and `/api/v1/notes/mentions?id=`; writes use the
+  Files APIs. The runtime reads each note version once and caches what it found by blob ID.
   The older `/api/v1/notes/notebooks`, `/items` and `/trash` remain for the copy.
 
 ## Tasks
@@ -50,5 +64,5 @@ identity as the other apps; no extra dependency or worker. UI rules are in the
 - Trash up to 10,000 entries per instance.
 - Moves keep IDs and require the same owner; copies get new IDs.
 
-Verified by the workspace integration and standards tests, `workspace-browser.mjs`,
+Verified by the `notes-links` suite, the workspace integration and standards tests, `workspace-browser.mjs`,
 vdirsyncer round trips and forced restart. Backups include note trash.

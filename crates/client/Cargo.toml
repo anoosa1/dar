@@ -48,6 +48,7 @@ web-sys = { version = "0.3", features = [
 
 spacetimedb-sdk.workspace = true
 dar-bindings.workspace = true
+dar-notes.workspace = true
 
 # The SDK's browser transport, on wasm32.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

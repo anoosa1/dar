@@ -193,7 +193,11 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   rename, move, Show in Files, delete). A note opens in the shared Markdown editor
   in the right sheet: Close, folder, save status, Write/Preview and the file menu;
   autosave, private recovery drafts and explicit conflicts. New notes take their
-  first heading as the file name when closed.
+  first heading as the file name when closed. Linked writing follows Obsidian and
+  Logseq without new chrome: `[[`/`#` suggestions in a top-layer list at the caret,
+  Outline in the editor bar, properties above the preview, callouts, tag chips,
+  dashed links for missing notes, and Linked/Unlinked references as disclosure
+  groups at the end of the note (Logseq's place). Tags follow Folders in the sidebar.
 - **Tasks:** quick add (title only) above the list; due-date sort groups Overdue,
   Today, Tomorrow, Upcoming, No date and Completed. Rows show a priority-colored
   check, due, repetition, list and tags. The card leads with Complete/Reopen and

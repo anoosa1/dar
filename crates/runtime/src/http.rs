@@ -678,6 +678,14 @@ async fn api(r: Api<'_>, body: Body) -> Result<Response> {
         let term: String = r.q("q").chars().take(200).collect();
         return ok(runtime.notes.library(db, &runtime.blobs, &session_id, &term).await?);
     }
+    if (path == "/api/v1/notes/backlinks" || path == "/api/v1/notes/mentions") && *method == Method::GET {
+        let id = r.q("id");
+        if id.is_empty() || id.len() > 64 {
+            return Err(AppError::invalid());
+        }
+        let notes = &runtime.notes;
+        return ok(if path.ends_with("backlinks") { notes.backlinks(db, &runtime.blobs, &session_id, &id).await? } else { notes.mentions(db, &runtime.blobs, &session_id, &id).await? });
+    }
     if ["notes", "tasks"].iter().any(|a| path == format!("/api/v1/{a}") || path.starts_with(&format!("/api/v1/{a}/"))) {
         return crate::pim::workspace::handle(db, &session_id, method, path, r.query, r.headers, body).await;
     }

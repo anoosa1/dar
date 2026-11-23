@@ -1,0 +1,66 @@
+/* Notes: linked writing (wikilinks, tags, callouts, properties), references below the note, suggestions while writing, the tag list. */
+.pim-details.has-note-editor .note-document{overflow-y:auto}
+.pim-details.has-note-editor .note-document>.note-source{field-sizing:content;flex:1 0 auto;min-height:max(200px,45vh)}
+.pim-details.has-note-editor .note-document>.markdown-preview{flex:1 0 auto;overflow:visible}
+.markdown-preview table{border-collapse:collapse;width:100%;font-size:.95em}.markdown-table{overflow-x:auto;margin:12px 0}
+.markdown-preview :is(th,td){border:1px solid var(--border);padding:6px 10px;text-align:left;vertical-align:top}.markdown-preview th{background:var(--surface-soft);font-weight:650}
+.markdown-preview .align-center{text-align:center}.markdown-preview .align-right{text-align:right}
+.markdown-preview mark{background:var(--warning-soft);color:inherit;border-radius:3px;padding:0 2px}
+.markdown-preview del{color:var(--muted)}
+.markdown-preview hr{border:0;border-top:1px solid var(--border);margin:20px 0}
+.markdown-preview img{max-width:100%;border-radius:10px}
+.markdown-preview .markdown-html{font-family:ui-monospace,monospace;font-size:.9em;color:var(--muted);white-space:pre-wrap}
+.markdown-preview .math{font-family:ui-monospace,monospace;color:var(--accent)}
+.markdown-preview .markdown-remote-image{display:inline-flex;align-items:center;gap:6px}.markdown-preview .markdown-remote-image .icon{width:14px;height:14px}
+.markdown-preview li.task-item{list-style:none;margin-left:-1.3em}.markdown-preview .note-check{width:16px;height:16px;margin:0 8px 0 0;vertical-align:-2px;accent-color:var(--accent)}
+.markdown-preview li.task-item:has(.note-check:checked){color:var(--muted);text-decoration:line-through}
+.markdown-preview .note-link{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+.markdown-preview .note-link:hover{border-bottom-color:var(--accent)}.markdown-preview .note-link.is-unresolved{opacity:.7;border-bottom-style:dashed}
+.markdown-preview .note-link.is-file{color:var(--muted);border:0}
+.markdown-preview .note-embed{display:flex;align-items:center;gap:8px;margin:8px 0;padding:10px 14px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;color:inherit;text-decoration:none;background:var(--surface-soft)}
+.markdown-preview .note-embed .icon{width:16px;height:16px;color:var(--accent)}.markdown-preview .note-embed.is-unresolved{border-left-style:dashed;opacity:.75}
+.markdown-preview .note-tag{display:inline;border:0;padding:1px 7px;border-radius:10px;background:var(--tonal);color:var(--on-tonal);font:inherit;font-size:.88em;cursor:pointer}
+.markdown-preview span.note-tag{cursor:default}.markdown-preview button.note-tag:hover{background:var(--hover)}
+.markdown-preview .footnote{font-size:.9em;color:var(--muted);border-top:1px solid var(--border);margin-top:16px;padding-top:6px;display:flex;gap:8px}.markdown-preview .footnote>p{margin:0}
+.markdown-preview .footnote-ref{color:var(--accent)}
+.callout{margin:14px 0;padding:10px 14px;border-radius:12px;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.callout-title{margin:0;font-weight:650;color:var(--accent)}.callout-content>:first-child{margin-top:6px}.callout-content>:last-child{margin-bottom:0}
+details.callout>summary{cursor:pointer}
+.callout:is(.callout-warning,.callout-caution,.callout-attention){border-color:var(--warning);background:var(--warning-soft)}.callout:is(.callout-warning,.callout-caution,.callout-attention) .callout-title{color:var(--warning)}
+.callout:is(.callout-danger,.callout-error,.callout-bug,.callout-failure,.callout-fail,.callout-missing){border-color:var(--danger);background:var(--error-soft)}.callout:is(.callout-danger,.callout-error,.callout-bug,.callout-failure,.callout-fail,.callout-missing) .callout-title{color:var(--danger)}
+.callout:is(.callout-tip,.callout-hint,.callout-success,.callout-check,.callout-done,.callout-important){border-color:var(--success);background:var(--success-soft)}.callout:is(.callout-tip,.callout-hint,.callout-success,.callout-check,.callout-done,.callout-important) .callout-title{color:var(--success)}
+.callout:is(.callout-quote,.callout-cite,.callout-example){border-color:var(--border);background:var(--surface-soft)}.callout:is(.callout-quote,.callout-cite,.callout-example) .callout-title{color:var(--muted)}
+.note-properties{display:grid;gap:2px;margin:0 0 16px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.note-property{display:grid;grid-template-columns:minmax(90px,150px) minmax(0,1fr);gap:12px;padding:3px 0}.note-property dt{color:var(--muted)}.note-property dd{margin:0;overflow-wrap:anywhere}
+.note-property-item{display:inline-block;margin:0 4px 2px 0;padding:0 8px;border-radius:10px;background:var(--surface-soft)}
+.markdown-inline{padding:0;min-height:0;line-height:1.6;flex:1;min-width:0}.markdown-inline>:first-child{margin-top:0}.markdown-inline>:last-child{margin-bottom:0}
+.markdown-inline :is(ul,ol){margin:0;padding-left:18px}.markdown-inline :is(h1,h2,h3,h4,h5,h6){font-size:1em;margin:0}
+.note-outline .ui-menu-trigger{padding:8px}.note-outline .ui-menu-item{white-space:pre}
+.note-references{flex:none;margin-top:24px;padding-top:8px;border-top:1px solid var(--border);font-size:14px}
+.note-references-group{margin:0 0 12px}.note-references-group>summary{display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 0;list-style-position:inside}
+.note-references-group>summary h2{display:inline;margin:0;font-size:14px;font-weight:650}
+.note-references-count{color:var(--muted);font-size:12px}
+.note-reference{margin:6px 0 10px;padding:10px 12px;border-radius:12px;background:var(--surface-soft)}
+.note-reference header{display:flex;align-items:baseline;gap:8px;min-width:0}.note-reference header small{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note-reference-title{border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:650;text-align:left;cursor:pointer}
+.note-reference-title:hover{text-decoration:underline}
+.note-reference-context{display:flex;align-items:flex-start;gap:8px;margin-top:6px;padding-left:10px;border-left:2px solid var(--border)}
+.note-reference-context .text-button{flex:none;font-size:12px;padding:4px 10px}
+.note-suggest{position:fixed;z-index:90;inset:auto;top:var(--float-top,auto);left:var(--float-left,auto);margin:0;width:min(300px,calc(100vw - 16px));max-height:260px;overflow:auto;padding:6px;border:1px solid var(--ui-border);border-radius:14px;background:var(--raised);color:var(--ui-text);box-shadow:0 8px 26px color-mix(in srgb,var(--accent) 15%,transparent)}
+.note-suggest-option{display:flex;flex-direction:column;gap:1px;padding:8px 10px;border-radius:9px;cursor:pointer;font-size:13px}
+.note-suggest-option small{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note-suggest-option[aria-selected=true],.note-suggest-option:hover{background:var(--tonal);color:var(--on-tonal)}
+.note-suggest-option[aria-selected=true] small{color:inherit}
+.notes-tags{display:flex;flex-direction:column;min-height:0;overflow:auto}
+.notes-tag-row>.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-width:0;text-align:left}
+.notes-tag-row>.nav-item>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.notes-tag-row .nav-count{color:var(--muted);font-size:11px}
+
+@media(max-width:800px){.notes-tags{flex-direction:row;flex-wrap:wrap;overflow:visible}.note-property{grid-template-columns:1fr;gap:0}}
+@media(prefers-reduced-motion:reduce){.note-suggest{animation:none}}
+.pim-details .markdown-preview :is(h1,h2,h3,h4,h5,h6){text-align:left;margin:1em 0 .4em}.pim-details .markdown-preview h2{font-size:21px}
+.note-references-group>summary::-webkit-details-marker{display:none}
+.note-references-group>summary::before{content:"";flex:none;width:7px;height:7px;margin:0 2px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform var(--ui-fade,.15s) ease}
+.note-references-group[open]>summary::before{transform:rotate(45deg)}
+.pim-details .note-references-group>summary h2{text-align:left;margin:0;font-size:14px}
+@media(prefers-reduced-motion:reduce){.note-references-group>summary::before{transition:none}}

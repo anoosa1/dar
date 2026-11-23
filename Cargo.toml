@@ -3,7 +3,7 @@ resolver = "3"
 # The module and the client build for wasm32 (`cargo xtask build`); their unit tests run natively.
 members = ["crates/*", "tests"]
 # `cargo test` covers the native crates; the acceptance suite runs through `cargo xtask verify`.
-default-members = ["crates/runtime", "crates/oidc", "crates/dav", "crates/bindings"]
+default-members = ["crates/runtime", "crates/notes", "crates/oidc", "crates/dav", "crates/bindings"]
 
 [workspace.package]
 edition = "2024"
@@ -26,6 +26,7 @@ spacetimedb-sdk = "=2.14.1"
 dar-bindings = { path = "crates/bindings" }
 dar-dav = { path = "crates/dav" }
 dar-oidc = { path = "crates/oidc" }
+dar-notes = { path = "crates/notes" }
 
 # Published crates Dar builds patched (prepared by `cargo xtask setup`, checksums verified):
 # - spacetimedb-bindings-macro names fields without the raw-identifier prefix (`r#type`) and

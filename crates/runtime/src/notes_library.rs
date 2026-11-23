@@ -1,23 +1,24 @@
 //! The Notes library over Files (`runtime/notes/library.ts`): the module lists the Notes folder;
-//! this reads note heads from immutable blobs (cached by blob ID, so a cached summary is never
-//! stale) and filters by query.
+//! this reads each note version once from its immutable blob (cached by blob ID, so a cached
+//! entry is never stale) for titles, excerpts, tags, aliases and links, and answers searches,
+//! backlinks and unlinked mentions.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 
 use crate::blobs::Blobs;
 use crate::db::Database;
-use crate::error::Result;
+use crate::error::{AppError, Result};
 
 const HEAD: u64 = 8192;
 const FULL_LIMIT: u64 = 1024 * 1024;
 
 #[derive(Default)]
 pub struct Library {
-    summaries: Mutex<(HashMap<String, (String, String)>, Vec<String>)>,
+    summaries: Mutex<(HashMap<String, Arc<Info>>, Vec<String>)>,
 }
 
 async fn read(blobs: &Blobs, blob_id: &str, bytes: u64) -> String {
@@ -151,14 +152,64 @@ fn utf16_prefix(value: &str, units: usize) -> String {
     String::from_utf16_lossy(&value.encode_utf16().take(units).collect::<Vec<_>>())
 }
 
+/// What the library keeps of one note version (by blob ID, so it is never stale).
+pub struct Info {
+    title: String,
+    excerpt: String,
+    tags: Vec<String>,
+    aliases: Vec<String>,
+    links: Vec<LinkInfo>,
+}
+
+struct LinkInfo {
+    target: String,
+    wiki: bool,
+    line: usize,
+    text: String,
+}
+
+/// A line shown as the context of a link or mention: trimmed and bounded.
+fn context_line(line: &str) -> String {
+    utf16_prefix(line.trim(), 400)
+}
+
+fn info(name: &str, text: &str) -> Info {
+    let (title, excerpt) = summarize(name, text);
+    let facts = dar_notes::facts(text);
+    let lines = dar_notes::Lines::new(text);
+    let links = facts
+        .links
+        .iter()
+        .map(|link| LinkInfo { target: link.target.clone(), wiki: link.wiki, line: link.line, text: context_line(&dar_notes::line_text(text, &lines, link.line)) })
+        .collect();
+    Info { title, excerpt, tags: facts.tags, aliases: facts.aliases, links }
+}
+
+struct Note {
+    row: Value,
+    path: String,
+    info: Arc<Info>,
+}
+
+impl Note {
+    fn id(&self) -> &str {
+        self.row["id"].as_str().unwrap_or_default()
+    }
+    fn heading(&self) -> Value {
+        json!({ "id": self.row["id"], "title": self.info.title, "path": self.path, "revision": self.row["revision"] })
+    }
+}
+
 impl Library {
-    async fn summary(&self, blobs: &Blobs, row: &Value) -> (String, String) {
+    async fn info(&self, blobs: &Blobs, row: &Value) -> Arc<Info> {
         let blob_id = row["blobId"].as_str().unwrap_or_default().to_owned();
         if let Some(cached) = self.summaries.lock().expect("summaries").0.get(&blob_id) {
             return cached.clone();
         }
         let size = row["size"].as_f64().unwrap_or(0.0) as u64;
-        let value = summarize(row["name"].as_str().unwrap_or_default(), &read(blobs, &blob_id, HEAD.min(size)).await);
+        let name = row["name"].as_str().unwrap_or_default();
+        let text = read(blobs, &blob_id, if size <= FULL_LIMIT { size } else { HEAD.min(size) }).await;
+        let value = Arc::new(info(name, &text));
         let mut cache = self.summaries.lock().expect("summaries");
         if cache.0.len() >= 20_000 {
             let oldest = cache.1.remove(0);
@@ -169,29 +220,130 @@ impl Library {
         value
     }
 
-    pub async fn library(&self, db: &Database, blobs: &Blobs, session_id: &str, query: &str) -> Result<Value> {
+    async fn notes(&self, db: &Database, blobs: &Blobs, session_id: &str) -> Result<(Value, Vec<Note>)> {
         let listing = db.call("service_notes", json!([session_id, "library"])).await?;
+        let mut notes = Vec::new();
+        for row in listing["files"].as_array().into_iter().flatten() {
+            let info = self.info(blobs, row).await;
+            notes.push(Note { row: row.clone(), path: row["path"].as_str().unwrap_or_default().to_owned(), info });
+        }
+        Ok((listing, notes))
+    }
+
+    pub async fn library(&self, db: &Database, blobs: &Blobs, session_id: &str, query: &str) -> Result<Value> {
+        let (listing, all) = self.notes(db, blobs, session_id).await?;
         let q = query.to_lowercase().trim().to_owned();
         let mut notes: Vec<Value> = Vec::new();
-        for row in listing["files"].as_array().into_iter().flatten() {
-            let (title, excerpt) = self.summary(blobs, row).await;
+        for note in all {
+            let (row, info) = (&note.row, &note.info);
             let name = row["name"].as_str().unwrap_or_default();
-            let path = row["path"].as_str().unwrap_or_default();
-            if !q.is_empty() && !format!("{name}\n{title}\n{path}").to_lowercase().contains(&q) {
-                // Search the whole note only when the name and heading do not match.
+            let path = note.path.as_str();
+            if !q.is_empty() && !format!("{name}\n{}\n{path}\n{}", info.title, info.aliases.join("\n")).to_lowercase().contains(&q) {
+                // Search the whole note only when the name, heading and aliases do not match.
                 let size = row["size"].as_f64().unwrap_or(0.0) as u64;
                 let text = if size <= FULL_LIMIT { read(blobs, row["blobId"].as_str().unwrap_or_default(), size).await } else { String::new() };
                 if !text.to_lowercase().contains(&q) {
                     continue;
                 }
             }
-            notes.push(json!({ "id": row["id"], "parentId": row["parentId"], "name": name, "title": title, "excerpt": excerpt, "size": row["size"], "revision": row["revision"], "modifiedAt": row["modifiedAt"], "favorite": row["favorite"], "path": path }));
+            notes.push(json!({ "id": row["id"], "parentId": row["parentId"], "name": name, "title": info.title, "excerpt": info.excerpt, "size": row["size"], "revision": row["revision"], "modifiedAt": row["modifiedAt"], "favorite": row["favorite"], "path": path, "tags": info.tags, "aliases": info.aliases }));
         }
         notes.sort_by(|a, b| {
             b["modifiedAt"].as_f64().unwrap_or(0.0).total_cmp(&a["modifiedAt"].as_f64().unwrap_or(0.0)).then_with(|| crate::http::locale_compare(a["title"].as_str().unwrap_or_default(), b["title"].as_str().unwrap_or_default()))
         });
         Ok(json!({ "rootId": listing["rootId"], "path": listing["path"], "folders": listing["folders"], "notes": notes, "truncated": listing["truncated"], "legacy": listing["legacy"] }))
     }
+
+    /// Notes that link to `id`, each with the lines that hold the links.
+    pub async fn backlinks(&self, db: &Database, blobs: &Blobs, session_id: &str, id: &str) -> Result<Value> {
+        let (_, notes) = self.notes(db, blobs, session_id).await?;
+        let vault = dar_notes::Vault::new(notes.iter().map(|n| n.path.clone()));
+        let target = notes.iter().position(|n| n.id() == id).ok_or_else(AppError::not_found)?;
+        let mut found = Vec::new();
+        for (index, note) in notes.iter().enumerate() {
+            if index == target {
+                continue;
+            }
+            let mut contexts: Vec<Value> = Vec::new();
+            for link in &note.info.links {
+                let hit = if link.wiki { vault.resolve_wiki(&note.path, &link.target) } else { vault.resolve_path(&note.path, &link.target) };
+                if hit == Some(target) && !contexts.iter().any(|c| c["line"] == json!(link.line)) && contexts.len() < 8 {
+                    contexts.push(json!({ "line": link.line, "text": link.text }));
+                }
+            }
+            if !contexts.is_empty() {
+                let mut item = note.heading();
+                item["contexts"] = json!(contexts);
+                found.push(item);
+            }
+        }
+        sort_by_title(&mut found);
+        Ok(json!({ "id": id, "backlinks": found }))
+    }
+
+    /// Notes that name `id` (title, file name or alias) in plain text without linking to it.
+    pub async fn mentions(&self, db: &Database, blobs: &Blobs, session_id: &str, id: &str) -> Result<Value> {
+        let (_, notes) = self.notes(db, blobs, session_id).await?;
+        let vault = dar_notes::Vault::new(notes.iter().map(|n| n.path.clone()));
+        let target = notes.iter().position(|n| n.id() == id).ok_or_else(AppError::not_found)?;
+        let stem = notes[target].path.rsplit('/').next().unwrap_or_default();
+        let stem = stem.strip_suffix(".md").or_else(|| stem.strip_suffix(".markdown")).unwrap_or(stem);
+        let mut names: Vec<String> = Vec::new();
+        for name in std::iter::once(&notes[target].info.title).chain(std::iter::once(&stem.to_owned())).chain(notes[target].info.aliases.iter()) {
+            if !names.iter().any(|n| n.to_lowercase() == name.to_lowercase()) {
+                names.push(name.clone());
+            }
+        }
+        // Longer names first, so "Project Apollo" wins over "Apollo".
+        names.sort_by_key(|n| std::cmp::Reverse(n.chars().count()));
+        let lowered: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
+        let mut found = Vec::new();
+        let mut truncated = false;
+        for (index, note) in notes.iter().enumerate() {
+            if index == target {
+                continue;
+            }
+            let links_here = note.info.links.iter().any(|l| (if l.wiki { vault.resolve_wiki(&note.path, &l.target) } else { vault.resolve_path(&note.path, &l.target) }) == Some(target));
+            if links_here {
+                continue;
+            }
+            let size = note.row["size"].as_f64().unwrap_or(0.0) as u64;
+            if size > FULL_LIMIT {
+                continue;
+            }
+            let text = read(blobs, note.row["blobId"].as_str().unwrap_or_default(), size).await;
+            let lower = text.to_lowercase();
+            if !lowered.iter().any(|n| lower.contains(n.as_str())) {
+                continue;
+            }
+            let facts = dar_notes::facts(&text);
+            let lines = dar_notes::Lines::new(&text);
+            let contexts: Vec<Value> = dar_notes::mentions(&text, &facts, &names)
+                .into_iter()
+                .take(8)
+                .map(|r| {
+                    let line = lines.line(r.start);
+                    json!({ "line": line, "start": r.start, "end": r.end, "match": &text[r.clone()], "text": context_line(&dar_notes::line_text(&text, &lines, line)) })
+                })
+                .collect();
+            if contexts.is_empty() {
+                continue;
+            }
+            if found.len() >= 50 {
+                truncated = true;
+                break;
+            }
+            let mut item = note.heading();
+            item["contexts"] = json!(contexts);
+            found.push(item);
+        }
+        sort_by_title(&mut found);
+        Ok(json!({ "id": id, "target": vault.wiki_target(target), "mentions": found, "truncated": truncated }))
+    }
+}
+
+fn sort_by_title(list: &mut [Value]) {
+    list.sort_by(|a, b| crate::http::locale_compare(a["title"].as_str().unwrap_or_default(), b["title"].as_str().unwrap_or_default()));
 }
 
 #[cfg(test)]
