@@ -84,6 +84,79 @@ pub struct NoteLinks {
     pub tag: Option<Callback<String>>,
     /// Toggles the checkbox whose `[ ]` starts at this byte offset of the source.
     pub toggle: Option<Callback<usize>>,
+    /// What an embed (`![[target]]`, or `![](path)` when not a wikilink) shows.
+    pub embed: Option<Callback<(String, bool), Option<Embed>>>,
+    /// Inside an embedded note, notes embed as links (no embedding loops).
+    pub nested: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Embed {
+    Note { id: String },
+    File { id: String, name: String, media_type: String },
+}
+
+fn file_embed(id: String, name: String, media_type: String, label: &str) -> AnyView {
+    let src = format!("/api/v1/files/{id}/content");
+    let width = label.trim().split('x').next().filter(|w| !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit())).map(str::to_owned);
+    let alt = if width.is_some() || label.is_empty() { name.clone() } else { label.to_owned() };
+    if media_type.starts_with("image/") {
+        view! { <img class="note-image" src=src alt=alt width=width loading="lazy"/> }.into_any()
+    } else if media_type.starts_with("audio/") {
+        view! { <audio class="note-media" controls preload="metadata" src=src aria-label=alt></audio> }.into_any()
+    } else if media_type.starts_with("video/") {
+        view! { <video class="note-media" controls preload="metadata" src=src aria-label=alt width=width></video> }.into_any()
+    } else {
+        view! { <a class="note-embed is-file-embed" href=src target="_blank" rel="noopener noreferrer"><Icon name="file"/>{name}</a> }.into_any()
+    }
+}
+
+/// Another note (or one of its sections) shown in place, read-only, with a link to it.
+fn note_embed(id: String, target: String, fragment: Option<String>, label: String, links: NoteLinks) -> AnyView {
+    let content: RwSignal<Option<Result<String, ()>>> = RwSignal::new(None);
+    let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    {
+        let alive = alive.clone();
+        on_cleanup(move || alive.store(false, std::sync::atomic::Ordering::Relaxed));
+    }
+    leptos::task::spawn_local(async move {
+        let text = async {
+            let response = crate::api::fetch(&format!("/api/v1/files/{id}/content"), Default::default()).await.map_err(|_| ())?;
+            if !response.ok() {
+                return Err(());
+            }
+            let value = wasm_bindgen_futures::JsFuture::from(response.text().map_err(|_| ())?).await.map_err(|_| ())?;
+            Ok(value.as_string().unwrap_or_default())
+        }
+        .await;
+        if alive.load(std::sync::atomic::Ordering::Relaxed) {
+            content.set(Some(text));
+        }
+    });
+    let inner = NoteLinks { nested: true, toggle: None, ..links };
+    let (follow_target, follow_fragment) = (target.clone(), fragment.clone());
+    let title = match &fragment {
+        Some(f) => format!("{target} \u{203a} {}", f.trim_start_matches('^')),
+        None => target.clone(),
+    };
+    let shown = if label.is_empty() || label == target { title.clone() } else { label };
+    view! {
+        <div class="note-transclusion" role="group" aria-label=format!("Embedded {title}")>
+            <button type="button" class="note-transclusion-title" title=format!("Open {title}")
+                on:click=move |_| { if let Some(f) = links.follow { f.try_run((follow_target.clone(), true, follow_fragment.clone())); } }>
+                <Icon name="file"/>{shown}
+            </button>
+            {move || match content.get() {
+                None => view! { <p class="muted small" role="status">"Loading\u{2026}"</p> }.into_any(),
+                Some(Err(())) => view! { <p class="muted small">"This note could not be loaded."</p> }.into_any(),
+                Some(Ok(text)) => match dar_notes::section(&text, fragment.as_deref()) {
+                    Some(part) => view! { <Markdown source=part links=inner/> }.into_any(),
+                    None => view! { <p class="muted small">"That section is not in the note."</p> }.into_any(),
+                },
+            }}
+        </div>
+    }
+    .into_any()
 }
 
 #[derive(Debug)]
@@ -363,10 +436,17 @@ impl Render {
                     let label = self.nodes(children).into_any();
                     self.note_link(target, true, fragment, label, false)
                 }
-                Tag::Image { link_type: LinkType::WikiLink { .. }, dest_url, .. } => {
+                Tag::Image { link_type: LinkType::WikiLink { has_pothole }, dest_url, .. } => {
                     let (target, fragment) = split_fragment(&dest_url);
-                    let label = plain(&children).into_any();
-                    self.note_link(target, true, fragment, label, true)
+                    let label = if has_pothole { plain(&children) } else { String::new() };
+                    match self.links.embed.and_then(|cb| cb.try_run((target.clone(), true)).flatten()) {
+                        Some(Embed::File { id, name, media_type }) => file_embed(id, name, media_type, &label),
+                        Some(Embed::Note { id }) if !self.links.nested => note_embed(id, target, fragment, label, self.links),
+                        _ => {
+                            let shown = if label.is_empty() { target.clone() } else { label };
+                            self.note_link(target, true, fragment, shown.into_any(), true)
+                        }
+                    }
                 }
                 Tag::Link { dest_url, .. } => {
                     let dest = dest_url.to_string();
@@ -393,6 +473,8 @@ impl Render {
                         // Remote images are not fetched; the link opens them.
                         let label = if alt.is_empty() { dest.clone() } else { alt };
                         view! { <a class="markdown-remote-image" href=dest rel="noopener noreferrer" target="_blank"><Icon name="external"/>{label}</a> }.into_any()
+                    } else if let Some(Embed::File { id, name, media_type }) = self.links.embed.and_then(|cb| cb.try_run((dar_notes::percent_decode(&dest), false)).flatten()) {
+                        file_embed(id, name, media_type, &alt)
                     } else {
                         alt.into_any()
                     }

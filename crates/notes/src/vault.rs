@@ -128,6 +128,11 @@ impl Vault {
         if !is_note_target(target) {
             return None;
         }
+        self.resolve_name(source, target)
+    }
+
+    /// A file named by `[[name]]` or `[[folder/name]]`, whatever its kind (attachments).
+    pub fn resolve_name(&self, source: &str, target: &str) -> Option<usize> {
         let wanted = key(target);
         let candidates: Vec<usize> = if wanted.contains('/') {
             if let Some(index) = self.by_path.get(&wanted) {
@@ -202,6 +207,10 @@ mod tests {
         assert_eq!(v.resolve_wiki("Ideas.md", "Deep/Notes"), Some(2));
         assert_eq!(v.resolve_wiki("Ideas.md", ""), Some(3));
         assert_eq!(v.resolve_wiki("Ideas.md", "photo.png"), None);
+        let files = Vault::new(["attachments/photo.png", "Work/photo.png"]);
+        assert_eq!(files.resolve_name("Work/Plan.md", "photo.png"), Some(1));
+        assert_eq!(files.resolve_name("attachments/Note.md", "photo.png"), Some(0));
+        assert_eq!(files.resolve_path("Ideas.md", "attachments/photo.png"), Some(0));
         assert_eq!(v.resolve_wiki("Ideas.md", "Missing"), None);
         assert_eq!(v.resolve_path("Work/Deep/Notes.md", "../Plan.md"), Some(1));
         assert_eq!(v.resolve_path("Ideas.md", "Trips/Paris 2026.md"), Some(4));

@@ -678,6 +678,9 @@ async fn api(r: Api<'_>, body: Body) -> Result<Response> {
         let term: String = r.q("q").chars().take(200).collect();
         return ok(runtime.notes.library(db, &runtime.blobs, &session_id, &term).await?);
     }
+    if path == "/api/v1/notes/attachments" && *method == Method::GET {
+        return ok(db.call("service_notes", json!([session_id, "attachments"])).await?);
+    }
     if (path == "/api/v1/notes/backlinks" || path == "/api/v1/notes/mentions") && *method == Method::GET {
         let id = r.q("id");
         if id.is_empty() || id.len() > 64 {

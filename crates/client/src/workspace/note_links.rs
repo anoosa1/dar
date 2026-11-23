@@ -14,10 +14,29 @@ use wasm_bindgen::JsCast;
 
 use super::notes::{NotesFile, NotesLibrary, fetch_detail, has_md_ext, read_file_content};
 use crate::api::{self, BrowserSession};
-use crate::files::editor::{TextFile, write_text_file};
-use crate::live::Live;
-use crate::markdown::{Markdown, NoteLinks};
+use crate::files::editor::{TextFile, upload_blob, write_text_file};
+use crate::live::{Live, reducer, replied};
+use crate::module_bindings::create_folder;
+use crate::markdown::{Embed, Markdown, NoteLinks};
 use crate::ui::{call_method, document, window};
+
+/// A file in the Notes folder that is not a note (an image, PDF or recording).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteFile {
+    pub id: String,
+    pub parent_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub media_type: String,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct NoteFiles {
+    #[serde(default)]
+    pub files: Vec<NoteFile>,
+}
 
 /// The whole library, for resolving links (the list on screen may be a search result).
 pub struct NoteIndex {
@@ -25,9 +44,33 @@ pub struct NoteIndex {
     pub notes: Vec<NotesFile>,
     /// Tags with the number of notes carrying them, by name.
     pub tags: Vec<(String, usize)>,
+    pub files: Vec<NoteFile>,
+    pub file_vault: Vault,
+    pub root_id: String,
+    /// The `attachments` folder pasted and dropped files go to, once it exists.
+    pub attachments: Option<String>,
 }
 
 impl NoteIndex {
+    /// What an embed in `source_id` shows: a note, another file, or nothing.
+    pub fn embed(&self, source_id: &str, target: &str, wiki: bool) -> Option<Embed> {
+        if wiki && dar_notes::is_note_target(target) {
+            return self.resolve(source_id, target, true).map(|n| Embed::Note { id: n.id.clone() });
+        }
+        let source = self.path_of(source_id).unwrap_or_default();
+        let hit = if wiki { self.file_vault.resolve_name(source, target) } else { self.file_vault.resolve_path(source, target) };
+        hit.map(|i| {
+            let file = &self.files[i];
+            Embed::File { id: file.id.clone(), name: file.name.clone(), media_type: file.media_type.clone() }
+        })
+    }
+
+    pub fn with_files(mut self, files: Option<&NoteFiles>) -> Self {
+        self.files = files.map(|f| f.files.clone()).unwrap_or_default();
+        self.file_vault = Vault::new(self.files.iter().map(|f| f.path.clone()));
+        self
+    }
+
     pub fn new(library: Option<&NotesLibrary>) -> Self {
         let notes: Vec<NotesFile> = library.map(|l| l.notes.clone()).unwrap_or_default();
         let vault = Vault::new(notes.iter().map(|n| n.path.clone()));
@@ -41,7 +84,9 @@ impl NoteIndex {
             }
         }
         tags.sort_by_key(|(t, _)| t.to_lowercase());
-        Self { vault, notes, tags }
+        let root_id = library.map(|l| l.root_id.clone()).unwrap_or_default();
+        let attachments = library.and_then(|l| l.folders.iter().find(|f| f.path.eq_ignore_ascii_case("attachments")).map(|f| f.id.clone()));
+        Self { vault, notes, tags, files: Vec::new(), file_vault: Vault::new(Vec::<String>::new()), root_id, attachments }
     }
 
     pub fn position(&self, id: &str) -> Option<usize> {
@@ -75,6 +120,64 @@ pub enum Trigger {
     Link { start: usize, query: String },
     /// `#query` before the caret; `start` is the byte offset of `#`.
     Tag { start: usize, query: String },
+    /// `/query` after a space or at a line start: commands and templates.
+    Slash { start: usize, query: String },
+}
+
+/// Where the caret goes in an inserted command (removed on insert).
+pub const CARET: char = '\u{1}';
+
+/// Notes in the `Templates` folder, inserted with `{{date}}`, `{{time}}` and `{{title}}` filled in.
+pub fn is_template(note: &NotesFile) -> bool {
+    note.path.to_lowercase().starts_with("templates/")
+}
+
+/// `{{date}}`, `{{time}}` and `{{title}}` (and `{{date:YYYY-MM-DD}}`-style formats Obsidian
+/// writes, read as the plain date) filled in; template properties are dropped.
+pub fn fill_template(template: &str, title: &str, date: &str, time: &str) -> String {
+    let body = dar_notes::front_matter(template).map_or(template, |(_, end)| &template[end..]);
+    let mut out = String::new();
+    let mut rest = body;
+    while let Some(open) = rest.find("{{") {
+        let Some(close) = rest[open..].find("}}") else { break };
+        out.push_str(&rest[..open]);
+        let name = rest[open + 2..open + close].trim().to_lowercase();
+        match name.split(':').next().unwrap_or_default() {
+            "date" => out.push_str(date),
+            "time" => out.push_str(time),
+            "title" => out.push_str(title),
+            _ => out.push_str(&rest[open..open + close + 2]),
+        }
+        rest = &rest[open + close + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Today's date (`YYYY-MM-DD`) and time (`HH:MM`) in the browser's timezone.
+pub fn today() -> (String, String) {
+    let now = js_sys::Date::new_0();
+    (format!("{:04}-{:02}-{:02}", now.get_full_year(), now.get_month() + 1, now.get_date()), format!("{:02}:{:02}", now.get_hours(), now.get_minutes()))
+}
+
+fn commands(date: &str, time: &str) -> Vec<(&'static str, &'static str, String)> {
+    vec![
+        ("Heading 1", "Big section heading", format!("# {CARET}")),
+        ("Heading 2", "Medium section heading", format!("## {CARET}")),
+        ("Heading 3", "Small section heading", format!("### {CARET}")),
+        ("To-do", "Checkbox", format!("- [ ] {CARET}")),
+        ("Bulleted list", "", format!("- {CARET}")),
+        ("Numbered list", "", format!("1. {CARET}")),
+        ("Quote", "", format!("> {CARET}")),
+        ("Callout", "Note, tip, warning\u{2026}", format!("> [!note] {CARET}\n> ")),
+        ("Code block", "", format!("```\n{CARET}\n```")),
+        ("Table", "Two columns", format!("| {CARET} |  |\n| --- | --- |\n|  |  |")),
+        ("Divider", "", format!("---\n{CARET}")),
+        ("Link to note", "[[", format!("[[{CARET}]]")),
+        ("Date", "Today", date.to_owned()),
+        ("Time", "Now", time.to_owned()),
+        ("Math", "Formula", format!("$${CARET}$$")),
+    ]
 }
 
 /// What the text before the caret (a byte offset) asks to complete.
@@ -86,6 +189,13 @@ pub fn trigger(text: &str, caret: usize) -> Option<Trigger> {
         let query = &line[open + 2..];
         if !query.contains("]]") && !query.contains(['|', '[', '#']) && query.chars().count() <= 80 {
             return Some(Trigger::Link { start: line_start + open, query: query.to_owned() });
+        }
+    }
+    if let Some(slash) = line.rfind('/') {
+        let query = &line[slash + 1..];
+        let before = line[..slash].chars().next_back();
+        if before.is_none_or(char::is_whitespace) && query.len() <= 24 && query.chars().all(|c| c.is_alphanumeric() || c == '-') {
+            return Some(Trigger::Slash { start: line_start + slash, query: query.to_owned() });
         }
     }
     let word_len: usize = line.chars().rev().take_while(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '/')).map(char::len_utf8).sum();
@@ -106,6 +216,8 @@ pub struct Suggestion {
     pub label: String,
     pub detail: String,
     pub insert: String,
+    /// A template note to fetch and fill in instead of `insert`.
+    pub template: Option<String>,
 }
 
 fn rank(name: &str, query: &str) -> Option<u8> {
@@ -143,7 +255,7 @@ pub fn suggestions(index: &NoteIndex, trigger: &Trigger, source_id: &str) -> Vec
                     (None, None) => continue,
                 };
                 let detail = if label != note.title { format!("{} \u{b7} {}", note.title, folder) } else { folder };
-                found.push((score, note.modified_at, Suggestion { label, detail: detail.trim_end_matches([' ', '\u{b7}']).to_owned(), insert }));
+                found.push((score, note.modified_at, Suggestion { label, detail: detail.trim_end_matches([' ', '\u{b7}']).to_owned(), insert, template: None }));
             }
             found.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.total_cmp(&a.1)));
             found.into_iter().take(8).map(|(_, _, s)| s).collect()
@@ -155,8 +267,25 @@ pub fn suggestions(index: &NoteIndex, trigger: &Trigger, source_id: &str) -> Vec
             found
                 .into_iter()
                 .take(8)
-                .map(|(_, n, t)| Suggestion { label: format!("#{t}"), detail: format!("{n} {}", if n == 1 { "note" } else { "notes" }), insert: format!("#{t} ") })
+                .map(|(_, n, t)| Suggestion { label: format!("#{t}"), detail: format!("{n} {}", if n == 1 { "note" } else { "notes" }), insert: format!("#{t} "), template: None })
                 .collect()
+        }
+        Trigger::Slash { query, .. } => {
+            let q = query.to_lowercase();
+            let (date, time) = today();
+            let mut found: Vec<(u8, Suggestion)> = commands(&date, &time)
+                .into_iter()
+                .filter_map(|(label, detail, insert)| rank(label, &q).map(|r| (r, Suggestion { label: label.into(), detail: detail.into(), insert, template: None })))
+                .collect();
+            for note in index.notes.iter().filter(|n| is_template(n)) {
+                let name = super::notes::strip_md_ext(&note.name);
+                let label = format!("Template: {name}");
+                if let Some(r) = rank(&name, &q).or_else(|| rank(&label, &q)) {
+                    found.push((r, Suggestion { label, detail: "Insert template".into(), insert: String::new(), template: Some(note.id.clone()) }));
+                }
+            }
+            found.sort_by_key(|(r, _)| *r);
+            found.into_iter().take(10).map(|(_, s)| s).collect()
         }
     }
 }
@@ -164,7 +293,7 @@ pub fn suggestions(index: &NoteIndex, trigger: &Trigger, source_id: &str) -> Vec
 /// The text with a suggestion accepted at `caret` (bytes), and the caret after it.
 pub fn accept(text: &str, caret: usize, trigger: &Trigger, insert: &str) -> (String, usize) {
     let (start, mut end) = match trigger {
-        Trigger::Link { start, .. } | Trigger::Tag { start, .. } => (*start, caret),
+        Trigger::Link { start, .. } | Trigger::Tag { start, .. } | Trigger::Slash { start, .. } => (*start, caret),
     };
     if matches!(trigger, Trigger::Link { .. }) && text[end..].starts_with("]]") {
         end += 2;
@@ -172,8 +301,10 @@ pub fn accept(text: &str, caret: usize, trigger: &Trigger, insert: &str) -> (Str
     if matches!(trigger, Trigger::Tag { .. }) && text[end..].starts_with(' ') {
         end += 1;
     }
+    let at = insert.find(CARET).unwrap_or(insert.len());
+    let insert = insert.replace(CARET, "");
     let next = format!("{}{insert}{}", &text[..start], &text[end..]);
-    (next, start + insert.len())
+    (next, start + at)
 }
 
 /// The viewport position just below the caret of a textarea (a mirror element measures it).
@@ -502,6 +633,63 @@ pub fn NoteReferences(
     }
 }
 
+
+fn attachment_name(file: &web_sys::File) -> String {
+    let media = file.type_();
+    let name: String = file.name().chars().map(|c| if matches!(c, '[' | ']' | '|' | '#' | '^' | '/' | '\\') || (c as u32) < 0x20 { '-' } else { c }).collect();
+    let name = name.trim().to_owned();
+    // Clipboard images arrive as `image.png`; name them as Obsidian does.
+    if name.is_empty() || (media.starts_with("image/") && name.eq_ignore_ascii_case(&format!("image.{}", media.trim_start_matches("image/")))) {
+        let now = js_sys::Date::new_0();
+        let ext = media.split('/').nth(1).unwrap_or("bin").split('+').next().unwrap_or("bin");
+        return format!(
+            "Pasted image {:04}{:02}{:02}{:02}{:02}{:02}.{ext}",
+            now.get_full_year(),
+            now.get_month() + 1,
+            now.get_date(),
+            now.get_hours(),
+            now.get_minutes(),
+            now.get_seconds()
+        );
+    }
+    name
+}
+
+/// Uploads pasted or dropped files to the Notes folder's `attachments` folder (made on first
+/// use) and returns the embeds to insert, one per line.
+pub async fn attach(live: Live, session: &BrowserSession, index: &NoteIndex, files: Vec<web_sys::File>) -> Result<String, String> {
+    let conn = live.connection.get_untracked().ok_or("Notes are reconnecting. Try again in a moment.")?;
+    if index.root_id.is_empty() {
+        return Err("The Notes folder is still loading.".into());
+    }
+    let folder = match &index.attachments {
+        Some(id) => id.clone(),
+        None => {
+            let id = crate::random_uuid();
+            let (folder, parent) = (id.clone(), index.root_id.clone());
+            reducer(|tx| conn.reducers.create_folder_then(folder, parent, "attachments".into(), replied(tx))).await.map_err(|_| "The attachments folder could not be created. Refresh and try again.".to_owned())?;
+            id
+        }
+    };
+    let mut taken: std::collections::HashSet<String> = index.files.iter().filter(|f| f.parent_id == folder).map(|f| f.name.to_lowercase()).collect();
+    let mut embeds = Vec::new();
+    for file in files {
+        let wanted = attachment_name(&file);
+        let (stem, ext) = wanted.rsplit_once('.').map_or((wanted.as_str(), String::new()), |(s, e)| (s, format!(".{e}")));
+        let mut name = wanted.clone();
+        let mut n = 1;
+        while taken.contains(&name.to_lowercase()) {
+            n += 1;
+            name = format!("{stem} {n}{ext}");
+        }
+        let media = if file.type_().is_empty() { "application/octet-stream".to_owned() } else { file.type_() };
+        upload_blob(session, &name, &folder, &media, &file).await.map_err(|e| format!("{name} could not be uploaded: {}", e.message))?;
+        taken.insert(name.to_lowercase());
+        embeds.push(format!("![[{name}]]"));
+    }
+    Ok(embeds.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,5 +756,11 @@ mod tests {
         assert_eq!(&next[..caret], "See [[Project Apollo]]");
         let (next, caret) = accept("go #wo", 6, &Trigger::Tag { start: 3, query: "wo".into() }, "#work ");
         assert_eq!((next.as_str(), caret), ("go #work ", 9));
+        let (next, caret) = accept("x\n/co", 5, &Trigger::Slash { start: 2, query: "co".into() }, &format!("```\n{CARET}\n```"));
+        assert_eq!(next, "x\n```\n\n```");
+        assert_eq!(caret, 6);
+        assert_eq!(trigger("a /tab", 6), Some(Trigger::Slash { start: 2, query: "tab".into() }));
+        assert_eq!(trigger("https://x", 9), None);
+        assert_eq!(fill_template("---\ntags: [t]\n---\n# {{title}}\n{{date:YYYY}} {{time}} {{other}}", "Plan", "2026-11-22", "09:30"), "# Plan\n2026-11-22 09:30 {{other}}");
     }
 }

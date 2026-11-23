@@ -498,3 +498,36 @@ mod tests {
         assert_eq!(block_id("x^abc"), None);
     }
 }
+
+/// The part of a note an embed shows: the whole text after its properties, a heading's
+/// section (to the next heading of the same or a higher level) or a `^block`'s line.
+pub fn section(text: &str, fragment: Option<&str>) -> Option<String> {
+    let facts = facts(text);
+    let body = &text[facts.body..];
+    let Some(fragment) = fragment.map(str::trim).filter(|f| !f.is_empty()) else { return Some(body.trim().to_owned()) };
+    if let Some(id) = fragment.strip_prefix('^') {
+        let line = text[facts.body..].lines().find(|l| block_id(l) == Some(id))?;
+        let trimmed = line.trim_end();
+        return Some(trimmed[..trimmed.len() - id.len() - 1].trim_end().to_owned());
+    }
+    let wanted = slug(fragment.rsplit('#').next().unwrap_or(fragment));
+    let index = facts.headings.iter().position(|h| slug(&h.text) == wanted)?;
+    let heading = &facts.headings[index];
+    let end = facts.headings[index + 1..].iter().find(|h| h.level <= heading.level).map_or(text.len(), |h| h.offset);
+    Some(text[heading.offset..end].trim().to_owned())
+}
+
+#[cfg(test)]
+mod section_tests {
+    use super::section;
+
+    #[test]
+    fn embeds_sections_and_blocks() {
+        let text = "---\na: b\n---\n# Top\nintro\n## Part\nbody ^b1\n### Deep\nmore\n## Next\nend\n";
+        assert_eq!(section(text, None).unwrap(), "# Top\nintro\n## Part\nbody ^b1\n### Deep\nmore\n## Next\nend");
+        assert_eq!(section(text, Some("Part")).unwrap(), "## Part\nbody ^b1\n### Deep\nmore");
+        assert_eq!(section(text, Some("Top#Next")).unwrap(), "## Next\nend");
+        assert_eq!(section(text, Some("^b1")).unwrap(), "body");
+        assert_eq!(section(text, Some("Missing")), None);
+    }
+}

@@ -48,6 +48,13 @@ fn plain_links(value: &str) -> String {
             rest = &inner[end + 1..];
             continue;
         }
+        // `![[embed]]` leaves the excerpt like an image.
+        if let Some(after) = rest.strip_prefix("![[")
+            && let Some(close) = after.find("]]")
+        {
+            rest = &after[close + 2..];
+            continue;
+        }
         if let Some(after) = rest.strip_prefix("[[")
             && let Some(close) = after.find("]]")
             && !after[..close].contains(']')
@@ -55,7 +62,7 @@ fn plain_links(value: &str) -> String {
             let inner = &after[..close];
             let (target, label) = inner.split_once('|').map_or((inner, None), |(t, l)| (t, Some(l)));
             if !target.is_empty() && !target.contains('|') {
-                out.push_str(label.filter(|l| !l.is_empty()).unwrap_or(target));
+                out.push_str(label.filter(|l| !l.is_empty()).unwrap_or_else(|| target.split('#').next().unwrap_or(target)));
                 rest = &after[close + 2..];
                 continue;
             }
@@ -357,5 +364,6 @@ mod tests {
         assert_eq!(summarize("Plan.md", "---\ntitle: \"Trip\"\n---\nPack [[Bags|bags]] and [tickets](x).\n"), ("Trip".into(), "Pack bags and tickets.".into()));
         assert_eq!(summarize("Plan.md", "# Groceries\n- [ ] milk\n- [x] **bread**\n"), ("Groceries".into(), "milk bread".into()));
         assert_eq!(summarize("Plan.md", "Just text"), ("Plan".into(), "Just text".into()));
+        assert_eq!(summarize("Day.md", "Read [[Book#Ch 2]].\n![[Book#Part]]\n![[dot.png]] done"), ("Day".into(), "Read Book. done".into()));
     }
 }

@@ -215,8 +215,9 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     let library: RwSignal<Option<NotesLibrary>> = RwSignal::new(None);
     // The whole library (the list may show a search result), for links, tags and suggestions.
     let all_notes: RwSignal<Option<NotesLibrary>> = RwSignal::new(None);
+    let attachments: RwSignal<Option<note_links::NoteFiles>> = RwSignal::new(None);
     let index = RwSignal::new(Arc::new(NoteIndex::new(None)));
-    Effect::new(move |_| all_notes.with(|l| index.set(Arc::new(NoteIndex::new(l.as_ref())))));
+    Effect::new(move |_| all_notes.with(|l| attachments.with(|a| index.set(Arc::new(NoteIndex::new(l.as_ref()).with_files(a.as_ref()))))));
     // A heading or block to show once a note opens: (note ID, fragment).
     let anchor: RwSignal<Option<(String, String)>> = RwSignal::new(None);
     // Bumped when other notes were rewritten (link updates), so a clean editor reloads.
@@ -276,6 +277,11 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             let filtered = !q.is_empty();
             let qs = search_params(&[("q", q)]);
             let whole = if filtered { api::get::<NotesLibrary>("/api/v1/notes/library").await.ok() } else { None };
+            if let Ok(files) = api::get::<note_links::NoteFiles>("/api/v1/notes/attachments").await
+                && load_seq.try_get_untracked() == Some(seq)
+            {
+                attachments.set(Some(files));
+            }
             match api::get::<NotesLibrary>(&format!("/api/v1/notes/library?{qs}")).await {
                 Ok(value) if load_seq.try_get_untracked() == Some(seq) => {
                     all_notes.set(if filtered { whole.or_else(|| all_notes.get_untracked()) } else { Some(value.clone()) });
@@ -471,6 +477,52 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     };
     let joined = |folder: String, name: &str| if folder.is_empty() { name.to_owned() } else { format!("{folder}/{name}") };
 
+    // Today's daily note (`Journal/YYYY-MM-DD.md`), made from `Templates/Daily` when there is one.
+    let open_today = move || {
+        let (date, time) = note_links::today();
+        let ix = index.get_untracked();
+        if let Some(i) = ix.vault.find(&format!("Journal/{date}.md")) {
+            open_note(ix.notes[i].id.clone());
+            return;
+        }
+        if ix.root_id.is_empty() {
+            return;
+        }
+        let sess = session_sv.get_value();
+        let journal = all_notes.with_untracked(|l| l.as_ref().and_then(|l| l.folders.iter().find(|f| f.path.eq_ignore_ascii_case("journal")).map(|f| f.id.clone())));
+        spawn_local(async move {
+            busy.set(true);
+            let result: Result<(), String> = async {
+                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let folder = match journal {
+                    Some(id) => id,
+                    None => {
+                        let id = crate::random_uuid();
+                        let (folder, parent) = (id.clone(), ix.root_id.clone());
+                        reducer(|tx| conn.reducers.create_folder_then(folder, parent, "Journal".into(), replied(tx))).await?;
+                        id
+                    }
+                };
+                let template = ix.notes.iter().find(|n| note_links::is_template(n) && matches!(strip_md_ext(&n.name).to_lowercase().as_str(), "daily" | "daily note" | "journal"));
+                let content = match template {
+                    Some(t) => note_links::fill_template(&read_file_content(&t.id).await?, &date, &date, &time),
+                    None => String::new(),
+                };
+                let name = format!("{date}.md");
+                let file = TextFile { name: &name, parent_id: &folder, content: &content, media_type: "text/markdown", file_id: None, expected_revision: None };
+                let id = write_text_file(&sess, file).await.map_err(|e| e.message)?;
+                open.set(Some(fetch_detail(&conn, &id).await?.entry));
+                Ok(())
+            }
+            .await;
+            match result {
+                Ok(()) => reload.update(|n| *n += 1),
+                Err(e) => error.set(error_message(&e)),
+            }
+            busy.set(false);
+        });
+    };
+
     let toggle_favorite = move |note_id: String| {
         spawn_local(async move {
             busy.set(true);
@@ -625,6 +677,9 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         </button>
                     }
                 }).collect_view()}
+                <button class="nav-item" disabled=move || busy.get() || library.with(Option::is_none) on:click=move |_| open_today()>
+                    <Icon name="calendar"/>"Today"
+                </button>
             </nav>
             <div class="sidebar-heading">
                 "Folders"
@@ -740,6 +795,8 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         follow: Some(Callback::new(move |(target, wiki, fragment): (String, bool, Option<String>)| follow_link(source_id.get_value(), target, wiki, fragment))),
                         tag: Some(Callback::new(move |tag: String| scope.set(format!("tag:{tag}")))),
                         toggle: None,
+                        embed: Some(Callback::new(move |(target, wiki): (String, bool)| index.with(|ix| ix.embed(&source_id.get_value(), &target, wiki)))),
+                        nested: false,
                     };
                     let version = RwSignal::new(0u32);
                     let on_saved = Callback::new(move |saved: (u32, String)| {
@@ -1607,6 +1664,26 @@ fn NoteTextEditor(
         suggest.set(found);
         choices.set(list);
     };
+    // Text inserted at the caret (pasted files' embeds, templates, slash commands).
+    let alive_insert = alive.clone();
+    let insert_at_caret = move |insert: String| {
+        if !alive_insert.load(Ordering::Relaxed) {
+            return;
+        }
+        let Some(field) = input.get_untracked() else {
+            change_text(format!("{}{insert}", text.get_untracked()));
+            return;
+        };
+        let source = text.get_untracked();
+        let start = byte_index(&source, field.selection_start().ok().flatten().unwrap_or(u32::MAX));
+        let end = byte_index(&source, field.selection_end().ok().flatten().unwrap_or(u32::MAX)).max(start);
+        let next = format!("{}{insert}{}", &source[..start], &source[end..]);
+        let caret16 = utf16_len(&next[..start + insert.len()]);
+        field.set_value(&next);
+        let _ = field.set_selection_range(caret16, caret16);
+        change_text(next);
+    };
+    let insert_at_caret = StoredValue::new(insert_at_caret);
     let pick = Callback::new(move |i: usize| {
         let (Some(trigger), Some(choice), Some(field)) = (suggest.get_untracked(), choices.with_untracked(|c| c.get(i).cloned()), input.get_untracked()) else { return };
         let source = text.get_untracked();
@@ -1619,7 +1696,42 @@ fn NoteTextEditor(
         change_text(next);
         choices.set(Vec::new());
         suggest.set(None);
+        if let Some(template) = choice.template {
+            let title = strip_md_ext(&entry.with_untracked(|e| e.name.clone()));
+            spawn_local(async move {
+                match read_file_content(&template).await {
+                    Ok(body) => {
+                        let (date, time) = note_links::today();
+                        let filled = note_links::fill_template(&body, &title, &date, &time);
+                        insert_at_caret.with_value(|f| f(filled));
+                    }
+                    Err(e) => error.set(e),
+                }
+            });
+        } else {
+            // "Link to note" leaves the caret inside `[[]]`: the note list opens.
+            update_suggestions();
+        }
     });
+    let attach_files = move |files: Vec<web_sys::File>| {
+        if files.is_empty() || read_only.get_untracked() || !ready.get_untracked() {
+            return;
+        }
+        status.set("Uploading\u{2026}");
+        spawn_local(async move {
+            let ix = index.get_untracked();
+            let result = note_links::attach(live, &session.get_value(), &ix, files).await;
+            match result {
+                Ok(embeds) => insert_at_caret.with_value(|f| f(embeds)),
+                Err(e) => {
+                    error.set(e);
+                    status.set("Unsaved");
+                }
+            }
+        });
+    };
+    let file_list = |list: Option<web_sys::FileList>| -> Vec<web_sys::File> { list.map(|l| (0..l.length()).filter_map(|i| l.get(i)).collect()).unwrap_or_default() };
+
     let suggest_keys = move |e: web_sys::KeyboardEvent| {
         let count = choices.with_untracked(Vec::len);
         if count == 0 {
@@ -1666,7 +1778,7 @@ fn NoteTextEditor(
     let phase = move || {
         if read_only.get() {
             "read"
-        } else if matches!(status.get(), "Saving\u{2026}" | "Loading\u{2026}") {
+        } else if matches!(status.get(), "Saving\u{2026}" | "Loading\u{2026}" | "Uploading\u{2026}") {
             "saving"
         } else if dirty.get() {
             if status.get() == "Save failed" { "error" } else { "dirty" }
@@ -1677,7 +1789,7 @@ fn NoteTextEditor(
 
     let label = move || {
         let s = status.get();
-        if matches!(s, "Loading\u{2026}" | "Saving\u{2026}") || read_only.get() {
+        if matches!(s, "Loading\u{2026}" | "Saving\u{2026}" | "Uploading\u{2026}") || read_only.get() {
             s
         } else if dirty.get() {
             if s == "Save failed" { "Not saved" } else { "Unsaved changes" }
@@ -1840,6 +1952,25 @@ fn NoteTextEditor(
                             aria-activedescendant=move || (!choices.with(Vec::is_empty)).then(|| format!("{listbox}-{}", active.get()))
                             prop:value=move || text.get()
                             on:keydown=suggest_keys
+                            on:paste=move |e: web_sys::ClipboardEvent| {
+                                let files = file_list(e.clipboard_data().and_then(|d| d.files()));
+                                if !files.is_empty() && markdown.get_untracked() {
+                                    e.prevent_default();
+                                    attach_files(files);
+                                }
+                            }
+                            on:dragover=move |e: web_sys::DragEvent| {
+                                if e.data_transfer().is_some_and(|d| d.types().includes(&"Files".into(), 0)) && markdown.get_untracked() {
+                                    e.prevent_default();
+                                }
+                            }
+                            on:drop=move |e: web_sys::DragEvent| {
+                                let files = file_list(e.data_transfer().and_then(|d| d.files()));
+                                if !files.is_empty() && markdown.get_untracked() {
+                                    e.prevent_default();
+                                    attach_files(files);
+                                }
+                            }
                             on:keyup=move |e| if matches!(e.key().as_str(), "ArrowLeft" | "ArrowRight" | "Home" | "End") { update_suggestions() }
                             on:click=move |_| update_suggestions()
                             on:blur=move |_| choices.set(Vec::new())

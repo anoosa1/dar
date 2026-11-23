@@ -33,10 +33,21 @@ identity as the other apps; no extra dependency or worker. UI rules are in the
   follows links, creates a missing note on click, filters by a tag and toggles checkboxes in
   the source; Outline jumps to a heading. Below each note: linked references (with the
   linking lines) and, on demand, unlinked references with a Link action.
+- Embeds: `![[note]]`, `![[note#heading]]` and `![[note#^block]]` show that part of the note
+  in place (read-only, one level deep); `![[photo.png]]`, `![[photo.png|300]]` and
+  `![](attachments/photo.png)` show images, audio and video from the Notes folder, and
+  other files as links. Pasted or dropped files go to `attachments/` (made on first use)
+  and are embedded at the caret.
+- `/` at a line start or after a space lists commands (headings, to-do, lists, quote,
+  callout, code, table, divider, link, date, time, math) and the notes in `Templates/`;
+  a template is inserted with `{{title}}`, `{{date}}` and `{{time}}` filled in and its
+  properties dropped. Today opens `Journal/YYYY-MM-DD.md`, made from `Templates/Daily`
+  (or `Daily note`, `Journal`) when it exists.
 - Renaming or moving a note rewrites the links to it in other notes (each write checked
   against the revision read); a clean open editor reloads. The sidebar lists tags.
 - APIs: `/api/v1/notes/library` (tree, summaries, tags and aliases; search also matches
-  aliases), `/api/v1/notes/backlinks?id=` and `/api/v1/notes/mentions?id=`; writes use the
+  aliases), `/api/v1/notes/backlinks?id=`, `/api/v1/notes/mentions?id=` and `/api/v1/notes/attachments`
+  (the folder's other files, `service_notes` operation `attachments`); writes use the
   Files APIs. The runtime reads each note version once and caches what it found by blob ID.
   The older `/api/v1/notes/notebooks`, `/items` and `/trash` remain for the copy.
 

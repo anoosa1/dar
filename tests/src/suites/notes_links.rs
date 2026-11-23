@@ -9,7 +9,7 @@ use std::time::Duration;
 
 pub const SUITE: Suite = Suite {
     name: "notes-links",
-    cases: &[case!(backlinks_mentions_and_tags, 60), case!(linked_writing_in_the_browser, 180)],
+    cases: &[case!(backlinks_mentions_and_tags, 60), case!(linked_writing_in_the_browser, 180), case!(daily_notes_templates_and_embeds, 120)],
 };
 
 async fn note(session: &Session, root: &str, name: &str, text: &str) -> Result<String> {
@@ -165,5 +165,77 @@ pub async fn linked_writing_in_the_browser(t: &Ctx) -> Result<()> {
 
     let failures = failures.lock().unwrap().clone();
     assert!(failures.is_empty(), "page errors: {failures:?}");
+    Ok(())
+}
+
+pub async fn daily_notes_templates_and_embeds(t: &Ctx) -> Result<()> {
+    let base = t.fixture().await?.base.clone();
+    let admin = login(&base).await?;
+    let root = admin.get_json("/api/v1/notes/library").await?["rootId"].as_str().context("rootId")?.to_owned();
+    let tag = &uuid()[..6];
+    let db = admin.connect().await?;
+    let templates = uuid();
+    reducer(|done| db.reducers.create_folder_then(templates.clone(), root.clone(), "Templates".into(), done)).await?;
+    note(&admin, &templates, "Daily.md", &format!("---\ntags: [template]\n---\n# {{{{title}}}}\n\nTemplate line {tag}\n")).await?;
+    note(&admin, &root, &format!("Source {tag}.md"), &format!("# Source\n\n## Part\nEmbedded words {tag}.\n\n## Other\nNot shown {tag}.\n")).await?;
+
+    let browser = Browser::shared().await?;
+    let context = browser.new_context(ContextOptions::sized(1440, 950)).await?;
+    let page = context.new_page().await?;
+    page.goto(&format!("{base}/notes")).await?;
+    page.get_by_label("Username").fill("admin").await?;
+    page.get_by_label("Password").fill(PASSWORD).await?;
+    page.get_by_role("button", "Sign in").click().await?;
+    page.get_by_role("heading", "All notes").wait_for().await?;
+    let date = page.evaluate("() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }").await?;
+    let date = date.as_str().context("date")?.to_owned();
+
+    // Today opens Journal/<date>.md, made from Templates/Daily.
+    page.get_by_role("button", "Today").click().await?;
+    let editor = page.get_by_role("region", format!("Editor for {date}.md"));
+    editor.wait_for().await?;
+    let source = editor.get_by_label("File contents");
+    editor.locator(r#"textarea[aria-label="File contents"]:not([readonly])"#).wait_for().await?;
+    let filled = source.input_value().await?;
+    assert_eq!(filled.trim(), format!("# {date}\n\nTemplate line {tag}"));
+
+    // Slash commands insert blocks; templates are listed with them.
+    source.press("End").await?;
+    source.press_sequentially("\n/tab").await?;
+    page.get_by_role("option", contains("Table")).wait_for().await?;
+    source.press("Enter").await?;
+    assert!(source.input_value().await?.contains("| --- | --- |"));
+    source.press_sequentially("\n\n/dai").await?;
+    page.get_by_role("option", contains("Template: Daily")).wait_for().await?;
+    source.press("Escape").await?;
+
+    // A note section embeds in place; a dropped image goes to attachments and embeds.
+    let text = format!("{filled}\n![[Source {tag}#Part]]\n");
+    source.fill(&text).await?;
+    source.evaluate(
+        "el => { const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
+                const data = new DataTransfer(); data.items.add(new File([bytes], 'dot.png', { type: 'image/png' }));
+                el.focus(); el.setSelectionRange(el.value.length, el.value.length);
+                el.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true })); }",
+        Value::Null,
+    ).await?;
+    eventually(Duration::from_secs(10), "image embed inserted", || async { Ok(source.input_value().await?.contains("![[dot.png]]").then_some(())) }).await?;
+    editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
+    let files = admin.get_json("/api/v1/notes/attachments").await?;
+    assert!(files["files"].as_array().context("files")?.iter().any(|f| f["path"] == "attachments/dot.png" && f["mediaType"] == "image/png"));
+
+    editor.get_by_role("button", "Preview").click().await?;
+    let embed = editor.get_by_role("group", format!("Embedded Source {tag} \u{203a} Part"));
+    embed.get_by_text(format!("Embedded words {tag}.")).wait_for().await?;
+    assert_eq!(embed.get_by_text(format!("Not shown {tag}.")).count().await?, 0);
+    editor.locator(r#"img.note-image[src^="/api/v1/files/"]"#).wait_for().await?;
+    page.screenshot(t.screenshot("notes-daily-embeds.png"), true).await?;
+
+    // Today opens the same note again.
+    editor.get_by_role("button", "Close editor").click().await?;
+    page.get_by_role("button", "Today").click().await?;
+    editor.wait_for().await?;
+    let library = admin.get_json("/api/v1/notes/library").await?;
+    assert_eq!(library["notes"].as_array().context("notes")?.iter().filter(|n| n["path"] == format!("Journal/{date}.md")).count(), 1);
     Ok(())
 }

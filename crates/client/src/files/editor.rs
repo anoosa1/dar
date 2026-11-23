@@ -47,9 +47,19 @@ pub async fn write_text_file(session: &BrowserSession, file: TextFile<'_>) -> Re
         body["fileId"] = id.into();
         body["expectedRevision"] = revision.into();
     }
+    send_upload(session, body, js_sys::Uint8Array::from(bytes).into()).await
+}
+
+/// Uploads a browser file (pasted or dropped) as a new file in `parent_id`; returns its id.
+pub async fn upload_blob(session: &BrowserSession, name: &str, parent_id: &str, media_type: &str, blob: &web_sys::Blob) -> Result<String, RequestError> {
+    let body = serde_json::json!({ "name": name, "parentId": parent_id, "mediaType": media_type, "size": blob.size() as u64 });
+    send_upload(session, body, blob.into()).await
+}
+
+/// Reserves an upload with `body`, then sends `raw`; a failed transfer cancels the reservation.
+async fn send_upload(session: &BrowserSession, body: serde_json::Value, raw: wasm_bindgen::JsValue) -> Result<String, RequestError> {
     let upload: Upload = api::send("/api/v1/files/uploads", "POST", Some(body), &session.csrf_token).await?;
-    let array = js_sys::Uint8Array::from(bytes);
-    let result = api::fetch(&format!("/api/v1/files/uploads/{}", upload.id), Req { method: "PUT", raw: Some(array.into()), csrf: Some(&session.csrf_token), ..Default::default() }).await;
+    let result = api::fetch(&format!("/api/v1/files/uploads/{}", upload.id), Req { method: "PUT", raw: Some(raw), csrf: Some(&session.csrf_token), ..Default::default() }).await;
     let failure = match result {
         Ok(response) if response.ok() => return Ok(upload.file_id),
         Ok(response) => {

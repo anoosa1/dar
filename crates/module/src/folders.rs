@@ -263,6 +263,17 @@ pub fn service_notes(ctx: &mut spacetimedb::ProcedureContext, sessionId: String,
         if !app_enabled(tx, "notes") {
             return fail("notFound");
         }
+        if operation == "attachments" {
+            // Other files in the Notes folder (images, PDFs, audio), for `![[embeds]]`.
+            let root_id = notes_root(tx, &user.id, true)?.unwrap_or_default();
+            let found = walk(tx, &user.id, &root_id, 5000, 3000, &|n: &str| !is_note_file(n) && !n.starts_with('.'), false);
+            let files: Vec<Value> = found
+                .files
+                .iter()
+                .map(|(e, parent, path, _)| json!({ "id": e.id, "parentId": parent, "name": e.name, "mediaType": e.media_type, "size": e.size, "path": path }))
+                .collect();
+            return Ok(json!({ "rootId": root_id, "files": files, "truncated": found.truncated }));
+        }
         if operation != "library" {
             return fail("invalidInput");
         }
