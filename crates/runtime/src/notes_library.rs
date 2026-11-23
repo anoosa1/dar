@@ -142,9 +142,18 @@ pub fn summarize(name: &str, text: &str) -> (String, String) {
             }
         }
     }
+    let mut fenced = false;
     let joined = body
         .lines()
-        .filter(|l| heading_text(l).is_none() && !(l.starts_with("```") || l.starts_with("~~~")) && !(l.starts_with('#') && l.len() <= 7 && l.bytes().all(|b| b == b'#')))
+        .filter(|l| {
+            // Code (and query blocks) stays out of the excerpt.
+            let fence = l.trim_start().starts_with("```") || l.trim_start().starts_with("~~~");
+            if fence {
+                fenced = !fenced;
+            }
+            !fence && !fenced
+        })
+        .filter(|l| heading_text(l).is_none() && !(l.starts_with('#') && l.len() <= 7 && l.bytes().all(|b| b == b'#')))
         .map(list_marker)
         .collect::<Vec<_>>()
         .join(" ");
@@ -166,6 +175,7 @@ pub struct Info {
     tags: Vec<String>,
     aliases: Vec<String>,
     links: Vec<LinkInfo>,
+    properties: Value,
 }
 
 struct LinkInfo {
@@ -189,7 +199,13 @@ fn info(name: &str, text: &str) -> Info {
         .iter()
         .map(|link| LinkInfo { target: link.target.clone(), wiki: link.wiki, line: link.line, text: context_line(&dar_notes::line_text(text, &lines, link.line)) })
         .collect();
-    Info { title, excerpt, tags: facts.tags, aliases: facts.aliases, links }
+    let properties: serde_json::Map<String, Value> = facts
+        .properties
+        .iter()
+        .take(64)
+        .map(|(k, v)| (k.clone(), match v { dar_notes::Prop::Text(t) => json!(utf16_prefix(t, 400)), dar_notes::Prop::List(items) => json!(items.iter().take(50).map(|i| utf16_prefix(i, 200)).collect::<Vec<_>>()) }))
+        .collect();
+    Info { title, excerpt, tags: facts.tags, aliases: facts.aliases, links, properties: Value::Object(properties) }
 }
 
 struct Note {
@@ -253,7 +269,7 @@ impl Library {
                     continue;
                 }
             }
-            notes.push(json!({ "id": row["id"], "parentId": row["parentId"], "name": name, "title": info.title, "excerpt": info.excerpt, "size": row["size"], "revision": row["revision"], "modifiedAt": row["modifiedAt"], "favorite": row["favorite"], "path": path, "tags": info.tags, "aliases": info.aliases }));
+            notes.push(json!({ "id": row["id"], "parentId": row["parentId"], "name": name, "title": info.title, "excerpt": info.excerpt, "size": row["size"], "revision": row["revision"], "modifiedAt": row["modifiedAt"], "favorite": row["favorite"], "path": path, "tags": info.tags, "aliases": info.aliases, "properties": info.properties }));
         }
         notes.sort_by(|a, b| {
             b["modifiedAt"].as_f64().unwrap_or(0.0).total_cmp(&a["modifiedAt"].as_f64().unwrap_or(0.0)).then_with(|| crate::http::locale_compare(a["title"].as_str().unwrap_or_default(), b["title"].as_str().unwrap_or_default()))
@@ -364,6 +380,7 @@ mod tests {
         assert_eq!(summarize("Plan.md", "---\ntitle: \"Trip\"\n---\nPack [[Bags|bags]] and [tickets](x).\n"), ("Trip".into(), "Pack bags and tickets.".into()));
         assert_eq!(summarize("Plan.md", "# Groceries\n- [ ] milk\n- [x] **bread**\n"), ("Groceries".into(), "milk bread".into()));
         assert_eq!(summarize("Plan.md", "Just text"), ("Plan".into(), "Just text".into()));
+        assert_eq!(summarize("Shelf.md", "# Shelf\n```query\ntag: #b\n```\nAfter."), ("Shelf".into(), "After.".into()));
         assert_eq!(summarize("Day.md", "Read [[Book#Ch 2]].\n![[Book#Part]]\n![[dot.png]] done"), ("Day".into(), "Read Book. done".into()));
     }
 }

@@ -88,6 +88,18 @@ pub struct NoteLinks {
     pub embed: Option<Callback<(String, bool), Option<Embed>>>,
     /// Inside an embedded note, notes embed as links (no embedding loops).
     pub nested: bool,
+    /// Runs a ` ```query ` block.
+    pub query: Option<Callback<String, QueryOutput>>,
+}
+
+/// A query block's result: rows of (link target, title, cells).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct QueryOutput {
+    pub columns: Vec<String>,
+    pub rows: Vec<(String, String, Vec<String>)>,
+    pub list: bool,
+    pub total: usize,
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -398,6 +410,12 @@ impl Render {
                         CodeBlockKind::Fenced(lang) => lang.split_whitespace().next().unwrap_or_default().to_owned(),
                         CodeBlockKind::Indented => String::new(),
                     };
+                    if language.eq_ignore_ascii_case("query")
+                        && let Some(run) = self.links.query
+                        && let Some(output) = run.try_run(plain(&children))
+                    {
+                        return self.query(output);
+                    }
                     let label = if language.is_empty() { "Code".to_owned() } else { format!("{language} code") };
                     view! { <pre><code aria-label=label>{plain(&children)}</code></pre> }.into_any()
                 }
@@ -486,6 +504,35 @@ impl Render {
                 }
             },
         }
+    }
+
+    fn query(&self, output: QueryOutput) -> AnyView {
+        if let Some(error) = output.error {
+            return view! { <div class="note-query is-error" role="note"><p>{error}</p></div> }.into_any();
+        }
+        let summary = match (output.total, output.rows.len()) {
+            (0, _) => "No notes match.".to_owned(),
+            (1, _) => "1 note".to_owned(),
+            (total, shown) if shown < total => format!("{shown} of {total} notes"),
+            (total, _) => format!("{total} notes"),
+        };
+        let link = |target: String, title: String| self.note_link(target, true, None, title.into_any(), false);
+        let body = if output.list {
+            let items: Vec<AnyView> = output.rows.into_iter().map(|(target, title, _)| view! { <li>{link(target, title)}</li> }.into_any()).collect();
+            view! { <ul>{items}</ul> }.into_any()
+        } else {
+            let heads: Vec<AnyView> = output.columns.iter().map(|c| view! { <th>{c.clone()}</th> }.into_any()).collect();
+            let rows: Vec<AnyView> = output
+                .rows
+                .into_iter()
+                .map(|(target, title, cells)| {
+                    let cells: Vec<AnyView> = cells.into_iter().map(|c| view! { <td>{self.text(&c)}</td> }.into_any()).collect();
+                    view! { <tr><td>{link(target, title)}</td>{cells}</tr> }.into_any()
+                })
+                .collect();
+            view! { <div class="markdown-table"><table><thead><tr><th>"Note"</th>{heads}</tr></thead><tbody>{rows}</tbody></table></div> }.into_any()
+        };
+        view! { <div class="note-query" role="group" aria-label="Query results">{body}<p class="note-query-count">{summary}</p></div> }.into_any()
     }
 
     fn row(&self, row: Node, classes: &[Option<&'static str>], head: bool) -> AnyView {

@@ -71,3 +71,6 @@ details.callout>summary{cursor:pointer}
 .markdown-preview .note-image{display:block;max-width:100%;height:auto;margin:10px 0;border-radius:10px}
 .markdown-preview .note-media{display:block;max-width:100%;margin:10px 0}
 .markdown-preview .note-embed.is-file-embed{border-left-style:solid}
+.note-query{margin:12px 0;padding:4px 0}.note-query .markdown-table{margin:0}.note-query ul{margin:0}
+.note-query-count{margin:6px 0 0;color:var(--muted);font-size:12px}
+.note-query.is-error{padding:10px 14px;border-radius:12px;background:var(--error-soft);color:var(--danger);font-size:13px}.note-query.is-error p{margin:0}

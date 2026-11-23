@@ -9,7 +9,7 @@ use std::time::Duration;
 
 pub const SUITE: Suite = Suite {
     name: "notes-links",
-    cases: &[case!(backlinks_mentions_and_tags, 60), case!(linked_writing_in_the_browser, 180), case!(daily_notes_templates_and_embeds, 120)],
+    cases: &[case!(backlinks_mentions_and_tags, 60), case!(linked_writing_in_the_browser, 180), case!(daily_notes_templates_and_embeds, 120), case!(outliner_keys_and_query_blocks, 120)],
 };
 
 async fn note(session: &Session, root: &str, name: &str, text: &str) -> Result<String> {
@@ -237,5 +237,59 @@ pub async fn daily_notes_templates_and_embeds(t: &Ctx) -> Result<()> {
     editor.wait_for().await?;
     let library = admin.get_json("/api/v1/notes/library").await?;
     assert_eq!(library["notes"].as_array().context("notes")?.iter().filter(|n| n["path"] == format!("Journal/{date}.md")).count(), 1);
+    Ok(())
+}
+
+pub async fn outliner_keys_and_query_blocks(t: &Ctx) -> Result<()> {
+    let base = t.fixture().await?.base.clone();
+    let admin = login(&base).await?;
+    let root = admin.get_json("/api/v1/notes/library").await?["rootId"].as_str().context("rootId")?.to_owned();
+    let tag = &uuid()[..6];
+    note(&admin, &root, &format!("Book A {tag}.md"), &format!("---\nstatus: reading\nrating: 5\ntags: [book{tag}]\n---\nGood.\n")).await?;
+    note(&admin, &root, &format!("Book B {tag}.md"), &format!("---\nstatus: done\nrating: 3\ntags: [book{tag}]\n---\nFine.\n")).await?;
+    let library = admin.get_json("/api/v1/notes/library").await?;
+    let book = library["notes"].as_array().context("notes")?.iter().find(|n| n["title"] == format!("Book A {tag}")).context("book")?;
+    assert_eq!(book["properties"], json!({ "status": "reading", "rating": "5", "tags": [format!("book{tag}")] }));
+
+    let browser = Browser::shared().await?;
+    let context = browser.new_context(ContextOptions::sized(1440, 950)).await?;
+    let page = context.new_page().await?;
+    page.goto(&format!("{base}/notes")).await?;
+    page.get_by_label("Username").fill("admin").await?;
+    page.get_by_label("Password").fill(PASSWORD).await?;
+    page.get_by_role("button", "Sign in").click().await?;
+    page.get_by_role("heading", "All notes").wait_for().await?;
+    page.get_by_role("button", "New note").first().click().await?;
+    let editor = page.get_by_role("region", regex("^Editor for Untitled"));
+    let source = editor.get_by_label("File contents");
+    editor.locator(r#"textarea[aria-label="File contents"]:not([readonly])"#).wait_for().await?;
+
+    // Enter continues the list, Tab and Shift+Tab change the level, Alt+Shift+Up moves the line.
+    source.fill("- one").await?;
+    source.press("End").await?;
+    source.press("Enter").await?;
+    source.press_sequentially("two").await?;
+    source.press("Tab").await?;
+    assert_eq!(source.input_value().await?, "- one\n\t- two");
+    source.press("Shift+Tab").await?;
+    source.press("Alt+Shift+ArrowUp").await?;
+    assert_eq!(source.input_value().await?, "- two\n- one");
+    source.press("End").await?;
+    source.press("Enter").await?;
+    source.press("Enter").await?;
+    assert_eq!(source.input_value().await?, "- two\n\n- one", "Enter on an empty item ends the list");
+
+    // A query block lists matching notes with their properties.
+    source.fill(&format!("# Shelf {tag}\n\n```query\ntag: #book{tag}\nsort: rating desc\nshow: status, rating\n```\n")).await?;
+    editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
+    editor.get_by_role("button", "Preview").click().await?;
+    let results = editor.get_by_role("group", "Query results");
+    results.get_by_text("2 notes").wait_for().await?;
+    let first = results.locator("tbody tr").first();
+    first.get_by_role("link", format!("Book A {tag}")).wait_for().await?;
+    first.get_by_text("reading").wait_for().await?;
+    page.screenshot(t.screenshot("notes-query.png"), true).await?;
+    results.get_by_role("link", format!("Book B {tag}")).click().await?;
+    page.get_by_role("region", format!("Editor for Book B {tag}.md")).wait_for().await?;
     Ok(())
 }

@@ -709,6 +709,7 @@ mod tests {
             path: path.into(),
             tags: tags.iter().map(|t| t.to_string()).collect(),
             aliases: aliases.iter().map(|t| t.to_string()).collect(),
+            properties: Default::default(),
         }
     }
 

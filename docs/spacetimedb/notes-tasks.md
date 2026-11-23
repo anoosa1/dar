@@ -43,9 +43,17 @@ identity as the other apps; no extra dependency or worker. UI rules are in the
   a template is inserted with `{{title}}`, `{{date}}` and `{{time}}` filled in and its
   properties dropped. Today opens `Journal/YYYY-MM-DD.md`, made from `Templates/Daily`
   (or `Daily note`, `Journal`) when it exists.
+- Outliner keys in lists: Enter continues the list (numbers count up, checkboxes start
+  open; Enter on an empty item ends it), Tab and Shift+Tab indent and outdent (outside
+  lists Tab moves focus), Alt+Shift+Up/Down move the selected lines.
+- Query blocks (` ```query `) list matching notes as a table or list, one condition per
+  line: `tag:`, `folder:`, `text:`, `where: field op value` (`= != > < >= <= contains`,
+  numbers compared as numbers), `sort:`, `show:`, `view: list`, `limit:` (at most 200).
+  Fields are properties plus `title`, `folder`, `path`, `tags` and `modified`. See
+  `crates/client/src/workspace/note_query.rs`.
 - Renaming or moving a note rewrites the links to it in other notes (each write checked
   against the revision read); a clean open editor reloads. The sidebar lists tags.
-- APIs: `/api/v1/notes/library` (tree, summaries, tags and aliases; search also matches
+- APIs: `/api/v1/notes/library` (tree, summaries, tags, aliases and properties; search also matches
   aliases), `/api/v1/notes/backlinks?id=`, `/api/v1/notes/mentions?id=` and `/api/v1/notes/attachments`
   (the folder's other files, `service_notes` operation `attachments`); writes use the
   Files APIs. The runtime reads each note version once and caches what it found by blob ID.

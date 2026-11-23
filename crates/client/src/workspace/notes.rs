@@ -59,6 +59,8 @@ pub struct NotesFile {
     pub tags: Vec<String>,
     #[serde(default)]
     pub aliases: Vec<String>,
+    #[serde(default)]
+    pub properties: serde_json::Map<String, Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -797,6 +799,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         toggle: None,
                         embed: Some(Callback::new(move |(target, wiki): (String, bool)| index.with(|ix| ix.embed(&source_id.get_value(), &target, wiki)))),
                         nested: false,
+                        query: Some(Callback::new(move |source: String| index.with(|ix| super::note_query::run(ix, &source_id.get_value(), &source)))),
                     };
                     let version = RwSignal::new(0u32);
                     let on_saved = Callback::new(move |saved: (u32, String)| {
@@ -1732,9 +1735,35 @@ fn NoteTextEditor(
     };
     let file_list = |list: Option<web_sys::FileList>| -> Vec<web_sys::File> { list.map(|l| (0..l.length()).filter_map(|i| l.get(i)).collect()).unwrap_or_default() };
 
+    // Outliner keys in lists: Tab/Shift+Tab indent, Alt+Shift+Up/Down move lines, Enter
+    // continues the list. Outside lists Tab keeps moving focus.
+    let outline_keys = move |e: &web_sys::KeyboardEvent| -> bool {
+        let Some(field) = input.get_untracked() else { return false };
+        if !markdown.get_untracked() || read_only.get_untracked() || e.ctrl_key() || e.meta_key() || e.is_composing() {
+            return false;
+        }
+        let source = text.get_untracked();
+        let start = byte_index(&source, field.selection_start().ok().flatten().unwrap_or(0));
+        let end = byte_index(&source, field.selection_end().ok().flatten().unwrap_or(0));
+        let edit = match e.key().as_str() {
+            "Tab" if !e.alt_key() => crate::outline::indent(&source, start, end, e.shift_key()),
+            "ArrowUp" | "ArrowDown" if e.alt_key() && e.shift_key() => crate::outline::move_lines(&source, start, end, e.key() == "ArrowUp"),
+            "Enter" if !e.alt_key() && !e.shift_key() && start == end => crate::outline::continue_list(&source, start).map(|(t, c)| (t, c, c)),
+            _ => None,
+        };
+        let Some((next, s, en)) = edit else { return false };
+        let (s16, e16) = (utf16_len(&next[..s]), utf16_len(&next[..en]));
+        field.set_value(&next);
+        let _ = field.set_selection_range(s16, e16);
+        change_text(next);
+        true
+    };
     let suggest_keys = move |e: web_sys::KeyboardEvent| {
         let count = choices.with_untracked(Vec::len);
         if count == 0 {
+            if outline_keys(&e) {
+                e.prevent_default();
+            }
             return;
         }
         match e.key().as_str() {

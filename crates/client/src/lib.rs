@@ -25,6 +25,7 @@ pub mod icons;
 pub mod identity;
 pub mod live;
 pub mod markdown;
+pub mod outline;
 /// The module's generated bindings (crates/bindings).
 pub use dar_bindings as module_bindings;
 pub mod navigation;

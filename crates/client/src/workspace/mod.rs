@@ -2,6 +2,7 @@
 //! along with their shared shell, settings sheet, transfers and reactive select control.
 
 pub mod note_links;
+pub mod note_query;
 pub mod notes;
 pub mod task_occurrences;
 pub mod tasks;
