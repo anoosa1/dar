@@ -1,7 +1,7 @@
-{ lib, stdenv, stdenvNoCC, fetchurl, runCommand, buildNpmPackage, rustPlatform, cargo, rustc, lld, perl, wasm-bindgen-cli, binaryen, brotli, gzip, bash, coreutils, gnugrep, curl, git, exiftool, vips, ffmpeg-headless, libarchive, makeWrapper, runtime, chatBridge }:
+{ lib, stdenv, stdenvNoCC, fetchurl, runCommand, buildNpmPackage, rustPlatform, cargo, rustc, lld, wasm-bindgen-cli, binaryen, brotli, gzip, bash, coreutils, gnugrep, curl, git, exiftool, vips, ffmpeg-headless, libarchive, makeWrapper, runtime, chatBridge }:
 let
   fs = lib.fileset;
-  wasmSplit = import ../rust/nix/wasm-split.nix { inherit rustPlatform fetchurl; };
+  wasmSplit = import ./wasm-split.nix { inherit rustPlatform fetchurl; };
 
   sdkSource = lib.cleanSourceWith {
     src = ../sdk;
@@ -44,37 +44,49 @@ let
     meta.platforms = [ "x86_64-linux" "aarch64-linux" ];
   };
 
-  spacetimedbBindingsMacroCrate = fetchurl {
-    url = "https://static.crates.io/crates/spacetimedb-bindings-macro/spacetimedb-bindings-macro-2.14.1.crate";
-    sha256 = "12687a386f7994d79a66b5e483335ffa3a4d4b4793ad29dbd640e09113c6b188";
-  };
+  # The patched crates' archives, for `xtask setup` offline (see xtask/src/patches.rs).
+  patchedCrates = runCommand "dar-patched-crate-archives" { } ''
+    mkdir -p $out
+    cp ${fetchurl {
+      url = "https://static.crates.io/crates/spacetimedb-bindings-macro/spacetimedb-bindings-macro-2.14.1.crate";
+      sha256 = "12687a386f7994d79a66b5e483335ffa3a4d4b4793ad29dbd640e09113c6b188";
+    }} $out/spacetimedb-bindings-macro-2.14.1.crate
+    cp ${fetchurl {
+      url = "https://static.crates.io/crates/brotli/brotli-3.5.0.crate";
+      sha256 = "d640d25bc63c50fb1f0b545ffd80207d2e10a4c965530809b40ba3386825c391";
+    }} $out/brotli-3.5.0.crate
+  '';
 
-  moduleSource = lib.cleanSourceWith {
-    src = ../rust/module;
-    filter = path: _: !(builtins.elem (baseNameOf path) [ "target" ".gitignore" ]);
+  # The Cargo workspace (every member's manifest is needed to load it) and the xtask.
+  workspaceSource = fs.toSource {
+    root = ../.;
+    fileset = fs.difference
+      # The client's stylesheet order also names an SDK stylesheet (crates/client/styles/order.txt).
+      (fs.unions [ ../Cargo.toml ../Cargo.lock ../.cargo ../crates ../tests ../xtask/Cargo.toml ../xtask/Cargo.lock ../xtask/src ../sdk/react/global-search.css ])
+      (fs.unions [ (fs.maybeMissing ../crates/bindings/src/generated) (fs.maybeMissing ../crates/runtime/serve.sh) ]);
   };
+  workspaceDeps = rustPlatform.importCargoLock { lockFile = ../Cargo.lock; };
+
+  # Builds the xtask (no dependencies) and prepares the patched crates the workspace needs.
+  prepareWorkspace = ''
+    export CARGO_NET_OFFLINE=true
+    export HOME=$TMPDIR/home
+    mkdir -p "$HOME"
+    cargo build -q --offline --manifest-path xtask/Cargo.toml
+    export XTASK=$PWD/xtask/target/debug/xtask
+    DAR_CRATE_DIR=${patchedCrates} $XTASK setup
+  '';
 
   darModule = stdenv.mkDerivation {
     pname = "dar-module";
     version = "0.1.0";
-    src = moduleSource;
-    cargoDeps = rustPlatform.importCargoLock { lockFile = ../rust/module/Cargo.lock; };
-    nativeBuildInputs = [ rustPlatform.cargoSetupHook cargo rustc lld perl ];
-    postPatch = ''
-      # Replicates rust/module/patch-macro.sh without network access.
-      dir="target/patches/spacetimedb-bindings-macro-2.14.1"
-      mkdir -p target/patches
-      tar -xzf ${spacetimedbBindingsMacroCrate} -C target/patches
-      perl -0pi -e 's/name: field\.ident\.as_ref\(\)\.map\(syn::Ident::to_string\),/name: field.ident.as_ref().map(|i| syn::ext::IdentExt::unraw(i).to_string()),/' "$dir/src/sats.rs"
-      grep -q 'IdentExt::unraw(i).to_string()' "$dir/src/sats.rs"
-      perl -0pi -e 's/let accessor_name = self\.accessor_name\.to_string\(\);/let accessor_name = { let mut out = String::new(); let mut upper = false; for c in syn::ext::IdentExt::unraw(self.accessor_name).to_string().chars() { if c == \x27_\x27 { upper = true; } else if upper { out.extend(c.to_uppercase()); upper = false; } else { out.push(c); } } out };/' "$dir/src/table.rs"
-      grep -q 'upper = true' "$dir/src/table.rs"
-      touch "$dir/.patched-2"
-    '';
+    src = workspaceSource;
+    cargoDeps = workspaceDeps;
+    nativeBuildInputs = [ rustPlatform.cargoSetupHook cargo rustc lld ];
     buildPhase = ''
       runHook preBuild
-      export CARGO_NET_OFFLINE=true
-      cargo build --release --frozen --offline --target wasm32-unknown-unknown
+      ${prepareWorkspace}
+      cargo build --release --frozen --offline -p dar-module --target wasm32-unknown-unknown
       runHook postBuild
     '';
     installPhase = ''
@@ -84,93 +96,38 @@ let
     '';
   };
 
-  brotliCrate = fetchurl {
-    url = "https://static.crates.io/crates/brotli/brotli-3.5.0.crate";
-    sha256 = "d640d25bc63c50fb1f0b545ffd80207d2e10a4c965530809b40ba3386825c391";
-  };
-
-  clientSource = lib.cleanSourceWith {
-    src = ../rust/client;
-    filter = path: _: !(builtins.elem (baseNameOf path) [ "target" "dist" "module_bindings" ".gitignore" ]);
-  };
-
   darClient = stdenv.mkDerivation {
     pname = "dar-client";
     version = "0.1.0";
-    src = clientSource;
-    sourceRoot = "work/rust/client";
-    cargoDeps = rustPlatform.importCargoLock { lockFile = ../rust/client/Cargo.lock; };
-    nativeBuildInputs = [ rustPlatform.cargoSetupHook cargo rustc lld perl wasm-bindgen-cli wasmSplit binaryen brotli gzip runtime.spacetime ];
-    unpackPhase = ''
-      runHook preUnpack
-      mkdir -p work/rust
-      cp -r ${clientSource} work/rust/client
-      cp -r ${jsAssets}/node_modules work/node_modules
-      cp -r ${sdkSource} work/sdk
-      chmod -R u+w work
-      cp -r ${jsAssets}/sdk/dist work/sdk/dist
-      chmod -R u+w work/sdk/dist
-      runHook postUnpack
-    '';
-    postPatch = ''
-      patchShebangs build.sh patch-brotli.sh
-
-      # Replicates rust/client/patch-brotli.sh without network access.
-      dir="target/patches/brotli-3.5.0"
-      mkdir -p target/patches
-      tar -xzf ${brotliCrate} -C target/patches
-      perl -0pi -e 's/default = \[\n    "std",\n    "ffi-api",\n\]/default = ["std"]/' "$dir/Cargo.toml"
-      printf '\n[lints.rust]\nunexpected_cfgs = "allow"\ndead_code = "allow"\nmismatched_lifetime_syntaxes = "allow"\n' >> "$dir/Cargo.toml"
-      grep -q '^default = \["std"\]$' "$dir/Cargo.toml"
-      touch "$dir/.patched"
-
-      # Replicates rust/client/generate.sh against the built Rust module.
-      cli_tmp=$(mktemp -d)
-      rm -rf src/module_bindings
-      spacetime --root-dir "$cli_tmp" generate --lang rust --bin-path ${darModule}/dar_module.wasm --out-dir src/module_bindings --yes --no-config 2>/dev/null || true
-      test -f src/module_bindings/mod.rs
-      sed -i -E 's/^(\s*)(pub )?type: /\1\2r#type: /' src/module_bindings/*.rs
-    '';
+    src = workspaceSource;
+    cargoDeps = workspaceDeps;
+    nativeBuildInputs = [ rustPlatform.cargoSetupHook cargo rustc lld wasm-bindgen-cli wasmSplit binaryen brotli gzip runtime.spacetime ];
     buildPhase = ''
       runHook preBuild
-      export CARGO_NET_OFFLINE=true
-      export HOME=$TMPDIR/home
-      mkdir -p "$HOME"
-      bash ./build.sh --release
-      test -f dist/index.html
-      test -f dist/sdk.js
-      test -d dist/pdfjs
+      ${prepareWorkspace}
+      # The bindings from the built module, then the release client with its dist.
+      DAR_MODULE_WASM=${darModule}/dar_module.wasm DAR_SPACETIME_BIN=${runtime.spacetime}/bin/spacetime $XTASK bindings
+      DAR_SDK_DIST=${jsAssets}/sdk/dist DAR_PDFJS_DIR=${jsAssets}/node_modules/pdfjs-dist $XTASK client --release
+      test -f target/client-release/index.html
+      test -f target/client-release/sdk.js
+      test -d target/client-release/pdfjs
       runHook postBuild
     '';
     installPhase = ''
       runHook preInstall
       mkdir -p $out
-      cp -r dist/. $out/
+      cp -r target/client-release/. $out/
+      rm -f $out/.dar-inputs
       runHook postInstall
     '';
-  };
-
-  runtimeSource = fs.toSource {
-    root = ../rust;
-    fileset = fs.difference
-      (fs.unions [
-        ../rust/Cargo.toml
-        ../rust/Cargo.lock
-        ../rust/runtime
-        ../rust/oidc
-        ../rust/dav
-      ])
-      (fs.unions [
-        (fs.maybeMissing ../rust/runtime/dev.sh)
-        (fs.maybeMissing ../rust/runtime/serve.sh)
-      ]);
   };
 
   darRuntime = rustPlatform.buildRustPackage {
     pname = "dar-runtime";
     version = "0.1.0";
-    src = runtimeSource;
-    cargoLock.lockFile = ../rust/Cargo.lock;
+    src = workspaceSource;
+    cargoLock.lockFile = ../Cargo.lock;
+    preBuild = prepareWorkspace;
     cargoBuildFlags = [ "-p" "dar-runtime" ];
     cargoTestFlags = [ "-p" "dar-runtime" "-p" "dar-oidc" "-p" "dar-dav" ];
     nativeCheckInputs = [ git gzip ];
@@ -188,7 +145,7 @@ stdenvNoCC.mkDerivation {
     runHook preInstall
     mkdir -p $out/bin $out/libexec/dar $out/share/dar
     cp ${darRuntime}/bin/dar-runtime $out/libexec/dar/dar-runtime
-    install -Dm755 ${../rust/runtime/serve.sh} $out/libexec/dar/serve.sh
+    install -Dm755 ${../crates/runtime/serve.sh} $out/libexec/dar/serve.sh
     cp ${darModule}/dar_module.wasm $out/share/dar/dar_module.wasm
     cp -r ${darClient} $out/share/dar/client
 

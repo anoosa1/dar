@@ -27,13 +27,13 @@ provides OIDC sign-in and SCIM provisioning for other applications.
 ```sh
 nix develop
 npm ci
-rust/runtime/dev.sh
+cargo xtask dev
 ```
 
-Open <http://127.0.0.1:4331>. The dev script builds the stack, keeps its data in
+Open <http://127.0.0.1:4331>. `cargo xtask dev` builds the stack, keeps its data in
 `~/.local/share/dar-rust` and prints the path to the private setup key used to create the
 first account. An existing instance's data folder and database are taken over in place
-(see `rust/PORTING.md`).
+(see `docs/porting.md`).
 
 ## Deploy
 
@@ -41,7 +41,8 @@ first account. An existing instance's data folder and database are taken over in
 
 ## Develop
 
-Dar is written in Rust (`rust/`: the SpacetimeDB module, the runtime and the Leptos
-client), with the chat bridge in Go (`bridge/`) and the installed-app SDK in JavaScript
-(`sdk/`). Run all checks with `nix develop --command node rust/verify.mjs`. UI work
+Dar is written in Rust: one Cargo workspace with the SpacetimeDB module, the runtime and
+the Leptos client in `crates/`, the acceptance suite in `tests/` and the build commands in
+`xtask/`; the chat bridge is in Go (`bridge/`) and the installed-app SDK in JavaScript
+(`sdk/`). Run all checks with `nix develop --command cargo xtask verify` ([testing](docs/testing.md)). UI work
 follows the [design guide](docs/design.md); engineering rules are in `AGENTS.md`.

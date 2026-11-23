@@ -1,0 +1,3 @@
+[alias]
+# cargo xtask setup|bindings|build|verify|dev (see xtask/src/main.rs).
+xtask = "run --quiet --manifest-path xtask/Cargo.toml --"

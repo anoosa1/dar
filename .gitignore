@@ -32,3 +32,8 @@ Thumbs.db
 # Nix build links
 /result
 /result-*
+
+# Cargo build outputs (the workspace, xtask)
+target/
+# Generated SpacetimeDB bindings (cargo xtask bindings)
+/crates/bindings/src/generated/

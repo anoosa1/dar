@@ -58,4 +58,4 @@ levels). Each run starts `claude -p` in the thread's working copy with:
   actions are the same as for Codex (the terminal needs Codex).
 
 Limits and backups match [Codex](codex.md). Tests use an isolated CLI fixture:
-`nix develop -c node rust/verify.mjs --only agent --only claude`.
+`nix develop -c cargo xtask verify --only agent --only claude`.

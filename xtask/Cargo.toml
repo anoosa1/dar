@@ -1,0 +1,11 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+publish = false
+description = "Dar's build, verify and dev commands (cargo xtask …)"
+
+# Its own workspace: it prepares the patched crates the main workspace needs before Cargo can
+# load it, so it must not depend on that workspace (and it has no dependencies at all).
+[workspace]

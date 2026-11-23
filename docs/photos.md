@@ -159,7 +159,7 @@ in phases.
 - **Backups** also keep Immich server connections (with their sealed keys) and
   imported-asset mappings; mobile sessions and sync checkpoints are not kept.
 
-Verify with `nix develop -c node rust/verify.mjs --only photos`.
+Verify with `nix develop -c cargo xtask verify --only photos`.
 
 ## Next phases
 

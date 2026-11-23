@@ -145,7 +145,7 @@ SpacetimeDB, publishes the module, restores the backup and starts the runtime.
 ```sh
 nix build .#dar .#prayer-times .#chat-bridge .#checks.x86_64-linux.module-evaluation --no-link -L
 nix flake check -L
-nix develop --command npm run verify
+nix develop --command cargo xtask verify
 ```
 
 The `module-evaluation` check evaluates the NixOS module, assertions, OIDC

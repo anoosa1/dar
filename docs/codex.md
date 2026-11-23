@@ -91,6 +91,6 @@ can be added through `systemd.services.dar.path`; commands have no network.
   copies; apply or export changes before restoring elsewhere.
 - No parallel agents, remote runners, scheduled runs or automatic publishing.
 
-Tests use an isolated CLI fixture: `nix develop -c node rust/verify.mjs --only agent --only codex --only claude`.
+Tests use an isolated CLI fixture: `nix develop -c cargo xtask verify --only agent --only codex --only claude`.
 CLI references: [non-interactive use](https://developers.openai.com/codex/noninteractive)
 and [configuration](https://developers.openai.com/codex/config-reference).

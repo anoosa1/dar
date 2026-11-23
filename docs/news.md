@@ -48,5 +48,5 @@ at 2,000 per request and updates since a time at 5,000.
   client compatibility. Limits: 500 feeds, 100 folders, 1,000 articles per feed,
   60,000 per account. Backups (v7) include News; deleting an account deletes it.
 
-Verify with `nix develop -c node rust/verify.mjs --only news` (local feed
+Verify with `nix develop -c cargo xtask verify --only news` (local feed
 fixture; no outside network).

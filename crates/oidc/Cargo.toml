@@ -1,0 +1,28 @@
+[package]
+name = "dar-oidc"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+description = "Dar's OpenID provider on oxide-auth"
+
+[dependencies]
+axum = { workspace = true, features = ["form", "query"] }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+base64.workspace = true
+sha2.workspace = true
+oxide-auth = "0.6.1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+jsonwebtoken = { version = "12", default-features = false, features = ["rust_crypto"] }
+rsa = "0.10"
+getrandom = { version = "0.4", features = ["sys_rng"] }
+hmac = "0.12"
+subtle = "2"
+
+[dev-dependencies]
+reqwest.workspace = true
+jsonwebtoken = { version = "12", default-features = false, features = ["rust_crypto"] }

@@ -8,7 +8,7 @@ maintainer decisions win; update this guide when they change.
 ## Frame (unified look B, November 11)
 
 Selected from [mock B](spacetimedb/unified-look-mock-b.html) over
-[mock A](spacetimedb/unified-look-mock-a.html). Built from `rust/client/styles/frame.css`,
+[mock A](spacetimedb/unified-look-mock-a.html). Built from `crates/client/styles/frame.css`,
 `AppRail` (`apps.tsx`) and `WorkspaceHeader` (`shell.tsx`).
 
 - **App rail** (72px, left): Dar mark, each enabled app as an icon pill with its

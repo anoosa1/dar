@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build:sdk": "node sdk/build-bundle.mjs",
-    "verify": "node rust/verify.mjs"
+    "verify": "cargo xtask verify"
   },
   "dependencies": {
     "react": "19.2.8",

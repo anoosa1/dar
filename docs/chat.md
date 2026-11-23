@@ -161,7 +161,7 @@ data is kept and every account disconnects.
 6. Done: Discord voice in server voice channels (dock, call view, DAVE, browser audio over
    the live socket).
 
-Verify with `nix develop -c node rust/verify.mjs --only chat` (Go tests with local fake
+Verify with `nix develop -c cargo xtask verify --only chat` (Go tests with local fake
 Discord servers, a fake bridge for the integration and browser tests; never a real
 WhatsApp or Discord account). Link a real phone or Discord account by hand to check
 pairing and sign-in.

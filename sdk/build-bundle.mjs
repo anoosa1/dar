@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Builds the installed-app SDK bundle into sdk/dist: /sdk.js and /sdk.css (stable URLs that
-// installed apps import), their hashed entry files and shared chunks. rust/client/build.sh
+// installed apps import), their hashed entry files and shared chunks. `cargo xtask build`
 // copies them into the client's dist, which the runtime serves.
 import {build} from "esbuild";
 import {mkdir, rm, writeFile, copyFile} from "node:fs/promises";

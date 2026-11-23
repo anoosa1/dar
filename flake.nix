@@ -19,7 +19,7 @@
         default = pkgs.mkShell {
           packages = [
             runtime.node runtime.npm runtime.spacetime
-            (pkgs.callPackage ./rust/nix/wasm-split.nix { }) pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.lld pkgs.wasm-bindgen-cli pkgs.binaryen pkgs.brotli pkgs.pkg-config pkgs.openssl pkgs.perl pkgs.gzip
+            (pkgs.callPackage ./nix/wasm-split.nix { }) pkgs.cargo pkgs.rustc pkgs.clippy pkgs.rustfmt pkgs.lld pkgs.wasm-bindgen-cli pkgs.binaryen pkgs.brotli pkgs.pkg-config pkgs.openssl pkgs.perl pkgs.gzip
             pkgs.go pkgs.chromium pkgs.curl pkgs.git pkgs.vdirsyncer pkgs.exiftool pkgs.vips pkgs.ffmpeg-headless pkgs.libarchive
           ];
           # SpacetimeDB's test datastore builds jemalloc at -O0, which glibc's _FORTIFY_SOURCE rejects.

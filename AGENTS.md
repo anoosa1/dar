@@ -1,14 +1,16 @@
 # Dar engineering guide
 
-Dar is a Linux-first personal cloud in Rust: a SpacetimeDB module (`rust/module`), the
-runtime (`rust/runtime`, with `rust/oidc` and `rust/dav`), a Leptos client (`rust/client`)
-and immutable local blobs. Beside it: the Go chat bridge (`bridge/`), the installed-app SDK
-(`sdk/`, JavaScript by design), the acceptance suite (`test/`), Nix packaging and the NixOS
-module (`nix/`; the root flake is authoritative). The historical Go baseline tag is
+Dar is a Linux-first personal cloud in Rust, one Cargo workspace: a SpacetimeDB module
+(`crates/module`), the runtime (`crates/runtime`, with `crates/oidc` and `crates/dav`), a Leptos
+client (`crates/client`, with the generated bindings in `crates/bindings`) and immutable local
+blobs. Beside it: the acceptance suite (`tests/`, Rust), the build commands (`xtask/`), the Go
+chat bridge (`bridge/`), the installed-app SDK (`sdk/`, JavaScript by design), Nix packaging and
+the NixOS module (`nix/`; the root flake is authoritative). The historical Go baseline tag is
 immutable. Do not restore legacy apps or the TypeScript stack (last in commit `799b524`).
 
 Read `docs/design.md` before any UI work and keep it current with maintainer decisions.
-Read `rust/PORTING.md` for the stack's history, its Leptos pitfalls and instance moves.
+Read `docs/porting.md` for the stack's history, its Leptos pitfalls and instance moves, and
+`docs/testing.md` before writing tests.
 
 - Keep systems simple and type boundaries explicit. Use patch-based edits.
 - Preserve unrelated work. Questions are read-only; answer before changing files.
@@ -23,7 +25,7 @@ Read `rust/PORTING.md` for the stack's history, its Leptos pitfalls and instance
   databases upgrade in place by publishing, and the client and tests depend on them.
 - All apps share one frame (app rail, top bar with centered search, floating sheets, right
   editing panes), controls and settings; see the design guide. Markup and class names follow
-  the stylesheet in `rust/client/styles` (cascade order in `order.txt`).
+  the stylesheet in `crates/client/styles` (cascade order in `order.txt`).
 - No browser prompt/confirm dialogs or inline product styles. Preserve keyboard use, focus,
   responsive layouts, reduced motion and error/recovery states.
 - Standards routes live under `/dav`; camelCase APIs under `/api/v1`.
@@ -41,6 +43,6 @@ Selected designs: unified look B with Twilight Afterglow/Nightfall; Files Focuse
 account tabs and Discord B with the voice dock; Agent T3 parity A. Mocks and details are in
 `docs/`. Applying a selected pattern needs no new mock; a new visual direction does.
 
-Verify: `nix develop`; `npm ci`; `node rust/verify.mjs` (the whole suite, on a throwaway
-instance); `cargo test` in `rust/` (and `--lib` in `rust/module`, `rust/client`).
+Verify: `nix develop`; `npm ci`; `cargo xtask verify` (unit tests, the bridge's Go tests and
+every acceptance suite, in parallel on throwaway instances; `--only <name>` for some suites).
 Deploy: `nix build .#dar` and `nix/module.nix`; see `docs/deployment.md`.

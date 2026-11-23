@@ -1,0 +1,77 @@
+[workspace]
+resolver = "3"
+# The module and the client build for wasm32 (`cargo xtask build`); their unit tests run natively.
+members = ["crates/*", "tests"]
+# `cargo test` covers the native crates; the acceptance suite runs through `cargo xtask verify`.
+default-members = ["crates/runtime", "crates/oidc", "crates/dav", "crates/bindings"]
+
+[workspace.package]
+edition = "2024"
+license = "UNLICENSED"
+publish = false
+rust-version = "1.97"
+
+[workspace.dependencies]
+axum = "0.8.9"
+tokio = { version = "1.54", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+base64 = "0.22"
+sha2 = "0.10"
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "cookies"] }
+# Pinned to the server Dar ships (nix/runtime.nix).
+spacetimedb = { version = "=2.14.1", features = ["unstable"] }
+spacetimedb-sdk = "=2.14.1"
+dar-bindings = { path = "crates/bindings" }
+dar-dav = { path = "crates/dav" }
+dar-oidc = { path = "crates/oidc" }
+
+# Published crates Dar builds patched (prepared by `cargo xtask setup`, checksums verified):
+# - spacetimedb-bindings-macro names fields without the raw-identifier prefix (`r#type`) and
+#   records index accessors in camelCase, as the TypeScript module did, so a TypeScript
+#   database upgrades to the Rust module in place;
+# - brotli drops its C API (`ffi-api`) from the defaults, which kept the whole encoder in the
+#   client although the SDK only decompresses.
+[patch.crates-io]
+spacetimedb-bindings-macro = { path = "target/patches/spacetimedb-bindings-macro-2.14.1" }
+brotli = { path = "target/patches/brotli-3.5.0" }
+
+# Password hashing is memory-hard by design; unoptimised it takes many seconds per sign-in.
+[profile.dev.package.scrypt]
+opt-level = 3
+[profile.dev.package.salsa20]
+opt-level = 3
+[profile.dev.package.pbkdf2]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+
+# What the acceptance suite and `cargo xtask dev` run: optimized, but incremental and without
+# LTO, so a change rebuilds in seconds instead of minutes.
+[profile.fast]
+inherits = "release"
+opt-level = 2
+lto = false
+codegen-units = 256
+incremental = true
+debug = false
+
+# The browser client as shipped: the smallest wasm.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# The browser client for the acceptance suite: no LTO, parallel codegen, still small and fast.
+[profile.wasm-fast]
+inherits = "release"
+opt-level = "s"
+lto = false
+codegen-units = 256
+incremental = true
+panic = "abort"
+debug = false
