@@ -147,8 +147,9 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
 ## Apps
 
 - **Files:** the breadcrumb is the title, with Upload and the list/grid switch
-  beside it. Rows show a type tile, relative modified date and size; selection
-  turns the toolbar into a tonal bar. Item actions in three-dot menus (Open,
+  beside it. New also offers Upload files and Upload folder; a picked or dropped folder
+  is recreated with its subfolders (a name already used gets a number). Rows show a
+  type tile, relative modified date and size; selection turns the toolbar into a tonal bar. Item actions in three-dot menus (Open,
   Organize, Clipboard, Delete sections); Details is its own action and does not
   repeat Rename/Move/Copy/Delete. Details: preview, Preview/Download/Favorite/
   Share quick actions, then Details/Versions/Sharing tabs; folders show History in place of

@@ -6,7 +6,7 @@ use dar_acceptance::prelude::*;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 
-pub const SUITE: Suite = Suite { name: "browser", cases: &[case!(files_journey, 180)] };
+pub const SUITE: Suite = Suite { name: "browser", cases: &[case!(files_journey, 180), case!(folder_upload, 90)] };
 
 pub async fn files_journey(t: &Ctx) -> Result<()> {
     let base = t.fixture().await?.base.clone();
@@ -116,5 +116,65 @@ pub async fn files_journey(t: &Ctx) -> Result<()> {
     let mut all = failures.lock().unwrap().clone();
     all.extend(phone_failures.lock().unwrap().iter().cloned());
     assert_eq!(all, Vec::<String>::new());
+    Ok(())
+}
+
+/// Dropping a folder (the entries API, faked here as Chromium cannot drop real folders under
+/// automation) recreates it with its subfolders and files; a name already used gets a number.
+pub async fn folder_upload(t: &Ctx) -> Result<()> {
+    let base = t.fixture().await?.base.clone();
+    let admin = login(&base).await?;
+    let browser = Browser::shared().await?;
+    let context = browser.new_context(ContextOptions::sized(1440, 950)).await?;
+    let page = context.new_page().await?;
+    let failures = page.collect_errors(|text| text.contains("401") && text.contains("Unauthorized"));
+    page.goto(&base).await?;
+    page.get_by_label("Username").fill("admin").await?;
+    page.get_by_label("Password").fill(PASSWORD).await?;
+    page.get_by_role("button", "Sign in").click().await?;
+    page.wait_for_function("() => !document.body.textContent.includes('Connecting…')").await?;
+    ui::open_menu_for(&page, &page.get_by_role("button", "New"), &page.get_by_role("menuitem", "Upload folder")).await?;
+    page.get_by_role("menuitem", "Upload files").wait_for().await?;
+    page.keyboard().press("Escape").await?;
+    page.get_by_label("Choose a folder to upload").wait_for_state(State::Attached).await?;
+    assert_eq!(page.get_by_label("Choose a folder to upload").get_attribute("webkitdirectory").await?, Some(String::new()));
+
+    let name = format!("Trip {}", &uuid()[..6]);
+    let drop = r#"name => {
+        const file = (n, text) => ({ isDirectory: false, name: n, file: ok => ok(new File([text], n, { type: 'text/plain' })) });
+        const dir = (n, children) => ({ isDirectory: true, name: n, createReader: () => { let done = false; return { readEntries: ok => { ok(done ? [] : children); done = true; } }; } });
+        const tree = dir(name, [file('b.txt', 'bee'), dir('Photos', [file('a.txt', 'ay')]), dir('Empty', [])]);
+        const event = new Event('drop', { bubbles: true, cancelable: true });
+        Object.defineProperty(event, 'dataTransfer', { value: { items: [{ webkitGetAsEntry: () => tree }], types: ['Files'], files: [] } });
+        document.querySelector('.files-main').dispatchEvent(event);
+    }"#;
+    page.evaluate_with(drop, json!(name)).await?;
+    let children = |parent: String| {
+        let admin = &admin;
+        async move { Ok::<Value, Error>(admin.get_json(&format!("/api/v1/files/picker?parentId={parent}&kind=file")).await?["items"].clone()) }
+    };
+    let find = |items: &Value, n: &str| items.as_array().and_then(|a| a.iter().find(|i| i["name"] == n).cloned());
+    let top = eventually(std::time::Duration::from_secs(15), "folder uploaded", || async {
+        let root = children(String::new()).await?;
+        let Some(top) = find(&root, &name) else { return Ok(None) };
+        let inside = children(top["id"].as_str().unwrap_or_default().to_owned()).await?;
+        let photos = find(&inside, "Photos");
+        let ready = find(&inside, "b.txt").is_some() && find(&inside, "Empty").is_some() && photos.is_some();
+        Ok(ready.then(|| (top, photos.unwrap())))
+    })
+    .await?;
+    eventually(std::time::Duration::from_secs(15), "nested file uploaded", || async {
+        let photos = children(top.1["id"].as_str().unwrap_or_default().to_owned()).await?;
+        Ok(find(&photos, "a.txt").map(|_| ()))
+    })
+    .await?;
+    page.get_by_role("button", &name).wait_for().await?;
+
+    // The same folder again lands beside it under a new name.
+    page.evaluate_with(drop, json!(name)).await?;
+    eventually(std::time::Duration::from_secs(15), "second copy", || async { Ok(find(&children(String::new()).await?, &format!("{name} 2")).map(|_| ())) }).await?;
+    page.screenshot(t.screenshot("files-folder-upload.png"), true).await?;
+    let errors = failures.lock().unwrap().clone();
+    assert!(errors.is_empty(), "page errors: {errors:?}");
     Ok(())
 }

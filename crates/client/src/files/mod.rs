@@ -2,6 +2,7 @@
 //! views, selection actions, the details panel, uploads and the editing panes.
 
 pub mod editor;
+mod folder_upload;
 pub mod locked;
 pub mod picker;
 pub mod preview;
@@ -312,6 +313,13 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     let trash_confirmation: RwSignal<Option<Vec<FileEntry>>> = RwSignal::new(None);
     let undo_trash: RwSignal<Option<Vec<FileEntry>>> = RwSignal::new(None);
     let upload_input = NodeRef::<html::Input>::new();
+    let folder_input = NodeRef::<html::Input>::new();
+    // The directory picker (`webkitdirectory`, which `view!` does not know).
+    Effect::new(move |_| {
+        if let Some(input) = folder_input.get() {
+            let _ = input.set_attribute("webkitdirectory", "");
+        }
+    });
     let replacement_input = NodeRef::<html::Input>::new();
     let detail_sequence = RwSignal::new(0u32);
     let navigation_ready = Arc::new(AtomicBool::new(false));
@@ -907,13 +915,15 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         }
     });
 
-    let upload = move |files: Vec<web_sys::File>, replace: Option<FileEntry>| {
+    // Each file goes to its own folder (a folder upload), else to the folder on screen.
+    let upload_into = move |files: Vec<(web_sys::File, Option<String>)>, replace: Option<FileEntry>| {
         let files = send_wrapper::SendWrapper::new(files);
         let csrf_token = csrf();
         spawn_local(async move {
-            for file in files.take() {
+            for (file, target) in files.take() {
                 // Files closed: the remaining uploads do not start.
-                let Some(here) = folder.try_get_untracked() else { break };
+                let Some(current) = folder.try_get_untracked() else { break };
+                let here = target.unwrap_or(current);
                 let transfer = crate::random_uuid();
                 let controller = web_sys::AbortController::new().expect("abort controller");
                 RESERVATIONS.with(|r| r.borrow_mut().insert(transfer.clone(), controller.clone()));
@@ -962,6 +972,49 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 UPLOADS.with(|u| u.borrow_mut().remove(&transfer));
                 RESERVATIONS.with(|r| r.borrow_mut().remove(&transfer));
             }
+        });
+    };
+    let upload = move |files: Vec<web_sys::File>, replace: Option<FileEntry>| upload_into(files.into_iter().map(|f| (f, None)).collect(), replace);
+    // A folder upload recreates the folder and its subfolders here, then uploads each file into
+    // its folder. A top-level name already used here gets a number, as Files names are unique.
+    let upload_folder = move |tree: folder_upload::Tree| {
+        if tree.folders.is_empty() && tree.files.is_empty() {
+            return;
+        }
+        let tree = send_wrapper::SendWrapper::new(tree);
+        spawn_local(async move {
+            let tree = tree.take();
+            let Some(here) = folder.try_get_untracked() else { return };
+            let mut taken: std::collections::HashSet<String> = visible.with_untracked(|v| v.iter().map(|e| e.name.to_lowercase()).collect());
+            let mut ids: HashMap<String, String> = HashMap::from([(String::new(), here.clone())]);
+            for path in &tree.folders {
+                let (parent, name) = path.rsplit_once('/').map_or(("", path.as_str()), |(p, n)| (p, n));
+                let name = if parent.is_empty() {
+                    let mut unique = name.to_owned();
+                    let mut n = 1;
+                    while taken.contains(&unique.to_lowercase()) {
+                        n += 1;
+                        unique = format!("{name} {n}");
+                    }
+                    taken.insert(unique.to_lowercase());
+                    unique
+                } else {
+                    name.to_owned()
+                };
+                let Some(parent_id) = ids.get(parent).cloned() else { continue };
+                let id = crate::random_uuid();
+                let created = match connection.try_get_untracked().flatten() {
+                    Some(c) => reducer(|tx| c.reducers.create_folder_then(id.clone(), parent_id, name.clone(), replied(tx))).await,
+                    None => Err("Wait for the connection to return.".to_owned()),
+                };
+                if let Err(cause) = created {
+                    error.try_set(format!("\u{201c}{name}\u{201d} could not be created: {}", failure(&cause)));
+                    return;
+                }
+                ids.insert(path.clone(), id);
+            }
+            let files = tree.files.into_iter().map(|(file, dir)| { let target = ids.get(&dir).cloned(); (file, target) }).collect();
+            upload_into(files, None);
         });
     };
     let files_of = |input: &web_sys::HtmlInputElement| -> Vec<web_sys::File> { input.files().map(|list| (0..list.length()).filter_map(|i| list.item(i)).collect()).unwrap_or_default() };
@@ -1422,6 +1475,21 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         <div class="app-shell has-files-main"
             on:dragover=move |e: web_sys::DragEvent| { if e.data_transfer().is_some_and(|d| { let types = d.types(); types.iter().any(|t| t.as_string().as_deref() == Some("Files")) }) { e.prevent_default() } }
             on:drop=move |e: web_sys::DragEvent| {
+                // Dropped folders are read now: their entries are gone once the event ends.
+                let entries = e.data_transfer().map(|d| folder_upload::dropped_entries(&d)).unwrap_or_default();
+                if !entries.is_empty() {
+                    e.prevent_default();
+                    if writable_here.get_untracked() {
+                        let entries = send_wrapper::SendWrapper::new(entries);
+                        spawn_local(async move {
+                            match folder_upload::walk(entries.take()).await {
+                                Ok(tree) => upload_folder(tree),
+                                Err(cause) => { error.try_set(cause); }
+                            }
+                        });
+                    }
+                    return;
+                }
                 let files: Vec<web_sys::File> = e.data_transfer().and_then(|d| d.files()).map(|l| (0..l.length()).filter_map(|i| l.item(i)).collect()).unwrap_or_default();
                 if !files.is_empty() { e.prevent_default(); if writable_here.get_untracked() { upload(files, None) } }
             }>
@@ -1433,6 +1501,8 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         let off = !connected.get_untracked() || !writable_here.get_untracked();
                         vec![
                             MenuAction::new("Folder", "folder").disabled(off).run(move || open_modal(Modal { kind: ModalKind::Folder, entry: None, entries: Vec::new() })),
+                            MenuAction::new("Upload files", "upload").disabled(off).run(move || { sidebar.set(false); if let Some(i) = upload_input.get_untracked() { i.click() } }),
+                            MenuAction::new("Upload folder", "upload").disabled(off).run(move || { sidebar.set(false); if let Some(i) = folder_input.get_untracked() { i.click() } }),
                             MenuAction::new("File", "file").disabled(off).items(vec![
                                 MenuAction::plain("Text file").run(move || { sidebar.set(false); new_file.set(Some("text")); }),
                                 MenuAction::plain("Markdown file").run(move || { sidebar.set(false); new_file.set(Some("markdown")); }),
@@ -1492,12 +1562,14 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                             <button class="secondary-button" disabled=move || !has_more.get() on:click=move |_| { previous.update(|p| p.push(cursor.get_untracked())); cursor.set(visible.with_untracked(|v| v.last().map(|e| e.list_key.clone())).unwrap_or_default()); }>"Next"</button>
                         </div>
                     })}
-                    {move || (writable_here.get() && !visible.with(Vec::is_empty)).then(|| view! { <div class="drop-hint"><Icon name="upload"/>" Drag files into this folder to upload"</div> })}
+                    {move || (writable_here.get() && !visible.with(Vec::is_empty)).then(|| view! { <div class="drop-hint"><Icon name="upload"/>" Drag files or folders here to upload"</div> })}
                 </main>
                 {details_panel}
             </div>
             <input node_ref=upload_input class="sr-only" type="file" multiple tabindex="-1" aria-label="Choose files to upload"
                 on:change=move |e| { if let Some(i) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) { upload(files_of(&i), None); i.set_value(""); } }/>
+            <input node_ref=folder_input class="sr-only" type="file" multiple tabindex="-1" aria-label="Choose a folder to upload"
+                on:change=move |e| { if let Some(i) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) { upload_folder(folder_upload::from_picker(files_of(&i))); i.set_value(""); } }/>
             <input node_ref=replacement_input class="sr-only" type="file" tabindex="-1" aria-label="Choose a new file version"
                 on:change=move |e| { if let Some(i) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) { upload(files_of(&i), chosen.get_untracked()); i.set_value(""); } }/>
             {move || (!transfers.with(Vec::is_empty)).then(|| view! {
