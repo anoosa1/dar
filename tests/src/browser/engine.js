@@ -124,7 +124,8 @@
       default: throw new Error(`Unknown locator step ${step.kind}`);
     }
   }
-  const roots = () => [document.documentElement];
+  // A document being replaced has no root yet: nothing matches, and the caller retries.
+  const roots = () => document.documentElement ? [document.documentElement] : [];
   function resolve(scopes, steps) {
     let current = scopes;
     for (const step of steps) current = apply(current, step);

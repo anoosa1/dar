@@ -165,6 +165,8 @@ pub struct ClickOptions {
     pub position: Option<(f64, f64)>,
     /// Skip the actionability checks, as Playwright's `force`.
     pub force: bool,
+    /// Only run actionability and hit-target checks without dispatching mouse events (Playwright's `trial`).
+    pub trial: bool,
     pub timeout: Option<Duration>,
     /// Do not wait for a navigation the click starts (always true here: clicks never wait).
     pub no_wait_after: bool,
@@ -218,6 +220,7 @@ pub(crate) struct PageInner {
     failed: Mutex<Vec<(u64, Listener<Request>)>>,
     responses: Mutex<Vec<(u64, Listener<Response>)>>,
     dialogs: Mutex<Vec<(u64, Listener<(String, String)>)>>,
+    accept_next_dialog: AtomicBool,
     in_flight: Mutex<HashMap<String, Request>>,
     failures: Mutex<HashSet<String>>,
     routes: Mutex<Vec<RouteEntry>>,
@@ -269,6 +272,7 @@ impl Page {
             failed: Mutex::default(),
             responses: Mutex::default(),
             dialogs: Mutex::default(),
+            accept_next_dialog: AtomicBool::new(false),
             in_flight: Mutex::default(),
             failures: Mutex::default(),
             routes: Mutex::default(),
@@ -309,6 +313,7 @@ impl Page {
         page.apply_viewport().await?;
         page.apply_media().await?;
         page.call("Runtime.evaluate", json!({"expression": ENGINE})).await?;
+        OPEN.lock().unwrap().push((std::thread::current().name().unwrap_or_default().to_owned(), page.clone()));
         Ok(page)
     }
 
@@ -345,6 +350,7 @@ impl Page {
             match event.method.as_str() {
                 "Page.frameNavigated" if p["frame"]["parentId"].is_null() => {
                     let (url, loader, frame) = (p["frame"]["url"].as_str().unwrap_or_default().to_owned(), p["frame"]["loaderId"].as_str().unwrap_or_default().to_owned(), p["frame"]["id"].as_str().unwrap_or_default().to_owned());
+                    self.inner.in_flight.lock().unwrap().clear();
                     self.inner.navigation.send_modify(|n| { n.url = url; n.loader = loader; n.main_frame = frame; });
                 }
                 "Page.navigatedWithinDocument" => {
@@ -382,8 +388,9 @@ impl Page {
                 "Page.javascriptDialogOpening" => {
                     let dialog = (p["type"].as_str().unwrap_or_default().to_owned(), p["message"].as_str().unwrap_or_default().to_owned());
                     self.emit(&self.inner.dialogs, &dialog);
+                    let accept = self.inner.accept_next_dialog.swap(false, Ordering::SeqCst);
                     let page = self.clone();
-                    tokio::spawn(async move { page.call("Page.handleJavaScriptDialog", json!({"accept": false})).await.ok(); });
+                    tokio::spawn(async move { page.call("Page.handleJavaScriptDialog", json!({"accept": accept})).await.ok(); });
                 }
                 "Network.requestWillBeSent" => {
                     let request = &p["request"];
@@ -458,9 +465,13 @@ impl Page {
     pub fn on_response(&self, listener: impl Fn(&Response) + Send + Sync + 'static) -> u64 {
         self.listen(&self.inner.responses, Arc::new(listener))
     }
-    /// Browser dialogs as (type, message); they are dismissed either way.
+    /// Browser dialogs as (type, message); dismissed by default unless `accept_next_dialog` is set.
     pub fn on_dialog(&self, listener: impl Fn(&(String, String)) + Send + Sync + 'static) -> u64 {
         self.listen(&self.inner.dialogs, Arc::new(listener))
+    }
+    /// Accepts the next browser dialog (such as a `beforeunload` confirmation) instead of dismissing it.
+    pub fn accept_next_dialog(&self) {
+        self.inner.accept_next_dialog.store(true, Ordering::SeqCst);
     }
     /// Removes a listener added with any `on_*`.
     pub fn off(&self, id: u64) {
@@ -568,6 +579,55 @@ impl Page {
             return Ok(());
         }
         self.wait_loaded(&loader).await
+    }
+
+    /// Runs `action` and waits for the subsequent main-frame load event (`waitForEvent("load")`).
+    pub async fn wait_for_next_load<F: Future<Output = Result<()>>>(&self, action: F) -> Result<()> {
+        let before = self.inner.navigation.borrow().loader.clone();
+        let mut navigation = self.inner.navigation.subscribe();
+        action.await?;
+        let deadline = Instant::now() + DEFAULT_TIMEOUT;
+        loop {
+            {
+                let n = navigation.borrow_and_update();
+                if n.loader != before && n.loaded == n.loader {
+                    return Ok(());
+                }
+            }
+            if tokio::time::timeout_at(deadline.into(), navigation.changed()).await.is_err() {
+                return Err(Error::new("navigation did not load in time"));
+            }
+        }
+    }
+
+    /// Waits until there are no in-flight network requests for 150 ms (Playwright's `networkidle`),
+    /// bounded to 2 s so background streams never stall multi-view audits.
+    pub async fn wait_for_network_idle(&self) -> Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut idle_since: Option<Instant> = None;
+        loop {
+            let empty = self.inner.in_flight.lock().unwrap().is_empty();
+            if empty {
+                let since = *idle_since.get_or_insert_with(Instant::now);
+                if since.elapsed() >= Duration::from_millis(150) {
+                    return Ok(());
+                }
+            } else {
+                idle_since = None;
+            }
+            if Instant::now() > deadline {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    }
+
+    /// Replaces the main frame's HTML content (Playwright's `page.setContent`).
+    pub async fn set_content(&self, html: &str) -> Result<()> {
+        let frame_id = self.inner.navigation.borrow().main_frame.clone();
+        self.call("Page.setDocumentContent", json!({"frameId": frame_id, "html": html})).await?;
+        self.call("Runtime.evaluate", json!({"expression": ENGINE})).await?;
+        Ok(())
     }
 
     pub async fn title(&self) -> Result<String> {
@@ -1269,5 +1329,22 @@ impl ApiRequest {
     }
     pub async fn delete(&self, url: &str, headers: &[(&str, &str)]) -> Result<ApiResponse> {
         self.fetch("DELETE", url, headers, None, None).await
+    }
+}
+
+/// Pages by the suite that opened them, for screenshots when a case fails.
+static OPEN: Mutex<Vec<(String, Page)>> = Mutex::new(Vec::new());
+
+/// Saves a full-page screenshot of every page `suite` still has open to `dir`
+/// (`failure-<case>-<n>.png`), and forgets its closed pages.
+pub async fn screenshot_open_pages(suite: &str, case: &str, dir: &Path) {
+    let pages: Vec<Page> = {
+        let mut open = OPEN.lock().unwrap();
+        open.retain(|(_, page)| !page.is_closed());
+        open.iter().filter(|(name, _)| name == suite).map(|(_, page)| page.clone()).collect()
+    };
+    for (index, page) in pages.iter().enumerate() {
+        let path = dir.join(format!("failure-{case}-{index}.png"));
+        let _ = tokio::time::timeout(Duration::from_secs(10), page.screenshot(&path, true)).await;
     }
 }

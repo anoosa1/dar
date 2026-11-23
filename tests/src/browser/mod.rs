@@ -10,7 +10,7 @@ mod page;
 
 pub use cdp::Event;
 pub use locator::{Locator, Pattern, State, contains, regex};
-pub use page::{ApiRequest, ApiResponse, ClickOptions, ConsoleMessage, Download, FilePayload, Fulfill, Keyboard, Mouse, Page, Rect, Request, Response, Route, RouteMatch, glob_matches};
+pub use page::{screenshot_open_pages, ApiRequest, ApiResponse, ClickOptions, ConsoleMessage, Download, FilePayload, Fulfill, Keyboard, Mouse, Page, Rect, Request, Response, Route, RouteMatch, glob_matches};
 
 use crate::{Error, Result};
 use cdp::Connection;
@@ -29,19 +29,46 @@ pub struct Browser {
     profile: PathBuf,
 }
 
-static SHARED: OnceCell<Arc<Browser>> = OnceCell::const_new();
+/// One Chromium per suite, keyed by the suite's runtime threads (the runner names them after
+/// the suite), as each Node browser script launched its own: pages of parallel suites sharing
+/// one browser process starved each other's input and timers under load.
+static SHARED: std::sync::Mutex<Vec<(String, Arc<OnceCell<Arc<Browser>>>)>> = std::sync::Mutex::new(Vec::new());
 
 impl Browser {
-    /// The run's Chromium (started on first use). `DAR_CHROMIUM` names the executable,
+    /// The suite's Chromium (started on first use). `DAR_CHROMIUM` names the executable,
     /// otherwise `chromium` on PATH.
     pub async fn shared() -> Result<Arc<Browser>> {
-        SHARED.get_or_try_init(|| async { Browser::launch().map(Arc::new) }).await.cloned()
+        let key = std::thread::current().name().unwrap_or_default().to_owned();
+        let cell = {
+            let mut shared = SHARED.lock().unwrap();
+            match shared.iter().find(|(name, _)| *name == key) {
+                Some((_, cell)) => cell.clone(),
+                None => {
+                    let cell = Arc::new(OnceCell::new());
+                    shared.push((key, cell.clone()));
+                    cell
+                }
+            }
+        };
+        cell.get_or_try_init(|| async { Browser::launch().map(Arc::new) }).await.cloned()
     }
 
     pub fn launch() -> Result<Browser> {
+        Self::launch_with(true)
+    }
+
+    pub fn launch_with(hide_scrollbars: bool) -> Result<Browser> {
         let executable = std::env::var_os("DAR_CHROMIUM").map(PathBuf::from).or_else(|| crate::which("chromium"))
             .ok_or_else(|| Error::new("Chromium is required: use Dar's dev shell or set DAR_CHROMIUM"))?;
-        let profile = crate::temp_dir("dar-chromium-")?;
+        // Chromium creates Unix sockets (`SingletonSocket`) inside both $TMPDIR and --user-data-dir.
+        // Linux limits AF_UNIX sun_path to 108 bytes, so fall back to /tmp when TMPDIR is long.
+        let tmp_base = if std::env::temp_dir().as_os_str().len() > 40 && Path::new("/tmp").is_dir() {
+            PathBuf::from("/tmp")
+        } else {
+            std::env::temp_dir()
+        };
+        let profile = tmp_base.join(format!("dar-chr-{}", &crate::uuid()[..12]));
+        std::fs::create_dir_all(&profile)?;
         let log = std::fs::File::create(profile.join("chromium.log"))?;
         let (chrome_reads, we_write) = std::io::pipe()?;
         let (we_read, chrome_writes) = std::io::pipe()?;
@@ -51,6 +78,7 @@ impl Browser {
             .arg("-c")
             .arg(r#"exec "$0" "$@" 3<&0 4>&1 0</dev/null 1>&2"#)
             .arg(&executable)
+            .env("TMPDIR", &tmp_base)
             .args([
                 "--headless=new", "--remote-debugging-pipe", "--no-sandbox", "--no-first-run", "--no-default-browser-check",
                 "--disable-background-networking", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
@@ -59,10 +87,14 @@ impl Browser {
                 "--disable-popup-blocking", "--disable-prompt-on-repost", "--disable-sync", "--disable-search-engine-choice-screen",
                 "--disable-features=Translate,MediaRouter,OptimizationHints,DialMediaRouteProvider,AcceptCHFrame,AutoExpandDetailsElement,CertificateTransparencyComponentUpdater,DestroyProfileOnBrowserClose,GlobalMediaControls,HttpsUpgrades,LensOverlay,PaintHolding,ThirdPartyStoragePartitioning",
                 "--enable-blink-features=ComputedAccessibilityInfo", "--force-color-profile=srgb", "--metrics-recording-only",
-                "--password-store=basic", "--use-mock-keychain", "--hide-scrollbars", "--mute-audio", "--use-fake-ui-for-media-stream",
+                "--password-store=basic", "--use-mock-keychain", "--mute-audio", "--use-fake-ui-for-media-stream",
                 "--use-fake-device-for-media-stream", "--autoplay-policy=no-user-gesture-required",
-            ])
-            .arg(format!("--user-data-dir={}", profile.join("profile").display()))
+            ]);
+        if hide_scrollbars {
+            command.arg("--hide-scrollbars");
+        }
+        command
+            .arg(format!("--user-data-dir={}", profile.join("p").display()))
             .arg("about:blank")
             .stdin(Stdio::from(chrome_reads))
             .stdout(Stdio::from(chrome_writes))
@@ -130,9 +162,25 @@ impl Drop for Browser {
     }
 }
 
-/// Closes the run's shared browser (the harness calls this before exiting).
+/// Closes a finished suite's browser (the runner calls this after its last case).
+pub async fn close_suite(suite: &str) {
+    let browsers: Vec<Arc<Browser>> = {
+        let mut shared = SHARED.lock().unwrap();
+        let (closing, kept): (Vec<_>, Vec<_>) = shared.drain(..).partition(|(name, _)| name == suite);
+        *shared = kept;
+        closing.into_iter().filter_map(|(_, cell)| cell.get().cloned()).collect()
+    };
+    close_all(browsers).await;
+}
+
+/// Closes every browser still open (the runner calls this before exiting).
 pub async fn shutdown() {
-    if let Some(browser) = SHARED.get() {
+    let browsers: Vec<Arc<Browser>> = SHARED.lock().unwrap().drain(..).filter_map(|(_, cell)| cell.get().cloned()).collect();
+    close_all(browsers).await;
+}
+
+async fn close_all(browsers: Vec<Arc<Browser>>) {
+    for browser in browsers {
         let _ = browser.call("Browser.close", json!({})).await;
         if let Ok(mut child) = browser.child.lock() {
             let _ = child.wait();

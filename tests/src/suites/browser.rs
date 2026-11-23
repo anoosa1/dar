@@ -21,7 +21,7 @@ pub async fn files_journey(t: &Ctx) -> Result<()> {
     page.screenshot(t.screenshot("auth-desktop.png"), true).await?;
     page.get_by_role("button", "Sign in").click().await?;
     page.wait_for_function("() => !document.body.textContent.includes('Connecting…')").await?;
-    page.get_by_role("button", "New").click().await?;
+    ui::open_menu_for(&page, &page.get_by_role("button", "New"), &page.get_by_role("menuitem", "Folder")).await?;
     page.get_by_role("menuitem", "Folder").click().await?;
     let folder = format!("Browser {}", &uuid()[..6]);
     page.locator("dialog,[data-editor-pane]").get_by_label("Name").fill(&folder).await?;

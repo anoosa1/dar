@@ -254,7 +254,13 @@ fn javascript() -> Result {
 
 fn runtime(profile: Profile) -> Result {
     patches::prepare()?;
-    step(&format!("runtime ({})", profile.native()), || run(cargo().args(["build", "-q", "-p", "dar-runtime", "--profile", profile.native()])))
+    // The fast runtime is built with the acceptance suite: one feature resolution for the
+    // dependencies they share, so neither build invalidates the other.
+    let packages: &[&str] = match profile {
+        Profile::Fast => &["-p", "dar-runtime", "-p", "dar-acceptance"],
+        Profile::Release => &["-p", "dar-runtime"],
+    };
+    step(&format!("runtime ({})", profile.native()), || run(cargo().args(["build", "-q"]).args(packages).args(["--profile", profile.native()])))
 }
 
 fn build(profile: Profile) -> Result {
@@ -288,7 +294,7 @@ fn verify(args: &[String]) -> Result {
     let jobs = args.iter().position(|a| a == "--jobs").and_then(|i| args.get(i + 1)).cloned();
     let unit = !args.iter().any(|a| a == "--no-unit") && only.is_empty();
     build(profile)?;
-    step("acceptance suite (build)", || run(cargo().args(["build", "-q", "-p", "dar-acceptance", "--profile", profile.native()])))?;
+    step("acceptance suite (build)", || run(cargo().args(["build", "-q", "-p", "dar-runtime", "-p", "dar-acceptance", "--profile", profile.native()])))?;
     let mut results: Vec<(String, bool, f64)> = Vec::new();
     std::thread::scope(|scope| {
         let go = (only.is_empty() || only.iter().any(|o| "bridge".contains(o.as_str()))).then(|| scope.spawn(|| {
@@ -301,9 +307,10 @@ fn verify(args: &[String]) -> Result {
         let unit = unit.then(|| scope.spawn(|| {
             let started = Instant::now();
             // Native unit tests of every crate, then the module's and client's libraries
-            // (their cdylib and wasm binaries do not link natively).
-            let ok = run(cargo().args(["test", "-q", "-p", "dar-runtime", "-p", "dar-oidc", "-p", "dar-dav", "-p", "dar-acceptance", "--lib", "--tests", "--profile", "fast"])).is_ok()
-                && run(cargo().args(["test", "-q", "-p", "dar-module", "-p", "dar-client", "--lib", "--profile", "fast"])).is_ok();
+            // (their cdylib and wasm binaries do not link natively). The test profile keeps their
+            // dev-dependency features away from the `fast` build.
+            let ok = run(cargo().args(["test", "-q", "-p", "dar-runtime", "-p", "dar-oidc", "-p", "dar-dav", "-p", "dar-acceptance", "--lib", "--tests"])).is_ok()
+                && run(cargo().args(["test", "-q", "-p", "dar-module", "-p", "dar-client", "--lib"])).is_ok();
             ("unit tests (cargo test)".to_owned(), ok, started.elapsed().as_secs_f64())
         }));
         let acceptance = scope.spawn(|| {

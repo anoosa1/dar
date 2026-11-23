@@ -52,4 +52,4 @@ rclone sync ~/Documents dar:Documents
 
 Until a file's checksums are recorded, rclone compares its size and modified time. GNOME Files
 (`davs://`), KDE (`webdavs://`), davfs2, Finder and Windows use the requests above; rclone
-and the requests in `test/dav.integration.test.ts` are what is tested.
+and the requests in the `dav` acceptance suite (`tests/src/suites/dav.rs`) are what is tested.

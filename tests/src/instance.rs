@@ -174,6 +174,21 @@ impl Instance {
         }
     }
 
+    /// Abruptly terminates the runtime with SIGKILL and reaps the child process.
+    pub async fn kill_now(&self) -> Result<()> {
+        let child = self.child.lock().unwrap().take();
+        if let Some(mut child) = child {
+            tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+                let _ = child.kill();
+                let _ = child.wait()?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| crate::Error::new(format!("kill join error: {e}")))??;
+        }
+        Ok(())
+    }
+
     pub async fn restart(&self) -> Result<()> {
         self.close().await;
         self.launch().await

@@ -10,8 +10,8 @@ the pitfalls worth knowing and how an existing TypeScript instance moves over.
 - `cargo xtask verify` builds the stack (module, bindings, runtime, client, the app SDK
   bundle), then runs the crates' unit tests, the bridge's Go tests and the acceptance suite in
   `tests/` (Rust, see `docs/testing.md`) in parallel on throwaway roots and ports.
-- While the suites move to Rust, the Node suite in `test/` still runs on the same build:
-  `node test/verify.mjs --skip-build` after `cargo xtask build`.
+- The Node and Playwright suite (`test/`) was ported suite for suite to Rust (last in commit
+  `e2f9e03`); see the progress log.
 
 ## Test inventory (at the time of the port)
 
@@ -58,6 +58,25 @@ runtime. Nothing is exported or converted beforehand.
 ## Progress log
 
 Newest first. Each entry: what passes now on the Rust stack, what was added to the tests.
+
+### 2026-11-22 — one workspace, the acceptance suite in Rust
+- Layout: `crates/` (module, runtime, client, oidc, dav, bindings) in one Cargo workspace with one
+  lockfile; `xtask/` replaces `verify.mjs`, `build.sh`, `generate.sh`, the patch scripts and
+  `dev.sh`; `rust/nix` folded into `nix/` and the root flake.
+- Builds: `fast` and `wasm-fast` profiles (no LTO, incremental) for verify and dev; release
+  stays as shipped. A client change rebuilds in about 20 s instead of 5 min 20 s; unchanged
+  steps are skipped.
+- Tests: all 66 suites of `test/` are Rust (`tests/`), with an in-house browser driver (CDP over
+  `--remote-debugging-pipe`, Playwright's locators and waiting rules on Chromium's computed
+  accessibility). Each suite has its own instance, so suites run in parallel. Fixture
+  programs (fake chat bridge, Codex and Claude stand-ins) are the test binary itself.
+- Found on the way: a contended `dar-oidc` provider lock could stall a Tokio worker while the
+  holder waited on SpacetimeDB in `block_in_place` (fixed in `Provider::lock`), and a calendar
+  subscription refresh requested during a pass was dropped (fixed in `maintenance.rs`).
+- Open: under parallel load a few browser suites still fail now and then and pass alone
+  (`browser`: Files' New → Folder stays disabled; `history-browser`: an earlier snapshot's
+  status message replaces "Folder restored…"; `git-tracker-browser`: Reopen does nothing;
+  `codex`, `claude`: a run misses its step in time). Each failure saves screenshots.
 
 ### 2026-11-22 — Mail
 - New optional app at `/mail` (direction A with B's inline reply, `docs/spacetimedb/mail-mocks.html`;

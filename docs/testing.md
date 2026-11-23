@@ -11,8 +11,10 @@ cargo test                         # unit tests of the native crates only
 ```
 
 `verify` builds with the `fast` and `wasm-fast` profiles: optimized, incremental, without
-LTO. Unchanged steps are skipped. Suites run in parallel (`--jobs`, default half the cores,
-at most 8). Each run's logs, roots and screenshots stay in the folder it prints.
+LTO. Unchanged steps are skipped. Suites run in parallel (`--jobs`, default a third of the
+cores, at most 5), each with its own instances and Chromium. Each run's logs, roots and
+screenshots stay in the folder it prints; a failing case also saves `failure-<case>-<n>.png`
+of the pages its suite left open.
 
 ## The acceptance suite (`tests/`)
 

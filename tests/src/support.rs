@@ -104,20 +104,7 @@ impl std::error::Error for AppError {}
 /// Runs `dar-runtime <args>` for `db` (and `root` when the command needs one) and returns its
 /// output (`operator` in `support/operator.ts`).
 pub fn operator(db: Option<&Database>, root: Option<&Path>, args: &[&str]) -> Result<String> {
-    let mut command = Command::new(&stack().artifacts.runtime);
-    command.args(args).stdin(Stdio::null());
-    if let Some(db) = db {
-        command.envs(db.env());
-    }
-    if let Some(root) = root {
-        command.env("DAR_ROOT", root);
-    }
-    let output = command.output().map_err(|e| Error::new(format!("dar-runtime {}: {e}", args.first().unwrap_or(&""))))?;
-    let (stdout, stderr) = (String::from_utf8_lossy(&output.stdout).trim().to_owned(), String::from_utf8_lossy(&output.stderr).trim().to_owned());
-    if !output.status.success() {
-        bail!("{}", if !stderr.is_empty() { stderr } else if !stdout.is_empty() { stdout } else { format!("dar-runtime {} failed", args.first().unwrap_or(&"")) });
-    }
-    Ok(stdout)
+    operator_env(db, root, &[], args)
 }
 
 fn operator_json(db: &Database, root: Option<&Path>, args: &[&str]) -> Result<Value> {
@@ -150,14 +137,35 @@ pub fn manage_apps(root: &Path, command: &str, argument: Option<&str>) -> Result
     args.extend(argument);
     operator(None, None, &args)
 }
+/// Runs `dar-runtime <args>` with extra environment variables.
+pub fn operator_env(db: Option<&Database>, root: Option<&Path>, env: &[(&str, &str)], args: &[&str]) -> Result<String> {
+    let mut command = Command::new(&stack().artifacts.runtime);
+    command.args(args).stdin(Stdio::null());
+    if let Some(db) = db {
+        command.envs(db.env());
+    }
+    if let Some(root) = root {
+        command.env("DAR_ROOT", root);
+    }
+    for (k, v) in env {
+        command.env(k, v);
+    }
+    let output = command.output().map_err(|e| Error::new(format!("dar-runtime {}: {e}", args.first().unwrap_or(&""))))?;
+    let (stdout, stderr) = (String::from_utf8_lossy(&output.stdout).trim().to_owned(), String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    if !output.status.success() {
+        bail!("{}", if !stderr.is_empty() { stderr } else if !stdout.is_empty() { stdout } else { format!("dar-runtime {} failed", args.first().unwrap_or(&"")) });
+    }
+    Ok(stdout)
+}
+
 /// Applies an OIDC client file to the database, as the runtime does with `DAR_OIDC_FILE`.
-pub fn configure_oidc(db: &Database, root: &Path, file: &Path, optional: bool) -> Result<String> {
+pub fn configure_oidc(db: &Database, root: &Path, origin: &str, file: &Path, optional: bool) -> Result<String> {
     let file = file.to_string_lossy();
     let mut args = vec!["configure-oidc", file.as_ref()];
     if optional {
         args.push("optional");
     }
-    operator(Some(db), Some(root), &args)
+    operator_env(Some(db), Some(root), &[("DAR_ORIGIN", origin), ("DAR_DEVELOPMENT", "1")], &args)
 }
 
 /// SHA-256 of a token, as Dar stores token digests.

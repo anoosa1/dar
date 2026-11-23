@@ -392,6 +392,9 @@ impl Locator {
 
     pub async fn click_with(&self, options: ClickOptions) -> Result<()> {
         let (x, y) = self.point(&options, true).await?;
+        if options.trial {
+            return Ok(());
+        }
         let button = options.button.unwrap_or("left");
         let keyboard = self.page.keyboard();
         for modifier in &options.modifiers {
@@ -434,7 +437,8 @@ impl Locator {
             {strict}
             const el = els[0];
             if (!E.visible(el)) return {{retry: "the element is not visible"}};
-            if (!E.editable(el)) return {{error: "the element is not an editable input, textarea or contenteditable"}};
+            if (!el.isContentEditable && !["input", "textarea"].includes(el.localName)) return {{error: "the element is not an editable input, textarea or contenteditable"}};
+            if (!E.editable(el)) return {{retry: "the element is not editable yet"}};
             if (el.localName === "input" && ["checkbox", "radio", "file", "button", "submit", "reset", "image"].includes(el.type)) return {{error: `cannot fill an input of type ${{el.type}}`}};
             const direct = el.localName === "input" && ["date", "time", "datetime-local", "month", "week", "color", "range"].includes(el.type);
             if (direct) {{

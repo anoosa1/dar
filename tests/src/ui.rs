@@ -99,3 +99,37 @@ pub async fn sign_in(page: &Page, base: &str, username: &str, password: &str) ->
     page.wait_for_function("() => !document.body.textContent.includes(\"Connecting…\")").await?;
     Ok(())
 }
+
+/// Opens a menu with `button` until `item` is listed and enabled, then returns it. Dar's menus
+/// take their items' state when they open, so one opened just before a change lands (the live
+/// connection, a settled thread) shows the old state until it is opened again.
+pub async fn open_menu_for(page: &Page, button: &Locator, item: &Locator) -> Result<()> {
+    let deadline = std::time::Instant::now() + crate::browser::DEFAULT_TIMEOUT;
+    loop {
+        button.click().await?;
+        let ready = item.clone().timeout(std::time::Duration::from_secs(2));
+        if ready.wait_for().await.is_ok() && ready.is_enabled().await.unwrap_or(false) {
+            return Ok(());
+        }
+        if std::time::Instant::now() > deadline {
+            crate::bail!("{} did not offer an enabled {}", button.describe(), item.describe());
+        }
+        page.keyboard().press("Escape").await?;
+        item.wait_for_state(State::Detached).await.ok();
+    }
+}
+
+/// Clicks `button` until `dialog` is visible. An app still mounting (a lazily loaded app right
+/// after switching to it) can drop the first click on its header's controls.
+pub async fn open_dialog(button: &Locator, dialog: &Locator) -> Result<()> {
+    let deadline = std::time::Instant::now() + crate::browser::DEFAULT_TIMEOUT;
+    loop {
+        button.click().await?;
+        if dialog.clone().timeout(std::time::Duration::from_secs(3)).wait_for().await.is_ok() {
+            return Ok(());
+        }
+        if std::time::Instant::now() > deadline {
+            crate::bail!("{} did not open {}", button.describe(), dialog.describe());
+        }
+    }
+}

@@ -23,7 +23,9 @@ fn main() -> ExitCode {
     }
     let only: Vec<&str> = args.iter().enumerate().filter(|(i, _)| *i > 0 && args[i - 1] == "--only").map(|(_, v)| v.as_str()).collect();
     let jobs = args.iter().position(|a| a == "--jobs").and_then(|i| args.get(i + 1)).and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| (std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) / 2).clamp(2, 8));
+        // A third of the cores, at most 5: each suite runs a runtime and often a Chromium, and
+        // browser journeys get flaky on a saturated machine.
+        .unwrap_or_else(|| (std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) / 3).clamp(2, 5));
     // `=name` selects one suite; otherwise a pattern is a substring of suite names.
     let selected = |name: &str| only.iter().any(|o| match o.strip_prefix('=') { Some(exact) => name == exact, None => name.contains(o) });
     let suites: Vec<Suite> = suites::SUITES.iter().copied().filter(|suite| only.is_empty() || selected(suite.name)).collect();
@@ -118,9 +120,12 @@ fn run_suite(suite: Suite, root: &std::path::Path) -> Vec<(String, bool, f64, St
             }
         });
         let short = case.name.rsplit("::").next().unwrap_or(case.name).to_owned();
+        if outcome.is_err() {
+            runtime.block_on(dar_acceptance::browser::screenshot_open_pages(suite.name, &short, ctx.dir()));
+        }
         outcomes.push((short, outcome.is_ok(), begun.elapsed().as_secs_f64(), outcome.err().unwrap_or_default()));
     }
-    runtime.block_on(ctx.close());
+    runtime.block_on(async { ctx.close().await; dar_acceptance::browser::close_suite(suite.name).await });
     runtime.shutdown_timeout(Duration::from_secs(5));
     outcomes
 }
