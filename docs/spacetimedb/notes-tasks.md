@@ -51,10 +51,18 @@ identity as the other apps; no extra dependency or worker. UI rules are in the
   numbers compared as numbers), `sort:`, `show:`, `view: list`, `limit:` (at most 200).
   Fields are properties plus `title`, `folder`, `path`, `tags` and `modified`. See
   `crates/client/src/workspace/note_query.rs`.
-- Renaming or moving a note rewrites the links to it in other notes (each write checked
-  against the revision read); a clean open editor reloads. The sidebar lists tags.
+- Hovering or focusing a resolved link in the preview opens a preview card of that note or
+  section after a moment. File options › Copy block link gives the caret's line a `^id`
+  (when it has none) and copies `[[note#^id]]`.
+- Graph (sidebar): the notes and their links on a canvas (pan, zoom, hover neighbors, a
+  text or `#tag` filter, Local graph for the open note) beside a list of the same notes by
+  link count; reduced motion lays it out without animating.
+- Renaming or moving a note, or renaming a folder, rewrites the links to the affected
+  notes in other notes (each write checked against the revision read); a clean open editor
+  reloads. The sidebar lists tags.
 - APIs: `/api/v1/notes/library` (tree, summaries, tags, aliases and properties; search also matches
-  aliases), `/api/v1/notes/backlinks?id=`, `/api/v1/notes/mentions?id=` and `/api/v1/notes/attachments`
+  aliases), `/api/v1/notes/backlinks?id=`, `/api/v1/notes/mentions?id=`, `/api/v1/notes/graph`
+  (nodes and resolved, deduplicated edges from the cache) and `/api/v1/notes/attachments`
   (the folder's other files, `service_notes` operation `attachments`); writes use the
   Files APIs. The runtime reads each note version once and caches what it found by blob ID.
   The older `/api/v1/notes/notebooks`, `/items` and `/trash` remain for the copy.

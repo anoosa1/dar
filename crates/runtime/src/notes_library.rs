@@ -155,6 +155,8 @@ pub fn summarize(name: &str, text: &str) -> (String, String) {
         })
         .filter(|l| heading_text(l).is_none() && !(l.starts_with('#') && l.len() <= 7 && l.bytes().all(|b| b == b'#')))
         .map(list_marker)
+        // A trailing `^block` id is an anchor, not text.
+        .map(|l| match dar_notes::block_id(l) { Some(id) => l.trim_end()[..l.trim_end().len() - id.len() - 1].trim_end(), None => l })
         .collect::<Vec<_>>()
         .join(" ");
     let plain: String = plain_links(&joined).chars().filter(|c| !"*_`~>#".contains(*c)).collect();
@@ -420,6 +422,7 @@ mod tests {
         assert_eq!(summarize("Plan.md", "---\ntitle: \"Trip\"\n---\nPack [[Bags|bags]] and [tickets](x).\n"), ("Trip".into(), "Pack bags and tickets.".into()));
         assert_eq!(summarize("Plan.md", "# Groceries\n- [ ] milk\n- [x] **bread**\n"), ("Groceries".into(), "milk bread".into()));
         assert_eq!(summarize("Plan.md", "Just text"), ("Plan".into(), "Just text".into()));
+        assert_eq!(summarize("B.md", "- one ^a1\ntwo ^b-2"), ("B".into(), "one two".into()));
         assert_eq!(summarize("Shelf.md", "# Shelf\n```query\ntag: #b\n```\nAfter."), ("Shelf".into(), "After.".into()));
         assert_eq!(summarize("Day.md", "Read [[Book#Ch 2]].\n![[Book#Part]]\n![[dot.png]] done"), ("Day".into(), "Read Book. done".into()));
     }
