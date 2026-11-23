@@ -461,9 +461,9 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     };
 
     // After a rename or move: links elsewhere follow the note (Obsidian's automatic link updates).
-    let relink = move |note_id: String, new_path: String, sources: Vec<String>, before: Arc<NoteIndex>| async move {
+    let relink = move |moves: Vec<(String, String)>, sources: Vec<String>, before: Arc<NoteIndex>| async move {
         let sess = session_sv.get_value();
-        let outcome = note_links::retarget_links(live, &sess, &before, &note_id, &new_path, sources).await;
+        let outcome = note_links::retarget_links(live, &sess, &before, &moves, sources).await;
         refresh.update(|n| *n += 1);
         match outcome {
             Ok(0) => String::new(),
@@ -769,7 +769,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                     let new_path = joined(folder_path(&current.parent_id), &next_name);
                                     let id = current.id.clone();
                                     if reducer(|tx| conn.reducers.rename_entry_then(current.id, next_name, current.revision, replied(tx))).await.is_ok() {
-                                        let updated = relink(id, new_path, sources, before).await;
+                                        let updated = relink(vec![(id, new_path)], sources, before).await;
                                         if !updated.is_empty() {
                                             notice.set(updated.trim_start().to_owned());
                                         }
@@ -970,7 +970,25 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                         }
                                         NotesPaneKind::RenameFolder(folder) => {
                                             let entry = fetch_detail(&conn, &folder.id).await?.entry;
+                                            // Notes inside move with the folder: links naming their path follow.
+                                            let before = index.get_untracked();
+                                            let old_prefix = format!("{}/", folder.path);
+                                            let new_folder = joined(folder.path.rfind('/').map(|i| folder.path[..i].to_owned()).unwrap_or_default(), &value);
+                                            let moves: Vec<(String, String)> = before.notes.iter().filter_map(|n| n.path.strip_prefix(&old_prefix).map(|rest| (n.id.clone(), format!("{new_folder}/{rest}")))).collect();
+                                            let mut sources = Vec::new();
+                                            if moves.len() <= 200 {
+                                                for (id, _) in &moves {
+                                                    for source in note_links::backlink_ids(id).await {
+                                                        if !sources.contains(&source) {
+                                                            sources.push(source);
+                                                        }
+                                                    }
+                                                }
+                                            }
                                             reducer(|tx| conn.reducers.rename_entry_then(entry.id, value, entry.revision, replied(tx))).await?;
+                                            if moves.len() <= 200 {
+                                                updated = relink(moves, sources, before).await;
+                                            }
                                         }
                                         NotesPaneKind::RenameNote(note) => {
                                             let entry = fetch_detail(&conn, &note.id).await?.entry;
@@ -978,7 +996,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                             let (before, sources) = (index.get_untracked(), note_links::backlink_ids(&entry.id).await);
                                             let new_path = joined(folder_path(&entry.parent_id), &next_name);
                                             reducer(|tx| conn.reducers.rename_entry_then(entry.id.clone(), next_name, entry.revision, replied(tx))).await?;
-                                            updated = relink(entry.id.clone(), new_path, sources, before).await;
+                                            updated = relink(vec![(entry.id.clone(), new_path)], sources, before).await;
                                             if open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == entry.id)) {
                                                 open.set(Some(fetch_detail(&conn, &entry.id).await?.entry));
                                             }
@@ -988,7 +1006,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                             let (before, sources) = (index.get_untracked(), note_links::backlink_ids(&entry.id).await);
                                             let new_path = joined(folder_path(&value), &entry.name);
                                             reducer(|tx| conn.reducers.move_entry_then(entry.id.clone(), value, entry.revision, None, replied(tx))).await?;
-                                            updated = relink(entry.id.clone(), new_path, sources, before).await;
+                                            updated = relink(vec![(entry.id.clone(), new_path)], sources, before).await;
                                             if open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == entry.id)) {
                                                 open.set(Some(fetch_detail(&conn, &entry.id).await?.entry));
                                             }

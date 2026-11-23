@@ -428,18 +428,25 @@ fn folder_of(path: &str) -> &str {
 /// After `moved` took `new_path`, points the links in `sources` (and the moved note's own
 /// relative links) at it again, each write checked against the revision read. Returns how many
 /// notes changed.
-pub async fn retarget_links(live: Live, session: &BrowserSession, before: &NoteIndex, moved: &str, new_path: &str, sources: Vec<String>) -> Result<usize, String> {
-    let Some(moved_index) = before.position(moved) else { return Ok(0) };
-    let after = Vault::new(before.vault.paths().iter().enumerate().map(|(i, p)| if i == moved_index { new_path.to_owned() } else { p.clone() }));
+pub async fn retarget_links(live: Live, session: &BrowserSession, before: &NoteIndex, moves: &[(String, String)], sources: Vec<String>) -> Result<usize, String> {
+    let moved: std::collections::HashMap<usize, &str> = moves.iter().filter_map(|(id, path)| before.position(id).map(|i| (i, path.as_str()))).collect();
+    if moved.is_empty() {
+        return Ok(0);
+    }
+    let after = Vault::new(before.vault.paths().iter().enumerate().map(|(i, p)| moved.get(&i).map_or_else(|| p.clone(), |n| (*n).to_owned())));
     let mut ids = sources;
-    if !ids.iter().any(|i| i == moved) {
-        ids.push(moved.to_owned());
+    for (id, _) in moves {
+        if !ids.contains(id) {
+            ids.push(id.clone());
+        }
     }
     let mut changed = 0;
     let mut failed = 0;
     for id in ids {
         let Some(old_source) = before.path_of(&id).map(str::to_owned) else { continue };
-        let new_source = if id == moved { new_path.to_owned() } else { old_source.clone() };
+        let source_index = before.position(&id);
+        let new_source = source_index.and_then(|i| moved.get(&i)).map_or_else(|| old_source.clone(), |p| (*p).to_owned());
+        let source_moved = folder_of(&old_source) != folder_of(&new_source);
         let conn = live.connection.get_untracked().ok_or("Notes are reconnecting. Try again in a moment.")?;
         let Ok(detail) = fetch_detail(&conn, &id).await else {
             failed += 1;
@@ -457,7 +464,7 @@ pub async fn retarget_links(live: Live, session: &BrowserSession, before: &NoteI
             if link.wiki && link.target.trim().is_empty() {
                 return None;
             }
-            if hit == moved_index || (id == moved && !link.wiki && folder_of(&old_source) != folder_of(&new_source)) {
+            if moved.contains_key(&hit) || (source_moved && !link.wiki) {
                 return Some(after.retarget(&new_source, link, hit));
             }
             None
