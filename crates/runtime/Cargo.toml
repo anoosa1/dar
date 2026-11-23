@@ -42,3 +42,4 @@ mail-builder = "0.4"
 dar-dav.workspace = true
 dar-oidc.workspace = true
 dar-notes.workspace = true
+dar-pdf.workspace = true

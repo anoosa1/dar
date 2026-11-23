@@ -1,0 +1,18 @@
+[package]
+name = "dar-pdf-worker"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+description = "The browser PDF viewer's Web Worker: dar-pdf compiled to wasm32, answering the viewer's messages"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+dar-pdf = { path = "../pdf" }
+wasm-bindgen = "=0.2.121"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["DedicatedWorkerGlobalScope", "MessageEvent", "Response", "WorkerGlobalScope", "ImageData"] }
+wasm-bindgen-futures = "0.4"

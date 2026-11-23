@@ -1,0 +1,11 @@
+[package]
+name = "dar-pdf"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+description = "PDF reading and page rendering on hayro (pure Rust), for the browser viewer's worker and the runtime"
+
+[dependencies]
+hayro = "0.9"
