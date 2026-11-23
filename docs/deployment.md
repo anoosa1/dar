@@ -5,7 +5,7 @@ The root flake exports `packages.<system>.dar` (also `default`), `chat-bridge`,
 `checks.<system>.module-evaluation`, `checks.<system>.nixos-vm` and the dev shell.
 The package ships the Rust runtime (`dar-runtime`), the Rust SpacetimeDB module
 (`dar_module.wasm`), the Leptos/Wasm browser client (with the installed-app SDK
-bundle and pdf.js), the Go Chat bridge (`dar-chat-bridge`), and SpacetimeDB
+bundle and the pure-Rust PDF renderer Web Worker), the Go Chat bridge (`dar-chat-bridge`), and SpacetimeDB
 2.14.1. Everything is built offline in Nix; the server never compiles code,
 installs packages or requires a Node.js runtime. Startup publishes the bundled
 database module in place without discarding existing state.

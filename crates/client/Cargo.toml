@@ -36,7 +36,7 @@ web-sys = { version = "0.3", features = [
   "Request", "RequestInit", "Response", "Headers", "AbortController", "AbortSignal", "FormData",
   "File", "FileList", "Blob", "BlobPropertyBag", "FileReader", "ReadableStream", "ReadableStreamDefaultReader",
   "TextDecoder", "XmlHttpRequest", "XmlHttpRequestUpload", "ProgressEvent",
-  "WebSocket", "BinaryType", "MessagePort",
+  "WebSocket", "BinaryType", "MessagePort", "Worker", "WorkerOptions", "WorkerType", "ImageData",
   "ResizeObserver", "ResizeObserverEntry", "IntersectionObserver", "IntersectionObserverEntry", "IntersectionObserverInit",
   "MutationObserver", "MutationObserverInit", "MutationRecord",
   "EventInit", "AddEventListenerOptions", "SubmitEvent", "HtmlProgressElement", "Selection",

@@ -310,7 +310,7 @@ fn verify(args: &[String]) -> Result {
             // (their cdylib and wasm binaries do not link natively). The test profile keeps their
             // dev-dependency features away from the `fast` build.
             let ok = run(cargo().args(["test", "-q", "-p", "dar-runtime", "-p", "dar-notes", "-p", "dar-pdf", "-p", "dar-oidc", "-p", "dar-dav", "-p", "dar-acceptance", "--lib", "--tests"])).is_ok()
-                && run(cargo().args(["test", "-q", "-p", "dar-module", "-p", "dar-client", "--lib"])).is_ok();
+                && run(cargo().args(["test", "-q", "-p", "dar-module", "-p", "dar-client", "-p", "dar-pdf-worker", "--lib"])).is_ok();
             ("unit tests (cargo test)".to_owned(), ok, started.elapsed().as_secs_f64())
         }));
         let acceptance = scope.spawn(|| {

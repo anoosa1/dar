@@ -14,5 +14,5 @@ crate-type = ["cdylib", "rlib"]
 dar-pdf = { path = "../pdf" }
 wasm-bindgen = "=0.2.121"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = ["DedicatedWorkerGlobalScope", "MessageEvent", "Response", "WorkerGlobalScope", "ImageData"] }
+web-sys = { version = "0.3", features = ["DedicatedWorkerGlobalScope", "RequestCredentials", "RequestInit", "Response", "WorkerGlobalScope"] }
 wasm-bindgen-futures = "0.4"

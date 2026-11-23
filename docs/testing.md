@@ -1,7 +1,6 @@
 # Testing
 
-Everything runs from Dar's dev shell (`nix develop`), after `npm ci` (for the SDK bundle and
-pdf.js):
+Everything runs from Dar's dev shell (`nix develop`), after `npm ci` (for the SDK bundle):
 
 ```sh
 cargo xtask verify                 # build, unit tests, the bridge's Go tests, every acceptance suite

@@ -59,6 +59,18 @@ runtime. Nothing is exported or converted beforehand.
 
 Newest first. Each entry: what passes now on the Rust stack, what was added to the tests.
 
+### 2026-11-23 — PDF viewer on hayro Web Worker (replacing pdf.js)
+- Browser viewer: `crates/pdf-worker` (`dar-pdf-worker`) runs `dar-pdf` (hayro) in a shared
+  dedicated ES module Web Worker, fetching PDFs same-origin and returning page sizes, outlines
+  and transferred RGBA bitmaps from a LIFO cancellable render queue. `crates/client/src/books/pdf.rs`
+  drives the worker with the same `PdfView`/`PdfHandle` interface, scaling existing page canvases
+  during zoom until crisp DPR bitmaps arrive.
+- Build & serving: `xtask/src/client.rs` builds `dar-pdf-worker` alongside `dar-client` into
+  content-hashed `pdf-worker-<hash>/` (with `wasm-opt` and `.gz`/`.br` in release) and passes its
+  URL via `data-pdf-worker` on `<html>`; `crates/runtime/src/http.rs` serves `pdf-worker-<hash>/`
+  as immutable, drops `/pdfjs/`, and adds `worker-src 'self'` to the CSP. `pdfjs-dist` and
+  `DAR_PDFJS_DIR` are removed from `package.json`, `xtask` and `nix/package.nix`.
+
 ### 2026-11-22 — one workspace, the acceptance suite in Rust
 - Layout: `crates/` (module, runtime, client, oidc, dav, bindings) in one Cargo workspace with one
   lockfile; `xtask/` replaces `verify.mjs`, `build.sh`, `generate.sh`, the patch scripts and

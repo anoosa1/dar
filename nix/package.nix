@@ -30,15 +30,8 @@ let
     '';
     installPhase = ''
       runHook preInstall
-      mkdir -p $out/sdk $out/node_modules/pdfjs-dist
+      mkdir -p $out/sdk
       cp -r sdk/dist $out/sdk/dist
-      cp node_modules/pdfjs-dist/package.json $out/node_modules/pdfjs-dist/
-      cp -r node_modules/pdfjs-dist/build $out/node_modules/pdfjs-dist/
-      for folder in cmaps standard_fonts wasm iccs; do
-        if [[ -d "node_modules/pdfjs-dist/$folder" ]]; then
-          cp -r "node_modules/pdfjs-dist/$folder" "$out/node_modules/pdfjs-dist/$folder"
-        fi
-      done
       runHook postInstall
     '';
     meta.platforms = [ "x86_64-linux" "aarch64-linux" ];
@@ -107,10 +100,11 @@ let
       ${prepareWorkspace}
       # The bindings from the built module, then the release client with its dist.
       DAR_MODULE_WASM=${darModule}/dar_module.wasm DAR_SPACETIME_BIN=${runtime.spacetime}/bin/spacetime $XTASK bindings
-      DAR_SDK_DIST=${jsAssets}/sdk/dist DAR_PDFJS_DIR=${jsAssets}/node_modules/pdfjs-dist $XTASK client --release
+      DAR_SDK_DIST=${jsAssets}/sdk/dist $XTASK client --release
       test -f target/client-release/index.html
       test -f target/client-release/sdk.js
-      test -d target/client-release/pdfjs
+      test -f target/client-release/pdf-worker-*/worker.js
+      test -f target/client-release/pdf-worker-*/dar_pdf_worker_bg.wasm
       runHook postBuild
     '';
     installPhase = ''

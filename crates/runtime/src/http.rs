@@ -303,9 +303,9 @@ fn set_security_headers(runtime: &Runtime, response: &mut Response) {
     if !headers.contains_key(header::CONTENT_SECURITY_POLICY) {
         let database = runtime.config.database_public_url.trim_end_matches('/').to_owned();
         let ws = |value: &str| value.replacen("http", "ws", 1);
-        // WebAssembly needs 'wasm-unsafe-eval'; scripts and styles still come only from this origin.
+        // WebAssembly needs 'wasm-unsafe-eval'; scripts, workers and styles still come only from this origin.
         let policy = format!(
-            "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob:; media-src 'self' https:; connect-src 'self' {} {database} {}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+            "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' https:; connect-src 'self' {} {database} {}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
             ws(&runtime.config.origin),
             ws(&database)
         );
@@ -939,13 +939,13 @@ async fn preferences(runtime: &Runtime, method: &Method, headers: &HeaderMap, bo
     }
 }
 
-/// The client's static files under `/rust/`, `/pdfjs/`, `/chunks/`, `/sdk.*`, `/app.css`;
+/// The client's static files under `/rust/`, `/chunks/`, `/sdk.*`, `/app.css`;
 /// every other page is its `index.html`.
 /// Whether a path under `/rust/` names its contents, so it can be cached for good.
 fn fingerprinted(path: &str) -> bool {
-    // The build (xtask/src/client.rs) names the folder of glue, wasm, app chunks and snippets after its contents.
+    // The build (xtask/src/client.rs) names the app and PDF worker folders after their contents.
     if let Some((folder, _)) = path.split_once('/') {
-        if let Some(hash) = folder.strip_prefix("app-") {
+        if let Some(hash) = folder.strip_prefix("app-").or_else(|| folder.strip_prefix("pdf-worker-")) {
             return (8..=64).contains(&hash.len()) && hash.bytes().all(|b| b.is_ascii_hexdigit());
         }
     }
@@ -965,7 +965,7 @@ async fn client(runtime: &Runtime, path: &str, headers: &HeaderMap) -> Result<Re
     let rel = if let Some(rest) = path.strip_prefix("/rust/") {
         let cache = if fingerprinted(rest) { IMMUTABLE } else { "no-cache" };
         Some((rest, cache))
-    } else if path.starts_with("/pdfjs/") || path.starts_with("/chunks/") {
+    } else if path.starts_with("/chunks/") {
         Some((path.trim_start_matches('/'), IMMUTABLE))
     } else if path.starts_with("/sdk-") && (path.ends_with(".js") || path.ends_with(".css")) {
         Some((path.trim_start_matches('/'), IMMUTABLE))
@@ -1099,9 +1099,12 @@ mod tests {
         assert!(fingerprinted("app.0123456789ab.css"));
         assert!(fingerprinted("app-0123456789ab/split_agent_app_1.wasm"));
         assert!(fingerprinted("app-0123456789ab/snippets/dar-client-1/inline0.js"));
+        assert!(fingerprinted("pdf-worker-0123456789ab/worker.js"));
+        assert!(fingerprinted("pdf-worker-0123456789ab/dar_pdf_worker_bg.wasm"));
         assert!(!fingerprinted("app.css"));
         assert!(!fingerprinted("mic-worklet.js"));
         assert!(!fingerprinted("app-latest/dar_client.js"));
+        assert!(!fingerprinted("pdf-worker-latest/worker.js"));
         assert!(!fingerprinted("snippets/dar-client-86ccece7599fa862/inline0.js"));
     }
 

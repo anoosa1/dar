@@ -1,148 +1,438 @@
-//! PDF viewer backed by pdf.js (`next/client/books/pdf.tsx`).
+//! PDF viewer backed by Dar's `dar-pdf-worker` Web Worker (`hayro` in WebAssembly).
 //!
 //! Pages are laid out at their real proportions in one scrolling column and only pages
 //! near the viewport are drawn on canvases. Reused by both Books and Files preview.
+//!
+//! One dedicated module worker is created lazily on the first PDF open and shared across
+//! all viewers in the page; closing a viewer closes only its document in the worker.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
+use std::task::{Context, Poll, Waker};
 
-use js_sys::{Array, Function, Object, Promise, Reflect};
+use js_sys::{Array, ArrayBuffer, Function, Object, Reflect, Uint8ClampedArray};
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use send_wrapper::SendWrapper;
 use wasm_bindgen::closure::Closure;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
-use wasm_bindgen_futures::JsFuture;
 
-use crate::ui::{call_method, window, Listener};
+use crate::ui::{document, window, Listener};
 
-// Keep in step with the copy the client dist gets (node_modules/pdfjs-dist/package.json; xtask/src/client.rs).
-const ASSETS: &str = "/pdfjs/6.5.438/";
 const GAP: f64 = 12.0;
 const PAD: f64 = 16.0;
+/// Leave slight headroom below `dar_pdf::MAX_PIXELS` (40_000_000) so rounding never trips it.
+const MAX_RENDER_PIXELS: f64 = 39_000_000.0;
 
-#[wasm_bindgen(inline_js = "export function dynamic_import(u) { return import(u); }")]
-extern "C" {
-    fn dynamic_import(u: &str) -> js_sys::Promise;
+// ---- Single-threaded oneshot channel for worker RPCs ----------------------------------------
+
+struct OneshotState<T> {
+    value: Option<T>,
+    closed: bool,
+    waker: Option<Waker>,
+}
+
+struct OneshotSender<T>(Rc<RefCell<OneshotState<T>>>);
+
+impl<T> OneshotSender<T> {
+    fn send(self, value: T) {
+        let waker = {
+            let mut state = self.0.borrow_mut();
+            state.value = Some(value);
+            state.closed = true;
+            state.waker.take()
+        };
+        if let Some(waker) = waker {
+            waker.wake();
+        }
+    }
+}
+
+impl<T> Drop for OneshotSender<T> {
+    fn drop(&mut self) {
+        let waker = {
+            let mut state = self.0.borrow_mut();
+            if state.closed {
+                return;
+            }
+            state.closed = true;
+            state.waker.take()
+        };
+        if let Some(waker) = waker {
+            waker.wake();
+        }
+    }
+}
+
+struct OneshotReceiver<T>(Rc<RefCell<OneshotState<T>>>);
+
+impl<T> Future for OneshotReceiver<T> {
+    type Output = Option<T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut state = self.0.borrow_mut();
+        if let Some(value) = state.value.take() {
+            return Poll::Ready(Some(value));
+        }
+        if state.closed {
+            return Poll::Ready(None);
+        }
+        state.waker = Some(cx.waker().clone());
+        Poll::Pending
+    }
+}
+
+fn oneshot<T>() -> (OneshotSender<T>, OneshotReceiver<T>) {
+    let state = Rc::new(RefCell::new(OneshotState {
+        value: None,
+        closed: false,
+        waker: None,
+    }));
+    (OneshotSender(state.clone()), OneshotReceiver(state))
+}
+
+// ---- Shared PDF worker pool -----------------------------------------------------------------
+
+struct OpenedDoc {
+    pages: usize,
+    sizes: Vec<(f64, f64)>,
+    outline: Vec<PdfOutlineEntry>,
+}
+
+struct RenderedPage {
+    width: u32,
+    height: u32,
+    buffer: ArrayBuffer,
+}
+
+struct SharedWorker {
+    worker: web_sys::Worker,
+    _on_message: Closure<dyn FnMut(web_sys::MessageEvent)>,
+    _on_error: Closure<dyn FnMut(web_sys::Event)>,
+}
+
+impl Drop for SharedWorker {
+    fn drop(&mut self) {
+        self.worker.set_onmessage(None);
+        self.worker.set_onerror(None);
+        self.worker.terminate();
+    }
+}
+
+struct WorkerPool {
+    shared: Option<SharedWorker>,
+    next_doc_id: u32,
+    next_req_id: u32,
+    open_waiters: HashMap<u32, OneshotSender<Result<OpenedDoc, String>>>,
+    render_waiters: HashMap<u32, OneshotSender<Result<RenderedPage, String>>>,
+}
+
+impl WorkerPool {
+    fn new() -> Self {
+        Self {
+            shared: None,
+            next_doc_id: 1,
+            next_req_id: 1,
+            open_waiters: HashMap::new(),
+            render_waiters: HashMap::new(),
+        }
+    }
+
+    fn alloc_doc_id(&mut self) -> u32 {
+        let id = self.next_doc_id;
+        self.next_doc_id = self.next_doc_id.wrapping_add(1).max(1);
+        id
+    }
+
+    fn alloc_req_id(&mut self) -> u32 {
+        let id = self.next_req_id;
+        self.next_req_id = self.next_req_id.wrapping_add(1).max(1);
+        id
+    }
 }
 
 thread_local! {
-    static PDFJS_PROMISE: RefCell<Option<Promise>> = const { RefCell::new(None) };
+    static WORKER_POOL: RefCell<WorkerPool> = RefCell::new(WorkerPool::new());
 }
 
-async fn load_pdfjs() -> Result<JsValue, JsValue> {
-    let promise = PDFJS_PROMISE.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        if let Some(p) = slot.as_ref() {
-            return p.clone();
-        }
-        let url = format!("{ASSETS}pdf.min.mjs");
-        let p = dynamic_import(&url);
-        *slot = Some(p.clone());
-        p
-    });
-    let module = match JsFuture::from(promise).await {
-        Ok(m) => m,
-        Err(err) => {
-            PDFJS_PROMISE.with(|cell| *cell.borrow_mut() = None);
-            return Err(err);
-        }
-    };
-    if let Ok(opts) = Reflect::get(&module, &JsValue::from_str("GlobalWorkerOptions"))
-        && !opts.is_undefined()
-        && !opts.is_null()
-    {
-        let worker = format!("{ASSETS}pdf.worker.min.mjs");
-        let _ = Reflect::set(&opts, &JsValue::from_str("workerSrc"), &JsValue::from_str(&worker));
+fn set_prop(obj: &Object, key: &str, value: &JsValue) {
+    let _ = Reflect::set(obj, &JsValue::from_str(key), value);
+}
+
+fn get_str(obj: &JsValue, key: &str) -> Option<String> {
+    Reflect::get(obj, &JsValue::from_str(key)).ok()?.as_string()
+}
+
+fn get_f64(obj: &JsValue, key: &str) -> Option<f64> {
+    Reflect::get(obj, &JsValue::from_str(key)).ok()?.as_f64()
+}
+
+fn get_u32(obj: &JsValue, key: &str) -> Option<u32> {
+    let n = get_f64(obj, key)?;
+    if n.is_finite() && n >= 0.0 && n <= u32::MAX as f64 {
+        Some(n as u32)
+    } else {
+        None
     }
-    Ok(module)
 }
 
-fn call1(target: &JsValue, name: &str, arg: &JsValue) -> Result<JsValue, JsValue> {
-    let func: Function = Reflect::get(target, &JsValue::from_str(name))?.dyn_into()?;
-    func.call1(target, arg)
+fn worker_url() -> Result<String, String> {
+    document()
+        .document_element()
+        .and_then(|el| el.get_attribute("data-pdf-worker"))
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| "The PDF viewer could not start.".to_owned())
 }
 
-fn call0(target: &JsValue, name: &str) -> Result<JsValue, JsValue> {
-    let func: Function = Reflect::get(target, &JsValue::from_str(name))?.dyn_into()?;
-    func.call0(target)
+fn ensure_worker(pool: &mut WorkerPool) -> Result<web_sys::Worker, String> {
+    if let Some(shared) = pool.shared.as_ref() {
+        return Ok(shared.worker.clone());
+    }
+    let url = worker_url()?;
+    let opts = web_sys::WorkerOptions::new();
+    opts.set_type(web_sys::WorkerType::Module);
+    let worker = web_sys::Worker::new_with_options(&url, &opts)
+        .map_err(|_| "The PDF viewer could not start.".to_owned())?;
+    let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(|event: web_sys::MessageEvent| {
+        handle_worker_message(event.data());
+    });
+    let on_error = Closure::<dyn FnMut(web_sys::Event)>::new(|_| {
+        handle_worker_fatal("The PDF viewer could not start.".to_owned());
+    });
+    worker.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+    worker.set_onerror(Some(on_error.as_ref().unchecked_ref()));
+    let cloned = worker.clone();
+    pool.shared = Some(SharedWorker {
+        worker,
+        _on_message: on_message,
+        _on_error: on_error,
+    });
+    Ok(cloned)
 }
 
-async fn get_page_size(doc: &JsValue, page_num: usize) -> Result<(f64, f64), JsValue> {
-    let page_promise: Promise = call1(doc, "getPage", &JsValue::from_f64(page_num as f64))?.dyn_into()?;
-    let page = JsFuture::from(page_promise).await?;
-    let opts = Object::new();
-    let _ = Reflect::set(&opts, &JsValue::from_str("scale"), &JsValue::from_f64(1.0));
-    let viewport = call1(&page, "getViewport", &opts)?;
-    let w = Reflect::get(&viewport, &JsValue::from_str("width"))?.as_f64().unwrap_or(612.0);
-    let h = Reflect::get(&viewport, &JsValue::from_str("height"))?.as_f64().unwrap_or(792.0);
-    Ok((w, h))
+fn handle_worker_fatal(message: String) {
+    let (open_waiters, render_waiters) = WORKER_POOL.with(|cell| {
+        let mut pool = cell.borrow_mut();
+        // Drop detaches handlers and terminates the broken worker before clearing the slot.
+        pool.shared.take();
+        let opens: Vec<_> = pool.open_waiters.drain().map(|(_, tx)| tx).collect();
+        let renders: Vec<_> = pool.render_waiters.drain().map(|(_, tx)| tx).collect();
+        (opens, renders)
+    });
+    for tx in open_waiters {
+        tx.send(Err(message.clone()));
+    }
+    for tx in render_waiters {
+        tx.send(Err(message.clone()));
+    }
 }
 
-fn walk_outline<'a>(
-    doc: &'a JsValue,
-    items: JsValue,
-    depth: usize,
-    out: &'a mut Vec<PdfOutlineEntry>,
-) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
-    Box::pin(async move {
-        if items.is_null() || items.is_undefined() || out.len() >= 2000 {
-            return;
-        }
-        let arr = Array::from(&items);
-        let len = arr.length();
-        for i in 0..len {
-            if out.len() >= 2000 {
-                return;
-            }
-            let item = arr.get(i);
-            let mut target: i32 = -1;
-            if let Ok(dest) = Reflect::get(&item, &JsValue::from_str("dest")) {
-                let resolved = if let Some(name) = dest.as_string() {
-                    if let Ok(p) = call1(doc, "getDestination", &JsValue::from_str(&name))
-                        && let Ok(promise) = p.dyn_into::<Promise>()
-                    {
-                        JsFuture::from(promise).await.unwrap_or(JsValue::NULL)
-                    } else {
-                        JsValue::NULL
-                    }
-                } else {
-                    dest
-                };
-                if !resolved.is_null() && !resolved.is_undefined() {
-                    let first = Reflect::get(&resolved, &JsValue::from_f64(0.0)).unwrap_or(JsValue::UNDEFINED);
-                    if let Some(n) = first.as_f64() {
-                        target = n as i32;
-                    } else if !first.is_undefined() && !first.is_null() {
-                        if let Ok(p) = call1(doc, "getPageIndex", &first)
-                            && let Ok(promise) = p.dyn_into::<Promise>()
-                            && let Ok(idx) = JsFuture::from(promise).await
-                            && let Some(n) = idx.as_f64()
-                        {
-                            target = n as i32;
-                        }
-                    }
+fn handle_worker_message(data: JsValue) {
+    let Some(kind) = get_str(&data, "type") else {
+        return;
+    };
+    match kind.as_str() {
+        "opened" => {
+            let Some(id) = get_u32(&data, "id") else { return };
+            let pages = get_f64(&data, "pages").unwrap_or(0.0).max(0.0) as usize;
+            let mut sizes = Vec::with_capacity(pages);
+            if let Ok(raw_sizes) = Reflect::get(&data, &JsValue::from_str("sizes"))
+                && !raw_sizes.is_null()
+                && !raw_sizes.is_undefined()
+            {
+                let arr = Array::from(&raw_sizes);
+                for i in 0..arr.length() {
+                    let pair = arr.get(i);
+                    let w = Reflect::get(&pair, &JsValue::from_f64(0.0))
+                        .ok()
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(612.0)
+                        .max(1.0);
+                    let h = Reflect::get(&pair, &JsValue::from_f64(1.0))
+                        .ok()
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(792.0)
+                        .max(1.0);
+                    sizes.push((w, h));
                 }
             }
-            let title = Reflect::get(&item, &JsValue::from_str("title"))
-                .ok()
-                .and_then(|v| v.as_string())
-                .unwrap_or_default();
-            let trimmed = title.trim();
-            if !trimmed.is_empty() {
-                let label: String = trimmed.chars().take(200).collect();
-                out.push(PdfOutlineEntry { label, page: target, depth: depth.min(6) });
+            if sizes.len() < pages {
+                sizes.resize(pages, (612.0, 792.0));
             }
-            if let Ok(children) = Reflect::get(&item, &JsValue::from_str("items")) {
-                walk_outline(doc, children, depth + 1, out).await;
+
+            let mut outline = Vec::new();
+            if let Ok(raw_outline) = Reflect::get(&data, &JsValue::from_str("outline"))
+                && !raw_outline.is_null()
+                && !raw_outline.is_undefined()
+            {
+                let arr = Array::from(&raw_outline);
+                for i in 0..arr.length() {
+                    if outline.len() >= 2000 {
+                        break;
+                    }
+                    let item = arr.get(i);
+                    let title = get_str(&item, "title").unwrap_or_default();
+                    let trimmed = title.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    let label: String = trimmed.chars().take(200).collect();
+                    let page = get_f64(&item, "page").map(|n| n as i32).unwrap_or(-1);
+                    let depth = get_f64(&item, "depth").map(|n| (n as usize).min(6)).unwrap_or(0);
+                    outline.push(PdfOutlineEntry { label, page, depth });
+                }
+            }
+
+            let tx = WORKER_POOL.with(|cell| cell.borrow_mut().open_waiters.remove(&id));
+            if let Some(tx) = tx {
+                tx.send(Ok(OpenedDoc { pages, sizes, outline }));
             }
         }
-    })
+        "error" => {
+            let Some(id) = get_u32(&data, "id") else { return };
+            let message = get_str(&data, "message")
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| "The PDF could not be loaded.".to_owned());
+            let tx = WORKER_POOL.with(|cell| cell.borrow_mut().open_waiters.remove(&id));
+            if let Some(tx) = tx {
+                tx.send(Err(message));
+            }
+        }
+        "page" => {
+            let Some(request) = get_u32(&data, "request") else { return };
+            let width = get_u32(&data, "width").unwrap_or(0);
+            let height = get_u32(&data, "height").unwrap_or(0);
+            let buffer = Reflect::get(&data, &JsValue::from_str("buffer"))
+                .ok()
+                .and_then(|v| v.dyn_into::<ArrayBuffer>().ok());
+            let tx = WORKER_POOL.with(|cell| cell.borrow_mut().render_waiters.remove(&request));
+            if let Some(tx) = tx {
+                match buffer {
+                    Some(buffer) if width > 0 && height > 0 => {
+                        tx.send(Ok(RenderedPage { width, height, buffer }));
+                    }
+                    _ => tx.send(Err("This page could not be drawn.".to_owned())),
+                }
+            }
+        }
+        "render-error" => {
+            let Some(request) = get_u32(&data, "request") else { return };
+            let message = get_str(&data, "message")
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| "This page could not be drawn.".to_owned());
+            let tx = WORKER_POOL.with(|cell| cell.borrow_mut().render_waiters.remove(&request));
+            if let Some(tx) = tx {
+                tx.send(Err(message));
+            }
+        }
+        "fatal" => {
+            let message = get_str(&data, "message")
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| "The PDF viewer could not start.".to_owned());
+            handle_worker_fatal(message);
+        }
+        _ => {}
+    }
 }
+
+fn start_open(url: &str) -> Result<(u32, OneshotReceiver<Result<OpenedDoc, String>>), String> {
+    let (tx, rx) = oneshot();
+    let (worker, doc_id) = WORKER_POOL.with(|cell| {
+        let mut pool = cell.borrow_mut();
+        let worker = ensure_worker(&mut pool)?;
+        let doc_id = pool.alloc_doc_id();
+        pool.open_waiters.insert(doc_id, tx);
+        Ok::<_, String>((worker, doc_id))
+    })?;
+
+    let msg = Object::new();
+    set_prop(&msg, "type", &JsValue::from_str("open"));
+    set_prop(&msg, "id", &JsValue::from_f64(doc_id as f64));
+    set_prop(&msg, "url", &JsValue::from_str(url));
+    if worker.post_message(&msg).is_err() {
+        WORKER_POOL.with(|cell| {
+            cell.borrow_mut().open_waiters.remove(&doc_id);
+        });
+        return Err("The PDF could not be loaded.".to_owned());
+    }
+    Ok((doc_id, rx))
+}
+
+fn close_doc(doc_id: u32) {
+    let worker = WORKER_POOL.with(|cell| {
+        let mut pool = cell.borrow_mut();
+        pool.open_waiters.remove(&doc_id);
+        pool.shared.as_ref().map(|s| s.worker.clone())
+    });
+    if let Some(worker) = worker {
+        let msg = Object::new();
+        set_prop(&msg, "type", &JsValue::from_str("close"));
+        set_prop(&msg, "doc", &JsValue::from_f64(doc_id as f64));
+        let _ = worker.post_message(&msg);
+    }
+}
+
+fn start_render(
+    doc_id: u32,
+    page: usize,
+    scale: f64,
+) -> Result<(u32, OneshotReceiver<Result<RenderedPage, String>>), String> {
+    let (tx, rx) = oneshot();
+    let (worker, req_id) = WORKER_POOL.with(|cell| {
+        let mut pool = cell.borrow_mut();
+        let worker = pool
+            .shared
+            .as_ref()
+            .map(|s| s.worker.clone())
+            .ok_or_else(|| "The PDF viewer is not running.".to_owned())?;
+        let req_id = pool.alloc_req_id();
+        pool.render_waiters.insert(req_id, tx);
+        Ok::<_, String>((worker, req_id))
+    })?;
+
+    let msg = Object::new();
+    set_prop(&msg, "type", &JsValue::from_str("render"));
+    set_prop(&msg, "doc", &JsValue::from_f64(doc_id as f64));
+    set_prop(&msg, "page", &JsValue::from_f64(page as f64));
+    set_prop(&msg, "scale", &JsValue::from_f64(scale));
+    set_prop(&msg, "request", &JsValue::from_f64(req_id as f64));
+    if worker.post_message(&msg).is_err() {
+        WORKER_POOL.with(|cell| {
+            cell.borrow_mut().render_waiters.remove(&req_id);
+        });
+        return Err("This page could not be drawn.".to_owned());
+    }
+    Ok((req_id, rx))
+}
+
+fn cancel_render(req_id: u32) {
+    let worker = WORKER_POOL.with(|cell| {
+        let mut pool = cell.borrow_mut();
+        pool.render_waiters.remove(&req_id);
+        pool.shared.as_ref().map(|s| s.worker.clone())
+    });
+    if let Some(worker) = worker {
+        let msg = Object::new();
+        set_prop(&msg, "type", &JsValue::from_str("cancel"));
+        set_prop(&msg, "request", &JsValue::from_f64(req_id as f64));
+        let _ = worker.post_message(&msg);
+    }
+}
+
+/// Builds a browser `ImageData` directly over a transferred `ArrayBuffer` without copying
+/// pixel bytes through the main client's WASM heap.
+fn image_data_from_buffer(buffer: &ArrayBuffer, width: u32, height: u32) -> Result<web_sys::ImageData, JsValue> {
+    let clamped = Uint8ClampedArray::new(buffer);
+    let ctor: Function = Reflect::get(&js_sys::global(), &JsValue::from_str("ImageData"))?.dyn_into()?;
+    let args = Array::of3(&clamped, &JsValue::from_f64(width as f64), &JsValue::from_f64(height as f64));
+    Reflect::construct(&ctor, &args)?.dyn_into()
+}
+
+// ---- Public API (kept stable for Books workspace and Files preview) -------------------------
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PdfOutlineEntry {
@@ -181,13 +471,13 @@ pub struct PdfHandle {
 
 impl PdfHandle {
     pub fn go_to(&self, page: usize, fraction: f64) {
-        self.go_to.run((page, fraction));
+        let _ = self.go_to.try_run((page, fraction));
     }
     pub fn step(&self, direction: i32) {
-        self.step.run(direction);
+        let _ = self.step.try_run(direction);
     }
     pub fn zoom(&self, change: PdfZoomChange) {
-        self.zoom.run(change);
+        let _ = self.zoom.try_run(change);
     }
 }
 
@@ -198,8 +488,25 @@ struct Layout {
     total: f64,
 }
 
-/// A PDF drawn with pdf.js: pages are laid out at their real proportions in one scrolling
-/// column, and only pages near the viewport are drawn on canvases.
+fn compute_layout(sizes: &[(f64, f64)], width: f64, height: f64, zoom: PdfZoom) -> Layout {
+    let widest = sizes.iter().map(|(pw, _)| *pw).fold(1.0_f64, f64::max);
+    let tallest = sizes.iter().map(|(_, ph)| *ph).fold(1.0_f64, f64::max);
+    let scale = match zoom {
+        PdfZoom::Scale(val) => val,
+        PdfZoom::Width => ((width - PAD * 2.0) / widest).max(0.2),
+        PdfZoom::Page => (((width - PAD * 2.0) / widest).min((height - PAD * 2.0) / tallest)).max(0.2),
+    };
+    let mut tops = Vec::with_capacity(sizes.len());
+    let mut total = PAD;
+    for (_, ph) in sizes {
+        tops.push(total);
+        total += *ph * scale + GAP;
+    }
+    Layout { scale, tops, total }
+}
+
+/// A PDF drawn by Dar's `dar-pdf-worker`: pages are laid out at their real proportions in one
+/// scrolling column, and only pages near the viewport are drawn on canvases.
 #[component]
 pub fn PdfView(
     #[prop(into)] url: Signal<String>,
@@ -215,8 +522,7 @@ pub fn PdfView(
 ) -> impl IntoView {
     let scroller = NodeRef::<html::Div>::new();
     let pages_node = NodeRef::<html::Div>::new();
-    let doc: RwSignal<Option<SendWrapper<JsValue>>> = RwSignal::new(None);
-    let doc_id = RwSignal::new(0u32);
+    let doc_id: RwSignal<Option<u32>> = RwSignal::new(None);
     let sizes: RwSignal<Vec<(f64, f64)>> = RwSignal::new(Vec::new());
     let width = RwSignal::new(0.0_f64);
     let height = RwSignal::new(0.0_f64);
@@ -228,179 +534,72 @@ pub fn PdfView(
     let restored = StoredValue::new(false);
     let kept = StoredValue::new((0usize, 0.0_f64));
 
-    // Load PDF whenever `url` changes; cancel & destroy previous task on re-run or cleanup.
-    let active_task: StoredValue<Option<SendWrapper<(Rc<Cell<bool>>, Option<JsValue>)>>> = StoredValue::new(None);
-    let destroy_active = move || {
-        active_task.update_value(|slot| {
+    // Close the current document in the shared worker when `url` changes or this view unmounts.
+    let active_open: StoredValue<Option<SendWrapper<(Rc<Cell<bool>>, u32)>>> = StoredValue::new(None);
+    let close_active = move || {
+        let _ = active_open.try_update_value(|slot| {
             if let Some(prev) = slot.take() {
-                let (alive, task) = prev.take();
+                let (alive, id) = prev.take();
                 alive.set(false);
-                if let Some(t) = task {
-                    call_method(&t, "destroy");
-                }
+                close_doc(id);
             }
         });
     };
-    on_cleanup(move || destroy_active());
+    on_cleanup(move || close_active());
 
     Effect::new(move |_| {
         let current_url = url.get();
-        destroy_active();
+        close_active();
         failed.set(String::new());
-        doc.set(None);
+        doc_id.set(None);
         sizes.set(Vec::new());
         restored.set_value(false);
 
+        let (id, rx) = match start_open(&current_url) {
+            Ok(opened) => opened,
+            Err(msg) => {
+                failed.set(msg.clone());
+                if let Some(cb) = on_error {
+                    let _ = cb.try_run(msg);
+                }
+                return;
+            }
+        };
+
         let alive = Rc::new(Cell::new(true));
-        active_task.set_value(Some(SendWrapper::new((alive.clone(), None))));
-        let alive_for_task = alive.clone();
+        active_open.set_value(Some(SendWrapper::new((alive.clone(), id))));
 
         spawn_local(async move {
-            let module = match load_pdfjs().await {
-                Ok(m) => m,
-                Err(_) => {
-                    if alive_for_task.get() {
-                        let msg = "The PDF could not be loaded.".to_owned();
-                        failed.set(msg.clone());
-                        if let Some(cb) = on_error {
-                            cb.run(msg);
-                        }
-                    }
-                    return;
-                }
+            let Some(result) = rx.await else {
+                return;
             };
-            if !alive_for_task.get() {
+            if !alive.get() {
                 return;
             }
-            let opts = Object::new();
-            let _ = Reflect::set(&opts, &JsValue::from_str("url"), &JsValue::from_str(&current_url));
-            let _ = Reflect::set(&opts, &JsValue::from_str("cMapUrl"), &JsValue::from_str(&format!("{ASSETS}cmaps/")));
-            let _ = Reflect::set(&opts, &JsValue::from_str("cMapPacked"), &JsValue::from_bool(true));
-            let _ = Reflect::set(&opts, &JsValue::from_str("standardFontDataUrl"), &JsValue::from_str(&format!("{ASSETS}standard_fonts/")));
-            let _ = Reflect::set(&opts, &JsValue::from_str("wasmUrl"), &JsValue::from_str(&format!("{ASSETS}wasm/")));
-            let _ = Reflect::set(&opts, &JsValue::from_str("iccUrl"), &JsValue::from_str(&format!("{ASSETS}iccs/")));
-            let _ = Reflect::set(&opts, &JsValue::from_str("enableXfa"), &JsValue::from_bool(false));
-            let _ = Reflect::set(&opts, &JsValue::from_str("isOffscreenCanvasSupported"), &JsValue::from_bool(true));
-
-            let task = match call1(&module, "getDocument", &opts) {
-                Ok(t) => t,
-                Err(_) => {
-                    if alive_for_task.get() {
-                        let msg = "The PDF could not be loaded.".to_owned();
-                        failed.set(msg.clone());
-                        if let Some(cb) = on_error {
-                            cb.run(msg);
-                        }
-                    }
-                    return;
-                }
-            };
-            if !alive_for_task.get() {
-                call_method(&task, "destroy");
-                return;
-            }
-            active_task.set_value(Some(SendWrapper::new((alive_for_task.clone(), Some(task.clone())))));
-
-            let promise = match Reflect::get(&task, &JsValue::from_str("promise")).and_then(|p| p.dyn_into::<Promise>()) {
-                Ok(p) => p,
-                Err(_) => {
-                    if alive_for_task.get() {
-                        let msg = "The PDF could not be loaded.".to_owned();
-                        failed.set(msg.clone());
-                        if let Some(cb) = on_error {
-                            cb.run(msg);
-                        }
-                    }
-                    return;
-                }
-            };
-
-            match JsFuture::from(promise).await {
-                Ok(value) => {
-                    if !alive_for_task.get() {
-                        return;
-                    }
-                    let num_pages = Reflect::get(&value, &JsValue::from_str("numPages"))
-                        .ok()
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0) as usize;
-                    if num_pages == 0 {
+            match result {
+                Ok(opened) => {
+                    if opened.pages == 0 {
+                        close_doc(id);
                         let msg = "This file is not a readable PDF.".to_owned();
-                        failed.set(msg.clone());
+                        let _ = failed.try_set(msg.clone());
                         if let Some(cb) = on_error {
-                            cb.run(msg);
+                            let _ = cb.try_run(msg);
                         }
                         return;
                     }
-                    let first = match get_page_size(&value, 1).await {
-                        Ok(s) => s,
-                        Err(_) => {
-                            if alive_for_task.get() {
-                                let msg = "The PDF could not be loaded.".to_owned();
-                                failed.set(msg.clone());
-                                if let Some(cb) = on_error {
-                                    cb.run(msg);
-                                }
-                            }
-                            return;
-                        }
-                    };
-                    if !alive_for_task.get() {
-                        return;
-                    }
-                    let mut list = vec![first; num_pages];
-                    sizes.set(list.clone());
-                    doc.set(Some(SendWrapper::new(value.clone())));
-                    doc_id.update(|n| *n += 1);
-
-                    for i in 2..=num_pages {
-                        if !alive_for_task.get() {
-                            return;
-                        }
-                        if let Ok(v) = get_page_size(&value, i).await {
-                            if (v.0 - first.0).abs() > f64::EPSILON || (v.1 - first.1).abs() > f64::EPSILON {
-                                list[i - 1] = v;
-                                if i % 25 == 0 || i == num_pages {
-                                    sizes.set(list.clone());
-                                }
-                            }
-                        }
-                    }
-                    if !alive_for_task.get() {
-                        return;
-                    }
-                    sizes.set(list);
-
-                    let mut outline = Vec::new();
-                    if let Ok(p) = call0(&value, "getOutline")
-                        && let Ok(promise) = p.dyn_into::<Promise>()
-                        && let Ok(items) = JsFuture::from(promise).await
-                    {
-                        walk_outline(&value, items, 0, &mut outline).await;
-                    }
-                    if alive_for_task.get()
-                        && let Some(cb) = on_ready
-                    {
-                        cb.run(PdfReady { pages: num_pages, outline });
+                    let _ = sizes.try_set(opened.sizes);
+                    let _ = doc_id.try_set(Some(id));
+                    if let Some(cb) = on_ready {
+                        let _ = cb.try_run(PdfReady {
+                            pages: opened.pages,
+                            outline: opened.outline,
+                        });
                     }
                 }
-                Err(cause) => {
-                    if !alive_for_task.get() {
-                        return;
-                    }
-                    let name = Reflect::get(&cause, &JsValue::from_str("name"))
-                        .ok()
-                        .and_then(|v| v.as_string())
-                        .unwrap_or_default();
-                    let msg = match name.as_str() {
-                        "PasswordException" => "This PDF is protected with a password. Download it to open it in another app.",
-                        "InvalidPDFException" => "This file is not a readable PDF.",
-                        _ => "The PDF could not be loaded.",
-                    }
-                    .to_owned();
-                    failed.set(msg.clone());
+                Err(msg) => {
+                    let _ = failed.try_set(msg.clone());
                     if let Some(cb) = on_error {
-                        cb.run(msg);
+                        let _ = cb.try_run(msg);
                     }
                 }
             }
@@ -414,8 +613,8 @@ pub fn PdfView(
         height.set(node.client_height() as f64);
         let node_for_cb = node.clone();
         let cb = Closure::<dyn FnMut()>::new(move || {
-            width.set(node_for_cb.client_width() as f64);
-            height.set(node_for_cb.client_height() as f64);
+            let _ = width.try_set(node_for_cb.client_width() as f64);
+            let _ = height.try_set(node_for_cb.client_height() as f64);
         });
         let observer = web_sys::ResizeObserver::new(cb.as_ref().unchecked_ref()).expect("ResizeObserver");
         observer.observe(&node);
@@ -429,23 +628,7 @@ pub fn PdfView(
     // Compute scale, tops, and total column height.
     let layout = Memo::new(move |_| {
         let s = sizes.get();
-        let w = width.get();
-        let h = height.get();
-        let z = zoom.get();
-        let widest = s.iter().map(|(pw, _)| *pw).fold(1.0_f64, f64::max);
-        let tallest = s.iter().map(|(_, ph)| *ph).fold(1.0_f64, f64::max);
-        let scale = match z {
-            PdfZoom::Scale(val) => val,
-            PdfZoom::Width => ((w - PAD * 2.0) / widest).max(0.2),
-            PdfZoom::Page => (((w - PAD * 2.0) / widest).min((h - PAD * 2.0) / tallest)).max(0.2),
-        };
-        let mut tops = Vec::with_capacity(s.len());
-        let mut total = PAD;
-        for (_, ph) in &s {
-            tops.push(total);
-            total += *ph * scale + GAP;
-        }
-        Layout { scale, tops, total }
+        compute_layout(&s, width.get(), height.get(), zoom.get())
     });
 
     // Set `--pdf-height` via CSSOM (no inline style attribute because of CSP).
@@ -458,11 +641,15 @@ pub fn PdfView(
     });
 
     let compute_position = move || -> (usize, f64, usize) {
-        let Some(node) = scroller.get_untracked() else {
+        let Some(node) = scroller.try_get_untracked().flatten() else {
             return (0, 0.0, 0);
         };
-        let s = sizes.get_untracked();
-        let l = layout.get_untracked();
+        let Some(s) = sizes.try_get_untracked() else {
+            return (0, 0.0, 0);
+        };
+        let Some(l) = layout.try_get_untracked() else {
+            return (0, 0.0, 0);
+        };
         if l.tops.is_empty() || s.is_empty() {
             return (0, 0.0, 0);
         }
@@ -479,9 +666,9 @@ pub fn PdfView(
     };
 
     let go_to_fn = move |target: usize, frac: f64| {
-        let Some(node) = scroller.get_untracked() else { return };
-        let s = sizes.get_untracked();
-        let l = layout.get_untracked();
+        let Some(node) = scroller.try_get_untracked().flatten() else { return };
+        let Some(s) = sizes.try_get_untracked() else { return };
+        let Some(l) = layout.try_get_untracked() else { return };
         if l.tops.is_empty() || s.is_empty() {
             return;
         }
@@ -493,10 +680,10 @@ pub fn PdfView(
 
     // Keep the same place across zoom and resize; restore the saved place once sizes are known.
     Effect::new(move |_| {
-        let _ = doc_id.get();
+        let current_doc = doc_id.get();
         let w = width.get();
         let l = layout.get();
-        if doc.with_untracked(Option::is_none) || w <= 0.0 || l.tops.is_empty() {
+        if current_doc.is_none() || w <= 0.0 || l.tops.is_empty() {
             return;
         }
         if !restored.get_value() {
@@ -506,7 +693,7 @@ pub fn PdfView(
             let (p, f, count) = compute_position();
             kept.set_value((p, f));
             if let Some(cb) = on_position {
-                cb.run((p, f, count));
+                let _ = cb.try_run((p, f, count));
             }
         } else {
             let (kp, kf) = kept.get_value();
@@ -516,8 +703,8 @@ pub fn PdfView(
 
     // Update visible window and report scroll position (rAF-throttled).
     let update_visible = move || {
-        let Some(node) = scroller.get_untracked() else { return };
-        let l = layout.get_untracked();
+        let Some(node) = scroller.try_get_untracked().flatten() else { return };
+        let Some(l) = layout.try_get_untracked() else { return };
         if l.tops.is_empty() {
             return;
         }
@@ -533,8 +720,8 @@ pub fn PdfView(
         while b + 1 < l.tops.len() && l.tops[b + 1] < bottom {
             b += 1;
         }
-        if visible.get_untracked() != (a, b) {
-            visible.set((a, b));
+        if visible.try_get_untracked() != Some((a, b)) {
+            let _ = visible.try_set((a, b));
         }
     };
 
@@ -544,7 +731,7 @@ pub fn PdfView(
         update_visible();
     });
 
-    // Attach passive scroll listener on scroller.
+    // Attach scroll listener on scroller.
     Effect::new(move |_| {
         let Some(node) = scroller.get() else { return };
         let frame_id: Rc<Cell<Option<i32>>> = Rc::new(Cell::new(None));
@@ -559,13 +746,13 @@ pub fn PdfView(
             let fid = frame_id_listener.clone();
             let cb = Closure::<dyn FnMut()>::new(move || {
                 fid.set(None);
-                if !restored.get_value() {
+                if !restored.try_get_value().unwrap_or(false) {
                     return;
                 }
                 let (p, f, count) = compute_position();
-                kept.set_value((p, f));
+                let _ = kept.try_set_value((p, f));
                 if let Some(cb) = on_position {
-                    cb.run((p, f, count));
+                    let _ = cb.try_run((p, f, count));
                 }
             });
             if let Ok(id) = window().request_animation_frame(cb.as_ref().unchecked_ref()) {
@@ -585,15 +772,15 @@ pub fn PdfView(
     // Expose PdfHandle if caller wants imperative control.
     if let Some(slot) = handle {
         let change_zoom = move |next: PdfZoom| {
-            zoom.set(next);
+            let _ = zoom.try_set(next);
             if let Some(cb) = on_zoom {
-                cb.run(next);
+                let _ = cb.try_run(next);
             }
         };
         slot.set(Some(PdfHandle {
             go_to: Callback::new(move |(p, f)| go_to_fn(p, f)),
             step: Callback::new(move |direction: i32| {
-                if let Some(node) = scroller.get_untracked() {
+                if let Some(node) = scroller.try_get_untracked().flatten() {
                     let reduced = window()
                         .match_media("(prefers-reduced-motion: reduce)")
                         .ok()
@@ -613,12 +800,14 @@ pub fn PdfView(
                 PdfZoomChange::Width => change_zoom(PdfZoom::Width),
                 PdfZoomChange::Page => change_zoom(PdfZoom::Page),
                 PdfZoomChange::In => {
-                    let s = layout.with_untracked(|l| l.scale);
-                    change_zoom(PdfZoom::Scale((s * 1.25).clamp(0.25, 5.0)));
+                    if let Some(s) = layout.try_with_untracked(|l| l.scale) {
+                        change_zoom(PdfZoom::Scale((s * 1.25).clamp(0.25, 5.0)));
+                    }
                 }
                 PdfZoomChange::Out => {
-                    let s = layout.with_untracked(|l| l.scale);
-                    change_zoom(PdfZoom::Scale((s * 0.8).clamp(0.25, 5.0)));
+                    if let Some(s) = layout.try_with_untracked(|l| l.scale) {
+                        change_zoom(PdfZoom::Scale((s * 0.8).clamp(0.25, 5.0)));
+                    }
                 }
             }),
         }));
@@ -645,13 +834,13 @@ pub fn PdfView(
             tabindex="0"
             role="document"
             aria-label=move || label.get()
-            aria-busy=move || (doc.with(Option::is_none) && failed.with(String::is_empty)).to_string()
+            aria-busy=move || (doc_id.with(Option::is_none) && failed.with(String::is_empty)).to_string()
         >
             {move || {
                 let err = failed.get();
                 if !err.is_empty() {
                     view! { <div class="pdf-view-message" role="alert">{err}</div> }.into_any()
-                } else if doc.with(Option::is_none) {
+                } else if doc_id.with(Option::is_none) {
                     view! { <div class="pdf-view-message" role="status">"Opening PDF\u{2026}"</div> }.into_any()
                 } else {
                     view! {
@@ -662,7 +851,6 @@ pub fn PdfView(
                                 children=move |index| {
                                     view! {
                                         <PdfPage
-                                            doc=doc
                                             doc_id=doc_id
                                             sizes=sizes
                                             layout=layout
@@ -682,27 +870,25 @@ pub fn PdfView(
 
 struct RenderGuard {
     alive: Rc<Cell<bool>>,
-    task: Rc<RefCell<Option<JsValue>>>,
-    page: Rc<RefCell<Option<JsValue>>>,
+    req_id: Rc<Cell<Option<u32>>>,
 }
 
 impl RenderGuard {
     fn cancel(&self) {
         self.alive.set(false);
-        if let Some(t) = self.task.borrow_mut().take() {
-            call_method(&t, "cancel");
-        }
-        if let Some(p) = self.page.borrow_mut().take() {
-            call_method(&p, "cleanup");
+        if let Some(id) = self.req_id.take() {
+            cancel_render(id);
         }
     }
 }
 
 /// One page box; its canvas is drawn at the screen's pixel density.
+///
+/// While re-rendering after a zoom change, the previous bitmap stays on the canvas and is scaled
+/// smoothly by CSS (`width: 100%; height: 100%`) until the crisp replacement arrives.
 #[component]
 fn PdfPage(
-    doc: RwSignal<Option<SendWrapper<JsValue>>>,
-    doc_id: RwSignal<u32>,
+    doc_id: RwSignal<Option<u32>>,
     sizes: RwSignal<Vec<(f64, f64)>>,
     layout: Memo<Layout>,
     index: usize,
@@ -710,6 +896,8 @@ fn PdfPage(
     let box_ref = NodeRef::<html::Div>::new();
     let canvas_ref = NodeRef::<html::Canvas>::new();
     let drawn = RwSignal::new(false);
+    let page_error = RwSignal::new(String::new());
+    let drawn_doc: StoredValue<Option<u32>> = StoredValue::new(None);
 
     // Update page box geometry via CSSOM.
     Effect::new(move |_| {
@@ -723,10 +911,10 @@ fn PdfPage(
         let _ = style.set_property("--pdf-page-height", &format!("{}px", ph * l.scale));
     });
 
-    // Render page onto canvas after 60ms settle; cancel previous render on scale/doc change or unmount.
+    // Request render from the shared worker after 60ms settle; cancel on zoom/doc change or unmount.
     let guard: StoredValue<Option<SendWrapper<RenderGuard>>> = StoredValue::new(None);
     let cancel_current = move || {
-        guard.update_value(|slot| {
+        let _ = guard.try_update_value(|slot| {
             if let Some(prev) = slot.take() {
                 prev.take().cancel();
             }
@@ -735,19 +923,21 @@ fn PdfPage(
     on_cleanup(move || cancel_current());
 
     Effect::new(move |_| {
-        let _ = doc_id.get();
+        let Some(current_doc) = doc_id.get() else { return };
         let scale = layout.with(|l| l.scale);
-        let Some(doc_val) = doc.with_untracked(|d| d.as_ref().map(|w| (**w).clone())) else {
-            return;
-        };
+        let (pw, ph) = sizes.with_untracked(|s| s.get(index).copied().unwrap_or((612.0, 792.0)));
         cancel_current();
+        if drawn_doc.get_value() != Some(current_doc) {
+            drawn_doc.set_value(Some(current_doc));
+            drawn.set(false);
+            page_error.set(String::new());
+        }
+
         let alive = Rc::new(Cell::new(true));
-        let task_slot: Rc<RefCell<Option<JsValue>>> = Rc::new(RefCell::new(None));
-        let page_slot: Rc<RefCell<Option<JsValue>>> = Rc::new(RefCell::new(None));
+        let req_slot: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
         guard.set_value(Some(SendWrapper::new(RenderGuard {
             alive: alive.clone(),
-            task: task_slot.clone(),
-            page: page_slot.clone(),
+            req_id: req_slot.clone(),
         })));
 
         spawn_local(async move {
@@ -755,59 +945,56 @@ fn PdfPage(
             if !alive.get() {
                 return;
             }
-            let page_promise = match call1(&doc_val, "getPage", &JsValue::from_f64((index + 1) as f64))
-                .and_then(|p| p.dyn_into::<Promise>())
-            {
-                Ok(p) => p,
-                Err(_) => return,
-            };
-            let page = match JsFuture::from(page_promise).await {
-                Ok(p) => p,
-                Err(_) => return,
-            };
-            if !alive.get() {
-                call_method(&page, "cleanup");
-                return;
-            }
-            let Some(target) = canvas_ref.get_untracked() else {
-                call_method(&page, "cleanup");
-                return;
-            };
-            *page_slot.borrow_mut() = Some(page.clone());
-
             let dpr = window().device_pixel_ratio();
             let ratio = if dpr > 0.0 { dpr.min(2.0) } else { 1.0 };
-            let vp_opts = Object::new();
-            let _ = Reflect::set(&vp_opts, &JsValue::from_str("scale"), &JsValue::from_f64(scale * ratio));
-            let viewport = match call1(&page, "getViewport", &vp_opts) {
-                Ok(v) => v,
-                Err(_) => return,
-            };
-            let vw = Reflect::get(&viewport, &JsValue::from_str("width"))
-                .ok()
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
-            let vh = Reflect::get(&viewport, &JsValue::from_str("height"))
-                .ok()
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
-            target.set_width(vw.floor().max(1.0) as u32);
-            target.set_height(vh.floor().max(1.0) as u32);
+            let max_scale = (MAX_RENDER_PIXELS / (pw * ph).max(1.0)).sqrt();
+            let render_scale = (scale * ratio).min(max_scale).max(0.1);
 
-            let render_opts = Object::new();
-            let _ = Reflect::set(&render_opts, &JsValue::from_str("canvas"), target.as_ref());
-            let _ = Reflect::set(&render_opts, &JsValue::from_str("viewport"), &viewport);
-            let task = match call1(&page, "render", &render_opts) {
-                Ok(t) => t,
-                Err(_) => return,
+            let (req_id, rx) = match start_render(current_doc, index, render_scale) {
+                Ok(started) => started,
+                Err(msg) => {
+                    if !drawn.try_get_untracked().unwrap_or(false) {
+                        let _ = page_error.try_set(msg);
+                    }
+                    return;
+                }
             };
-            *task_slot.borrow_mut() = Some(task.clone());
-            if let Ok(p) = Reflect::get(&task, &JsValue::from_str("promise"))
-                && let Ok(promise) = p.dyn_into::<Promise>()
-                && JsFuture::from(promise).await.is_ok()
-                && alive.get()
-            {
-                let _ = drawn.try_set(true);
+            req_slot.set(Some(req_id));
+
+            let Some(result) = rx.await else {
+                req_slot.set(None);
+                return;
+            };
+            req_slot.set(None);
+            if !alive.get() {
+                return;
+            }
+            match result {
+                Ok(rendered) => {
+                    let Some(target) = canvas_ref.try_get_untracked().flatten() else {
+                        return;
+                    };
+                    let Ok(Some(ctx_obj)) = target.get_context("2d") else {
+                        return;
+                    };
+                    let Ok(ctx) = ctx_obj.dyn_into::<web_sys::CanvasRenderingContext2d>() else {
+                        return;
+                    };
+                    let Ok(image) = image_data_from_buffer(&rendered.buffer, rendered.width, rendered.height) else {
+                        return;
+                    };
+                    target.set_width(rendered.width);
+                    target.set_height(rendered.height);
+                    if ctx.put_image_data(&image, 0.0, 0.0).is_ok() {
+                        let _ = page_error.try_set(String::new());
+                        let _ = drawn.try_set(true);
+                    }
+                }
+                Err(msg) => {
+                    if !drawn.try_get_untracked().unwrap_or(false) {
+                        let _ = page_error.try_set(msg);
+                    }
+                }
             }
         });
     });
@@ -820,6 +1007,34 @@ fn PdfPage(
             role="img"
         >
             <canvas node_ref=canvas_ref/>
+            {move || {
+                let err = page_error.get();
+                (!err.is_empty() && !drawn.get()).then(|| {
+                    view! { <div class="pdf-view-message" role="alert">{err}</div> }
+                })
+            }}
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layout_computes_scales_and_page_tops() {
+        let sizes = vec![(300.0, 400.0), (600.0, 800.0)];
+
+        let fit_w = compute_layout(&sizes, 632.0, 800.0, PdfZoom::Width);
+        assert!((fit_w.scale - 1.0).abs() < 1e-6);
+        assert_eq!(fit_w.tops, vec![PAD, PAD + 400.0 + GAP]);
+        assert_eq!(fit_w.total, PAD + 400.0 + GAP + 800.0 + GAP);
+
+        let fit_p = compute_layout(&sizes, 1000.0, 432.0, PdfZoom::Page);
+        assert!((fit_p.scale - 0.5).abs() < 1e-6);
+
+        let fixed = compute_layout(&sizes, 100.0, 100.0, PdfZoom::Scale(1.5));
+        assert!((fixed.scale - 1.5).abs() < 1e-6);
+        assert_eq!(fixed.tops, vec![PAD, PAD + 600.0 + GAP]);
     }
 }

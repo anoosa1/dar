@@ -2,12 +2,43 @@
 //! EPUB reader with paging/typography/contents/bookmarks/reload/other-device conflict, CBZ manga
 //! right-to-left reader, PDF reader, Files PDF preview, and phone layout.
 
-use super::photos_books_apps_support::{cbz, create_user, epub, pdf};
+use super::photos_books_apps_support::{cbz, create_user, epub};
 use dar_acceptance::prelude::*;
 use dar_acceptance::session::Upload;
 use std::sync::{Arc, Mutex};
 
 pub const SUITE: Suite = Suite { name: "books-browser", cases: &[case!(books_journey, 180)] };
+
+/// A two-page PDF with title, author and an outline pointing to both pages.
+fn pdf_with_outline() -> Vec<u8> {
+    let stream = |text: &str| format!("<< /Length {} >>\nstream\n{text}\nendstream", text.len());
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R /Outlines 9 0 R >>".to_owned(),
+        "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>".to_owned(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Contents 4 0 R /Resources << /Font << /F1 7 0 R >> >> >>".to_owned(),
+        stream("BT /F1 24 Tf 40 340 Td (Page one) Tj ET"),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>".to_owned(),
+        stream("BT /F1 24 Tf 40 340 Td (Page two) Tj ET"),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+        "<< /Title (A Fixture Paper) /Author (Grace Columns) >>".to_owned(),
+        "<< /Type /Outlines /First 10 0 R /Last 11 0 R /Count 2 >>".to_owned(),
+        "<< /Title (First section) /Parent 9 0 R /Next 11 0 R /Dest [3 0 R /Fit] >>".to_owned(),
+        "<< /Title (Second section) /Parent 9 0 R /Prev 10 0 R /Dest [5 0 R /Fit] >>".to_owned(),
+    ];
+    let mut body = String::from("%PDF-1.4\n");
+    let mut offsets = Vec::with_capacity(objects.len());
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(body.len());
+        body.push_str(&format!("{} 0 obj\n{object}\nendobj\n", index + 1));
+    }
+    let xref = body.len();
+    body.push_str(&format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1));
+    for offset in offsets {
+        body.push_str(&format!("{offset:010} 00000 n \n"));
+    }
+    body.push_str(&format!("trailer\n<< /Size {} /Root 1 0 R /Info 8 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1));
+    body.into_bytes()
+}
 
 pub async fn books_journey(t: &Ctx) -> Result<()> {
     let base = t.fixture().await?.base.clone();
@@ -39,7 +70,7 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     let paper = upload_with(
         &reader,
         "paper.pdf",
-        pdf(),
+        pdf_with_outline(),
         Upload { parent_id: &root, media_type: "application/pdf", ..Upload::default() },
     )
     .await?;
@@ -163,12 +194,36 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     comic_reader.get_by_role("img", "Page 2 of 3").wait_for().await?;
     page.screenshot(t.screenshot("books-reader-comic-1440.png"), false).await?;
 
-    // PDF: drawn by pdf.js, with the page tracked.
+    // PDF: drawn by the hayro Web Worker, with page tracking, zoom and outline navigation.
     page.goto(&format!("{base}/books?book={}&read=1", paper.file_id)).await?;
     let pdf_reader = page.get_by_role("main", "Reading A Fixture Paper");
     pdf_reader.wait_for().await?;
     page.locator(".pdf-view-page.is-drawn").first().wait_for().await?;
+    assert_eq!(
+        page.evaluate("() => { const c = document.querySelector('.pdf-view-page.is-drawn canvas'); return !!c && c.width > 0 && c.height > 0; }").await?,
+        json!(true),
+        "drawn PDF canvas has non-zero pixel dimensions"
+    );
     pdf_reader.get_by_text("Page 1 of 2").wait_for().await?;
+    let initial_width = page
+        .evaluate("() => document.querySelector('.pdf-view-page').getBoundingClientRect().width")
+        .await?
+        .as_f64()
+        .context("initial PDF page width")?;
+    pdf_reader.get_by_role("button", "Zoom in").click().await?;
+    page.wait_for_function_with(
+        "(w) => document.querySelector('.pdf-view-page').getBoundingClientRect().width > w + 10",
+        json!(initial_width),
+    )
+    .await?;
+    pdf_reader.get_by_role("button", "Fit width").click().await?;
+    let pdf_panel = pdf_reader.get_by_role("complementary", "Contents and bookmarks");
+    if !pdf_panel.is_visible().await? {
+        pdf_reader.get_by_role("button", "Contents and bookmarks").click().await?;
+    }
+    pdf_panel.get_by_role("tab", "Contents").click().await?;
+    pdf_panel.get_by_role("button", regex("Second section")).click().await?;
+    pdf_reader.get_by_text("Page 2 of 2").wait_for().await?;
     page.screenshot(t.screenshot("books-reader-pdf-1440.png"), false).await?;
 
     // Files' PDF preview uses the same viewer.
@@ -176,7 +231,13 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     page.get_by_role("button", "Actions for paper.pdf").click().await?;
     page.get_by_role("menuitem", "Details").click().await?;
     page.get_by_role("button", "Preview").click().await?;
-    page.get_by_role("region", "Preview of paper.pdf").locator(".pdf-view-page.is-drawn").first().wait_for().await?;
+    let preview = page.get_by_role("region", "Preview of paper.pdf");
+    preview.locator(".pdf-view-page.is-drawn").first().wait_for().await?;
+    assert_eq!(
+        page.evaluate("() => { const c = document.querySelector('[aria-label=\"Preview of paper.pdf\"] .pdf-view-page.is-drawn canvas'); return !!c && c.width > 0 && c.height > 0; }").await?,
+        json!(true),
+        "preview PDF canvas has non-zero pixel dimensions"
+    );
     page.screenshot(t.screenshot("books-files-pdf-preview-1440.png"), false).await?;
 
     // Phones: chips, full-screen details and reader.

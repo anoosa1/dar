@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "JavaScript tooling around Dar's Rust stack: the installed-app SDK and pdf.js for the client.",
+  "description": "JavaScript tooling around Dar's Rust stack: the installed-app SDK.",
   "engines": {
     "node": ">=24.22.1 <25"
   },
@@ -20,7 +20,6 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "esbuild": "0.28.2",
-    "pdfjs-dist": "6.5.438",
     "spacetimedb": "2.14.1"
   },
   "overrides": {
