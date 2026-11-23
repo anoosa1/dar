@@ -326,11 +326,14 @@ pub struct Subscriptions {
     db: Database,
     allow_private: bool,
     running: Arc<tokio::sync::Mutex<()>>,
+    /// Set by every request for a pass; the pass that is running then goes round again, so a
+    /// subscription added while one runs is not left for the next 30-second tick.
+    again: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Subscriptions {
     pub fn new(db: Database, allow_private: bool) -> Subscriptions {
-        let subscriptions = Subscriptions { db, allow_private, running: Arc::new(tokio::sync::Mutex::new(())) };
+        let subscriptions = Subscriptions { db, allow_private, running: Arc::new(tokio::sync::Mutex::new(())), again: Arc::default() };
         let ticker = subscriptions.clone();
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -356,10 +359,22 @@ impl Subscriptions {
     }
 
     async fn tick(&self) {
-        let Ok(_turn) = self.running.try_lock() else { return };
-        let Ok(due) = self.worker("due", json!({})).await else { return };
-        for row in due.as_array().into_iter().flatten() {
-            self.sync(row).await;
+        use std::sync::atomic::Ordering;
+        self.again.store(true, Ordering::SeqCst);
+        loop {
+            {
+                let Ok(_turn) = self.running.try_lock() else { return };
+                while self.again.swap(false, Ordering::SeqCst) {
+                    let Ok(due) = self.worker("due", json!({})).await else { return };
+                    for row in due.as_array().into_iter().flatten() {
+                        self.sync(row).await;
+                    }
+                }
+            }
+            // A request that came in as the pass let go would otherwise wait for the next tick.
+            if !self.again.load(Ordering::SeqCst) {
+                return;
+            }
         }
     }
 
