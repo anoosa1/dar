@@ -680,9 +680,11 @@ async fn list(
         .decode(q("cursor").unwrap_or_default().trim_end_matches('='))
         .unwrap_or_default();
     let cursor = String::from_utf8_lossy(&cursor_bytes).into_owned();
-    let cid = q("collection");
-    let view = q("view");
-    let sort = q("sort").unwrap_or_else(|| "modified".into());
+    let cid = q("collection").filter(|s| !s.is_empty());
+    let view = q("view").filter(|s| !s.is_empty());
+    let sort = q("sort")
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "modified".into());
     let tag = q("tag").unwrap_or_default();
     let term = {
         use unicode_normalization_shim::nfc_lower;
@@ -702,12 +704,20 @@ async fn list(
             None,
         ));
     }
-    let today = today(viewer);
+    let today_day = today(viewer);
+    let week_end = chrono::NaiveDate::parse_from_str(&today_day, "%Y-%m-%d")
+        .map(|d| {
+            (d + chrono::Duration::days(7))
+                .format("%Y-%m-%d")
+                .to_string()
+        })
+        .unwrap_or_else(|_| today_day.clone());
     let mut results: Vec<(String, Value)> = Vec::new();
     for c in collections {
         if cid.as_ref().is_some_and(|id| c["id"] != json!(id)) {
             continue;
         }
+        let mut col_rows: Vec<(Value, Value)> = Vec::new();
         let mut scan = String::new();
         loop {
             let page = r
@@ -720,83 +730,137 @@ async fn list(
                 if data["kind"] != "task" {
                     continue;
                 }
-                if !term.is_empty()
-                    && !unicode_normalization_shim::nfc_lower(
-                        row["projection"].as_str().unwrap_or_default(),
-                    )
-                    .contains(&term)
-                    || !tag.is_empty()
-                        && !data["categories"]
-                            .as_array()
-                            .is_some_and(|c| c.iter().any(|t| t == &json!(tag)))
-                {
-                    continue;
-                }
-                let next = if data["recurring"] == true {
-                    tasks::next_task_occurrence(row, viewer_zone)?
-                } else {
-                    None
-                };
-                let d = next.as_ref().unwrap_or(&data);
-                let (day, due_sort) = tasks::task_due(row, viewer_zone, next.as_ref())?;
-                let status = d["status"].as_str().unwrap_or_default();
-                let done = status == "COMPLETED";
-                let has_due = d["due"] != "";
-                let keep = match view.as_deref() {
-                    Some("completed") => done,
-                    Some("all") => true,
-                    other => {
-                        !done
-                            && status != "CANCELLED"
-                            && match other {
-                                Some("today") => has_due && day <= today,
-                                Some("upcoming") => has_due && day > today,
-                                Some("important") => {
-                                    d["priority"].as_i64().is_some_and(|p| (1..=4).contains(&p))
-                                }
-                                Some("inbox") => d["parentUid"] == "" || d["parentUid"].is_null(),
-                                _ => true,
-                            }
-                    }
-                };
-                if !keep {
-                    continue;
-                }
-                let order = match sort.as_str() {
-                    "title" => data["title"].as_str().unwrap_or_default().to_lowercase(),
-                    "due" => due_sort.clone(),
-                    _ => format!(
-                        "{:013}",
-                        9_999_999_999_999i64 - row["modifiedAt"].as_f64().unwrap_or(0.0) as i64
-                    ),
-                };
-                let key = format!("{order}\u{0}{}", row["id"].as_str().unwrap_or_default());
-                if key <= cursor {
-                    continue;
-                }
-                let position = results.partition_point(|(k, _)| *k < key);
-                if position > 200 {
-                    continue;
-                }
-                let mut item = row.clone();
-                item.as_object_mut().expect("row").remove("content");
-                let state = data["status"].as_str().unwrap_or_default();
-                item["data"] = data.clone();
-                item["role"] = c["role"].clone();
-                item["collectionName"] = c["name"].clone();
-                item["overdue"] = json!(
-                    !day.is_empty() && day < today && state != "COMPLETED" && state != "CANCELLED"
-                );
-                if let Some(next) = &next {
-                    item["nextOccurrence"] = next.clone();
-                }
-                results.insert(position, (key, item));
-                if results.len() > 201 {
-                    results.pop();
-                }
+                col_rows.push((row.clone(), data));
             }
             if scan.is_empty() {
                 break;
+            }
+        }
+        let mut uid_to_id: HashMap<String, String> = HashMap::new();
+        let mut children_by_parent: HashMap<String, Vec<Value>> = HashMap::new();
+        for (row, data) in &col_rows {
+            if let (Some(u), Some(id)) = (row["uid"].as_str(), row["id"].as_str()) {
+                uid_to_id.insert(u.to_owned(), id.to_owned());
+            }
+            if let Some(puid) = data["parentUid"].as_str().filter(|s| !s.is_empty()) {
+                children_by_parent
+                    .entry(puid.to_owned())
+                    .or_default()
+                    .push(json!({
+                        "id": row["id"],
+                        "uid": row["uid"],
+                        "title": data["title"],
+                        "status": data["status"],
+                    }));
+            }
+        }
+        for (row, data) in col_rows {
+            if !term.is_empty()
+                && !unicode_normalization_shim::nfc_lower(
+                    row["projection"].as_str().unwrap_or_default(),
+                )
+                .contains(&term)
+                || !tag.is_empty()
+                    && !data["categories"]
+                        .as_array()
+                        .is_some_and(|cats| cats.iter().any(|t| t == &json!(tag)))
+            {
+                continue;
+            }
+            let next = if data["recurring"] == true {
+                tasks::next_task_occurrence(&row, viewer_zone)?
+            } else {
+                None
+            };
+            let d = next.as_ref().unwrap_or(&data);
+            let (day, due_sort) = tasks::task_due(&row, viewer_zone, next.as_ref())?;
+            let status = d["status"].as_str().unwrap_or_default();
+            let done = status == "COMPLETED";
+            let has_due = d["due"] != "";
+            let is_starred = d["starred"] == json!(true)
+                || d["priority"].as_i64().is_some_and(|p| (1..=4).contains(&p));
+            let keep = match view.as_deref() {
+                Some("completed") => done,
+                Some("all") => true,
+                other => {
+                    !done
+                        && status != "CANCELLED"
+                        && match other {
+                            Some("today") => has_due && day <= today_day,
+                            Some("week") => has_due && day <= week_end,
+                            Some("upcoming") => has_due && day > today_day,
+                            Some("important") | Some("starred") => is_starred,
+                            Some("inbox") => {
+                                (d["parentUid"] == "" || d["parentUid"].is_null()) && !has_due
+                            }
+                            _ => true,
+                        }
+                }
+            };
+            if !keep {
+                continue;
+            }
+            let modified_desc = format!(
+                "{:013}",
+                9_999_999_999_999i64 - row["modifiedAt"].as_f64().unwrap_or(0.0) as i64
+            );
+            let order = match sort.as_str() {
+                "title" => data["title"].as_str().unwrap_or_default().to_lowercase(),
+                "due" => due_sort.clone(),
+                "start" => {
+                    let s = d["start"].as_str().unwrap_or_default();
+                    if s.is_empty() {
+                        format!("9999\u{1}{modified_desc}")
+                    } else {
+                        format!("{s}\u{1}{modified_desc}")
+                    }
+                }
+                "priority" => {
+                    let p = d["priority"].as_i64().unwrap_or(0);
+                    let rank = if (1..=9).contains(&p) { p } else { 99 };
+                    let star_rank = if is_starred { 0 } else { 1 };
+                    format!("{star_rank}{rank:02}\u{1}{due_sort}")
+                }
+                "manual" => {
+                    let ord = data["sortOrder"].as_i64().unwrap_or(0);
+                    let biased = (ord as i128 + 1_000_000_000_000i128).max(0);
+                    format!("{biased:016}\u{1}{modified_desc}")
+                }
+                _ => modified_desc,
+            };
+            let key = format!("{order}\u{0}{}", row["id"].as_str().unwrap_or_default());
+            if key <= cursor {
+                continue;
+            }
+            let position = results.partition_point(|(k, _)| *k < key);
+            if position > 200 {
+                continue;
+            }
+            let mut item = row.clone();
+            item.as_object_mut().expect("row").remove("content");
+            let state = data["status"].as_str().unwrap_or_default();
+            item["data"] = data.clone();
+            item["role"] = c["role"].clone();
+            item["collectionName"] = c["name"].clone();
+            item["overdue"] = json!(
+                !day.is_empty() && day < today_day && state != "COMPLETED" && state != "CANCELLED"
+            );
+            if let Some(puid) = data["parentUid"].as_str().filter(|s| !s.is_empty())
+                && let Some(pid) = uid_to_id.get(puid)
+            {
+                item["parentId"] = json!(pid);
+            }
+            if let Some(uid) = row["uid"].as_str()
+                && let Some(kids) = children_by_parent.get(uid)
+            {
+                item["children"] = Value::Array(kids.clone());
+            }
+            if let Some(next) = &next {
+                item["nextOccurrence"] = next.clone();
+            }
+            results.insert(position, (key, item));
+            if results.len() > 201 {
+                results.pop();
             }
         }
     }

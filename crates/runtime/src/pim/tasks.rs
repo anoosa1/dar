@@ -66,8 +66,17 @@ fn data(c: &Component) -> Value {
         .and_then(|a| a.prop("TRIGGER"))
         .filter(|t| t.param("VALUE") != Some("DATE-TIME"))
         .and_then(|t| duration_ms(t.value.trim()))
-        .map_or(Value::Null, |ms| json!(-(ms as f64) / 60_000.0));
+        .map_or(Value::Null, |ms| {
+            let mins = -(ms as f64) / 60_000.0;
+            if mins.fract() == 0.0 {
+                json!(mins as i64)
+            } else {
+                json!(mins)
+            }
+        });
     let state = value(c, "STATUS");
+    let starred = value(c, "X-DAR-STARRED").eq_ignore_ascii_case("TRUE");
+    let sort_order = value(c, "X-DAR-ORDER").trim().parse::<i64>().unwrap_or(0);
     json!({
         "kind": "task", "title": value(c, "SUMMARY"), "description": value(c, "DESCRIPTION"),
         "start": start.as_ref().map(|t| t.wall_string()).unwrap_or_default(), "due": due.as_ref().map(|t| t.wall_string()).unwrap_or_default(),
@@ -76,6 +85,10 @@ fn data(c: &Component) -> Value {
         "progress": number(&value(c, "PERCENT-COMPLETE")), "completedAt": completed, "categories": categories, "parentUid": parent,
         "recurrence": c.value("RRULE").unwrap_or_default().trim(), "recurring": c.prop("RRULE").is_some() || c.prop("RDATE").is_some(),
         "reminderMinutes": reminder,
+        "location": value(c, "LOCATION"),
+        "url": value(c, "URL"),
+        "starred": starred,
+        "sortOrder": sort_order,
     })
 }
 
@@ -464,6 +477,19 @@ pub fn write_task(
         .map(|o| o.uid.clone())
         .unwrap_or_else(crate::auth::uuid);
     let description = field(input_value(p, "description", &baseline), 65_536)?;
+    let location = field(input_value(p, "location", &baseline), 1000)?;
+    let url = field(input_value(p, "url", &baseline), 2048)?;
+    let starred = match p.get("starred") {
+        None | Some(Value::Null) => baseline["starred"] == json!(true),
+        Some(v) => *v == json!(true),
+    };
+    let sort_order = match p.get("sortOrder").filter(|v| !v.is_null()) {
+        Some(v) => v
+            .as_i64()
+            .or_else(|| v.as_f64().map(|f| f as i64))
+            .unwrap_or(0),
+        None => baseline["sortOrder"].as_i64().unwrap_or(0),
+    };
     let starts = [("start", "DTSTART"), ("due", "DUE")];
     let mut values: Vec<(String, &str)> = Vec::new();
     for (key, name) in starts {
@@ -474,6 +500,22 @@ pub fn write_task(
         set_text(c, "UID", &uid);
         set_text(c, "SUMMARY", &title);
         set_text(c, "DESCRIPTION", &description);
+        set_text(c, "LOCATION", &location);
+        if url.trim().is_empty() {
+            remove(c, "URL");
+        } else {
+            set(c, prop("URL", &[], url.trim()));
+        }
+        if starred {
+            set(c, prop("X-DAR-STARRED", &[], "TRUE"));
+        } else {
+            remove(c, "X-DAR-STARRED");
+        }
+        if sort_order != 0 {
+            set(c, prop("X-DAR-ORDER", &[], &sort_order.to_string()));
+        } else {
+            remove(c, "X-DAR-ORDER");
+        }
         set_text(c, "STATUS", &status);
         set(
             c,
@@ -860,10 +902,14 @@ mod tests {
 
     #[test]
     fn tasks_round_trip() {
-        let made = write_task(&json!({ "title": "Pay rent", "due": "2026-12-01", "allDay": true, "priority": 1, "reminderMinutes": 60 }), None, None).unwrap();
+        let made = write_task(&json!({ "title": "Pay rent", "due": "2026-12-01", "allDay": true, "priority": 1, "reminderMinutes": 60, "location": "Bank portal", "url": "https://bank.example", "starred": true, "sortOrder": 42 }), None, None).unwrap();
         assert_eq!(made.data["due"], "2026-12-01");
         assert_eq!(made.data["allDay"], true);
-        assert_eq!(made.data["reminderMinutes"], 60.0);
+        assert_eq!(made.data["reminderMinutes"], 60);
+        assert_eq!(made.data["location"], "Bank portal");
+        assert_eq!(made.data["url"], "https://bank.example");
+        assert_eq!(made.data["starred"], true);
+        assert_eq!(made.data["sortOrder"], 42);
         assert!(made.content.contains("TRIGGER;RELATED=END:-PT1H"));
         let done =
             write_task(&json!({ "status": "COMPLETED" }), Some(&made.content), None).unwrap();

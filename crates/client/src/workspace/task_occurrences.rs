@@ -11,6 +11,15 @@ use crate::date_popover::add_days;
 use crate::dates::local_date_time;
 use crate::ui::Dialog;
 
+fn de_opt_i64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
+    let val = Option::<Value>::deserialize(d)?;
+    Ok(val.and_then(|v| {
+        v.as_i64()
+            .or_else(|| v.as_f64().map(|f| f.round() as i64))
+            .or_else(|| v.as_str().and_then(|s| s.trim().parse::<i64>().ok()))
+    }))
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskData {
@@ -44,8 +53,16 @@ pub struct TaskData {
     pub recurrence: String,
     #[serde(default)]
     pub recurring: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_opt_i64")]
     pub reminder_minutes: Option<i64>,
+    #[serde(default)]
+    pub location: String,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub starred: bool,
+    #[serde(default)]
+    pub sort_order: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

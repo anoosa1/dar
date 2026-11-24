@@ -184,6 +184,7 @@ pub fn path(name: &str) -> &'static str {
             "M3 3h6v6H3ZM15 3h6v6h-6ZM3 15h6v6H3ZM15 15h2v2h-2ZM19 15h2v2h-2ZM15 19h2v2h-2ZM19 19h2v2h-2Z"
         }
         "table" => "M3 5h18v14H3ZM3 10h18M9 5v14",
+        "board" => "M3 4h5v16H3ZM10 4h5v11h-5ZM17 4h4v14h-4Z",
         _ => "",
     }
 }

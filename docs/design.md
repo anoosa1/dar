@@ -244,11 +244,30 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   in the sidebar): positioned text, note/file, link and group cards with SVG
   connections, pan/zoom, keyboard movement and an accessible card outline. Embedded notes are a quiet inset with an accent rule
   and an open link; `/` commands share the suggestion list.
-- **Tasks:** quick add (title only) above the list; due-date sort groups Overdue,
-  Today, Tomorrow, Upcoming, No date and Completed. Rows show a priority-colored
-  check, due, repetition, list and tags. The card leads with Complete/Reopen and
-  Add subtask, then properties and subtasks; Reminders and the timezone sit at the
-  bottom of the sidebar. Hierarchy, recurrence scope and timezone are preserved.
+- **Tasks:** scrollable sidebar with smart views (`Today` with overdue badge,
+  `Next 7 days`, `Inbox`, `Starred`, `All tasks`, `Completed`, each configurable
+  as Show/Auto/Hide), task lists with live counts and three-dot menus (becoming
+  column-visibility toggles in List Board mode), clickable `#tags`, a `Today's
+  pace` completion card, and `Reminders` with live badge and timezone at the
+  bottom. The middle sheet header pairs the title and count pill with a List /
+  Board (side-by-side list columns with drag-and-drop) / Status (To do / In
+  progress / Completed Kanban) switcher, a 6-way sort menu (Due date, Priority,
+  My order, Start date, Title, Recently edited) and `?` shortcuts; quick filter
+  chips (`All`, `Overdue`, `High priority`, `Has subtasks`, `Repeating`) swap to
+  a tonal bulk selection bar (Complete, Today, Star, Move, Delete) when rows are
+  checked. Smart Quick-Add includes inline Today/Tomorrow/High/list pills. Due-date
+  sort groups Overdue (with 1-click Move to Today), Today, Tomorrow, Upcoming and
+  No date, with a collapsible Completed drawer below. Rows show hover checkboxes,
+  priority rings, expandable nested subtask trees (`done/total`), inline star and
+  action menus; reversible actions show a floating Undo toast. The 368px right
+  inspector supports direct inline editing (title, description, quick-schedule
+  pills, priority pills, interactive progress slider, checkable subtasks with
+  inline `+ Add subtask`, Location, clickable URL, interactive `#tags` chips)
+  beside the full VTODO editor pane. Single-key shortcuts (`C`, `J`/`K`, `Space`,
+  `S`, `E`, `X`, `1`/`2`/`3`, `?`, `Escape`) work outside inputs and dialogs.
+  Defaults, display switches, smart-view visibility, CalDAV sync URL and ICS /
+  Markdown export live in Tasks settings. Hierarchy, recurrence scope and timezone
+  are preserved.
 - **Scheduling forms:** common repetition, priority and reminder choices, with
   advanced controls for exact imported values. Never simplify an unknown rule.
 - **Prayer Times:** a today band (next prayer, countdown and a timeline of the

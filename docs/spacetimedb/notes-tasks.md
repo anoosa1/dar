@@ -129,18 +129,32 @@ the [design guide](../design.md).
 
 ## Tasks
 
+- Modular client under `crates/client/src/pim/tasks/` (`model`, `sidebar`, `list`,
+  `board`, `inspector`, `settings`, `mod`) styled by `crates/client/styles/tasks/tasks.css`.
 - Standard VTODO resources in calendar collections, so CalDAV clients and the app
   edit the same records; sharing a list shares its events and tasks.
-- Subtasks (no cycles), title, description, start/due (date-only or zoned),
-  priority, status, progress, completion time and categories. Views: All, Inbox,
-  Today, Upcoming, Important, Completed, using the Regional timezone.
+- Subtasks (no cycles, expandable nested trees in List view and inline checkable
+  subtasks in the inspector), title, description, start/due (date-only or zoned),
+  priority, status, progress slider, completion time, categories, `LOCATION`, `URL`,
+  `X-DAR-STARRED` and `X-DAR-ORDER`.
+- Smart views (`Today`, `Next 7 days`, `Inbox`, `Starred`/`Important`, `All tasks`,
+  `Completed`) with live sidebar counts and configurable Show/Auto/Hide visibility,
+  using the Regional timezone. Three layouts: List (Smart Quick-Add, quick filters,
+  bulk actions, due-date sections with 1-click overdue reschedule, collapsible
+  Completed drawer), List Board (side-by-side task lists with drag-and-drop moves),
+  and Status Kanban (To do / In progress / Completed with drag-and-drop status updates).
+- Direct-manipulation right inspector autosaves inline edits; reversible actions
+  show a floating Undo toast. Tasks settings holds layout/view/sort/quick-add defaults,
+  display switches, smart-view visibility, CalDAV sync URL and ICS + Markdown export.
 - Recurring tasks: completing an occurrence stores a completed exception; the
   series continues. Completing the whole series is explicit. Parent completion
   and deletion ask how to handle children and commit atomically.
-- Reminders reuse the Calendar inbox; completion, edits, moves and deletion
-  invalidate old reminders.
-- APIs: `/api/v1/tasks/lists`, `/items`. CalDAV advertises VEVENT and VTODO with
-  query, multiget, time ranges and conditional CRUD; unsupported filters fail.
+- Reminders reuse the Calendar inbox with a live due badge; completion, edits,
+  moves and deletion invalidate old reminders.
+- APIs: `/api/v1/tasks/lists`, `/items` (with `parentId` and `children` summaries,
+  `week`/`starred` views, and `priority`/`manual`/`start` sorts). CalDAV advertises
+  VEVENT and VTODO with query, multiget, time ranges and conditional CRUD;
+  unsupported filters fail.
 
 ## Limits
 

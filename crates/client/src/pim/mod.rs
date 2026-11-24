@@ -5,6 +5,7 @@ pub mod calendar;
 pub mod contacts;
 pub mod presentation;
 pub mod schedule;
+pub mod tasks;
 pub mod transfers;
 
 use std::sync::Arc;

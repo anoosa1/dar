@@ -474,6 +474,60 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
         .wait_for()
         .await?;
 
+    // Verify Tasks redesign: smart views return tasks (collection= empty-string bug fix),
+    // inline star, Board & Status layouts, direct inspector subtask add, and Tasks settings.
+    let smart_all = api
+        .get(&format!(
+            "{base}/api/v1/tasks/items?view=all&collection=&timezone=UTC"
+        ))
+        .await?
+        .json()?;
+    assert!(
+        smart_all["items"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()),
+        "smart view with empty collection= must return tasks"
+    );
+
+    // Quick-add subtask directly inside Task details inspector.
+    page.get_by_role("complementary", "Task details")
+        .get_by_label("Quick add subtask")
+        .fill("Inline subtask check")
+        .await?;
+    page.keyboard().press("Enter").await?;
+    page.get_by_role("complementary", "Task details")
+        .get_by_text("Inline subtask check")
+        .wait_for()
+        .await?;
+
+    // Switch layouts: Board -> Status -> List.
+    page.get_by_role("radio", "Board layout").click().await?;
+    page.get_by_role("region", "Task lists board")
+        .wait_for()
+        .await?;
+    page.get_by_role("radio", "Status board layout")
+        .click()
+        .await?;
+    page.get_by_role("region", "Status board")
+        .wait_for()
+        .await?;
+    page.get_by_role("radio", "List layout").click().await?;
+
+    // Open Tasks settings and confirm redesigned controls are present.
+    page.get_by_role("button", "Tasks settings").click().await?;
+    let settings = page.locator("[data-settings-sheet]");
+    settings.get_by_text("Default layout").wait_for().await?;
+    settings
+        .get_by_text("Sidebar smart views")
+        .wait_for()
+        .await?;
+    settings.get_by_text("CalDAV sync").wait_for().await?;
+    settings
+        .get_by_role("button", "Close settings")
+        .click()
+        .await?;
+    settings.wait_for_state(State::Hidden).await?;
+
     let all_failures = failures.lock().unwrap().clone();
     context.close().await?;
     assert_eq!(all_failures, Vec::<String>::new());

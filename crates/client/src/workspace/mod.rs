@@ -11,10 +11,9 @@ pub mod note_query;
 pub mod note_tabs;
 pub mod notes;
 pub mod task_occurrences;
-pub mod tasks;
 
+pub use crate::pim::tasks::TasksWorkspace;
 pub use notes::Notes;
-pub use tasks::TasksWorkspace;
 
 use leptos::html;
 use leptos::prelude::*;
@@ -37,7 +36,7 @@ use logseq_import::LogseqImport;
 
 pub(super) const DEFAULT_NOTES_FOLDER: &str = "docs/notes";
 
-pub(super) fn browser_timezone() -> String {
+pub(crate) fn browser_timezone() -> String {
     let fmt = js_sys::Intl::DateTimeFormat::new(&js_sys::Array::new(), &js_sys::Object::new());
     let opts = fmt.resolved_options();
     js_sys::Reflect::get(&opts, &"timeZone".into())
@@ -47,7 +46,7 @@ pub(super) fn browser_timezone() -> String {
         .unwrap_or_else(|| "UTC".into())
 }
 
-pub(super) fn search_params(pairs: &[(&str, String)]) -> String {
+pub(crate) fn search_params(pairs: &[(&str, String)]) -> String {
     let params = web_sys::UrlSearchParams::new().expect("params");
     for (k, v) in pairs {
         params.append(k, v);
@@ -93,7 +92,7 @@ fn focus_by_key(items: &[web_sys::HtmlElement], key: &str) -> bool {
 
 /// Like `crate::ui::Select`, with reactive `options` and optional `disabled` / `required`.
 #[component]
-pub(super) fn ReactiveSelect(
+pub(crate) fn ReactiveSelect(
     #[prop(into)] options: Signal<Vec<(String, String)>>,
     #[prop(optional, into)] name: Option<String>,
     #[prop(optional, into)] value: Option<RwSignal<String>>,
@@ -237,9 +236,10 @@ pub(super) fn ReactiveSelect(
 }
 
 /// Shared PIM shell for Notes and Tasks (`pim/common.tsx`'s `PimShell`), adding
-/// `has-note-editor`, `has-workspace-list`, phone focus restoration, and the Notes/Tasks settings sheet.
+/// `has-note-editor`, `has-workspace-list`, `has-tasks-main`, phone focus restoration,
+/// and the Notes/Tasks settings sheet.
 #[component]
-pub(super) fn WorkspaceShell(
+pub(crate) fn WorkspaceShell(
     kind: &'static str,
     session: BrowserSession,
     on_signed_out: Callback<()>,
@@ -357,16 +357,21 @@ pub(super) fn WorkspaceShell(
     let sidebar = StoredValue::new(sidebar);
     let details = StoredValue::new(details);
     let children = StoredValue::new(children);
+    let tasks_cls = if kind == "tasks" {
+        " has-tasks-main"
+    } else {
+        ""
+    };
     view! {
         <div class=move || {
             let layout = if connected.get() { "has-workspace-list" } else { "" };
             let details_cls = if has_details.get() { "has-pim-details" } else { "" };
             let editor_cls = if has_details.get() && note_editor.get() { " has-note-editor" } else { "" };
             let split_cls = if has_details.get() && split_details.get() { " has-note-split" } else { "" };
-            format!("app-shell pim-shell {details_cls} {layout}{editor_cls}{split_cls}")
+            format!("app-shell pim-shell {details_cls} {layout}{tasks_cls}{editor_cls}{split_cls}")
         }>
             <WorkspaceHeader app=kind session=session_header on_signed_out=on_signed_out on_settings=Callback::new(move |_| settings.set(true))/>
-            <div class=move || format!("pim-workspace {}", if connected.get() { "has-workspace-list" } else { "" })>
+            <div class=move || format!("pim-workspace {}{tasks_cls}", if connected.get() { "has-workspace-list" } else { "" })>
                 {move || navigation.get().then(|| view! { <button class="nav-scrim" aria-label="Close navigation" on:click=move |_| navigation.set(false)></button> })}
                 <aside class=move || if navigation.get() { "sidebar is-open" } else { "sidebar " }
                     on:click=move |e| {
@@ -382,7 +387,7 @@ pub(super) fn WorkspaceShell(
                     {sidebar.with_value(|s| s())}
                     <AppSettingsButton app=kind on_click=Callback::new(move |_| settings.set(true))/>
                 </aside>
-                <main node_ref=main tabindex="-1" class=move || format!("pim-main {}", if connected.get() { "has-workspace-list" } else { "" })>
+                <main node_ref=main tabindex="-1" class=move || format!("pim-main {}{tasks_cls}", if connected.get() { "has-workspace-list" } else { "" })>
                     <ConnectionStatus state=pim.state/>
                     {move || connected.get().then(|| children.with_value(|c| c()))}
                 </main>
@@ -473,6 +478,12 @@ fn WorkspaceSettings(
     pim: PimLive,
     on_close: Callback<()>,
 ) -> impl IntoView {
+    if app == "tasks" {
+        return view! {
+            <crate::pim::tasks::TasksSettings session=session pim=pim on_close=on_close/>
+        }
+        .into_any();
+    }
     let saver = Saver::new(session.clone());
     let section = RwSignal::new("General");
     let is_notes = app == "notes";
@@ -576,6 +587,7 @@ fn WorkspaceSettings(
             }}
         </SettingsSheet>
     }
+    .into_any()
 }
 
 #[derive(Deserialize)]

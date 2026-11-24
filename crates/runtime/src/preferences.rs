@@ -187,7 +187,11 @@ pub fn merge(
     );
     put(
         "tasksSort",
-        choice("tasksSort", &["modified", "title", "due"], "due")?,
+        choice(
+            "tasksSort",
+            &["modified", "title", "due", "priority", "manual", "start"],
+            "due",
+        )?,
     );
     put("filesView", choice("filesView", &["list", "grid"], "list")?);
     put("filesShowHidden", flag("filesShowHidden", false)?);
@@ -212,13 +216,50 @@ pub fn merge(
                 "all",
                 "inbox",
                 "today",
+                "week",
                 "upcoming",
                 "important",
+                "starred",
                 "completed",
             ],
             "today",
         )?,
     );
+    put(
+        "tasksLayout",
+        choice("tasksLayout", &["list", "board", "kanban"], "list")?,
+    );
+    let default_task_list = get("tasksDefaultList", json!(""));
+    let default_task_list_ok = default_task_list
+        .as_str()
+        .is_some_and(|v| v.is_empty() || crate::auth::is_uuid(v));
+    if !default_task_list_ok {
+        return Err(invalid("Invalid tasksDefaultList."));
+    }
+    put("tasksDefaultList", default_task_list);
+    put("tasksShowCompleted", flag("tasksShowCompleted", true)?);
+    put("tasksExpandSubtasks", flag("tasksExpandSubtasks", false)?);
+    put("tasksShowPace", flag("tasksShowPace", true)?);
+    put("tasksConfirmDelete", flag("tasksConfirmDelete", true)?);
+    let smart_views_default = json!({
+        "week": "show",
+        "inbox": "show",
+        "starred": "show",
+        "completed": "show",
+    });
+    let smart_views_in = get("tasksSmartViews", smart_views_default.clone());
+    let smart_obj = smart_views_in
+        .as_object()
+        .ok_or_else(|| invalid("Invalid tasksSmartViews."))?;
+    let mut smart_out = Map::new();
+    for key in ["week", "inbox", "starred", "completed"] {
+        let val = smart_obj.get(key).and_then(Value::as_str).unwrap_or("show");
+        if !["show", "auto", "hide"].contains(&val) {
+            return Err(invalid("Invalid tasksSmartViews."));
+        }
+        smart_out.insert(key.to_owned(), json!(val));
+    }
+    put("tasksSmartViews", Value::Object(smart_out));
     put(
         "newsMarkRead",
         choice("newsMarkRead", &["open", "scroll"], "open")?,
@@ -360,6 +401,41 @@ mod tests {
         assert!(merge(&previous, &zone).is_err());
         assert_eq!(folder_parts(" a / b /"), Some(vec!["a".into(), "b".into()]));
         assert_eq!(folder_parts("../x"), None);
+    }
+
+    #[test]
+    fn validates_tasks_redesign_preferences() {
+        let empty = Map::new();
+        let body: Map<String, Value> = serde_json::from_value(json!({
+            "tasksView": "week",
+            "tasksSort": "priority",
+            "tasksLayout": "board",
+            "tasksShowCompleted": false,
+            "tasksExpandSubtasks": true,
+            "tasksShowPace": false,
+            "tasksConfirmDelete": false,
+            "tasksSmartViews": { "week": "auto", "inbox": "hide", "starred": "show", "completed": "auto" }
+        }))
+        .unwrap();
+        let merged = merge(&empty, &body).unwrap();
+        assert_eq!(merged["tasksView"], "week");
+        assert_eq!(merged["tasksSort"], "priority");
+        assert_eq!(merged["tasksLayout"], "board");
+        assert_eq!(merged["tasksShowCompleted"], false);
+        assert_eq!(merged["tasksExpandSubtasks"], true);
+        assert_eq!(merged["tasksShowPace"], false);
+        assert_eq!(merged["tasksConfirmDelete"], false);
+        assert_eq!(merged["tasksSmartViews"]["inbox"], "hide");
+
+        let bad_layout: Map<String, Value> =
+            serde_json::from_value(json!({ "tasksLayout": "timeline" })).unwrap();
+        assert!(merge(&empty, &bad_layout).is_err());
+        let bad_vis: Map<String, Value> =
+            serde_json::from_value(json!({ "tasksSmartViews": { "inbox": "maybe" } })).unwrap();
+        assert!(merge(&empty, &bad_vis).is_err());
+        let bad_default_list: Map<String, Value> =
+            serde_json::from_value(json!({ "tasksDefaultList": "not-a-uuid" })).unwrap();
+        assert!(merge(&empty, &bad_default_list).is_err());
     }
 }
 
