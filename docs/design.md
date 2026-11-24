@@ -204,10 +204,13 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   Outline in the editor bar, properties above the preview, callouts, tag chips,
   dashed links for missing notes, and Linked/Unlinked references as disclosure
   groups at the end of the note (Logseq's place). Tags follow Folders in the sidebar;
-  Today, Graph and Review sit under the views; Graph replaces the
+  Today, Random note, Graph and Review sit under the views; Graph replaces the
   list with the canvas and its note list, and Review shows due flashcards with
   deck filters, one card at a time (Space to reveal, 1–4 to grade, Open note)
-  storing schedules inline as `<!--SR:...-->` comments. Embedded notes are a quiet inset with an accent rule
+  storing schedules inline as `<!--SR:...-->` comments. Query and ` ```base `
+  blocks share one result table (or list), with a quiet line naming the parts of
+  a base left out. Notes settings › Import and export holds Import a Logseq graph
+  (files or the graph folder, then a summary). Embedded notes are a quiet inset with an accent rule
   and an open link; `/` commands share the suggestion list.
 - **Tasks:** quick add (title only) above the list; due-date sort groups Overdue,
   Today, Tomorrow, Upcoming, No date and Completed. Rows show a priority-colored

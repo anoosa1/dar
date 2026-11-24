@@ -591,7 +591,12 @@ async fn api(r: Api<'_>, body: Body) -> Result<Response> {
         if term.len() > 800 {
             return Err(AppError::invalid());
         }
-        return ok(db.read("service_global_search", json!([session_id, term])).await?);
+        let mut found = db.read("service_global_search", json!([session_id, term])).await?;
+        // Notes by `#tag` or alias come from the notes cache; Notes being off or unreachable leaves them out.
+        if let Ok(hits) = runtime.notes.search(db, &runtime.blobs, &session_id, &term).await {
+            crate::notes_library::merge_search(&mut found, hits);
+        }
+        return ok(found);
     }
     if path == "/api/v1/appSettings" && *method == Method::GET {
         return ok(crate::installed::settings(db).await?);

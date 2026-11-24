@@ -510,6 +510,18 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     };
     let joined = |folder: String, name: &str| if folder.is_empty() { name.to_owned() } else { format!("{folder}/{name}") };
 
+    // Random note (Obsidian's core plugin): any note but the open one and the templates.
+    let open_random = move || {
+        let current = open.with_untracked(|o| o.as_ref().map(|e| e.id.clone()));
+        let choices: Vec<String> = index.with_untracked(|ix| ix.notes.iter().filter(|n| current.as_deref() != Some(n.id.as_str()) && !note_links::is_template(n)).map(|n| n.id.clone()).collect());
+        if choices.is_empty() {
+            notice.set("There is no other note to open.".into());
+            return;
+        }
+        let pick = ((js_sys::Math::random() * choices.len() as f64) as usize).min(choices.len() - 1);
+        open_note(choices[pick].clone());
+    };
+
     // Today's daily note (`Journal/YYYY-MM-DD.md`), made from `Templates/Daily` when there is one.
     let open_today = move || {
         let (date, time) = note_links::today();
@@ -718,6 +730,9 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 }).collect_view()}
                 <button class="nav-item" disabled=move || busy.get() || library.with(Option::is_none) on:click=move |_| open_today()>
                     <Icon name="calendar"/>"Today"
+                </button>
+                <button class="nav-item" disabled=move || busy.get() || index.with(|ix| ix.notes.is_empty()) on:click=move |_| open_random()>
+                    <Icon name="repeat"/>"Random note"
                 </button>
                 <button class=move || format!("nav-item {}", if scope.get() == "graph" { "active" } else { "" }) aria-current=move || (scope.get() == "graph").then_some("page") on:click=move |_| scope.set("graph".to_owned())>
                     <Icon name="share"/>"Graph"

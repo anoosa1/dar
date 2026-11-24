@@ -12,6 +12,7 @@ use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 pub mod cards;
 mod front;
 mod vault;
+pub mod logseq;
 
 pub use cards::{Card, CardKind, Date as CardDate, Grade, Schedule};
 pub use front::{Prop, front_matter};

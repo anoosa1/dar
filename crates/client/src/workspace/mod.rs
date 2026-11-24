@@ -1,6 +1,7 @@
 //! Notes (`notes.tsx`) and Tasks (`pim/workspace.tsx`, `pim/task-occurrences.tsx`) apps,
 //! along with their shared shell, settings sheet, transfers and reactive select control.
 
+mod logseq_import;
 pub mod note_cards;
 pub mod note_editor;
 pub mod note_graph;
@@ -26,6 +27,7 @@ use crate::pim::{Collection, PimLive, send};
 use crate::settings::{AppSettingsButton, SaveProblems, SaveStatus, Saver, Segmented, SettingRow, SettingsSheet};
 use crate::shell::WorkspaceHeader;
 use crate::ui::{ConnectionState, ConnectionStatus, document, listen, unique_id, use_floating, window};
+use logseq_import::LogseqImport;
 
 pub(super) const DEFAULT_NOTES_FOLDER: &str = "docs/notes";
 
@@ -343,7 +345,7 @@ pub(super) fn WorkspaceShell(
                 })}
             </div>
             {move || settings.get().then(|| view! {
-                <WorkspaceSettings app=kind session=session_settings.get_value() on_close=Callback::new(move |_| settings.set(false))/>
+                <WorkspaceSettings app=kind session=session_settings.get_value() pim=pim on_close=Callback::new(move |_| settings.set(false))/>
             })}
         </div>
     }
@@ -414,7 +416,7 @@ fn NotesFolderSetting(
 /// Local Notes and Tasks settings sheet (`app-settings.tsx`), since `crate::settings::AppSettings`
 /// currently handles Files, Contacts and Calendar only.
 #[component]
-fn WorkspaceSettings(app: &'static str, session: BrowserSession, on_close: Callback<()>) -> impl IntoView {
+fn WorkspaceSettings(app: &'static str, session: BrowserSession, pim: PimLive, on_close: Callback<()>) -> impl IntoView {
     let saver = Saver::new(session.clone());
     let section = RwSignal::new("General");
     let is_notes = app == "notes";
@@ -439,7 +441,10 @@ fn WorkspaceSettings(app: &'static str, session: BrowserSession, on_close: Callb
         <SettingsSheet title=format!("{name} settings") icon=icon sections=vec!["General", "Import and export", "Keyboard shortcuts"] section=section on_close=on_close notice=saver.notice>
             <SaveProblems saver=saver/>
             {move || match section.get() {
-                "Import and export" => view! { <WorkspaceTransfers session=session.get_value() app=app/> }.into_any(),
+                "Import and export" => view! {
+                    <WorkspaceTransfers session=session.get_value() app=app/>
+                    {is_notes.then(|| view! { <LogseqImport session=session.get_value() pim=pim/> })}
+                }.into_any(),
                 "Keyboard shortcuts" => view! {
                     <dl class="ui-shortcuts">
                         <dt>"Ctrl / Cmd K"</dt><dd>"Search all apps outside editors and dialogs"</dd>

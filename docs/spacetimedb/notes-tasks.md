@@ -31,7 +31,10 @@ the [design guide](../design.md).
   preview with references, embeds, hover cards and queries. The Rust side
   (`crates/client/src/workspace/note_editor.rs`) keeps suggestions, the outliner, formatting,
   attachments and saving; offsets cross as UTF-16, line endings stay as written.
-- Global search finds notes by file name. Notes from the earlier database storage
+- Global search finds notes by file name and text; `/api/v1/search` adds the notes a `#tag`
+  query names (tags from properties and text, nested tags and prefixes included) and notes whose
+  alias matches, from the runtime's notes cache (same rows, no duplicates, eight per group).
+  Notes from the earlier database storage
   are copied once into the folder (one folder per notebook; title as a heading,
   tags as front matter, favorites kept); the old copies are left untouched and
   their notebook import/export stays in Notes settings.
@@ -70,6 +73,24 @@ the [design guide](../design.md).
   numbers compared as numbers), `sort:`, `show:`, `view: list`, `limit:` (at most 200).
   Fields are properties plus `title`, `folder`, `path`, `tags` and `modified`. See
   `crates/client/src/workspace/note_query.rs`.
+- Base blocks (` ```base `, a `.base` file's YAML from Obsidian Bases) run on the same engine:
+  `filters` with `and`/`or`/`not` lists of `file.hasTag(…)`, `file.inFolder(…)`,
+  `file.hasProperty(…)`, `x.contains(…)`, comparisons (`== != > < >= <=` against literals),
+  `!`, `&&` and `||`; `properties` display names; the first view's `type` (`table`, `list`;
+  `cards` shows as a table), `order`, the first `sort` and `limit`. `file.name`, `basename`,
+  `path`, `folder`, `tags` and `mtime` map to built-in fields. Formulas, summaries, grouping,
+  other functions and other views are left out and named under the results. `.base` files
+  themselves are not opened by Notes yet.
+- Random note (sidebar) opens any note but the open one and those in `Templates/`.
+- Notes settings › Import and export › Import a Logseq graph takes the graph's Markdown files
+  (or its folder) and writes notes through the Files API (`crates/notes/src/logseq.rs`):
+  pages `a___b.md`/`a%2Fb.md` become `a/b.md`, journals `2026_11_23.md` become
+  `Journal/2026-11-23.md`, `((uuid))` becomes `[[Page#^id]]` (the block with `id:: uuid` gets
+  a `^id` of the uuid's first hex digits), `{{embed …}}` becomes `![[…]]`, first-block
+  `key:: value` page properties become YAML (`tags`, `alias` as `aliases`), `TODO`/`LATER`/`NOW`/
+  `DOING`/`WAITING` become `- [ ]` and `DONE` `- [x]`; Logseq's `collapsed::` and `:LOGBOOK:`
+  drawers are dropped and the rest is kept as written. `logseq/`, `assets/` and non-Markdown
+  files are skipped; nothing is overwritten (a taken name gets ` 2`, and block links follow it).
 - Hovering or focusing a resolved link in the preview opens a preview card of that note or
   section after a moment. File options › Copy block link gives the caret's line a `^id`
   (when it has none) and copies `[[note#^id]]`.
@@ -117,5 +138,6 @@ the [design guide](../design.md).
 - Trash up to 10,000 entries per instance.
 - Moves keep IDs and require the same owner; copies get new IDs.
 
-Verified by the `notes-links` and `workspace-browser` suites, the workspace integration and standards tests,
+Verified by the `notes-links`, `notes-graph`, `notes-extras` and `workspace-browser` suites,
+the workspace integration and standards tests,
 vdirsyncer round trips and forced restart. Backups include note trash.

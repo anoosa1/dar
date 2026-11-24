@@ -102,6 +102,8 @@ pub struct QueryOutput {
     pub list: bool,
     pub total: usize,
     pub error: Option<String>,
+    /// Parts of a base that were left out.
+    pub notice: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -426,7 +428,7 @@ impl Render {
                         CodeBlockKind::Fenced(lang) => lang.split_whitespace().next().unwrap_or_default().to_owned(),
                         CodeBlockKind::Indented => String::new(),
                     };
-                    if language.eq_ignore_ascii_case("query")
+                    if (language.eq_ignore_ascii_case("query") || language.eq_ignore_ascii_case("base"))
                         && let Some(run) = self.links.query
                         && let Some(output) = run.try_run(plain(&children))
                     {
@@ -560,7 +562,8 @@ impl Render {
                 .collect();
             view! { <div class="markdown-table"><table><thead><tr><th>"Note"</th>{heads}</tr></thead><tbody>{rows}</tbody></table></div> }.into_any()
         };
-        view! { <div class="note-query" role="group" aria-label="Query results">{body}<p class="note-query-count">{summary}</p></div> }.into_any()
+        let notice = output.notice.map(|n| view! { <p class="note-query-count" role="note">{n}</p> });
+        view! { <div class="note-query" role="group" aria-label="Query results">{body}<p class="note-query-count">{summary}</p>{notice}</div> }.into_any()
     }
 
     fn row(&self, row: Node, classes: &[Option<&'static str>], head: bool) -> AnyView {

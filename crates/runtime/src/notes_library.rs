@@ -387,6 +387,18 @@ impl Library {
         Ok(json!({ "id": id, "target": vault.wiki_target(target), "mentions": found, "truncated": truncated }))
     }
 
+    /// Global search rows for the notes a `#tag` query or an alias names, which only this cache
+    /// knows (the module's search matches file names and text).
+    pub async fn search(&self, db: &Database, blobs: &Blobs, session_id: &str, query: &str) -> Result<Vec<Value>> {
+        let q = query.trim();
+        let term = q.strip_prefix('#').unwrap_or(q).trim();
+        if term.is_empty() || (!q.starts_with('#') && term.chars().count() < 2) {
+            return Ok(Vec::new());
+        }
+        let (_, notes) = self.notes(db, blobs, session_id).await?;
+        Ok(search_hits(&notes, q))
+    }
+
     /// Nodes and deduplicated resolved link edges across the whole Notes library.
     pub async fn graph(&self, db: &Database, blobs: &Blobs, session_id: &str) -> Result<Value> {
         let (_, notes) = self.notes(db, blobs, session_id).await?;
@@ -493,6 +505,56 @@ fn build_cards(notes: &[Note], today: dar_notes::cards::Date) -> Value {
         "decks": decks,
         "cards": cards,
     })
+}
+
+/// Notes with a tag starting with `#query`'s tag (nested tags included), or an alias containing
+/// `query`, as global search rows (Notes group, at most eight, by title).
+fn search_hits(notes: &[Note], query: &str) -> Vec<Value> {
+    let q = query.trim().to_lowercase();
+    let (by_tag, term) = match q.strip_prefix('#') {
+        Some(tag) => (true, tag.trim().to_owned()),
+        None => (false, q.clone()),
+    };
+    let mut hits: Vec<Value> = Vec::new();
+    for note in notes {
+        let detail = if by_tag {
+            if !note.info.tags.iter().any(|t| t.to_lowercase().starts_with(&term)) {
+                continue;
+            }
+            note.info.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" ")
+        } else {
+            match note.info.aliases.iter().find(|a| a.to_lowercase().contains(&term)) {
+                Some(alias) => format!("Alias: {alias}"),
+                None => continue,
+            }
+        };
+        hits.push(json!({ "id": note.id(), "group": "Notes", "title": note.info.title, "detail": utf16_prefix(&detail, 240), "href": format!("/notes?note={}", note.id()) }));
+    }
+    sort_by_title(&mut hits);
+    hits.truncate(8);
+    hits
+}
+
+/// Adds `hits` to the module's search result after its own Notes rows, without duplicates and
+/// within the group's eight rows (more set `truncated`).
+pub fn merge_search(result: &mut Value, hits: Vec<Value>) {
+    let Some(items) = result["items"].as_array_mut() else { return };
+    let mut count = items.iter().filter(|i| i["group"] == "Notes").count();
+    let mut truncated = false;
+    for hit in hits {
+        if items.iter().any(|i| i["group"] == "Notes" && i["id"] == hit["id"]) {
+            continue;
+        }
+        if count >= 8 {
+            truncated = true;
+            break;
+        }
+        items.push(hit);
+        count += 1;
+    }
+    if truncated {
+        result["truncated"] = json!(true);
+    }
 }
 
 fn build_graph(notes: &[Note]) -> Value {
@@ -637,5 +699,31 @@ mod tests {
         assert_eq!(cards[2]["noteId"], "n3");
         assert_eq!(cards[2]["deck"], "Notes");
         assert_eq!(cards[2]["answer"], "- Logseq A");
+    }
+
+    #[test]
+    fn tag_and_alias_search() {
+        let make = |id: &str, name: &str, text: &str| Note { row: json!({ "id": id, "name": name }), path: name.to_owned(), info: Arc::new(info(name, text)) };
+        let notes = vec![
+            make("a", "Dune.md", "---\ntags: [book/scifi]\naliases: [Arrakis]\n---\n# Dune\n"),
+            make("b", "Emma.md", "# Emma\nA #book and #classic.\n"),
+            make("c", "Plan.md", "# Plan\n#work\n"),
+        ];
+        let ids = |hits: &Vec<Value>| hits.iter().map(|h| h["id"].as_str().unwrap_or_default().to_owned()).collect::<Vec<_>>();
+        let hits = search_hits(&notes, "#Book");
+        assert_eq!(ids(&hits), ["a", "b"]);
+        assert_eq!(hits[1], json!({ "id": "b", "group": "Notes", "title": "Emma", "detail": "#book #classic", "href": "/notes?note=b" }));
+        assert_eq!(ids(&search_hits(&notes, "arrak")), ["a"]);
+        assert_eq!(search_hits(&notes, "arrak")[0]["detail"], "Alias: Arrakis");
+        assert!(search_hits(&notes, "#nothing").is_empty());
+
+        let mut result = json!({ "items": [{ "id": "b", "group": "Notes" }, { "id": "f", "group": "Files" }], "truncated": false });
+        merge_search(&mut result, search_hits(&notes, "#book"));
+        assert_eq!(ids(result["items"].as_array().unwrap()), ["b", "f", "a"]);
+        assert_eq!(result["truncated"], false);
+        let mut full = json!({ "items": (0..8).map(|i| json!({ "id": i.to_string(), "group": "Notes" })).collect::<Vec<_>>(), "truncated": false });
+        merge_search(&mut full, search_hits(&notes, "#book"));
+        assert_eq!(full["items"].as_array().unwrap().len(), 8);
+        assert_eq!(full["truncated"], true);
     }
 }
