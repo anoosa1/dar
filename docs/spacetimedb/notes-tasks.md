@@ -31,6 +31,13 @@ the [design guide](../design.md).
   preview with references, embeds, hover cards and queries. The Rust side
   (`crates/client/src/workspace/note_editor.rs`) keeps suggestions, the outliner, formatting,
   attachments and saving; offsets cross as UTF-16, line endings stay as written.
+- Tabs (`crates/client/src/workspace/note_tabs.rs`): each open note is a tab in the note sheet,
+  in one pane or two side by side; the URL's `?note=` is the focused pane's tab. Background tabs
+  keep their editor mounted and hidden (text, undo history, scroll), up to 8 editors; older
+  clean ones unmount and load again when shown. Closing a tab with unsaved changes uses the
+  editor's keep/discard banner. The tab set is remembered per browser tab in sessionStorage
+  (`dar.notes-tabs.<user>`) and comes back with a link or reload that names a note. A note is
+  open in one tab at most; opening it again shows that tab.
 - Global search finds notes by file name and text; `/api/v1/search` adds the notes a `#tag`
   query names (tags from properties and text, nested tags and prefixes included) and notes whose
   alias matches, from the runtime's notes cache (same rows, no duplicates, eight per group).

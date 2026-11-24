@@ -258,3 +258,36 @@ details.callout>summary{cursor:pointer}
 @media(prefers-reduced-motion:reduce){
   .note-deck-chip,.note-grade{transition:none}
 }
+
+/* Open notes as tabs in the note sheet, in one pane or two side by side (note_tabs.rs). Background
+   tabs keep their editor in a hidden panel in the same grid cell, so scroll and undo survive. */
+.note-sheet{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);height:100%;min-width:0;min-height:0}
+.note-sheet.is-split{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.note-pane-switch{grid-row:1;grid-column:1/-1;justify-self:start;margin:0 0 6px}
+.note-tabbar{grid-row:2;grid-column:1;display:flex;align-items:center;gap:4px;min-width:0;padding:0 0 6px;border-bottom:1px solid var(--border)}
+.note-tabbar[data-pane="1"],.note-tabpanel[data-pane="1"]{grid-column:2}
+.note-sheet.is-split [data-pane="1"]{border-left:1px solid var(--border);padding-left:8px}
+.note-tabs{display:flex;flex:1;gap:2px;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;overscroll-behavior-x:contain}
+.note-tab{display:flex;align-items:center;flex:0 1 190px;min-width:92px;height:34px;border-radius:9px;color:var(--muted)}
+.note-tab:hover{background:var(--hover);color:var(--text)}
+.note-tab.is-active{background:var(--tonal);color:var(--on-tonal)}
+.note-sheet.is-split .note-tabbar.is-focused-pane .note-tab.is-active{box-shadow:inset 0 -2px var(--accent)}
+.note-tab-button{display:flex;flex:1;align-items:center;gap:6px;min-width:0;height:100%;padding:0 2px 0 12px;border-radius:inherit;color:inherit;font-size:12.5px;font-weight:550;text-align:left}
+.note-tab-button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.note-tab-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note-tab-dirty{flex:none;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.note-tab-close{display:inline-grid;place-items:center;flex:none;width:26px;height:26px;margin-right:4px;border-radius:7px;color:inherit;opacity:0}
+.note-tab-close .icon{width:14px;height:14px}
+.note-tab:is(:hover,.is-active) .note-tab-close{opacity:1}
+.note-tab-close:hover{background:var(--hover)}
+.note-tab-menu{flex:none}.note-tab-menu .ui-menu-trigger{min-width:34px;min-height:34px;padding:5px;border-radius:9px}
+.note-tabpanel{grid-row:3;grid-column:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+.note-tabpanel.is-hidden{visibility:hidden;content-visibility:hidden;pointer-events:none}
+.note-tabpanel>.file-text-editor{position:static;inset:auto;flex:1;width:auto;height:auto;min-height:0;border:0;border-radius:0;box-shadow:none;z-index:auto}
+@media(min-width:1100px){.note-pane-switch{display:none}}
+@media(max-width:1099.98px){
+  .note-sheet.is-split{grid-template-columns:minmax(0,1fr)}
+  .note-sheet.is-split [data-pane="1"]{grid-column:1;border-left:0;padding-left:0}
+  .note-sheet.is-split.shows-pane-0 [data-pane="1"],.note-sheet.is-split.shows-pane-1 [data-pane="0"]{display:none}
+}
+@media(max-width:800px){.note-tab{flex:none;min-width:0;max-width:180px}.note-tab-close{opacity:1}}

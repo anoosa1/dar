@@ -16,6 +16,7 @@ use super::note_cards::{CardSummary, NoteCards};
 use super::note_graph::NoteGraph;
 use super::note_editor;
 use super::note_links::{self, LinkSuggestions, NoteIndex, NoteReferences, Suggestion, Trigger, has_tag};
+use super::note_tabs::{self, NoteTabStrip, NoteTabs, OpenIn};
 use super::{ReactiveSelect, WorkspaceShell, search_params};
 use crate::api::{self, BrowserSession};
 use crate::dates::edited;
@@ -198,6 +199,23 @@ fn session_storage() -> Option<web_sys::Storage> {
     window().session_storage().ok().flatten()
 }
 
+fn event_element(event: &web_sys::Event) -> Option<web_sys::Element> {
+    event.target().and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::Element>(t).ok())
+}
+
+fn closest(el: &web_sys::Element, selector: &str) -> Option<web_sys::Element> {
+    el.closest(selector).ok().flatten()
+}
+
+fn attribute_of(el: &web_sys::Element, selector: &str, name: &str) -> Option<String> {
+    closest(el, selector)?.get_attribute(name)
+}
+
+/// The note sheet's pane (0 left, 1 right) an element is in.
+fn pane_of(el: &web_sys::Element) -> Option<usize> {
+    attribute_of(el, "[data-pane]", "data-pane")?.parse().ok()
+}
+
 pub(super) async fn read_file_content(id: &str) -> Result<String, String> {
     let response = api::fetch(&format!("/api/v1/files/{id}/content"), Default::default()).await.map_err(|e| e.message)?;
     if !response.ok() {
@@ -232,12 +250,22 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     let notice = RwSignal::new(String::new());
     let query = RwSignal::new(String::new());
     let scope = RwSignal::new(initial_scope);
-    let open: RwSignal<Option<FileEntry>> = RwSignal::new(None);
+    // Open notes are tabs in the note sheet, in one pane or two side by side (note_tabs.rs);
+    // `open` is the focused pane's note, the one in the URL and selected in the list.
+    let tabs = NoteTabs::new();
+    let open = Memo::new(move |_| tabs.current());
+    let tabs_key = StoredValue::new(format!("dar.notes-tabs.{}", session.user.id));
+    // How the latest click or key in the note sheet asks a followed link to open, and when.
+    let intent: StoredValue<(OpenIn, f64)> = StoredValue::new((OpenIn::Current, 0.0));
+    let take_intent = move || {
+        let (how, at) = intent.try_with_value(|i| *i).unwrap_or((OpenIn::Current, 0.0));
+        intent.try_update_value(|i| *i = (OpenIn::Current, 0.0));
+        if js_sys::Date::now() - at < 1500.0 { how } else { OpenIn::Current }
+    };
     let pane: RwSignal<Option<NotesPaneKind>> = RwSignal::new(None);
     let confirm: RwSignal<Option<ConfirmState>> = RwSignal::new(None);
     let busy = RwSignal::new(false);
     let reload = RwSignal::new(0u32);
-    let last_saved: RwSignal<Option<(String, String)>> = RwSignal::new(None);
     let load_seq = RwSignal::new(0u32);
     let session_sv = StoredValue::new(session.clone());
 
@@ -354,17 +382,40 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         }
     });
 
-    // Open initial deep-linked note once the live connection is ready.
+    // Open the deep-linked note once the live connection is ready, with the tabs this browser
+    // tab had open (a reload keeps `?note=`, so it brings the whole set back).
     Effect::new(move |_| {
         let Some(conn) = live.connection.get() else { return };
         let Some(id) = initial_note.get_untracked() else { return };
         initial_note.set(None);
+        let saved = note_tabs::load(&tabs_key.get_value());
         spawn_local(async move {
-            match fetch_detail(&conn, &id).await {
-                Ok(detail) => open.set(Some(detail.entry)),
-                Err(cause) => error.set(error_message(&cause)),
+            let first = fetch_detail(&conn, &id).await;
+            let others: Vec<String> = saved.tabs.iter().map(|(tab, _)| tab.clone()).filter(|tab| *tab != id).collect();
+            let found = futures::future::join_all(others.iter().map(|tab| fetch_detail(&conn, tab))).await;
+            let entries: Vec<(FileEntry, usize)> = saved
+                .tabs
+                .iter()
+                .filter_map(|(tab, pane)| {
+                    let detail = if *tab == id { first.as_ref().ok() } else { others.iter().position(|o| o == tab).and_then(|i| found[i].as_ref().ok()) };
+                    detail.filter(|d| !d.entry.trashed).map(|d| (d.entry.clone(), *pane))
+                })
+                .collect();
+            tabs.restore(entries, &saved);
+            match first {
+                Ok(detail) => tabs.open(detail.entry, OpenIn::NewTab),
+                Err(cause) => {
+                    error.try_set(error_message(&cause));
+                }
             }
         });
+    });
+    // Remember the tab set for this browser tab once it changes.
+    Effect::new(move |previous: Option<()>| {
+        let saved = tabs.snapshot();
+        if previous.is_some() {
+            note_tabs::save(&tabs_key.get_value(), &saved);
+        }
     });
 
     let folder_name = move |id: &str| -> String {
@@ -417,7 +468,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 .await
                 .map_err(|e| e.message)?;
                 let detail = fetch_detail(&conn, &id).await?;
-                open.set(Some(detail.entry));
+                tabs.open(detail.entry, OpenIn::Current);
                 Ok(())
             }
             .await;
@@ -430,22 +481,27 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         });
     };
 
-    let open_note = move |note_id: String| {
+    let open_note_in = move |note_id: String, how: OpenIn| {
+        if let Some(entry) = tabs.entry(&note_id) {
+            tabs.open(entry, how);
+            return;
+        }
         spawn_local(async move {
             let Some(conn) = live.connection.get_untracked() else {
                 error.set("Notes are reconnecting. Try again in a moment.".into());
                 return;
             };
             match fetch_detail(&conn, &note_id).await {
-                Ok(detail) => open.set(Some(detail.entry)),
+                Ok(detail) => tabs.open(detail.entry, how),
                 Err(cause) => error.set(error_message(&cause)),
             }
         });
     };
+    let open_note = move |note_id: String| open_note_in(note_id, OpenIn::Current);
 
     // A link to a missing note creates it (in the folder the link names, else the linking note's
     // folder for a Markdown link, else the Notes folder) and opens it.
-    let create_linked = move |source_id: String, target: String, wiki: bool| {
+    let create_linked = move |source_id: String, target: String, wiki: bool, how: OpenIn| {
         let Some(root) = library.with_untracked(|l| l.as_ref().map(|l| l.root_id.clone())) else { return };
         let stem = strip_md_ext(target.rsplit('/').next().unwrap_or(&target).trim());
         let folder_path = if wiki {
@@ -465,7 +521,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
                 let file = TextFile { name: &name, parent_id: &parent, content: "", media_type: "text/markdown", file_id: None, expected_revision: None };
                 let id = write_text_file(&sess, file).await.map_err(|e| e.message)?;
-                open.set(Some(fetch_detail(&conn, &id).await?.entry));
+                tabs.open(fetch_detail(&conn, &id).await?.entry, how);
                 Ok(())
             }
             .await;
@@ -477,19 +533,21 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         });
     };
 
-    let follow_link = move |source_id: String, target: String, wiki: bool, fragment: Option<String>| {
+    let follow_link_in = move |source_id: String, target: String, wiki: bool, fragment: Option<String>, how: OpenIn| {
         let hit = index.with_untracked(|ix| ix.resolve(&source_id, &target, wiki).map(|n| n.id.clone()));
         match hit {
             Some(id) => {
                 anchor.set(fragment.map(|f| (id.clone(), f)));
                 if id != source_id {
-                    open_note(id);
+                    open_note_in(id, how);
                 }
             }
             None if wiki && !dar_notes::is_note_target(&target) => notice.set(format!("\u{201c}{target}\u{201d} is not a note in this folder.")),
-            None => create_linked(source_id, target, wiki),
+            None => create_linked(source_id, target, wiki, how),
         }
     };
+    // Links followed from the editor open as the click or key that followed them asks.
+    let follow_link = move |source_id: String, target: String, wiki: bool, fragment: Option<String>| follow_link_in(source_id, target, wiki, fragment, take_intent());
 
     // After a rename or move: links elsewhere follow the note (Obsidian's automatic link updates).
     let relink = move |moves: Vec<(String, String)>, sources: Vec<String>, before: Arc<NoteIndex>| async move {
@@ -556,7 +614,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 let name = format!("{date}.md");
                 let file = TextFile { name: &name, parent_id: &folder, content: &content, media_type: "text/markdown", file_id: None, expected_revision: None };
                 let id = write_text_file(&sess, file).await.map_err(|e| e.message)?;
-                open.set(Some(fetch_detail(&conn, &id).await?.entry));
+                tabs.open(fetch_detail(&conn, &id).await?.entry, OpenIn::Current);
                 Ok(())
             }
             .await;
@@ -638,6 +696,20 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 .disabled(is_busy)
                 .run(move || request_remove_note(n_del.clone())),
         ]
+    };
+    // The list row's menu: where to open the note, then its file actions.
+    let row_actions = move |note: NotesFile| -> Vec<MenuAction> {
+        let (tab_id, right_id) = (note.id.clone(), note.id.clone());
+        let mut list = vec![
+            MenuAction::new("Open in new tab", "plus").run(move || open_note_in(tab_id.clone(), OpenIn::NewTab)),
+            MenuAction::new("Open to the right", "panel").run(move || open_note_in(right_id.clone(), OpenIn::Right)),
+        ];
+        let mut rest = build_note_actions(note);
+        if let Some(first) = rest.first_mut() {
+            first.separator = true;
+        }
+        list.extend(rest);
+        list
     };
 
     let sorted_folders = Memo::new(move |_| {
@@ -811,92 +883,248 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         .into_any()
     });
 
+    // Closing a tab: a mounted editor closes through its keep/discard flow (and names an
+    // Untitled note after its heading); a tab without one closes at once.
+    let close_tab = Callback::new(move |id: String| {
+        if !tabs.mounted(&id) {
+            tabs.remove(&id);
+            tabs.refocus();
+            return;
+        }
+        if tabs.is_dirty(&id) {
+            tabs.show(&id);
+        }
+        tabs.request_close(&id);
+    });
+    let split = Memo::new(move |_| tabs.split());
+    let set_intent = move |how: OpenIn| {
+        intent.try_update_value(|i| *i = (how, js_sys::Date::now()));
+    };
+    // A link in Reading (an embed, a preview card) opened in a new tab or to the right: the
+    // preview leaves modified clicks to the browser, so the sheet takes them first.
+    let open_link = move |link: web_sys::Element, how: OpenIn| {
+        let source = attribute_of(&link, "[data-note-id]", "data-note-id").unwrap_or_default();
+        let named = link.get_attribute("data-target").unwrap_or_default();
+        let (target, fragment) = match named.split_once('#') {
+            Some((t, f)) => (t.to_owned(), Some(f.to_owned())),
+            None => (named.clone(), None),
+        };
+        match link.get_attribute("href").and_then(|h| h.strip_prefix("/notes?note=").map(str::to_owned)) {
+            Some(id) => {
+                anchor.set(fragment.map(|f| (id.clone(), f)));
+                open_note_in(id, how);
+            }
+            None => {
+                let wiki = !has_md_ext(&target);
+                follow_link_in(source, target, wiki, fragment, how);
+            }
+        }
+    };
+    // A Live preview link opened with the middle button.
+    let open_live_link = move |link: web_sys::Element| {
+        let source = attribute_of(&link, "[data-note-id]", "data-note-id").unwrap_or_default();
+        let dest = link.get_attribute("data-href").unwrap_or_default();
+        let wiki = link.get_attribute("data-wiki").as_deref() == Some("true");
+        if let note_editor::LinkAction::Note(target, wiki, fragment) = note_editor::link_action(&dest, wiki) {
+            follow_link_in(source, target, wiki, fragment, OpenIn::NewTab);
+        }
+    };
+
     let details: ChildrenFn = Arc::new(move || {
+        let root = NodeRef::<html::Div>::new();
+        // Capture-phase listeners see a click or key before the link or editor it lands on.
+        Effect::new(move |_| {
+            let Some(el) = root.get() else { return };
+            listen(&el, "mousedown", true, move |event| {
+                let (Some(e), Some(target)) = (wasm_bindgen::JsCast::dyn_ref::<web_sys::MouseEvent>(&event), event_element(&event)) else { return };
+                if let Some(pane) = pane_of(&target) {
+                    tabs.focus_pane(pane);
+                }
+                set_intent(OpenIn::from_live_click(e));
+                if e.button() == 1 && closest(&target, ".cm-dar-link, a.note-link, a.note-embed").is_some() {
+                    e.prevent_default();
+                }
+            });
+            listen(&el, "click", true, move |event| {
+                let (Some(e), Some(target)) = (wasm_bindgen::JsCast::dyn_ref::<web_sys::MouseEvent>(&event), event_element(&event)) else { return };
+                // Live preview follows on mousedown, with its own modifiers.
+                if closest(&target, ".cm-editor").is_some() {
+                    return;
+                }
+                let how = OpenIn::from_click(e);
+                set_intent(how);
+                if how == OpenIn::Current {
+                    return;
+                }
+                if let Some(link) = closest(&target, "a.note-link[data-target], a.note-embed[data-target]") {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    open_link(link, how);
+                }
+            });
+            listen(&el, "auxclick", true, move |event| {
+                let (Some(e), Some(target)) = (wasm_bindgen::JsCast::dyn_ref::<web_sys::MouseEvent>(&event), event_element(&event)) else { return };
+                if e.button() != 1 {
+                    return;
+                }
+                if let Some(link) = closest(&target, "a.note-link[data-target], a.note-embed[data-target]").filter(|l| closest(l, ".cm-editor").is_none()) {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    open_link(link, OpenIn::NewTab);
+                } else if let Some(link) = closest(&target, ".cm-dar-link[data-href]") {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    open_live_link(link);
+                }
+            });
+            listen(&el, "keydown", true, move |_| set_intent(OpenIn::Current));
+            listen(&el, "focusin", true, move |event| {
+                if let Some(pane) = event_element(&event).as_ref().and_then(pane_of) {
+                    tabs.focus_pane(pane);
+                }
+            });
+        });
+        // Ctrl/Cmd+Tab and Ctrl/Cmd+Shift+Tab cycle the focused pane's tabs; Ctrl/Cmd+W closes
+        // its shown tab.
+        let sheet_keys = move |e: web_sys::KeyboardEvent| {
+            if !(e.ctrl_key() || e.meta_key()) || e.alt_key() || e.default_prevented() {
+                return;
+            }
+            let pane = tabs.focused();
+            if e.key() == "Tab" {
+                e.prevent_default();
+                if let Some(id) = tabs.cycle(pane, if e.shift_key() { -1 } else { 1 }) {
+                    note_tabs::focus_tab(&id);
+                }
+            } else if !e.shift_key() && e.key().eq_ignore_ascii_case("w") {
+                e.prevent_default();
+                if let Some(id) = tabs.active_in(pane) {
+                    close_tab.run(id);
+                }
+            }
+        };
         view! {
-            <For each=move || open.get().into_iter() key=|e| e.id.clone() let:initial>
-                {
-                    let init_id = initial.id.clone();
-                    let source_id = StoredValue::new(initial.id.clone());
-                    let entry_sig = Signal::derive(move || open.get().filter(|e| e.id == init_id).unwrap_or_else(|| initial.clone()));
-                    let ctx_sig = Signal::derive(move || Some(folder_name(&entry_sig.with(|e| e.parent_id.clone()))));
-                    let on_close = Callback::new(move |_| {
-                        let closed = open.get_untracked();
-                        open.set(None);
-                        let saved = last_saved.get_untracked();
-                        last_saved.set(None);
-                        spawn_local(async move {
-                            if let (Some(entry), Some((saved_id, saved_content)), Some(conn)) = (closed, saved, live.connection.get_untracked())
-                                && saved_id == entry.id
-                                && is_untitled_md(&entry.name)
-                                && let Some(heading) = extract_heading(&saved_content)
-                                && let Ok(detail) = fetch_detail(&conn, &entry.id).await
-                            {
-                                let current = detail.entry;
-                                let next_name = unique_name(&file_name(&heading), &siblings(&current.parent_id));
-                                if next_name != current.name {
-                                    let before = index.get_untracked();
-                                    let sources = note_links::backlink_ids(&current.id).await;
-                                    let new_path = joined(folder_path(&current.parent_id), &next_name);
-                                    let id = current.id.clone();
-                                    if reducer(|tx| conn.reducers.rename_entry_then(current.id, next_name, current.revision, replied(tx))).await.is_ok() {
-                                        let updated = relink(vec![(id, new_path)], sources, before).await;
-                                        if !updated.is_empty() {
-                                            notice.set(updated.trim_start().to_owned());
+            <div node_ref=root class=move || format!("note-sheet{}{}", if split.get() { " is-split" } else { "" }, if tabs.focus.get() == 1 { " shows-pane-1" } else { " shows-pane-0" })
+                on:keydown=sheet_keys>
+                {move || split.get().then(|| view! {
+                    <div class="note-pane-switch segmented" role="group" aria-label="Shown pane">
+                        <button type="button" aria-pressed=move || (tabs.focus.get() == 0).to_string() on:click=move |_| tabs.focus_pane(0)>"Left"</button>
+                        <button type="button" aria-pressed=move || (tabs.focus.get() == 1).to_string() on:click=move |_| tabs.focus_pane(1)>"Right"</button>
+                    </div>
+                })}
+                <NoteTabStrip tabs=tabs pane=0 on_close=close_tab/>
+                {move || split.get().then(|| view! { <NoteTabStrip tabs=tabs pane=1 on_close=close_tab/> })}
+                // Background tabs keep their editor (text, undo history, scroll) in a hidden panel.
+                <For each=move || tabs.mounted_ids() key=|id| id.clone() let:id>
+                    {tabs.entry(&id).map(|initial| {
+                        let source_id = StoredValue::new(id.clone());
+                        let entry_sig = Signal::from(Memo::new({
+                            let id = id.clone();
+                            move |_| tabs.tabs.with(|list| list.iter().find(|t| t.entry.id == id).map(|t| t.entry.clone())).unwrap_or_else(|| initial.clone())
+                        }));
+                        let pane = Memo::new({
+                            let id = id.clone();
+                            move |_| tabs.tabs.with(|list| list.iter().find(|t| t.entry.id == id).map_or(0, |t| t.pane))
+                        });
+                        let shown = Memo::new({
+                            let id = id.clone();
+                            move |_| tabs.active.with(|a| a.iter().any(|x| x.as_deref() == Some(id.as_str())))
+                        });
+                        let close_request = Signal::from(Memo::new({
+                            let id = id.clone();
+                            move |_| tabs.close.with(|asked| asked.get(&id).copied().unwrap_or(0))
+                        }));
+                        // The text last saved here, for naming an Untitled note after its heading.
+                        let saved_text: StoredValue<Option<String>> = StoredValue::new(None);
+                        let ctx_sig = Signal::derive(move || Some(folder_name(&entry_sig.with(|e| e.parent_id.clone()))));
+                        let on_close = Callback::new(move |_| {
+                            let Some(id) = source_id.try_get_value() else { return };
+                            let closed = tabs.entry(&id);
+                            let saved = saved_text.try_get_value().flatten();
+                            tabs.remove(&id);
+                            tabs.refocus();
+                            spawn_local(async move {
+                                if let (Some(entry), Some(saved_content), Some(conn)) = (closed, saved, live.connection.get_untracked())
+                                    && is_untitled_md(&entry.name)
+                                    && let Some(heading) = extract_heading(&saved_content)
+                                    && let Ok(detail) = fetch_detail(&conn, &entry.id).await
+                                {
+                                    let current = detail.entry;
+                                    let next_name = unique_name(&file_name(&heading), &siblings(&current.parent_id));
+                                    if next_name != current.name {
+                                        let before = index.get_untracked();
+                                        let sources = note_links::backlink_ids(&current.id).await;
+                                        let new_path = joined(folder_path(&current.parent_id), &next_name);
+                                        let id = current.id.clone();
+                                        if reducer(|tx| conn.reducers.rename_entry_then(current.id, next_name, current.revision, replied(tx))).await.is_ok() {
+                                            let updated = relink(vec![(id, new_path)], sources, before).await;
+                                            if !updated.is_empty() {
+                                                notice.set(updated.trim_start().to_owned());
+                                            }
                                         }
                                     }
                                 }
-                            }
+                                reload.update(|n| *n += 1);
+                            });
+                        });
+                        let on_saved = Callback::new(move |(_rev, content): (u32, String)| {
+                            saved_text.try_update_value(|s| *s = Some(content));
                             reload.update(|n| *n += 1);
                         });
-                    });
-                    let on_saved = Callback::new(move |(_rev, content): (u32, String)| {
-                        if let Some(id) = open.with_untracked(|o| o.as_ref().map(|e| e.id.clone())) {
-                            last_saved.set(Some((id, content)));
+                        let editor_actions = Callback::new(move |()| {
+                            let current_id = entry_sig.with_untracked(|e| e.id.clone());
+                            let row = library.with_untracked(|lib| lib.as_ref().and_then(|l| l.notes.iter().find(|n| n.id == current_id).cloned()));
+                            row.map(build_note_actions).unwrap_or_default()
+                        });
+                        let links = NoteLinks {
+                            resolve: Some(Callback::new(move |(target, wiki): (String, bool)| {
+                                index.with(|ix| ix.resolve(&source_id.get_value(), &target, wiki).map(|n| n.id.clone()))
+                            })),
+                            follow: Some(Callback::new(move |(target, wiki, fragment): (String, bool, Option<String>)| follow_link(source_id.get_value(), target, wiki, fragment))),
+                            tag: Some(Callback::new(move |tag: String| scope.set(format!("tag:{tag}")))),
+                            toggle: None,
+                            embed: Some(Callback::new(move |(target, wiki): (String, bool)| index.with(|ix| ix.embed(&source_id.get_value(), &target, wiki)))),
+                            nested: false,
+                            query: Some(Callback::new(move |source: String| index.with(|ix| super::note_query::run(ix, &source_id.get_value(), &source)))),
+                        };
+                        let version = RwSignal::new(0u32);
+                        let on_saved = Callback::new(move |saved: (u32, String)| {
+                            version.update(|n| *n += 1);
+                            on_saved.run(saved);
+                        });
+                        let on_dirty = Callback::new(move |unsaved: bool| {
+                            if let Some(id) = source_id.try_get_value() {
+                                tabs.set_dirty(&id, unsaved);
+                            }
+                        });
+                        let note_id = Signal::derive(move || source_id.get_value());
+                        let starts_in_preview = preview_choice.get_untracked().unwrap_or_else(|| start_in_preview.get_untracked());
+                        view! {
+                            <div class=move || if shown.get() { "note-tabpanel" } else { "note-tabpanel is-hidden" } role="tabpanel"
+                                id=note_tabs::panel_id(&id) aria-labelledby=note_tabs::tab_id(&id)
+                                data-pane=move || pane.get().to_string() data-note-id=id.clone() inert=move || !shown.get()>
+                                <NoteTextEditor entry=entry_sig session=session_sv.get_value() context=ctx_sig start_in_preview=starts_in_preview on_close=on_close on_saved=on_saved actions=editor_actions
+                                    links=links index=index anchor=anchor refresh=refresh on_mode=Callback::new(move |p: bool| preview_choice.set(Some(p)))
+                                    active=Signal::from(shown) on_dirty=on_dirty close_request=close_request>
+                                    <NoteReferences note_id=note_id version=Signal::derive(move || version.get() + refresh.get()) links=links session=session_sv.get_value()
+                                        on_open=Callback::new(move |id: String| open_note_in(id, take_intent()))
+                                        on_changed=Callback::new(move |_| { version.update(|n| *n += 1); reload.update(|n| *n += 1); })/>
+                                </NoteTextEditor>
+                            </div>
                         }
-                        reload.update(|n| *n += 1);
-                    });
-                    let editor_actions = Callback::new(move |()| {
-                        let current_id = entry_sig.with_untracked(|e| e.id.clone());
-                        let row = library.with_untracked(|lib| lib.as_ref().and_then(|l| l.notes.iter().find(|n| n.id == current_id).cloned()));
-                        row.map(build_note_actions).unwrap_or_default()
-                    });
-                    let links = NoteLinks {
-                        resolve: Some(Callback::new(move |(target, wiki): (String, bool)| {
-                            index.with(|ix| ix.resolve(&source_id.get_value(), &target, wiki).map(|n| n.id.clone()))
-                        })),
-                        follow: Some(Callback::new(move |(target, wiki, fragment): (String, bool, Option<String>)| follow_link(source_id.get_value(), target, wiki, fragment))),
-                        tag: Some(Callback::new(move |tag: String| scope.set(format!("tag:{tag}")))),
-                        toggle: None,
-                        embed: Some(Callback::new(move |(target, wiki): (String, bool)| index.with(|ix| ix.embed(&source_id.get_value(), &target, wiki)))),
-                        nested: false,
-                        query: Some(Callback::new(move |source: String| index.with(|ix| super::note_query::run(ix, &source_id.get_value(), &source)))),
-                    };
-                    let version = RwSignal::new(0u32);
-                    let on_saved = Callback::new(move |saved: (u32, String)| {
-                        version.update(|n| *n += 1);
-                        on_saved.run(saved);
-                    });
-                    let note_id = Signal::derive(move || source_id.get_value());
-                    let starts_in_preview = preview_choice.get_untracked().unwrap_or_else(|| start_in_preview.get_untracked());
-                    view! {
-                        <NoteTextEditor entry=entry_sig session=session_sv.get_value() context=ctx_sig start_in_preview=starts_in_preview on_close=on_close on_saved=on_saved actions=editor_actions
-                            links=links index=index anchor=anchor refresh=refresh on_mode=Callback::new(move |p: bool| preview_choice.set(Some(p)))>
-                            <NoteReferences note_id=note_id version=Signal::derive(move || version.get() + refresh.get()) links=links session=session_sv.get_value()
-                                on_open=Callback::new(move |id: String| open_note(id))
-                                on_changed=Callback::new(move |_| { version.update(|n| *n += 1); reload.update(|n| *n += 1); })/>
-                        </NoteTextEditor>
-                    }
-                }
-            </For>
+                        .into_any()
+                    })}
+                </For>
+            </div>
         }
         .into_any()
     });
 
-    let has_open = Signal::from(Memo::new(move |_| open.with(Option::is_some)));
+    let has_open = Signal::from(Memo::new(move |_| tabs.any()));
     let graph_epoch = pim.epoch;
 
     view! {
-        <WorkspaceShell kind="notes" session=session on_signed_out=on_signed_out sidebar=sidebar has_details=has_open note_editor=has_open details=details pim=pim>
+        <WorkspaceShell kind="notes" session=session on_signed_out=on_signed_out sidebar=sidebar has_details=has_open note_editor=has_open split_details=split details=details pim=pim>
             <div class=move || match scope.get().as_str() {
                 "graph" => "workspace-list notes-list is-graph",
                 "review" => "workspace-list notes-list is-review",
@@ -1008,17 +1236,27 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                         });
                                         let id_sel = note_id.clone();
                                         let id_click = note_id.clone();
+                                        let id_aux = note_id.clone();
                                         let action_label = Signal::derive(move || {
                                             note_sig.with(|n| format!("Actions for {}", n.as_ref().map(|n| n.title.as_str()).unwrap_or("")))
                                         });
                                         view! {
                                             <div class="workspace-entry">
                                                 <article class=move || format!("workspace-row {}", if open.with(|o| o.as_ref().is_some_and(|e| e.id == id_sel)) { "selected" } else { "" })>
-                                                    <button class="workspace-row-content" on:click=move |_| {
-                                                        if !open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == id_click)) {
-                                                            open_note(id_click.clone());
+                                                    // Ctrl/Cmd+click or the middle button opens a new tab, Ctrl/Cmd+Alt+click to the right.
+                                                    <button class="workspace-row-content"
+                                                        on:click=move |e: web_sys::MouseEvent| open_note_in(id_click.clone(), OpenIn::from_click(&e))
+                                                        on:mousedown=move |e: web_sys::MouseEvent| {
+                                                            if e.button() == 1 {
+                                                                e.prevent_default();
+                                                            }
                                                         }
-                                                    }>
+                                                        on:auxclick=move |e: web_sys::MouseEvent| {
+                                                            if e.button() == 1 {
+                                                                e.prevent_default();
+                                                                open_note_in(id_aux.clone(), OpenIn::NewTab);
+                                                            }
+                                                        }>
                                                         <strong>
                                                             {move || note_sig.with(|n| {
                                                                 let t = n.as_ref().map(|n| n.title.as_str()).unwrap_or("");
@@ -1047,7 +1285,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                                     </button>
                                                     <div class="workspace-row-tools">
                                                         <ActionMenu label=action_label class="ui-file-actions" actions=move |_| {
-                                                            note_sig.with_untracked(|n| n.clone()).map(build_note_actions).unwrap_or_default()
+                                                            note_sig.with_untracked(|n| n.clone()).map(row_actions).unwrap_or_default()
                                                         }><Icon name="more"/></ActionMenu>
                                                     </div>
                                                 </article>
@@ -1078,11 +1316,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                     <NoteGraph
                         open_id=Signal::derive(move || open.with(|o| o.as_ref().map(|e| e.id.clone())))
                         version=Signal::derive(move || reload.get() + graph_epoch.get())
-                        on_open=Callback::new(move |id: String| {
-                            if !open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == id)) {
-                                open_note(id);
-                            }
-                        })
+                        on_open=Callback::new(move |id: String| open_note(id))
                     />
                 </Show>
             </div>
@@ -1141,8 +1375,8 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                             let new_path = joined(folder_path(&entry.parent_id), &next_name);
                                             reducer(|tx| conn.reducers.rename_entry_then(entry.id.clone(), next_name, entry.revision, replied(tx))).await?;
                                             updated = relink(vec![(entry.id.clone(), new_path)], sources, before).await;
-                                            if open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == entry.id)) {
-                                                open.set(Some(fetch_detail(&conn, &entry.id).await?.entry));
+                                            if tabs.contains(&entry.id) {
+                                                tabs.update_entry(fetch_detail(&conn, &entry.id).await?.entry);
                                             }
                                         }
                                         NotesPaneKind::Move(note) => {
@@ -1151,8 +1385,8 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                             let new_path = joined(folder_path(&value), &entry.name);
                                             reducer(|tx| conn.reducers.move_entry_then(entry.id.clone(), value, entry.revision, None, replied(tx))).await?;
                                             updated = relink(vec![(entry.id.clone(), new_path)], sources, before).await;
-                                            if open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == entry.id)) {
-                                                open.set(Some(fetch_detail(&conn, &entry.id).await?.entry));
+                                            if tabs.contains(&entry.id) {
+                                                tabs.update_entry(fetch_detail(&conn, &entry.id).await?.entry);
                                             }
                                         }
                                     }
@@ -1196,9 +1430,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                             ConfirmTarget::Note(note) => {
                                                 let entry = fetch_detail(&conn, &note.id).await?.entry;
                                                 reducer(|tx| conn.reducers.trash_entry_then(entry.id, entry.revision, replied(tx))).await?;
-                                                if open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == note.id)) {
-                                                    open.set(None);
-                                                }
+                                                tabs.remove(&note.id);
                                             }
                                             ConfirmTarget::Folder(folder) => {
                                                 let entry = fetch_detail(&conn, &folder.id).await?.entry;
@@ -1490,6 +1722,15 @@ fn NoteTextEditor(
     anchor: RwSignal<Option<(String, String)>>,
     #[prop(into)] refresh: Signal<u32>,
     on_mode: Callback<bool>,
+    /// Whether this editor's tab is shown (background tabs keep their editor mounted).
+    #[prop(optional, into)]
+    active: Option<Signal<bool>>,
+    /// Unsaved changes or a save in progress, for the tab's dot.
+    #[prop(optional)]
+    on_dirty: Option<Callback<bool>>,
+    /// Changes when the tab's close button asks the editor to close (keep/discard flow).
+    #[prop(optional, into)]
+    close_request: Option<Signal<u32>>,
     children: Children,
 ) -> impl IntoView {
     use wasm_bindgen::JsCast;
@@ -1530,6 +1771,15 @@ fn NoteTextEditor(
 
     let markdown = Memo::new(move |_| has_md_ext(&entry.with(|e| e.name.clone())));
     let dirty = Memo::new(move |_| text.with(|t| saved.with(|s| t != s)));
+    if let Some(report) = on_dirty {
+        Effect::new(move |previous: Option<bool>| {
+            let unsaved = dirty.get() || saving.get();
+            if previous != Some(unsaved) {
+                report.try_run(unsaved);
+            }
+            unsaved
+        });
+    }
 
     // Keep revision synchronized if the open note is renamed or moved via the Notes pane.
     Effect::new(move |_| {
@@ -2266,6 +2516,35 @@ fn NoteTextEditor(
             { on_close.try_run(()); };
         }
     };
+    if let Some(request) = close_request {
+        Effect::new(move |previous: Option<u32>| {
+            let asked = request.get();
+            if previous.is_some_and(|p| p != asked) {
+                close();
+            }
+            asked
+        });
+    }
+    // A tab shown again measures its editor (hidden, it had no layout); a hidden one drops its
+    // suggestion list and preview card.
+    if let Some(active) = active {
+        Effect::new(move |previous: Option<bool>| {
+            let shown = active.get();
+            if shown && previous == Some(false) {
+                request_animation_frame(move || {
+                    if preview.try_get_untracked() == Some(false)
+                        && let Some(cm) = cm()
+                    {
+                        cm.measure();
+                    }
+                });
+            } else if !shown {
+                choices.try_set(Vec::new());
+                close_hover_now.try_run(());
+            }
+            shown
+        });
+    }
 
     let save_for_key = save.clone();
     let save_for_btn = save.clone();

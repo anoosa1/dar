@@ -1,6 +1,7 @@
 //! Linked notes: the library's tags and aliases, backlinks and unlinked mentions over the API,
 //! and in the browser `[[`/`#` suggestions, following and creating links, linked references,
-//! link updates after a rename, the tag list and checkbox toggling in the preview.
+//! link updates after a rename, the tag list and checkbox toggling in the preview, and open
+//! notes as tabs and side by side.
 
 use dar_acceptance::prelude::*;
 use dar_acceptance::session::Upload;
@@ -16,6 +17,7 @@ pub const SUITE: Suite = Suite {
         case!(outliner_keys_and_query_blocks, 120),
         case!(hover_preview_block_link_and_folder_rename, 180),
         case!(math_and_mermaid_in_reading_mode, 120),
+        case!(tabs_and_side_by_side_notes, 180),
     ],
 };
 
@@ -539,6 +541,141 @@ pub async fn math_and_mermaid_in_reading_mode(t: &Ctx) -> Result<()> {
     assert!(svg_text.contains("Write note") && svg_text.contains("View diagram"), "{svg_info}");
 
     page.screenshot(t.screenshot("notes-math-mermaid.png"), true).await?;
+
+    let failures = failures.lock().unwrap().clone();
+    assert!(failures.is_empty(), "page errors: {failures:?}");
+    Ok(())
+}
+
+pub async fn tabs_and_side_by_side_notes(t: &Ctx) -> Result<()> {
+    let base = t.fixture().await?.base.clone();
+    let admin = login(&base).await?;
+    let root = admin.get_json("/api/v1/notes/library").await?["rootId"].as_str().context("rootId")?.to_owned();
+    let tag = &uuid()[..6];
+    let (alpha, beta, gamma) = (format!("Alpha {tag}"), format!("Beta {tag}"), format!("Gamma {tag}"));
+    let alpha_id = note(&admin, &root, &format!("{alpha}.md"), &format!("# {alpha}\n\nFirst body.\n")).await?;
+    let beta_id = note(&admin, &root, &format!("{beta}.md"), &format!("# {beta}\n\nSecond body.\n")).await?;
+    let gamma_id = note(&admin, &root, &format!("{gamma}.md"), &format!("# {gamma}\n\nThird body.\n")).await?;
+
+    let browser = Browser::shared().await?;
+    let context = browser.new_context(ContextOptions::sized(1440, 950)).await?;
+    let page = context.new_page().await?;
+    let failures = Arc::new(Mutex::new(Vec::<String>::new()));
+    {
+        let sink = failures.clone();
+        page.on_page_error(move |msg| sink.lock().unwrap().push(msg.clone()));
+    }
+    page.goto(&format!("{base}/notes")).await?;
+    page.get_by_label("Username").fill("admin").await?;
+    page.get_by_label("Password").fill(PASSWORD).await?;
+    page.get_by_role("button", "Sign in").click().await?;
+    page.get_by_role("heading", "All notes").wait_for().await?;
+    let row = |title: &str| page.locator(".workspace-row").filter_has_text(title).locator(".workspace-row-content");
+    let search = || async { Ok::<String, Error>(page.evaluate("() => location.search").await?.as_str().unwrap_or_default().to_owned()) };
+
+    // A row opens its note in a tab of the note sheet.
+    row(&alpha).click().await?;
+    let left = page.get_by_role("tablist", "Open notes");
+    left.get_by_role("tab", alpha.as_str()).selected(true).wait_for().await?;
+    let alpha_editor = page.get_by_role("region", format!("Editor for {alpha}.md"));
+    let alpha_source = ui::note_source(&alpha_editor).await?;
+
+    // Text not yet saved (the save fails once) stays with its tab while another one is shown:
+    // the background tab keeps its editor, so the same editor (and its undo history) comes back.
+    page.route("**/api/v1/files/uploads", Some(1), |route| async move {
+        route.fulfill(Fulfill::json(503, &json!({ "error": { "message": "Simulated note save interruption" } }))).await
+    })
+    .await?;
+    ui::note_select(&alpha_source, None, None).await?;
+    alpha_source.press_sequentially(" Kept edit.").await?;
+    alpha_editor.get_by_text("Simulated note save interruption").wait_for().await?;
+    left.get_by_role("tab", contains(&alpha)).locator(".note-tab-dirty").wait_for().await?;
+    alpha_source.evaluate("el => { el.dataset.kept = 'yes'; }", Value::Null).await?;
+
+    // Ctrl+click opens another tab; the hidden tab's editor is out of the way.
+    row(&beta).click_with(ClickOptions { modifiers: vec!["Control"], ..ClickOptions::default() }).await?;
+    left.get_by_role("tab", beta.as_str()).selected(true).wait_for().await?;
+    let beta_editor = page.get_by_role("region", format!("Editor for {beta}.md"));
+    ui::note_source(&beta_editor).await?;
+    assert_eq!(left.get_by_role("tab", ()).count().await?, 2);
+    assert_eq!(alpha_editor.count().await?, 0, "a background tab's editor is hidden");
+    assert!(search().await?.contains(&format!("note={beta_id}")), "the URL names the shown note");
+    page.screenshot(t.screenshot("notes-tabs.png"), true).await?;
+
+    left.get_by_role("tab", contains(&alpha)).click().await?;
+    let alpha_source = ui::note_source(&alpha_editor).await?;
+    assert_eq!(alpha_source.evaluate("el => el.dataset.kept ?? null", Value::Null).await?, json!("yes"), "the same editor came back");
+    assert!(ui::note_text(&alpha_source).await?.contains("Kept edit."));
+    assert!(alpha_editor.get_by_role("button", "Undo").is_enabled().await?);
+    assert!(search().await?.contains(&format!("note={alpha_id}")));
+
+    // Closing a tab with unsaved text asks first; Keep editing keeps it.
+    left.get_by_role("button", format!("Close {alpha}")).click().await?;
+    alpha_editor.get_by_text(contains("retained as a recovery draft")).wait_for().await?;
+    alpha_editor.get_by_role("button", "Keep editing").click().await?;
+    alpha_editor.get_by_role("button", "Retry save").click().await?;
+    alpha_editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
+    assert!(admin.get(&format!("/api/v1/files/{alpha_id}/content")).await?.text().contains("Kept edit."));
+    left.get_by_role("tab", alpha.as_str()).locator(".note-tab-dirty").wait_for_state(State::Detached).await?;
+
+    // Ctrl+Tab and Ctrl+Shift+Tab cycle the tabs; arrow keys move along the strip.
+    left.get_by_role("tab", alpha.as_str()).press("Control+Tab").await?;
+    left.get_by_role("tab", beta.as_str()).selected(true).wait_for().await?;
+    page.keyboard().press("Control+Shift+Tab").await?;
+    left.get_by_role("tab", alpha.as_str()).selected(true).wait_for().await?;
+    page.keyboard().press("ArrowRight").await?;
+    left.get_by_role("tab", beta.as_str()).selected(true).wait_for().await?;
+    assert_eq!(left.get_by_role("tab", beta.as_str()).evaluate("el => el === document.activeElement", Value::Null).await?, json!(true), "roving focus");
+    page.keyboard().press("ArrowLeft").await?;
+    left.get_by_role("tab", alpha.as_str()).selected(true).wait_for().await?;
+
+    // Open to the right splits the sheet into two panes, each with its own tabs.
+    ui::item_action(&page, &gamma, "Open to the right").await?;
+    let right = page.get_by_role("tablist", "Open notes on the right");
+    right.get_by_role("tab", gamma.as_str()).selected(true).wait_for().await?;
+    let gamma_editor = page.get_by_role("region", format!("Editor for {gamma}.md"));
+    ui::note_source(&gamma_editor).await?;
+    alpha_editor.wait_for().await?;
+    let left_box = alpha_editor.bounding_box().await?.context("left pane box")?;
+    let right_box = gamma_editor.bounding_box().await?.context("right pane box")?;
+    assert!(right_box.x >= left_box.x + left_box.width - 1.0, "side by side: {left_box:?} {right_box:?}");
+    assert!(search().await?.contains(&format!("note={gamma_id}")), "the focused pane's note is in the URL");
+    page.screenshot(t.screenshot("notes-tabs-split.png"), true).await?;
+
+    // Narrower sheets show one pane at a time, with a switch.
+    page.set_viewport_size(1000, 800).await?;
+    gamma_editor.wait_for().await?;
+    alpha_editor.wait_for_state(State::Hidden).await?;
+    page.get_by_role("group", "Shown pane").get_by_role("button", "Left").click().await?;
+    alpha_editor.wait_for().await?;
+    gamma_editor.wait_for_state(State::Hidden).await?;
+    page.set_viewport_size(390, 844).await?;
+    alpha_editor.wait_for().await?;
+    assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
+    page.screenshot(t.screenshot("notes-tabs-phone.png"), true).await?;
+    page.set_viewport_size(1440, 950).await?;
+
+    // A reload brings the tab set back (the URL names the shown note).
+    page.reload().await?;
+    left.get_by_role("tab", alpha.as_str()).selected(true).wait_for().await?;
+    left.get_by_role("tab", beta.as_str()).wait_for().await?;
+    right.get_by_role("tab", gamma.as_str()).wait_for().await?;
+    ui::note_source(&alpha_editor).await?;
+
+    // Closing the right pane's last tab ends the split; Ctrl+W closes the shown tab; the
+    // editor's Close closes the last one and the sheet.
+    right.get_by_role("button", format!("Close {gamma}")).click().await?;
+    right.wait_for_state(State::Detached).await?;
+    gamma_editor.wait_for_state(State::Detached).await?;
+    left.get_by_role("tab", beta.as_str()).click().await?;
+    ui::note_source(&beta_editor).await?;
+    left.get_by_role("tab", beta.as_str()).press("Control+w").await?;
+    left.get_by_role("tab", beta.as_str()).wait_for_state(State::Detached).await?;
+    left.get_by_role("tab", alpha.as_str()).selected(true).wait_for().await?;
+    alpha_editor.get_by_role("button", "Close editor").click().await?;
+    left.wait_for_state(State::Detached).await?;
+    page.get_by_role("heading", "All notes").wait_for().await?;
+    assert!(!search().await?.contains("note="));
 
     let failures = failures.lock().unwrap().clone();
     assert!(failures.is_empty(), "page errors: {failures:?}");

@@ -199,6 +199,13 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   wikilinks that Ctrl/Cmd+click or Alt+Enter follows, tag chips, clickable checkboxes,
   quotes and callouts with their rule, code panels); Reading is the rendered preview
   (including LaTeX math as MathML and themed Mermaid diagrams, shared across Markdown previews).
+  Open notes are tabs in that sheet (Obsidian's tabs, no new chrome): a tab strip above the
+  editor (title, unsaved dot, close; middle-click closes, right-click or the strip's menu for
+  options), Ctrl/Cmd+Tab cycles and Ctrl/Cmd+W closes. A row click replaces the shown tab
+  (never one with unsaved changes); Ctrl/Cmd+click, the middle button or the row menu's Open in
+  new tab opens another; in Live a link takes Ctrl/Cmd+Shift+click for a new tab. Open to the
+  right (row and tab menus, Ctrl/Cmd+Alt+click) splits the sheet into two panes with their own
+  tabs; below 1100px one pane shows, with a Left/Right switch.
   New notes take their first heading as the file name when closed. Linked writing follows Obsidian and
   Logseq without new chrome: `[[`/`#` suggestions in a top-layer list at the caret,
   Outline in the editor bar, properties above the preview, callouts, tag chips,

@@ -7,6 +7,7 @@ pub mod note_editor;
 pub mod note_graph;
 pub mod note_links;
 pub mod note_query;
+pub mod note_tabs;
 pub mod notes;
 pub mod task_occurrences;
 pub mod tasks;
@@ -226,6 +227,8 @@ pub(super) fn WorkspaceShell(
     sidebar: ChildrenFn,
     #[prop(into)] has_details: Signal<bool>,
     #[prop(optional, into)] note_editor: Signal<bool>,
+    /// The note sheet shows two panes side by side, so the list column narrows.
+    #[prop(optional, into)] split_details: Signal<bool>,
     details: ChildrenFn,
     pim: PimLive,
     children: ChildrenFn,
@@ -270,7 +273,7 @@ pub(super) fn WorkspaceShell(
                 if window().match_media("(max-width:800px)").ok().flatten().is_some_and(|m| m.matches()) {
                     // The details load after the sheet opens; focus their Close button once it is there.
                     fn focus_close(p: web_sys::HtmlElement, tries: u32) {
-                        let close = p.query_selector("[aria-label^=\"Close\"]").ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
+                        let close = p.query_selector("[aria-label^=\"Close\"]:not([data-tab-close])").ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
                         match close {
                             Some(c) => { let _ = c.focus(); }
                             None if tries > 0 && p.is_connected() => request_animation_frame(move || focus_close(p, tries - 1)),
@@ -315,7 +318,8 @@ pub(super) fn WorkspaceShell(
             let layout = if connected.get() { "has-workspace-list" } else { "" };
             let details_cls = if has_details.get() { "has-pim-details" } else { "" };
             let editor_cls = if has_details.get() && note_editor.get() { " has-note-editor" } else { "" };
-            format!("app-shell pim-shell {details_cls} {layout}{editor_cls}")
+            let split_cls = if has_details.get() && split_details.get() { " has-note-split" } else { "" };
+            format!("app-shell pim-shell {details_cls} {layout}{editor_cls}{split_cls}")
         }>
             <WorkspaceHeader app=kind session=session_header on_signed_out=on_signed_out on_settings=Callback::new(move |_| settings.set(true))/>
             <div class=move || format!("pim-workspace {}", if connected.get() { "has-workspace-list" } else { "" })>
