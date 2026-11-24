@@ -224,16 +224,20 @@ impl Saver {
     }
 
     pub fn reload(self) {
+        let queue = self.queue.get_value();
         spawn_local(async move {
+            let _turn = queue.lock().await;
             match api::get::<Preferences>(PREFERENCES).await {
                 Ok(value) => {
-                    self.saved.set(Some(value.clone()));
-                    self.preferences.set(Some(value));
-                    self.conflict.set(false);
-                    self.error.set(String::new());
-                    self.states.set(HashMap::new());
+                    self.saved.try_set(Some(value.clone()));
+                    self.preferences.try_set(Some(value));
+                    self.conflict.try_set(false);
+                    self.error.try_set(String::new());
+                    self.states.try_set(HashMap::new());
                 }
-                Err(e) => self.error.set(e.message),
+                Err(e) => {
+                    self.error.try_set(e.message);
+                }
             }
         });
     }
@@ -247,68 +251,104 @@ impl Saver {
     }
 
     pub fn change(self, key: &'static str, value: serde_json::Value, message: String, undoable: bool) {
-        let Some(saved) = self.saved.get_untracked() else { return };
-        let before = field(&saved, key);
-        if before == value {
-            return;
-        }
         let set_local = move |v: serde_json::Value| {
-            self.preferences.update(|p| {
+            self.preferences.try_update(|p| {
                 if let Some(p) = p
-                    && let Ok(serde_json::Value::Object(mut map)) = serde_json::to_value(&*p) {
-                        map.insert(key.into(), v);
-                        if let Ok(next) = serde_json::from_value(serde_json::Value::Object(map)) {
-                            *p = next;
-                        }
-                    }
-            })
-        };
-        set_local(value.clone());
-        self.states.update(|s| {
-            s.insert(key, SaveState::Saving);
-        });
-        self.error.set(String::new());
-        self.notice.set(None);
-        let queue = self.queue.get_value();
-        spawn_local(async move {
-            // Saves run in order: each waits for the previous one to finish.
-            let _turn = queue.lock().await;
-            let Some(session) = self.session.try_get_value() else { return };
-            // A missing value (undoing a first change) is left out, as JSON.stringify drops `undefined`.
-            let body = |revision: u64| if value.is_null() { serde_json::json!({ "revision": revision }) } else { serde_json::json!({ "revision": revision, key: value.clone() }) };
-            let revision = self.saved.try_with_untracked(|s| s.as_ref().map(|s| s.revision)).flatten().unwrap_or(0);
-            let mut result = save_preferences(body(revision), revision, &session).await;
-            if let Err(e) = &result
-                && e.status == 412 {
-                    match api::get::<Preferences>(PREFERENCES).await {
-                        Ok(latest) if field(&latest, key) == before => result = save_preferences(body(latest.revision), latest.revision, &session).await,
-                        Ok(latest) => self.saved.set(Some(latest)),
-                        Err(_) => {}
+                    && let Ok(serde_json::Value::Object(mut map)) = serde_json::to_value(&*p)
+                {
+                    map.insert(key.into(), v);
+                    if let Ok(next) = serde_json::from_value(serde_json::Value::Object(map)) {
+                        *p = next;
                     }
                 }
+            });
+        };
+        if let Some(saved) = self.saved.get_untracked() {
+            if field(&saved, key) == value {
+                return;
+            }
+            set_local(value.clone());
+        }
+        self.states.try_update(|s| {
+            s.insert(key, SaveState::Saving);
+        });
+        self.error.try_set(String::new());
+        self.notice.try_set(None);
+        let queue = self.queue.get_value();
+        spawn_local(async move {
+            // Saves run in order: each waits for any initial load and previous save to finish.
+            let _turn = queue.lock().await;
+            let Some(session) = self.session.try_get_value() else { return };
+            let saved = match self.saved.try_get_untracked().flatten() {
+                Some(s) => s,
+                None => match api::get::<Preferences>(PREFERENCES).await {
+                    Ok(latest) => {
+                        self.saved.try_set(Some(latest.clone()));
+                        self.preferences.try_set(Some(latest.clone()));
+                        latest
+                    }
+                    Err(e) => {
+                        self.states.try_update(|s| {
+                            s.insert(key, SaveState::Error);
+                        });
+                        self.error.try_set(e.message);
+                        return;
+                    }
+                },
+            };
+            let before = field(&saved, key);
+            if before == value {
+                self.states.try_update(|s| {
+                    s.remove(key);
+                });
+                return;
+            }
+            set_local(value.clone());
+            self.states.try_update(|s| {
+                s.insert(key, SaveState::Saving);
+            });
+            // A missing value (undoing a first change) is left out, as JSON.stringify drops `undefined`.
+            let body = |revision: u64| if value.is_null() { serde_json::json!({ "revision": revision }) } else { serde_json::json!({ "revision": revision, key: value.clone() }) };
+            let revision = saved.revision;
+            let mut result = save_preferences(body(revision), revision, &session).await;
+            if let Err(e) = &result
+                && e.status == 412
+            {
+                match api::get::<Preferences>(PREFERENCES).await {
+                    Ok(latest) if field(&latest, key) == before => result = save_preferences(body(latest.revision), latest.revision, &session).await,
+                    Ok(latest) => {
+                        self.saved.try_set(Some(latest));
+                    }
+                    Err(_) => {}
+                }
+            }
             match result {
                 Ok(next) => {
-                    self.saved.set(Some(next.clone()));
+                    self.saved.try_set(Some(next.clone()));
                     // The rest of the page (the theme, other apps) follows the saved preferences at once.
                     self.shared.value.try_set(Some(next.clone()));
-                    self.preferences.update(|p| {
+                    self.preferences.try_update(|p| {
                         if let Some(p) = p {
                             p.revision = next.revision;
                         }
                     });
-                    self.states.update(|s| {
+                    self.states.try_update(|s| {
                         s.insert(key, SaveState::Saved);
                     });
                     let undo = undoable.then(|| std::sync::Arc::new(move || self.change(key, before.clone(), "Change undone".into(), false)) as std::sync::Arc<dyn Fn() + Send + Sync>);
-                    self.notice.set(Some(Notice { message, undo }));
+                    self.notice.try_set(Some(Notice { message, undo }));
                 }
                 Err(e) => {
                     let previous = self.saved.try_with_untracked(|s| s.as_ref().map(|s| field(s, key))).flatten().unwrap_or(serde_json::Value::Null);
                     set_local(previous);
-                    self.states.update(|s| {
+                    self.states.try_update(|s| {
                         s.insert(key, SaveState::Error);
                     });
-                    if e.status == 412 { self.conflict.set(true) } else { self.error.set(e.message) }
+                    if e.status == 412 {
+                        self.conflict.try_set(true);
+                    } else {
+                        self.error.try_set(e.message);
+                    }
                 }
             }
         });

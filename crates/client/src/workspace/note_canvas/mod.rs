@@ -307,7 +307,7 @@ pub fn NoteCanvas(
     Effect::new(move |_| {
         let view = board.view.get();
         let Some(element) = stage.get() else { return };
-        let style = element.style();
+        let style = web_sys::HtmlElement::style(&element);
         let _ = style.set_property("--pan-x", &format!("{}px", view.x));
         let _ = style.set_property("--pan-y", &format!("{}px", view.y));
         let _ = style.set_property("--zoom", &view.zoom.to_string());

@@ -58,7 +58,7 @@ impl OpenIn {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct NoteTab {
+pub struct NoteTab {
     pub entry: FileEntry,
     /// 0 is the left (or only) pane, 1 the right one.
     pub pane: usize,
@@ -124,7 +124,7 @@ pub(super) fn save(key: &str, saved: &SavedTabs) {
 
 /// The open notes. Every method reads and writes with `try_`, so deferred code may call it.
 #[derive(Clone, Copy)]
-pub(super) struct NoteTabs {
+pub struct NoteTabs {
     pub tabs: RwSignal<Vec<NoteTab>>,
     /// Each pane's shown tab.
     pub active: RwSignal<[Option<String>; 2]>,

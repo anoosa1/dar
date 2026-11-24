@@ -132,17 +132,17 @@ async fn hydrate_mermaid(root: NodeRef<html::Div>, alive: Arc<AtomicBool>) {
         return;
     }
     let Ok(module) = module else {
-        mark_error(&root_el, "figure.mermaid[data-source]");
+        mark_error(&root_el, ".mermaid[data-source]");
         return;
     };
     let Ok(render) = js_sys::Reflect::get(&module, &JsValue::from_str("render"))
         .and_then(|value| value.dyn_into::<js_sys::Function>())
     else {
-        mark_error(&root_el, "figure.mermaid[data-source]");
+        mark_error(&root_el, ".mermaid[data-source]");
         return;
     };
 
-    for el in own_placeholders(&root_el, "figure.mermaid[data-source]") {
+    for el in own_placeholders(&root_el, ".mermaid[data-source]") {
         if !alive.load(Ordering::Relaxed) || root.try_get_untracked().flatten().is_none() || !el.is_connected() {
             return;
         }
@@ -165,10 +165,12 @@ async fn hydrate_mermaid(root: NodeRef<html::Div>, alive: Arc<AtomicBool>) {
         }
         match outcome {
             Ok(_) => {
+                let _ = el.remove_attribute("data-render-error");
                 let _ = list.remove_1("is-error");
                 let _ = list.add_1("is-rendered");
             }
-            Err(_) => {
+            Err(err) => {
+                let _ = el.set_attribute("data-render-error", &format!("{err:?}"));
                 let _ = list.remove_1("is-rendered");
                 let _ = list.add_1("is-error");
             }

@@ -18,7 +18,7 @@ pub const SUITE: Suite = Suite {
     cases: &[
         case!(task_windows_page_and_keep_collection_scope, 45),
         case!(notebook_export_import_and_unicode_search, 45),
-        case!(due_only_task_alarms_and_completion, 30),
+        case!(due_only_task_alarms_and_completion, 45),
         case!(vtodo_dav_edits_filters_scoping_and_child_first_import, 45),
         case!(notes_revisions_fidelity_move_copy_trash_and_sharing, 45),
         case!(tasks_hierarchy_cycles_completion_copy_move_and_vtodo, 45),

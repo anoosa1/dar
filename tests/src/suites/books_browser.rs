@@ -285,7 +285,7 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     page.keyboard().press("Control+f").await?;
     let find = pdf_reader.get_by_role("searchbox", "Find in book");
     find.wait_for().await?;
-    assert_eq!(page.evaluate("() => document.activeElement?.getAttribute('aria-label')").await?, json!("Find in book"));
+    page.wait_for_function("() => document.activeElement?.getAttribute('aria-label') === 'Find in book'").await?;
     find.fill("LIGHTHOUSE").await?;
     count_is("2 of 2").await?;
     page.locator(".pdf-view-page[data-page=\"1\"] .pdf-view-match.is-current").wait_for().await?;

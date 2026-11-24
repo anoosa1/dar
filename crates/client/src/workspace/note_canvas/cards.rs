@@ -35,7 +35,7 @@ pub(super) fn CanvasCard(board: Board, id: String) -> impl IntoView {
         if let Some(rect) = rect.get() {
             place(&el, &rect);
         }
-        let style = el.style();
+        let style = web_sys::HtmlElement::style(&el);
         match color_parts(color.get().as_deref()).1 {
             Some(hex) => {
                 let _ = style.set_property("--canvas-color", &hex);
@@ -330,9 +330,9 @@ pub(super) fn CanvasEdge(board: Board, id: String) -> impl IntoView {
     view! {
         <div node_ref=frame class=class data-edge-id=id.clone()>
             <svg aria-hidden="true" color=hex
-                width=move || area.get().map(|r| r.width.to_string()).unwrap_or_default()
-                height=move || area.get().map(|r| r.height.to_string()).unwrap_or_default()
-                viewBox=move || area.get().map(|r| view_box(&r)).unwrap_or_default()>
+                width=move || area.get().map(|r| r.width.to_string()).unwrap_or_else(|| "1".into())
+                height=move || area.get().map(|r| r.height.to_string()).unwrap_or_else(|| "1".into())
+                viewBox=move || area.get().map(|r| view_box(&r)).unwrap_or_else(|| "0 0 1 1".into())>
                 <path class="canvas-edge-hit" d=path/>
                 <path class="canvas-edge-line" d=path/>
                 <polygon class="canvas-edge-arrow" points=from_arrow/>
@@ -418,9 +418,9 @@ pub(super) fn ConnectPreview(board: Board) -> impl IntoView {
     view! {
         <div node_ref=frame class=move || if curve.with(Option::is_some) { "canvas-edge is-preview" } else { "canvas-edge is-preview is-hidden" } aria-hidden="true">
             <svg aria-hidden="true"
-                width=move || curve.get().map(|(_, r)| r.width.to_string()).unwrap_or_default()
-                height=move || curve.get().map(|(_, r)| r.height.to_string()).unwrap_or_default()
-                viewBox=move || curve.get().map(|(_, r)| view_box(&r)).unwrap_or_default()>
+                width=move || curve.get().map(|(_, r)| r.width.to_string()).unwrap_or_else(|| "1".to_owned())
+                height=move || curve.get().map(|(_, r)| r.height.to_string()).unwrap_or_else(|| "1".to_owned())
+                viewBox=move || curve.get().map(|(_, r)| view_box(&r)).unwrap_or_else(|| "0 0 1 1".to_owned())>
                 <path class="canvas-edge-line" d=move || curve.get().map(|(d, _)| d).unwrap_or_default()/>
             </svg>
         </div>

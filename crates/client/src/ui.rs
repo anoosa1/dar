@@ -108,10 +108,7 @@ pub fn use_floating(open: Signal<bool>, anchor: NodeRef<html::Button>, panel: No
         if !element.has_attribute("popover") {
             let _ = element.set_attribute("popover", "manual");
         }
-        if !element.matches(":popover-open").unwrap_or(true) {
-            call_method(&element, "showPopover");
-        }
-        let place = {
+        let place = std::rc::Rc::new({
             let element = element.clone();
             move || {
                 let Some(anchor) = anchor.get_untracked() else { return };
@@ -140,20 +137,58 @@ pub fn use_floating(open: Signal<bool>, anchor: NodeRef<html::Button>, panel: No
                 let _ = style.set_property("--float-left", &format!("{}px", left.round()));
                 let _ = element.set_attribute("data-side", if up { "up" } else { "down" });
             }
-        };
-        place();
-        let place = std::rc::Rc::new(place);
-        let observer_callback = {
+        });
+        let ensure_open = std::rc::Rc::new({
+            let element = element.clone();
             let place = place.clone();
-            Closure::<dyn FnMut()>::new(move || place())
+            move || {
+                if open.try_get_untracked() != Some(true) || !element.is_connected() {
+                    return;
+                }
+                if !element.matches(":popover-open").unwrap_or(true) {
+                    call_method(&element, "showPopover");
+                }
+                place();
+            }
+        });
+        ensure_open();
+        {
+            let ensure = ensure_open.clone();
+            request_animation_frame(move || ensure());
+        }
+        let observer_callback = {
+            let element = element.clone();
+            let place = place.clone();
+            let ensure = ensure_open.clone();
+            Closure::<dyn FnMut()>::new(move || {
+                // Moving an ancestor (such as a Leptos `<For>` row reorder) closes an open
+                // popover silently (`fireEvents = false`), collapsing it to 0x0 and triggering
+                // ResizeObserver. Reopen and re-anchor on the next frame if still open.
+                if open.try_get_untracked() == Some(true) && !element.matches(":popover-open").unwrap_or(true) {
+                    let ensure = ensure.clone();
+                    request_animation_frame(move || ensure());
+                } else {
+                    place();
+                }
+            })
         };
         let observer = web_sys::ResizeObserver::new(observer_callback.as_ref().unchecked_ref()).expect("ResizeObserver");
         observer.observe(&element);
         let resize = Listener::new(&window(), "resize", false, { let place = place.clone(); move |_| place() });
         let scroll = Listener::new(&window(), "scroll", true, { let place = place.clone(); move |_| place() });
-        let kept = send_wrapper::SendWrapper::new((observer, observer_callback, resize, scroll, element));
+        let toggle = Listener::new(&element, "toggle", false, {
+            let element = element.clone();
+            let ensure = ensure_open.clone();
+            move |_| {
+                if open.try_get_untracked() == Some(true) && !element.matches(":popover-open").unwrap_or(true) {
+                    let ensure = ensure.clone();
+                    request_animation_frame(move || ensure());
+                }
+            }
+        });
+        let kept = send_wrapper::SendWrapper::new((observer, observer_callback, resize, scroll, toggle, element));
         on_cleanup(move || {
-            let (observer, _callback, _resize, _scroll, element) = kept.take();
+            let (observer, _callback, _resize, _scroll, _toggle, element) = kept.take();
             observer.disconnect();
             if element.matches(":popover-open").unwrap_or(false) {
                 call_method(&element, "hidePopover");

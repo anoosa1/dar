@@ -10,7 +10,7 @@
 // `adoptedStyleSheets`, and apply any remaining `style` attributes via CSSOM before mounting.
 
 import mermaid from "mermaid";
-import {applyStyleDeclarations} from "./style.js";
+import {DATA_STYLE_ATTR, applyStyleDeclarations, neutralizeInlineStyleAttrs} from "./style.js";
 
 let nextId = 0;
 let queue = Promise.resolve();
@@ -98,7 +98,8 @@ function stripImports(css) {
 }
 
 /// Runs `mermaid.render()` inside a hidden Light DOM scratch container while redirecting
-/// temporary `<style>` insertions and `setAttribute("style", ...)` calls to CSP-safe CSSOM.
+/// temporary `<style>` insertions, `setAttribute("style", ...)`, and `DOMParser` inline
+/// style attributes to CSP-safe CSSOM.
 async function renderSvgCspSafe(id, source, scratch) {
   const capturedStyles = [];
   const tempSheet =
@@ -112,6 +113,7 @@ async function renderSvgCspSafe(id, source, scratch) {
   const origSetAttr = Element.prototype.setAttribute;
   const origInsertBefore = Node.prototype.insertBefore;
   const origAppendChild = Node.prototype.appendChild;
+  const origParseFromString = DOMParser.prototype.parseFromString;
 
   const syncTempSheet = () => {
     if (!tempSheet) return;
@@ -164,6 +166,10 @@ async function renderSvgCspSafe(id, source, scratch) {
     return origAppendChild.call(this, child);
   };
 
+  DOMParser.prototype.parseFromString = function (str, type) {
+    return origParseFromString.call(this, neutralizeInlineStyleAttrs(str), type);
+  };
+
   try {
     const result = await mermaid.render(id, source, scratch);
     const capturedCss = capturedStyles.map((s) => s.textContent || "").join("\n");
@@ -172,6 +178,7 @@ async function renderSvgCspSafe(id, source, scratch) {
     Element.prototype.setAttribute = origSetAttr;
     Node.prototype.insertBefore = origInsertBefore;
     Node.prototype.appendChild = origAppendChild;
+    DOMParser.prototype.parseFromString = origParseFromString;
     if (tempSheet) {
       document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== tempSheet);
     }
@@ -179,9 +186,10 @@ async function renderSvgCspSafe(id, source, scratch) {
 }
 
 /// Parses the rendered SVG with `DOMParser`, moves `<style>` rules into a ShadowRoot's
-/// `adoptedStyleSheets`, strips all `style="..."` attributes and re-applies them via CSSOM.
+/// `adoptedStyleSheets`, strips all `style="..."` / `data-dar-style="..."` attributes and
+/// re-applies them via CSSOM.
 function mountDiagram(host, svgMarkup, capturedCss) {
-  const doc = new DOMParser().parseFromString(svgMarkup, "image/svg+xml");
+  const doc = new DOMParser().parseFromString(neutralizeInlineStyleAttrs(svgMarkup), "image/svg+xml");
   if (doc.querySelector("parsererror")) {
     throw new Error("Mermaid produced invalid SVG.");
   }
@@ -197,14 +205,21 @@ function mountDiagram(host, svgMarkup, capturedCss) {
   }
   const safeCss = stripImports(css);
 
-  const styledNodes = [svgEl, ...Array.from(svgEl.querySelectorAll("[style]"))];
+  const styledNodes = [svgEl, ...Array.from(svgEl.querySelectorAll(`[${DATA_STYLE_ATTR}], [style]`))];
   const saved = new Map();
   for (const node of styledNodes) {
+    const parts = [];
+    const dataRaw = node.getAttribute(DATA_STYLE_ATTR);
+    if (dataRaw !== null) {
+      node.removeAttribute(DATA_STYLE_ATTR);
+      if (dataRaw.trim()) parts.push(dataRaw);
+    }
     const raw = node.getAttribute("style");
     if (raw !== null) {
       node.removeAttribute("style");
-      if (raw.trim()) saved.set(node, raw);
+      if (raw.trim()) parts.push(raw);
     }
+    if (parts.length > 0) saved.set(node, parts.join(";"));
   }
 
   const shadow = host.shadowRoot || host.attachShadow({mode: "open"});

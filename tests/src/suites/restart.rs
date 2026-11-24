@@ -213,7 +213,10 @@ pub async fn forced_crash_and_full_restart(t: &Ctx) -> Result<()> {
         let task_uid = task["uid"].as_str().context("task uid")?.to_owned();
 
         let owner = Database::new(&db_server.url, db_name, &db_server.token_file)?;
-        support::deliver_reminders(&owner)?;
+        // Do not run deliver_reminders before the reminder is due: if >1s elapsed since creation,
+        // commit_reminders advances run_at by 60s and defers delivery past the fast restart.
+        let pre_crash_inbox = session.get_json("/api/v1/pim/reminders").await?;
+        assert_eq!(pre_crash_inbox["items"].as_array().map_or(0, Vec::len), 0);
 
         let durable = upload(&session, "Durable.txt", "Committed content survives process failure.").await?;
 

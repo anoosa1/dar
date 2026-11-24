@@ -1100,18 +1100,34 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             });
         });
         // Ctrl/Cmd+Tab and Ctrl/Cmd+Shift+Tab cycle the focused pane's tabs; Ctrl/Cmd+W closes
-        // its shown tab.
+        // its shown tab. Alt+] / Alt+[ and Alt+W provide browser-safe equivalents since browsers
+        // reserve Ctrl+Tab and Ctrl+W outside standalone PWA windows.
         let sheet_keys = move |e: web_sys::KeyboardEvent| {
-            if !(e.ctrl_key() || e.meta_key()) || e.alt_key() || e.default_prevented() {
+            if e.default_prevented() {
                 return;
             }
             let pane = tabs.focused();
-            if e.key() == "Tab" {
+            let ctrl_or_meta = (e.ctrl_key() || e.meta_key()) && !e.alt_key();
+            let alt_only = e.alt_key() && !e.ctrl_key() && !e.meta_key() && !e.shift_key();
+            let key = e.key();
+            let code = e.code();
+            let cycle_step = if ctrl_or_meta && key == "Tab" {
+                Some(if e.shift_key() { -1 } else { 1 })
+            } else if alt_only && (key == "]" || code == "BracketRight") {
+                Some(1)
+            } else if alt_only && (key == "[" || code == "BracketLeft") {
+                Some(-1)
+            } else {
+                None
+            };
+            if let Some(step) = cycle_step {
                 e.prevent_default();
-                if let Some(id) = tabs.cycle(pane, if e.shift_key() { -1 } else { 1 }) {
+                if let Some(id) = tabs.cycle(pane, step) {
                     note_tabs::focus_tab(&id);
                 }
-            } else if !e.shift_key() && e.key().eq_ignore_ascii_case("w") {
+            } else if (ctrl_or_meta && !e.shift_key() && key.eq_ignore_ascii_case("w"))
+                || (alt_only && (key.eq_ignore_ascii_case("w") || code == "KeyW"))
+            {
                 e.prevent_default();
                 if let Some(id) = tabs.active_in(pane) {
                     close_tab.run(id);
@@ -1133,7 +1149,8 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 <For each=move || tabs.mounted_ids() key=|id| id.clone() let:id>
                     {tabs.entry(&id).map(|initial| {
                         let source_id = StoredValue::new(id.clone());
-                        let entry_sig = Signal::from(Memo::new({
+                        let is_canvas = note_canvas::is_canvas(&initial.name);
+                        let entry_sig: Signal<FileEntry> = Signal::from(Memo::new({
                             let id = id.clone();
                             move |_| tabs.tabs.with(|list| list.iter().find(|t| t.entry.id == id).map(|t| t.entry.clone())).unwrap_or_else(|| initial.clone())
                         }));
@@ -1186,7 +1203,6 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                             saved_text.try_update_value(|s| *s = Some(content));
                             reload.update(|n| *n += 1);
                         });
-                        let is_canvas = note_canvas::is_canvas(&initial.name);
                         let links = NoteLinks {
                             resolve: Some(Callback::new(move |(target, wiki): (String, bool)| {
                                 index.with(|ix| ix.resolve(&source_id.get_value(), &target, wiki).map(|n| n.id.clone()))
@@ -1977,6 +1993,7 @@ fn NoteTextEditor(
     children: Children,
 ) -> impl IntoView {
     use wasm_bindgen::JsCast;
+    let tab_active = active;
     let live = expect_context::<Live>();
     let initial = entry.get_untracked();
     let text = RwSignal::new(String::new());
@@ -2770,9 +2787,9 @@ fn NoteTextEditor(
     }
     // A tab shown again measures its editor (hidden, it had no layout); a hidden one drops its
     // suggestion list and preview card.
-    if let Some(active) = active {
+    if let Some(tab_active) = tab_active {
         Effect::new(move |previous: Option<bool>| {
-            let shown = active.get();
+            let shown = tab_active.get();
             if shown && previous == Some(false) {
                 request_animation_frame(move || {
                     if preview.try_get_untracked() == Some(false)

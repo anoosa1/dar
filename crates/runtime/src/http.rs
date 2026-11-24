@@ -364,7 +364,9 @@ pub async fn handle(State(runtime): State<Shared>, ConnectInfo(peer): ConnectInf
         if path.starts_with("/api/v1/files/") || path.starts_with("/api/v1/notes/") {
             runtime.texts.nudge();
         }
-        if path.starts_with("/api/v1/calendar/") && (path.ends_with("/subscription") || path.ends_with("/refresh") || path.ends_with("/calendars")) {
+        if path.starts_with("/api/v1/calendar/")
+            && (path.ends_with("/subscriptions") || path.ends_with("/subscription") || path.ends_with("/refresh") || path.ends_with("/calendars"))
+        {
             runtime.subscriptions.poke();
         }
     }

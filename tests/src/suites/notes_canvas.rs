@@ -5,6 +5,7 @@
 use dar_acceptance::prelude::*;
 use dar_acceptance::session::Upload;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 pub const SUITE: Suite = Suite {
     name: "notes-canvas",

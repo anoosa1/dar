@@ -192,6 +192,7 @@ pub async fn linked_writing_in_the_browser(t: &Ctx) -> Result<()> {
     page.locator(".workspace-row").filter_has_text(&trip).locator(".workspace-row-content").click().await?;
     let trip_editor = page.get_by_role("region", regex("^Editor for "));
     trip_editor.get_by_role("link", "Fresh idea").wait_for().await?;
+    trip_editor.get_by_text("All changes saved").timeout(Duration::from_secs(10)).wait_for().await?;
     trip_editor.get_by_role("button", "Live").click().await?;
     ui::note_source(&trip_editor).await?;
     let fresh = trip_editor.locator(r#".cm-dar-link[data-href="Fresh idea"]"#);
@@ -524,7 +525,7 @@ pub async fn math_and_mermaid_in_reading_mode(t: &Ctx) -> Result<()> {
     assert_eq!(display_info["hasFrac"], json!(true), "{display_info}");
 
     // Mermaid diagrams render an SVG inside a per-diagram shadow root with constructed stylesheets.
-    let diagram = editor.locator("figure.mermaid.is-rendered");
+    let diagram = editor.locator("div.mermaid.is-rendered");
     diagram.clone().timeout(Duration::from_secs(20)).wait_for().await?;
     assert_eq!(diagram.get_attribute("role").await?.as_deref(), Some("img"));
     let svg_info = diagram
@@ -618,10 +619,11 @@ pub async fn tabs_and_side_by_side_notes(t: &Ctx) -> Result<()> {
     assert!(admin.get(&format!("/api/v1/files/{alpha_id}/content")).await?.text().contains("Kept edit."));
     left.get_by_role("tab", alpha.as_str()).locator(".note-tab-dirty").wait_for_state(State::Detached).await?;
 
-    // Ctrl+Tab and Ctrl+Shift+Tab cycle the tabs; arrow keys move along the strip.
-    left.get_by_role("tab", alpha.as_str()).press("Control+Tab").await?;
+    // Alt+] and Alt+[ (browser-safe equivalents of Ctrl+Tab / Ctrl+Shift+Tab) cycle the tabs;
+    // arrow keys move along the strip.
+    left.get_by_role("tab", alpha.as_str()).press("Alt+]").await?;
     left.get_by_role("tab", beta.as_str()).selected(true).wait_for().await?;
-    page.keyboard().press("Control+Shift+Tab").await?;
+    page.keyboard().press("Alt+[").await?;
     left.get_by_role("tab", alpha.as_str()).selected(true).wait_for().await?;
     page.keyboard().press("ArrowRight").await?;
     left.get_by_role("tab", beta.as_str()).selected(true).wait_for().await?;
@@ -662,14 +664,14 @@ pub async fn tabs_and_side_by_side_notes(t: &Ctx) -> Result<()> {
     right.get_by_role("tab", gamma.as_str()).wait_for().await?;
     ui::note_source(&alpha_editor).await?;
 
-    // Closing the right pane's last tab ends the split; Ctrl+W closes the shown tab; the
+    // Closing the right pane's last tab ends the split; Alt+W closes the shown tab; the
     // editor's Close closes the last one and the sheet.
     right.get_by_role("button", format!("Close {gamma}")).click().await?;
     right.wait_for_state(State::Detached).await?;
     gamma_editor.wait_for_state(State::Detached).await?;
     left.get_by_role("tab", beta.as_str()).click().await?;
     ui::note_source(&beta_editor).await?;
-    left.get_by_role("tab", beta.as_str()).press("Control+w").await?;
+    left.get_by_role("tab", beta.as_str()).press("Alt+w").await?;
     left.get_by_role("tab", beta.as_str()).wait_for_state(State::Detached).await?;
     left.get_by_role("tab", alpha.as_str()).selected(true).wait_for().await?;
     alpha_editor.get_by_role("button", "Close editor").click().await?;

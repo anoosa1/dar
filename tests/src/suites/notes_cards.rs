@@ -36,21 +36,27 @@ pub async fn cards_api(t: &Ctx) -> Result<()> {
         &folder_id,
         &format!("Cells {tag}.md"),
         &format!(
-            "---\ntitle: Cells {tag}\nsummary: Not::A card\n---\n\
-             # Cells {tag}\n\n\
-             ```txt\n\
-             Code::Ignored\n\
-             ```\n\n\
-             Powerhouse of the cell::Mitochondria\n\
-             <!--SR:!2026-05-01,2,250-->\n\n\
-             DNA:::Deoxyribonucleic acid\n\n\
-             What carries oxygen in blood?\n\
-             ?\n\
-             Hemoglobin\n\n\
-             - Largest organ in the body #card\n\
-               - Skin\n\n\
-             Already learned::Skip me\n\
-             <!--SR:!2099-01-01,30,250-->\n"
+            concat!(
+                "---\n",
+                "title: Cells {tag}\n",
+                "summary: Not::A card\n",
+                "---\n",
+                "# Cells {tag}\n\n",
+                "```txt\n",
+                "Code::Ignored\n",
+                "```\n\n",
+                "Powerhouse of the cell::Mitochondria\n",
+                "<!--SR:!2026-05-01,2,250-->\n\n",
+                "DNA:::Deoxyribonucleic acid\n\n",
+                "What carries oxygen in blood?\n",
+                "?\n",
+                "Hemoglobin\n\n",
+                "- Largest organ in the body #card\n",
+                "  - Skin\n\n",
+                "Already learned::Skip me\n",
+                "<!--SR:!2099-01-01,30,250-->\n",
+            ),
+            tag = tag,
         ),
     )
     .await?;
@@ -148,23 +154,27 @@ pub async fn review_in_the_browser(t: &Ctx) -> Result<()> {
     let filename = format!("{title}.md");
 
     let original = format!(
-        "---\n\
-         tags:\n\
-           - flashcards/{deck}\n\
-         ---\n\
-         # {title}\n\n\
-         Keep this paragraph untouched.\n\n\
-         ```rust\n\
-         // Fake::Not a card\n\
-         ```\n\n\
-         Capital of France::Paris\n\n\
-         Atomic symbol for gold?\n\
-         ?\n\
-         Au\n\n\
-         - Boiling point of water #card\n\
-           - 100 C at 1 atm\n\n\
-         Bonjour:::Hello\n\n\
-         Trailing note text stays intact.\n"
+        concat!(
+            "---\n",
+            "tags:\n",
+            "  - flashcards/{deck}\n",
+            "---\n",
+            "# {title}\n\n",
+            "Keep this paragraph untouched.\n\n",
+            "```rust\n",
+            "// Fake::Not a card\n",
+            "```\n\n",
+            "Capital of France::Paris\n\n",
+            "Atomic symbol for gold?\n",
+            "?\n",
+            "Au\n\n",
+            "- Boiling point of water #card\n",
+            "  - 100 C at 1 atm\n\n",
+            "Bonjour:::Hello\n\n",
+            "Trailing note text stays intact.\n",
+        ),
+        deck = deck,
+        title = title,
     );
     let note_id = note(&admin, &root, &filename, &original).await?;
 
@@ -270,27 +280,33 @@ pub async fn review_in_the_browser(t: &Ctx) -> Result<()> {
     // Verify saved Markdown has exact `<!--SR:...-->` comments and nothing else changed.
     let saved = admin.get(&format!("/api/v1/files/{note_id}/content")).await?.expect(200)?.text();
     let expected = format!(
-        "---\n\
-         tags:\n\
-           - flashcards/{deck}\n\
-         ---\n\
-         # {title}\n\n\
-         Keep this paragraph untouched.\n\n\
-         ```rust\n\
-         // Fake::Not a card\n\
-         ```\n\n\
-         Capital of France::Paris\n\
-         <!--SR:!{due_3d},3,250-->\n\n\
-         Atomic symbol for gold?\n\
-         ?\n\
-         Au\n\
-         <!--SR:!{due_1d},1,230-->\n\n\
-         - Boiling point of water #card\n\
-           - 100 C at 1 atm\n\
-         <!--SR:!{due_3d},3,250-->\n\n\
-         Bonjour:::Hello\n\
-         <!--SR:!{due_3d},3,250!{due_1d},1,230-->\n\n\
-         Trailing note text stays intact.\n"
+        concat!(
+            "---\n",
+            "tags:\n",
+            "  - flashcards/{deck}\n",
+            "---\n",
+            "# {title}\n\n",
+            "Keep this paragraph untouched.\n\n",
+            "```rust\n",
+            "// Fake::Not a card\n",
+            "```\n\n",
+            "Capital of France::Paris\n",
+            "<!--SR:!{due_3d},3,250-->\n\n",
+            "Atomic symbol for gold?\n",
+            "?\n",
+            "Au\n",
+            "<!--SR:!{due_1d},1,230-->\n\n",
+            "- Boiling point of water #card\n",
+            "  - 100 C at 1 atm\n",
+            "<!--SR:!{due_3d},3,250-->\n\n",
+            "Bonjour:::Hello\n",
+            "<!--SR:!{due_3d},3,250!{due_1d},1,230-->\n\n",
+            "Trailing note text stays intact.\n",
+        ),
+        deck = deck,
+        title = title,
+        due_3d = due_3d,
+        due_1d = due_1d,
     );
     assert_eq!(saved, expected, "saved Markdown mismatch");
 

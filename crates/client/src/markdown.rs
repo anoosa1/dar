@@ -440,9 +440,9 @@ impl Render {
                         let fallback = source.clone();
                         let label = if source.trim().is_empty() { "Mermaid diagram".to_owned() } else { source.trim().to_owned() };
                         return view! {
-                            <figure class="mermaid" role="img" aria-label=label data-source=source>
+                            <div class="mermaid" role="img" aria-label=label data-source=source>
                                 <pre class="mermaid-source"><code>{fallback}</code></pre>
-                            </figure>
+                            </div>
                         }
                         .into_any();
                     }

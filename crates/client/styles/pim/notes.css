@@ -181,10 +181,10 @@ details.callout>summary{cursor:pointer}
 .markdown-preview .math-display.is-error .math-source{border-color:var(--danger);background:var(--error-soft)}
 .markdown-preview .math math{font-size:1.05em}
 .markdown-preview .math-display math{font-size:1.15em}
-.markdown-preview figure.mermaid{margin:14px 0;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow-x:auto}
-.markdown-preview figure.mermaid.is-error{border-color:var(--danger);background:var(--error-soft)}
-.markdown-preview figure.mermaid .mermaid-source{margin:0;padding:0;border:0;background:transparent;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;color:var(--muted);white-space:pre-wrap}
-.markdown-preview figure.mermaid.is-error .mermaid-source{color:var(--danger)}
+.markdown-preview .mermaid{margin:14px 0;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow-x:auto}
+.markdown-preview .mermaid.is-error{border-color:var(--danger);background:var(--error-soft)}
+.markdown-preview .mermaid .mermaid-source{margin:0;padding:0;border:0;background:transparent;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;color:var(--muted);white-space:pre-wrap}
+.markdown-preview .mermaid.is-error .mermaid-source{color:var(--danger)}
 .mermaid-scratch{position:fixed;left:-99999px;top:0;width:1200px;visibility:hidden;pointer-events:none;overflow:hidden}
 
 /* Spaced-repetition flashcards review view */
@@ -360,8 +360,8 @@ details.callout>summary{cursor:pointer}
 .canvas-edge.is-selected .canvas-edge-line{stroke-width:2.75}
 .canvas-edge.is-preview .canvas-edge-line{stroke-dasharray:6 4}
 .canvas-edge-arrow{fill:currentColor;stroke:none;pointer-events:none}
-.canvas-edge-label{position:absolute;left:0;top:0;transform:translate(var(--x,0px),var(--y,0px)) translate(-50%,-50%);padding:2px 8px;border:1px solid var(--border);border-radius:999px;background:var(--panel);color:var(--text);font-size:12px;white-space:nowrap;z-index:5;cursor:pointer;box-shadow:0 1px 4px var(--shadow)}
-.canvas-edge-label.is-selected{border-color:var(--accent)}
+.canvas-edge-label{position:absolute;left:0;top:0;transform:translate(var(--x,0px),var(--y,0px)) translate(-50%,-50%);padding:2px 8px;border:1px solid var(--border);border-radius:999px;background:var(--panel);color:var(--text);font-size:12px;white-space:nowrap;z-index:2;cursor:pointer;box-shadow:0 1px 4px var(--shadow)}
+.canvas-edge-label.is-selected{border-color:var(--accent);z-index:4}
 .canvas-marquee{position:absolute;left:0;top:0;width:var(--w,0px);height:var(--h,0px);transform:translate(var(--x,0px),var(--y,0px));border:1.5px solid var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);border-radius:4px;pointer-events:none;z-index:6}
 .canvas-outline{flex:none;border:1px solid var(--border);border-radius:10px;background:var(--surface-soft);padding:6px 10px;font-size:13px}
 .canvas-outline>summary{cursor:pointer;font-weight:550;color:var(--muted)}
