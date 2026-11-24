@@ -590,7 +590,20 @@ pub(super) fn NoteTabStrip(tabs: NoteTabs, pane: usize, on_close: Callback<Strin
 fn note_tab(tabs: NoteTabs, pane: usize, id: String, on_close: Callback<String>, bar: NodeRef<html::Div>) -> impl IntoView {
     let title = Memo::new({
         let id = id.clone();
-        move |_| tabs.tabs.with(|list| list.iter().find(|t| t.entry.id == id).map(|t| strip_md_ext(&t.entry.name)).unwrap_or_default())
+        move |_| {
+            tabs.tabs.with(|list| {
+                list.iter()
+                    .find(|t| t.entry.id == id)
+                    .map(|t| {
+                        if super::note_canvas::is_canvas(&t.entry.name) {
+                            super::note_canvas::stem(&t.entry.name).to_owned()
+                        } else {
+                            strip_md_ext(&t.entry.name)
+                        }
+                    })
+                    .unwrap_or_default()
+            })
+        }
     });
     let selected = Memo::new({
         let id = id.clone();

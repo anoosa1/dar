@@ -38,6 +38,12 @@ the [design guide](../design.md).
   editor's keep/discard banner. The tab set is remembered per browser tab in sessionStorage
   (`dar.notes-tabs.<user>`) and comes back with a link or reload that names a note. A note is
   open in one tab at most; opening it again shows that tab.
+- Canvases (`crates/client/src/workspace/note_canvas/`): `*.canvas` files in the Notes folder use
+  JSON Canvas 1.0 (`nodes` of type `text`, `file`, `link`, `group`; `edges` with sides, ends,
+  colour and label), preserving unknown fields on save. Canvases list alongside notes (via
+  `/api/v1/notes/attachments`), open in the note sheet and tabs (`?note=<id>`), autosave with
+  revision checks, and provide pan/zoom, drag/resize/connect, undo/redo, keyboard navigation and
+  an accessible card outline.
 - Global search finds notes by file name and text; `/api/v1/search` adds the notes a `#tag`
   query names (tags from properties and text, nested tags and prefixes included) and notes whose
   alias matches, from the runtime's notes cache (same rows, no duplicates, eight per group).

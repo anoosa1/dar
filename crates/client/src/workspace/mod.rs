@@ -2,6 +2,7 @@
 //! along with their shared shell, settings sheet, transfers and reactive select control.
 
 mod logseq_import;
+pub mod note_canvas;
 pub mod note_cards;
 pub mod note_editor;
 pub mod note_graph;

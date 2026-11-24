@@ -217,7 +217,10 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   storing schedules inline as `<!--SR:...-->` comments. Query and ` ```base `
   blocks share one result table (or list), with a quiet line naming the parts of
   a base left out. Notes settings › Import and export holds Import a Logseq graph
-  (files or the graph folder, then a summary). Embedded notes are a quiet inset with an accent rule
+  (files or the graph folder, then a summary). Canvases (`*.canvas`, JSON Canvas 1.0)
+  appear in the Notes list with a grid icon and open in the same sheet (New canvas
+  in the sidebar): positioned text, note/file, link and group cards with SVG
+  connections, pan/zoom, keyboard movement and an accessible card outline. Embedded notes are a quiet inset with an accent rule
   and an open link; `/` commands share the suggestion list.
 - **Tasks:** quick add (title only) above the list; due-date sort groups Overdue,
   Today, Tomorrow, Upcoming, No date and Completed. Rows show a priority-colored

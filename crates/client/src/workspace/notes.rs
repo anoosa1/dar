@@ -12,6 +12,7 @@ use leptos::task::spawn_local;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::note_canvas::{self, NoteCanvas};
 use super::note_cards::{CardSummary, NoteCards};
 use super::note_graph::NoteGraph;
 use super::note_editor;
@@ -149,6 +150,18 @@ fn file_name(title: &str) -> String {
     let trimmed: String = collapsed.chars().take(200).collect();
     let stem = trimmed.trim();
     format!("{}.md", if stem.is_empty() { "Untitled" } else { stem })
+}
+
+fn canvas_file_name(title: &str) -> String {
+    let base = note_canvas::stem(title.trim());
+    let cleaned: String = base
+        .chars()
+        .map(|c| if (c as u32) < 0x20 || c == '/' || c == '\\' { ' ' } else { c })
+        .collect();
+    let collapsed: String = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed: String = collapsed.chars().take(200).collect();
+    let stem = trimmed.trim();
+    format!("{}.canvas", if stem.is_empty() { "Untitled" } else { stem })
 }
 
 fn unique_name(name: &str, taken: &HashSet<String>) -> String {
@@ -481,6 +494,39 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         });
     };
 
+    // A new, empty JSON Canvas file (`Untitled.canvas`) in the current folder.
+    let new_canvas = move || {
+        if library.with_untracked(Option::is_none) {
+            return;
+        }
+        let target = current_target();
+        let taken: Vec<String> = attachments.with_untracked(|a| {
+            a.as_ref().map(|a| a.files.iter().filter(|f| f.parent_id == target).map(|f| f.name.to_lowercase()).collect()).unwrap_or_default()
+        });
+        let name = note_canvas::unique_name("Untitled", &taken);
+        let sess = session_sv.get_value();
+        spawn_local(async move {
+            busy.set(true);
+            error.set(String::new());
+            let result: Result<(), String> = async {
+                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let content = note_canvas::empty_canvas();
+                let file = TextFile { name: &name, parent_id: &target, content: &content, media_type: note_canvas::MEDIA_TYPE, file_id: None, expected_revision: None };
+                let id = write_text_file(&sess, file).await.map_err(|e| e.message)?;
+                let detail = fetch_detail(&conn, &id).await?;
+                tabs.open(detail.entry, OpenIn::Current);
+                Ok(())
+            }
+            .await;
+            if let Err(e) = result {
+                error.set(error_message(&e));
+            } else {
+                reload.update(|n| *n += 1);
+            }
+            busy.set(false);
+        });
+    };
+
     let open_note_in = move |note_id: String, how: OpenIn| {
         if let Some(entry) = tabs.entry(&note_id) {
             tabs.open(entry, how);
@@ -647,7 +693,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     let request_remove_note = move |note: NotesFile| {
         confirm.set(Some(ConfirmState {
-            title: "Move note to deleted files?".into(),
+            title: if note_canvas::is_canvas(&note.name) { "Move canvas to deleted files?" } else { "Move note to deleted files?" }.into(),
             action: "Move to deleted files".into(),
             text: format!("\u{201c}{}\u{201d} can be restored from Files \u{203a} Deleted files.", note.title),
             target: ConfirmTarget::Note(note),
@@ -711,6 +757,72 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         list.extend(rest);
         list
     };
+
+    // Canvases (`*.canvas`) come from the folder's other files; the row menu treats them as notes.
+    let canvas_note = |file: &note_links::NoteFile| NotesFile {
+        id: file.id.clone(),
+        parent_id: file.parent_id.clone(),
+        name: file.name.clone(),
+        title: note_canvas::stem(&file.name).to_owned(),
+        excerpt: String::new(),
+        size: 0.0,
+        revision: 0,
+        modified_at: 0.0,
+        favorite: false,
+        path: file.path.clone(),
+        tags: Vec::new(),
+        aliases: Vec::new(),
+        properties: serde_json::Map::new(),
+    };
+    let build_canvas_actions = move |canvas: NotesFile| -> Vec<MenuAction> {
+        let is_busy = busy.get_untracked();
+        let has_folders = library.with_untracked(|lib| lib.as_ref().is_some_and(|l| !l.folders.is_empty()));
+        let (renamed, moved, removed) = (canvas.clone(), canvas.clone(), canvas.clone());
+        vec![
+            MenuAction::new("Rename", "pencil").disabled(is_busy).run(move || pane.set(Some(NotesPaneKind::RenameNote(renamed.clone())))),
+            MenuAction::new("Move to\u{2026}", "move").disabled(is_busy || !has_folders).run(move || pane.set(Some(NotesPaneKind::Move(moved.clone())))),
+            MenuAction::new("Show in Files", "folder").href(format!("/?folder={}&file={}", canvas.parent_id, canvas.id)),
+            MenuAction::new("Move to deleted files", "trash").danger().separator().disabled(is_busy).run(move || request_remove_note(removed.clone())),
+        ]
+    };
+    let canvas_row_actions = move |canvas: NotesFile| -> Vec<MenuAction> {
+        let (tab_id, right_id) = (canvas.id.clone(), canvas.id.clone());
+        let mut list = vec![
+            MenuAction::new("Open in new tab", "plus").run(move || open_note_in(tab_id.clone(), OpenIn::NewTab)),
+            MenuAction::new("Open to the right", "panel").run(move || open_note_in(right_id.clone(), OpenIn::Right)),
+        ];
+        let mut rest = build_canvas_actions(canvas);
+        if let Some(first) = rest.first_mut() {
+            first.separator = true;
+        }
+        list.extend(rest);
+        list
+    };
+    let canvas_rows = Memo::new(move |_| {
+        let s = scope.get();
+        let q = query.get().trim().to_lowercase();
+        let folder = if s == "all" {
+            Some(String::new())
+        } else {
+            library.with(|lib| lib.as_ref().and_then(|l| l.folders.iter().find(|f| f.id == s).map(|f| format!("{}/", f.path))))
+        };
+        // Favorites, tags, graph and review cover notes only.
+        let Some(prefix) = folder else { return Vec::new() };
+        attachments.with(|a| {
+            let mut list: Vec<NotesFile> = a
+                .as_ref()
+                .map(|a| {
+                    a.files
+                        .iter()
+                        .filter(|f| note_canvas::is_canvas(&f.name) && f.path.starts_with(&prefix) && (q.is_empty() || f.name.to_lowercase().contains(&q)))
+                        .map(canvas_note)
+                        .collect()
+                })
+                .unwrap_or_default();
+            list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()).then_with(|| a.path.cmp(&b.path)));
+            list
+        })
+    });
 
     let sorted_folders = Memo::new(move |_| {
         let mut folders = library.with(|lib| lib.as_ref().map(|l| l.folders.clone()).unwrap_or_default());
@@ -823,6 +935,9 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         let count = due_cards.get();
                         (count > 0).then(|| view! { <small class="nav-count">{count}</small> })
                     }}
+                </button>
+                <button class="nav-item" disabled=move || busy.get() || library.with(Option::is_none) on:click=move |_| new_canvas()>
+                    <Icon name="grid"/>"New canvas"
                 </button>
             </nav>
             <div class="sidebar-heading">
@@ -1071,11 +1186,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                             saved_text.try_update_value(|s| *s = Some(content));
                             reload.update(|n| *n += 1);
                         });
-                        let editor_actions = Callback::new(move |()| {
-                            let current_id = entry_sig.with_untracked(|e| e.id.clone());
-                            let row = library.with_untracked(|lib| lib.as_ref().and_then(|l| l.notes.iter().find(|n| n.id == current_id).cloned()));
-                            row.map(build_note_actions).unwrap_or_default()
-                        });
+                        let is_canvas = note_canvas::is_canvas(&initial.name);
                         let links = NoteLinks {
                             resolve: Some(Callback::new(move |(target, wiki): (String, bool)| {
                                 index.with(|ix| ix.resolve(&source_id.get_value(), &target, wiki).map(|n| n.id.clone()))
@@ -1087,22 +1198,61 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                             nested: false,
                             query: Some(Callback::new(move |source: String| index.with(|ix| super::note_query::run(ix, &source_id.get_value(), &source)))),
                         };
-                        let version = RwSignal::new(0u32);
-                        let on_saved = Callback::new(move |saved: (u32, String)| {
-                            version.update(|n| *n += 1);
-                            on_saved.run(saved);
-                        });
-                        let on_dirty = Callback::new(move |unsaved: bool| {
-                            if let Some(id) = source_id.try_get_value() {
-                                tabs.set_dirty(&id, unsaved);
+                        let body = if is_canvas {
+                            let canvas_actions = Callback::new(move |()| {
+                                let current = entry_sig.get_untracked();
+                                let row = attachments
+                                    .with_untracked(|a| a.as_ref().and_then(|a| a.files.iter().find(|f| f.id == current.id).map(canvas_note)))
+                                    .unwrap_or_else(|| NotesFile {
+                                        id: current.id.clone(),
+                                        parent_id: current.parent_id.clone(),
+                                        name: current.name.clone(),
+                                        title: note_canvas::stem(&current.name).to_owned(),
+                                        excerpt: String::new(),
+                                        size: current.size,
+                                        revision: current.revision,
+                                        modified_at: current.modified_at,
+                                        favorite: current.favorite,
+                                        path: joined(folder_path(&current.parent_id), &current.name),
+                                        tags: Vec::new(),
+                                        aliases: Vec::new(),
+                                        properties: serde_json::Map::new(),
+                                    });
+                                build_canvas_actions(row)
+                            });
+                            view! {
+                                <NoteCanvas
+                                    entry=entry_sig
+                                    session=session_sv.get_value()
+                                    context=ctx_sig
+                                    on_close=on_close
+                                    on_saved=on_saved
+                                    actions=canvas_actions
+                                    links=links
+                                    index=index
+                                    on_open=Callback::new(move |id: String| open_note_in(id, take_intent()))
+                                />
                             }
-                        });
-                        let note_id = Signal::derive(move || source_id.get_value());
-                        let starts_in_preview = preview_choice.get_untracked().unwrap_or_else(|| start_in_preview.get_untracked());
-                        view! {
-                            <div class=move || if shown.get() { "note-tabpanel" } else { "note-tabpanel is-hidden" } role="tabpanel"
-                                id=note_tabs::panel_id(&id) aria-labelledby=note_tabs::tab_id(&id)
-                                data-pane=move || pane.get().to_string() data-note-id=id.clone() inert=move || !shown.get()>
+                            .into_any()
+                        } else {
+                            let editor_actions = Callback::new(move |()| {
+                                let current_id = entry_sig.with_untracked(|e| e.id.clone());
+                                let row = library.with_untracked(|lib| lib.as_ref().and_then(|l| l.notes.iter().find(|n| n.id == current_id).cloned()));
+                                row.map(build_note_actions).unwrap_or_default()
+                            });
+                            let version = RwSignal::new(0u32);
+                            let on_saved = Callback::new(move |saved: (u32, String)| {
+                                version.update(|n| *n += 1);
+                                on_saved.run(saved);
+                            });
+                            let on_dirty = Callback::new(move |unsaved: bool| {
+                                if let Some(id) = source_id.try_get_value() {
+                                    tabs.set_dirty(&id, unsaved);
+                                }
+                            });
+                            let note_id = Signal::derive(move || source_id.get_value());
+                            let starts_in_preview = preview_choice.get_untracked().unwrap_or_else(|| start_in_preview.get_untracked());
+                            view! {
                                 <NoteTextEditor entry=entry_sig session=session_sv.get_value() context=ctx_sig start_in_preview=starts_in_preview on_close=on_close on_saved=on_saved actions=editor_actions
                                     links=links index=index anchor=anchor refresh=refresh on_mode=Callback::new(move |p: bool| preview_choice.set(Some(p)))
                                     active=Signal::from(shown) on_dirty=on_dirty close_request=close_request>
@@ -1110,6 +1260,14 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                         on_open=Callback::new(move |id: String| open_note_in(id, take_intent()))
                                         on_changed=Callback::new(move |_| { version.update(|n| *n += 1); reload.update(|n| *n += 1); })/>
                                 </NoteTextEditor>
+                            }
+                            .into_any()
+                        };
+                        view! {
+                            <div class=move || if shown.get() { "note-tabpanel" } else { "note-tabpanel is-hidden" } role="tabpanel"
+                                id=note_tabs::panel_id(&id) aria-labelledby=note_tabs::tab_id(&id)
+                                data-pane=move || pane.get().to_string() data-note-id=id.clone() inert=move || !shown.get()>
+                                {body}
                             </div>
                         }
                         .into_any()
@@ -1183,7 +1341,8 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         {move || {
                             let lib = library.get();
                             let list = rows.get();
-                            lib.filter(|_| list.is_empty()).map(|lib| {
+                            let canvases = canvas_rows.get();
+                            lib.filter(|_| list.is_empty() && canvases.is_empty()).map(|lib| {
                                 let q = query.get();
                                 let s = scope.get();
                                 let tagged = s.starts_with("tag:");
@@ -1224,6 +1383,68 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                 })
                             });
                             view! {
+                                <For
+                                    each=move || canvas_rows.with(|list| list.iter().map(|c| c.id.clone()).collect::<Vec<_>>())
+                                    key=|id| id.clone()
+                                    let:canvas_id
+                                >
+                                    {
+                                        let id_row = canvas_id.clone();
+                                        let canvas_sig = Memo::new(move |_| {
+                                            canvas_rows.with(|list| list.iter().find(|c| c.id == id_row).cloned())
+                                        });
+                                        let id_sel = canvas_id.clone();
+                                        let id_click = canvas_id.clone();
+                                        let id_aux = canvas_id.clone();
+                                        let action_label = Signal::derive(move || {
+                                            canvas_sig.with(|c| format!("Actions for {}", c.as_ref().map(|c| c.title.as_str()).unwrap_or("")))
+                                        });
+                                        view! {
+                                            <div class="workspace-entry">
+                                                <article class=move || format!("workspace-row is-canvas {}", if open.with(|o| o.as_ref().is_some_and(|e| e.id == id_sel)) { "selected" } else { "" })>
+                                                    <button class="workspace-row-content"
+                                                        on:click=move |e: web_sys::MouseEvent| open_note_in(id_click.clone(), OpenIn::from_click(&e))
+                                                        on:mousedown=move |e: web_sys::MouseEvent| {
+                                                            if e.button() == 1 {
+                                                                e.prevent_default();
+                                                            }
+                                                        }
+                                                        on:auxclick=move |e: web_sys::MouseEvent| {
+                                                            if e.button() == 1 {
+                                                                e.prevent_default();
+                                                                open_note_in(id_aux.clone(), OpenIn::NewTab);
+                                                            }
+                                                        }>
+                                                        <strong>
+                                                            <Icon name="grid" class="row-canvas-icon"/>
+                                                            {move || canvas_sig.with(|c| {
+                                                                let t = c.as_ref().map(|c| c.title.as_str()).unwrap_or("");
+                                                                if t.is_empty() { "Untitled".to_owned() } else { t.to_owned() }
+                                                            })}
+                                                        </strong>
+                                                        <span class="row-meta">
+                                                            <span>"Canvas"</span>
+                                                            {move || {
+                                                                let parent_id = canvas_sig.with(|c| c.as_ref().map(|c| c.parent_id.clone()).unwrap_or_default());
+                                                                folder_meta.with(|(root_id, names)| {
+                                                                    (!parent_id.is_empty() && parent_id != *root_id).then(|| {
+                                                                        let parent_label = names.get(&parent_id).cloned().unwrap_or_else(|| "Notes".into());
+                                                                        view! { <span><Icon name="folder"/>{parent_label}</span> }
+                                                                    })
+                                                                })
+                                                            }}
+                                                        </span>
+                                                    </button>
+                                                    <div class="workspace-row-tools">
+                                                        <ActionMenu label=action_label class="ui-file-actions" actions=move |_| {
+                                                            canvas_sig.with_untracked(|c| c.clone()).map(canvas_row_actions).unwrap_or_default()
+                                                        }><Icon name="more"/></ActionMenu>
+                                                    </div>
+                                                </article>
+                                            </div>
+                                        }
+                                    }
+                                </For>
                                 <For
                                     each=move || rows.with(|list| list.iter().map(|n| n.id.clone()).collect::<Vec<_>>())
                                     key=|id| id.clone()
@@ -1370,21 +1591,37 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                         }
                                         NotesPaneKind::RenameNote(note) => {
                                             let entry = fetch_detail(&conn, &note.id).await?.entry;
-                                            let next_name = if has_md_ext(&value) { value } else { format!("{value}.md") };
-                                            let (before, sources) = (index.get_untracked(), note_links::backlink_ids(&entry.id).await);
-                                            let new_path = joined(folder_path(&entry.parent_id), &next_name);
-                                            reducer(|tx| conn.reducers.rename_entry_then(entry.id.clone(), next_name, entry.revision, replied(tx))).await?;
-                                            updated = relink(vec![(entry.id.clone(), new_path)], sources, before).await;
+                                            let is_canvas = note_canvas::is_canvas(&entry.name);
+                                            let next_name = if is_canvas {
+                                                canvas_file_name(&value)
+                                            } else if has_md_ext(&value) {
+                                                value
+                                            } else {
+                                                format!("{value}.md")
+                                            };
+                                            if is_canvas {
+                                                reducer(|tx| conn.reducers.rename_entry_then(entry.id.clone(), next_name, entry.revision, replied(tx))).await?;
+                                            } else {
+                                                let (before, sources) = (index.get_untracked(), note_links::backlink_ids(&entry.id).await);
+                                                let new_path = joined(folder_path(&entry.parent_id), &next_name);
+                                                reducer(|tx| conn.reducers.rename_entry_then(entry.id.clone(), next_name, entry.revision, replied(tx))).await?;
+                                                updated = relink(vec![(entry.id.clone(), new_path)], sources, before).await;
+                                            }
                                             if tabs.contains(&entry.id) {
                                                 tabs.update_entry(fetch_detail(&conn, &entry.id).await?.entry);
                                             }
                                         }
                                         NotesPaneKind::Move(note) => {
                                             let entry = fetch_detail(&conn, &note.id).await?.entry;
-                                            let (before, sources) = (index.get_untracked(), note_links::backlink_ids(&entry.id).await);
-                                            let new_path = joined(folder_path(&value), &entry.name);
-                                            reducer(|tx| conn.reducers.move_entry_then(entry.id.clone(), value, entry.revision, None, replied(tx))).await?;
-                                            updated = relink(vec![(entry.id.clone(), new_path)], sources, before).await;
+                                            let is_canvas = note_canvas::is_canvas(&entry.name);
+                                            if is_canvas {
+                                                reducer(|tx| conn.reducers.move_entry_then(entry.id.clone(), value, entry.revision, None, replied(tx))).await?;
+                                            } else {
+                                                let (before, sources) = (index.get_untracked(), note_links::backlink_ids(&entry.id).await);
+                                                let new_path = joined(folder_path(&value), &entry.name);
+                                                reducer(|tx| conn.reducers.move_entry_then(entry.id.clone(), value, entry.revision, None, replied(tx))).await?;
+                                                updated = relink(vec![(entry.id.clone(), new_path)], sources, before).await;
+                                            }
                                             if tabs.contains(&entry.id) {
                                                 tabs.update_entry(fetch_detail(&conn, &entry.id).await?.entry);
                                             }
@@ -1472,16 +1709,20 @@ fn NotesPane(
     on_close: Callback<()>,
     on_submit: Callback<String>,
 ) -> impl IntoView {
+    let is_canvas = matches!(&pane, NotesPaneKind::RenameNote(n) | NotesPaneKind::Move(n) if note_canvas::is_canvas(&n.name));
     let initial = match &pane {
         NotesPaneKind::Folder { .. } => String::new(),
         NotesPaneKind::RenameFolder(f) => f.name.clone(),
+        NotesPaneKind::RenameNote(n) if is_canvas => note_canvas::stem(&n.name).to_owned(),
         NotesPaneKind::RenameNote(n) => strip_md_ext(&n.name),
         NotesPaneKind::Move(n) => n.parent_id.clone(),
     };
     let title = match &pane {
         NotesPaneKind::Folder { .. } => "New folder",
         NotesPaneKind::RenameFolder(_) => "Rename folder",
+        NotesPaneKind::RenameNote(_) if is_canvas => "Rename canvas",
         NotesPaneKind::RenameNote(_) => "Rename note",
+        NotesPaneKind::Move(_) if is_canvas => "Move canvas",
         NotesPaneKind::Move(_) => "Move note",
     };
     let submit_label = match &pane {
@@ -1523,12 +1764,14 @@ fn NotesPane(
                     view! {
                         <label>"Name"
                             <input autofocus required maxlength="255" prop:value=move || value.get() on:input=move |e| value.set(event_target_value(&e))/>
-                            {is_rename_note.then(|| view! { <small class="field-hint">"Saved as "{move || file_name(&value.get())}</small> })}
+                            {is_rename_note.then(|| view! {
+                                <small class="field-hint">"Saved as "{move || if is_canvas { canvas_file_name(&value.get()) } else { file_name(&value.get()) }}</small>
+                            })}
                         </label>
                     }.into_any()
                 }}
                 <div class="dialog-actions">
-                    <button type="button" class="text-button">"Cancel"</button>
+                    <button type="button" class="text-button" on:click=move |_| { on_close.try_run(()); }>"Cancel"</button>
                     <button class="primary-button" disabled=move || busy.get() || value.get().trim().is_empty() || value.get() == initial_sv.get_value()>
                         {move || if busy.get() { "Saving\u{2026}" } else { submit_label }}
                     </button>
