@@ -76,12 +76,19 @@ the [design guide](../design.md).
 - Graph (sidebar): the notes and their links on a canvas (pan, zoom, hover neighbors, a
   text or `#tag` filter, Local graph for the open note) beside a list of the same notes by
   link count; reduced motion lays it out without animating.
+- Review (sidebar, with the due count): spaced-repetition flashcards compatible with
+  Obsidian's Spaced Repetition plugin — single-line `Question::Answer` (or `:::` reversible),
+  multi-line `?` blocks, and Logseq-style `#card` list items with nested answers. Decks come
+  from `#flashcards/...` tags or the note's folder; grading (Again/Hard/Good/Easy, keys 1–4,
+  Space to reveal) runs the SM-2 variant in `dar-notes` and rewrites only that card's
+  `<!--SR:!YYYY-MM-DD,interval,ease-->` comment with revision checks.
 - Renaming or moving a note, or renaming a folder, rewrites the links to the affected
   notes in other notes (each write checked against the revision read); a clean open editor
   reloads. The sidebar lists tags.
 - APIs: `/api/v1/notes/library` (tree, summaries, tags, aliases and properties; search also matches
   aliases), `/api/v1/notes/backlinks?id=`, `/api/v1/notes/mentions?id=`, `/api/v1/notes/graph`
-  (nodes and resolved, deduplicated edges from the cache) and `/api/v1/notes/attachments`
+  (nodes and resolved, deduplicated edges from the cache), `/api/v1/notes/cards` (due and new
+  flashcards and per-deck counts from the cache) and `/api/v1/notes/attachments`
   (the folder's other files, `service_notes` operation `attachments`); writes use the
   Files APIs. The runtime reads each note version once and caches what it found by blob ID.
   The older `/api/v1/notes/notebooks`, `/items` and `/trash` remain for the copy.

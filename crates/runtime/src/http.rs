@@ -685,6 +685,15 @@ async fn api(r: Api<'_>, body: Body) -> Result<Response> {
     if path == "/api/v1/notes/graph" && *method == Method::GET {
         return ok(runtime.notes.graph(db, &runtime.blobs, &session_id).await?);
     }
+    if path == "/api/v1/notes/cards" && *method == Method::GET {
+        let today = r.q("today");
+        let today = if today.is_empty() {
+            None
+        } else {
+            Some(dar_notes::cards::Date::parse(&today).ok_or_else(AppError::invalid)?)
+        };
+        return ok(runtime.notes.cards(db, &runtime.blobs, &session_id, today).await?);
+    }
     if (path == "/api/v1/notes/backlinks" || path == "/api/v1/notes/mentions") && *method == Method::GET {
         let id = r.q("id");
         if id.is_empty() || id.len() > 64 {

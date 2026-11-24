@@ -204,8 +204,10 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   Outline in the editor bar, properties above the preview, callouts, tag chips,
   dashed links for missing notes, and Linked/Unlinked references as disclosure
   groups at the end of the note (Logseq's place). Tags follow Folders in the sidebar;
-  Today and Graph sit under the views; Graph replaces the
-  list with the canvas and its note list. Embedded notes are a quiet inset with an accent rule
+  Today, Graph and Review sit under the views; Graph replaces the
+  list with the canvas and its note list, and Review shows due flashcards with
+  deck filters, one card at a time (Space to reveal, 1–4 to grade, Open note)
+  storing schedules inline as `<!--SR:...-->` comments. Embedded notes are a quiet inset with an accent rule
   and an open link; `/` commands share the suggestion list.
 - **Tasks:** quick add (title only) above the list; due-date sort groups Overdue,
   Today, Tomorrow, Upcoming, No date and Completed. Rows show a priority-colored

@@ -9,9 +9,11 @@ use std::ops::Range;
 pub use pulldown_cmark;
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 
+pub mod cards;
 mod front;
 mod vault;
 
+pub use cards::{Card, CardKind, Date as CardDate, Grade, Schedule};
 pub use front::{Prop, front_matter};
 pub use vault::{Vault, is_note_target, md_target, percent_decode};
 

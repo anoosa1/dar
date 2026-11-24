@@ -178,6 +178,7 @@ pub struct Info {
     aliases: Vec<String>,
     links: Vec<LinkInfo>,
     properties: Value,
+    cards: Vec<CardInfo>,
 }
 
 struct LinkInfo {
@@ -185,6 +186,15 @@ struct LinkInfo {
     wiki: bool,
     line: usize,
     text: String,
+}
+
+struct CardInfo {
+    index: usize,
+    question: String,
+    answer: String,
+    due: Option<dar_notes::cards::Date>,
+    interval: Option<u32>,
+    ease: Option<u32>,
 }
 
 /// A line shown as the context of a link or mention: trimmed and bounded.
@@ -207,7 +217,18 @@ fn info(name: &str, text: &str) -> Info {
         .take(64)
         .map(|(k, v)| (k.clone(), match v { dar_notes::Prop::Text(t) => json!(utf16_prefix(t, 400)), dar_notes::Prop::List(items) => json!(items.iter().take(50).map(|i| utf16_prefix(i, 200)).collect::<Vec<_>>()) }))
         .collect();
-    Info { title, excerpt, tags: facts.tags, aliases: facts.aliases, links, properties: Value::Object(properties) }
+    let cards = dar_notes::cards::find(text)
+        .into_iter()
+        .map(|card| CardInfo {
+            index: card.index,
+            question: card.question,
+            answer: card.answer,
+            due: card.schedule.map(|s| s.due),
+            interval: card.schedule.map(|s| s.interval),
+            ease: card.schedule.map(|s| s.ease),
+        })
+        .collect();
+    Info { title, excerpt, tags: facts.tags, aliases: facts.aliases, links, properties: Value::Object(properties), cards }
 }
 
 struct Note {
@@ -371,6 +392,107 @@ impl Library {
         let (_, notes) = self.notes(db, blobs, session_id).await?;
         Ok(build_graph(&notes))
     }
+
+    /// Due and new flashcards across the whole Notes library, served from cached per-blob `Info`.
+    pub async fn cards(&self, db: &Database, blobs: &Blobs, session_id: &str, today: Option<dar_notes::cards::Date>) -> Result<Value> {
+        let (_, notes) = self.notes(db, blobs, session_id).await?;
+        Ok(build_cards(&notes, today.unwrap_or_else(today_date)))
+    }
+}
+
+fn today_date() -> dar_notes::cards::Date {
+    use chrono::Datelike;
+    let now = chrono::Local::now().date_naive();
+    dar_notes::cards::Date::new(now.year(), now.month() as u8, now.day() as u8).expect("local date")
+}
+
+struct DeckTotals {
+    due: usize,
+    new: usize,
+    total: usize,
+}
+
+fn build_cards(notes: &[Note], today: dar_notes::cards::Date) -> Value {
+    let mut due_count = 0usize;
+    let mut new_count = 0usize;
+    let mut total_count = 0usize;
+    let mut deck_map: HashMap<String, DeckTotals> = HashMap::new();
+    let mut items: Vec<(Option<dar_notes::cards::Date>, String, String, usize, Value)> = Vec::new();
+
+    for note in notes {
+        if note.info.cards.is_empty() {
+            continue;
+        }
+        let deck_name = dar_notes::cards::deck(&note.path, &note.info.tags);
+        let entry = deck_map.entry(deck_name.clone()).or_insert(DeckTotals { due: 0, new: 0, total: 0 });
+        let revision = note.row["revision"]
+            .as_u64()
+            .or_else(|| note.row["revision"].as_f64().map(|n| n as u64))
+            .unwrap_or(0);
+        for card in &note.info.cards {
+            total_count += 1;
+            entry.total += 1;
+            let include = match card.due {
+                Some(due) if due <= today => {
+                    due_count += 1;
+                    entry.due += 1;
+                    true
+                }
+                Some(_) => false,
+                None => {
+                    new_count += 1;
+                    entry.new += 1;
+                    true
+                }
+            };
+            if include {
+                let payload = json!({
+                    "noteId": note.id(),
+                    "title": note.info.title,
+                    "path": note.path,
+                    "revision": revision,
+                    "cardIndex": card.index,
+                    "question": card.question,
+                    "answer": card.answer,
+                    "due": card.due.map(|d| d.to_string()),
+                    "interval": card.interval,
+                    "ease": card.ease,
+                    "deck": deck_name,
+                });
+                items.push((card.due, note.info.title.clone(), note.path.clone(), card.index, payload));
+            }
+        }
+    }
+
+    items.sort_by(|a, b| {
+        let due_ord = match (a.0, b.0) {
+            (Some(da), Some(db)) => da.cmp(&db),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        };
+        due_ord
+            .then_with(|| crate::http::locale_compare(&a.1, &b.1))
+            .then_with(|| a.2.cmp(&b.2))
+            .then_with(|| a.3.cmp(&b.3))
+    });
+
+    let mut decks: Vec<(String, DeckTotals)> = deck_map.into_iter().collect();
+    decks.sort_by(|a, b| crate::http::locale_compare(&a.0, &b.0));
+    let decks: Vec<Value> = decks
+        .into_iter()
+        .map(|(name, counts)| json!({ "name": name, "due": counts.due, "new": counts.new, "total": counts.total }))
+        .collect();
+    let cards: Vec<Value> = items.into_iter().map(|(_, _, _, _, v)| v).collect();
+
+    json!({
+        "today": today.to_string(),
+        "due": due_count,
+        "new": new_count,
+        "total": total_count,
+        "decks": decks,
+        "cards": cards,
+    })
 }
 
 fn build_graph(notes: &[Note]) -> Value {
@@ -450,5 +572,70 @@ mod tests {
             json!({ "from": "id-c", "to": "id-a" }),
             json!({ "from": "id-c", "to": "id-b" }),
         ]);
+    }
+
+    #[test]
+    fn cards_decks_and_due_filter() {
+        let make = |id: &str, path: &str, revision: u64, text: &str| {
+            let name = path.rsplit('/').next().unwrap_or(path);
+            Note { row: json!({ "id": id, "name": name, "revision": revision }), path: path.to_owned(), info: Arc::new(info(name, text)) }
+        };
+        let notes = vec![
+            make(
+                "n1",
+                "Languages/Spanish.md",
+                3,
+                "---\ntags: [flashcards/vocab]\n---\n# Spanish\nHola::Hello\n<!--SR:!2026-11-20,4,250-->\n\nAdios::Bye\n<!--SR:!2026-12-01,10,250-->\n",
+            ),
+            make(
+                "n2",
+                "Science/Bio.md",
+                2,
+                "# Bio\nCell powerhouse?\n?\nMitochondria\n",
+            ),
+            make(
+                "n3",
+                "Root.md",
+                1,
+                "# Root\n- Logseq Q #card\n  - Logseq A\n",
+            ),
+            make("n4", "Plain.md", 1, "# Plain\nNo cards here.\n"),
+        ];
+        let today = dar_notes::cards::Date::parse("2026-11-23").expect("today");
+        let out = build_cards(&notes, today);
+        assert_eq!(out["today"], "2026-11-23");
+        assert_eq!(out["due"], 1);
+        assert_eq!(out["new"], 2);
+        assert_eq!(out["total"], 4);
+
+        let decks = out["decks"].as_array().expect("decks");
+        assert_eq!(decks, &[
+            json!({ "name": "Notes", "due": 0, "new": 1, "total": 1 }),
+            json!({ "name": "Science", "due": 0, "new": 1, "total": 1 }),
+            json!({ "name": "vocab", "due": 1, "new": 0, "total": 2 }),
+        ]);
+
+        let cards = out["cards"].as_array().expect("cards");
+        assert_eq!(cards.len(), 3);
+        // Due card first, then new cards sorted by title.
+        assert_eq!(cards[0], json!({
+            "noteId": "n1",
+            "title": "Spanish",
+            "path": "Languages/Spanish.md",
+            "revision": 3,
+            "cardIndex": 0,
+            "question": "Hola",
+            "answer": "Hello",
+            "due": "2026-11-20",
+            "interval": 4,
+            "ease": 250,
+            "deck": "vocab",
+        }));
+        assert_eq!(cards[1]["noteId"], "n2");
+        assert_eq!(cards[1]["deck"], "Science");
+        assert_eq!(cards[1]["due"], Value::Null);
+        assert_eq!(cards[2]["noteId"], "n3");
+        assert_eq!(cards[2]["deck"], "Notes");
+        assert_eq!(cards[2]["answer"], "- Logseq A");
     }
 }

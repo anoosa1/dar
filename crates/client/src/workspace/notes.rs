@@ -12,6 +12,7 @@ use leptos::task::spawn_local;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::note_cards::{CardSummary, NoteCards};
 use super::note_graph::NoteGraph;
 use super::note_editor;
 use super::note_links::{self, LinkSuggestions, NoteIndex, NoteReferences, Suggestion, Trigger, has_tag};
@@ -299,6 +300,34 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             }
         });
     });
+
+    let due_cards = RwSignal::new(0usize);
+    let due_seq = RwSignal::new(0u32);
+    let cards_alive = Arc::new(AtomicBool::new(true));
+    {
+        let cards_alive = cards_alive.clone();
+        on_cleanup(move || cards_alive.store(false, Ordering::Relaxed));
+    }
+    {
+        let cards_alive = cards_alive.clone();
+        Effect::new(move |_| {
+            let _r = reload.get();
+            let _e = pim.epoch.get();
+            let seq = due_seq.get_untracked() + 1;
+            due_seq.set(seq);
+            let cards_alive = cards_alive.clone();
+            let (today_iso, _) = note_links::today();
+            spawn_local(async move {
+                let url = format!("/api/v1/notes/cards?today={today_iso}");
+                if let Ok(summary) = api::get::<CardSummary>(&url).await
+                    && cards_alive.load(Ordering::Relaxed)
+                    && due_seq.try_get_untracked() == Some(seq)
+                {
+                    let _ = due_cards.try_set(summary.due + summary.new);
+                }
+            });
+        });
+    }
 
     listen(&window(), "focus", false, move |_| reload.update(|n| *n += 1));
 
@@ -652,6 +681,9 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         if s == "graph" {
             return "Graph".to_owned();
         }
+        if s == "review" {
+            return "Review".to_owned();
+        }
         if let Some(tag) = s.strip_prefix("tag:") {
             return format!("#{tag}");
         }
@@ -665,7 +697,7 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     let current_folder_path = Memo::new(move |_| {
         let s = scope.get();
-        if s == "all" || s == "favorites" || s == "graph" {
+        if s == "all" || s == "favorites" || s == "graph" || s == "review" {
             return None;
         }
         library.with(|lib| lib.as_ref().and_then(|l| l.folders.iter().find(|f| f.id == s).map(|f| f.path.clone())))
@@ -689,6 +721,21 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 </button>
                 <button class=move || format!("nav-item {}", if scope.get() == "graph" { "active" } else { "" }) aria-current=move || (scope.get() == "graph").then_some("page") on:click=move |_| scope.set("graph".to_owned())>
                     <Icon name="share"/>"Graph"
+                </button>
+                <button
+                    class=move || format!("nav-item notes-review-nav {}", if scope.get() == "review" { "active" } else { "" })
+                    aria-current=move || (scope.get() == "review").then_some("page")
+                    aria-label=move || {
+                        let count = due_cards.get();
+                        if count > 0 { format!("Review, {count} due") } else { "Review".to_owned() }
+                    }
+                    on:click=move |_| scope.set("review".to_owned())
+                >
+                    <Icon name="stack"/><span>"Review"</span>
+                    {move || {
+                        let count = due_cards.get();
+                        (count > 0).then(|| view! { <small class="nav-count">{count}</small> })
+                    }}
                 </button>
             </nav>
             <div class="sidebar-heading">
@@ -835,10 +882,14 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     view! {
         <WorkspaceShell kind="notes" session=session on_signed_out=on_signed_out sidebar=sidebar has_details=has_open note_editor=has_open details=details pim=pim>
-            <div class=move || if scope.get() == "graph" { "workspace-list notes-list is-graph" } else { "workspace-list notes-list" }>
+            <div class=move || match scope.get().as_str() {
+                "graph" => "workspace-list notes-list is-graph",
+                "review" => "workspace-list notes-list is-review",
+                _ => "workspace-list notes-list",
+            }>
                 <div class="workspace-heading">
                     <h1>{move || heading_title.get()}</h1>
-                    <Show when=move || scope.get() != "graph">
+                    <Show when=move || { let s = scope.get(); s != "graph" && s != "review" }>
                         <ActionMenu label="Sort notes" class="workspace-sort" actions=move |_| {
                             let current = sort.get_untracked();
                             [("modified", "Recently edited"), ("title", "Title")].into_iter().map(|(value, label)| {
@@ -880,6 +931,9 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 <Show
                     when=move || scope.get() == "graph"
                     fallback=move || view! {
+                        <Show
+                            when=move || scope.get() == "review"
+                            fallback=move || view! {
                         {move || (library.with(Option::is_none) && error.with(String::is_empty)).then(|| view! {
                             <p role="status">"Loading notes\u{2026}"</p>
                         })}
@@ -991,6 +1045,19 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         {move || library.with(|l| l.as_ref().is_some_and(|l| l.truncated)).then(|| view! {
                             <p class="muted small">"This folder is large; only the first notes are shown. Use search to find others."</p>
                         })}
+                            }
+                        >
+                            <NoteCards
+                                session=session_sv.get_value()
+                                on_open=Callback::new(move |id: String| {
+                                    if !open.with_untracked(|o| o.as_ref().is_some_and(|e| e.id == id)) {
+                                        open_note(id);
+                                    }
+                                })
+                                on_due_change=Callback::new(move |count: usize| { let _ = due_cards.try_set(count); })
+                                on_note_updated=Callback::new(move |_| { let _ = refresh.try_update(|n| *n += 1); })
+                            />
+                        </Show>
                     }
                 >
                     <NoteGraph

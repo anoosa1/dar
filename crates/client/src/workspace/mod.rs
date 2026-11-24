@@ -1,6 +1,7 @@
 //! Notes (`notes.tsx`) and Tasks (`pim/workspace.tsx`, `pim/task-occurrences.tsx`) apps,
 //! along with their shared shell, settings sheet, transfers and reactive select control.
 
+pub mod note_cards;
 pub mod note_editor;
 pub mod note_graph;
 pub mod note_links;
