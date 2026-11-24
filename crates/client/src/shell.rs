@@ -13,7 +13,7 @@ use crate::files::types::FileTile;
 use crate::icons::Icon;
 use crate::navigation::navigate;
 use crate::shared::context;
-use crate::ui::{document, listen, unique_id, window, ActionMenu, MenuAction};
+use crate::ui::{ActionMenu, MenuAction, document, listen, unique_id, window};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppEntry {
@@ -41,12 +41,28 @@ const APPS: [(&str, &str, &str, &str); 12] = [
 /// Built-in apps the administrator has not disabled, followed by enabled installed apps.
 pub fn app_list() -> Vec<AppEntry> {
     let shared = context();
-    let disabled = shared.app_settings.value.with(|s| s.as_ref().map(|s| s.disabled.clone()).unwrap_or_default());
-    let installed = shared.installed.value.with(|i| i.as_ref().map(|i| i.items.clone()).unwrap_or_default());
+    let disabled = shared
+        .app_settings
+        .value
+        .with(|s| s.as_ref().map(|s| s.disabled.clone()).unwrap_or_default());
+    let installed = shared
+        .installed
+        .value
+        .with(|i| i.as_ref().map(|i| i.items.clone()).unwrap_or_default());
     APPS.iter()
         .filter(|(id, ..)| !disabled.iter().any(|d| d == id))
-        .map(|(id, label, icon, href)| AppEntry { id: (*id).into(), label: (*label).into(), icon, href: (*href).into() })
-        .chain(installed.into_iter().map(|app| AppEntry { id: format!("app:{}", app.id), label: app.name, icon: "clock", href: format!("/apps/{}", app.id) }))
+        .map(|(id, label, icon, href)| AppEntry {
+            id: (*id).into(),
+            label: (*label).into(),
+            icon,
+            href: (*href).into(),
+        })
+        .chain(installed.into_iter().map(|app| AppEntry {
+            id: format!("app:{}", app.id),
+            label: app.name,
+            icon: "clock",
+            href: format!("/apps/{}", app.id),
+        }))
         .collect()
 }
 
@@ -54,7 +70,11 @@ pub fn app_label(id: &str, list: &[AppEntry]) -> String {
     if id == "settings" {
         return "Settings".into();
     }
-    list.iter().find(|a| a.id == id).map(|a| a.label.clone()).or_else(|| APPS.iter().find(|a| a.0 == id).map(|a| a.1.to_owned())).unwrap_or_else(|| "App".into())
+    list.iter()
+        .find(|a| a.id == id)
+        .map(|a| a.label.clone())
+        .or_else(|| APPS.iter().find(|a| a.0 == id).map(|a| a.1.to_owned()))
+        .unwrap_or_else(|| "App".into())
 }
 
 /// Phones show this many apps in the bottom bar; the rest are under More.
@@ -62,26 +82,58 @@ const PHONE_SLOTS: usize = 4;
 
 #[component]
 pub fn Avatar(#[prop(into)] name: String) -> impl IntoView {
-    let initials: String = name.split_whitespace().filter_map(|w| w.chars().next()).collect::<String>().chars().take(2).collect::<String>().to_uppercase();
+    let initials: String = name
+        .split_whitespace()
+        .filter_map(|w| w.chars().next())
+        .collect::<String>()
+        .chars()
+        .take(2)
+        .collect::<String>()
+        .to_uppercase();
     view! { <span class="avatar" aria-hidden="true">{initials}</span> }
 }
 
 /// The persistent app rail; on phones a bottom bar with four apps and a More menu.
 #[component]
-pub fn AppRail(#[prop(into)] active: Signal<String>, administrator: bool, account: ChildrenFn) -> impl IntoView {
+pub fn AppRail(
+    #[prop(into)] active: Signal<String>,
+    administrator: bool,
+    account: ChildrenFn,
+) -> impl IntoView {
     let rail = move || {
         let list = app_list();
         let active = active.get();
         let active_index = list.iter().position(|a| a.id == active);
-        let on_phone: Vec<bool> = (0..list.len()).map(|i| i < PHONE_SLOTS - usize::from(active_index.is_some_and(|a| a >= PHONE_SLOTS)) || Some(i) == active_index).collect();
-        let overflow: Vec<AppEntry> = list.iter().zip(&on_phone).filter(|(_, p)| !**p).map(|(a, _)| a.clone()).collect();
+        let on_phone: Vec<bool> = (0..list.len())
+            .map(|i| {
+                i < PHONE_SLOTS - usize::from(active_index.is_some_and(|a| a >= PHONE_SLOTS))
+                    || Some(i) == active_index
+            })
+            .collect();
+        let overflow: Vec<AppEntry> = list
+            .iter()
+            .zip(&on_phone)
+            .filter(|(_, p)| !**p)
+            .map(|(a, _)| a.clone())
+            .collect();
         let more_active = active == "settings";
-        let mut more: Vec<MenuAction> = overflow.iter().map(|a| MenuAction::new(a.label.clone(), a.icon).href(a.href.clone()).current(a.id == active)).collect();
-        let mut settings = MenuAction::new("Settings", "settings").href("/settings").current(active == "settings");
+        let mut more: Vec<MenuAction> = overflow
+            .iter()
+            .map(|a| {
+                MenuAction::new(a.label.clone(), a.icon)
+                    .href(a.href.clone())
+                    .current(a.id == active)
+            })
+            .collect();
+        let mut settings = MenuAction::new("Settings", "settings")
+            .href("/settings")
+            .current(active == "settings");
         settings.separator = !overflow.is_empty();
         more.push(settings);
         if administrator {
-            more.push(MenuAction::new("Manage apps", "grid").href("/settings?section=installedApps"));
+            more.push(
+                MenuAction::new("Manage apps", "grid").href("/settings?section=installedApps"),
+            );
         }
         let items = list.into_iter().zip(on_phone).map(|(app, phone)| {
             let current = (app.id == active).then_some("page");
@@ -113,25 +165,53 @@ pub fn AppRail(#[prop(into)] active: Signal<String>, administrator: bool, accoun
 
 /// The same account actions are available from the rail and the phone top bar.
 #[component]
-pub fn WorkspaceAccount(session: BrowserSession, on_signed_out: Callback<()>, #[prop(into)] class: String) -> impl IntoView {
+pub fn WorkspaceAccount(
+    session: BrowserSession,
+    on_signed_out: Callback<()>,
+    #[prop(into)] class: String,
+) -> impl IntoView {
     let error = RwSignal::new(String::new());
     let user = session.user.clone();
     let csrf = StoredValue::new(session.csrf_token.clone());
     let administrator = user.administrator;
     let actions = move |_| {
-        let mut list = vec![MenuAction::new("Settings", "settings").href("/settings"), MenuAction::new("Account security", "lock").href("/settings?section=security")];
+        let mut list = vec![
+            MenuAction::new("Settings", "settings").href("/settings"),
+            MenuAction::new("Account security", "lock").href("/settings?section=security"),
+        ];
         if administrator {
-            list.push(MenuAction::new("Directory", "shield").href("/settings?section=directory").section("Administration"));
-            list.push(MenuAction::new("Manage apps", "grid").href("/settings?section=installedApps"));
+            list.push(
+                MenuAction::new("Directory", "shield")
+                    .href("/settings?section=directory")
+                    .section("Administration"),
+            );
+            list.push(
+                MenuAction::new("Manage apps", "grid").href("/settings?section=installedApps"),
+            );
         }
-        list.push(MenuAction::new("Sign out", "logout").separator().run(move || {
-            spawn_local(async move {
-                match api::request::<serde_json::Value>("/api/v1/auth/logout", Req { method: "POST", csrf: Some(&csrf.get_value()), ..Default::default() }).await {
-                    Ok(_) => { on_signed_out.try_run(()); },
-                    Err(e) => error.set(e.message),
-                }
-            });
-        }));
+        list.push(
+            MenuAction::new("Sign out", "logout")
+                .separator()
+                .run(move || {
+                    spawn_local(async move {
+                        match api::request::<serde_json::Value>(
+                            "/api/v1/auth/logout",
+                            Req {
+                                method: "POST",
+                                csrf: Some(&csrf.get_value()),
+                                ..Default::default()
+                            },
+                        )
+                        .await
+                        {
+                            Ok(_) => {
+                                on_signed_out.try_run(());
+                            }
+                            Err(e) => error.set(e.message),
+                        }
+                    });
+                }),
+        );
         list
     };
     let (name, username) = (user.display_name.clone(), user.username.clone());
@@ -163,14 +243,21 @@ pub struct Frame {
 
 impl Frame {
     pub fn provide() -> Self {
-        let frame = Frame { app: RwSignal::new(String::new()), settings: RwSignal::new((0, None)), sequence: StoredValue::new(0), own_chrome: RwSignal::new(false) };
+        let frame = Frame {
+            app: RwSignal::new(String::new()),
+            settings: RwSignal::new((0, None)),
+            sequence: StoredValue::new(0),
+            own_chrome: RwSignal::new(false),
+        };
         provide_context(frame);
         frame
     }
 
     /// While `showing` is true the page draws its own rail and top bar, and the frame steps aside.
     pub fn own_chrome(showing: Signal<bool>) {
-        let Some(frame) = use_context::<Frame>() else { return };
+        let Some(frame) = use_context::<Frame>() else {
+            return;
+        };
         Effect::new(move |_| frame.own_chrome.set(showing.get()));
         on_cleanup(move || {
             let _ = frame.own_chrome.try_set(false);
@@ -181,19 +268,36 @@ impl Frame {
 /// The persistent app rail and top bar for signed-in pages. Only the app's own content
 /// changes when moving between apps, so search, the rail and the account menu stay put.
 #[component]
-pub fn AppFrame(frame: Frame, session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoView {
-    let label = Memo::new(move |_| { let app = frame.app.get(); if app.is_empty() { String::new() } else { app_label(&app, &app_list()) } });
+pub fn AppFrame(
+    frame: Frame,
+    session: BrowserSession,
+    on_signed_out: Callback<()>,
+) -> impl IntoView {
+    let label = Memo::new(move |_| {
+        let app = frame.app.get();
+        if app.is_empty() {
+            String::new()
+        } else {
+            app_label(&app, &app_list())
+        }
+    });
     let has_settings = Memo::new(move |_| frame.settings.with(|(_, s)| s.is_some()));
     let shown = Memo::new(move |_| !frame.own_chrome.get());
     Effect::new(move |_| {
         if let Some(body) = document().body() {
-            let _ = body.class_list().toggle_with_force("has-app-frame", shown.get());
-            let _ = body.class_list().toggle_with_force("has-app-settings", shown.get() && has_settings.get());
+            let _ = body
+                .class_list()
+                .toggle_with_force("has-app-frame", shown.get());
+            let _ = body
+                .class_list()
+                .toggle_with_force("has-app-settings", shown.get() && has_settings.get());
         }
     });
     on_cleanup(|| {
         if let Some(body) = document().body() {
-            let _ = body.class_list().remove_2("has-app-frame", "has-app-settings");
+            let _ = body
+                .class_list()
+                .remove_2("has-app-frame", "has-app-settings");
         }
     });
     let session = StoredValue::new(session);
@@ -227,7 +331,12 @@ pub fn AppFrame(frame: Frame, session: BrowserSession, on_signed_out: Callback<(
 /// signed-in frame it only tells the frame which app is showing; elsewhere (identity
 /// interactions) it renders them itself.
 #[component]
-pub fn WorkspaceHeader(#[prop(into)] app: String, session: BrowserSession, on_signed_out: Callback<()>, #[prop(optional, into)] on_settings: Option<Callback<()>>) -> impl IntoView {
+pub fn WorkspaceHeader(
+    #[prop(into)] app: String,
+    session: BrowserSession,
+    on_signed_out: Callback<()>,
+    #[prop(optional, into)] on_settings: Option<Callback<()>>,
+) -> impl IntoView {
     if let Some(frame) = use_context::<Frame>() {
         let id = frame.sequence.get_value() + 1;
         frame.sequence.set_value(id);
@@ -235,7 +344,11 @@ pub fn WorkspaceHeader(#[prop(into)] app: String, session: BrowserSession, on_si
         frame.settings.set((id, on_settings));
         // The next app replaces this registration; leaving without one clears the button.
         on_cleanup(move || {
-            if frame.settings.try_with_untracked(|(current, _)| *current == id) == Some(true) {
+            if frame
+                .settings
+                .try_with_untracked(|(current, _)| *current == id)
+                == Some(true)
+            {
                 let _ = frame.settings.try_set((id, None));
             }
         });
@@ -247,7 +360,9 @@ pub fn WorkspaceHeader(#[prop(into)] app: String, session: BrowserSession, on_si
     };
     let label = Memo::new(move |_| label());
     let (rail_session, top_session) = (session.clone(), session.clone());
-    let account: ChildrenFn = std::sync::Arc::new(move || view! { <WorkspaceAccount session=rail_session.clone() on_signed_out=on_signed_out class="rail-account"/> }.into_any());
+    let account: ChildrenFn = std::sync::Arc::new(move || {
+        view! { <WorkspaceAccount session=rail_session.clone() on_signed_out=on_signed_out class="rail-account"/> }.into_any()
+    });
     view! {
         <AppRail active=Signal::stored(app) administrator=session.user.administrator account=account/>
         <header class=if on_settings.is_some() { "topbar has-settings" } else { "topbar" }>
@@ -265,7 +380,11 @@ pub fn WorkspaceHeader(#[prop(into)] app: String, session: BrowserSession, on_si
 }
 
 fn is_mac() -> bool {
-    window().navigator().platform().map(|p| p.contains("Mac") || p.contains("iPhone") || p.contains("iPad")).unwrap_or(false)
+    window()
+        .navigator()
+        .platform()
+        .map(|p| p.contains("Mac") || p.contains("iPhone") || p.contains("iPad"))
+        .unwrap_or(false)
 }
 
 /// The top-bar search trigger; Ctrl/Cmd+K or a click opens the spotlight palette.
@@ -274,11 +393,25 @@ pub fn GlobalSearch(#[prop(into)] account: String) -> impl IntoView {
     let open = RwSignal::new(false);
     listen(&document(), "keydown", false, move |event| {
         let event: web_sys::KeyboardEvent = event.unchecked_into();
-        let blocked = document().query_selector("dialog[open]:not(.spotlight),[data-editor-pane]").ok().flatten().is_some();
-        if (event.ctrl_key() || event.meta_key()) && !event.alt_key() && event.key().to_lowercase() == "k" && !event.default_prevented() && !blocked {
+        let blocked = document()
+            .query_selector("dialog[open]:not(.spotlight),[data-editor-pane]")
+            .ok()
+            .flatten()
+            .is_some();
+        if (event.ctrl_key() || event.meta_key())
+            && !event.alt_key()
+            && event.key().to_lowercase() == "k"
+            && !event.default_prevented()
+            && !blocked
+        {
             event.prevent_default();
             open.set(true);
-            if let Some(input) = document().query_selector(".spotlight input").ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok()) {
+            if let Some(input) = document()
+                .query_selector(".spotlight input")
+                .ok()
+                .flatten()
+                .and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok())
+            {
                 input.select();
             }
         }
@@ -297,7 +430,17 @@ pub fn GlobalSearch(#[prop(into)] account: String) -> impl IntoView {
     }
 }
 
-const ORDER: [&str; 9] = ["Photos", "Files", "Contacts", "Calendar", "Notes", "Tasks", "News", "Chat", "Applications"];
+const ORDER: [&str; 9] = [
+    "Photos",
+    "Files",
+    "Contacts",
+    "Calendar",
+    "Notes",
+    "Tasks",
+    "News",
+    "Chat",
+    "Applications",
+];
 
 fn group_icon(group: &str) -> &'static str {
     match group {
@@ -357,7 +500,10 @@ fn storage() -> Option<web_sys::Storage> {
 }
 
 fn read_recent(key: &str) -> Recent {
-    let mut value: Recent = storage().and_then(|s| s.get_item(key).ok().flatten()).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default();
+    let mut value: Recent = storage()
+        .and_then(|s| s.get_item(key).ok().flatten())
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or_default();
     value.queries.truncate(6);
     value.opened.retain(|r| r.href.starts_with('/'));
     value.opened.truncate(5);
@@ -365,7 +511,16 @@ fn read_recent(key: &str) -> Recent {
 }
 
 fn command(id: &str, title: String, detail: &str, href: String) -> Entry {
-    Entry { key: format!("go:{id}"), section: "Actions".into(), title, detail: detail.into(), href, group: None, thumbnail: None, result: None }
+    Entry {
+        key: format!("go:{id}"),
+        section: "Actions".into(),
+        title,
+        detail: detail.into(),
+        href,
+        group: None,
+        thumbnail: None,
+        result: None,
+    }
 }
 
 #[component]
@@ -438,11 +593,41 @@ fn Spotlight(account: String, on_close: Callback<()>) -> impl IntoView {
         });
     });
     let commands = Memo::new(move |_| {
-        let mut list: Vec<Entry> = app_list().into_iter().map(|app| command(&app.id, format!("Go to {}", app.label), "Open app", app.href)).collect();
-        list.push(command("settings", "Open Dar settings".into(), "Settings", "/settings".into()));
-        list.push(command("appearance", "Appearance settings".into(), "Theme and colors", "/settings?section=appearance".into()));
-        list.push(command("security", "Account security".into(), "Passwords and app passwords", "/settings?section=security".into()));
-        list.push(command("regional", "Regional settings".into(), "Time zone", "/settings?section=regional".into()));
+        let mut list: Vec<Entry> = app_list()
+            .into_iter()
+            .map(|app| {
+                command(
+                    &app.id,
+                    format!("Go to {}", app.label),
+                    "Open app",
+                    app.href,
+                )
+            })
+            .collect();
+        list.push(command(
+            "settings",
+            "Open Dar settings".into(),
+            "Settings",
+            "/settings".into(),
+        ));
+        list.push(command(
+            "appearance",
+            "Appearance settings".into(),
+            "Theme and colors",
+            "/settings?section=appearance".into(),
+        ));
+        list.push(command(
+            "security",
+            "Account security".into(),
+            "Passwords and app passwords",
+            "/settings?section=security".into(),
+        ));
+        list.push(command(
+            "regional",
+            "Regional settings".into(),
+            "Time zone",
+            "/settings?section=regional".into(),
+        ));
         list
     });
     let counts = Memo::new(move |_| {
@@ -457,34 +642,71 @@ fn Spotlight(account: String, on_close: Callback<()>) -> impl IntoView {
         });
         counts
     });
-    let count_of = move |group: &str| counts.with(|c| c.iter().find(|(g, _)| g == group).map(|(_, n)| *n));
-    let scopes = Memo::new(move |_| ORDER.iter().filter(|g| count_of(g).is_some()).map(|g| g.to_string()).collect::<Vec<_>>());
+    let count_of =
+        move |group: &str| counts.with(|c| c.iter().find(|(g, _)| g == group).map(|(_, n)| *n));
+    let scopes = Memo::new(move |_| {
+        ORDER
+            .iter()
+            .filter(|g| count_of(g).is_some())
+            .map(|g| g.to_string())
+            .collect::<Vec<_>>()
+    });
     let effective = Memo::new(move |_| {
         let s = scope.get();
-        if s != "All" && count_of(&s).is_some() { s } else { "All".into() }
+        if s != "All" && count_of(&s).is_some() {
+            s
+        } else {
+            "All".into()
+        }
     });
     let entries = Memo::new(move |_| {
         let term = term.get();
         let matches = |e: &Entry| e.title.to_lowercase().contains(&term.to_lowercase());
         if command_mode.get() {
-            return commands.get().into_iter().filter(matches).collect::<Vec<_>>();
+            return commands
+                .get()
+                .into_iter()
+                .filter(matches)
+                .collect::<Vec<_>>();
         }
         if term.is_empty() {
             let mut list: Vec<Entry> = recent
                 .get()
                 .opened
                 .into_iter()
-                .map(|item| Entry { key: format!("recent:{}", item.id), section: "Jump back in".into(), title: item.title.clone(), detail: format!("{} · {}", item.group, item.detail), href: item.href.clone(), group: Some(item.group.clone()), thumbnail: item.thumbnail.clone(), result: Some(item) })
+                .map(|item| Entry {
+                    key: format!("recent:{}", item.id),
+                    section: "Jump back in".into(),
+                    title: item.title.clone(),
+                    detail: format!("{} · {}", item.group, item.detail),
+                    href: item.href.clone(),
+                    group: Some(item.group.clone()),
+                    thumbnail: item.thumbnail.clone(),
+                    result: Some(item),
+                })
                 .collect();
             list.extend(commands.get().into_iter().take(4));
             return list;
         }
         let scope = effective.get();
-        let mut list: Vec<Entry> = if scope == "All" { commands.get().into_iter().filter(matches).take(3).collect() } else { Vec::new() };
+        let mut list: Vec<Entry> = if scope == "All" {
+            commands.get().into_iter().filter(matches).take(3).collect()
+        } else {
+            Vec::new()
+        };
         let items = result.get().items;
         for group in ORDER.iter().filter(|g| scope == "All" || **g == scope) {
             for item in items.iter().filter(|i| i.group == *group) {
-                list.push(Entry { key: format!("{}:{}", item.id, item.group), section: item.group.clone(), title: item.title.clone(), detail: item.detail.clone(), href: item.href.clone(), group: Some(item.group.clone()), thumbnail: item.thumbnail.clone(), result: Some(item.clone()) });
+                list.push(Entry {
+                    key: format!("{}:{}", item.id, item.group),
+                    section: item.group.clone(),
+                    title: item.title.clone(),
+                    detail: item.detail.clone(),
+                    href: item.href.clone(),
+                    group: Some(item.group.clone()),
+                    thumbnail: item.thumbnail.clone(),
+                    result: Some(item.clone()),
+                });
             }
         }
         list
@@ -495,7 +717,15 @@ fn Spotlight(account: String, on_close: Callback<()>) -> impl IntoView {
         result.track();
         active.set(0);
     });
-    let current_index = move || entries.with(|e| if e.is_empty() { None } else { Some(active.get().min(e.len() - 1)) });
+    let current_index = move || {
+        entries.with(|e| {
+            if e.is_empty() {
+                None
+            } else {
+                Some(active.get().min(e.len() - 1))
+            }
+        })
+    };
     let current = move || current_index().and_then(|i| entries.with(|e| e.get(i).cloned()));
     let row_id = move |index: usize| format!("{}-{index}", id.get_value());
     {
@@ -529,10 +759,13 @@ fn Spotlight(account: String, on_close: Callback<()>) -> impl IntoView {
         let Some(entry) = entry else { return };
         remember(&entry);
         if new_tab {
-            let _ = window().open_with_url_and_target_and_features(&entry.href, "_blank", "noopener");
+            let _ =
+                window().open_with_url_and_target_and_features(&entry.href, "_blank", "noopener");
             return;
         }
-        { on_close.try_run(()); };
+        {
+            on_close.try_run(());
+        };
         navigate(&entry.href);
     };
     let cycle_scope = move |step: i64| {
@@ -542,13 +775,20 @@ fn Spotlight(account: String, on_close: Callback<()>) -> impl IntoView {
             return false;
         }
         let len = list.len() as i64;
-        let index = list.iter().position(|s| *s == effective.get_untracked()).unwrap_or(0) as i64;
+        let index = list
+            .iter()
+            .position(|s| *s == effective.get_untracked())
+            .unwrap_or(0) as i64;
         scope.set(list[((index + step + len) % len) as usize].clone());
         true
     };
     let status = move || {
         if command_mode.get() {
-            return if entries.with(Vec::is_empty) { "No matching commands." } else { "" };
+            return if entries.with(Vec::is_empty) {
+                "No matching commands."
+            } else {
+                ""
+            };
         }
         if term.with(String::is_empty) {
             ""
@@ -702,7 +942,14 @@ fn Glyph(entry: Entry) -> impl IntoView {
 fn Highlight(text: String, query: String) -> impl IntoView {
     let needle = query.trim().to_lowercase();
     let lower = text.to_lowercase();
-    match (!needle.is_empty()).then(|| lower.find(&needle)).flatten().filter(|i| lower.len() == text.len() && text.is_char_boundary(*i) && text.is_char_boundary(*i + needle.len())) {
+    match (!needle.is_empty())
+        .then(|| lower.find(&needle))
+        .flatten()
+        .filter(|i| {
+            lower.len() == text.len()
+                && text.is_char_boundary(*i)
+                && text.is_char_boundary(*i + needle.len())
+        }) {
         None => view! { {text} }.into_any(),
         Some(index) => {
             let end = index + needle.len();

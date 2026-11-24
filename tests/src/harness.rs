@@ -33,12 +33,18 @@ pub struct Suite {
 /// `case!(files::immutable_upload, 120)`. The function is `async fn(t: &Ctx) -> Result<()>`.
 #[macro_export]
 macro_rules! case {
-    ($function:path) => { $crate::case!($function, 300) };
+    ($function:path) => {
+        $crate::case!($function, 300)
+    };
     ($function:path, $seconds:expr) => {{
         fn run(t: &$crate::Ctx) -> $crate::harness::CaseFuture<'_> {
             Box::pin($function(t))
         }
-        $crate::Case { name: stringify!($function), run, timeout: std::time::Duration::from_secs($seconds) }
+        $crate::Case {
+            name: stringify!($function),
+            run,
+            timeout: std::time::Duration::from_secs($seconds),
+        }
     }};
 }
 
@@ -51,12 +57,23 @@ pub struct Ctx {
 
 impl Ctx {
     pub fn new(suite: &'static str, dir: PathBuf) -> Self {
-        Self { suite, dir, fixture: OnceCell::new() }
+        Self {
+            suite,
+            dir,
+            fixture: OnceCell::new(),
+        }
     }
 
     /// The suite's standard instance (started on first use; see [`Instance::fixture`]).
     pub async fn fixture(&self) -> Result<Arc<Instance>> {
-        self.fixture.get_or_try_init(|| async { Instance::fixture(&self.dir, &self.suite.replace(['_', ' '], "-")).await.map(Arc::new) }).await.cloned()
+        self.fixture
+            .get_or_try_init(|| async {
+                Instance::fixture(&self.dir, &self.suite.replace(['_', ' '], "-"))
+                    .await
+                    .map(Arc::new)
+            })
+            .await
+            .cloned()
     }
 
     /// The suite's folder: logs, screenshots and the roots of its instances.

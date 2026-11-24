@@ -12,8 +12,15 @@ use leptos::task::spawn_local;
 use serde_json::{Value, json};
 use wasm_bindgen::JsCast;
 
-use super::workspace::{ChatAvatar, Confirm, ConfirmAction, RunFuture, Ticks, day_label, emoji_label, iso, kind_icon, message_of, muted, narrow, now, phone_of};
-use super::{BASE, CHAT_LIMITS_DISCORD_TEXT, CHAT_LIMITS_TEXT, CHAT_MUTE_CHOICES, CHAT_QUICK_REACTIONS, ChatAccount, ChatInfo, ChatMessage, ChatMessagePage, ChatSetting, ChatThread, chat_time_key, kind_label, local_name, platform_name, search_params};
+use super::workspace::{
+    ChatAvatar, Confirm, ConfirmAction, RunFuture, Ticks, day_label, emoji_label, iso, kind_icon,
+    message_of, muted, narrow, now, phone_of,
+};
+use super::{
+    BASE, CHAT_LIMITS_DISCORD_TEXT, CHAT_LIMITS_TEXT, CHAT_MUTE_CHOICES, CHAT_QUICK_REACTIONS,
+    ChatAccount, ChatInfo, ChatMessage, ChatMessagePage, ChatSetting, ChatThread, chat_time_key,
+    kind_label, local_name, platform_name, search_params,
+};
 use crate::api::{self, BrowserSession, format_bytes};
 use crate::dates::{local_date_time, local_time};
 use crate::files::types::FileTile;
@@ -25,7 +32,10 @@ use crate::ui::{ActionMenu, MenuAction};
 const EDIT_WINDOW: f64 = 15.0 * 60_000.0;
 
 pub(super) fn media_url(thread_id: &str, message_id: &str) -> String {
-    format!("{BASE}/media?{}", search_params(&[("threadId", thread_id), ("messageId", message_id)]))
+    format!(
+        "{BASE}/media?{}",
+        search_params(&[("threadId", thread_id), ("messageId", message_id)])
+    )
 }
 
 fn clock(seconds: u32) -> String {
@@ -39,7 +49,10 @@ fn fit(width: u32, height: u32, max_width: f64, max_height: f64) -> (u32, u32) {
     }
     let (w, h) = (width as f64, height as f64);
     let scale = 1f64.min(max_width / w).min(max_height / h);
-    ((w * scale).round().max(80.0) as u32, (h * scale).round().max(60.0) as u32)
+    (
+        (w * scale).round().max(80.0) as u32,
+        (h * scale).round().max(60.0) as u32,
+    )
 }
 
 fn mute_items(on_setting: Callback<ChatSetting>) -> Vec<MenuAction> {
@@ -47,7 +60,12 @@ fn mute_items(on_setting: Callback<ChatSetting>) -> Vec<MenuAction> {
         .iter()
         .map(|(label, ms)| {
             let ms = *ms;
-            MenuAction::plain(*label).run(move || { on_setting.try_run(ChatSetting { muted_until: Some(if ms < 0 { -1 } else { now() as i64 + ms }), ..Default::default() }); })
+            MenuAction::plain(*label).run(move || {
+                on_setting.try_run(ChatSetting {
+                    muted_until: Some(if ms < 0 { -1 } else { now() as i64 + ms }),
+                    ..Default::default()
+                });
+            })
         })
         .collect()
 }
@@ -107,25 +125,41 @@ pub(super) fn Conversation(
         on_cleanup(move || alive.store(false, Ordering::Relaxed));
     }
     let alive = StoredValue::new(alive);
-    let is_alive = move || alive.try_with_value(|a| a.load(Ordering::Relaxed)).unwrap_or(false);
+    let is_alive = move || {
+        alive
+            .try_with_value(|a| a.load(Ordering::Relaxed))
+            .unwrap_or(false)
+    };
 
     let post = move |path: &'static str, mut body: Value| {
         let csrf = csrf.get_value();
         body["threadId"] = Value::String(thread_id.get_value());
-        async move { api::send::<Value>(&format!("{BASE}/{path}"), "POST", Some(body), &csrf).await.map(|_| ()) }
+        async move {
+            api::send::<Value>(&format!("{BASE}/{path}"), "POST", Some(body), &csrf)
+                .await
+                .map(|_| ())
+        }
     };
     let load = move || {
         let id = thread_id.get_value();
         let csrf = csrf.get_value();
         async move {
-            match api::get::<ChatMessagePage>(&format!("{BASE}/messages?{}", search_params(&[("threadId", &id)]))).await {
+            match api::get::<ChatMessagePage>(&format!(
+                "{BASE}/messages?{}",
+                search_params(&[("threadId", &id)])
+            ))
+            .await
+            {
                 Ok(result) => {
                     if !is_alive() {
                         return;
                     }
                     if first.get_value() {
                         first.set_value(false);
-                        older.set(Older { messages: Vec::new(), before: result.before.clone() });
+                        older.set(Older {
+                            messages: Vec::new(),
+                            before: result.before.clone(),
+                        });
                     }
                     let unread = result.thread.unread > 0;
                     if page.with_untracked(|p| p.as_ref() != Some(&result)) {
@@ -133,7 +167,13 @@ pub(super) fn Conversation(
                     }
                     error.set(String::new());
                     if unread {
-                        let _ = api::send::<Value>(&format!("{BASE}/read"), "POST", Some(json!({ "threadId": id })), &csrf).await;
+                        let _ = api::send::<Value>(
+                            &format!("{BASE}/read"),
+                            "POST",
+                            Some(json!({ "threadId": id })),
+                            &csrf,
+                        )
+                        .await;
                     }
                 }
                 Err(cause) => {
@@ -167,7 +207,9 @@ pub(super) fn Conversation(
         });
     };
     let load_older = move || {
-        let Some(before) = older.with_untracked(|o| o.before.clone()) else { return };
+        let Some(before) = older.with_untracked(|o| o.before.clone()) else {
+            return;
+        };
         if loading_older.get_untracked() {
             return;
         }
@@ -175,16 +217,26 @@ pub(super) fn Conversation(
         let height = scroller.get_untracked().map_or(0, |el| el.scroll_height());
         let id = thread_id.get_value();
         spawn_local(async move {
-            match api::get::<ChatMessagePage>(&format!("{BASE}/messages?{}", search_params(&[("threadId", &id), ("before", &before)]))).await {
+            match api::get::<ChatMessagePage>(&format!(
+                "{BASE}/messages?{}",
+                search_params(&[("threadId", &id), ("before", &before)])
+            ))
+            .await
+            {
                 Ok(result) => {
                     older.try_update(|o| {
                         let mut messages = result.messages;
                         messages.append(&mut o.messages);
-                        *o = Older { messages, before: result.before };
+                        *o = Older {
+                            messages,
+                            before: result.before,
+                        };
                     });
                     keep_offset(height);
                 }
-                Err(cause) => { on_notice.try_run(message_of(&cause)); },
+                Err(cause) => {
+                    on_notice.try_run(message_of(&cause));
+                }
             }
             loading_older.try_set(false);
         });
@@ -192,13 +244,19 @@ pub(super) fn Conversation(
     let messages = Memo::new(move |_| {
         let mut seen = HashSet::new();
         let mut out: Vec<ChatMessage> = Vec::new();
-        older.with(|o| page.with(|p| {
-            for m in o.messages.iter().chain(p.iter().flat_map(|p| p.messages.iter())) {
-                if seen.insert(m.id.clone()) {
-                    out.push(m.clone());
+        older.with(|o| {
+            page.with(|p| {
+                for m in o
+                    .messages
+                    .iter()
+                    .chain(p.iter().flat_map(|p| p.messages.iter()))
+                {
+                    if seen.insert(m.id.clone()) {
+                        out.push(m.clone());
+                    }
                 }
-            }
-        }));
+            })
+        });
         out
     });
     // A search result opens the chat at its message: earlier pages load until it is found, then it is shown and outlined.
@@ -215,35 +273,49 @@ pub(super) fn Conversation(
         }
         // The list renders in the same pass; look for the message once it has.
         request_animation_frame(move || {
-        if seek.try_get_untracked().as_deref() != Some(target.as_str()) {
-            return;
-        }
-        let el = scroller.try_get_untracked().flatten().and_then(|s| {
-            let escaped = js_sys::Reflect::get(&js_sys::global(), &"CSS".into()).ok()
-                .and_then(|css| js_sys::Reflect::get(&css, &"escape".into()).ok().and_then(|f| f.dyn_into::<js_sys::Function>().ok()).and_then(|f| f.call1(&css, &target.clone().into()).ok()))
-                .and_then(|v| v.as_string()).unwrap_or_else(|| target.clone());
-            s.query_selector(&format!("[data-message=\"{escaped}\"]")).ok().flatten()
-        });
-        if let Some(el) = el {
-            stick.set_value(false);
-            let options = web_sys::ScrollIntoViewOptions::new();
-            options.set_block(web_sys::ScrollLogicalPosition::Center);
-            el.scroll_into_view_with_scroll_into_view_options(&options);
-            found.set(target);
-            seek.set(String::new());
-            if let Ok(handle) = set_timeout_with_handle(move || { found.try_set(String::new()); }, Duration::from_millis(4000)) {
-                // The outline fades even after the effect runs again for the cleared seek.
-                let _ = handle;
+            if seek.try_get_untracked().as_deref() != Some(target.as_str()) {
+                return;
             }
-            return;
-        }
-        let tried = tries.get_value();
-        if has_before && !busy && tried < 40 {
-            tries.set_value(tried + 1);
-            load_older();
-        } else if !has_before {
-            seek.set(String::new());
-        }
+            let el = scroller.try_get_untracked().flatten().and_then(|s| {
+                let escaped = js_sys::Reflect::get(&js_sys::global(), &"CSS".into())
+                    .ok()
+                    .and_then(|css| {
+                        js_sys::Reflect::get(&css, &"escape".into())
+                            .ok()
+                            .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+                            .and_then(|f| f.call1(&css, &target.clone().into()).ok())
+                    })
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_else(|| target.clone());
+                s.query_selector(&format!("[data-message=\"{escaped}\"]"))
+                    .ok()
+                    .flatten()
+            });
+            if let Some(el) = el {
+                stick.set_value(false);
+                let options = web_sys::ScrollIntoViewOptions::new();
+                options.set_block(web_sys::ScrollLogicalPosition::Center);
+                el.scroll_into_view_with_scroll_into_view_options(&options);
+                found.set(target);
+                seek.set(String::new());
+                if let Ok(handle) = set_timeout_with_handle(
+                    move || {
+                        found.try_set(String::new());
+                    },
+                    Duration::from_millis(4000),
+                ) {
+                    // The outline fades even after the effect runs again for the cleared seek.
+                    let _ = handle;
+                }
+                return;
+            }
+            let tried = tries.get_value();
+            if has_before && !busy && tried < 40 {
+                tries.set_value(tried + 1);
+                load_older();
+            } else if !has_before {
+                seek.set(String::new());
+            }
         });
     });
     Effect::new(move |_| {
@@ -259,23 +331,43 @@ pub(super) fn Conversation(
     });
 
     let thread = Memo::new(move |_| page.with(|p| p.as_ref().map(|p| p.thread.clone())));
-    let name = Memo::new(move |_| thread.with(|t| {
-        let t = t.as_ref();
-        let n = t.map(|t| t.name.clone()).unwrap_or_default();
-        if !n.is_empty() { return n; }
-        let p = phone_of(t.map(|t| t.jid.as_str()).unwrap_or_default());
-        if p.is_empty() { "Chat".into() } else { p }
-    }));
+    let name = Memo::new(move |_| {
+        thread.with(|t| {
+            let t = t.as_ref();
+            let n = t.map(|t| t.name.clone()).unwrap_or_default();
+            if !n.is_empty() {
+                return n;
+            }
+            let p = phone_of(t.map(|t| t.jid.as_str()).unwrap_or_default());
+            if p.is_empty() { "Chat".into() } else { p }
+        })
+    });
     let has_thread = Memo::new(move |_| thread.with(Option::is_some));
     let group = Memo::new(move |_| thread.with(|t| t.as_ref().is_some_and(|t| t.kind == "group")));
     let discord = Memo::new(move |_| account.with(|a| a.platform == "discord"));
-    let channel = Memo::new(move |_| thread.with(|t| t.as_ref().is_some_and(|t| !t.server_id.is_empty())));
+    let channel =
+        Memo::new(move |_| thread.with(|t| t.as_ref().is_some_and(|t| !t.server_id.is_empty())));
     let service = Memo::new(move |_| platform_name(&account.with(|a| a.platform.clone())));
-    let shown = Memo::new(move |_| if channel.get() { format!("#{}", name.get()) } else { name.get() });
-    let can_send = Memo::new(move |_| account.with(|a| matches!(a.state.as_str(), "connected" | "connecting" | "disconnected")));
+    let shown = Memo::new(move |_| {
+        if channel.get() {
+            format!("#{}", name.get())
+        } else {
+            name.get()
+        }
+    });
+    let can_send = Memo::new(move |_| {
+        account.with(|a| {
+            matches!(
+                a.state.as_str(),
+                "connected" | "connecting" | "disconnected"
+            )
+        })
+    });
     // Discord: fetch what was said while Dar was away; the change feed shows it.
     if account.with_untracked(|a| a.platform == "discord" && a.state == "connected") {
-        spawn_local(async move { let _ = post("catchUp", json!({})).await; });
+        spawn_local(async move {
+            let _ = post("catchUp", json!({})).await;
+        });
     }
     /* Discord: earlier messages come straight from Discord, then show above the ones loaded. */
     let earlier = move || {
@@ -293,17 +385,30 @@ pub(super) fn Conversation(
                 more: bool,
             }
             let result: Result<(), api::RequestError> = async {
-                let result = api::send::<History>(&format!("{BASE}/history"), "POST", Some(json!({ "threadId": id })), &csrf).await?;
+                let result = api::send::<History>(
+                    &format!("{BASE}/history"),
+                    "POST",
+                    Some(json!({ "threadId": id })),
+                    &csrf,
+                )
+                .await?;
                 if !result.more {
                     start.try_set(true);
                 }
                 if let Some(oldest) = oldest {
                     let before = format!("{id}/{}/{}", chat_time_key(oldest.at), oldest.message_id);
-                    let next = api::get::<ChatMessagePage>(&format!("{BASE}/messages?{}", search_params(&[("threadId", &id), ("before", &before)]))).await?;
+                    let next = api::get::<ChatMessagePage>(&format!(
+                        "{BASE}/messages?{}",
+                        search_params(&[("threadId", &id), ("before", &before)])
+                    ))
+                    .await?;
                     older.try_update(|o| {
                         let mut messages = next.messages;
                         messages.append(&mut o.messages);
-                        *o = Older { messages, before: next.before };
+                        *o = Older {
+                            messages,
+                            before: next.before,
+                        };
                     });
                     keep_offset(height);
                 } else {
@@ -313,7 +418,9 @@ pub(super) fn Conversation(
             }
             .await;
             if let Err(cause) = result {
-                { on_notice.try_run(message_of(&cause)); };
+                {
+                    on_notice.try_run(message_of(&cause));
+                };
             }
             loading_older.try_set(false);
         });
@@ -331,13 +438,20 @@ pub(super) fn Conversation(
         if let Some(target) = editing.get_untracked() {
             sending.set(true);
             spawn_local(async move {
-                match post("edit", json!({ "messageId": target.message_id, "text": body })).await {
+                match post(
+                    "edit",
+                    json!({ "messageId": target.message_id, "text": body }),
+                )
+                .await
+                {
                     Ok(()) => {
                         editing.try_set(None);
                         text.try_set(String::new());
                         load().await;
                     }
-                    Err(cause) => { on_notice.try_run(message_of(&cause)); },
+                    Err(cause) => {
+                        on_notice.try_run(message_of(&cause));
+                    }
                 }
                 sending.try_set(false);
                 focus_input();
@@ -358,9 +472,19 @@ pub(super) fn Conversation(
             match post("send", payload).await {
                 Ok(()) => load().await,
                 Err(cause) => {
-                    text.try_update(|t| if t.is_empty() { *t = body.clone() });
-                    reply.try_update(|r| if r.is_none() { *r = quoted.clone() });
-                    { on_notice.try_run(message_of(&cause)); };
+                    text.try_update(|t| {
+                        if t.is_empty() {
+                            *t = body.clone()
+                        }
+                    });
+                    reply.try_update(|r| {
+                        if r.is_none() {
+                            *r = quoted.clone()
+                        }
+                    });
+                    {
+                        on_notice.try_run(message_of(&cause));
+                    };
                 }
             }
             sending.try_set(false);
@@ -382,7 +506,9 @@ pub(super) fn Conversation(
     let act_now = move |path: &'static str, m: ChatMessage, body: Value| {
         spawn_local(async move {
             if let Err(message) = act(path, m, body).await {
-                { on_notice.try_run(message); };
+                {
+                    on_notice.try_run(message);
+                };
             }
         });
     };
@@ -392,24 +518,51 @@ pub(super) fn Conversation(
                 Ok(()) => {
                     asked.try_set(true);
                 }
-                Err(cause) => { on_notice.try_run(message_of(&cause)); },
+                Err(cause) => {
+                    on_notice.try_run(message_of(&cause));
+                }
             }
         });
     };
     let quiet = Memo::new(move |_| thread.with(|t| t.as_ref().is_some_and(muted)));
     let chat_actions = move || {
-        let Some(t) = thread.get_untracked() else { return Vec::new() };
+        let Some(t) = thread.get_untracked() else {
+            return Vec::new();
+        };
         let mut actions = Vec::new();
         if quiet.get_untracked() {
-            actions.push(MenuAction::new("Unmute", "bell").run(move || { on_setting.try_run(ChatSetting { muted_until: Some(0), ..Default::default() }); }));
+            actions.push(MenuAction::new("Unmute", "bell").run(move || {
+                on_setting.try_run(ChatSetting {
+                    muted_until: Some(0),
+                    ..Default::default()
+                });
+            }));
         } else {
             actions.push(MenuAction::new("Mute", "bell").items(mute_items(on_setting)));
         }
         if !discord.get_untracked() {
             let pinned = t.pinned;
             let archived = t.archived;
-            actions.push(MenuAction::new(if pinned { "Unpin" } else { "Pin" }, "pin").disabled(archived).run(move || { on_setting.try_run(ChatSetting { pinned: Some(!pinned), ..Default::default() }); }));
-            actions.push(MenuAction::new(if archived { "Unarchive" } else { "Archive" }, "archive").run(move || { on_setting.try_run(ChatSetting { archived: Some(!archived), ..Default::default() }); }));
+            actions.push(
+                MenuAction::new(if pinned { "Unpin" } else { "Pin" }, "pin")
+                    .disabled(archived)
+                    .run(move || {
+                        on_setting.try_run(ChatSetting {
+                            pinned: Some(!pinned),
+                            ..Default::default()
+                        });
+                    }),
+            );
+            actions.push(
+                MenuAction::new(if archived { "Unarchive" } else { "Archive" }, "archive").run(
+                    move || {
+                        on_setting.try_run(ChatSetting {
+                            archived: Some(!archived),
+                            ..Default::default()
+                        });
+                    },
+                ),
+            );
         }
         actions
     };
@@ -427,19 +580,37 @@ pub(super) fn Conversation(
             .map(|(i, m)| {
                 let day = &days[i];
                 let next = list.get(i + 1);
-                let tail = next.is_none_or(|n| n.from_me != m.from_me || n.sender != m.sender || days[i + 1] != *day);
+                let tail = next.is_none_or(|n| {
+                    n.from_me != m.from_me || n.sender != m.sender || days[i + 1] != *day
+                });
                 let prev = i.checked_sub(1).map(|p| &list[p]);
                 // Discord rows name the sender at the start of each run, as Discord does (a new run after seven minutes).
                 let show_name = if d {
-                    prev.is_none_or(|p| p.sender != m.sender || p.from_me != m.from_me || days[i - 1] != *day || m.at - p.at > 7.0 * 60_000.0 || !m.quoted_id.is_empty())
+                    prev.is_none_or(|p| {
+                        p.sender != m.sender
+                            || p.from_me != m.from_me
+                            || days[i - 1] != *day
+                            || m.at - p.at > 7.0 * 60_000.0
+                            || !m.quoted_id.is_empty()
+                    })
                 } else {
-                    g && !m.from_me && prev.is_none_or(|p| p.sender != m.sender || p.from_me || days[i - 1] != *day)
+                    g && !m.from_me
+                        && prev.is_none_or(|p| {
+                            p.sender != m.sender || p.from_me || days[i - 1] != *day
+                        })
                 };
                 let heading = (*day != last_day).then(|| {
                     last_day = day.clone();
                     day.clone()
                 });
-                Row { message: m.clone(), day: heading, tail, show_name, found: !found.is_empty() && m.message_id == found, can_change }
+                Row {
+                    message: m.clone(),
+                    day: heading,
+                    tail,
+                    show_name,
+                    found: !found.is_empty() && m.message_id == found,
+                    can_change,
+                }
             })
             .collect::<Vec<_>>()
     });
@@ -449,7 +620,9 @@ pub(super) fn Conversation(
             event.prevent_default();
             send();
         }
-        if event.key() == "Escape" && (reply.with_untracked(Option::is_some) || editing.with_untracked(Option::is_some)) {
+        if event.key() == "Escape"
+            && (reply.with_untracked(Option::is_some) || editing.with_untracked(Option::is_some))
+        {
             event.prevent_default();
             reply.set(None);
             if editing.with_untracked(Option::is_some) {
@@ -462,10 +635,22 @@ pub(super) fn Conversation(
     let account_name = Memo::new(move |_| account.with(|a| a.name.clone()));
     let account_state = Memo::new(move |_| account.with(|a| a.state.clone()));
     let has_older = Memo::new(move |_| older.with(|o| o.before.is_some()));
-    let show_ask_phone = Memo::new(move |_| !discord.get() && page.with(Option::is_some) && older.with(|o| o.before.is_none()) && !messages.with(Vec::is_empty) && can_send.get());
-    let show_discord_earlier = Memo::new(move |_| discord.get() && page.with(Option::is_some) && older.with(|o| o.before.is_none()) && !messages.with(Vec::is_empty));
+    let show_ask_phone = Memo::new(move |_| {
+        !discord.get()
+            && page.with(Option::is_some)
+            && older.with(|o| o.before.is_none())
+            && !messages.with(Vec::is_empty)
+            && can_send.get()
+    });
+    let show_discord_earlier = Memo::new(move |_| {
+        discord.get()
+            && page.with(Option::is_some)
+            && older.with(|o| o.before.is_none())
+            && !messages.with(Vec::is_empty)
+    });
     let has_error = Memo::new(move |_| !error.with(String::is_empty));
-    let show_opening = Memo::new(move |_| page.with(Option::is_none) && error.with(String::is_empty));
+    let show_opening =
+        Memo::new(move |_| page.with(Option::is_none) && error.with(String::is_empty));
     let show_empty = Memo::new(move |_| page.with(Option::is_some) && messages.with(Vec::is_empty));
 
     view! {
@@ -684,78 +869,173 @@ fn Bubble(
     on_discard: Callback<()>,
 ) -> impl IntoView {
     let m = message;
-    let label = if m.kind != "text" { kind_label(&m.kind) } else { "" };
+    let label = if m.kind != "text" {
+        kind_label(&m.kind)
+    } else {
+        ""
+    };
     let icon = kind_icon(&m.kind);
     let discord = platform == "discord";
-    let file = if m.media.as_ref().is_some_and(|media| media.state != "expired") { media_url(&thread_id, &m.message_id) } else { String::new() };
-    let mine = m.reactions.iter().find(|r| r.mine).map(|r| r.emoji.clone()).unwrap_or_default();
+    let file = if m
+        .media
+        .as_ref()
+        .is_some_and(|media| media.state != "expired")
+    {
+        media_url(&thread_id, &m.message_id)
+    } else {
+        String::new()
+    };
+    let mine = m
+        .reactions
+        .iter()
+        .find(|r| r.mine)
+        .map(|r| r.emoji.clone())
+        .unwrap_or_default();
     let live = m.status != "pending" && m.status != "failed";
     // WhatsApp keeps one reaction per person; Discord allows several, each toggled on its own.
     let reactions = StoredValue::new(m.reactions.clone());
     let actions = {
-        let (file, mine, deleted, text, from_me, kind, at) = (file.clone(), mine.clone(), m.deleted, m.text.clone(), m.from_me, m.kind.clone(), m.at);
+        let (file, mine, deleted, text, from_me, kind, at) = (
+            file.clone(),
+            mine.clone(),
+            m.deleted,
+            m.text.clone(),
+            m.from_me,
+            m.kind.clone(),
+            m.at,
+        );
         move || -> Vec<MenuAction> {
             if deleted {
-                return vec![MenuAction::new("Delete from Dar\u{2026}", "trash").danger().run(move || { on_delete_for_me.try_run(()); })];
+                return vec![
+                    MenuAction::new("Delete from Dar\u{2026}", "trash")
+                        .danger()
+                        .run(move || {
+                            on_delete_for_me.try_run(());
+                        }),
+                ];
             }
             let mut actions = Vec::new();
             if can_change && live {
                 let react_items: Vec<MenuAction> = if discord {
-                    CHAT_QUICK_REACTIONS.iter().map(|emoji| {
-                        let emoji = (*emoji).to_owned();
-                        let on = reactions.with_value(|r| r.iter().any(|r| r.emoji == emoji && r.mine));
-                        MenuAction::plain(emoji.clone()).current(on).run(move || { on_react.try_run((emoji.clone(), on)); })
-                    }).collect()
+                    CHAT_QUICK_REACTIONS
+                        .iter()
+                        .map(|emoji| {
+                            let emoji = (*emoji).to_owned();
+                            let on = reactions
+                                .with_value(|r| r.iter().any(|r| r.emoji == emoji && r.mine));
+                            MenuAction::plain(emoji.clone()).current(on).run(move || {
+                                on_react.try_run((emoji.clone(), on));
+                            })
+                        })
+                        .collect()
                 } else {
-                    let mut items: Vec<MenuAction> = CHAT_QUICK_REACTIONS.iter().map(|emoji| {
-                        let emoji = (*emoji).to_owned();
-                        let is_mine = emoji == mine;
-                        MenuAction::plain(emoji.clone()).current(is_mine).run(move || { on_react.try_run((if is_mine { String::new() } else { emoji.clone() }, false)); })
-                    }).collect();
+                    let mut items: Vec<MenuAction> = CHAT_QUICK_REACTIONS
+                        .iter()
+                        .map(|emoji| {
+                            let emoji = (*emoji).to_owned();
+                            let is_mine = emoji == mine;
+                            MenuAction::plain(emoji.clone())
+                                .current(is_mine)
+                                .run(move || {
+                                    on_react.try_run((
+                                        if is_mine {
+                                            String::new()
+                                        } else {
+                                            emoji.clone()
+                                        },
+                                        false,
+                                    ));
+                                })
+                        })
+                        .collect();
                     if !mine.is_empty() {
-                        items.push(MenuAction::new("Remove reaction", "close").separator().run(move || { on_react.try_run((String::new(), false)); }));
+                        items.push(MenuAction::new("Remove reaction", "close").separator().run(
+                            move || {
+                                on_react.try_run((String::new(), false));
+                            },
+                        ));
                     }
                     items
                 };
                 actions.push(MenuAction::new("React", "star").items(react_items));
-                actions.push(MenuAction::new("Reply", "reply").run(move || { on_reply.try_run(()); }));
+                actions.push(MenuAction::new("Reply", "reply").run(move || {
+                    on_reply.try_run(());
+                }));
             }
             if !text.is_empty() {
-                actions.push(MenuAction::new("Copy text", "copy").run(move || { on_copy.try_run(()); }));
+                actions.push(MenuAction::new("Copy text", "copy").run(move || {
+                    on_copy.try_run(());
+                }));
             }
-            if can_change && live && from_me && kind == "text" && (discord || now() - at < EDIT_WINDOW) {
-                actions.push(MenuAction::new("Edit", "pencil").run(move || { on_edit.try_run(()); }));
+            if can_change
+                && live
+                && from_me
+                && kind == "text"
+                && (discord || now() - at < EDIT_WINDOW)
+            {
+                actions.push(MenuAction::new("Edit", "pencil").run(move || {
+                    on_edit.try_run(());
+                }));
             }
             if !file.is_empty() {
-                actions.push(MenuAction::new("Download", "download").href(format!("{file}&download=1")).download().separator());
-                actions.push(MenuAction::new("Save to Files\u{2026}", "folder").run(move || { on_save.try_run(()); }));
+                actions.push(
+                    MenuAction::new("Download", "download")
+                        .href(format!("{file}&download=1"))
+                        .download()
+                        .separator(),
+                );
+                actions.push(
+                    MenuAction::new("Save to Files\u{2026}", "folder").run(move || {
+                        on_save.try_run(());
+                    }),
+                );
             }
             let revoke = can_change && live && from_me;
             if revoke {
-                actions.push(MenuAction::new("Delete for everyone\u{2026}", "trash").danger().separator().run(move || { on_revoke.try_run(()); }));
+                actions.push(
+                    MenuAction::new("Delete for everyone\u{2026}", "trash")
+                        .danger()
+                        .separator()
+                        .run(move || {
+                            on_revoke.try_run(());
+                        }),
+                );
             }
             let mut delete = MenuAction::new("Delete from Dar\u{2026}", "trash").danger();
             if !revoke {
                 delete = delete.separator();
             }
-            actions.push(delete.run(move || { on_delete_for_me.try_run(()); }));
+            actions.push(delete.run(move || {
+                on_delete_for_me.try_run(());
+            }));
             actions
         }
     };
-    let photo = !m.deleted && m.media.as_ref().is_some_and(|media| (m.kind == "image" || m.kind == "sticker") && media.state != "expired" && media.state != "retrying");
+    let photo = !m.deleted
+        && m.media.as_ref().is_some_and(|media| {
+            (m.kind == "image" || m.kind == "sticker")
+                && media.state != "expired"
+                && media.state != "retrying"
+        });
     let who = if m.from_me && discord {
         "You".to_owned()
     } else if !m.sender_name.is_empty() {
         m.sender_name.clone()
     } else {
-        Some(phone_of(&m.sender)).filter(|p| !p.is_empty()).unwrap_or_else(|| "Unknown".into())
+        Some(phone_of(&m.sender))
+            .filter(|p| !p.is_empty())
+            .unwrap_or_else(|| "Unknown".into())
     };
     let class = format!(
         "chat-message {}{}{}{}{}",
         if m.from_me { "is-out" } else { "is-in" },
         if tail { " is-tail" } else { "" },
         if show_name { " is-first" } else { "" },
-        if m.status == "failed" { " is-failed" } else { "" },
+        if m.status == "failed" {
+            " is-failed"
+        } else {
+            ""
+        },
         if found { " is-found" } else { "" }
     );
     let time_text = local_time(m.at, &[("hour", "numeric"), ("minute", "2-digit")]);
@@ -802,8 +1082,15 @@ fn Bubble(
         let media = if m.media.is_some() {
             Some(view! { <MediaView thread_id=thread_id.clone() message=m.clone() platform=platform.clone()/> }.into_any())
         } else if !label.is_empty() {
-            let text = if m.kind == "document" && !m.file_name.is_empty() { m.file_name.clone() } else { label.to_owned() };
-            Some(view! { <span class="chat-media"><Icon name=icon.unwrap_or("file")/>{text}</span> }.into_any())
+            let text = if m.kind == "document" && !m.file_name.is_empty() {
+                m.file_name.clone()
+            } else {
+                label.to_owned()
+            };
+            Some(
+                view! { <span class="chat-media"><Icon name=icon.unwrap_or("file")/>{text}</span> }
+                    .into_any(),
+            )
         } else {
             None
         };
@@ -845,7 +1132,11 @@ fn MediaView(thread_id: String, message: ChatMessage, platform: String) -> impl 
     let base_url = media_url(&thread_id, &m.message_id);
     let url = Memo::new(move |_| {
         let a = attempt.get();
-        if a > 0 { format!("{base_url}&attempt={a}") } else { base_url.clone() }
+        if a > 0 {
+            format!("{base_url}&attempt={a}")
+        } else {
+            base_url.clone()
+        }
     });
     let label = kind_label(&m.kind);
     let name = local_name(&m.kind, &media.mime, &m.file_name, m.at, &platform);
@@ -919,7 +1210,11 @@ pub(super) fn ChatInfoSheet(
         }
         let id = thread_key.get_value();
         spawn_local(async move {
-            let result = api::get::<ChatInfo>(&format!("{BASE}/info?{}", search_params(&[("threadId", &id)]))).await;
+            let result = api::get::<ChatInfo>(&format!(
+                "{BASE}/info?{}",
+                search_params(&[("threadId", &id)])
+            ))
+            .await;
             if gone.load(Ordering::Relaxed) {
                 return;
             }
@@ -1081,5 +1376,8 @@ pub(super) fn ChatInfoSheet(
 
 /// `number.toLocaleString()`.
 fn locale_number(value: u64) -> String {
-    js_sys::Number::from(value as f64).to_locale_string("default").as_string().unwrap_or_else(|| value.to_string())
+    js_sys::Number::from(value as f64)
+        .to_locale_string("default")
+        .as_string()
+        .unwrap_or_else(|| value.to_string())
 }

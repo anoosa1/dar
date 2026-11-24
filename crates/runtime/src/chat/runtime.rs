@@ -27,8 +27,7 @@ use super::bridge::{Bridge, BridgeHandler};
 use super::live::{LiveHandler, LiveSocket, spawn_live_socket};
 use super::media::ChatMedia;
 use super::{
-    CHAT_LIMIT_DISCORD_TEXT, CHAT_READ_OPERATIONS, is_account_id, json_i64, now_ms,
-    value_to_string,
+    CHAT_LIMIT_DISCORD_TEXT, CHAT_READ_OPERATIONS, is_account_id, json_i64, now_ms, value_to_string,
 };
 
 fn reason_message(code: &str) -> &'static str {
@@ -668,7 +667,11 @@ impl ChatRuntime {
                 let id = id.to_owned();
                 tasks.push(tokio::spawn(async move {
                     let _ = bridge
-                        .call("disconnect", json!({ "account": id }), Duration::from_secs(60))
+                        .call(
+                            "disconnect",
+                            json!({ "account": id }),
+                            Duration::from_secs(60),
+                        )
                         .await;
                 }));
             }
@@ -739,7 +742,11 @@ impl ChatRuntime {
 
         self.inner
             .bridge
-            .call(action, Value::Object(bridge_params), Duration::from_secs(45))
+            .call(
+                action,
+                Value::Object(bridge_params),
+                Duration::from_secs(45),
+            )
             .await?;
 
         if action == "react" && platform == "discord" {
@@ -863,12 +870,8 @@ impl ChatRuntime {
                 Duration::from_secs(45),
             )
             .await?;
-        self.call(
-            session_id,
-            "applyChatSetting",
-            Value::Object(apply_params),
-        )
-        .await
+        self.call(session_id, "applyChatSetting", Value::Object(apply_params))
+            .await
     }
 
     /// Chat info; groups add their members from WhatsApp when it is reachable.
@@ -882,8 +885,14 @@ impl ChatRuntime {
         if info["thread"]["kind"].as_str() == Some("group")
             && info["account"]["platform"].as_str() == Some("whatsapp")
         {
-            let account_id = info["account"]["id"].as_str().unwrap_or_default().to_owned();
-            let chat_jid = info["thread"]["jid"].as_str().unwrap_or_default().to_owned();
+            let account_id = info["account"]["id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
+            let chat_jid = info["thread"]["jid"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
             let fetched: Result<Value> = async {
                 let mut value = self
                     .inner
@@ -908,8 +917,10 @@ impl ChatRuntime {
                 if let Some(members) = value["members"].as_array_mut() {
                     for member in members.iter_mut() {
                         if let Some(jid) = member["jid"].as_str()
-                            && let Some(contact_name) =
-                                names.get(jid).and_then(|c| c.get("name")).and_then(Value::as_str)
+                            && let Some(contact_name) = names
+                                .get(jid)
+                                .and_then(|c| c.get("name"))
+                                .and_then(Value::as_str)
                         {
                             member["name"] = json!(contact_name);
                         }
@@ -939,11 +950,7 @@ impl ChatRuntime {
     }
 
     /// Asks the phone or Discord for messages before the oldest one here.
-    pub(crate) async fn request_history(
-        &self,
-        session_id: &str,
-        thread_id: &str,
-    ) -> Result<Value> {
+    pub(crate) async fn request_history(&self, session_id: &str, thread_id: &str) -> Result<Value> {
         let oldest = self
             .call(session_id, "oldest", json!({ "threadId": thread_id }))
             .await?;
@@ -1118,9 +1125,7 @@ impl ChatRuntime {
         let (live, start_tx) = spawn_live_socket(socket, handler);
         {
             let mut voices = self.inner.voices.lock().expect("voices");
-            let v = voices
-                .entry(account_id)
-                .or_insert_with(Voice::new);
+            let v = voices.entry(account_id).or_insert_with(Voice::new);
             v.sockets.insert(live.id(), live.clone());
             live.send_text(&json!({
                 "type": "hello",
@@ -1229,7 +1234,9 @@ impl ChatRuntime {
     ) -> Result<Response> {
         self.inner
             .media
-            .serve(method, headers, session_id, thread_id, message_id, attachment)
+            .serve(
+                method, headers, session_id, thread_id, message_id, attachment,
+            )
             .await
     }
 
@@ -1369,7 +1376,11 @@ impl ChatInner {
 
     fn open(&self, account_id: &str, key: &str, sealed: &str) -> Result<String> {
         let value = self.key_box.decrypt(sealed).ok_or_else(|| {
-            AppError::with("runtimeError", 500, "The identity payload cannot be decrypted.")
+            AppError::with(
+                "runtimeError",
+                500,
+                "The identity payload cannot be decrypted.",
+            )
         })?;
         if value["a"].as_str() != Some(account_id) || value["k"].as_str() != Some(key) {
             return Err(AppError::with(
@@ -1496,7 +1507,11 @@ impl ChatInner {
             if should_leave {
                 let _ = inner
                     .bridge
-                    .call("voiceLeave", json!({ "account": aid }), Duration::from_secs(60))
+                    .call(
+                        "voiceLeave",
+                        json!({ "account": aid }),
+                        Duration::from_secs(60),
+                    )
                     .await;
             }
         });
@@ -1517,8 +1532,7 @@ impl ChatInner {
             let Some(user_str) = data.get("user").and_then(Value::as_str) else {
                 return;
             };
-            if !(1..=20).contains(&user_str.len())
-                || !user_str.bytes().all(|b| b.is_ascii_digit())
+            if !(1..=20).contains(&user_str.len()) || !user_str.bytes().all(|b| b.is_ascii_digit())
             {
                 return;
             }
@@ -1555,10 +1569,7 @@ impl ChatInner {
                 v.servers.clear();
             }
             for (id, channels) in &servers {
-                if channels
-                    .as_object()
-                    .is_some_and(|ch| !ch.is_empty())
-                {
+                if channels.as_object().is_some_and(|ch| !ch.is_empty()) {
                     v.servers.insert(id.clone(), channels.clone());
                 } else {
                     v.servers.remove(id);
@@ -1731,10 +1742,7 @@ impl ChatInner {
                     let mut values = Map::new();
                     for chunk in keys.chunks(500) {
                         let found = self
-                            .worker(
-                                "kvGet",
-                                json!({ "accountId": account_id, "keys": chunk }),
-                            )
+                            .worker("kvGet", json!({ "accountId": account_id, "keys": chunk }))
                             .await?;
                         if let Some(map) = found["values"].as_object() {
                             for (key, sealed_val) in map {
@@ -1864,10 +1872,7 @@ impl ChatInner {
                 );
             }
             "linkScanned" => {
-                let name: String = value_to_string(data.get("name"))
-                    .chars()
-                    .take(64)
-                    .collect();
+                let name: String = value_to_string(data.get("name")).chars().take(64).collect();
                 self.links.lock().expect("links").insert(
                     account_id.clone(),
                     json!({

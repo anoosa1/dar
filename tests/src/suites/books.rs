@@ -7,7 +7,10 @@ use dar_acceptance::prelude::*;
 use dar_acceptance::session::Upload;
 use std::time::Duration;
 
-pub const SUITE: Suite = Suite { name: "books", cases: &[case!(books_library_and_access, 120)] };
+pub const SUITE: Suite = Suite {
+    name: "books",
+    cases: &[case!(books_library_and_access, 120)],
+};
 
 async fn books_get(session: &Session, route: &str) -> Result<Reply> {
     session.get(&format!("/api/v1/books{route}")).await
@@ -15,7 +18,12 @@ async fn books_get(session: &Session, route: &str) -> Result<Reply> {
 
 async fn books_json(session: &Session, route: &str) -> Result<Value> {
     let reply = books_get(session, route).await?;
-    ensure!(reply.status == 200, "{route}: {} {}", reply.status, reply.text());
+    ensure!(
+        reply.status == 200,
+        "{route}: {} {}",
+        reply.status,
+        reply.text()
+    );
     reply.json()
 }
 
@@ -44,7 +52,10 @@ fn encrypted_pdf() -> Vec<u8> {
         body.push_str(&format!("{} 0 obj\n{object}\nendobj\n", index + 1));
     }
     let xref = body.len();
-    body.push_str(&format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1));
+    body.push_str(&format!(
+        "xref\n0 {}\n0000000000 65535 f \n",
+        objects.len() + 1
+    ));
     for offset in offsets {
         body.push_str(&format!("{offset:010} 00000 n \n"));
     }
@@ -62,19 +73,34 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
     let db = session.connect().await?;
 
     let first = books_json(&session, "/library").await?;
-    assert_eq!(first["path"], "docs/books", "the default folder is docs/books");
+    assert_eq!(
+        first["path"], "docs/books",
+        "the default folder is docs/books"
+    );
     let root_id = first["rootId"].as_str().context("rootId")?.to_owned();
 
     let comics_id = uuid();
-    reducer(|done| db.reducers.create_folder_then(comics_id.clone(), root_id.clone(), "Comics".into(), done)).await?;
+    reducer(|done| {
+        db.reducers
+            .create_folder_then(comics_id.clone(), root_id.clone(), "Comics".into(), done)
+    })
+    .await?;
 
     fn up_in(parent: &str) -> Upload<'_> {
-        Upload { parent_id: parent, ..Upload::default() }
+        Upload {
+            parent_id: parent,
+            ..Upload::default()
+        }
     }
     let voyage = upload_with(
         &session,
         "the-test-voyage.epub",
-        epub("The Test Voyage", "Ishmael Fixture", Some(("Fixture Series", 2)), false),
+        epub(
+            "The Test Voyage",
+            "Ishmael Fixture",
+            Some(("Fixture Series", 2)),
+            false,
+        ),
         up_in(&root_id),
     )
     .await?;
@@ -87,7 +113,13 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
     .await?;
     let comic = upload_with(&session, "fixture-comic.cbz", cbz(), up_in(&comics_id)).await?;
     let paper = upload_with(&session, "paper.pdf", pdf(), up_in(&root_id)).await?;
-    upload_with(&session, "old-format.mobi", "not a book we open", up_in(&root_id)).await?;
+    upload_with(
+        &session,
+        "old-format.mobi",
+        "not a book we open",
+        up_in(&root_id),
+    )
+    .await?;
 
     // A tar comic goes through bsdtar, like CBR and CB7.
     let work = t.temp("dar-books")?;
@@ -97,25 +129,57 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
         std::fs::write(pages_dir.join(format!("{n}.png")), png(30, 45, color))?;
     }
     let cbt_path = work.join("comic.cbt");
-    run_cmd("bsdtar", &["-cf", &cbt_path.to_string_lossy(), "-C", &work.to_string_lossy(), "pages"]).await?;
-    upload_with(&session, "tar-comic.cbt", std::fs::read(&cbt_path)?, up_in(&comics_id)).await?;
+    run_cmd(
+        "bsdtar",
+        &[
+            "-cf",
+            &cbt_path.to_string_lossy(),
+            "-C",
+            &work.to_string_lossy(),
+            "pages",
+        ],
+    )
+    .await?;
+    upload_with(
+        &session,
+        "tar-comic.cbt",
+        std::fs::read(&cbt_path)?,
+        up_in(&comics_id),
+    )
+    .await?;
 
     let value = wait_library(&session).await?;
     let books = value["books"].as_array().context("books array")?;
-    let find = |name: &str| books.iter().find(|b| b["name"] == name).unwrap_or_else(|| panic!("missing book {name}"));
+    let find = |name: &str| {
+        books
+            .iter()
+            .find(|b| b["name"] == name)
+            .unwrap_or_else(|| panic!("missing book {name}"))
+    };
 
     let mut names: Vec<&str> = books.iter().filter_map(|b| b["name"].as_str()).collect();
     names.sort_unstable();
     assert_eq!(
         names,
-        vec!["fixture-comic.cbz", "locked.epub", "paper.pdf", "tar-comic.cbt", "the-test-voyage.epub"],
+        vec![
+            "fixture-comic.cbz",
+            "locked.epub",
+            "paper.pdf",
+            "tar-comic.cbt",
+            "the-test-voyage.epub"
+        ],
         "only book formats are listed"
     );
     let libraries: Vec<(&str, u64)> = value["libraries"]
         .as_array()
         .context("libraries")?
         .iter()
-        .map(|l| (l["name"].as_str().unwrap_or_default(), l["count"].as_u64().unwrap_or_default()))
+        .map(|l| {
+            (
+                l["name"].as_str().unwrap_or_default(),
+                l["count"].as_u64().unwrap_or_default(),
+            )
+        })
         .collect();
     assert_eq!(libraries, vec![("Comics", 2)], "top folders are libraries");
 
@@ -130,7 +194,11 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
     assert_eq!(book["subjects"], json!(["Sea stories"]));
     assert_eq!(book["cover"], json!(true));
     assert_eq!(book["error"], "");
-    assert_eq!(find("locked.epub")["error"], "drm", "an encrypted EPUB is reported as DRM");
+    assert_eq!(
+        find("locked.epub")["error"],
+        "drm",
+        "an encrypted EPUB is reported as DRM"
+    );
 
     let comic_book = find("fixture-comic.cbz");
     assert_eq!(comic_book["pages"], 3);
@@ -138,7 +206,11 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
     assert_eq!(comic_book["authors"], json!(["Ada Panel"]));
     assert_eq!(comic_book["series"], "Fixture Comics");
     assert_eq!(comic_book["library"], comics_id.as_str());
-    assert_eq!(find("tar-comic.cbt")["pages"], 2, "bsdtar unpacks tar comics");
+    assert_eq!(
+        find("tar-comic.cbt")["pages"],
+        2,
+        "bsdtar unpacks tar comics"
+    );
 
     let paper_book = find("paper.pdf");
     assert_eq!(paper_book["pages"], 2);
@@ -178,29 +250,66 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
             )
         })
         .collect();
-    assert_eq!(toc, vec![("One: Departure", 0, 0), ("Two: The Storm", 1, 0), ("The mast breaks", 1, 1)]);
-    assert_eq!(detail["manifest"]["toc"][2]["href"], "OEBPS/chapter2.xhtml#p3");
+    assert_eq!(
+        toc,
+        vec![
+            ("One: Departure", 0, 0),
+            ("Two: The Storm", 1, 0),
+            ("The mast breaks", 1, 1)
+        ]
+    );
+    assert_eq!(
+        detail["manifest"]["toc"][2]["href"],
+        "OEBPS/chapter2.xhtml#p3"
+    );
 
-    let chapter = books_get(&session, &format!("/{}/epub/r1/OEBPS/chapter1.xhtml", voyage.file_id)).await?;
+    let chapter = books_get(
+        &session,
+        &format!("/{}/epub/r1/OEBPS/chapter1.xhtml", voyage.file_id),
+    )
+    .await?;
     assert_eq!(chapter.status, 200);
-    assert_eq!(chapter.header("content-type"), Some("application/xhtml+xml"));
-    let policy = chapter.header("content-security-policy").unwrap_or_default();
+    assert_eq!(
+        chapter.header("content-type"),
+        Some("application/xhtml+xml")
+    );
+    let policy = chapter
+        .header("content-security-policy")
+        .unwrap_or_default();
     assert!(policy.contains("script-src 'none'"), "CSP: {policy}");
     assert!(policy.contains("form-action 'none'"), "CSP: {policy}");
     assert!(policy.contains("frame-ancestors 'self'"), "CSP: {policy}");
     assert!(chapter.text().contains("Paragraph 1 of Departure"));
-    let as_html = books_get(&session, &format!("/{}/epub/r1/OEBPS/chapter1.xhtml?as=html", voyage.file_id)).await?;
-    assert_eq!(as_html.header("content-type"), Some("text/html; charset=utf-8"));
+    let as_html = books_get(
+        &session,
+        &format!("/{}/epub/r1/OEBPS/chapter1.xhtml?as=html", voyage.file_id),
+    )
+    .await?;
+    assert_eq!(
+        as_html.header("content-type"),
+        Some("text/html; charset=utf-8")
+    );
     for bad in [
         "OEBPS/../../../etc/passwd",
         "OEBPS%2F..%2F..%2Fsecret",
         "..%2FMETA-INF%2Fcontainer.xml",
         "OEBPS/missing.xhtml",
     ] {
-        assert_eq!(books_get(&session, &format!("/{}/epub/r1/{bad}", voyage.file_id)).await?.status, 404, "{bad}");
+        assert_eq!(
+            books_get(&session, &format!("/{}/epub/r1/{bad}", voyage.file_id))
+                .await?
+                .status,
+            404,
+            "{bad}"
+        );
     }
     assert_eq!(
-        books_get(&session, &format!("/{}/epub/r1/OEBPS/chapter1.xhtml", locked.file_id)).await?.status,
+        books_get(
+            &session,
+            &format!("/{}/epub/r1/OEBPS/chapter1.xhtml", locked.file_id)
+        )
+        .await?
+        .status,
         200,
         "DRM is reported, not enforced by refusing bytes the owner already has"
     );
@@ -210,27 +319,66 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
     assert_eq!(page.status, 200);
     assert_eq!(page.header("content-type"), Some("image/png"));
     assert_eq!(&page.body[..4], &[137, 80, 78, 71]);
-    assert_eq!(books_get(&session, &format!("/{}/pages/3", comic.file_id)).await?.status, 404);
-    assert_eq!(books_get(&session, &format!("/{}/pages/0", paper.file_id)).await?.status, 404);
-    assert_eq!(books_json(&session, &format!("/{}", comic.file_id)).await?["manifest"]["kind"], "comic");
-    assert_eq!(books_json(&session, &format!("/{}", paper.file_id)).await?["manifest"]["kind"], "pdf");
+    assert_eq!(
+        books_get(&session, &format!("/{}/pages/3", comic.file_id))
+            .await?
+            .status,
+        404
+    );
+    assert_eq!(
+        books_get(&session, &format!("/{}/pages/0", paper.file_id))
+            .await?
+            .status,
+        404
+    );
+    assert_eq!(
+        books_json(&session, &format!("/{}", comic.file_id)).await?["manifest"]["kind"],
+        "comic"
+    );
+    assert_eq!(
+        books_json(&session, &format!("/{}", paper.file_id)).await?["manifest"]["kind"],
+        "pdf"
+    );
 
     // Damaged and password-protected PDFs are isolated in the child process and reported cleanly.
-    let damaged_pdf = upload_with(&session, "broken_file.pdf", "not a pdf", up_in(&root_id)).await?;
-    let protected_pdf = upload_with(&session, "locked_paper.pdf", encrypted_pdf(), up_in(&root_id)).await?;
+    let damaged_pdf =
+        upload_with(&session, "broken_file.pdf", "not a pdf", up_in(&root_id)).await?;
+    let protected_pdf = upload_with(
+        &session,
+        "locked_paper.pdf",
+        encrypted_pdf(),
+        up_in(&root_id),
+    )
+    .await?;
     let after_bad = wait_library(&session).await?;
     let after_books = after_bad["books"].as_array().context("books array")?;
-    let damaged_entry = after_books.iter().find(|b| b["id"] == damaged_pdf.file_id.as_str()).context("broken_file.pdf")?;
+    let damaged_entry = after_books
+        .iter()
+        .find(|b| b["id"] == damaged_pdf.file_id.as_str())
+        .context("broken_file.pdf")?;
     assert_eq!(damaged_entry["title"], "broken file");
     assert_eq!(damaged_entry["error"], "damaged");
     assert_eq!(damaged_entry["cover"], json!(false));
-    assert_eq!(books_get(&session, &format!("/{}/cover", damaged_pdf.file_id)).await?.status, 404);
+    assert_eq!(
+        books_get(&session, &format!("/{}/cover", damaged_pdf.file_id))
+            .await?
+            .status,
+        404
+    );
 
-    let protected_entry = after_books.iter().find(|b| b["id"] == protected_pdf.file_id.as_str()).context("locked_paper.pdf")?;
+    let protected_entry = after_books
+        .iter()
+        .find(|b| b["id"] == protected_pdf.file_id.as_str())
+        .context("locked_paper.pdf")?;
     assert_eq!(protected_entry["title"], "locked paper");
     assert_eq!(protected_entry["error"], "drm");
     assert_eq!(protected_entry["cover"], json!(false));
-    assert_eq!(books_get(&session, &format!("/{}/cover", protected_pdf.file_id)).await?.status, 404);
+    assert_eq!(
+        books_get(&session, &format!("/{}/cover", protected_pdf.file_id))
+            .await?
+            .status,
+        404
+    );
 
     // Reading state: revisions, conflicts carry the newer state, lists.
     let put_state = |id: &str, body: Value| {
@@ -248,9 +396,20 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
     assert_eq!(saved["revision"], 1);
     assert_eq!(saved["position"], json!({"spine": 1, "fraction": 0.5}));
 
-    let conflict = put_state(&voyage.file_id, json!({"revision": 0, "position": {"spine": 0, "fraction": 0.1}, "progress": 0.05})).await?;
-    assert_eq!(conflict.status, 409, "a stale place never overwrites a newer one");
-    assert_eq!(conflict.json()?["state"]["progress"], 0.6, "the conflict returns the newer place");
+    let conflict = put_state(
+        &voyage.file_id,
+        json!({"revision": 0, "position": {"spine": 0, "fraction": 0.1}, "progress": 0.05}),
+    )
+    .await?;
+    assert_eq!(
+        conflict.status, 409,
+        "a stale place never overwrites a newer one"
+    );
+    assert_eq!(
+        conflict.json()?["state"]["progress"],
+        0.6,
+        "the conflict returns the newer place"
+    );
 
     for bad in [
         json!({"revision": 1, "status": "maybe"}),
@@ -258,15 +417,41 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
         json!({"revision": 1, "progress": 2}),
         json!({"revision": 1, "extra": true}),
     ] {
-        assert_eq!(put_state(&voyage.file_id, bad.clone()).await?.status, 400, "{bad}");
+        assert_eq!(
+            put_state(&voyage.file_id, bad.clone()).await?.status,
+            400,
+            "{bad}"
+        );
     }
-    assert_eq!(put_state(&paper.file_id, json!({"revision": 0, "status": "want"})).await?.status, 200);
-    assert_eq!(put_state(&uuid(), json!({"revision": 0, "status": "want"})).await?.status, 404);
+    assert_eq!(
+        put_state(&paper.file_id, json!({"revision": 0, "status": "want"}))
+            .await?
+            .status,
+        200
+    );
+    assert_eq!(
+        put_state(&uuid(), json!({"revision": 0, "status": "want"}))
+            .await?
+            .status,
+        404
+    );
 
     let listed = wait_library(&session).await?;
     let listed_books = listed["books"].as_array().context("listed books")?;
-    assert_eq!(listed_books.iter().find(|b| b["id"] == voyage.file_id.as_str()).unwrap()["state"]["status"], "reading");
-    assert_eq!(listed_books.iter().find(|b| b["id"] == paper.file_id.as_str()).unwrap()["state"]["status"], "want");
+    assert_eq!(
+        listed_books
+            .iter()
+            .find(|b| b["id"] == voyage.file_id.as_str())
+            .unwrap()["state"]["status"],
+        "reading"
+    );
+    assert_eq!(
+        listed_books
+            .iter()
+            .find(|b| b["id"] == paper.file_id.as_str())
+            .unwrap()["state"]["status"],
+        "want"
+    );
 
     // Bookmarks.
     let mark_id = uuid();
@@ -279,9 +464,25 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
         .expect(201)?
         .json()?;
     assert_eq!(mark["label"], "The storm");
-    assert_eq!(books_json(&session, &format!("/{}", voyage.file_id)).await?["marks"].as_array().map(Vec::len), Some(1));
-    assert_eq!(session.delete(&format!("/api/v1/books/{}/marks/{mark_id}", voyage.file_id)).await?.status, 200);
-    assert_eq!(books_json(&session, &format!("/{}", voyage.file_id)).await?["marks"].as_array().map(Vec::len), Some(0));
+    assert_eq!(
+        books_json(&session, &format!("/{}", voyage.file_id)).await?["marks"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        session
+            .delete(&format!("/api/v1/books/{}/marks/{mark_id}", voyage.file_id))
+            .await?
+            .status,
+        200
+    );
+    assert_eq!(
+        books_json(&session, &format!("/{}", voyage.file_id)).await?["marks"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
 
     // Another account sees none of it; the owner's state and books stay private.
     let username = format!("reader-{}", &uuid()[..6]);
@@ -296,13 +497,26 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
         let status = books_get(&other, &route).await?.status;
         assert!([403, 404].contains(&status), "{route}: {status}");
     }
-    let other_put = other.put(&format!("/api/v1/books/{}/state", voyage.file_id), &json!({"revision": 0, "status": "want"})).await?;
+    let other_put = other
+        .put(
+            &format!("/api/v1/books/{}/state", voyage.file_id),
+            &json!({"revision": 0, "status": "want"}),
+        )
+        .await?;
     assert!([403, 404].contains(&other_put.status));
-    assert_eq!(books_json(&other, "/library").await?["books"].as_array().map(Vec::len), Some(0));
+    assert_eq!(
+        books_json(&other, "/library").await?["books"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
 
     // A changed Books folder is followed; preferences validate it.
     let current = session.get_json("/api/v1/pim/preferences").await?;
-    assert_eq!(current["booksFolder"].as_str().unwrap_or("docs/books"), "docs/books");
+    assert_eq!(
+        current["booksFolder"].as_str().unwrap_or("docs/books"),
+        "docs/books"
+    );
     let put_prefs = |value: Value, revision: u64| {
         let session = session.clone();
         async move {
@@ -319,13 +533,41 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
             .await
         }
     };
-    let rev = current["revision"].as_u64().context("preferences revision")?;
-    assert_eq!(put_prefs(json!({"booksFolder": "../escape"}), rev).await?.status, 400);
-    assert_eq!(put_prefs(json!({"booksTheme": "neon"}), rev).await?.status, 400);
-    assert_eq!(put_prefs(json!({"booksFolder": "Reading/Shelf", "booksTheme": "sepia", "booksFontSize": 20}), rev).await?.status, 200);
-    assert_eq!(books_json(&session, "/library").await?["path"], "Reading/Shelf");
-    let rev = session.get_json("/api/v1/pim/preferences").await?["revision"].as_u64().context("preferences revision")?;
-    assert_eq!(put_prefs(json!({"booksFolder": "docs/books"}), rev).await?.status, 200);
+    let rev = current["revision"]
+        .as_u64()
+        .context("preferences revision")?;
+    assert_eq!(
+        put_prefs(json!({"booksFolder": "../escape"}), rev)
+            .await?
+            .status,
+        400
+    );
+    assert_eq!(
+        put_prefs(json!({"booksTheme": "neon"}), rev).await?.status,
+        400
+    );
+    assert_eq!(
+        put_prefs(
+            json!({"booksFolder": "Reading/Shelf", "booksTheme": "sepia", "booksFontSize": 20}),
+            rev
+        )
+        .await?
+        .status,
+        200
+    );
+    assert_eq!(
+        books_json(&session, "/library").await?["path"],
+        "Reading/Shelf"
+    );
+    let rev = session.get_json("/api/v1/pim/preferences").await?["revision"]
+        .as_u64()
+        .context("preferences revision")?;
+    assert_eq!(
+        put_prefs(json!({"booksFolder": "docs/books"}), rev)
+            .await?
+            .status,
+        200
+    );
 
     // Administrators can turn Books off; the data stays.
     let state = session.get_json("/api/v1/admin/installedApps").await?;
@@ -349,11 +591,26 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
             .await
         }
     };
-    assert_eq!(toggle(false, state["revision"].as_u64().context("apps revision")?).await?.status, 200);
+    assert_eq!(
+        toggle(false, state["revision"].as_u64().context("apps revision")?)
+            .await?
+            .status,
+        200
+    );
     assert_eq!(books_get(&session, "/library").await?.status, 404);
-    assert_eq!(books_get(&session, &format!("/{}", voyage.file_id)).await?.status, 404);
+    assert_eq!(
+        books_get(&session, &format!("/{}", voyage.file_id))
+            .await?
+            .status,
+        404
+    );
     let state = session.get_json("/api/v1/admin/installedApps").await?;
-    assert_eq!(toggle(true, state["revision"].as_u64().context("apps revision")?).await?.status, 200);
+    assert_eq!(
+        toggle(true, state["revision"].as_u64().context("apps revision")?)
+            .await?
+            .status,
+        200
+    );
     let restored = books_json(&session, "/library").await?;
     assert_eq!(
         restored["books"]
@@ -373,7 +630,9 @@ pub async fn books_library_and_access(t: &Ctx) -> Result<()> {
     assert!(
         snapshot["books"]["states"]
             .as_array()
-            .is_some_and(|states| states.iter().any(|s| s["fileId"] == voyage.file_id.as_str()))
+            .is_some_and(|states| states
+                .iter()
+                .any(|s| s["fileId"] == voyage.file_id.as_str()))
     );
 
     db.disconnect();

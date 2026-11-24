@@ -14,7 +14,9 @@ use wasm_bindgen::{JsCast, JsValue};
 
 use super::presentation::recurrence_label;
 use super::schedule::{ReminderField, RepeatField};
-use super::{Collection, CollectionDot, CollectionEditor, Done, Item, PimShell, Sharing, etag, send, use_pim};
+use super::{
+    Collection, CollectionDot, CollectionEditor, Done, Item, PimShell, Sharing, etag, send, use_pim,
+};
 use crate::api::{self, BrowserSession};
 use crate::date_popover::{DatePopover, MiniMonth, add_days, format_date, shift};
 use crate::icons::Icon;
@@ -38,7 +40,15 @@ fn local(epoch: f64, zone: &str) -> String {
         let mut f = f.borrow_mut();
         let format = f.entry(zone.to_owned()).or_insert_with(|| {
             let options = js_sys::Object::new();
-            for (k, v) in [("timeZone", zone), ("year", "numeric"), ("month", "2-digit"), ("day", "2-digit"), ("hour", "2-digit"), ("minute", "2-digit"), ("hourCycle", "h23")] {
+            for (k, v) in [
+                ("timeZone", zone),
+                ("year", "numeric"),
+                ("month", "2-digit"),
+                ("day", "2-digit"),
+                ("hour", "2-digit"),
+                ("minute", "2-digit"),
+                ("hourCycle", "h23"),
+            ] {
                 let _ = js_sys::Reflect::set(&options, &k.into(), &v.into());
             }
             js_sys::Intl::DateTimeFormat::new(&js_sys::Array::of1(&"en-CA".into()), &options)
@@ -46,11 +56,23 @@ fn local(epoch: f64, zone: &str) -> String {
         let parts = format.format_to_parts(&js_sys::Date::new(&JsValue::from_f64(epoch)));
         let mut map = HashMap::new();
         for part in parts.iter() {
-            let get = |k: &str| js_sys::Reflect::get(&part, &k.into()).ok().and_then(|v| v.as_string()).unwrap_or_default();
+            let get = |k: &str| {
+                js_sys::Reflect::get(&part, &k.into())
+                    .ok()
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_default()
+            };
             map.insert(get("type"), get("value"));
         }
         let p = |k: &str| map.get(k).cloned().unwrap_or_default();
-        format!("{}-{}-{}T{}:{}", p("year"), p("month"), p("day"), p("hour"), p("minute"))
+        format!(
+            "{}-{}-{}T{}:{}",
+            p("year"),
+            p("month"),
+            p("day"),
+            p("hour"),
+            p("minute")
+        )
     });
     TIMES.with(|t| {
         let mut t = t.borrow_mut();
@@ -88,7 +110,10 @@ fn range(anchor: &str, view: &str, first: u32) -> (String, i64) {
             let offset = (weekday(&start) + 7 - first) % 7;
             (add_days(&start, -(offset as i64)), 42)
         }
-        _ => (add_days(anchor, -(((weekday(anchor) + 7 - first) % 7) as i64)), 7),
+        _ => (
+            add_days(anchor, -(((weekday(anchor) + 7 - first) % 7) as i64)),
+            7,
+        ),
     }
 }
 
@@ -99,17 +124,46 @@ fn day(date: &str, options: &[(&str, &str)]) -> String {
 /// "November 2026", "Nov 9 – 15, 2026" or "Thursday, November 12, 2026" (`periodTitle`).
 fn period_title(anchor: &str, view: &str, days: &[String]) -> String {
     match view {
-        "day" => day(anchor, &[("weekday", "long"), ("month", "long"), ("day", "numeric"), ("year", "numeric")]),
+        "day" => day(
+            anchor,
+            &[
+                ("weekday", "long"),
+                ("month", "long"),
+                ("day", "numeric"),
+                ("year", "numeric"),
+            ],
+        ),
         "week" => {
             let (first, last) = (&days[0], days.last().expect("week"));
             let month = |d: &str| day(d, &[("month", "short")]);
             let d = |date: &str| date[8..].trim_start_matches('0').to_owned();
             if first[..4] != last[..4] {
-                format!("{} {}, {} – {} {}, {}", month(first), d(first), &first[..4], month(last), d(last), &last[..4])
+                format!(
+                    "{} {}, {} – {} {}, {}",
+                    month(first),
+                    d(first),
+                    &first[..4],
+                    month(last),
+                    d(last),
+                    &last[..4]
+                )
             } else if first[..7] == last[..7] {
-                format!("{} {} – {}, {}", month(first), d(first), d(last), &first[..4])
+                format!(
+                    "{} {} – {}, {}",
+                    month(first),
+                    d(first),
+                    d(last),
+                    &first[..4]
+                )
             } else {
-                format!("{} {} – {} {}, {}", month(first), d(first), month(last), d(last), &first[..4])
+                format!(
+                    "{} {} – {} {}, {}",
+                    month(first),
+                    d(first),
+                    month(last),
+                    d(last),
+                    &first[..4]
+                )
             }
         }
         _ => day(anchor, &[("month", "long"), ("year", "numeric")]),
@@ -121,22 +175,60 @@ fn event_when(event: &Value, zone: &str) -> String {
     if event["allDay"] == json!(true) {
         let start = &s(event, "start")[..10];
         let last = add_days(&s(event, "end")[..10], -1);
-        return if last.as_str() <= start { day(start, &[("weekday", "long"), ("month", "long"), ("day", "numeric")]) } else { format!("{} – {}", day(start, &[("month", "short"), ("day", "numeric")]), day(&last, &[("month", "short"), ("day", "numeric"), ("year", "numeric")])) };
+        return if last.as_str() <= start {
+            day(
+                start,
+                &[("weekday", "long"), ("month", "long"), ("day", "numeric")],
+            )
+        } else {
+            format!(
+                "{} – {}",
+                day(start, &[("month", "short"), ("day", "numeric")]),
+                day(
+                    &last,
+                    &[("month", "short"), ("day", "numeric"), ("year", "numeric")]
+                )
+            )
+        };
     }
     let (start_at, end_at) = (at(event, "startAt"), at(event, "endAt"));
-    let (start, end) = (local(start_at, zone)[..10].to_owned(), local(end_at, zone)[..10].to_owned());
+    let (start, end) = (
+        local(start_at, zone)[..10].to_owned(),
+        local(end_at, zone)[..10].to_owned(),
+    );
     if start == end || end_at - start_at <= 86_400_000.0 && &local(end_at, zone)[11..] == "00:00" {
-        day(&start, &[("weekday", "long"), ("month", "long"), ("day", "numeric")])
+        day(
+            &start,
+            &[("weekday", "long"), ("month", "long"), ("day", "numeric")],
+        )
     } else {
-        format!("{} – {}", day(&start, &[("weekday", "short"), ("month", "short"), ("day", "numeric")]), day(&end, &[("weekday", "short"), ("month", "short"), ("day", "numeric")]))
+        format!(
+            "{} – {}",
+            day(
+                &start,
+                &[("weekday", "short"), ("month", "short"), ("day", "numeric")]
+            ),
+            day(
+                &end,
+                &[("weekday", "short"), ("month", "short"), ("day", "numeric")]
+            )
+        )
     }
 }
 
 fn reminder_text(minutes: i64) -> String {
     if minutes % 1440 == 0 {
-        format!("{} day{}", minutes / 1440, if minutes == 1440 { "" } else { "s" })
+        format!(
+            "{} day{}",
+            minutes / 1440,
+            if minutes == 1440 { "" } else { "s" }
+        )
     } else if minutes % 60 == 0 {
-        format!("{} hour{}", minutes / 60, if minutes == 60 { "" } else { "s" })
+        format!(
+            "{} hour{}",
+            minutes / 60,
+            if minutes == 60 { "" } else { "s" }
+        )
     } else {
         format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
     }
@@ -150,9 +242,17 @@ fn occurrence_key(e: &Value) -> String {
 fn day_lanes(days: &[String], events: &[Value], zone: &str) -> HashMap<String, (usize, usize)> {
     let mut result = HashMap::new();
     for date in days {
-        let mut rows: Vec<&Value> = events.iter().filter(|e| e["allDay"] != json!(true) && local(at(e, "startAt"), zone)[..10] == *date).collect();
-        rows.sort_by(|a, b| at(a, "startAt").total_cmp(&at(b, "startAt")).then(at(b, "endAt").total_cmp(&at(a, "endAt"))));
-        let (mut cluster, mut ends, mut cluster_end): (Vec<(String, usize)>, Vec<f64>, f64) = (Vec::new(), Vec::new(), 0.0);
+        let mut rows: Vec<&Value> = events
+            .iter()
+            .filter(|e| e["allDay"] != json!(true) && local(at(e, "startAt"), zone)[..10] == *date)
+            .collect();
+        rows.sort_by(|a, b| {
+            at(a, "startAt")
+                .total_cmp(&at(b, "startAt"))
+                .then(at(b, "endAt").total_cmp(&at(a, "endAt")))
+        });
+        let (mut cluster, mut ends, mut cluster_end): (Vec<(String, usize)>, Vec<f64>, f64) =
+            (Vec::new(), Vec::new(), 0.0);
         let mut flush = |cluster: &mut Vec<(String, usize)>, ends: &mut Vec<f64>| {
             let lanes = ends.len().max(1);
             for (key, lane) in cluster.drain(..) {
@@ -188,7 +288,9 @@ fn on_day(event: &Value, date: &str, zone: &str) -> bool {
     let from = local(at(event, "startAt"), zone)[..10].to_owned();
     let end = local(at(event, "endAt"), zone);
     let to = &end[..10];
-    from.as_str() <= date && (to > date || to == date && (&end[11..] != "00:00" || event["startAt"] == event["endAt"]))
+    from.as_str() <= date
+        && (to > date
+            || to == date && (&end[11..] != "00:00" || event["startAt"] == event["endAt"]))
 }
 
 #[derive(Deserialize)]
@@ -207,18 +309,35 @@ struct Editor {
 #[component]
 pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoView {
     let pim = use_pim(on_signed_out);
-    let params = web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default()).expect("params");
-    let guessed = js_sys::Intl::DateTimeFormat::new(&js_sys::Array::new(), &js_sys::Object::new()).resolved_options();
-    let guessed = js_sys::Reflect::get(&guessed, &"timeZone".into()).ok().and_then(|v| v.as_string()).unwrap_or_else(|| "UTC".into());
+    let params =
+        web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default())
+            .expect("params");
+    let guessed = js_sys::Intl::DateTimeFormat::new(&js_sys::Array::new(), &js_sys::Object::new())
+        .resolved_options();
+    let guessed = js_sys::Reflect::get(&guessed, &"timeZone".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| "UTC".into());
     let shared = context().preferences;
-    let prefs: RwSignal<Value> = RwSignal::new(json!({ "revision": 0, "timezone": "UTC", "weekStart": 1, "hiddenCalendars": [] }));
+    let prefs: RwSignal<Value> = RwSignal::new(
+        json!({ "revision": 0, "timezone": "UTC", "weekStart": 1, "hiddenCalendars": [] }),
+    );
     let calendars: RwSignal<Vec<Collection>> = RwSignal::new(Vec::new());
     let events: RwSignal<Vec<Value>> = RwSignal::new(Vec::new());
     let reminders: RwSignal<Vec<Value>> = RwSignal::new(Vec::new());
-    let date_param = params.get("date").filter(|d| d.len() == 10 && d.as_bytes()[4] == b'-');
+    let date_param = params
+        .get("date")
+        .filter(|d| d.len() == 10 && d.as_bytes()[4] == b'-');
     let initial_date = date_param.is_some();
-    let anchor = RwSignal::new(date_param.unwrap_or_else(|| local(js_sys::Date::now(), "UTC")[..10].to_owned()));
-    let view_mode = RwSignal::new(params.get("view").filter(|v| ["day", "week", "month", "agenda"].contains(&v.as_str())).unwrap_or_else(|| "month".into()));
+    let anchor = RwSignal::new(
+        date_param.unwrap_or_else(|| local(js_sys::Date::now(), "UTC")[..10].to_owned()),
+    );
+    let view_mode = RwSignal::new(
+        params
+            .get("view")
+            .filter(|v| ["day", "week", "month", "agenda"].contains(&v.as_str()))
+            .unwrap_or_else(|| "month".into()),
+    );
     let selected: RwSignal<Option<Value>> = RwSignal::new(None);
     let detail: RwSignal<Option<Item>> = RwSignal::new(None);
     let editor: RwSignal<Option<Editor>> = RwSignal::new(None);
@@ -247,11 +366,28 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
     let session = StoredValue::new(session);
     let csrf = move || session.with_value(|s| s.csrf_token.clone());
 
-    let zone = Memo::new(move |_| prefs.with(|p| p["timezone"].as_str().map(str::to_owned)).unwrap_or_else(|| guessed.clone()));
-    let week_start = Signal::derive(move || prefs.with(|p| p["weekStart"].as_u64().unwrap_or(1) as u32));
-    let show_cancelled = Signal::derive(move || prefs.with(|p| p["calendarShowCancelled"] == json!(true)));
+    let zone = Memo::new(move |_| {
+        prefs
+            .with(|p| p["timezone"].as_str().map(str::to_owned))
+            .unwrap_or_else(|| guessed.clone())
+    });
+    let week_start =
+        Signal::derive(move || prefs.with(|p| p["weekStart"].as_u64().unwrap_or(1) as u32));
+    let show_cancelled =
+        Signal::derive(move || prefs.with(|p| p["calendarShowCancelled"] == json!(true)));
     let show_tasks = Signal::derive(move || prefs.with(|p| p["calendarShowTasks"] != json!(false)));
-    let hidden = Memo::new(move |_| prefs.with(|p| p["hiddenCalendars"].as_array().map(|h| h.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect::<Vec<_>>()).unwrap_or_default()));
+    let hidden = Memo::new(move |_| {
+        prefs.with(|p| {
+            p["hiddenCalendars"]
+                .as_array()
+                .map(|h| {
+                    h.iter()
+                        .filter_map(|v| v.as_str().map(str::to_owned))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        })
+    });
     let window_range = Memo::new(move |_| range(&anchor.get(), &view_mode.get(), week_start.get()));
     let days = Memo::new(move |_| {
         let (start, count) = window_range.get();
@@ -259,7 +395,12 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
     });
     let today = Memo::new(move |_| local(js_sys::Date::now(), &zone.get())[..10].to_owned());
     let loaded_prefs = Memo::new(move |_| shared.value.with(|v| v.as_ref().map(|p| p.revision)));
-    let ready_to_create = Memo::new(move |_| !loading.get() && loaded_prefs.get().is_some_and(|r| prefs.with(|p| p["revision"].as_u64() == Some(r))));
+    let ready_to_create = Memo::new(move |_| {
+        !loading.get()
+            && loaded_prefs
+                .get()
+                .is_some_and(|r| prefs.with(|p| p["revision"].as_u64() == Some(r)))
+    });
 
     Effect::new(move |_| {
         let Some(p) = shared.value.get() else { return };
@@ -277,7 +418,13 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
     // Occurrences of every visible calendar, covering day boundaries in any zone.
     Effect::new(move |_| {
         pim.epoch.track();
-        let ((start, count), z, cancelled, tasks, hide) = (window_range.get(), zone.get(), show_cancelled.get(), show_tasks.get(), hidden.get());
+        let ((start, count), z, cancelled, tasks, hide) = (
+            window_range.get(),
+            zone.get(),
+            show_cancelled.get(),
+            show_tasks.get(),
+            hidden.get(),
+        );
         let key = json!([start, count, z, hide]).to_string();
         if loaded_range.get_value() != key {
             loading.set(true);
@@ -299,19 +446,42 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
                     return;
                 }
             };
-            let from = js_sys::Date::new(&JsValue::from_f64(parse_ms(&format!("{start}T00:00:00Z")) - 86_400_000.0)).to_iso_string().as_string().unwrap_or_default();
-            let to = js_sys::Date::new(&JsValue::from_f64(parse_ms(&format!("{}T00:00:00Z", add_days(&start, count))) + 86_400_000.0)).to_iso_string().as_string().unwrap_or_default();
+            let from = js_sys::Date::new(&JsValue::from_f64(
+                parse_ms(&format!("{start}T00:00:00Z")) - 86_400_000.0,
+            ))
+            .to_iso_string()
+            .as_string()
+            .unwrap_or_default();
+            let to = js_sys::Date::new(&JsValue::from_f64(
+                parse_ms(&format!("{}T00:00:00Z", add_days(&start, count))) + 86_400_000.0,
+            ))
+            .to_iso_string()
+            .as_string()
+            .unwrap_or_default();
             // Up to four calendars load at once, as in React; results keep the calendars' order.
-            let visible: Vec<Collection> = list.items.iter().filter(|c| !hide.contains(&c.id)).cloned().collect();
+            let visible: Vec<Collection> = list
+                .items
+                .iter()
+                .filter(|c| !hide.contains(&c.id))
+                .cloned()
+                .collect();
             let query = web_sys::UrlSearchParams::new().expect("params");
-            for (k, v) in [("from", from.as_str()), ("to", to.as_str()), ("timezone", z.as_str()), ("includeCancelled", if cancelled { "1" } else { "0" }), ("includeTasks", if tasks { "1" } else { "0" })] {
+            for (k, v) in [
+                ("from", from.as_str()),
+                ("to", to.as_str()),
+                ("timezone", z.as_str()),
+                ("includeCancelled", if cancelled { "1" } else { "0" }),
+                ("includeTasks", if tasks { "1" } else { "0" }),
+            ] {
                 query.append(k, v);
             }
             let query = query.to_string().as_string().unwrap_or_default();
             let next = std::rc::Rc::new(std::cell::Cell::new(0usize));
-            let results: std::rc::Rc<std::cell::RefCell<Vec<Option<Result<Vec<Value>, ()>>>>> = std::rc::Rc::new(std::cell::RefCell::new(vec![None; visible.len()]));
+            let results: std::rc::Rc<std::cell::RefCell<Vec<Option<Result<Vec<Value>, ()>>>>> =
+                std::rc::Rc::new(std::cell::RefCell::new(vec![None; visible.len()]));
             let workers = (0..visible.len().min(4)).map(|_| {
-                let (next, results, visible, query) = (next.clone(), results.clone(), &visible, &query);
+                let (next, results, visible, query) =
+                    (next.clone(), results.clone(), &visible, &query);
                 async move {
                     loop {
                         let index = next.get();
@@ -319,8 +489,16 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
                             break;
                         }
                         next.set(index + 1);
-                        let result = api::get::<Value>(&format!("{BASE}/{}/occurrences?{query}", visible[index].id)).await;
-                        results.borrow_mut()[index] = Some(result.map(|v| v["items"].as_array().cloned().unwrap_or_default()).map_err(|_| ()));
+                        let result = api::get::<Value>(&format!(
+                            "{BASE}/{}/occurrences?{query}",
+                            visible[index].id
+                        ))
+                        .await;
+                        results.borrow_mut()[index] = Some(
+                            result
+                                .map(|v| v["items"].as_array().cloned().unwrap_or_default())
+                                .map_err(|_| ()),
+                        );
                     }
                 }
             });
@@ -339,7 +517,11 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
             let same = loaded_range.get_value() == key;
             loaded_range.set_value(key);
             if same {
-                let kept: Vec<Value> = events.get_untracked().into_iter().filter(|e| failed.iter().any(|c| c.id == s(e, "collectionId"))).collect();
+                let kept: Vec<Value> = events
+                    .get_untracked()
+                    .into_iter()
+                    .filter(|e| failed.iter().any(|c| c.id == s(e, "collectionId")))
+                    .collect();
                 batches.extend(kept);
             }
             if !list.items.iter().any(|c| c.id == managed.get_untracked()) {
@@ -348,18 +530,40 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
             calendars.set(list.items);
             events.set(batches);
             reminders.set(inbox["items"].as_array().cloned().unwrap_or_default());
-            error.set(if failed.is_empty() { String::new() } else { format!("Could not refresh {}.{} Try Refresh.", failed.iter().map(|c| c.name.clone()).collect::<Vec<_>>().join(", "), if same { " Previously loaded events in this window have been kept." } else { "" }) });
+            error.set(if failed.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "Could not refresh {}.{} Try Refresh.",
+                    failed
+                        .iter()
+                        .map(|c| c.name.clone())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    if same {
+                        " Previously loaded events in this window have been kept."
+                    } else {
+                        ""
+                    }
+                )
+            });
             loading.set(false);
         });
     });
     // `?book=…&event=…` opens that event once it is loaded.
     Effect::new(move |_| {
         let (book, href) = initial_event.get_value();
-        let (Some(book), Some(href)) = (book, href) else { return };
+        let (Some(book), Some(href)) = (book, href) else {
+            return;
+        };
         if loading.get() {
             return;
         }
-        if let Some(found) = events.with(|e| e.iter().find(|e| s(e, "collectionId") == book && s(e, "href") == href).cloned()) {
+        if let Some(found) = events.with(|e| {
+            e.iter()
+                .find(|e| s(e, "collectionId") == book && s(e, "href") == href)
+                .cloned()
+        }) {
             initial_event.set_value((None, None));
             selected.set(Some(found));
         }
@@ -367,14 +571,22 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
     Effect::new(move |_| {
         pim.epoch.track();
         let current = selected.get();
-        let key = current.as_ref().map(|e| format!("{}/{}", s(e, "collectionId"), s(e, "href"))).unwrap_or_default();
+        let key = current
+            .as_ref()
+            .map(|e| format!("{}/{}", s(e, "collectionId"), s(e, "href")))
+            .unwrap_or_default();
         if loaded_detail.get_value() != key {
             detail.set(None);
         }
         loaded_detail.set_value(key.clone());
         let Some(e) = current else { return };
         spawn_local(async move {
-            let result = api::get::<Item>(&format!("{BASE}/{}/items/{}", s(&e, "collectionId"), s(&e, "href"))).await;
+            let result = api::get::<Item>(&format!(
+                "{BASE}/{}/items/{}",
+                s(&e, "collectionId"),
+                s(&e, "href")
+            ))
+            .await;
             if loaded_detail.try_get_value().as_deref() != Some(key.as_str()) {
                 return;
             }
@@ -391,17 +603,25 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         let params = web_sys::UrlSearchParams::new().expect("params");
         params.append("date", &anchor.get());
         params.append("view", &view_mode.get());
-        let _ = window().history().expect("history").replace_state_with_url(&JsValue::NULL, "", Some(&format!("/calendar?{}", params.to_string().as_string().unwrap_or_default())));
+        let _ = window().history().expect("history").replace_state_with_url(
+            &JsValue::NULL,
+            "",
+            Some(&format!(
+                "/calendar?{}",
+                params.to_string().as_string().unwrap_or_default()
+            )),
+        );
     });
     // The time grid opens at 07:00 once per period.
     Effect::new(move |_| {
         let period = format!("{}/{}", view_mode.get(), window_range.get().0);
         pim.state.track();
         if let (Some(g), false) = (grid.get(), loading.get())
-            && grid_period.get_value() != period {
-                g.set_scroll_top(7 * 64);
-                grid_period.set_value(period);
-            }
+            && grid_period.get_value() != period
+        {
+            g.set_scroll_top(7 * 64);
+            grid_period.set_value(period);
+        }
     });
     Effect::new(move |_| {
         let list = events.get();
@@ -409,12 +629,30 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
             return;
         }
         if let Some(current) = selected.get_untracked() {
-            selected.set(list.into_iter().find(|e| occurrence_key(e) == occurrence_key(&current)));
+            selected.set(
+                list.into_iter()
+                    .find(|e| occurrence_key(e) == occurrence_key(&current)),
+            );
         }
     });
     let resize_pages = move || {
-        let (w, h) = (window().inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(1000.0), window().inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(900.0));
-        page_size.set(if w <= 800.0 { 1000 } else { (((h - 56.0 - 560.0) / 42.0).floor() as usize).clamp(1, 8) });
+        let (w, h) = (
+            window()
+                .inner_width()
+                .ok()
+                .and_then(|v| v.as_f64())
+                .unwrap_or(1000.0),
+            window()
+                .inner_height()
+                .ok()
+                .and_then(|v| v.as_f64())
+                .unwrap_or(900.0),
+        );
+        page_size.set(if w <= 800.0 {
+            1000
+        } else {
+            (((h - 56.0 - 560.0) / 42.0).floor() as usize).clamp(1, 8)
+        });
     };
     resize_pages();
     crate::ui::listen(&window(), "resize", false, move |_| resize_pages());
@@ -431,44 +669,60 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         let measured = node.clone();
         let measure = move || {
             let height = measured.client_height() as f64;
-            let limit = (((height - 28.0) / 6.0 - 48.0) / 22.0).floor().clamp(0.0, 3.0) as usize;
-            if month_limit.try_get_untracked().is_some_and(|current| current != limit) {
+            let limit = (((height - 28.0) / 6.0 - 48.0) / 22.0)
+                .floor()
+                .clamp(0.0, 3.0) as usize;
+            if month_limit
+                .try_get_untracked()
+                .is_some_and(|current| current != limit)
+            {
                 month_limit.set(limit);
             }
         };
         let callback = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(measure);
-        let observer = web_sys::ResizeObserver::new(callback.as_ref().unchecked_ref()).expect("ResizeObserver");
+        let observer = web_sys::ResizeObserver::new(callback.as_ref().unchecked_ref())
+            .expect("ResizeObserver");
         observer.observe(&node);
         let kept = send_wrapper::SendWrapper::new((observer, callback));
         on_cleanup(move || kept.take().0.disconnect());
     });
 
-    let run = move |work: std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>| {
-        spawn_local(async move {
-            busy.set(true);
-            error.set(String::new());
-            match work.await {
-                Ok(()) => {
-                    pim.refresh();
-                    modal.set(None);
-                    scope.set(None);
+    let run =
+        move |work: std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>| {
+            spawn_local(async move {
+                busy.set(true);
+                error.set(String::new());
+                match work.await {
+                    Ok(()) => {
+                        pim.refresh();
+                        modal.set(None);
+                        scope.set(None);
+                    }
+                    Err(e) => error.set(e),
                 }
-                Err(e) => error.set(e),
-            }
-            busy.set(false);
-        });
-    };
+                busy.set(false);
+            });
+        };
     let new_event = move |date: String, hour: u32| {
         if !ready_to_create.get_untracked() {
             return;
         }
         let editable = |c: &Collection| c.role != "read" && c.subscription.is_none();
-        let target = calendars.with_untracked(|list| list.iter().find(|c| c.id == managed.get_untracked() && editable(c)).or_else(|| list.iter().find(|c| editable(c))).cloned());
+        let target = calendars.with_untracked(|list| {
+            list.iter()
+                .find(|c| c.id == managed.get_untracked() && editable(c))
+                .or_else(|| list.iter().find(|c| editable(c)))
+                .cloned()
+        });
         let Some(target) = target else {
             modal.set(Some("newCalendar"));
             return;
         };
-        let end = if hour == 23 { format!("{}T00:00", add_days(&date, 1)) } else { format!("{date}T{:02}:00", hour + 1) };
+        let end = if hour == 23 {
+            format!("{}T00:00", add_days(&date, 1))
+        } else {
+            format!("{date}T{:02}:00", hour + 1)
+        };
         editor.set(Some(Editor {
             collection_id: target.id,
             resource: None,
@@ -477,16 +731,34 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         }));
     };
     let edit_occurrence = move |whole: bool| {
-        let (Some(d), Some(sel)) = (detail.get_untracked(), selected.get_untracked()) else { return };
-        editor.set(Some(Editor { collection_id: d.collection_id.clone(), occurrence: (!whole).then(|| s(&sel, "recurrenceId")), data: if whole { d.data.clone() } else { sel }, resource: Some(d) }));
+        let (Some(d), Some(sel)) = (detail.get_untracked(), selected.get_untracked()) else {
+            return;
+        };
+        editor.set(Some(Editor {
+            collection_id: d.collection_id.clone(),
+            occurrence: (!whole).then(|| s(&sel, "recurrenceId")),
+            data: if whole { d.data.clone() } else { sel },
+            resource: Some(d),
+        }));
         scope.set(None);
     };
     let refresh_subscription = move |c: Collection| {
         spawn_local(async move {
-            match send::<Value>(&format!("{BASE}/{}/refresh", c.id), "POST", None, &csrf(), None).await {
+            match send::<Value>(
+                &format!("{BASE}/{}/refresh", c.id),
+                "POST",
+                None,
+                &csrf(),
+                None,
+            )
+            .await
+            {
                 Ok(_) => {
                     notice.set(format!("Refreshing {}…", c.name));
-                    set_timeout(move || pim.refresh(), std::time::Duration::from_millis(4000));
+                    set_timeout(
+                        move || pim.refresh(),
+                        std::time::Duration::from_millis(4000),
+                    );
                 }
                 Err(e) => error.set(e.message),
             }
@@ -502,7 +774,9 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
             delete_count.set(None);
             spawn_local(async move {
                 match api::get::<Value>(&format!("{BASE}/{}", c.id)).await {
-                    Ok(v) if action_sequence.try_get_untracked() == Some(id) => delete_count.set(v["count"].as_u64().map(|c| c as usize)),
+                    Ok(v) if action_sequence.try_get_untracked() == Some(id) => {
+                        delete_count.set(v["count"].as_u64().map(|c| c as usize))
+                    }
                     Err(e) => error.set(e.message),
                     _ => {}
                 }
@@ -510,50 +784,127 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         }
     };
     let current = Memo::new(move |_| {
-        let id = { let a = action_id.get(); if a.is_empty() { managed.get() } else { a } };
+        let id = {
+            let a = action_id.get();
+            if a.is_empty() { managed.get() } else { a }
+        };
         calendars.with(|c| c.iter().find(|x| x.id == id).cloned())
     });
-    let selected_calendar = Memo::new(move |_| selected.with(|sel| sel.as_ref().and_then(|e| calendars.with(|c| c.iter().find(|x| x.id == s(e, "collectionId")).cloned()))));
-    let can_edit = Memo::new(move |_| selected_calendar.with(|c| c.as_ref().is_some_and(|c| c.role != "read" && c.subscription.is_none())));
+    let selected_calendar = Memo::new(move |_| {
+        selected.with(|sel| {
+            sel.as_ref().and_then(|e| {
+                calendars.with(|c| c.iter().find(|x| x.id == s(e, "collectionId")).cloned())
+            })
+        })
+    });
+    let can_edit = Memo::new(move |_| {
+        selected_calendar.with(|c| {
+            c.as_ref()
+                .is_some_and(|c| c.role != "read" && c.subscription.is_none())
+        })
+    });
     let drop_at = move |date: String, hour: Option<u32>| {
-        let Some((event, resize)) = dragged.get_value() else { return };
+        let Some((event, resize)) = dragged.get_value() else {
+            return;
+        };
         dragged.set_value(None);
         let z = zone.get_untracked();
         run(Box::pin(async move {
-            let resource: Item = api::get(&format!("{BASE}/{}/items/{}", s(&event, "collectionId"), s(&event, "href"))).await.map_err(|e| e.message)?;
+            let resource: Item = api::get(&format!(
+                "{BASE}/{}/items/{}",
+                s(&event, "collectionId"),
+                s(&event, "href")
+            ))
+            .await
+            .map_err(|e| e.message)?;
             let old_start = local(at(&event, "startAt"), &z);
             let all_day = event["allDay"] == json!(true);
-            let new_start = if resize { old_start.clone() } else if all_day { date.clone() } else { format!("{date}T{}", hour.map(|h| format!("{h:02}:00")).unwrap_or_else(|| old_start[11..16].to_owned())) };
+            let new_start = if resize {
+                old_start.clone()
+            } else if all_day {
+                date.clone()
+            } else {
+                format!(
+                    "{date}T{}",
+                    hour.map(|h| format!("{h:02}:00"))
+                        .unwrap_or_else(|| old_start[11..16].to_owned())
+                )
+            };
             let duration = at(&event, "endAt") - at(&event, "startAt");
-            let naive = parse_ms(&if new_start.len() == 10 { format!("{new_start}T00:00:00Z") } else { format!("{}:00Z", &new_start[..16]) });
-            let new_end = if resize { format!("{date}T{:02}:00", hour.unwrap_or(10)) } else {
-                let iso = js_sys::Date::new(&JsValue::from_f64(naive + duration)).to_iso_string().as_string().unwrap_or_default();
+            let naive = parse_ms(&if new_start.len() == 10 {
+                format!("{new_start}T00:00:00Z")
+            } else {
+                format!("{}:00Z", &new_start[..16])
+            });
+            let new_end = if resize {
+                format!("{date}T{:02}:00", hour.unwrap_or(10))
+            } else {
+                let iso = js_sys::Date::new(&JsValue::from_f64(naive + duration))
+                    .to_iso_string()
+                    .as_string()
+                    .unwrap_or_default();
                 iso[..if all_day { 10 } else { 16 }].to_owned()
             };
-            let recurring = resource.data["recurring"] == json!(true) || !s(&resource.data, "recurrence").is_empty();
+            let recurring = resource.data["recurring"] == json!(true)
+                || !s(&resource.data, "recurrence").is_empty();
             let mut data = event.clone();
             data["start"] = json!(new_start);
             data["end"] = json!(new_end);
             if !all_day {
                 data["timezone"] = json!(z);
             }
-            editor.set(Some(Editor { collection_id: resource.collection_id.clone(), occurrence: recurring.then(|| s(&event, "recurrenceId")), data, resource: Some(resource) }));
+            editor.set(Some(Editor {
+                collection_id: resource.collection_id.clone(),
+                occurrence: recurring.then(|| s(&event, "recurrenceId")),
+                data,
+                resource: Some(resource),
+            }));
             notice.set("Review the moved or resized event and save. The keyboard editor offers the same controls.".into());
             Ok(())
         }));
     };
     let event_button = move |event: Value, layout: Option<(usize, usize)>| {
         let z = zone.get_untracked();
-        let calendar = calendars.with_untracked(|c| c.iter().find(|x| x.id == s(&event, "collectionId")).cloned());
-        let color = calendar.as_ref().map(|c| c.color.clone()).filter(|c| !c.is_empty()).unwrap_or_else(|| "currentColor".into());
+        let calendar = calendars.with_untracked(|c| {
+            c.iter()
+                .find(|x| x.id == s(&event, "collectionId"))
+                .cloned()
+        });
+        let color = calendar
+            .as_ref()
+            .map(|c| c.color.clone())
+            .filter(|c| !c.is_empty())
+            .unwrap_or_else(|| "currentColor".into());
         let start = local(at(&event, "startAt"), &z);
-        let minutes: f64 = start[11..13].parse::<f64>().unwrap_or(0.0) * 60.0 + start[14..16].parse::<f64>().unwrap_or(0.0);
+        let minutes: f64 = start[11..13].parse::<f64>().unwrap_or(0.0) * 60.0
+            + start[14..16].parse::<f64>().unwrap_or(0.0);
         let all_day = event["allDay"] == json!(true);
         let title = s(&event, "title");
         if event["task"] == json!(true) {
             let done = s(&event, "status") == "COMPLETED";
-            let block = layout.map(|(lane, lanes)| format!(" ev-at-{} ev-span-2 ev-lane-{} ev-lanes-{}", (minutes as i64 % 60) / 5, lane.min(3), lanes.min(4))).unwrap_or_default();
-            let label = format!("Task: {title}{}{} in {}", if done { ", completed" } else { "" }, if all_day { ", due".to_owned() } else { format!(", due at {}", &start[11..16]) }, calendar.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "a task list".into()));
+            let block = layout
+                .map(|(lane, lanes)| {
+                    format!(
+                        " ev-at-{} ev-span-2 ev-lane-{} ev-lanes-{}",
+                        (minutes as i64 % 60) / 5,
+                        lane.min(3),
+                        lanes.min(4)
+                    )
+                })
+                .unwrap_or_default();
+            let label = format!(
+                "Task: {title}{}{} in {}",
+                if done { ", completed" } else { "" },
+                if all_day {
+                    ", due".to_owned()
+                } else {
+                    format!(", due at {}", &start[11..16])
+                },
+                calendar
+                    .as_ref()
+                    .map(|c| c.name.clone())
+                    .unwrap_or_else(|| "a task list".into())
+            );
             return view! {
                 <div class=format!("calendar-event-wrap is-task{block}")>
                     <a class=format!("calendar-event calendar-task{}{}", if all_day { " all-day" } else { "" }, if done { " is-done" } else { "" }) href=format!("/tasks?item={}", js_sys::encode_uri_component(&s(&event, "resourceId"))) aria-label=label>
@@ -565,14 +916,27 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
             }
             .into_any();
         }
-        let writable = calendar.as_ref().is_some_and(|c| c.role != "read" && c.subscription.is_none());
+        let writable = calendar
+            .as_ref()
+            .is_some_and(|c| c.role != "read" && c.subscription.is_none());
         let duration = ((at(&event, "endAt") - at(&event, "startAt")) / 900_000.0).ceil();
         let span = duration.min(96.0 - (minutes / 15.0).floor()).max(1.0) as i64;
-        let block = layout.map(|(lane, lanes)| format!(" ev-at-{} ev-span-{span} ev-lane-{} ev-lanes-{}", (minutes as i64 % 60) / 5, lane.min(3), lanes.min(4))).unwrap_or_default();
+        let block = layout
+            .map(|(lane, lanes)| {
+                format!(
+                    " ev-at-{} ev-span-{span} ev-lane-{} ev-lanes-{}",
+                    (minutes as i64 % 60) / 5,
+                    lane.min(3),
+                    lanes.min(4)
+                )
+            })
+            .unwrap_or_default();
         let key = occurrence_key(&event);
         let (k1, k2) = (key.clone(), key.clone());
-        let is_selected = move || selected.with(|sel| sel.as_ref().is_some_and(|e| occurrence_key(e) == k1));
-        let is_selected2 = move || selected.with(|sel| sel.as_ref().is_some_and(|e| occurrence_key(e) == k2));
+        let is_selected =
+            move || selected.with(|sel| sel.as_ref().is_some_and(|e| occurrence_key(e) == k1));
+        let is_selected2 =
+            move || selected.with(|sel| sel.as_ref().is_some_and(|e| occurrence_key(e) == k2));
         let cancelled = s(&event, "status") == "CANCELLED";
         let repeats = event["recurring"] == json!(true) || !s(&event, "recurrence").is_empty();
         let (e1, e2, e3, e4) = (event.clone(), event.clone(), event.clone(), event.clone());
@@ -745,7 +1109,9 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         let today_now = today.get();
         match view_mode.get().as_str() {
             "agenda" => {
-                let any = list.iter().any(|e| all_days.iter().any(|d| on_day(e, d, &z)));
+                let any = list
+                    .iter()
+                    .any(|e| all_days.iter().any(|d| on_day(e, d, &z)));
                 view! {
                     <div class="calendar-agenda">
                         {all_days.iter().map(|date| {
@@ -834,10 +1200,16 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         }
     };
     let save = Callback::new(move |(data, collection_id, done): (Value, String, Done)| {
-        let Some(e) = editor.get_untracked() else { return };
+        let Some(e) = editor.get_untracked() else {
+            return;
+        };
         spawn_local(async move {
             let (url, method, tag) = match &e.resource {
-                Some(r) => (format!("{BASE}/{}/items/{}", r.collection_id, r.href), "PUT", Some(etag(&r.id, r.revision))),
+                Some(r) => (
+                    format!("{BASE}/{}/items/{}", r.collection_id, r.href),
+                    "PUT",
+                    Some(etag(&r.id, r.revision)),
+                ),
                 None => (format!("{BASE}/{collection_id}/items"), "POST", None),
             };
             let mut body = json!({ "data": data });
@@ -850,13 +1222,21 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
                     selected.set(None);
                     pim.refresh();
                     notice.set(format!("{} saved.", s(&row.data, "title")));
-                    { done.try_run(Ok(())); };
+                    {
+                        done.try_run(Ok(()));
+                    };
                 }
-                Err(err) => { done.try_run(Err(err.message)); },
+                Err(err) => {
+                    done.try_run(Err(err.message));
+                }
             }
         });
     });
-    let time_grid_class = Signal::derive(move || !loading.get() && !calendars.with(Vec::is_empty) && !["agenda", "month"].contains(&view_mode.get().as_str()));
+    let time_grid_class = Signal::derive(move || {
+        !loading.get()
+            && !calendars.with(Vec::is_empty)
+            && !["agenda", "month"].contains(&view_mode.get().as_str())
+    });
     let shell_session = session.get_value();
     view! {
         <PimShell kind="calendar" main_class="calendar-main" session=shell_session on_signed_out=on_signed_out sidebar=sidebar has_details=Signal::from(Memo::new(move |_| selected.with(Option::is_some))) details=details pim=pim>
@@ -1029,37 +1409,104 @@ pub fn Calendar(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
 fn TimeGridClass(active: Signal<bool>) -> impl IntoView {
     Effect::new(move |_| {
         let on = active.get();
-        if let Some(main) = crate::ui::document().query_selector(".pim-main.calendar-main").ok().flatten() {
-            let _ = if on { main.class_list().add_1("has-time-grid") } else { main.class_list().remove_1("has-time-grid") };
+        if let Some(main) = crate::ui::document()
+            .query_selector(".pim-main.calendar-main")
+            .ok()
+            .flatten()
+        {
+            let _ = if on {
+                main.class_list().add_1("has-time-grid")
+            } else {
+                main.class_list().remove_1("has-time-grid")
+            };
         }
     });
 }
 
-const REFRESH: [(&str, &str); 4] = [("15", "Every 15 minutes"), ("60", "Every hour"), ("360", "Every 6 hours"), ("1440", "Every day")];
+const REFRESH: [(&str, &str); 4] = [
+    ("15", "Every 15 minutes"),
+    ("60", "Every hour"),
+    ("360", "Every 6 hours"),
+    ("1440", "Every day"),
+];
 
 /// Subscribe by link, or edit a subscription (`SubscriptionEditor`).
 #[component]
-fn SubscriptionEditor(calendar: Option<Collection>, on_save: Callback<(Value, Done)>, on_close: Callback<()>, on_refresh: Callback<()>) -> impl IntoView {
+fn SubscriptionEditor(
+    calendar: Option<Collection>,
+    on_save: Callback<(Value, Done)>,
+    on_close: Callback<()>,
+    on_refresh: Callback<()>,
+) -> impl IntoView {
     let status = calendar.as_ref().and_then(|c| c.subscription.clone());
     let editing = calendar.is_some();
-    let url = RwSignal::new(status.as_ref().map(|s| s["url"].as_str().unwrap_or_default().to_owned()).unwrap_or_default());
-    let name = RwSignal::new(calendar.as_ref().map(|c| c.name.clone()).unwrap_or_default());
-    let refresh = RwSignal::new(status.as_ref().and_then(|s| s["refreshMinutes"].as_u64()).unwrap_or(360).to_string());
+    let url = RwSignal::new(
+        status
+            .as_ref()
+            .map(|s| s["url"].as_str().unwrap_or_default().to_owned())
+            .unwrap_or_default(),
+    );
+    let name = RwSignal::new(
+        calendar
+            .as_ref()
+            .map(|c| c.name.clone())
+            .unwrap_or_default(),
+    );
+    let refresh = RwSignal::new(
+        status
+            .as_ref()
+            .and_then(|s| s["refreshMinutes"].as_u64())
+            .unwrap_or(360)
+            .to_string(),
+    );
     let error = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
-    let color = calendar.as_ref().map(|c| c.color.clone()).unwrap_or_else(|| "#2f7d8c".into());
+    let color = calendar
+        .as_ref()
+        .map(|c| c.color.clone())
+        .unwrap_or_else(|| "#2f7d8c".into());
     // A name suggested from the link until the person types one.
     let suggested = Memo::new(move |_| {
         let raw = url.get().trim().to_owned();
         let lower = raw.to_lowercase();
-        let normalized = if lower.starts_with("webcals://") { format!("https://{}", &raw[10..]) } else if lower.starts_with("webcal://") { format!("https://{}", &raw[9..]) } else { raw };
-        let Ok(parsed) = web_sys::Url::new(&normalized) else { return String::new() };
-        let last = parsed.pathname().split('/').rfind(|p| !p.is_empty()).map(|p| js_sys::decode_uri_component(p).ok().and_then(|v| v.as_string()).unwrap_or_default()).unwrap_or_default();
-        let last = last.trim_end_matches(".ics").trim_end_matches(".ICS").replace(['-', '_'], " ").trim().to_owned();
+        let normalized = if lower.starts_with("webcals://") {
+            format!("https://{}", &raw[10..])
+        } else if lower.starts_with("webcal://") {
+            format!("https://{}", &raw[9..])
+        } else {
+            raw
+        };
+        let Ok(parsed) = web_sys::Url::new(&normalized) else {
+            return String::new();
+        };
+        let last = parsed
+            .pathname()
+            .split('/')
+            .rfind(|p| !p.is_empty())
+            .map(|p| {
+                js_sys::decode_uri_component(p)
+                    .ok()
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        let last = last
+            .trim_end_matches(".ics")
+            .trim_end_matches(".ICS")
+            .replace(['-', '_'], " ")
+            .trim()
+            .to_owned();
         let opaque = last.len() >= 24 && last.chars().all(|c| c.is_ascii_alphanumeric());
-        if !last.is_empty() && !opaque { last } else { parsed.hostname().trim_start_matches("www.").to_owned() }
+        if !last.is_empty() && !opaque {
+            last
+        } else {
+            parsed.hostname().trim_start_matches("www.").to_owned()
+        }
     });
-    let options: Vec<(String, String)> = REFRESH.iter().map(|(v, l)| ((*v).into(), (*l).into())).collect();
+    let options: Vec<(String, String)> = REFRESH
+        .iter()
+        .map(|(v, l)| ((*v).into(), (*l).into()))
+        .collect();
     let dirty = Signal::derive(move || !editing && !url.with(String::is_empty));
     view! {
         <EditorPane title=if editing { "Edit subscription" } else { "Subscribe to a calendar" } on_close=on_close dirty=dirty>
@@ -1103,54 +1550,134 @@ fn minutes_of(value: &str) -> f64 {
 }
 
 fn stamp(ms: f64) -> String {
-    js_sys::Date::new(&JsValue::from_f64(ms)).to_iso_string().as_string().unwrap_or_default()[..16].to_owned()
+    js_sys::Date::new(&JsValue::from_f64(ms))
+        .to_iso_string()
+        .as_string()
+        .unwrap_or_default()[..16]
+        .to_owned()
 }
 
 fn time_zones() -> Vec<String> {
     let intl = js_sys::Reflect::get(&js_sys::global(), &"Intl".into()).ok();
-    let supported = intl.as_ref().and_then(|i| js_sys::Reflect::get(i, &"supportedValuesOf".into()).ok()).and_then(|f| f.dyn_into::<js_sys::Function>().ok());
+    let supported = intl
+        .as_ref()
+        .and_then(|i| js_sys::Reflect::get(i, &"supportedValuesOf".into()).ok())
+        .and_then(|f| f.dyn_into::<js_sys::Function>().ok());
     let mut zones = vec!["UTC".to_owned(), "floating".to_owned()];
     if let (Some(intl), Some(f)) = (intl, supported)
-        && let Ok(list) = f.call1(&intl, &"timeZone".into()) {
-            zones.extend(js_sys::Array::from(&list).iter().filter_map(|v| v.as_string()));
-        }
+        && let Ok(list) = f.call1(&intl, &"timeZone".into())
+    {
+        zones.extend(
+            js_sys::Array::from(&list)
+                .iter()
+                .filter_map(|v| v.as_string()),
+        );
+    }
     zones
 }
 
 /// The event form (`EventEditor`).
 #[component]
-fn EventEditor(initial: Editor, calendars: Vec<Collection>, on_close: Callback<()>, on_save: Callback<(Value, String, Done)>) -> impl IntoView {
+fn EventEditor(
+    initial: Editor,
+    calendars: Vec<Collection>,
+    on_close: Callback<()>,
+    on_save: Callback<(Value, String, Done)>,
+) -> impl IntoView {
     let data = RwSignal::new(initial.data.clone());
     let collection = RwSignal::new(initial.collection_id.clone());
     let error = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let recurrence = RwSignal::new(s(&initial.data, "recurrence"));
-    let reminder = RwSignal::new(initial.data["reminderMinutes"].as_i64().map(|m| m.to_string()).unwrap_or_default());
-    let status = RwSignal::new({ let st = s(&initial.data, "status"); if st.is_empty() { "CONFIRMED".to_owned() } else { st } });
-    Effect::new(move |_| { let r = recurrence.get(); data.update(|d| d["recurrence"] = json!(r)); });
-    Effect::new(move |_| { let r = reminder.get(); data.update(|d| d["reminderMinutes"] = if r.is_empty() { Value::Null } else { r.parse::<i64>().map(|m| json!(m)).unwrap_or(Value::Null) }); });
-    Effect::new(move |_| { let st = status.get(); data.update(|d| d["status"] = json!(st)); });
+    let reminder = RwSignal::new(
+        initial.data["reminderMinutes"]
+            .as_i64()
+            .map(|m| m.to_string())
+            .unwrap_or_default(),
+    );
+    let status = RwSignal::new({
+        let st = s(&initial.data, "status");
+        if st.is_empty() {
+            "CONFIRMED".to_owned()
+        } else {
+            st
+        }
+    });
+    Effect::new(move |_| {
+        let r = recurrence.get();
+        data.update(|d| d["recurrence"] = json!(r));
+    });
+    Effect::new(move |_| {
+        let r = reminder.get();
+        data.update(|d| {
+            d["reminderMinutes"] = if r.is_empty() {
+                Value::Null
+            } else {
+                r.parse::<i64>().map(|m| json!(m)).unwrap_or(Value::Null)
+            }
+        });
+    });
+    Effect::new(move |_| {
+        let st = status.get();
+        data.update(|d| d["status"] = json!(st));
+    });
     let get = move |k: &'static str| Signal::derive(move || data.with(|d| s(d, k)));
     let all_day = Signal::derive(move || data.with(|d| d["allDay"] == json!(true)));
     let set = move |k: &'static str, v: Value| data.update(|d| d[k] = v);
     // Moving the start keeps the duration, so the end never lands before it.
-    let set_start = move |next: String| data.update(|d| {
-        if d["allDay"] == json!(true) || next.len() < 16 || minutes_of(&next).is_nan() {
+    let set_start = move |next: String| {
+        data.update(|d| {
+            if d["allDay"] == json!(true) || next.len() < 16 || minutes_of(&next).is_nan() {
+                d["start"] = json!(next);
+                return;
+            }
+            let duration = (minutes_of(&s(d, "end")) - minutes_of(&s(d, "start"))).max(0.0);
+            let end = if duration.is_nan() {
+                s(d, "end")
+            } else {
+                stamp(minutes_of(&next) + duration)
+            };
             d["start"] = json!(next);
-            return;
-        }
-        let duration = (minutes_of(&s(d, "end")) - minutes_of(&s(d, "start"))).max(0.0);
-        let end = if duration.is_nan() { s(d, "end") } else { stamp(minutes_of(&next) + duration) };
-        d["start"] = json!(next);
-        d["end"] = json!(end);
+            d["end"] = json!(end);
+        })
+    };
+    let start_date =
+        Signal::derive(move || get("start").get().chars().take(10).collect::<String>());
+    let start_time = Signal::derive(move || {
+        get("start")
+            .get()
+            .chars()
+            .skip(11)
+            .take(5)
+            .collect::<String>()
     });
-    let start_date = Signal::derive(move || get("start").get().chars().take(10).collect::<String>());
-    let start_time = Signal::derive(move || get("start").get().chars().skip(11).take(5).collect::<String>());
-    let end_date = Signal::derive(move || { let e = get("end").get(); if all_day.get() { if e.len() >= 10 { add_days(&e[..10], -1) } else { String::new() } } else { e.chars().take(10).collect() } });
-    let end_time = Signal::derive(move || get("end").get().chars().skip(11).take(5).collect::<String>());
+    let end_date = Signal::derive(move || {
+        let e = get("end").get();
+        if all_day.get() {
+            if e.len() >= 10 {
+                add_days(&e[..10], -1)
+            } else {
+                String::new()
+            }
+        } else {
+            e.chars().take(10).collect()
+        }
+    });
+    let end_time = Signal::derive(move || {
+        get("end")
+            .get()
+            .chars()
+            .skip(11)
+            .take(5)
+            .collect::<String>()
+    });
     let duration = Signal::derive(move || {
         let (st, en) = (get("start").get(), get("end").get());
-        if !all_day.get() && st.len() >= 16 && en.len() >= 16 { minutes_of(&en) - minutes_of(&st) } else { f64::NAN }
+        if !all_day.get() && st.len() >= 16 && en.len() >= 16 {
+            minutes_of(&en) - minutes_of(&st)
+        } else {
+            f64::NAN
+        }
     });
     let duration_text = move || {
         let d = duration.get();
@@ -1161,17 +1688,38 @@ fn EventEditor(initial: Editor, calendars: Vec<Collection>, on_close: Callback<(
             format!("{} days", (d / 86_400_000.0 * 10.0).round() / 10.0)
         } else if d >= 3_600_000.0 {
             let rest = d % 3_600_000.0;
-            format!("{} h{}", (d / 3_600_000.0).floor(), if rest > 0.0 { format!(" {} min", (rest / 60_000.0).round()) } else { String::new() })
+            format!(
+                "{} h{}",
+                (d / 3_600_000.0).floor(),
+                if rest > 0.0 {
+                    format!(" {} min", (rest / 60_000.0).round())
+                } else {
+                    String::new()
+                }
+            )
         } else {
             format!("{} min", (d / 60_000.0).round())
         };
         format!("Lasts {text}")
     };
-    let options: Vec<(String, String)> = calendars.iter().map(|c| (c.id.clone(), c.name.clone())).collect();
-    let statuses: Vec<(String, String)> = [("CONFIRMED", "Confirmed"), ("TENTATIVE", "Tentative"), ("CANCELLED", "Cancelled")].iter().map(|(v, l)| ((*v).into(), (*l).into())).collect();
+    let options: Vec<(String, String)> = calendars
+        .iter()
+        .map(|c| (c.id.clone(), c.name.clone()))
+        .collect();
+    let statuses: Vec<(String, String)> = [
+        ("CONFIRMED", "Confirmed"),
+        ("TENTATIVE", "Tentative"),
+        ("CANCELLED", "Cancelled"),
+    ]
+    .iter()
+    .map(|(v, l)| ((*v).into(), (*l).into()))
+    .collect();
     let creating = initial.resource.is_none();
     let occurrence = initial.occurrence.is_some();
-    let more_open = !initial.data["attendees"].as_array().is_none_or(Vec::is_empty) || s(&initial.data, "status") != "CONFIRMED";
+    let more_open = !initial.data["attendees"]
+        .as_array()
+        .is_none_or(Vec::is_empty)
+        || s(&initial.data, "status") != "CONFIRMED";
     let zones = StoredValue::new(time_zones());
     view! {
         <EditorPane title=if creating { "New event" } else { "Edit event" } on_close=on_close>

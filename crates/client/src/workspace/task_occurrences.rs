@@ -74,8 +74,15 @@ pub fn TaskOccurrences(
     scope: RwSignal<String>,
     on_pick: Callback<(TaskData, Option<TaskData>, bool)>,
 ) -> impl IntoView {
-    let today_iso = js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_else(|| "2026-01-01".into());
-    let base_date: String = if start.len() >= 10 { start.chars().take(10).collect() } else { today_iso.chars().take(10).collect() };
+    let today_iso = js_sys::Date::new_0()
+        .to_iso_string()
+        .as_string()
+        .unwrap_or_else(|| "2026-01-01".into());
+    let base_date: String = if start.len() >= 10 {
+        start.chars().take(10).collect()
+    } else {
+        today_iso.chars().take(10).collect()
+    };
     let from = RwSignal::new(base_date.clone());
     let to = RwSignal::new(add_days(&base_date, 90));
     let items: RwSignal<Vec<TaskOccurrence>> = RwSignal::new(Vec::new());
@@ -96,7 +103,9 @@ pub fn TaskOccurrences(
         spawn_local(async move {
             let (record, occs) = futures::future::join(
                 api::get::<MasterWrap>(&format!("/api/v1/tasks/items/{task_id}")),
-                api::get::<OccurrencesWrap>(&format!("/api/v1/tasks/items/{task_id}/occurrences?{params}")),
+                api::get::<OccurrencesWrap>(&format!(
+                    "/api/v1/tasks/items/{task_id}/occurrences?{params}"
+                )),
             )
             .await;
             if sequence.try_get_untracked() != Some(seq) {
@@ -121,8 +130,15 @@ pub fn TaskOccurrences(
             opts.push((cur.clone(), format!("{cur} \u{00b7} Selected occurrence")));
         }
         for item in list {
-            let label = if item.data.status == "COMPLETED" { "Completed" } else { "Occurrence" };
-            opts.push((item.recurrence_id.clone(), format!("{} \u{00b7} {label}", item.recurrence_id)));
+            let label = if item.data.status == "COMPLETED" {
+                "Completed"
+            } else {
+                "Occurrence"
+            };
+            opts.push((
+                item.recurrence_id.clone(),
+                format!("{} \u{00b7} {label}", item.recurrence_id),
+            ));
         }
         opts
     });
@@ -131,12 +147,18 @@ pub fn TaskOccurrences(
         scope.set(next.clone());
         let master_data = master.get_untracked();
         let chosen = if !next.is_empty() {
-            items.with_untracked(|list| list.iter().find(|i| i.recurrence_id == next).map(|i| i.data.clone()))
+            items.with_untracked(|list| {
+                list.iter()
+                    .find(|i| i.recurrence_id == next)
+                    .map(|i| i.data.clone())
+            })
         } else {
             master_data.clone()
         };
         if let Some(item) = chosen {
-            { on_pick.try_run((item, master_data, !next.is_empty())); };
+            {
+                on_pick.try_run((item, master_data, !next.is_empty()));
+            };
         }
     });
 

@@ -68,7 +68,11 @@ impl ReviewCard {
         let due = Date::parse(self.due.as_deref()?)?;
         let interval = self.interval?;
         let ease = self.ease?;
-        (interval > 0).then_some(Schedule { due, interval, ease })
+        (interval > 0).then_some(Schedule {
+            due,
+            interval,
+            ease,
+        })
     }
 }
 
@@ -98,11 +102,16 @@ fn is_typing_target(e: &web_sys::KeyboardEvent) -> bool {
     if e.ctrl_key() || e.meta_key() || e.alt_key() {
         return true;
     }
-    let Some(target) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else {
+    let Some(target) = e
+        .target()
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+    else {
         return false;
     };
     target
-        .closest("input,textarea,select,[contenteditable=\"true\"],.cm-editor,[role=\"dialog\"],dialog")
+        .closest(
+            "input,textarea,select,[contenteditable=\"true\"],.cm-editor,[role=\"dialog\"],dialog",
+        )
         .ok()
         .flatten()
         .is_some()
@@ -115,7 +124,9 @@ fn match_card<'a>(found: &'a [Card], target: &ReviewCard) -> Option<&'a Card> {
     {
         return Some(card);
     }
-    found.iter().find(|c| c.question == target.question && c.answer == target.answer)
+    found
+        .iter()
+        .find(|c| c.question == target.question && c.answer == target.answer)
 }
 
 /// Re-reads the note's revision and content, rewrites only the graded card's `<!--SR:...-->`
@@ -139,12 +150,17 @@ async fn persist_grade(
         }
         let content = read_file_content(&card.note_id).await?;
         let found = dar_notes::cards::find(&content);
-        let target = match_card(&found, card)
-            .ok_or_else(|| "This card changed or was removed from the note. Refresh to continue.".to_owned())?;
+        let target = match_card(&found, card).ok_or_else(|| {
+            "This card changed or was removed from the note. Refresh to continue.".to_owned()
+        })?;
         let next_state = schedule(target.schedule, grade, today);
         let updated = dar_notes::cards::rewrite(&content, target, next_state);
         let entry = &detail.entry;
-        let media_type = if entry.media_type.is_empty() { "text/markdown" } else { &entry.media_type };
+        let media_type = if entry.media_type.is_empty() {
+            "text/markdown"
+        } else {
+            &entry.media_type
+        };
         let file = TextFile {
             name: &entry.name,
             parent_id: &entry.parent_id,
@@ -157,7 +173,9 @@ async fn persist_grade(
             Ok(_) => return Ok(()),
             Err(err)
                 if attempt == 0
-                    && (err.status == 409 || err.status == 412 || err.message.to_lowercase().contains("conflict")) =>
+                    && (err.status == 409
+                        || err.status == 412
+                        || err.message.to_lowercase().contains("conflict")) =>
             {
                 continue;
             }
@@ -221,7 +239,10 @@ pub fn NoteCards(
             spawn_local(async move {
                 let url = format!("/api/v1/notes/cards?today={query_today}");
                 match api::get::<CardsResponse>(&url).await {
-                    Ok(resp) if alive.load(Ordering::Relaxed) && seq.try_get_untracked() == Some(ticket) => {
+                    Ok(resp)
+                        if alive.load(Ordering::Relaxed)
+                            && seq.try_get_untracked() == Some(ticket) =>
+                    {
                         let due_total = resp.cards.len();
                         let parsed_today = Date::parse(&resp.today).unwrap_or(query_today);
                         let _ = today.try_set(parsed_today);
@@ -238,7 +259,10 @@ pub fn NoteCards(
                         let _ = loading.try_set(false);
                         on_due_change.try_run(due_total);
                     }
-                    Err(e) if alive.load(Ordering::Relaxed) && seq.try_get_untracked() == Some(ticket) => {
+                    Err(e)
+                        if alive.load(Ordering::Relaxed)
+                            && seq.try_get_untracked() == Some(ticket) =>
+                    {
                         let msg = if e.message.is_empty() {
                             "Flashcards could not be loaded.".into()
                         } else {
@@ -300,7 +324,10 @@ pub fn NoteCards(
         let _ = error.try_set(String::new());
         spawn_local(async move {
             let outcome = persist_grade(live, &sess, &card, grade, review_day).await;
-            if !alive_grade.try_with_value(|a| a.load(Ordering::Relaxed)).unwrap_or(false) {
+            if !alive_grade
+                .try_with_value(|a| a.load(Ordering::Relaxed))
+                .unwrap_or(false)
+            {
                 return;
             }
             match outcome {
@@ -310,7 +337,10 @@ pub fn NoteCards(
                     let card_index = card.card_index;
                     let deck_name = card.deck.clone();
                     let _ = cards.try_update(|list| {
-                        if let Some(pos) = list.iter().position(|c| c.note_id == note_id && c.card_index == card_index) {
+                        if let Some(pos) = list
+                            .iter()
+                            .position(|c| c.note_id == note_id && c.card_index == card_index)
+                        {
                             list.remove(pos);
                         }
                     });
@@ -354,14 +384,19 @@ pub fn NoteCards(
             if !alive.load(Ordering::Relaxed) {
                 return;
             }
-            let Ok(e) = event.dyn_into::<web_sys::KeyboardEvent>() else { return };
+            let Ok(e) = event.dyn_into::<web_sys::KeyboardEvent>() else {
+                return;
+            };
             if is_typing_target(&e) {
                 return;
             }
             if saving.try_get_untracked().unwrap_or(true) {
                 return;
             }
-            if current_card.try_with_untracked(Option::is_none).unwrap_or(true) {
+            if current_card
+                .try_with_untracked(Option::is_none)
+                .unwrap_or(true)
+            {
                 return;
             }
             let key = e.key();

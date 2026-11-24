@@ -80,7 +80,12 @@ fn build_command(name: &str) -> Command {
     cmd
 }
 
-async fn run_bytes(name: &str, args: &[String], timeout_ms: u64, max_buffer: usize) -> Option<Vec<u8>> {
+async fn run_bytes(
+    name: &str,
+    args: &[String],
+    timeout_ms: u64,
+    max_buffer: usize,
+) -> Option<Vec<u8>> {
     let mut cmd = build_command(name);
     cmd.args(args);
     let mut child = cmd.spawn().ok()?;
@@ -100,12 +105,24 @@ async fn run_bytes(name: &str, args: &[String], timeout_ms: u64, max_buffer: usi
             out.extend_from_slice(&buf[..n]);
         }
         let status = child.wait().await.ok()?;
-        if status.success() && !out.is_empty() { Some(out) } else { None }
+        if status.success() && !out.is_empty() {
+            Some(out)
+        } else {
+            None
+        }
     };
-    tokio::time::timeout(Duration::from_millis(timeout_ms), fut).await.ok().flatten()
+    tokio::time::timeout(Duration::from_millis(timeout_ms), fut)
+        .await
+        .ok()
+        .flatten()
 }
 
-async fn run_text(name: &str, args: &[String], timeout_ms: u64, max_buffer: usize) -> (bool, String) {
+async fn run_text(
+    name: &str,
+    args: &[String],
+    timeout_ms: u64,
+    max_buffer: usize,
+) -> (bool, String) {
     let mut cmd = build_command(name);
     cmd.args(args);
     let Ok(mut child) = cmd.spawn() else {
@@ -147,7 +164,12 @@ fn exif_date(value: Option<&Value>, offset: Option<&Value>, utc: bool) -> Option
     if b.len() < 19 {
         return None;
     }
-    if b[4] != b':' || b[7] != b':' || (b[10] != b' ' && b[10] != b'T') || b[13] != b':' || b[16] != b':' {
+    if b[4] != b':'
+        || b[7] != b':'
+        || (b[10] != b' ' && b[10] != b'T')
+        || b[13] != b':'
+        || b[16] != b':'
+    {
         return None;
     }
     let y_str = &s[0..4];
@@ -187,7 +209,10 @@ fn exif_date(value: Option<&Value>, offset: Option<&Value>, utc: bool) -> Option
         let mi: u32 = mi_str.parse().ok()?;
         let sec: u32 = s_str.parse().ok()?;
         let naive = NaiveDate::from_ymd_opt(y, mo, d)?.and_hms_opt(h, mi, sec)?;
-        Local.from_local_datetime(&naive).earliest()?.timestamp_millis()
+        Local
+            .from_local_datetime(&naive)
+            .earliest()?
+            .timestamp_millis()
     };
     (time_ms > 0).then_some(time_ms as f64)
 }
@@ -231,13 +256,23 @@ pub fn playback_for(name: &str, media_type: &str, video: &str, audio: &str) -> &
         "other"
     };
     let audio_in = |list: &[&str]| audio.is_empty() || list.contains(&audio);
-    if container == "mp4" && ["h264", "av1", "vp9"].contains(&video) && audio_in(&["aac", "mp3", "opus"]) {
+    if container == "mp4"
+        && ["h264", "av1", "vp9"].contains(&video)
+        && audio_in(&["aac", "mp3", "opus"])
+    {
         return "original";
     }
-    if container == "webm" && ["vp8", "vp9", "av1"].contains(&video) && audio_in(&["opus", "vorbis"]) {
+    if container == "webm"
+        && ["vp8", "vp9", "av1"].contains(&video)
+        && audio_in(&["opus", "vorbis"])
+    {
         return "original";
     }
-    if video == "h264" { "remux" } else { "transcode" }
+    if video == "h264" {
+        "remux"
+    } else {
+        "transcode"
+    }
 }
 
 async fn probe(file: &Path) -> (bool, String, String) {
@@ -323,16 +358,26 @@ pub async fn read_facts(
     }
     // QuickTime CreateDate is UTC by specification; photo EXIF dates are local.
     // Empty dates ("0000:00:00 ...") are skipped so the next candidate applies.
-    facts.taken_at = exif_date(data.get("DateTimeOriginal"), data.get("OffsetTimeOriginal"), false)
-        .or_else(|| {
-            if kind == "video" {
-                exif_date(data.get("MediaCreateDate"), None, true)
-            } else {
-                None
-            }
-        })
-        .or_else(|| exif_date(data.get("CreateDate"), data.get("OffsetTimeOriginal"), kind == "video"))
-        .unwrap_or(fallback_time);
+    facts.taken_at = exif_date(
+        data.get("DateTimeOriginal"),
+        data.get("OffsetTimeOriginal"),
+        false,
+    )
+    .or_else(|| {
+        if kind == "video" {
+            exif_date(data.get("MediaCreateDate"), None, true)
+        } else {
+            None
+        }
+    })
+    .or_else(|| {
+        exif_date(
+            data.get("CreateDate"),
+            data.get("OffsetTimeOriginal"),
+            kind == "video",
+        )
+    })
+    .unwrap_or(fallback_time);
 
     let mut width = finite(data.get("ExifImageWidth"))
         .or_else(|| finite(data.get("ImageWidth")))
@@ -355,8 +400,10 @@ pub async fn read_facts(
     } else {
         0.0
     };
-    if let (Some(lat), Some(lon)) = (finite(data.get("GPSLatitude")), finite(data.get("GPSLongitude")))
-        && lat.abs() <= 90.0
+    if let (Some(lat), Some(lon)) = (
+        finite(data.get("GPSLatitude")),
+        finite(data.get("GPSLongitude")),
+    ) && lat.abs() <= 90.0
         && lon.abs() <= 180.0
         && !(lat == 0.0 && lon == 0.0)
     {
@@ -431,9 +478,14 @@ fn valid_cache_id(blob_id: &str) -> bool {
 
 fn cache_file(cache: &Path, blob_id: &str, suffix: &str) -> std::io::Result<PathBuf> {
     if !valid_cache_id(blob_id) {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Unexpected blob ID."));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Unexpected blob ID.",
+        ));
     }
-    Ok(cache.join(&blob_id[..2]).join(format!("{blob_id}-{suffix}")))
+    Ok(cache
+        .join(&blob_id[..2])
+        .join(format!("{blob_id}-{suffix}")))
 }
 
 pub fn cache_path(cache: &Path, blob_id: &str, size: &str) -> std::io::Result<PathBuf> {
@@ -452,7 +504,10 @@ async fn exists_non_empty(file: &Path) -> bool {
 
 async fn make_work_dir(cache: &Path) -> std::io::Result<PathBuf> {
     let work = cache.join(format!(".work-{}", uuid()));
-    tokio::fs::DirBuilder::new().mode(0o700).create(&work).await?;
+    tokio::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&work)
+        .await?;
     Ok(work)
 }
 
@@ -495,7 +550,9 @@ pub async fn make_thumbnail(
                 "-o".into(),
                 format!("{}[Q={quality},strip]", out_path.display()),
             ];
-            run_text("vipsthumbnail", &args, 120_000, 4 * 1024 * 1024).await.0
+            run_text("vipsthumbnail", &args, 120_000, 4 * 1024 * 1024)
+                .await
+                .0
         };
         let ok = if kind == "video" {
             let frame = work.join("frame.png");
@@ -532,7 +589,9 @@ pub async fn make_thumbnail(
                         "--".into(),
                         source.to_string_lossy().into_owned(),
                     ];
-                    if let Some(bytes) = run_bytes("exiftool", &args, 60_000, 64 * 1024 * 1024).await {
+                    if let Some(bytes) =
+                        run_bytes("exiftool", &args, 60_000, 64 * 1024 * 1024).await
+                    {
                         if let Ok(mut f) = tokio::fs::OpenOptions::new()
                             .write(true)
                             .create(true)

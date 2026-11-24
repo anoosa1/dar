@@ -13,11 +13,25 @@ pub fn RepeatField(value: RwSignal<String>) -> impl IntoView {
     let mode = Memo::new(move |_| {
         let v = value.get();
         let simple = v.is_empty() || REPEATS.iter().any(|f| v == format!("FREQ={f}"));
-        if custom.get() || !simple { "custom".to_owned() } else { v.trim_start_matches("FREQ=").to_lowercase() }
+        if custom.get() || !simple {
+            "custom".to_owned()
+        } else {
+            v.trim_start_matches("FREQ=").to_lowercase()
+        }
     });
     let selected = RwSignal::new(mode.get_untracked());
     Effect::new(move |_| selected.set(mode.get()));
-    let options: Vec<(String, String)> = [("", "Does not repeat"), ("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "Monthly"), ("yearly", "Yearly"), ("custom", "Custom schedule…")].iter().map(|(v, l)| ((*v).into(), (*l).into())).collect();
+    let options: Vec<(String, String)> = [
+        ("", "Does not repeat"),
+        ("daily", "Daily"),
+        ("weekly", "Weekly"),
+        ("monthly", "Monthly"),
+        ("yearly", "Yearly"),
+        ("custom", "Custom schedule…"),
+    ]
+    .iter()
+    .map(|(v, l)| ((*v).into(), (*l).into()))
+    .collect();
     view! {
         <div>
             <input type="hidden" name="recurrence" prop:value=move || value.get()/>
@@ -37,7 +51,17 @@ pub fn RepeatField(value: RwSignal<String>) -> impl IntoView {
     }
 }
 
-const REMINDERS: [(&str, &str); 9] = [("", "No reminder"), ("0", "At start"), ("5", "5 minutes before"), ("10", "10 minutes before"), ("15", "15 minutes before"), ("30", "30 minutes before"), ("60", "1 hour before"), ("1440", "1 day before"), ("10080", "1 week before")];
+const REMINDERS: [(&str, &str); 9] = [
+    ("", "No reminder"),
+    ("0", "At start"),
+    ("5", "5 minutes before"),
+    ("10", "10 minutes before"),
+    ("15", "15 minutes before"),
+    ("30", "30 minutes before"),
+    ("60", "1 hour before"),
+    ("1440", "1 day before"),
+    ("10080", "1 week before"),
+];
 
 /// `value` is minutes before the start; empty means no reminder.
 #[component]
@@ -45,11 +69,18 @@ pub fn ReminderField(value: RwSignal<String>) -> impl IntoView {
     let custom = RwSignal::new(false);
     let mode = Memo::new(move |_| {
         let v = value.get();
-        if custom.get() || !REMINDERS.iter().any(|(o, _)| *o == v) { "custom".to_owned() } else { v }
+        if custom.get() || !REMINDERS.iter().any(|(o, _)| *o == v) {
+            "custom".to_owned()
+        } else {
+            v
+        }
     });
     let selected = RwSignal::new(mode.get_untracked());
     Effect::new(move |_| selected.set(mode.get()));
-    let mut options: Vec<(String, String)> = REMINDERS.iter().map(|(v, l)| ((*v).into(), (*l).into())).collect();
+    let mut options: Vec<(String, String)> = REMINDERS
+        .iter()
+        .map(|(v, l)| ((*v).into(), (*l).into()))
+        .collect();
     options.push(("custom".into(), "Custom reminder…".into()));
     view! {
         <div>

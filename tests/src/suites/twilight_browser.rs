@@ -35,7 +35,15 @@ const CONTRAST_AUDIT_JS: &str = r#"() => {
   return { contrast: issues, overflow: document.documentElement.scrollWidth > innerWidth, verticalOverflow: document.documentElement.scrollHeight > innerHeight + 1 };
 }"#;
 
-async fn capture(page: &Page, output: &Path, theme: &str, width: u32, name: &str, manifest: &mut Vec<Value>, failures: &mut Vec<Value>) -> Result<()> {
+async fn capture(
+    page: &Page,
+    output: &Path,
+    theme: &str,
+    width: u32,
+    name: &str,
+    manifest: &mut Vec<Value>,
+    failures: &mut Vec<Value>,
+) -> Result<()> {
     let issues = page.evaluate(CONTRAST_AUDIT_JS).await?;
     let filename = format!("{theme}-{width}-{name}.png");
     page.screenshot(output.join(&filename), true).await?;
@@ -43,7 +51,10 @@ async fn capture(page: &Page, output: &Path, theme: &str, width: u32, name: &str
     entry["filename"] = json!(filename);
     let has_overflow = issues["overflow"].as_bool().unwrap_or(false)
         || issues["verticalOverflow"].as_bool().unwrap_or(false)
-        || !issues["contrast"].as_array().map(|a| a.is_empty()).unwrap_or(true);
+        || !issues["contrast"]
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(true);
     if has_overflow {
         failures.push(entry.clone());
     }
@@ -59,8 +70,12 @@ async fn navigate(page: &Page, base: &str, path: &str, ready: Locator) -> Result
 }
 
 async fn open_settings(page: &Page, app: &str) -> Result<()> {
-    page.get_by_role("button", format!("{app} settings")).click().await?;
-    page.get_by_role("dialog", format!("{app} settings")).wait_for().await
+    page.get_by_role("button", format!("{app} settings"))
+        .click()
+        .await?;
+    page.get_by_role("dialog", format!("{app} settings"))
+        .wait_for()
+        .await
 }
 
 async fn close_settings(page: &Page) -> Result<()> {
@@ -74,32 +89,72 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
     let admin = login(&base).await?;
     let marker = format!("Twilight {}", &uuid()[..6]);
 
-    upload(&admin, &format!("{marker}.md"), "# A quieter week\n\nKeep room for the important things.\n").await?;
+    upload(
+        &admin,
+        &format!("{marker}.md"),
+        "# A quieter week\n\nKeep room for the important things.\n",
+    )
+    .await?;
     {
         let connection = admin.connect().await?;
         for i in 0..24 {
-            reducer(|cb| connection.reducers.create_folder_then(uuid(), String::new(), format!("{marker} folder {:02}", i + 1), cb)).await?;
+            reducer(|cb| {
+                connection.reducers.create_folder_then(
+                    uuid(),
+                    String::new(),
+                    format!("{marker} folder {:02}", i + 1),
+                    cb,
+                )
+            })
+            .await?;
         }
         connection.disconnect();
     }
 
-    let notes_root = admin.get_json("/api/v1/notes/library").await?["rootId"].as_str().context("notes rootId")?.to_owned();
+    let notes_root = admin.get_json("/api/v1/notes/library").await?["rootId"]
+        .as_str()
+        .context("notes rootId")?
+        .to_owned();
     let note = upload_with(
         &admin,
         &format!("{marker} note.md"),
         "# A quieter week\n\n- Plant herbs\n- Finish the chapter\n- Take a long walk\n",
-        Upload { parent_id: &notes_root, ..Upload::default() },
+        Upload {
+            parent_id: &notes_root,
+            ..Upload::default()
+        },
     )
     .await?;
     let long_notebook_name = format!("{}{}", "N".repeat(223), uuid().replace('-', ""));
     let long_task_list_name = format!("{}{}", "T".repeat(223), uuid().replace('-', ""));
     {
         let folders = admin.connect().await?;
-        reducer(|cb| folders.reducers.create_folder_then(uuid(), notes_root.clone(), long_notebook_name.clone(), cb)).await?;
+        reducer(|cb| {
+            folders.reducers.create_folder_then(
+                uuid(),
+                notes_root.clone(),
+                long_notebook_name.clone(),
+                cb,
+            )
+        })
+        .await?;
         folders.disconnect();
     }
-    admin.post("/api/v1/tasks/lists", &json!({ "name": long_task_list_name, "color": "#73396f" })).await?.expect(201)?;
-    let tasklist = admin.post("/api/v1/tasks/lists", &json!({ "name": marker, "color": "#73396f" })).await?.expect(201)?.json()?;
+    admin
+        .post(
+            "/api/v1/tasks/lists",
+            &json!({ "name": long_task_list_name, "color": "#73396f" }),
+        )
+        .await?
+        .expect(201)?;
+    let tasklist = admin
+        .post(
+            "/api/v1/tasks/lists",
+            &json!({ "name": marker, "color": "#73396f" }),
+        )
+        .await?
+        .expect(201)?
+        .json()?;
     let task = admin
         .post(
             "/api/v1/tasks/items",
@@ -108,7 +163,14 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
         .await?
         .expect(201)?
         .json()?;
-    let calendar = admin.post("/api/v1/calendar/calendars", &json!({ "name": marker, "color": "#73396f" })).await?.expect(201)?.json()?;
+    let calendar = admin
+        .post(
+            "/api/v1/calendar/calendars",
+            &json!({ "name": marker, "color": "#73396f" }),
+        )
+        .await?
+        .expect(201)?
+        .json()?;
     admin
         .post(
             &format!("/api/v1/calendar/calendars/{}/items", calendar["id"].as_str().context("cal id")?),
@@ -116,7 +178,14 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
         )
         .await?
         .expect(201)?;
-    let addressbook = admin.post("/api/v1/contacts/books", &json!({ "name": marker, "color": "#73396f" })).await?.expect(201)?.json()?;
+    let addressbook = admin
+        .post(
+            "/api/v1/contacts/books",
+            &json!({ "name": marker, "color": "#73396f" }),
+        )
+        .await?
+        .expect(201)?
+        .json()?;
     let contact = admin
         .post(
             &format!("/api/v1/contacts/books/{}/items", addressbook["id"].as_str().context("book id")?),
@@ -154,9 +223,12 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
     }
 
     let browser = Browser::shared().await?;
-    let context = browser.new_context(ContextOptions::sized(1440, 950)).await?;
+    let context = browser
+        .new_context(ContextOptions::sized(1440, 950))
+        .await?;
     let page = context.new_page().await?;
-    let errors: std::sync::Arc<std::sync::Mutex<Vec<String>>> = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let errors: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     {
         let sink = errors.clone();
         page.on_page_error(move |msg| sink.lock().unwrap().push(msg.clone()));
@@ -406,9 +478,17 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
     }
     .await;
 
-    std::fs::write(output.join("manifest.json"), serde_json::to_string_pretty(&json!({ "screenshots": manifest, "failures": failures }))?)?;
+    std::fs::write(
+        output.join("manifest.json"),
+        serde_json::to_string_pretty(&json!({ "screenshots": manifest, "failures": failures }))?,
+    )?;
     context.close().await.ok();
     result?;
-    assert!(failures.is_empty(), "Visible text contrast and viewport overflow failures ({}): {}", failures.len(), json!(failures));
+    assert!(
+        failures.is_empty(),
+        "Visible text contrast and viewport overflow failures ({}): {}",
+        failures.len(),
+        json!(failures)
+    );
     Ok(())
 }

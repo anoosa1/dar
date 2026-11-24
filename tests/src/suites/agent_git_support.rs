@@ -22,7 +22,10 @@ pub fn encode_uri_component(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for byte in input.bytes() {
         let keep = byte.is_ascii_alphanumeric()
-            || matches!(byte, b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')');
+            || matches!(
+                byte,
+                b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')'
+            );
         if keep {
             out.push(byte as char);
         } else {
@@ -33,9 +36,17 @@ pub fn encode_uri_component(input: &str) -> String {
 }
 
 /// Creates a user account via the admin session.
-pub async fn create_user(admin: &Session, username: &str, display_name: &str, password: &str) -> Result<()> {
+pub async fn create_user(
+    admin: &Session,
+    username: &str,
+    display_name: &str,
+    password: &str,
+) -> Result<()> {
     admin
-        .post("/api/v1/auth/users", &json!({ "username": username, "displayName": display_name, "password": password }))
+        .post(
+            "/api/v1/auth/users",
+            &json!({ "username": username, "displayName": display_name, "password": password }),
+        )
         .await?
         .expect(201)?;
     Ok(())
@@ -43,8 +54,17 @@ pub async fn create_user(admin: &Session, username: &str, display_name: &str, pa
 
 /// Creates an app password for Git over HTTPS and returns the secret.
 pub async fn create_app_password(session: &Session, label: &str, scope: &str) -> Result<String> {
-    let reply = session.post("/api/v1/auth/app-passwords", &json!({ "label": label, "scope": scope })).await?.expect(201)?;
-    reply.json()?["secret"].as_str().map(str::to_owned).context("app password secret")
+    let reply = session
+        .post(
+            "/api/v1/auth/app-passwords",
+            &json!({ "label": label, "scope": scope }),
+        )
+        .await?
+        .expect(201)?;
+    reply.json()?["secret"]
+        .as_str()
+        .map(str::to_owned)
+        .context("app password secret")
 }
 
 /// Result of running a `git` subprocess.
@@ -95,9 +115,17 @@ pub fn run_git(
     let out = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     let err = String::from_utf8_lossy(&output.stderr).into_owned();
     if expect_ok {
-        ensure!(output.status.success(), "git {} failed:\nstdout: {out}\nstderr: {err}", args.join(" "));
+        ensure!(
+            output.status.success(),
+            "git {} failed:\nstdout: {out}\nstderr: {err}",
+            args.join(" ")
+        );
     } else {
-        ensure!(!output.status.success(), "git {} should have failed:\nstdout: {out}\nstderr: {err}", args.join(" "));
+        ensure!(
+            !output.status.success(),
+            "git {} should have failed:\nstdout: {out}\nstderr: {err}",
+            args.join(" ")
+        );
     }
     Ok(GitOutput { out, err })
 }
@@ -116,14 +144,21 @@ pub fn run_git_local(cwd: &Path, home: &Path, args: &[&str]) -> Result<GitOutput
         .context("running git")?;
     let out = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     let err = String::from_utf8_lossy(&output.stderr).into_owned();
-    ensure!(output.status.success(), "git {} failed:\n{err}", args.join(" "));
+    ensure!(
+        output.status.success(),
+        "git {} failed:\n{err}",
+        args.join(" ")
+    );
     Ok(GitOutput { out, err })
 }
 
 /// Extracts a query parameter from a URL string.
 pub fn url_param(url_str: &str, key: &str) -> Option<String> {
     let parsed = url::Url::parse(url_str).ok()?;
-    parsed.query_pairs().find(|(k, _)| k == key).map(|(_, v)| v.into_owned())
+    parsed
+        .query_pairs()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.into_owned())
 }
 
 /// Signs in to a page at `url` (may be a deep link like `/git?repo=...`).
@@ -146,11 +181,17 @@ fn send_line(writer: &Mutex<std::io::Stdout>, value: &Value) {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
 }
 
 fn load_sessions(path: &Path) -> HashMap<String, Vec<String>> {
-    std::fs::read_to_string(path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
 }
 
 fn save_sessions(path: &Path, sessions: &HashMap<String, Vec<String>>) -> std::io::Result<()> {
@@ -159,9 +200,18 @@ fn save_sessions(path: &Path, sessions: &HashMap<String, Vec<String>>) -> std::i
 
 /// The Codex CLI stand-in (`test/fixtures/codex-fixture.mjs`).
 pub fn codex_fixture(args: &[String]) -> ExitCode {
-    assert!(std::env::var_os("OPENAI_API_KEY").is_none(), "OPENAI_API_KEY must be unset");
-    assert!(std::env::var_os("CODEX_API_KEY").is_none(), "CODEX_API_KEY must be unset");
-    assert!(std::env::var_os("DAR_DATABASE_TOKEN_FILE").is_none(), "DAR_DATABASE_TOKEN_FILE must be unset");
+    assert!(
+        std::env::var_os("OPENAI_API_KEY").is_none(),
+        "OPENAI_API_KEY must be unset"
+    );
+    assert!(
+        std::env::var_os("CODEX_API_KEY").is_none(),
+        "CODEX_API_KEY must be unset"
+    );
+    assert!(
+        std::env::var_os("DAR_DATABASE_TOKEN_FILE").is_none(),
+        "DAR_DATABASE_TOKEN_FILE must be unset"
+    );
 
     let stdout = Arc::new(Mutex::new(std::io::stdout()));
     let command = args.first().map(String::as_str).unwrap_or("");
@@ -203,7 +253,10 @@ pub fn codex_fixture(args: &[String]) -> ExitCode {
             assert!(args.iter().any(|a| a == r#"approval_policy="never""#));
             assert!(args.iter().any(|a| a == r#"default_permissions="dar""#));
             assert!(args.iter().any(|a| a == "notify=[]"));
-            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("tokio runtime");
             rt.block_on(codex_app_server(stdout))
         }
         ("exec", _) => codex_exec(args, &stdout),
@@ -259,7 +312,10 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
         }
         let value: Value = serde_json::from_str(&line).expect("valid JSON-RPC line");
         let id = value.get("id").cloned();
-        let method = value.get("method").and_then(Value::as_str).map(str::to_owned);
+        let method = value
+            .get("method")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         let params = value.get("params").cloned().unwrap_or(Value::Null);
 
         let Some(method) = method else {
@@ -276,7 +332,10 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
         match method.as_str() {
             "initialize" => {
                 assert_eq!(params["capabilities"]["experimentalApi"], json!(true));
-                send_line(&stdout, &json!({ "id": id, "result": { "userAgent": "fixture" } }));
+                send_line(
+                    &stdout,
+                    &json!({ "id": id, "result": { "userAgent": "fixture" } }),
+                );
             }
             "initialized" => {}
             "thread/start" => {
@@ -292,7 +351,10 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
                     save_sessions(&st.sessions_file, &st.sessions).expect("save sessions");
                     tid
                 };
-                send_line(&stdout, &json!({ "id": id, "result": { "thread": { "id": thread_id } } }));
+                send_line(
+                    &stdout,
+                    &json!({ "id": id, "result": { "thread": { "id": thread_id } } }),
+                );
             }
             "thread/resume" => {
                 let tid = params["threadId"].as_str().unwrap_or_default().to_owned();
@@ -308,15 +370,24 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
                     }
                 };
                 if !found {
-                    send_line(&stdout, &json!({ "id": id, "error": { "code": -32600, "message": "no such thread" } }));
+                    send_line(
+                        &stdout,
+                        &json!({ "id": id, "error": { "code": -32600, "message": "no such thread" } }),
+                    );
                 } else {
-                    send_line(&stdout, &json!({ "id": id, "result": { "thread": { "id": tid } } }));
+                    send_line(
+                        &stdout,
+                        &json!({ "id": id, "result": { "thread": { "id": tid } } }),
+                    );
                 }
             }
             "turn/start" => {
                 assert_eq!(params["approvalPolicy"], json!("never"));
                 if let Some(effort) = params["effort"].as_str() {
-                    assert!(matches!(effort, "low" | "medium" | "high"), "invalid effort: {effort}");
+                    assert!(
+                        matches!(effort, "low" | "medium" | "high"),
+                        "invalid effort: {effort}"
+                    );
                 }
                 let turn_id = {
                     let mut st = state.lock().unwrap();
@@ -325,7 +396,10 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
                     st.current_turn = Some(tid.clone());
                     tid
                 };
-                send_line(&stdout, &json!({ "id": id, "result": { "turn": { "id": turn_id, "status": "inProgress", "items": [] } } }));
+                send_line(
+                    &stdout,
+                    &json!({ "id": id, "result": { "turn": { "id": turn_id, "status": "inProgress", "items": [] } } }),
+                );
                 let st_clone = state.clone();
                 let out_clone = stdout.clone();
                 tokio::spawn(async move {
@@ -338,10 +412,19 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
             "turn/steer" => {
                 let (current, tx) = {
                     let mut st = state.lock().unwrap();
-                    assert_eq!(params["expectedTurnId"].as_str(), st.current_turn.as_deref());
-                    (st.current_turn.clone().unwrap_or_default(), st.steered.take())
+                    assert_eq!(
+                        params["expectedTurnId"].as_str(),
+                        st.current_turn.as_deref()
+                    );
+                    (
+                        st.current_turn.clone().unwrap_or_default(),
+                        st.steered.take(),
+                    )
                 };
-                send_line(&stdout, &json!({ "id": id, "result": { "turnId": current } }));
+                send_line(
+                    &stdout,
+                    &json!({ "id": id, "result": { "turnId": current } }),
+                );
                 let text = params["input"]
                     .as_array()
                     .and_then(|arr| arr.iter().find(|item| item["type"] == "text"))
@@ -369,10 +452,22 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
                     st.current_turn = Some(tid.clone());
                     tid
                 };
-                send_line(&stdout, &json!({ "id": id, "result": { "turn": { "id": turn_id, "status": "inProgress", "items": [] }, "reviewThreadId": thread_id } }));
-                send_line(&stdout, &json!({ "method": "turn/started", "params": { "threadId": thread_id, "turn": { "id": turn_id } } }));
-                send_line(&stdout, &json!({ "method": "item/completed", "params": { "threadId": thread_id, "turnId": turn_id, "item": { "type": "agentMessage", "id": "review-1", "text": "Review: greeting.txt changed; no issues found." } } }));
-                send_line(&stdout, &json!({ "method": "turn/completed", "params": { "threadId": thread_id, "turn": { "id": turn_id, "status": "completed", "items": [] } } }));
+                send_line(
+                    &stdout,
+                    &json!({ "id": id, "result": { "turn": { "id": turn_id, "status": "inProgress", "items": [] }, "reviewThreadId": thread_id } }),
+                );
+                send_line(
+                    &stdout,
+                    &json!({ "method": "turn/started", "params": { "threadId": thread_id, "turn": { "id": turn_id } } }),
+                );
+                send_line(
+                    &stdout,
+                    &json!({ "method": "item/completed", "params": { "threadId": thread_id, "turnId": turn_id, "item": { "type": "agentMessage", "id": "review-1", "text": "Review: greeting.txt changed; no issues found." } } }),
+                );
+                send_line(
+                    &stdout,
+                    &json!({ "method": "turn/completed", "params": { "threadId": thread_id, "turn": { "id": turn_id, "status": "completed", "items": [] } } }),
+                );
             }
             "thread/compact/start" => {
                 let thread_id = params["threadId"].as_str().unwrap_or_default().to_owned();
@@ -384,7 +479,10 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
                     }
                     save_sessions(&st.sessions_file, &st.sessions).expect("save sessions");
                 }
-                send_line(&stdout, &json!({ "method": "thread/compacted", "params": { "threadId": thread_id, "turnId": "compact" } }));
+                send_line(
+                    &stdout,
+                    &json!({ "method": "thread/compacted", "params": { "threadId": thread_id, "turnId": "compact" } }),
+                );
             }
             "account/rateLimits/read" => {
                 send_line(
@@ -412,15 +510,24 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
                 let shell_cwd = params["cwd"].as_str().unwrap_or_default().to_owned();
                 state.lock().unwrap().shells.insert(
                     process_id.clone(),
-                    ShellState { cwd: shell_cwd, exec_id: id, line: String::new() },
+                    ShellState {
+                        cwd: shell_cwd,
+                        exec_id: id,
+                        line: String::new(),
+                    },
                 );
                 let delta = base64::engine::general_purpose::STANDARD.encode("$ ");
-                send_line(&stdout, &json!({ "method": "command/exec/outputDelta", "params": { "processId": process_id, "stream": "stdout", "deltaBase64": delta, "capReached": false } }));
+                send_line(
+                    &stdout,
+                    &json!({ "method": "command/exec/outputDelta", "params": { "processId": process_id, "stream": "stdout", "deltaBase64": delta, "capReached": false } }),
+                );
             }
             "command/exec/write" => {
                 let process_id = params["processId"].as_str().unwrap_or_default().to_owned();
                 let raw_b64 = params["deltaBase64"].as_str().unwrap_or("");
-                let bytes = base64::engine::general_purpose::STANDARD.decode(raw_b64).unwrap_or_default();
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(raw_b64)
+                    .unwrap_or_default();
                 let data = String::from_utf8_lossy(&bytes).into_owned();
                 let mut outputs: Vec<String> = Vec::new();
                 let mut exit_id: Option<Value> = None;
@@ -461,10 +568,16 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
                 }
                 for text in outputs {
                     let delta = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
-                    send_line(&stdout, &json!({ "method": "command/exec/outputDelta", "params": { "processId": process_id, "stream": "stdout", "deltaBase64": delta, "capReached": false } }));
+                    send_line(
+                        &stdout,
+                        &json!({ "method": "command/exec/outputDelta", "params": { "processId": process_id, "stream": "stdout", "deltaBase64": delta, "capReached": false } }),
+                    );
                 }
                 if let Some(exec_id) = exit_id {
-                    send_line(&stdout, &json!({ "id": exec_id, "result": { "exitCode": 0, "stdout": "", "stderr": "" } }));
+                    send_line(
+                        &stdout,
+                        &json!({ "id": exec_id, "result": { "exitCode": 0, "stdout": "", "stderr": "" } }),
+                    );
                 }
                 send_line(&stdout, &json!({ "id": id, "result": {} }));
             }
@@ -475,14 +588,22 @@ async fn codex_app_server(stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
                 send_line(&stdout, &json!({ "id": id, "result": {} }));
             }
             other => {
-                send_line(&stdout, &json!({ "id": id, "error": { "code": -32601, "message": format!("unsupported {other}") } }));
+                send_line(
+                    &stdout,
+                    &json!({ "id": id, "error": { "code": -32601, "message": format!("unsupported {other}") } }),
+                );
             }
         }
     }
     ExitCode::SUCCESS
 }
 
-async fn codex_scenario(state: Arc<Mutex<CodexState>>, stdout: Arc<Mutex<std::io::Stdout>>, params: Value, turn_id: String) -> Result<()> {
+async fn codex_scenario(
+    state: Arc<Mutex<CodexState>>,
+    stdout: Arc<Mutex<std::io::Stdout>>,
+    params: Value,
+    turn_id: String,
+) -> Result<()> {
     let thread_id = params["threadId"].as_str().unwrap_or_default().to_owned();
     let input = params["input"].as_array().cloned().unwrap_or_default();
     let text = input
@@ -491,7 +612,10 @@ async fn codex_scenario(state: Arc<Mutex<CodexState>>, stdout: Arc<Mutex<std::io
         .and_then(|item| item["text"].as_str())
         .unwrap_or("")
         .to_owned();
-    let images: Vec<Value> = input.into_iter().filter(|item| item["type"] == "localImage").collect();
+    let images: Vec<Value> = input
+        .into_iter()
+        .filter(|item| item["type"] == "localImage")
+        .collect();
 
     let (turn_count, cwd) = {
         let mut st = state.lock().unwrap();
@@ -510,16 +634,25 @@ async fn codex_scenario(state: Arc<Mutex<CodexState>>, stdout: Arc<Mutex<std::io
         if let Some(msg) = error {
             turn["error"] = json!({ "message": msg });
         }
-        send_line(&stdout, &json!({ "method": "turn/completed", "params": { "threadId": thread_id, "turn": turn } }));
+        send_line(
+            &stdout,
+            &json!({ "method": "turn/completed", "params": { "threadId": thread_id, "turn": turn } }),
+        );
     };
     let message = |id: &str, msg: &str| {
-        send_line(&stdout, &json!({ "method": "item/completed", "params": { "threadId": thread_id, "turnId": turn_id, "item": { "type": "agentMessage", "id": id, "text": msg } } }));
+        send_line(
+            &stdout,
+            &json!({ "method": "item/completed", "params": { "threadId": thread_id, "turnId": turn_id, "item": { "type": "agentMessage", "id": id, "text": msg } } }),
+        );
     };
 
     if text.contains("WAIT_FOR_CANCEL") {
         let (tx, rx) = oneshot::channel();
         state.lock().unwrap().interrupted = Some(tx);
-        notify("item/started", json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "commandExecution", "id": "waiting-command", "command": "fixture waiting for cancellation", "status": "inProgress" } }));
+        notify(
+            "item/started",
+            json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "commandExecution", "id": "waiting-command", "command": "fixture waiting for cancellation", "status": "inProgress" } }),
+        );
         let _ = rx.await;
         complete("interrupted", None);
         return Ok(());
@@ -570,7 +703,12 @@ async fn codex_scenario(state: Arc<Mutex<CodexState>>, stdout: Arc<Mutex<std::io
         let answer = rx.await.map_err(|_| Error::new("question reply dropped"))?;
         let joined: String = answer["answers"]["color"]["answers"]
             .as_array()
-            .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "))
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
             .unwrap_or_default();
         message("reply-1", &format!("You chose {joined}."));
         complete("completed", None);
@@ -611,9 +749,15 @@ async fn codex_scenario(state: Arc<Mutex<CodexState>>, stdout: Arc<Mutex<std::io
     if text.contains("WAIT_FOR_STEER") {
         let (tx, rx) = oneshot::channel();
         state.lock().unwrap().steered = Some(tx);
-        notify("item/started", json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "commandExecution", "id": "steer-wait", "command": "fixture waiting for guidance", "status": "inProgress" } }));
+        notify(
+            "item/started",
+            json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "commandExecution", "id": "steer-wait", "command": "fixture waiting for guidance", "status": "inProgress" } }),
+        );
         let guidance = rx.await.map_err(|_| Error::new("steer channel dropped"))?;
-        notify("item/completed", json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "commandExecution", "id": "steer-wait", "command": "fixture waiting for guidance", "status": "completed", "exitCode": 0, "aggregatedOutput": "" } }));
+        notify(
+            "item/completed",
+            json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "commandExecution", "id": "steer-wait", "command": "fixture waiting for guidance", "status": "completed", "exitCode": 0, "aggregatedOutput": "" } }),
+        );
         message("reply-1", &format!("Steered: {guidance}"));
         complete("completed", None);
         return Ok(());
@@ -630,32 +774,70 @@ async fn codex_scenario(state: Arc<Mutex<CodexState>>, stdout: Arc<Mutex<std::io
             let bytes = std::fs::read(path)?;
             assert_eq!(&bytes[1..4], b"PNG");
         }
-        message("reply-1", &format!("Saw {} image{}.", images.len(), if images.len() == 1 { "" } else { "s" }));
+        message(
+            "reply-1",
+            &format!(
+                "Saw {} image{}.",
+                images.len(),
+                if images.len() == 1 { "" } else { "s" }
+            ),
+        );
         complete("completed", None);
         return Ok(());
     }
     if text.contains("RESUME_CHECK") {
         let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-        message("reply-1", &format!("Turns: {turn_count}. Input: {normalized}"));
+        message(
+            "reply-1",
+            &format!("Turns: {turn_count}. Input: {normalized}"),
+        );
         complete("completed", None);
         return Ok(());
     }
 
     let greeting_path = cwd.join("greeting.txt");
     let content = std::fs::read_to_string(&greeting_path)?;
-    let next = if content.contains("Updated") { "Updated again by Codex fixture.\n" } else { "Updated by Codex fixture.\n" };
+    let next = if content.contains("Updated") {
+        "Updated again by Codex fixture.\n"
+    } else {
+        "Updated by Codex fixture.\n"
+    };
     std::fs::write(&greeting_path, next)?;
-    notify("item/completed", json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "reasoning", "id": "reasoning-1", "summary": ["Checking the greeting file before editing."], "content": [] } }));
-    notify("turn/plan/updated", json!({ "threadId": thread_id, "turnId": turn_id, "explanation": null, "plan": [{ "step": "Read greeting", "status": "completed" }, { "step": "Update greeting", "status": "pending" }] }));
-    notify("item/completed", json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "fileChange", "id": "edit-1", "status": "completed", "changes": [{ "path": "greeting.txt", "kind": { "type": "update" }, "diff": "" }] } }));
-    notify("item/started", json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "commandExecution", "id": "command-1", "command": "fixture test command", "status": "inProgress" } }));
-    notify("item/commandExecution/outputDelta", json!({ "threadId": thread_id, "turnId": turn_id, "itemId": "command-1", "delta": "fixture check " }));
-    notify("item/completed", json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "commandExecution", "id": "command-1", "command": "fixture test command", "status": "completed", "exitCode": 0, "aggregatedOutput": "fixture check passed\n" } }));
-    notify("item/agentMessage/delta", json!({ "threadId": thread_id, "turnId": turn_id, "itemId": "reply-1", "delta": "The edit " }));
+    notify(
+        "item/completed",
+        json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "reasoning", "id": "reasoning-1", "summary": ["Checking the greeting file before editing."], "content": [] } }),
+    );
+    notify(
+        "turn/plan/updated",
+        json!({ "threadId": thread_id, "turnId": turn_id, "explanation": null, "plan": [{ "step": "Read greeting", "status": "completed" }, { "step": "Update greeting", "status": "pending" }] }),
+    );
+    notify(
+        "item/completed",
+        json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "fileChange", "id": "edit-1", "status": "completed", "changes": [{ "path": "greeting.txt", "kind": { "type": "update" }, "diff": "" }] } }),
+    );
+    notify(
+        "item/started",
+        json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "commandExecution", "id": "command-1", "command": "fixture test command", "status": "inProgress" } }),
+    );
+    notify(
+        "item/commandExecution/outputDelta",
+        json!({ "threadId": thread_id, "turnId": turn_id, "itemId": "command-1", "delta": "fixture check " }),
+    );
+    notify(
+        "item/completed",
+        json!({ "threadId": thread_id, "turnId": turn_id, "item": { "type": "commandExecution", "id": "command-1", "command": "fixture test command", "status": "completed", "exitCode": 0, "aggregatedOutput": "fixture check passed\n" } }),
+    );
+    notify(
+        "item/agentMessage/delta",
+        json!({ "threadId": thread_id, "turnId": turn_id, "itemId": "reply-1", "delta": "The edit " }),
+    );
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
     message("reply-1", "The edit is ready.");
     let usage = json!({ "totalTokens": 15, "inputTokens": 10, "cachedInputTokens": 4, "cacheWriteInputTokens": 0, "outputTokens": 5, "reasoningOutputTokens": 0 });
-    notify("thread/tokenUsage/updated", json!({ "threadId": thread_id, "turnId": turn_id, "tokenUsage": { "total": usage, "last": usage, "modelContextWindow": 200000 } }));
+    notify(
+        "thread/tokenUsage/updated",
+        json!({ "threadId": thread_id, "turnId": turn_id, "tokenUsage": { "total": usage, "last": usage, "modelContextWindow": 200000 } }),
+    );
     complete("completed", None);
     Ok(())
 }
@@ -667,48 +849,102 @@ fn codex_exec(args: &[String], stdout: &Mutex<std::io::Stdout>) -> ExitCode {
     assert!(args.iter().any(|a| a == "--ignore-rules"));
     assert_eq!(args.last().map(String::as_str), Some("-"));
     let m_idx = args.iter().position(|a| a == "-m").expect("-m flag");
-    assert_eq!(args.get(m_idx + 1).map(String::as_str), Some("fixture-model"));
+    assert_eq!(
+        args.get(m_idx + 1).map(String::as_str),
+        Some("fixture-model")
+    );
     assert!(args.iter().any(|a| a == r#"approval_policy="never""#));
 
     let mut prompt = String::new();
     std::io::Read::read_to_string(&mut std::io::stdin(), &mut prompt).expect("read stdin");
-    send_line(stdout, &json!({ "type": "thread.started", "thread_id": "fixture-thread" }));
+    send_line(
+        stdout,
+        &json!({ "type": "thread.started", "thread_id": "fixture-thread" }),
+    );
     send_line(stdout, &json!({ "type": "turn.started" }));
 
     if prompt.contains("WAIT_FOR_CANCEL") {
-        send_line(stdout, &json!({ "type": "item.started", "item": { "id": "waiting-command", "type": "command_execution", "command": "fixture waiting for cancellation", "status": "in_progress" } }));
+        send_line(
+            stdout,
+            &json!({ "type": "item.started", "item": { "id": "waiting-command", "type": "command_execution", "command": "fixture waiting for cancellation", "status": "in_progress" } }),
+        );
         loop {
             std::thread::sleep(std::time::Duration::from_secs(1));
         }
     } else if prompt.contains("FAIL_CLI") {
-        send_line(stdout, &json!({ "type": "turn.failed", "error": { "message": "Fixture failure" } }));
+        send_line(
+            stdout,
+            &json!({ "type": "turn.failed", "error": { "message": "Fixture failure" } }),
+        );
         return ExitCode::from(1);
     } else if prompt.contains("EXIT_WITHOUT_TURN") {
-        send_line(stdout, &json!({ "type": "item.completed", "item": { "id": "reply-1", "type": "agent_message", "text": "Unconfirmed response" } }));
+        send_line(
+            stdout,
+            &json!({ "type": "item.completed", "item": { "id": "reply-1", "type": "agent_message", "text": "Unconfirmed response" } }),
+        );
         return ExitCode::SUCCESS;
     }
 
     let c_idx = args.iter().position(|a| a == "-C").expect("-C flag");
     let cwd = Path::new(&args[c_idx + 1]);
     let content = std::fs::read_to_string(cwd.join("greeting.txt")).expect("read greeting.txt");
-    let next = if content.contains("Updated") { "Updated again by Codex fixture.\n" } else { "Updated by Codex fixture.\n" };
+    let next = if content.contains("Updated") {
+        "Updated again by Codex fixture.\n"
+    } else {
+        "Updated by Codex fixture.\n"
+    };
     std::fs::write(cwd.join("greeting.txt"), next).expect("write greeting.txt");
-    if let Some(effort) = args.iter().find(|v| v.starts_with("model_reasoning_effort=")) {
+    if let Some(effort) = args
+        .iter()
+        .find(|v| v.starts_with("model_reasoning_effort="))
+    {
         assert!(
-            matches!(effort.as_str(), r#"model_reasoning_effort="low""# | r#"model_reasoning_effort="medium""# | r#"model_reasoning_effort="high""#),
+            matches!(
+                effort.as_str(),
+                r#"model_reasoning_effort="low""#
+                    | r#"model_reasoning_effort="medium""#
+                    | r#"model_reasoning_effort="high""#
+            ),
             "invalid effort {effort}"
         );
     }
-    send_line(stdout, &json!({ "type": "item.completed", "item": { "id": "reasoning-1", "type": "reasoning", "text": "Checking the greeting file before editing." } }));
-    send_line(stdout, &json!({ "type": "item.started", "item": { "id": "plan-1", "type": "todo_list", "items": [{ "text": "Read greeting", "completed": true }, { "text": "Update greeting", "completed": false }] } }));
-    send_line(stdout, &json!({ "type": "item.completed", "item": { "id": "edit-1", "type": "file_change", "status": "completed", "changes": [{ "path": "greeting.txt", "kind": "update" }] } }));
-    send_line(stdout, &json!({ "type": "item.started", "item": { "id": "command-1", "type": "command_execution", "command": "fixture test command", "status": "in_progress" } }));
-    send_line(stdout, &json!({ "type": "item.updated", "item": { "id": "command-1", "type": "command_execution", "aggregated_output": "fixture check " } }));
-    send_line(stdout, &json!({ "type": "item.completed", "item": { "id": "command-1", "type": "command_execution", "aggregated_output": "fixture check passed\n", "exit_code": 0, "status": "completed" } }));
-    send_line(stdout, &json!({ "type": "item.updated", "item": { "id": "reply-1", "type": "agent_message", "text": "The edit " } }));
+    send_line(
+        stdout,
+        &json!({ "type": "item.completed", "item": { "id": "reasoning-1", "type": "reasoning", "text": "Checking the greeting file before editing." } }),
+    );
+    send_line(
+        stdout,
+        &json!({ "type": "item.started", "item": { "id": "plan-1", "type": "todo_list", "items": [{ "text": "Read greeting", "completed": true }, { "text": "Update greeting", "completed": false }] } }),
+    );
+    send_line(
+        stdout,
+        &json!({ "type": "item.completed", "item": { "id": "edit-1", "type": "file_change", "status": "completed", "changes": [{ "path": "greeting.txt", "kind": "update" }] } }),
+    );
+    send_line(
+        stdout,
+        &json!({ "type": "item.started", "item": { "id": "command-1", "type": "command_execution", "command": "fixture test command", "status": "in_progress" } }),
+    );
+    send_line(
+        stdout,
+        &json!({ "type": "item.updated", "item": { "id": "command-1", "type": "command_execution", "aggregated_output": "fixture check " } }),
+    );
+    send_line(
+        stdout,
+        &json!({ "type": "item.completed", "item": { "id": "command-1", "type": "command_execution", "aggregated_output": "fixture check passed\n", "exit_code": 0, "status": "completed" } }),
+    );
+    send_line(
+        stdout,
+        &json!({ "type": "item.updated", "item": { "id": "reply-1", "type": "agent_message", "text": "The edit " } }),
+    );
     std::thread::sleep(std::time::Duration::from_millis(800));
-    send_line(stdout, &json!({ "type": "item.completed", "item": { "id": "reply-1", "type": "agent_message", "text": "The edit is ready." } }));
-    send_line(stdout, &json!({ "type": "turn.completed", "usage": { "input_tokens": 10, "cached_input_tokens": 4, "output_tokens": 5 } }));
+    send_line(
+        stdout,
+        &json!({ "type": "item.completed", "item": { "id": "reply-1", "type": "agent_message", "text": "The edit is ready." } }),
+    );
+    send_line(
+        stdout,
+        &json!({ "type": "turn.completed", "usage": { "input_tokens": 10, "cached_input_tokens": 4, "output_tokens": 5 } }),
+    );
     ExitCode::SUCCESS
 }
 
@@ -735,16 +971,27 @@ struct ClaudeState {
 pub fn claude_fixture(args: &[String]) -> ExitCode {
     let home = std::env::var("CLAUDE_CONFIG_DIR").expect("CLAUDE_CONFIG_DIR");
     assert!(!home.is_empty());
-    assert!(std::env::var_os("ANTHROPIC_API_KEY").is_none(), "ANTHROPIC_API_KEY must be unset");
-    assert!(std::env::var_os("DAR_DATABASE_TOKEN_FILE").is_none(), "DAR_DATABASE_TOKEN_FILE must be unset");
+    assert!(
+        std::env::var_os("ANTHROPIC_API_KEY").is_none(),
+        "ANTHROPIC_API_KEY must be unset"
+    );
+    assert!(
+        std::env::var_os("DAR_DATABASE_TOKEN_FILE").is_none(),
+        "DAR_DATABASE_TOKEN_FILE must be unset"
+    );
     assert_eq!(std::env::var("HOME").ok().as_deref(), Some(home.as_str()));
 
     let stdout = Arc::new(Mutex::new(std::io::stdout()));
     let option = |name: &str| -> Option<String> {
-        args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
     };
 
-    if args.first().map(String::as_str) == Some("auth") && args.get(1).map(String::as_str) == Some("status") {
+    if args.first().map(String::as_str) == Some("auth")
+        && args.get(1).map(String::as_str) == Some("status")
+    {
         let logged_out = Path::new(&home).join("logged-out").exists();
         send_line(
             &stdout,
@@ -756,10 +1003,20 @@ pub fn claude_fixture(args: &[String]) -> ExitCode {
                 "subscriptionType": "max"
             }),
         );
-        return if logged_out { ExitCode::from(1) } else { ExitCode::SUCCESS };
+        return if logged_out {
+            ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
+        };
     }
 
-    for flag in ["-p", "--restricted", "--strict-mcp-config", "--disable-slash-commands", "--verbose"] {
+    for flag in [
+        "-p",
+        "--restricted",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--verbose",
+    ] {
         assert!(args.iter().any(|a| a == flag), "missing flag {flag}");
     }
     assert_eq!(option("--input-format").as_deref(), Some("stream-json"));
@@ -772,16 +1029,31 @@ pub fn claude_fixture(args: &[String]) -> ExitCode {
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
         .collect();
-    let settings: Value = serde_json::from_str(&option("--settings").unwrap_or_else(|| "{}".into())).expect("valid settings JSON");
+    let settings: Value =
+        serde_json::from_str(&option("--settings").unwrap_or_else(|| "{}".into()))
+            .expect("valid settings JSON");
     for tool in &tools {
         assert!(
-            ["Read", "Edit", "Write", "Glob", "Grep", "TodoWrite", "AskUserQuestion", "Bash"].contains(&tool.as_str()),
+            [
+                "Read",
+                "Edit",
+                "Write",
+                "Glob",
+                "Grep",
+                "TodoWrite",
+                "AskUserQuestion",
+                "Bash"
+            ]
+            .contains(&tool.as_str()),
             "unexpected tool {tool}"
         );
     }
     if tools.iter().any(|t| t == "Bash") {
         assert_eq!(settings["sandbox"]["failIfUnavailable"], json!(true));
-        assert_eq!(settings["sandbox"]["allowUnsandboxedCommands"], json!(false));
+        assert_eq!(
+            settings["sandbox"]["allowUnsandboxedCommands"],
+            json!(false)
+        );
         assert_eq!(settings["sandbox"]["network"]["allowedDomains"], json!([]));
     }
 
@@ -812,17 +1084,25 @@ pub fn claude_fixture(args: &[String]) -> ExitCode {
         permission_mode: option("--permission-mode"),
     }));
 
-    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
     rt.block_on(claude_loop(state, stdout))
 }
 
-async fn claude_loop(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::Stdout>>) -> ExitCode {
+async fn claude_loop(
+    state: Arc<Mutex<ClaudeState>>,
+    stdout: Arc<Mutex<std::io::Stdout>>,
+) -> ExitCode {
     let (turn_tx, mut turn_rx) = mpsc::unbounded_channel::<Vec<Value>>();
     let worker_state = state.clone();
     let worker_stdout = stdout.clone();
     let worker = tokio::spawn(async move {
         while let Some(content) = turn_rx.recv().await {
-            if let Err(err) = claude_turn(worker_state.clone(), worker_stdout.clone(), content).await {
+            if let Err(err) =
+                claude_turn(worker_state.clone(), worker_stdout.clone(), content).await
+            {
                 eprintln!("{err}");
                 std::process::exit(3);
             }
@@ -849,7 +1129,10 @@ async fn claude_loop(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::
                 let req_id = value["request_id"].as_str().unwrap_or_default();
                 let subtype = value["request"]["subtype"].as_str().unwrap_or_default();
                 let ok = |resp: Value| {
-                    send_line(&stdout, &json!({ "type": "control_response", "response": { "subtype": "success", "request_id": req_id, "response": resp } }));
+                    send_line(
+                        &stdout,
+                        &json!({ "type": "control_response", "response": { "subtype": "success", "request_id": req_id, "response": resp } }),
+                    );
                 };
                 match subtype {
                     "initialize" => ok(json!({
@@ -878,12 +1161,18 @@ async fn claude_loop(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::
                         }
                     }
                     _ => {
-                        send_line(&stdout, &json!({ "type": "control_response", "response": { "subtype": "error", "request_id": req_id, "error": "unsupported" } }));
+                        send_line(
+                            &stdout,
+                            &json!({ "type": "control_response", "response": { "subtype": "error", "request_id": req_id, "error": "unsupported" } }),
+                        );
                     }
                 }
             }
             "user" => {
-                let content = value["message"]["content"].as_array().cloned().unwrap_or_default();
+                let content = value["message"]["content"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
                 let steer_tx = {
                     let mut st = state.lock().unwrap();
                     if st.running && st.steered.is_some() {
@@ -913,14 +1202,21 @@ async fn claude_loop(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::
     ExitCode::SUCCESS
 }
 
-async fn claude_turn(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::Stdout>>, content: Vec<Value>) -> Result<()> {
+async fn claude_turn(
+    state: Arc<Mutex<ClaudeState>>,
+    stdout: Arc<Mutex<std::io::Stdout>>,
+    content: Vec<Value>,
+) -> Result<()> {
     let text = content
         .iter()
         .find(|item| item["type"] == "text")
         .and_then(|item| item["text"].as_str())
         .unwrap_or("")
         .to_owned();
-    let images: Vec<Value> = content.into_iter().filter(|item| item["type"] == "image").collect();
+    let images: Vec<Value> = content
+        .into_iter()
+        .filter(|item| item["type"] == "image")
+        .collect();
 
     let (session_id, turn_count, should_announce, tools, model, permission_mode) = {
         let mut st = state.lock().unwrap();
@@ -931,11 +1227,21 @@ async fn claude_turn(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::
         save_sessions(&st.sessions_file, &st.sessions)?;
         let announce = !st.announced;
         st.announced = true;
-        (sid, len, announce, st.tools.clone(), st.model.clone(), st.permission_mode.clone())
+        (
+            sid,
+            len,
+            announce,
+            st.tools.clone(),
+            st.model.clone(),
+            st.permission_mode.clone(),
+        )
     };
 
     if should_announce {
-        let cwd = std::env::current_dir().unwrap_or_default().to_string_lossy().into_owned();
+        let cwd = std::env::current_dir()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         send_line(
             &stdout,
             &json!({
@@ -990,9 +1296,18 @@ async fn claude_turn(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::
     let reply = |reply_text: &str| {
         let next_seq = state.lock().unwrap().message_seq + 1;
         let prefix: String = reply_text.chars().take(4).collect();
-        send_line(&stdout, &json!({ "type": "stream_event", "event": { "type": "message_start", "message": { "id": format!("msg_{next_seq}") } }, "parent_tool_use_id": null, "session_id": session_id }));
-        send_line(&stdout, &json!({ "type": "stream_event", "event": { "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } }, "parent_tool_use_id": null, "session_id": session_id }));
-        send_line(&stdout, &json!({ "type": "stream_event", "event": { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": prefix } }, "parent_tool_use_id": null, "session_id": session_id }));
+        send_line(
+            &stdout,
+            &json!({ "type": "stream_event", "event": { "type": "message_start", "message": { "id": format!("msg_{next_seq}") } }, "parent_tool_use_id": null, "session_id": session_id }),
+        );
+        send_line(
+            &stdout,
+            &json!({ "type": "stream_event", "event": { "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } }, "parent_tool_use_id": null, "session_id": session_id }),
+        );
+        send_line(
+            &stdout,
+            &json!({ "type": "stream_event", "event": { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": prefix } }, "parent_tool_use_id": null, "session_id": session_id }),
+        );
         assistant(json!([{ "type": "text", "text": reply_text }]));
     };
 
@@ -1012,14 +1327,19 @@ async fn claude_turn(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::
         let id = dar_acceptance::uuid();
         let (tx, rx) = oneshot::channel();
         state.lock().unwrap().replies.insert(id.clone(), tx);
-        send_line(&stdout, &json!({ "type": "control_request", "request_id": id, "request": req }));
+        send_line(
+            &stdout,
+            &json!({ "type": "control_request", "request_id": id, "request": req }),
+        );
         rx
     };
 
     if text.contains("WAIT_FOR_CANCEL") {
         let (tx, rx) = oneshot::channel();
         state.lock().unwrap().interrupted = Some(tx);
-        assistant(json!([{ "type": "tool_use", "id": "toolu_wait", "name": "Grep", "input": { "pattern": "fixture waiting for cancellation" } }]));
+        assistant(
+            json!([{ "type": "tool_use", "id": "toolu_wait", "name": "Grep", "input": { "pattern": "fixture waiting for cancellation" } }]),
+        );
         let _ = rx.await;
         result_msg("", Some("Interrupted"));
         return Ok(());
@@ -1045,13 +1365,17 @@ async fn claude_turn(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::
                 ]
             }]
         });
-        assistant(json!([{ "type": "tool_use", "id": "toolu_ask", "name": "AskUserQuestion", "input": input }]));
+        assistant(
+            json!([{ "type": "tool_use", "id": "toolu_ask", "name": "AskUserQuestion", "input": input }]),
+        );
         let decision = control_request(json!({ "subtype": "can_use_tool", "tool_name": "AskUserQuestion", "input": input, "tool_use_id": "toolu_ask" }))
             .await
             .map_err(|_| Error::new("ask question reply dropped"))?;
         assert_eq!(decision["behavior"], json!("allow"));
         tool_result("toolu_ask", "answered", false);
-        let chosen = decision["updatedInput"]["answers"]["Which color should the greeting use?"].as_str().unwrap_or_default();
+        let chosen = decision["updatedInput"]["answers"]["Which color should the greeting use?"]
+            .as_str()
+            .unwrap_or_default();
         reply(&format!("You chose {chosen}."));
         result_msg("done", None);
         return Ok(());
@@ -1073,7 +1397,9 @@ async fn claude_turn(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::
     if text.contains("WAIT_FOR_STEER") {
         let (tx, rx) = oneshot::channel();
         state.lock().unwrap().steered = Some(tx);
-        assistant(json!([{ "type": "tool_use", "id": "toolu_steer", "name": "Grep", "input": { "pattern": "fixture waiting for guidance" } }]));
+        assistant(
+            json!([{ "type": "tool_use", "id": "toolu_steer", "name": "Grep", "input": { "pattern": "fixture waiting for guidance" } }]),
+        );
         let guidance = rx.await.map_err(|_| Error::new("steer reply dropped"))?;
         tool_result("toolu_steer", "found", false);
         reply(&format!("Steered: {guidance}"));
@@ -1098,10 +1424,16 @@ async fn claude_turn(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::
     if text.contains("DESCRIBE_IMAGE") {
         for image in &images {
             let b64 = image["source"]["data"].as_str().context("image data")?;
-            let bytes = base64::engine::general_purpose::STANDARD.decode(b64).map_err(|e| Error::new(e.to_string()))?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| Error::new(e.to_string()))?;
             assert_eq!(&bytes[1..4], b"PNG");
         }
-        reply(&format!("Saw {} image{}.", images.len(), if images.len() == 1 { "" } else { "s" }));
+        reply(&format!(
+            "Saw {} image{}.",
+            images.len(),
+            if images.len() == 1 { "" } else { "s" }
+        ));
         result_msg("done", None);
         return Ok(());
     }
@@ -1122,14 +1454,30 @@ async fn claude_turn(state: Arc<Mutex<ClaudeState>>, stdout: Arc<Mutex<std::io::
     assert_eq!(permission_mode.as_deref(), Some("acceptEdits"));
     let file = std::env::current_dir()?.join("greeting.txt");
     let before = std::fs::read_to_string(&file)?;
-    assistant(json!([{ "type": "thinking", "thinking": "Checking the greeting file before editing." }]));
-    assistant(json!([{ "type": "tool_use", "id": "toolu_todo", "name": "TodoWrite", "input": { "todos": [{ "content": "Read greeting", "status": "completed" }, { "content": "Update greeting", "status": "pending" }] } }]));
-    assistant(json!([{ "type": "tool_use", "id": "toolu_edit", "name": "Write", "input": { "file_path": file.to_string_lossy(), "content": "Updated by Claude fixture.\n" } }]));
-    let next = if before.contains("Updated") { "Updated again by Claude fixture.\n" } else { "Updated by Claude fixture.\n" };
+    assistant(
+        json!([{ "type": "thinking", "thinking": "Checking the greeting file before editing." }]),
+    );
+    assistant(
+        json!([{ "type": "tool_use", "id": "toolu_todo", "name": "TodoWrite", "input": { "todos": [{ "content": "Read greeting", "status": "completed" }, { "content": "Update greeting", "status": "pending" }] } }]),
+    );
+    assistant(
+        json!([{ "type": "tool_use", "id": "toolu_edit", "name": "Write", "input": { "file_path": file.to_string_lossy(), "content": "Updated by Claude fixture.\n" } }]),
+    );
+    let next = if before.contains("Updated") {
+        "Updated again by Claude fixture.\n"
+    } else {
+        "Updated by Claude fixture.\n"
+    };
     std::fs::write(&file, next)?;
     tool_result("toolu_edit", "File written", false);
-    assistant(json!([{ "type": "tool_use", "id": "toolu_read", "name": "Read", "input": { "file_path": "/etc/hostname" } }]));
-    tool_result("toolu_read", "/etc/hostname is outside the working directory.", true);
+    assistant(
+        json!([{ "type": "tool_use", "id": "toolu_read", "name": "Read", "input": { "file_path": "/etc/hostname" } }]),
+    );
+    tool_result(
+        "toolu_read",
+        "/etc/hostname is outside the working directory.",
+        true,
+    );
     reply("The edit is ready.");
     result_msg("The edit is ready.", None);
     Ok(())

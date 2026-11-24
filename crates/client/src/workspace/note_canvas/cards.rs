@@ -22,11 +22,20 @@ fn color_parts(color: Option<&str>) -> (&'static str, Option<String>) {
 pub(super) fn CanvasCard(board: Board, id: String) -> impl IntoView {
     let key = StoredValue::new(id.clone());
     let node = Memo::new(move |_| board.doc.with(|c| key.with_value(|id| c.node(id).cloned())));
-    let kind = Memo::new(move |_| node.with(|n| n.as_ref().map(|n| n.kind.clone()).unwrap_or_default()));
+    let kind =
+        Memo::new(move |_| node.with(|n| n.as_ref().map(|n| n.kind.clone()).unwrap_or_default()));
     let color = Memo::new(move |_| node.with(|n| n.as_ref().and_then(|n| n.color.clone())));
     let selected = Memo::new(move |_| key.with_value(|id| board.selected.with(|s| s.contains(id))));
-    let editing = Memo::new(move |_| key.with_value(|id| board.editing.with(|e| e.as_deref() == Some(id.as_str()))));
-    let label = Memo::new(move |_| node.with(|n| n.as_ref().map(|n| format!("{}: {}", model::kind_label(&n.kind), model::summary(n))).unwrap_or_default()));
+    let editing = Memo::new(move |_| {
+        key.with_value(|id| board.editing.with(|e| e.as_deref() == Some(id.as_str())))
+    });
+    let label = Memo::new(move |_| {
+        node.with(|n| {
+            n.as_ref()
+                .map(|n| format!("{}: {}", model::kind_label(&n.kind), model::summary(n)))
+                .unwrap_or_default()
+        })
+    });
     let rect = Memo::new(move |_| node.with(|n| n.as_ref().map(model::Node::rect)));
 
     let element = NodeRef::<html::Div>::new();
@@ -48,7 +57,11 @@ pub(super) fn CanvasCard(board: Board, id: String) -> impl IntoView {
 
     let class = move || {
         let kind = kind.get();
-        let kind = if KINDS.contains(&kind.as_str()) { kind } else { "unknown".to_owned() };
+        let kind = if KINDS.contains(&kind.as_str()) {
+            kind
+        } else {
+            "unknown".to_owned()
+        };
         format!(
             "canvas-card is-{kind} {}{}{}",
             color_parts(color.get().as_deref()).0,
@@ -99,9 +112,12 @@ pub(super) fn CanvasCard(board: Board, id: String) -> impl IntoView {
 
 #[component]
 fn TextBody(board: Board, id: String, node: Memo<Option<model::Node>>) -> impl IntoView {
-    let text = Memo::new(move |_| node.with(|n| n.as_ref().map(|n| n.text.clone()).unwrap_or_default()));
+    let text =
+        Memo::new(move |_| node.with(|n| n.as_ref().map(|n| n.text.clone()).unwrap_or_default()));
     let key = StoredValue::new(id);
-    let editing = Memo::new(move |_| key.with_value(|id| board.editing.with(|e| e.as_deref() == Some(id.as_str()))));
+    let editing = Memo::new(move |_| {
+        key.with_value(|id| board.editing.with(|e| e.as_deref() == Some(id.as_str())))
+    });
     move || {
         if editing.get() {
             view! { <CardInput board=board id=key.get_value() value=text.get_untracked() group=false/> }.into_any()
@@ -149,12 +165,18 @@ fn CardInput(board: Board, id: String, value: String, group: bool) -> impl IntoV
         })
     };
     let finish = move || {
-        if key.with_value(|id| board.editing.with_untracked(|e| e.as_deref() == Some(id.as_str()))) {
+        if key.with_value(|id| {
+            board
+                .editing
+                .with_untracked(|e| e.as_deref() == Some(id.as_str()))
+        }) {
             board.finish_edit();
         }
     };
     let keys = move |e: web_sys::KeyboardEvent| {
-        let done = e.key() == "Escape" || (group && e.key() == "Enter") || (e.key() == "Enter" && (e.ctrl_key() || e.meta_key()));
+        let done = e.key() == "Escape"
+            || (group && e.key() == "Enter")
+            || (e.key() == "Enter" && (e.ctrl_key() || e.meta_key()));
         if done {
             e.prevent_default();
             e.stop_propagation();
@@ -179,9 +201,13 @@ fn CardInput(board: Board, id: String, value: String, group: bool) -> impl IntoV
 
 #[component]
 fn GroupLabel(board: Board, id: String, node: Memo<Option<model::Node>>) -> impl IntoView {
-    let label = Memo::new(move |_| node.with(|n| n.as_ref().and_then(|n| n.label.clone()).unwrap_or_default()));
+    let label = Memo::new(move |_| {
+        node.with(|n| n.as_ref().and_then(|n| n.label.clone()).unwrap_or_default())
+    });
     let key = StoredValue::new(id);
-    let editing = Memo::new(move |_| key.with_value(|id| board.editing.with(|e| e.as_deref() == Some(id.as_str()))));
+    let editing = Memo::new(move |_| {
+        key.with_value(|id| board.editing.with(|e| e.as_deref() == Some(id.as_str())))
+    });
     view! {
         <div class="canvas-group-label">
             {move || if editing.get() {
@@ -199,12 +225,22 @@ fn GroupLabel(board: Board, id: String, node: Memo<Option<model::Node>>) -> impl
 #[component]
 fn FileBody(board: Board, node: Memo<Option<model::Node>>) -> impl IntoView {
     let target = Memo::new(move |_| {
-        let (file, subpath) = node.with(|n| n.as_ref().map(|n| (n.file.clone(), n.subpath.clone())).unwrap_or_default());
+        let (file, subpath) = node.with(|n| {
+            n.as_ref()
+                .map(|n| (n.file.clone(), n.subpath.clone()))
+                .unwrap_or_default()
+        });
         let found = board.index.with(|ix| resolve_file(ix, &file));
         let found = match found {
             FileTarget::Note { id, target, .. } => {
-                let fragment = subpath.map(|s| s.trim_start_matches('#').to_owned()).filter(|s| !s.is_empty());
-                FileTarget::Note { id, target, fragment }
+                let fragment = subpath
+                    .map(|s| s.trim_start_matches('#').to_owned())
+                    .filter(|s| !s.is_empty());
+                FileTarget::Note {
+                    id,
+                    target,
+                    fragment,
+                }
             }
             other => other,
         };
@@ -246,7 +282,8 @@ fn FileBody(board: Board, node: Memo<Option<model::Node>>) -> impl IntoView {
 
 #[component]
 fn LinkBody(node: Memo<Option<model::Node>>) -> impl IntoView {
-    let url = Memo::new(move |_| node.with(|n| n.as_ref().map(|n| n.url.clone()).unwrap_or_default()));
+    let url =
+        Memo::new(move |_| node.with(|n| n.as_ref().map(|n| n.url.clone()).unwrap_or_default()));
     move || {
         let url = url.get();
         let host = model::link_host(&url);
@@ -275,7 +312,12 @@ fn curve_box(points: &[(f64, f64)]) -> Rect {
     if x0 > x1 {
         return Rect::new(0.0, 0.0, 1.0, 1.0);
     }
-    Rect::new((x0 - pad).floor(), (y0 - pad).floor(), (x1 - x0 + 2.0 * pad).ceil(), (y1 - y0 + 2.0 * pad).ceil())
+    Rect::new(
+        (x0 - pad).floor(),
+        (y0 - pad).floor(),
+        (x1 - x0 + 2.0 * pad).ceil(),
+        (y1 - y0 + 2.0 * pad).ceil(),
+    )
 }
 
 fn view_box(rect: &Rect) -> String {
@@ -298,18 +340,40 @@ pub(super) fn CanvasEdge(board: Board, id: String) -> impl IntoView {
             key.with_value(|id| {
                 let edge = c.edges.iter().find(|e| &e.id == id)?;
                 let shape = model::edge_shape(c, edge)?;
-                let (from, to) = (c.node(&edge.from_node)?.rect(), c.node(&edge.to_node)?.rect());
+                let (from, to) = (
+                    c.node(&edge.from_node)?.rect(),
+                    c.node(&edge.to_node)?.rect(),
+                );
                 let curve = model::edge_curve(&from, edge.from_side, &to, edge.to_side);
-                Some(EdgeDrawing { area: curve_box(&curve), shape, color: edge.color.clone(), label: edge.label.clone() })
+                Some(EdgeDrawing {
+                    area: curve_box(&curve),
+                    shape,
+                    color: edge.color.clone(),
+                    label: edge.label.clone(),
+                })
             })
         })
     });
-    let selected = Memo::new(move |_| key.with_value(|id| board.selected_edge.with(|e| e.as_deref() == Some(id.as_str()))));
-    let editing = Memo::new(move |_| key.with_value(|id| board.editing_edge.with(|e| e.as_deref() == Some(id.as_str()))));
+    let selected = Memo::new(move |_| {
+        key.with_value(|id| {
+            board
+                .selected_edge
+                .with(|e| e.as_deref() == Some(id.as_str()))
+        })
+    });
+    let editing = Memo::new(move |_| {
+        key.with_value(|id| {
+            board
+                .editing_edge
+                .with(|e| e.as_deref() == Some(id.as_str()))
+        })
+    });
     let area = Memo::new(move |_| drawing.with(|d| d.as_ref().map(|d| d.area)));
     let middle = Memo::new(move |_| drawing.with(|d| d.as_ref().map(|d| d.shape.middle)));
     let color = Memo::new(move |_| drawing.with(|d| d.as_ref().and_then(|d| d.color.clone())));
-    let label = Memo::new(move |_| drawing.with(|d| d.as_ref().and_then(|d| d.label.clone()).unwrap_or_default()));
+    let label = Memo::new(move |_| {
+        drawing.with(|d| d.as_ref().and_then(|d| d.label.clone()).unwrap_or_default())
+    });
 
     let frame = NodeRef::<html::Div>::new();
     Effect::new(move |_| {
@@ -317,12 +381,33 @@ pub(super) fn CanvasEdge(board: Board, id: String) -> impl IntoView {
             place(&el, &rect);
         }
     });
-    let path = move || drawing.with(|d| d.as_ref().map(|d| d.shape.path.clone()).unwrap_or_default());
-    let from_arrow = move || drawing.with(|d| d.as_ref().and_then(|d| d.shape.from_arrow.clone()).unwrap_or_default());
-    let to_arrow = move || drawing.with(|d| d.as_ref().and_then(|d| d.shape.to_arrow.clone()).unwrap_or_default());
+    let path =
+        move || drawing.with(|d| d.as_ref().map(|d| d.shape.path.clone()).unwrap_or_default());
+    let from_arrow = move || {
+        drawing.with(|d| {
+            d.as_ref()
+                .and_then(|d| d.shape.from_arrow.clone())
+                .unwrap_or_default()
+        })
+    };
+    let to_arrow = move || {
+        drawing.with(|d| {
+            d.as_ref()
+                .and_then(|d| d.shape.to_arrow.clone())
+                .unwrap_or_default()
+        })
+    };
     let class = move || {
         let color_class = color_parts(color.get().as_deref()).0;
-        format!("canvas-edge {color_class}{}{}", if selected.get() { " is-selected" } else { "" }, if drawing.with(Option::is_none) { " is-hidden" } else { "" })
+        format!(
+            "canvas-edge {color_class}{}{}",
+            if selected.get() { " is-selected" } else { "" },
+            if drawing.with(Option::is_none) {
+                " is-hidden"
+            } else {
+                ""
+            }
+        )
     };
     let hex = move || color_parts(color.get().as_deref()).1;
     let label_id = id.clone();
@@ -344,7 +429,14 @@ pub(super) fn CanvasEdge(board: Board, id: String) -> impl IntoView {
 }
 
 #[component]
-fn EdgeLabel(board: Board, id: String, middle: Memo<Option<(f64, f64)>>, label: Memo<String>, editing: Memo<bool>, selected: Memo<bool>) -> impl IntoView {
+fn EdgeLabel(
+    board: Board,
+    id: String,
+    middle: Memo<Option<(f64, f64)>>,
+    label: Memo<String>,
+    editing: Memo<bool>,
+    selected: Memo<bool>,
+) -> impl IntoView {
     let element = NodeRef::<html::Div>::new();
     Effect::new(move |_| {
         if let (Some(el), Some((x, y))) = (element.get(), middle.get()) {

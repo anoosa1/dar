@@ -12,13 +12,28 @@ pub const PASSWORD: &str = "a long isolated test password";
 /// explicit cookie headers (suites that follow redirects use [`following`]).
 pub fn client() -> reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(120)).build().expect("HTTP client")).clone()
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(Duration::from_secs(120))
+                .build()
+                .expect("HTTP client")
+        })
+        .clone()
 }
 
 /// A client that follows redirects, as `fetch` does by default.
 pub fn following() -> reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| reqwest::Client::builder().timeout(Duration::from_secs(120)).build().expect("HTTP client")).clone()
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(120))
+                .build()
+                .expect("HTTP client")
+        })
+        .clone()
 }
 
 /// A signed-in browser session: the cookie, CSRF token and SpacetimeDB token.
@@ -39,13 +54,20 @@ impl Session {
         let mut headers = HeaderMap::new();
         headers.insert("cookie", HeaderValue::from_str(&self.cookie).unwrap());
         headers.insert("origin", HeaderValue::from_str(&self.base).unwrap());
-        headers.insert("x-csrf-token", HeaderValue::from_str(&self.csrf_token).unwrap());
+        headers.insert(
+            "x-csrf-token",
+            HeaderValue::from_str(&self.csrf_token).unwrap(),
+        );
         headers
     }
 
     /// The headers as pairs (for the browser driver's request helpers).
     pub fn header_pairs(&self) -> Vec<(&'static str, String)> {
-        vec![("cookie", self.cookie.clone()), ("origin", self.base.clone()), ("x-csrf-token", self.csrf_token.clone())]
+        vec![
+            ("cookie", self.cookie.clone()),
+            ("origin", self.base.clone()),
+            ("x-csrf-token", self.csrf_token.clone()),
+        ]
     }
 
     pub fn url(&self, path: &str) -> String {
@@ -54,8 +76,14 @@ impl Session {
 
     /// A request to `base` + `path` with the session's headers.
     pub fn request(&self, method: &str, path: &str) -> reqwest::RequestBuilder {
-        let url = if path.starts_with("http") { path.to_owned() } else { self.url(path) };
-        client().request(reqwest::Method::from_bytes(method.as_bytes()).unwrap(), url).headers(self.headers())
+        let url = if path.starts_with("http") {
+            path.to_owned()
+        } else {
+            self.url(path)
+        };
+        client()
+            .request(reqwest::Method::from_bytes(method.as_bytes()).unwrap(), url)
+            .headers(self.headers())
     }
 
     pub async fn get(&self, path: &str) -> Result<Reply> {
@@ -86,14 +114,27 @@ impl Session {
     /// GETs JSON and checks the status is 200.
     pub async fn get_json(&self, path: &str) -> Result<Value> {
         let reply = self.get(path).await?;
-        ensure!(reply.status == 200, "GET {path}: {} {}", reply.status, reply.text());
+        ensure!(
+            reply.status == 200,
+            "GET {path}: {} {}",
+            reply.status,
+            reply.text()
+        );
         reply.json()
     }
 
     /// Opens a SpacetimeDB connection as this person, subscribed to `me`, `my_files` and
     /// `my_usage` (`connect`).
     pub async fn connect(&self) -> Result<crate::live::Live> {
-        crate::live::Live::connect(self, &["SELECT * FROM me", "SELECT * FROM my_files", "SELECT * FROM my_usage"]).await
+        crate::live::Live::connect(
+            self,
+            &[
+                "SELECT * FROM me",
+                "SELECT * FROM my_files",
+                "SELECT * FROM my_usage",
+            ],
+        )
+        .await
     }
 }
 
@@ -110,31 +151,50 @@ impl Reply {
         let status = response.status().as_u16();
         let headers = response.headers().clone();
         let body = response.bytes().await?.to_vec();
-        Ok(Reply { status, headers, body })
+        Ok(Reply {
+            status,
+            headers,
+            body,
+        })
     }
     pub fn text(&self) -> String {
         String::from_utf8_lossy(&self.body).into_owned()
     }
     pub fn json(&self) -> Result<Value> {
-        serde_json::from_slice(&self.body).map_err(|error| crate::Error::new(format!("not JSON ({error}): {}", self.text())))
+        serde_json::from_slice(&self.body)
+            .map_err(|error| crate::Error::new(format!("not JSON ({error}): {}", self.text())))
     }
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers.get(name).and_then(|value| value.to_str().ok())
     }
     /// Every `set-cookie` header.
     pub fn set_cookies(&self) -> Vec<&str> {
-        self.headers.get_all("set-cookie").iter().filter_map(|value| value.to_str().ok()).collect()
+        self.headers
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .collect()
     }
     /// Fails with the body unless the status is `expected`.
     pub fn expect(self, expected: u16) -> Result<Reply> {
-        ensure!(self.status == expected, "expected HTTP {expected}, got {}: {}", self.status, self.text());
+        ensure!(
+            self.status == expected,
+            "expected HTTP {expected}, got {}: {}",
+            self.status,
+            self.text()
+        );
         Ok(self)
     }
 }
 
 /// Sets up the first account (`admin`) with the run's bootstrap token, if not done yet.
 pub async fn setup_admin(base: &str) -> Result<()> {
-    let status: Value = client().get(format!("{base}/api/v1/auth/status")).send().await?.json().await?;
+    let status: Value = client()
+        .get(format!("{base}/api/v1/auth/status"))
+        .send()
+        .await?
+        .json()
+        .await?;
     if status["initialized"] == json!(true) {
         return Ok(());
     }
@@ -143,7 +203,11 @@ pub async fn setup_admin(base: &str) -> Result<()> {
         .json(&json!({"username": "admin", "displayName": "Test Administrator", "password": PASSWORD, "bootstrapToken": token.trim()}))
         .send().await?;
     let status = response.status().as_u16();
-    ensure!(status == 200, "setting up the administrator: {status} {}", response.text().await.unwrap_or_default());
+    ensure!(
+        status == 200,
+        "setting up the administrator: {status} {}",
+        response.text().await.unwrap_or_default()
+    );
     Ok(())
 }
 
@@ -153,19 +217,53 @@ pub async fn login(base: &str) -> Result<Session> {
 }
 
 pub async fn login_as(base: &str, username: &str, password: &str) -> Result<Session> {
-    let response = client().post(format!("{base}/api/v1/auth/login")).header("origin", base)
-        .json(&json!({"username": username, "password": password})).send().await.context("signing in")?;
+    let response = client()
+        .post(format!("{base}/api/v1/auth/login"))
+        .header("origin", base)
+        .json(&json!({"username": username, "password": password}))
+        .send()
+        .await
+        .context("signing in")?;
     let reply = Reply::from(response).await?;
-    ensure!(reply.status == 200, "signing in as {username}: {} {}", reply.status, reply.text());
-    let cookie = reply.header("set-cookie").context("no session cookie")?.split(';').next().unwrap_or_default().to_owned();
-    let csrf_token = reply.json()?["csrfToken"].as_str().context("no CSRF token")?.to_owned();
-    let mut session = Session { base: base.to_owned(), cookie, csrf_token, token: String::new(), database_url: String::new(), database_name: String::new() };
+    ensure!(
+        reply.status == 200,
+        "signing in as {username}: {} {}",
+        reply.status,
+        reply.text()
+    );
+    let cookie = reply
+        .header("set-cookie")
+        .context("no session cookie")?
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    let csrf_token = reply.json()?["csrfToken"]
+        .as_str()
+        .context("no CSRF token")?
+        .to_owned();
+    let mut session = Session {
+        base: base.to_owned(),
+        cookie,
+        csrf_token,
+        token: String::new(),
+        database_url: String::new(),
+        database_name: String::new(),
+    };
     let reply = Reply::from(session.request("POST", "/api/v1/auth/token").send().await?).await?;
-    ensure!(reply.status == 200, "fetching the database token: {} {}", reply.status, reply.text());
+    ensure!(
+        reply.status == 200,
+        "fetching the database token: {} {}",
+        reply.status,
+        reply.text()
+    );
     let token = reply.json()?;
     session.token = token["token"].as_str().unwrap_or_default().to_owned();
     session.database_url = token["databaseUrl"].as_str().unwrap_or_default().to_owned();
-    session.database_name = token["databaseName"].as_str().unwrap_or_default().to_owned();
+    session.database_name = token["databaseName"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
     Ok(session)
 }
 
@@ -188,16 +286,30 @@ pub struct Upload<'a> {
 
 impl Default for Upload<'_> {
     fn default() -> Self {
-        Self { parent_id: "", file_id: None, expected_revision: None, media_type: "text/plain" }
+        Self {
+            parent_id: "",
+            file_id: None,
+            expected_revision: None,
+            media_type: "text/plain",
+        }
     }
 }
 
 /// Reserves and sends a file through the Files API (`upload`).
-pub async fn upload(session: &Session, name: &str, contents: impl AsRef<[u8]>) -> Result<Reservation> {
+pub async fn upload(
+    session: &Session,
+    name: &str,
+    contents: impl AsRef<[u8]>,
+) -> Result<Reservation> {
     upload_with(session, name, contents, Upload::default()).await
 }
 
-pub async fn upload_with(session: &Session, name: &str, contents: impl AsRef<[u8]>, options: Upload<'_>) -> Result<Reservation> {
+pub async fn upload_with(
+    session: &Session,
+    name: &str,
+    contents: impl AsRef<[u8]>,
+    options: Upload<'_>,
+) -> Result<Reservation> {
     let contents = contents.as_ref();
     let mut body = json!({"name": name, "size": contents.len(), "mediaType": options.media_type, "parentId": options.parent_id});
     if let Some(file_id) = options.file_id {
@@ -211,9 +323,19 @@ pub async fn upload_with(session: &Session, name: &str, contents: impl AsRef<[u8
         bail!("reserving {name}: {} {}", reply.status, reply.text());
     }
     let reservation: Reservation = serde_json::from_value(reply.json()?)?;
-    let transfer = session.request("PUT", &format!("/api/v1/files/uploads/{}", reservation.id)).body(contents.to_vec()).timeout(Duration::from_secs(10)).send().await?;
+    let transfer = session
+        .request("PUT", &format!("/api/v1/files/uploads/{}", reservation.id))
+        .body(contents.to_vec())
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await?;
     let transfer = Reply::from(transfer).await?;
-    ensure!(transfer.status == 200, "sending {name}: {} {}", transfer.status, transfer.text());
+    ensure!(
+        transfer.status == 200,
+        "sending {name}: {} {}",
+        transfer.status,
+        transfer.text()
+    );
     Ok(reservation)
 }
 

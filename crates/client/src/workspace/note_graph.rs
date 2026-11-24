@@ -58,7 +58,9 @@ impl ActiveGraph {
     }
 
     fn is_neighbor(&self, a: usize, b: usize) -> bool {
-        self.neighbors.get(a).is_some_and(|list| list.binary_search(&b).is_ok())
+        self.neighbors
+            .get(a)
+            .is_some_and(|list| list.binary_search(&b).is_ok())
     }
 }
 
@@ -79,7 +81,12 @@ fn build_active_graph(data: &GraphData, open_id: Option<&str>, local_only: bool)
                 keep.insert(edge.from.as_str());
             }
         }
-        selected = data.nodes.iter().filter(|n| keep.contains(n.id.as_str())).cloned().collect();
+        selected = data
+            .nodes
+            .iter()
+            .filter(|n| keep.contains(n.id.as_str()))
+            .cloned()
+            .collect();
         if selected.len() > MAX_NODES {
             selected.truncate(MAX_NODES);
             truncated = true;
@@ -106,13 +113,19 @@ fn build_active_graph(data: &GraphData, open_id: Option<&str>, local_only: bool)
         selected = data.nodes.clone();
     }
 
-    let id_to_idx: HashMap<&str, usize> = selected.iter().enumerate().map(|(i, n)| (n.id.as_str(), i)).collect();
+    let id_to_idx: HashMap<&str, usize> = selected
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.id.as_str(), i))
+        .collect();
     let mut edges: Vec<(usize, usize)> = Vec::new();
     let mut seen_edges: HashSet<(usize, usize)> = HashSet::new();
     let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); selected.len()];
     for edge in &data.edges {
-        if let (Some(&from), Some(&to)) = (id_to_idx.get(edge.from.as_str()), id_to_idx.get(edge.to.as_str()))
-            && from != to
+        if let (Some(&from), Some(&to)) = (
+            id_to_idx.get(edge.from.as_str()),
+            id_to_idx.get(edge.to.as_str()),
+        ) && from != to
             && seen_edges.insert((from, to))
         {
             edges.push((from, to));
@@ -124,7 +137,12 @@ fn build_active_graph(data: &GraphData, open_id: Option<&str>, local_only: bool)
         list.sort_unstable();
         list.dedup();
     }
-    ActiveGraph { nodes: selected, edges, neighbors, truncated }
+    ActiveGraph {
+        nodes: selected,
+        edges,
+        neighbors,
+        truncated,
+    }
 }
 
 fn matches_filter(node: &GraphNode, query: &str) -> bool {
@@ -152,7 +170,10 @@ fn resolve_css_color(raw: &str, dark: bool, fallback: &str) -> String {
     if s.is_empty() {
         return fallback.to_owned();
     }
-    if let Some(inner) = s.strip_prefix("light-dark(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(inner) = s
+        .strip_prefix("light-dark(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         let mut depth = 0i32;
         let mut split_at = None;
         for (i, ch) in inner.char_indices() {
@@ -167,7 +188,12 @@ fn resolve_css_color(raw: &str, dark: bool, fallback: &str) -> String {
             }
         }
         if let Some(comma) = split_at {
-            let chosen = if dark { &inner[comma + 1..] } else { &inner[..comma] }.trim();
+            let chosen = if dark {
+                &inner[comma + 1..]
+            } else {
+                &inner[..comma]
+            }
+            .trim();
             if !chosen.is_empty() {
                 return chosen.to_owned();
             }
@@ -377,13 +403,18 @@ impl WheelListener {
             callback.as_ref().unchecked_ref(),
             &opts,
         );
-        Self { target: target.clone(), callback }
+        Self {
+            target: target.clone(),
+            callback,
+        }
     }
 }
 
 impl Drop for WheelListener {
     fn drop(&mut self) {
-        let _ = self.target.remove_event_listener_with_callback("wheel", self.callback.as_ref().unchecked_ref());
+        let _ = self
+            .target
+            .remove_event_listener_with_callback("wheel", self.callback.as_ref().unchecked_ref());
     }
 }
 
@@ -468,7 +499,9 @@ impl CanvasState {
         let cy = (min_y + max_y) * 0.5;
         let span_x = (max_x - min_x + 120.0).max(160.0);
         let span_y = (max_y - min_y + 120.0).max(160.0);
-        self.zoom = (self.width / span_x).min(self.height / span_y).clamp(0.4, 1.25);
+        self.zoom = (self.width / span_x)
+            .min(self.height / span_y)
+            .clamp(0.4, 1.25);
         self.pan_x = -cx * self.zoom;
         self.pan_y = -cy * self.zoom;
         self.fitted = true;
@@ -489,12 +522,18 @@ impl CanvasState {
     }
 
     fn draw(&self) {
-        let Some(canvas) = self.canvas.as_ref() else { return };
+        let Some(canvas) = self.canvas.as_ref() else {
+            return;
+        };
         if self.width <= 0.0 || self.height <= 0.0 {
             return;
         }
-        let Ok(Some(ctx)) = canvas.get_context("2d") else { return };
-        let Ok(ctx) = ctx.dyn_into::<web_sys::CanvasRenderingContext2d>() else { return };
+        let Ok(Some(ctx)) = canvas.get_context("2d") else {
+            return;
+        };
+        let Ok(ctx) = ctx.dyn_into::<web_sys::CanvasRenderingContext2d>() else {
+            return;
+        };
 
         let palette = read_palette(canvas);
         let _ = ctx.set_transform(self.dpr, 0.0, 0.0, self.dpr, 0.0, 0.0);
@@ -521,7 +560,11 @@ impl CanvasState {
             } else {
                 let both_match = self.matched.get(a).copied().unwrap_or(true)
                     && self.matched.get(b).copied().unwrap_or(true);
-                (palette.border.as_str(), 1.0, if both_match { 0.7 } else { 0.14 })
+                (
+                    palette.border.as_str(),
+                    1.0,
+                    if both_match { 0.7 } else { 0.14 },
+                )
             };
             ctx.set_stroke_style_str(color);
             ctx.set_line_width(width);
@@ -553,11 +596,23 @@ impl CanvasState {
                     (palette.muted.as_str(), 0.18, false)
                 }
             } else if is_open {
-                (palette.accent.as_str(), if is_match { 1.0 } else { 0.25 }, true)
+                (
+                    palette.accent.as_str(),
+                    if is_match { 1.0 } else { 0.25 },
+                    true,
+                )
             } else if deg > 0 {
-                (palette.accent.as_str(), if is_match { 0.82 } else { 0.18 }, false)
+                (
+                    palette.accent.as_str(),
+                    if is_match { 0.82 } else { 0.18 },
+                    false,
+                )
             } else {
-                (palette.muted.as_str(), if is_match { 0.8 } else { 0.18 }, false)
+                (
+                    palette.muted.as_str(),
+                    if is_match { 0.8 } else { 0.18 },
+                    false,
+                )
             };
 
             if ring {
@@ -587,12 +642,21 @@ impl CanvasState {
             let is_neighbor = self.hovered.is_some_and(|h| self.graph.is_neighbor(h, i));
             let is_open = self.open_idx == Some(i);
             let is_match = self.matched.get(i).copied().unwrap_or(true);
-            let show = is_hovered || is_neighbor || (zoomed_in && (is_match || is_open)) || (is_open && self.hovered.is_none());
+            let show = is_hovered
+                || is_neighbor
+                || (zoomed_in && (is_match || is_open))
+                || (is_open && self.hovered.is_none());
             if !show {
                 continue;
             }
             let alpha = if self.hovered.is_some() {
-                if is_hovered { 1.0 } else if is_neighbor { 0.9 } else { 0.18 }
+                if is_hovered {
+                    1.0
+                } else if is_neighbor {
+                    0.9
+                } else {
+                    0.18
+                }
             } else if is_match || is_open {
                 0.92
             } else {
@@ -643,7 +707,9 @@ fn start_layout(state: Rc<RefCell<CanvasState>>) {
 fn schedule_raf(state: Rc<RefCell<CanvasState>>, start_ms: f64) {
     let weak = Rc::downgrade(&state);
     let closure = Closure::<dyn FnMut(f64)>::new(move |now: f64| {
-        let Some(state_tick) = weak.upgrade() else { return };
+        let Some(state_tick) = weak.upgrade() else {
+            return;
+        };
         let keep_going = {
             let mut st = state_tick.borrow_mut();
             st.raf_id = None;
@@ -654,14 +720,17 @@ fn schedule_raf(state: Rc<RefCell<CanvasState>>, start_ms: f64) {
         };
         if keep_going {
             let mut st = state_tick.borrow_mut();
-            let id = st
-                .raf_cb
-                .as_ref()
-                .and_then(|c| window().request_animation_frame(c.as_ref().unchecked_ref()).ok());
+            let id = st.raf_cb.as_ref().and_then(|c| {
+                window()
+                    .request_animation_frame(c.as_ref().unchecked_ref())
+                    .ok()
+            });
             st.raf_id = id;
         }
     });
-    let id = window().request_animation_frame(closure.as_ref().unchecked_ref()).ok();
+    let id = window()
+        .request_animation_frame(closure.as_ref().unchecked_ref())
+        .ok();
     let mut st = state.borrow_mut();
     if let Some(id) = id {
         st.raf_id = Some(id);
@@ -669,7 +738,11 @@ fn schedule_raf(state: Rc<RefCell<CanvasState>>, start_ms: f64) {
     }
 }
 
-fn sync_canvas_size(st: &mut CanvasState, stage: &web_sys::HtmlDivElement, canvas: &web_sys::HtmlCanvasElement) {
+fn sync_canvas_size(
+    st: &mut CanvasState,
+    stage: &web_sys::HtmlDivElement,
+    canvas: &web_sys::HtmlCanvasElement,
+) {
     let rect = stage.get_bounding_client_rect();
     let w = rect.width().max(1.0);
     let h = rect.height().max(1.0);
@@ -729,12 +802,22 @@ pub fn NoteGraph(
             let alive = alive.clone();
             spawn_local(async move {
                 match api::get::<GraphData>("/api/v1/notes/graph").await {
-                    Ok(data) if alive.load(Ordering::Relaxed) && seq.try_get_untracked() == Some(ticket) => {
+                    Ok(data)
+                        if alive.load(Ordering::Relaxed)
+                            && seq.try_get_untracked() == Some(ticket) =>
+                    {
                         let _ = raw.try_set(Some(data));
                         let _ = error.try_set(String::new());
                     }
-                    Err(e) if alive.load(Ordering::Relaxed) && seq.try_get_untracked() == Some(ticket) => {
-                        let msg = if e.message.is_empty() { "Graph could not be loaded.".into() } else { e.message };
+                    Err(e)
+                        if alive.load(Ordering::Relaxed)
+                            && seq.try_get_untracked() == Some(ticket) =>
+                    {
+                        let msg = if e.message.is_empty() {
+                            "Graph could not be loaded.".into()
+                        } else {
+                            e.message
+                        };
                         let _ = error.try_set(msg);
                     }
                     _ => {}
@@ -762,7 +845,9 @@ pub fn NoteGraph(
             let q = filter.get_untracked();
             let cur_open = open_id.get_untracked();
             let matched: Vec<bool> = graph.nodes.iter().map(|n| matches_filter(n, &q)).collect();
-            let open_idx = cur_open.as_deref().and_then(|id| graph.nodes.iter().position(|n| n.id == id));
+            let open_idx = cur_open
+                .as_deref()
+                .and_then(|id| graph.nodes.iter().position(|n| n.id == id));
             {
                 let mut st = state.borrow_mut();
                 st.cancel_raf();
@@ -785,8 +870,15 @@ pub fn NoteGraph(
             let q = filter.get();
             let cur_open = open_id.get();
             let mut st = state.borrow_mut();
-            st.matched = st.graph.nodes.iter().map(|n| matches_filter(n, &q)).collect();
-            st.open_idx = cur_open.as_deref().and_then(|id| st.graph.nodes.iter().position(|n| n.id == id));
+            st.matched = st
+                .graph
+                .nodes
+                .iter()
+                .map(|n| matches_filter(n, &q))
+                .collect();
+            st.open_idx = cur_open
+                .as_deref()
+                .and_then(|id| st.graph.nodes.iter().position(|n| n.id == id));
             st.draw();
         });
     }
@@ -795,7 +887,9 @@ pub fn NoteGraph(
     {
         let state = state.clone();
         Effect::new(move |_| {
-            let (Some(stage), Some(canvas)) = (stage_ref.get(), canvas_ref.get()) else { return };
+            let (Some(stage), Some(canvas)) = (stage_ref.get(), canvas_ref.get()) else {
+                return;
+            };
             let stage_el: web_sys::HtmlDivElement = stage.clone();
             let canvas_el: web_sys::HtmlCanvasElement = canvas.clone();
             {
@@ -821,7 +915,9 @@ pub fn NoteGraph(
             let down_state = (*state).clone();
             let down_canvas = canvas_el.clone();
             let on_down = Listener::new(&target, "pointerdown", false, move |event| {
-                let Ok(e) = event.dyn_into::<web_sys::PointerEvent>() else { return };
+                let Ok(e) = event.dyn_into::<web_sys::PointerEvent>() else {
+                    return;
+                };
                 if e.button() != 0 {
                     return;
                 }
@@ -839,7 +935,9 @@ pub fn NoteGraph(
             let move_state = (*state).clone();
             let move_canvas = canvas_el.clone();
             let on_move = Listener::new(&target, "pointermove", false, move |event| {
-                let Ok(e) = event.dyn_into::<web_sys::PointerEvent>() else { return };
+                let Ok(e) = event.dyn_into::<web_sys::PointerEvent>() else {
+                    return;
+                };
                 let mut st = move_state.borrow_mut();
                 if st.dragging {
                     let dx = e.client_x() as f64 - st.drag_start_x;
@@ -874,7 +972,9 @@ pub fn NoteGraph(
             let up_state = (*state).clone();
             let up_canvas = canvas_el.clone();
             let on_up = Listener::new(&target, "pointerup", false, move |event| {
-                let Ok(e) = event.dyn_into::<web_sys::PointerEvent>() else { return };
+                let Ok(e) = event.dyn_into::<web_sys::PointerEvent>() else {
+                    return;
+                };
                 let clicked_id = {
                     let mut st = up_state.borrow_mut();
                     if !st.dragging {
@@ -920,7 +1020,9 @@ pub fn NoteGraph(
             let wheel_state = (*state).clone();
             let wheel_canvas = canvas_el.clone();
             let on_wheel = WheelListener::new(&target, move |event| {
-                let Ok(e) = event.dyn_into::<web_sys::WheelEvent>() else { return };
+                let Ok(e) = event.dyn_into::<web_sys::WheelEvent>() else {
+                    return;
+                };
                 e.prevent_default();
                 let mut st = wheel_state.borrow_mut();
                 let rect = wheel_canvas.get_bounding_client_rect();
@@ -1077,14 +1179,40 @@ mod tests {
     fn sample_graph() -> GraphData {
         GraphData {
             nodes: vec![
-                GraphNode { id: "a".into(), title: "Alpha".into(), path: "Alpha.md".into(), tags: vec!["work".into(), "work/space".into()] },
-                GraphNode { id: "b".into(), title: "Beta".into(), path: "Projects/Beta.md".into(), tags: vec!["personal".into()] },
-                GraphNode { id: "c".into(), title: "Gamma".into(), path: "Gamma.md".into(), tags: vec![] },
-                GraphNode { id: "d".into(), title: "Delta".into(), path: "Delta.md".into(), tags: vec![] },
+                GraphNode {
+                    id: "a".into(),
+                    title: "Alpha".into(),
+                    path: "Alpha.md".into(),
+                    tags: vec!["work".into(), "work/space".into()],
+                },
+                GraphNode {
+                    id: "b".into(),
+                    title: "Beta".into(),
+                    path: "Projects/Beta.md".into(),
+                    tags: vec!["personal".into()],
+                },
+                GraphNode {
+                    id: "c".into(),
+                    title: "Gamma".into(),
+                    path: "Gamma.md".into(),
+                    tags: vec![],
+                },
+                GraphNode {
+                    id: "d".into(),
+                    title: "Delta".into(),
+                    path: "Delta.md".into(),
+                    tags: vec![],
+                },
             ],
             edges: vec![
-                GraphEdge { from: "a".into(), to: "b".into() },
-                GraphEdge { from: "c".into(), to: "a".into() },
+                GraphEdge {
+                    from: "a".into(),
+                    to: "b".into(),
+                },
+                GraphEdge {
+                    from: "c".into(),
+                    to: "a".into(),
+                },
             ],
         }
     }
@@ -1122,9 +1250,18 @@ mod tests {
         assert!(!matches_filter(&g.nodes[2], "#"));
         assert!(matches_filter(&g.nodes[0], "#"));
 
-        assert_eq!(resolve_css_color("light-dark(#73396f, #f2a2a9)", false, "#000"), "#73396f");
-        assert_eq!(resolve_css_color("light-dark(#73396f, #f2a2a9)", true, "#000"), "#f2a2a9");
-        assert_eq!(resolve_css_color("light-dark(rgb(1, 2, 3), rgb(4, 5, 6))", true, "#000"), "rgb(4, 5, 6)");
+        assert_eq!(
+            resolve_css_color("light-dark(#73396f, #f2a2a9)", false, "#000"),
+            "#73396f"
+        );
+        assert_eq!(
+            resolve_css_color("light-dark(#73396f, #f2a2a9)", true, "#000"),
+            "#f2a2a9"
+        );
+        assert_eq!(
+            resolve_css_color("light-dark(rgb(1, 2, 3), rgb(4, 5, 6))", true, "#000"),
+            "rgb(4, 5, 6)"
+        );
         assert_eq!(resolve_css_color("", false, "#123"), "#123");
     }
 

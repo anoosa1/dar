@@ -19,7 +19,13 @@ thread_local! {
 }
 
 const DATE_FIELDS: [&str; 4] = ["weekday", "year", "month", "day"];
-const TIME_FIELDS: [&str; 5] = ["dayPeriod", "hour", "minute", "second", "fractionalSecondDigits"];
+const TIME_FIELDS: [&str; 5] = [
+    "dayPeriod",
+    "hour",
+    "minute",
+    "second",
+    "fractionalSecondDigits",
+];
 
 fn format(value: f64, options: &[(&str, &str)], kind: Kind) -> String {
     let key = format!("{}{:?}", kind as u8, options);
@@ -27,7 +33,9 @@ fn format(value: f64, options: &[(&str, &str)], kind: Kind) -> String {
         let mut formats = formats.borrow_mut();
         let formatter = formats.entry(key).or_insert_with(|| {
             let has = |fields: &[&str]| options.iter().any(|(name, _)| fields.contains(name));
-            let styled = options.iter().any(|(name, _)| *name == "dateStyle" || *name == "timeStyle");
+            let styled = options
+                .iter()
+                .any(|(name, _)| *name == "dateStyle" || *name == "timeStyle");
             let bare = !styled
                 && match kind {
                     Kind::Date => !has(&DATE_FIELDS),
@@ -40,18 +48,31 @@ fn format(value: f64, options: &[(&str, &str)], kind: Kind) -> String {
             }
             if bare && kind != Kind::Time {
                 for name in ["year", "month", "day"] {
-                    let _ = Reflect::set(&object, &JsValue::from_str(name), &JsValue::from_str("numeric"));
+                    let _ = Reflect::set(
+                        &object,
+                        &JsValue::from_str(name),
+                        &JsValue::from_str("numeric"),
+                    );
                 }
             }
             if bare && kind != Kind::Date {
                 for name in ["hour", "minute", "second"] {
-                    let _ = Reflect::set(&object, &JsValue::from_str(name), &JsValue::from_str("numeric"));
+                    let _ = Reflect::set(
+                        &object,
+                        &JsValue::from_str(name),
+                        &JsValue::from_str("numeric"),
+                    );
                 }
             }
             Intl::DateTimeFormat::new(&Array::new(), &object)
         });
         let date = Date::new(&JsValue::from_f64(value));
-        formatter.format().call1(&JsValue::NULL, &date).ok().and_then(|v| v.as_string()).unwrap_or_default()
+        formatter
+            .format()
+            .call1(&JsValue::NULL, &date)
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default()
     })
 }
 
@@ -72,7 +93,12 @@ pub fn local_date_time(value: f64, options: &[(&str, &str)]) -> String {
 
 fn start_of_day(value: f64) -> f64 {
     let date = Date::new(&JsValue::from_f64(value));
-    Date::new_with_year_month_day(date.get_full_year(), date.get_month() as i32, date.get_date() as i32).get_time()
+    Date::new_with_year_month_day(
+        date.get_full_year(),
+        date.get_month() as i32,
+        date.get_date() as i32,
+    )
+    .get_time()
 }
 
 /// Whole calendar days from `value` to now, in local time.
@@ -83,7 +109,10 @@ pub fn days_ago(value: f64) -> i64 {
 /// "Today, 3:04 PM", "Yesterday", then "Nov 18" (Files' `relative`).
 pub fn relative(value: f64) -> String {
     match days_ago(value) {
-        0 => format!("Today, {}", local_time(value, &[("hour", "numeric"), ("minute", "2-digit")])),
+        0 => format!(
+            "Today, {}",
+            local_time(value, &[("hour", "numeric"), ("minute", "2-digit")])
+        ),
         1 => "Yesterday".into(),
         _ => short_date(value),
     }
@@ -100,11 +129,15 @@ pub fn edited(value: f64) -> String {
         0 => local_time(value, &[("hour", "numeric"), ("minute", "2-digit")]),
         1 => "Yesterday".into(),
         _ => {
-            let same_year = Date::new(&JsValue::from_f64(value)).get_full_year() == Date::new_0().get_full_year();
+            let same_year = Date::new(&JsValue::from_f64(value)).get_full_year()
+                == Date::new_0().get_full_year();
             if same_year {
                 local_date(value, &[("month", "short"), ("day", "numeric")])
             } else {
-                local_date(value, &[("month", "short"), ("day", "numeric"), ("year", "numeric")])
+                local_date(
+                    value,
+                    &[("month", "short"), ("day", "numeric"), ("year", "numeric")],
+                )
             }
         }
     }

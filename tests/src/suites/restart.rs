@@ -25,10 +25,17 @@ pub async fn forced_crash_and_full_restart(t: &Ctx) -> Result<()> {
     let origin = format!("http://127.0.0.1:{port}");
     let db_name = "dar-restart";
 
-    support::manage_apps(&root, "apps-install", Some(&stack.artifacts.prayer_times.to_string_lossy()))?;
+    support::manage_apps(
+        &root,
+        "apps-install",
+        Some(&stack.artifacts.prayer_times.to_string_lossy()),
+    )?;
 
     let bootstrap_token_file = root.join("secrets/bootstrap-token");
-    write_private(&bootstrap_token_file, dar_acceptance::base64url(&dar_acceptance::random_bytes(32)).as_bytes())?;
+    write_private(
+        &bootstrap_token_file,
+        dar_acceptance::base64url(&dar_acceptance::random_bytes(32)).as_bytes(),
+    )?;
 
     let db_server = SpacetimeServer::start(&root.join("spacetime"), &stack.artifacts).await?;
     db_server.publish(&stack.artifacts, db_name, &origin)?;

@@ -41,10 +41,28 @@ pub struct Resource {
 /// Dar's `service_pim` operations used by DAV.
 pub trait PimBackend: Send + Sync + 'static {
     fn collections(&self, session: &str) -> DavResult<Vec<Collection>>;
-    fn list(&self, session: &str, collection_id: &str, metadata_only: bool) -> DavResult<Vec<Resource>>;
+    fn list(
+        &self,
+        session: &str,
+        collection_id: &str,
+        metadata_only: bool,
+    ) -> DavResult<Vec<Resource>>;
     /// Validate and store `content`; `revision` 0 creates. Returns the stored row.
-    fn put(&self, session: &str, collection: &Collection, href: &str, content: &str, revision: u64) -> DavResult<Resource>;
-    fn delete(&self, session: &str, collection_id: &str, href: &str, revision: u64) -> DavResult<()>;
+    fn put(
+        &self,
+        session: &str,
+        collection: &Collection,
+        href: &str,
+        content: &str,
+        revision: u64,
+    ) -> DavResult<Resource>;
+    fn delete(
+        &self,
+        session: &str,
+        collection_id: &str,
+        href: &str,
+        revision: u64,
+    ) -> DavResult<()>;
 }
 
 pub fn pim_etag(id: &str, revision: u64) -> String {
@@ -92,46 +110,115 @@ impl Context<'_> {
         };
         let contacts = self.kind == PimKind::Contacts;
         let mut map = Props::new();
-        map.insert(key(D, "displayname"), format!("<d:displayname>{}</d:displayname>", escape(name)));
+        map.insert(
+            key(D, "displayname"),
+            format!("<d:displayname>{}</d:displayname>", escape(name)),
+        );
         let mut types = String::new();
         if is_collection {
             types.push_str("<d:collection/>");
         }
         if is_collection && property_collection.is_some() {
-            types.push_str(if contacts { "<a:addressbook/>" } else { "<c:calendar/>" });
+            types.push_str(if contacts {
+                "<a:addressbook/>"
+            } else {
+                "<c:calendar/>"
+            });
         }
         if self.at_principal {
             types.push_str("<d:principal/>");
         }
-        map.insert(key(D, "resourcetype"), format!("<d:resourcetype>{types}</d:resourcetype>"));
-        map.insert(key(D, "current-user-principal"), format!("<d:current-user-principal><d:href>{}</d:href></d:current-user-principal>", self.principal));
+        map.insert(
+            key(D, "resourcetype"),
+            format!("<d:resourcetype>{types}</d:resourcetype>"),
+        );
+        map.insert(
+            key(D, "current-user-principal"),
+            format!(
+                "<d:current-user-principal><d:href>{}</d:href></d:current-user-principal>",
+                self.principal
+            ),
+        );
         if self.pim_access {
             map.insert(key(CARDDAV, "addressbook-home-set"), format!("<a:addressbook-home-set><d:href>/dav/addressbooks/{}/</d:href></a:addressbook-home-set>", self.user));
             map.insert(key(CALDAV, "calendar-home-set"), format!("<c:calendar-home-set><d:href>/dav/calendars/{}/</d:href></c:calendar-home-set>", self.user));
         }
         let (id, revision, modified, content) = match &row {
             Some(Row::Collection(c)) => (c.id.as_str(), c.revision, c.modified_at, None),
-            Some(Row::Resource(r)) => (r.id.as_str(), r.revision, r.modified_at, Some(r.content.as_str())),
+            Some(Row::Resource(r)) => (
+                r.id.as_str(),
+                r.revision,
+                r.modified_at,
+                Some(r.content.as_str()),
+            ),
             None => ("", 0, 0, None),
         };
         if row.is_some() {
-            map.insert(key(D, "getetag"), format!("<d:getetag>{}</d:getetag>", escape(&pim_etag(id, revision))));
-            map.insert(key(D, "getlastmodified"), format!("<d:getlastmodified>{}</d:getlastmodified>", http_date(modified)));
+            map.insert(
+                key(D, "getetag"),
+                format!("<d:getetag>{}</d:getetag>", escape(&pim_etag(id, revision))),
+            );
+            map.insert(
+                key(D, "getlastmodified"),
+                format!(
+                    "<d:getlastmodified>{}</d:getlastmodified>",
+                    http_date(modified)
+                ),
+            );
         }
         if let Some(content) = content.filter(|c| !c.is_empty()) {
-            map.insert(key(D, "getcontenttype"), format!("<d:getcontenttype>{}</d:getcontenttype>", if contacts { "text/vcard" } else { "text/calendar" }));
-            map.insert(key(D, "getcontentlength"), format!("<d:getcontentlength>{}</d:getcontentlength>", content.len()));
+            map.insert(
+                key(D, "getcontenttype"),
+                format!(
+                    "<d:getcontenttype>{}</d:getcontenttype>",
+                    if contacts {
+                        "text/vcard"
+                    } else {
+                        "text/calendar"
+                    }
+                ),
+            );
+            map.insert(
+                key(D, "getcontentlength"),
+                format!("<d:getcontentlength>{}</d:getcontentlength>", content.len()),
+            );
             if contacts {
-                map.insert(key(CARDDAV, "address-data"), format!("<a:address-data>{}</a:address-data>", escape(content)));
+                map.insert(
+                    key(CARDDAV, "address-data"),
+                    format!("<a:address-data>{}</a:address-data>", escape(content)),
+                );
             } else {
-                map.insert(key(CALDAV, "calendar-data"), format!("<c:calendar-data>{}</c:calendar-data>", escape(content)));
+                map.insert(
+                    key(CALDAV, "calendar-data"),
+                    format!("<c:calendar-data>{}</c:calendar-data>", escape(content)),
+                );
             }
         }
         if is_collection && let Some(c) = property_collection {
-            let (ns, reports) = if contacts { ("a", ["addressbook-query", "addressbook-multiget"]) } else { ("c", ["calendar-query", "calendar-multiget"]) };
-            let set: String = reports.iter().map(|r| format!("<d:supported-report><d:report><{ns}:{r}/></d:report></d:supported-report>")).collect();
-            map.insert(key(D, "supported-report-set"), format!("<d:supported-report-set>{set}</d:supported-report-set>"));
-            map.insert(key(CALENDARSERVER, "getctag"), format!("<cs:getctag>{}</cs:getctag>", escape(&pim_etag(&c.id, c.revision))));
+            let (ns, reports) = if contacts {
+                ("a", ["addressbook-query", "addressbook-multiget"])
+            } else {
+                ("c", ["calendar-query", "calendar-multiget"])
+            };
+            let set: String = reports
+                .iter()
+                .map(|r| {
+                    format!(
+                        "<d:supported-report><d:report><{ns}:{r}/></d:report></d:supported-report>"
+                    )
+                })
+                .collect();
+            map.insert(
+                key(D, "supported-report-set"),
+                format!("<d:supported-report-set>{set}</d:supported-report-set>"),
+            );
+            map.insert(
+                key(CALENDARSERVER, "getctag"),
+                format!(
+                    "<cs:getctag>{}</cs:getctag>",
+                    escape(&pim_etag(&c.id, c.revision))
+                ),
+            );
             if !contacts {
                 map.insert(key(CALDAV, "supported-calendar-component-set"), "<c:supported-calendar-component-set><c:comp name=\"VEVENT\"/><c:comp name=\"VTODO\"/></c:supported-calendar-component-set>".into());
             }
@@ -142,7 +229,10 @@ impl Context<'_> {
 
 fn response(href: &str, properties: &Props, requested: Option<&[Xml]>) -> String {
     let wanted: Vec<(String, String)> = match requested {
-        Some(nodes) => nodes.iter().map(|n| (n.uri.clone(), n.name.clone())).collect(),
+        Some(nodes) => nodes
+            .iter()
+            .map(|n| (n.uri.clone(), n.name.clone()))
+            .collect(),
         None => properties
             .keys()
             .filter(|k| !k.ends_with("-data"))
@@ -161,7 +251,9 @@ fn response(href: &str, properties: &Props, requested: Option<&[Xml]>) -> String
     }
     let mut out = format!("<d:response><d:href>{}</d:href>", escape(href));
     if !found.is_empty() {
-        out.push_str(&format!("<d:propstat><d:prop>{found}</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>"));
+        out.push_str(&format!(
+            "<d:propstat><d:prop>{found}</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>"
+        ));
     }
     if !missing.is_empty() {
         out.push_str(&format!("<d:propstat><d:prop>{missing}</d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat>"));
@@ -175,7 +267,12 @@ fn multi(responses: Vec<String>) -> Response {
         "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:a=\"{CARDDAV}\" xmlns:c=\"{CALDAV}\" xmlns:cs=\"{CALENDARSERVER}\">{}</d:multistatus>",
         responses.concat()
     );
-    (StatusCode::MULTI_STATUS, [(header::CONTENT_TYPE, "application/xml; charset=utf-8")], body).into_response()
+    (
+        StatusCode::MULTI_STATUS,
+        [(header::CONTENT_TYPE, "application/xml; charset=utf-8")],
+        body,
+    )
+        .into_response()
 }
 
 fn unsupported() -> DavError {
@@ -187,8 +284,14 @@ pub async fn handle(dav: &Dav, request: Request) -> DavResult<Response> {
     let mut response = serve(dav, &request)?;
     let h = response.headers_mut();
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    h.insert("dav", HeaderValue::from_static("1, calendar-access, addressbook"));
-    h.insert(header::ALLOW, HeaderValue::from_static("OPTIONS, PROPFIND, REPORT, GET, HEAD, PUT, DELETE"));
+    h.insert(
+        "dav",
+        HeaderValue::from_static("1, calendar-access, addressbook"),
+    );
+    h.insert(
+        header::ALLOW,
+        HeaderValue::from_static("OPTIONS, PROPFIND, REPORT, GET, HEAD, PUT, DELETE"),
+    );
     Ok(response)
 }
 
@@ -200,13 +303,26 @@ fn serve(dav: &Dav, request: &Request) -> DavResult<Response> {
     let (username, digest) = request.credentials()?;
     let write = matches!(method, "PUT" | "DELETE");
     let pathname = request.path.as_str();
-    let mut kind = if pathname.starts_with("/dav/calendars/") { PimKind::Calendar } else { PimKind::Contacts };
-    let app = |k: PimKind| if k == PimKind::Contacts { App::Contacts } else { App::Calendar };
+    let mut kind = if pathname.starts_with("/dav/calendars/") {
+        PimKind::Calendar
+    } else {
+        PimKind::Contacts
+    };
+    let app = |k: PimKind| {
+        if k == PimKind::Contacts {
+            App::Contacts
+        } else {
+            App::Calendar
+        }
+    };
     let denied = |e: &DavError| e.status == 401 || e.status == 403;
     let discovery = pathname == "/dav/" || pathname.starts_with("/dav/principals/");
     // The generic DAV root also exposes the Files home to WebDAV and SAF mounts.
     let files: Option<Principal> = if discovery {
-        match dav.accounts.authenticate(&username, &digest, App::Files, false) {
+        match dav
+            .accounts
+            .authenticate(&username, &digest, App::Files, false)
+        {
             Ok(p) => Some(p),
             Err(e) if denied(&e) => None,
             Err(e) => return Err(e),
@@ -215,11 +331,17 @@ fn serve(dav: &Dav, request: &Request) -> DavResult<Response> {
         None
     };
     let mut pim_access = true;
-    let principal = match dav.accounts.authenticate(&username, &digest, app(kind), write) {
+    let principal = match dav
+        .accounts
+        .authenticate(&username, &digest, app(kind), write)
+    {
         Ok(p) => p,
         Err(e) if discovery && denied(&e) => {
             kind = PimKind::Calendar;
-            match dav.accounts.authenticate(&username, &digest, App::Calendar, write) {
+            match dav
+                .accounts
+                .authenticate(&username, &digest, App::Calendar, write)
+            {
                 Ok(p) => p,
                 Err(e) if files.is_some() && denied(&e) => {
                     pim_access = false;
@@ -232,17 +354,37 @@ fn serve(dav: &Dav, request: &Request) -> DavResult<Response> {
     };
     let session = principal.session_id.as_str();
     let user = encode_component(&principal.username);
-    let home = format!("/dav/{}/{user}/", if kind == PimKind::Contacts { "addressbooks" } else { "calendars" });
+    let home = format!(
+        "/dav/{}/{user}/",
+        if kind == PimKind::Contacts {
+            "addressbooks"
+        } else {
+            "calendars"
+        }
+    );
     let principal_href = format!("/dav/principals/{user}/");
-    let collections: Vec<Collection> = if pim_access { dav.pim.collections(session)?.into_iter().filter(|c| c.kind == kind).collect() } else { Vec::new() };
+    let collections: Vec<Collection> = if pim_access {
+        dav.pim
+            .collections(session)?
+            .into_iter()
+            .filter(|c| c.kind == kind)
+            .collect()
+    } else {
+        Vec::new()
+    };
     let at_home = pathname == home;
     let at_root = matches!(pathname, "/dav/" | "/dav/addressbooks/" | "/dav/calendars/");
     let at_principal = pathname == principal_href;
-    let tail: Vec<&str> = pathname.strip_prefix(&home).map(|t| t.split('/').filter(|p| !p.is_empty()).collect()).unwrap_or_default();
+    let tail: Vec<&str> = pathname
+        .strip_prefix(&home)
+        .map(|t| t.split('/').filter(|p| !p.is_empty()).collect())
+        .unwrap_or_default();
     if !at_root && !at_principal && !at_home && (tail.is_empty() || tail.len() > 2) {
         return Err(DavError::not_found());
     }
-    let collection = tail.first().and_then(|id| collections.iter().find(|c| c.id == *id));
+    let collection = tail
+        .first()
+        .and_then(|id| collections.iter().find(|c| c.id == *id));
     if !tail.is_empty() && collection.is_none() {
         return Err(DavError::not_found());
     }
@@ -253,18 +395,33 @@ fn serve(dav: &Dav, request: &Request) -> DavResult<Response> {
         None => Vec::new(),
     };
     let resource = href.and_then(|h| items.iter().find(|r| r.href == h));
-    let ctx = Context { kind, principal: principal_href.clone(), user: user.clone(), pim_access, at_principal, collections: &collections };
+    let ctx = Context {
+        kind,
+        principal: principal_href.clone(),
+        user: user.clone(),
+        pim_access,
+        at_principal,
+        collections: &collections,
+    };
 
     let request_xml: Option<Xml> = if matches!(method, "PROPFIND" | "REPORT") {
         if request.body.len() > 262_144 {
             return Err(DavError::new(413, "requestTooLarge"));
         }
-        let text = String::from_utf8(request.body.to_vec()).map_err(|_| DavError::bad("invalidXml"))?;
-        if text.trim().is_empty() { None } else { Some(xml::parse(&text)?) }
+        let text =
+            String::from_utf8(request.body.to_vec()).map_err(|_| DavError::bad("invalidXml"))?;
+        if text.trim().is_empty() {
+            None
+        } else {
+            Some(xml::parse(&text)?)
+        }
     } else {
         None
     };
-    let requested: Option<&[Xml]> = request_xml.as_ref().and_then(|x| x.child(D, "prop")).map(|p| p.children.as_slice());
+    let requested: Option<&[Xml]> = request_xml
+        .as_ref()
+        .and_then(|x| x.child(D, "prop"))
+        .map(|p| p.children.as_slice());
 
     match method {
         "PROPFIND" => {
@@ -275,23 +432,53 @@ fn serve(dav: &Dav, request: &Request) -> DavResult<Response> {
             if href.is_some() && resource.is_none() {
                 return Err(DavError::not_found());
             }
-            let name = resource.map(|r| r.href.clone()).or(collection.map(|c| c.name.clone())).unwrap_or_else(|| principal.username.clone());
-            let row = resource.map(Row::Resource).or(collection.map(Row::Collection));
-            let mut result = vec![response(pathname, &ctx.props(&name, href.is_none(), row), requested)];
-            if pathname == "/dav/" && depth != "0" && let Some(files) = &files {
+            let name = resource
+                .map(|r| r.href.clone())
+                .or(collection.map(|c| c.name.clone()))
+                .unwrap_or_else(|| principal.username.clone());
+            let row = resource
+                .map(Row::Resource)
+                .or(collection.map(Row::Collection));
+            let mut result = vec![response(
+                pathname,
+                &ctx.props(&name, href.is_none(), row),
+                requested,
+            )];
+            if pathname == "/dav/"
+                && depth != "0"
+                && let Some(files) = &files
+            {
                 let mut props = Props::new();
-                props.insert(key(D, "displayname"), "<d:displayname>Files</d:displayname>".into());
-                props.insert(key(D, "resourcetype"), "<d:resourcetype><d:collection/></d:resourcetype>".into());
-                result.push(response(&format!("/dav/files/{}/", encode_component(&files.username)), &props, requested));
+                props.insert(
+                    key(D, "displayname"),
+                    "<d:displayname>Files</d:displayname>".into(),
+                );
+                props.insert(
+                    key(D, "resourcetype"),
+                    "<d:resourcetype><d:collection/></d:resourcetype>".into(),
+                );
+                result.push(response(
+                    &format!("/dav/files/{}/", encode_component(&files.username)),
+                    &props,
+                    requested,
+                ));
             }
             if depth != "0" && href.is_none() {
                 if collection.is_some() {
                     for row in &items {
-                        result.push(response(&format!("{path}{}", row.href), &ctx.props(&row.href, false, Some(Row::Resource(row))), requested));
+                        result.push(response(
+                            &format!("{path}{}", row.href),
+                            &ctx.props(&row.href, false, Some(Row::Resource(row))),
+                            requested,
+                        ));
                     }
                 } else if at_home {
                     for c in &collections {
-                        result.push(response(&format!("{home}{}/", c.id), &ctx.props(&c.name, true, Some(Row::Collection(c))), requested));
+                        result.push(response(
+                            &format!("{home}{}/", c.id),
+                            &ctx.props(&c.name, true, Some(Row::Collection(c))),
+                            requested,
+                        ));
                     }
                 }
             }
@@ -301,16 +488,29 @@ fn serve(dav: &Dav, request: &Request) -> DavResult<Response> {
             let (Some(_), None, Some(report)) = (collection, href, request_xml.as_ref()) else {
                 return Err(DavError::new(403, "invalidReport"));
             };
-            let (ns, prefix) = if kind == PimKind::Contacts { (CARDDAV, "addressbook") } else { (CALDAV, "calendar") };
-            if report.uri != ns || (report.name != format!("{prefix}-query") && report.name != format!("{prefix}-multiget")) {
+            let (ns, prefix) = if kind == PimKind::Contacts {
+                (CARDDAV, "addressbook")
+            } else {
+                (CALDAV, "calendar")
+            };
+            if report.uri != ns
+                || (report.name != format!("{prefix}-query")
+                    && report.name != format!("{prefix}-multiget"))
+            {
                 return Err(DavError::new(403, "unsupportedReport"));
             }
             if report.name.ends_with("multiget") {
-                let base = url::Url::parse(&dav.origin).map_err(|_| DavError::bad("invalidHref"))?;
+                let base =
+                    url::Url::parse(&dav.origin).map_err(|_| DavError::bad("invalidHref"))?;
                 let mut responses = Vec::new();
                 for node in report.children(D, "href") {
-                    let target = base.join(node.text.trim()).map_err(|_| DavError::bad("invalidHref"))?;
-                    let name = target.path().strip_prefix(path.as_str()).filter(|n| !n.contains('/'));
+                    let target = base
+                        .join(node.text.trim())
+                        .map_err(|_| DavError::bad("invalidHref"))?;
+                    let name = target
+                        .path()
+                        .strip_prefix(path.as_str())
+                        .filter(|n| !n.contains('/'));
                     let Some(name) = name.filter(|_| target.origin() == base.origin()) else {
                         return Err(DavError::bad("invalidHref"));
                     };
@@ -323,9 +523,23 @@ fn serve(dav: &Dav, request: &Request) -> DavResult<Response> {
             }
             let mut rows: Vec<&Resource> = items.iter().collect();
             if let Some(filter) = report.child(ns, "filter") {
-                rows = if kind == PimKind::Contacts { contact_filter(filter, rows)? } else { calendar_filter(filter, rows)? };
+                rows = if kind == PimKind::Contacts {
+                    contact_filter(filter, rows)?
+                } else {
+                    calendar_filter(filter, rows)?
+                };
             }
-            Ok(multi(rows.into_iter().map(|row| response(&format!("{path}{}", row.href), &ctx.props(&row.href, false, Some(Row::Resource(row))), requested)).collect()))
+            Ok(multi(
+                rows.into_iter()
+                    .map(|row| {
+                        response(
+                            &format!("{path}{}", row.href),
+                            &ctx.props(&row.href, false, Some(Row::Resource(row))),
+                            requested,
+                        )
+                    })
+                    .collect(),
+            ))
         }
         _ => {
             let (Some(collection), Some(href)) = (collection, href) else {
@@ -334,10 +548,29 @@ fn serve(dav: &Dav, request: &Request) -> DavResult<Response> {
             match method {
                 "GET" | "HEAD" => {
                     let resource = resource.ok_or(DavError::not_found())?;
-                    let content_type = if kind == PimKind::Contacts { "text/vcard; charset=utf-8" } else { "text/calendar; charset=utf-8" };
-                    let body = if method == "HEAD" { String::new() } else { resource.content.clone() };
-                    let mut r = (StatusCode::OK, [(header::CONTENT_TYPE, content_type.to_owned()), (header::ETAG, pim_etag(&resource.id, resource.revision))], body).into_response();
-                    r.headers_mut().insert(header::CONTENT_LENGTH, HeaderValue::from(resource.content.len()));
+                    let content_type = if kind == PimKind::Contacts {
+                        "text/vcard; charset=utf-8"
+                    } else {
+                        "text/calendar; charset=utf-8"
+                    };
+                    let body = if method == "HEAD" {
+                        String::new()
+                    } else {
+                        resource.content.clone()
+                    };
+                    let mut r = (
+                        StatusCode::OK,
+                        [
+                            (header::CONTENT_TYPE, content_type.to_owned()),
+                            (header::ETAG, pim_etag(&resource.id, resource.revision)),
+                        ],
+                        body,
+                    )
+                        .into_response();
+                    r.headers_mut().insert(
+                        header::CONTENT_LENGTH,
+                        HeaderValue::from(resource.content.len()),
+                    );
                     Ok(r)
                 }
                 "PUT" => {
@@ -345,9 +578,14 @@ fn serve(dav: &Dav, request: &Request) -> DavResult<Response> {
                     if request.body.len() > 262_144 {
                         return Err(DavError::new(413, "requestTooLarge"));
                     }
-                    let content = String::from_utf8(request.body.to_vec()).map_err(|_| DavError::bad("invalidInput"))?;
+                    let content = String::from_utf8(request.body.to_vec())
+                        .map_err(|_| DavError::bad("invalidInput"))?;
                     let row = dav.pim.put(session, collection, href, &content, revision)?;
-                    let status = if resource.is_some() { StatusCode::NO_CONTENT } else { StatusCode::CREATED };
+                    let status = if resource.is_some() {
+                        StatusCode::NO_CONTENT
+                    } else {
+                        StatusCode::CREATED
+                    };
                     Ok((status, [(header::ETAG, pim_etag(&row.id, row.revision))]).into_response())
                 }
                 "DELETE" => {
@@ -367,7 +605,11 @@ const MATCH_TYPES: [&str; 4] = ["contains", "equals", "starts-with", "ends-with"
 
 fn contact_filter<'a>(filter: &Xml, rows: Vec<&'a Resource>) -> DavResult<Vec<&'a Resource>> {
     let filters: Vec<&Xml> = filter.children(CARDDAV, "prop-filter").collect();
-    if filter.children.len() != filters.len() || filter.attr("test").is_some_and(|t| t != "anyof" && t != "allof") {
+    if filter.children.len() != filters.len()
+        || filter
+            .attr("test")
+            .is_some_and(|t| t != "anyof" && t != "allof")
+    {
         return Err(unsupported());
     }
     for f in &filters {
@@ -377,13 +619,20 @@ fn contact_filter<'a>(filter: &Xml, rows: Vec<&'a Resource>) -> DavResult<Vec<&'
         }
         let absent = f.children(CARDDAV, "is-not-defined").count();
         let tests: Vec<&Xml> = f.children(CARDDAV, "text-match").collect();
-        if if absent > 0 { f.children.len() != 1 } else { f.children.len() != tests.len() } {
+        if if absent > 0 {
+            f.children.len() != 1
+        } else {
+            f.children.len() != tests.len()
+        } {
             return Err(unsupported());
         }
         for t in tests {
-            if t.attr("collation").is_some_and(|c| !COLLATIONS.contains(&c))
-                || t.attr("match-type").is_some_and(|m| !MATCH_TYPES.contains(&m))
-                || t.attr("negate-condition").is_some_and(|n| n != "yes" && n != "no")
+            if t.attr("collation")
+                .is_some_and(|c| !COLLATIONS.contains(&c))
+                || t.attr("match-type")
+                    .is_some_and(|m| !MATCH_TYPES.contains(&m))
+                || t.attr("negate-condition")
+                    .is_some_and(|n| n != "yes" && n != "no")
             {
                 return Err(unsupported());
             }
@@ -397,7 +646,8 @@ fn contact_filter<'a>(filter: &Xml, rows: Vec<&'a Resource>) -> DavResult<Vec<&'
             .iter()
             .map(|f| {
                 let name = f.attr("name").unwrap_or("").to_ascii_uppercase();
-                let values: Vec<String> = card.props_named(&name).flat_map(|p| p.values()).collect();
+                let values: Vec<String> =
+                    card.props_named(&name).flat_map(|p| p.values()).collect();
                 if f.child(CARDDAV, "is-not-defined").is_some() {
                     return values.is_empty();
                 }
@@ -417,11 +667,19 @@ fn contact_filter<'a>(filter: &Xml, rows: Vec<&'a Resource>) -> DavResult<Vec<&'
                             _ => text.contains(&wanted),
                         }
                     });
-                    if t.attr("negate-condition") == Some("yes") { !matched } else { matched }
+                    if t.attr("negate-condition") == Some("yes") {
+                        !matched
+                    } else {
+                        matched
+                    }
                 })
             })
             .collect();
-        if if any { results.iter().any(|r| *r) } else { results.iter().all(|r| *r) } {
+        if if any {
+            results.iter().any(|r| *r)
+        } else {
+            results.iter().all(|r| *r)
+        } {
             kept.push(row);
         }
     }
@@ -429,9 +687,15 @@ fn contact_filter<'a>(filter: &Xml, rows: Vec<&'a Resource>) -> DavResult<Vec<&'
 }
 
 fn calendar_filter<'a>(filter: &Xml, rows: Vec<&'a Resource>) -> DavResult<Vec<&'a Resource>> {
-    let root = filter.child(CALDAV, "comp-filter").ok_or_else(unsupported)?;
+    let root = filter
+        .child(CALDAV, "comp-filter")
+        .ok_or_else(unsupported)?;
     let components: Vec<&Xml> = root.children(CALDAV, "comp-filter").collect();
-    if filter.children.len() != 1 || root.children.len() != components.len() || root.attr("name") != Some("VCALENDAR") || components.len() != 1 {
+    if filter.children.len() != 1
+        || root.children.len() != components.len()
+        || root.attr("name") != Some("VCALENDAR")
+        || components.len() != 1
+    {
         return Err(unsupported());
     }
     let component = components[0];
@@ -447,29 +711,55 @@ fn calendar_filter<'a>(filter: &Xml, rows: Vec<&'a Resource>) -> DavResult<Vec<&
     let parsed: Vec<(&Resource, Component)> = rows
         .into_iter()
         .filter(|r| ical::is_task(&r.content) == (name == "VTODO"))
-        .map(|r| ical::parse(&r.content, "VCALENDAR").map(|c| (r, c)).map_err(|_| DavError::bad("invalidInput")))
+        .map(|r| {
+            ical::parse(&r.content, "VCALENDAR")
+                .map(|c| (r, c))
+                .map_err(|_| DavError::bad("invalidInput"))
+        })
         .collect::<DavResult<_>>()?;
     let mut kept: Vec<(&Resource, Component)> = parsed;
     for property in properties {
         let prop = property.attr("name").unwrap_or("").to_ascii_uppercase();
         let absent = property.child(CALDAV, "is-not-defined");
         let text = property.child(CALDAV, "text-match");
-        let expected_children = if absent.is_some() || text.is_some() { 1 } else { 0 };
+        let expected_children = if absent.is_some() || text.is_some() {
+            1
+        } else {
+            0
+        };
         let collation = text.and_then(|t| t.attr("collation"));
-        if prop.is_empty() || property.children.len() != expected_children || collation.is_some_and(|c| !["i;ascii-casemap", "i;unicode-casemap", "i;octet"].contains(&c)) {
+        if prop.is_empty()
+            || property.children.len() != expected_children
+            || collation
+                .is_some_and(|c| !["i;ascii-casemap", "i;unicode-casemap", "i;octet"].contains(&c))
+        {
             return Err(unsupported());
         }
         kept.retain(|(_, root)| {
-            let values: Vec<String> = root.components(name).flat_map(|c| c.props_named(&prop).map(|p| p.value.clone())).collect();
+            let values: Vec<String> = root
+                .components(name)
+                .flat_map(|c| c.props_named(&prop).map(|p| p.value.clone()))
+                .collect();
             if absent.is_some() {
                 return values.is_empty();
             }
             let Some(text) = text else {
                 return !values.is_empty();
             };
-            let fold = |v: &str| if collation == Some("i;octet") { v.to_owned() } else { v.to_lowercase() };
+            let fold = |v: &str| {
+                if collation == Some("i;octet") {
+                    v.to_owned()
+                } else {
+                    v.to_lowercase()
+                }
+            };
             let matched = values.iter().any(|v| fold(v).contains(&fold(&text.text)));
-            !values.is_empty() && if text.attr("negate-condition") == Some("yes") { !matched } else { matched }
+            !values.is_empty()
+                && if text.attr("negate-condition") == Some("yes") {
+                    !matched
+                } else {
+                    matched
+                }
         });
     }
     if let Some(range) = range {

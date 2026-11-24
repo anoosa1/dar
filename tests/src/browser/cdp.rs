@@ -42,7 +42,11 @@ impl Connection {
             sessions: Arc::default(),
             browser: Arc::default(),
         });
-        let (pending, sessions, browser) = (connection.pending.clone(), connection.sessions.clone(), connection.browser.clone());
+        let (pending, sessions, browser) = (
+            connection.pending.clone(),
+            connection.sessions.clone(),
+            connection.browser.clone(),
+        );
         std::thread::Builder::new()
             .name("cdp-reader".into())
             .spawn(move || {
@@ -57,12 +61,27 @@ impl Connection {
                     if buffer.last() == Some(&0) {
                         buffer.pop();
                     }
-                    let Ok(message) = serde_json::from_slice::<Value>(&buffer) else { continue };
+                    let Ok(message) = serde_json::from_slice::<Value>(&buffer) else {
+                        continue;
+                    };
                     if let Some(id) = message.get("id").and_then(Value::as_u64) {
-                        let Some(reply) = pending.lock().unwrap().remove(&id) else { continue };
+                        let Some(reply) = pending.lock().unwrap().remove(&id) else {
+                            continue;
+                        };
                         let result = match message.get("error") {
-                            Some(error) => Err(Error::new(format!("{}", error.get("message").and_then(Value::as_str).unwrap_or("protocol error")))
-                                .context(error.get("data").and_then(Value::as_str).unwrap_or_default())),
+                            Some(error) => Err(Error::new(format!(
+                                "{}",
+                                error
+                                    .get("message")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("protocol error")
+                            ))
+                            .context(
+                                error
+                                    .get("data")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default(),
+                            )),
                             None => Ok(message.get("result").cloned().unwrap_or(Value::Null)),
                         };
                         let _ = reply.send(result);
@@ -71,7 +90,10 @@ impl Connection {
                     let event = Event {
                         method: message["method"].as_str().unwrap_or_default().to_owned(),
                         params: message.get("params").cloned().unwrap_or(Value::Null),
-                        session: message.get("sessionId").and_then(Value::as_str).map(str::to_owned),
+                        session: message
+                            .get("sessionId")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
                     };
                     match &event.session {
                         Some(session) => {
@@ -79,7 +101,10 @@ impl Connection {
                                 let _ = sender.send(event);
                             }
                         }
-                        None => browser.lock().unwrap().retain(|sender| sender.send(event.clone()).is_ok()),
+                        None => browser
+                            .lock()
+                            .unwrap()
+                            .retain(|sender| sender.send(event.clone()).is_ok()),
                     }
                 }
                 // The browser went away: fail whatever still waits for a reply.
@@ -113,14 +138,19 @@ impl Connection {
             Ok(Err(_)) => Err(Error::new(format!("{method}: the browser closed"))),
             Err(_) => {
                 self.pending.lock().unwrap().remove(&id);
-                Err(Error::new(format!("{method}: no reply in {COMMAND_TIMEOUT:?}")))
+                Err(Error::new(format!(
+                    "{method}: no reply in {COMMAND_TIMEOUT:?}"
+                )))
             }
         }
     }
 
     pub fn subscribe_session(&self, session: &str) -> mpsc::UnboundedReceiver<Event> {
         let (sender, receiver) = mpsc::unbounded_channel();
-        self.sessions.lock().unwrap().insert(session.to_owned(), sender);
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(session.to_owned(), sender);
         receiver
     }
 

@@ -41,7 +41,11 @@ impl Error {
     /// Prefixes what was being done: "logging in: connection refused".
     pub fn context(self, context: impl fmt::Display) -> Self {
         let context = context.to_string();
-        if context.is_empty() { self } else { Error(format!("{context}: {}", self.0)) }
+        if context.is_empty() {
+            self
+        } else {
+            Error(format!("{context}: {}", self.0))
+        }
     }
 }
 
@@ -137,7 +141,14 @@ pub fn uuid() -> String {
     b[6] = (b[6] & 0x0f) | 0x40;
     b[8] = (b[8] & 0x3f) | 0x80;
     let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
-    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
 }
 
 /// Base64url without padding, as Node's `toString("base64url")`.
@@ -153,16 +164,27 @@ pub fn base64(bytes: &[u8]) -> String {
 
 pub fn sha256_hex(bytes: impl AsRef<[u8]>) -> String {
     use sha2::Digest as _;
-    sha2::Sha256::digest(bytes.as_ref()).iter().map(|b| format!("{b:02x}")).collect()
+    sha2::Sha256::digest(bytes.as_ref())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// An executable on PATH.
 pub fn which(name: &str) -> Option<PathBuf> {
-    std::env::var_os("PATH").and_then(|paths| std::env::split_paths(&paths).map(|dir| dir.join(name)).find(|path| path.is_file()))
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(name))
+            .find(|path| path.is_file())
+    })
 }
 
 /// Waits until `check` returns `Some`, polling every 50 ms, or fails after `timeout`.
-pub async fn eventually<T, F, Fut>(timeout: std::time::Duration, what: &str, mut check: F) -> Result<T>
+pub async fn eventually<T, F, Fut>(
+    timeout: std::time::Duration,
+    what: &str,
+    mut check: F,
+) -> Result<T>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<Option<T>>>,
@@ -176,7 +198,11 @@ where
             Err(error) => last = Some(error),
         }
         if std::time::Instant::now() > deadline {
-            bail!("{what} did not happen within {timeout:?}{}", last.map(|e| format!(" (last error: {e})")).unwrap_or_default());
+            bail!(
+                "{what} did not happen within {timeout:?}{}",
+                last.map(|e| format!(" (last error: {e})"))
+                    .unwrap_or_default()
+            );
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
@@ -192,15 +218,22 @@ pub fn read_to_string(path: impl AsRef<Path>) -> Result<String> {
 /// bindings' table and reducer traits, so `db.db.my_files()` and `db.reducers.browse_then(…)`
 /// resolve.
 pub mod prelude {
-    pub use crate::browser::{Browser, ClickOptions, Context as BrowserContext, ContextOptions, FilePayload, Fulfill, Locator, Page, State, contains, regex};
-    pub use crate::instance::{self, Instance, InstanceConfig};
-    pub use crate::live::{self, Live, procedure, reducer};
-    pub use crate::session::{self, PASSWORD, Reply, Session, login, login_as, upload, upload_with};
-    pub use crate::support::{self, Database};
+    pub use crate::browser::{
+        Browser, ClickOptions, Context as BrowserContext, ContextOptions, FilePayload, Fulfill,
+        Locator, Page, State, contains, regex,
+    };
     pub use crate::case;
     pub use crate::harness::Suite;
     pub use crate::identity::{CookieJar, IdentityAdmin, follow};
-    pub use crate::{Ctx, Error, Result, ResultExt, Value, bail, ensure, eventually, json, ui, uuid};
+    pub use crate::instance::{self, Instance, InstanceConfig};
+    pub use crate::live::{self, Live, procedure, reducer};
+    pub use crate::session::{
+        self, PASSWORD, Reply, Session, login, login_as, upload, upload_with,
+    };
+    pub use crate::support::{self, Database};
+    pub use crate::{
+        Ctx, Error, Result, ResultExt, Value, bail, ensure, eventually, json, ui, uuid,
+    };
     pub use dar_bindings::*;
     pub use spacetimedb_sdk::{DbContext as _, Table as _, TableWithPrimaryKey as _};
 }

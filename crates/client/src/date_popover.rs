@@ -12,7 +12,11 @@ use crate::ui::{Select, unique_id};
 /// `date` plus `days`, as civil dates (`add`).
 pub fn add_days(date: &str, days: i64) -> String {
     let ms = js_sys::Date::parse(&format!("{date}T12:00:00Z")) + days as f64 * 86_400_000.0;
-    js_sys::Date::new(&JsValue::from_f64(ms)).to_iso_string().as_string().unwrap_or_default()[..10].to_owned()
+    js_sys::Date::new(&JsValue::from_f64(ms))
+        .to_iso_string()
+        .as_string()
+        .unwrap_or_default()[..10]
+        .to_owned()
 }
 
 /// A civil date formatted in UTC (`format`).
@@ -23,7 +27,10 @@ pub fn format_date(date: &str, options: &[(&str, &str)]) -> String {
 }
 
 fn weekday(date: &str) -> u32 {
-    js_sys::Date::new(&JsValue::from_f64(js_sys::Date::parse(&format!("{date}T12:00:00Z")))).get_utc_day()
+    js_sys::Date::new(&JsValue::from_f64(js_sys::Date::parse(&format!(
+        "{date}T12:00:00Z"
+    ))))
+    .get_utc_day()
 }
 
 /// Moves a date by a view's period (`shiftCalendarDate`).
@@ -35,11 +42,26 @@ pub fn shift(anchor: &str, view: &str, direction: i64) -> String {
     if view == "month" {
         let total = parts[0] as i64 * 12 + parts[1] as i64 - 1 + direction;
         let (year, month) = (total.div_euclid(12), total.rem_euclid(12) + 1);
-        let last = js_sys::Date::new(&JsValue::from_f64(js_sys::Date::utc(year as f64, month as f64))).get_time() - 86_400_000.0;
+        let last = js_sys::Date::new(&JsValue::from_f64(js_sys::Date::utc(
+            year as f64,
+            month as f64,
+        )))
+        .get_time()
+            - 86_400_000.0;
         let last_day = js_sys::Date::new(&JsValue::from_f64(last)).get_utc_date();
         return format!("{year:04}-{month:02}-{:02}", parts[2].min(last_day));
     }
-    add_days(anchor, direction * if view == "day" { 1 } else if view == "agenda" { 30 } else { 7 })
+    add_days(
+        anchor,
+        direction
+            * if view == "day" {
+                1
+            } else if view == "agenda" {
+                30
+            } else {
+                7
+            },
+    )
 }
 
 /// A six-week grid of civil dates with roving focus (`MonthGrid`).
@@ -58,7 +80,9 @@ fn MonthGrid(
     let dates = Memo::new(move |_| {
         let m = month.get();
         let offset = (weekday(&m) + 7 - week_start.get()) % 7;
-        (0..42).map(|i| add_days(&m, i - offset as i64)).collect::<Vec<_>>()
+        (0..42)
+            .map(|i| add_days(&m, i - offset as i64))
+            .collect::<Vec<_>>()
     });
     let column = move |date: &str| (weekday(date) + 7 - week_start.get_untracked()) % 7;
     view! {
@@ -110,14 +134,26 @@ fn MonthGrid(
 }
 
 fn focus_date(root: Option<web_sys::Element>, date: &str) {
-    if let Some(button) = root.and_then(|r| r.query_selector(&format!("[data-date=\"{date}\"]")).ok().flatten()).and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok()) {
+    if let Some(button) = root
+        .and_then(|r| {
+            r.query_selector(&format!("[data-date=\"{date}\"]"))
+                .ok()
+                .flatten()
+        })
+        .and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok())
+    {
         let _ = button.focus();
     }
 }
 
 /// The themed date navigation control (`DatePopover`).
 #[component]
-pub fn DatePopover(#[prop(into)] value: Signal<String>, #[prop(into)] today: Signal<String>, #[prop(into)] week_start: Signal<u32>, on_change: Callback<String>) -> impl IntoView {
+pub fn DatePopover(
+    #[prop(into)] value: Signal<String>,
+    #[prop(into)] today: Signal<String>,
+    #[prop(into)] week_start: Signal<u32>,
+    on_change: Callback<String>,
+) -> impl IntoView {
     let id = unique_id();
     let panel = NodeRef::<html::Div>::new();
     let trigger = NodeRef::<html::Button>::new();
@@ -140,7 +176,9 @@ pub fn DatePopover(#[prop(into)] value: Signal<String>, #[prop(into)] today: Sig
         }
     };
     let select = move |date: String| {
-        { on_change.try_run(date); };
+        {
+            on_change.try_run(date);
+        };
         close();
     };
     let move_to = Callback::new(move |date: String| {
@@ -152,9 +190,26 @@ pub fn DatePopover(#[prop(into)] value: Signal<String>, #[prop(into)] today: Sig
         if v == t {
             return "Today".to_owned();
         }
-        if v[..4] != t[..4] { format_date(&v, &[("month", "short"), ("day", "numeric"), ("year", "numeric")]) } else { format_date(&v, &[("month", "short"), ("day", "numeric")]) }
+        if v[..4] != t[..4] {
+            format_date(
+                &v,
+                &[("month", "short"), ("day", "numeric"), ("year", "numeric")],
+            )
+        } else {
+            format_date(&v, &[("month", "short"), ("day", "numeric")])
+        }
     };
-    let months: Vec<(String, String)> = (0..12).map(|i| (i.to_string(), local_date(js_sys::Date::utc(2026.0, i as f64), &[("month", "long"), ("timeZone", "UTC")]))).collect();
+    let months: Vec<(String, String)> = (0..12)
+        .map(|i| {
+            (
+                i.to_string(),
+                local_date(
+                    js_sys::Date::utc(2026.0, i as f64),
+                    &[("month", "long"), ("timeZone", "UTC")],
+                ),
+            )
+        })
+        .collect();
     let month_index = RwSignal::new(String::new());
     let year = RwSignal::new(String::new());
     Effect::new(move |_| {
@@ -163,7 +218,10 @@ pub fn DatePopover(#[prop(into)] value: Signal<String>, #[prop(into)] today: Sig
         year.set(m[..4].trim_start_matches('0').to_owned());
     });
     let base_year: i32 = value.get_untracked()[..4].parse().unwrap_or(2026);
-    let years: Vec<(String, String)> = (base_year - 100..=base_year + 100).filter(|y| (1..=9999).contains(y)).map(|y| (y.to_string(), y.to_string())).collect();
+    let years: Vec<(String, String)> = (base_year - 100..=base_year + 100)
+        .filter(|y| (1..=9999).contains(y))
+        .map(|y| (y.to_string(), y.to_string()))
+        .collect();
     view! {
         <button node_ref=trigger type="button" class="text-button calendar-anchor date-popover-trigger" aria-label="Choose date" aria-haspopup="dialog" aria-expanded=move || open.get().to_string() aria-controls=id.clone() popovertarget=id.clone() data-date=move || value.get()>{label}<Icon name="chevron"/></button>
         <div id=id.clone() node_ref=panel popover="auto" role="dialog" aria-label="Choose calendar date" class="date-popover"
@@ -190,7 +248,13 @@ pub fn DatePopover(#[prop(into)] value: Signal<String>, #[prop(into)] today: Sig
 
 /// The sidebar month: follows the anchor and highlights the visible range (`MiniMonth`).
 #[component]
-pub fn MiniMonth(#[prop(into)] value: Signal<String>, #[prop(into)] today: Signal<String>, #[prop(into)] week_start: Signal<u32>, #[prop(into)] range: Signal<Option<Vec<String>>>, on_change: Callback<String>) -> impl IntoView {
+pub fn MiniMonth(
+    #[prop(into)] value: Signal<String>,
+    #[prop(into)] today: Signal<String>,
+    #[prop(into)] week_start: Signal<u32>,
+    #[prop(into)] range: Signal<Option<Vec<String>>>,
+    on_change: Callback<String>,
+) -> impl IntoView {
     let month = RwSignal::new(format!("{}-01", &value.get_untracked()[..7]));
     let focused = RwSignal::new(value.get_untracked());
     let root = NodeRef::<html::Div>::new();

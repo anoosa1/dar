@@ -71,24 +71,58 @@ struct Query {
 }
 
 fn parse(source: &str) -> Result<Query, String> {
-    let mut query = Query { limit: 50, ..Query::default() };
+    let mut query = Query {
+        limit: 50,
+        ..Query::default()
+    };
     for (number, raw) in source.lines().enumerate() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with("//") {
             continue;
         }
-        let Some((key, value)) = line.split_once(':') else { return Err(format!("Line {}: write `name: value`.", number + 1)) };
+        let Some((key, value)) = line.split_once(':') else {
+            return Err(format!("Line {}: write `name: value`.", number + 1));
+        };
         let value = value.trim();
         match key.trim().to_lowercase().as_str() {
-            "tag" | "tags" => query.tags.extend(value.split([' ', ',']).map(|t| t.trim().trim_start_matches('#')).filter(|t| !t.is_empty()).map(str::to_owned)),
+            "tag" | "tags" => query.tags.extend(
+                value
+                    .split([' ', ','])
+                    .map(|t| t.trim().trim_start_matches('#'))
+                    .filter(|t| !t.is_empty())
+                    .map(str::to_owned),
+            ),
             "folder" => query.folder = Some(value.trim_matches('/').to_owned()),
             "text" => query.text = Some(value.to_lowercase()),
             "where" => {
-                let ops = [(" contains ", Op::Contains), ("!=", Op::Ne), (">=", Op::Ge), ("<=", Op::Le), ("=", Op::Eq), (">", Op::Gt), ("<", Op::Lt)];
-                let found = ops.iter().find_map(|(token, op)| value.split_once(token).map(|(f, v)| (f.trim().to_lowercase(), *op, v.trim().trim_matches('"').to_owned())));
+                let ops = [
+                    (" contains ", Op::Contains),
+                    ("!=", Op::Ne),
+                    (">=", Op::Ge),
+                    ("<=", Op::Le),
+                    ("=", Op::Eq),
+                    (">", Op::Gt),
+                    ("<", Op::Lt),
+                ];
+                let found = ops.iter().find_map(|(token, op)| {
+                    value.split_once(token).map(|(f, v)| {
+                        (
+                            f.trim().to_lowercase(),
+                            *op,
+                            v.trim().trim_matches('"').to_owned(),
+                        )
+                    })
+                });
                 match found {
-                    Some((field, op, wanted)) if !field.is_empty() => query.filters.push((field, op, wanted)),
-                    _ => return Err(format!("Line {}: write `where: field = value`.", number + 1)),
+                    Some((field, op, wanted)) if !field.is_empty() => {
+                        query.filters.push((field, op, wanted))
+                    }
+                    _ => {
+                        return Err(format!(
+                            "Line {}: write `where: field = value`.",
+                            number + 1
+                        ));
+                    }
                 }
             }
             "sort" => {
@@ -102,10 +136,26 @@ fn parse(source: &str) -> Result<Query, String> {
                 };
                 query.sort = Some((field.to_lowercase(), desc));
             }
-            "show" => query.show = value.split(',').map(|f| f.trim().to_owned()).filter(|f| !f.is_empty()).collect(),
+            "show" => {
+                query.show = value
+                    .split(',')
+                    .map(|f| f.trim().to_owned())
+                    .filter(|f| !f.is_empty())
+                    .collect()
+            }
             "view" => query.list = value.eq_ignore_ascii_case("list"),
-            "limit" => query.limit = value.parse::<usize>().map_err(|_| format!("Line {}: the limit is a number.", number + 1))?.clamp(1, 200),
-            other => return Err(format!("Line {}: \u{201c}{other}\u{201d} is not a query condition.", number + 1)),
+            "limit" => {
+                query.limit = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("Line {}: the limit is a number.", number + 1))?
+                    .clamp(1, 200)
+            }
+            other => {
+                return Err(format!(
+                    "Line {}: \u{201c}{other}\u{201d} is not a query condition.",
+                    number + 1
+                ));
+            }
         }
     }
     Ok(query)
@@ -120,7 +170,12 @@ fn values(note: &NotesFile, field: &str) -> Vec<String> {
     match field {
         "title" => vec![note.title.clone()],
         "file.name" => vec![note.name.clone()],
-        "file.basename" => vec![note.name.rsplit_once('.').map_or(note.name.as_str(), |(stem, _)| stem).to_owned()],
+        "file.basename" => vec![
+            note.name
+                .rsplit_once('.')
+                .map_or(note.name.as_str(), |(stem, _)| stem)
+                .to_owned(),
+        ],
         "folder" => vec![folder_of(&note.path).to_owned()],
         "path" => vec![note.path.clone()],
         "tags" | "tag" => note.tags.clone(),
@@ -129,9 +184,20 @@ fn values(note: &NotesFile, field: &str) -> Vec<String> {
             vec![date]
         }
         _ => {
-            let found = note.properties.iter().find(|(k, _)| k.to_lowercase() == field).map(|(_, v)| v);
+            let found = note
+                .properties
+                .iter()
+                .find(|(k, _)| k.to_lowercase() == field)
+                .map(|(_, v)| v);
             match found {
-                Some(Value::Array(items)) => items.iter().map(|i| i.as_str().map(str::to_owned).unwrap_or_else(|| i.to_string())).collect(),
+                Some(Value::Array(items)) => items
+                    .iter()
+                    .map(|i| {
+                        i.as_str()
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| i.to_string())
+                    })
+                    .collect(),
                 Some(Value::String(s)) if !s.is_empty() => vec![s.clone()],
                 Some(Value::String(_)) | None | Some(Value::Null) => Vec::new(),
                 Some(other) => vec![other.to_string()],
@@ -143,7 +209,12 @@ fn values(note: &NotesFile, field: &str) -> Vec<String> {
 #[cfg(target_arch = "wasm32")]
 fn js_date(ms: f64) -> String {
     let d = js_sys::Date::new(&ms.into());
-    format!("{:04}-{:02}-{:02}", d.get_full_year(), d.get_month() + 1, d.get_date())
+    format!(
+        "{:04}-{:02}-{:02}",
+        d.get_full_year(),
+        d.get_month() + 1,
+        d.get_date()
+    )
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -173,7 +244,9 @@ fn matches(note: &NotesFile, field: &str, op: Op, wanted: &str) -> bool {
     let found = values(note, field);
     match op {
         Op::Ne => !found.iter().any(|v| compare(v, wanted) == Ordering::Equal),
-        Op::Contains => found.iter().any(|v| v.to_lowercase().contains(&wanted.to_lowercase())),
+        Op::Contains => found
+            .iter()
+            .any(|v| v.to_lowercase().contains(&wanted.to_lowercase())),
         _ => found.iter().any(|v| {
             let order = compare(v, wanted);
             match op {
@@ -189,7 +262,11 @@ fn matches(note: &NotesFile, field: &str, op: Op, wanted: &str) -> bool {
 }
 
 fn in_folder(note: &NotesFile, folder: &str) -> bool {
-    folder.is_empty() || note.path.to_lowercase().starts_with(&format!("{}/", folder.to_lowercase()))
+    folder.is_empty()
+        || note
+            .path
+            .to_lowercase()
+            .starts_with(&format!("{}/", folder.to_lowercase()))
 }
 
 fn eval(note: &NotesFile, cond: &Cond) -> bool {
@@ -206,10 +283,19 @@ fn eval(note: &NotesFile, cond: &Cond) -> bool {
 
 /// Runs a query block (or a base) over the library; the note holding it is left out.
 pub fn run(index: &NoteIndex, source_id: &str, source: &str) -> QueryOutput {
-    let parsed = if is_base(source) { Ok(base::parse(source)) } else { parse(source) };
+    let parsed = if is_base(source) {
+        Ok(base::parse(source))
+    } else {
+        parse(source)
+    };
     let query = match parsed {
         Ok(q) => q,
-        Err(error) => return QueryOutput { error: Some(error), ..QueryOutput::default() },
+        Err(error) => {
+            return QueryOutput {
+                error: Some(error),
+                ..QueryOutput::default()
+            };
+        }
     };
     let mut hits: Vec<usize> = (0..index.notes.len())
         .filter(|&i| {
@@ -217,14 +303,24 @@ pub fn run(index: &NoteIndex, source_id: &str, source: &str) -> QueryOutput {
             note.id != source_id
                 && query.tags.iter().all(|t| has_tag(note, t))
                 && query.folder.as_ref().is_none_or(|f| in_folder(note, f))
-                && query.text.as_ref().is_none_or(|t| note.title.to_lowercase().contains(t) || note.name.to_lowercase().contains(t) || note.aliases.iter().any(|a| a.to_lowercase().contains(t)))
-                && query.filters.iter().all(|(field, op, wanted)| matches(note, field, *op, wanted))
+                && query.text.as_ref().is_none_or(|t| {
+                    note.title.to_lowercase().contains(t)
+                        || note.name.to_lowercase().contains(t)
+                        || note.aliases.iter().any(|a| a.to_lowercase().contains(t))
+                })
+                && query
+                    .filters
+                    .iter()
+                    .all(|(field, op, wanted)| matches(note, field, *op, wanted))
                 && query.conds.iter().all(|c| eval(note, c))
         })
         .collect();
     match &query.sort {
         Some((field, desc)) => hits.sort_by(|&a, &b| {
-            let (va, vb) = (values(&index.notes[a], field), values(&index.notes[b], field));
+            let (va, vb) = (
+                values(&index.notes[a], field),
+                values(&index.notes[b], field),
+            );
             // Notes without the field come last either way.
             let order = match (va.first(), vb.first()) {
                 (Some(x), Some(y)) => {
@@ -235,9 +331,18 @@ pub fn run(index: &NoteIndex, source_id: &str, source: &str) -> QueryOutput {
                 (None, Some(_)) => Ordering::Greater,
                 (None, None) => Ordering::Equal,
             };
-            order.then_with(|| index.notes[a].title.to_lowercase().cmp(&index.notes[b].title.to_lowercase()))
+            order.then_with(|| {
+                index.notes[a]
+                    .title
+                    .to_lowercase()
+                    .cmp(&index.notes[b].title.to_lowercase())
+            })
         }),
-        None => hits.sort_by(|&a, &b| index.notes[b].modified_at.total_cmp(&index.notes[a].modified_at)),
+        None => hits.sort_by(|&a, &b| {
+            index.notes[b]
+                .modified_at
+                .total_cmp(&index.notes[a].modified_at)
+        }),
     }
     let total = hits.len();
     let rows = hits
@@ -245,17 +350,51 @@ pub fn run(index: &NoteIndex, source_id: &str, source: &str) -> QueryOutput {
         .take(query.limit)
         .map(|i| {
             let note = &index.notes[i];
-            let cells = query.show.iter().map(|f| values(note, &f.to_lowercase()).join(", ")).collect();
-            (index.vault.wiki_target(i), if note.title.is_empty() { "Untitled".to_owned() } else { note.title.clone() }, cells)
+            let cells = query
+                .show
+                .iter()
+                .map(|f| values(note, &f.to_lowercase()).join(", "))
+                .collect();
+            (
+                index.vault.wiki_target(i),
+                if note.title.is_empty() {
+                    "Untitled".to_owned()
+                } else {
+                    note.title.clone()
+                },
+                cells,
+            )
         })
         .collect();
-    let columns = if query.headers.len() == query.show.len() { query.headers.clone() } else { query.show.clone() };
-    QueryOutput { columns, rows, list: query.list, total, error: None, notice: query.notice.clone() }
+    let columns = if query.headers.len() == query.show.len() {
+        query.headers.clone()
+    } else {
+        query.show.clone()
+    };
+    QueryOutput {
+        columns,
+        rows,
+        list: query.list,
+        total,
+        error: None,
+        notice: query.notice.clone(),
+    }
 }
 
 /// A ` ```base ` block: Obsidian's base YAML rather than query lines.
 fn is_base(source: &str) -> bool {
-    source.lines().any(|line| !line.starts_with(char::is_whitespace) && ["filters:", "views:", "formulas:", "properties:", "summaries:"].iter().any(|key| line.starts_with(key)))
+    source.lines().any(|line| {
+        !line.starts_with(char::is_whitespace)
+            && [
+                "filters:",
+                "views:",
+                "formulas:",
+                "properties:",
+                "summaries:",
+            ]
+            .iter()
+            .any(|key| line.starts_with(key))
+    })
 }
 
 /// Obsidian Bases: the YAML subset its editor writes, mapped onto [`Query`].
@@ -303,7 +442,10 @@ mod base {
             .filter_map(|raw| {
                 let text = raw.trim_end();
                 let content = text.trim_start();
-                (!content.is_empty() && !content.starts_with('#')).then(|| Line { indent: text.len() - content.len(), text: content.to_owned() })
+                (!content.is_empty() && !content.starts_with('#')).then(|| Line {
+                    indent: text.len() - content.len(),
+                    text: content.to_owned(),
+                })
             })
             .collect()
     }
@@ -346,8 +488,14 @@ mod base {
             match quote {
                 Some(q) if c == q => quote = None,
                 Some(_) => {}
-                None if c == '"' || (c == '\'' && (previous.is_whitespace() || "([,".contains(previous))) => quote = Some(c),
-                None if c == ':' && text[i + 1..].chars().next().is_none_or(|n| n == ' ') => return Some(i),
+                None if c == '"'
+                    || (c == '\'' && (previous.is_whitespace() || "([,".contains(previous))) =>
+                {
+                    quote = Some(c)
+                }
+                None if c == ':' && text[i + 1..].chars().next().is_none_or(|n| n == ' ') => {
+                    return Some(i);
+                }
                 None => {}
             }
             previous = c;
@@ -358,7 +506,9 @@ mod base {
     fn scalar(text: &str) -> String {
         let t = text.trim();
         if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
-            return t[1..t.len() - 1].replace("\\\"", "\"").replace("\\\\", "\\");
+            return t[1..t.len() - 1]
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\");
         }
         if t.len() >= 2 && t.starts_with('\'') && t.ends_with('\'') {
             return t[1..t.len() - 1].replace("''", "'");
@@ -369,14 +519,23 @@ mod base {
     fn value(text: &str) -> Yaml {
         let t = text.trim();
         match t.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
-            Some(inner) => Yaml::List(split_top(inner, ",").into_iter().map(str::trim).filter(|s| !s.is_empty()).map(|s| Yaml::Text(scalar(s))).collect()),
+            Some(inner) => Yaml::List(
+                split_top(inner, ",")
+                    .into_iter()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| Yaml::Text(scalar(s)))
+                    .collect(),
+            ),
             None => Yaml::Text(scalar(t)),
         }
     }
 
     /// The block starting at `lines[*at]`, whose lines sit at `indent`.
     fn block(lines: &mut [Line], at: &mut usize, indent: usize) -> Yaml {
-        let Some(first) = lines.get(*at) else { return Yaml::Text(String::new()) };
+        let Some(first) = lines.get(*at) else {
+            return Yaml::Text(String::new());
+        };
         let first_text = first.text.clone();
         if is_item(&first_text) {
             let mut items = Vec::new();
@@ -392,7 +551,10 @@ mod base {
                 } else {
                     // The item's content continues as a block at its own column (`- key: value`).
                     let column = indent + 1 + (rest.len() - content.len());
-                    lines[*at] = Line { indent: column, text: content.to_owned() };
+                    lines[*at] = Line {
+                        indent: column,
+                        text: content.to_owned(),
+                    };
                     items.push(block(lines, at, column));
                 }
             }
@@ -425,7 +587,9 @@ mod base {
 
     pub(super) fn yaml(source: &str) -> (Yaml, bool) {
         let mut lines = lines(source);
-        let Some(indent) = lines.first().map(|l| l.indent) else { return (Yaml::Map(Vec::new()), true) };
+        let Some(indent) = lines.first().map(|l| l.indent) else {
+            return (Yaml::Map(Vec::new()), true);
+        };
         let mut at = 0;
         let root = block(&mut lines, &mut at, indent);
         (root, at == lines.len())
@@ -434,7 +598,9 @@ mod base {
     /// A literal: a quoted string, a number or a boolean.
     fn literal(text: &str) -> Option<String> {
         let t = text.trim();
-        let quoted = t.len() >= 2 && ((t.starts_with('"') && t.ends_with('"')) || (t.starts_with('\'') && t.ends_with('\'')));
+        let quoted = t.len() >= 2
+            && ((t.starts_with('"') && t.ends_with('"'))
+                || (t.starts_with('\'') && t.ends_with('\'')));
         if quoted {
             return Some(t[1..t.len() - 1].to_owned());
         }
@@ -457,7 +623,9 @@ mod base {
             return Some(mapped.to_owned());
         }
         let p = n.strip_prefix("note.").unwrap_or(n);
-        let plain = !p.is_empty() && p.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+        let plain = !p.is_empty()
+            && p.chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
         (plain && !n.starts_with("formula.") && !n.starts_with("this.")).then(|| p.to_lowercase())
     }
 
@@ -494,7 +662,13 @@ mod base {
             let parts = split_top(s, sep);
             if parts.len() > 1 {
                 let conds: Vec<Cond> = parts.into_iter().filter_map(|p| expr(p, skipped)).collect();
-                return (!conds.is_empty()).then(|| if any { Cond::Any(conds) } else { Cond::All(conds) });
+                return (!conds.is_empty()).then(|| {
+                    if any {
+                        Cond::Any(conds)
+                    } else {
+                        Cond::All(conds)
+                    }
+                });
             }
         }
         if let Some(rest) = s.strip_prefix('!')
@@ -506,13 +680,25 @@ mod base {
             && let Some(open) = s.find('(')
         {
             let (callee, inner) = (s[..open].trim(), &s[open + 1..s.len() - 1]);
-            let args: Option<Vec<String>> = split_top(inner, ",").into_iter().filter(|a| !a.trim().is_empty()).map(literal).collect();
+            let args: Option<Vec<String>> = split_top(inner, ",")
+                .into_iter()
+                .filter(|a| !a.trim().is_empty())
+                .map(literal)
+                .collect();
             let parsed = args.and_then(|args| match callee {
-                "file.hasTag" if !args.is_empty() => Some(Cond::Tag(args.iter().map(|t| t.trim_start_matches('#').to_owned()).collect())),
-                "file.inFolder" if args.len() == 1 => Some(Cond::Folder(args[0].trim_matches('/').to_owned())),
+                "file.hasTag" if !args.is_empty() => Some(Cond::Tag(
+                    args.iter()
+                        .map(|t| t.trim_start_matches('#').to_owned())
+                        .collect(),
+                )),
+                "file.inFolder" if args.len() == 1 => {
+                    Some(Cond::Folder(args[0].trim_matches('/').to_owned()))
+                }
                 "file.hasProperty" if args.len() == 1 => Some(Cond::Has(args[0].to_lowercase())),
                 _ => {
-                    let target = callee.strip_suffix(".contains").filter(|_| args.len() == 1)?;
+                    let target = callee
+                        .strip_suffix(".contains")
+                        .filter(|_| args.len() == 1)?;
                     field(target).map(|f| Cond::Field(f, Op::Contains, args[0].clone()))
                 }
             });
@@ -521,7 +707,14 @@ mod base {
             }
             return parsed;
         }
-        for (token, op) in [("==", Op::Eq), ("!=", Op::Ne), (">=", Op::Ge), ("<=", Op::Le), (">", Op::Gt), ("<", Op::Lt)] {
+        for (token, op) in [
+            ("==", Op::Eq),
+            ("!=", Op::Ne),
+            (">=", Op::Ge),
+            ("<=", Op::Le),
+            (">", Op::Gt),
+            ("<", Op::Lt),
+        ] {
             if let Some(at) = find_top(s, token) {
                 let (left, right) = (&s[..at], &s[at + token.len()..]);
                 return match (field(left), literal(right)) {
@@ -559,7 +752,11 @@ mod base {
                         skipped.push(key.clone());
                         continue;
                     }
-                    let list: Vec<Cond> = children.items().into_iter().filter_map(|i| filter(i, skipped)).collect();
+                    let list: Vec<Cond> = children
+                        .items()
+                        .into_iter()
+                        .filter_map(|i| filter(i, skipped))
+                        .collect();
                     if list.is_empty() {
                         continue;
                     }
@@ -580,7 +777,10 @@ mod base {
     }
 
     pub(super) fn parse(source: &str) -> Query {
-        let mut query = Query { limit: 50, ..Query::default() };
+        let mut query = Query {
+            limit: 50,
+            ..Query::default()
+        };
         let mut skipped: Vec<String> = Vec::new();
         let (root, complete) = yaml(source);
         if !complete {
@@ -598,7 +798,9 @@ mod base {
                 "properties" => {
                     if let Yaml::Map(props) = value {
                         for (name, config) in props {
-                            if let (Some(f), Some(shown)) = (field(name), config.get("displayName").and_then(Yaml::text)) {
+                            if let (Some(f), Some(shown)) =
+                                (field(name), config.get("displayName").and_then(Yaml::text))
+                            {
                                 names.push((f, shown.to_owned()));
                             }
                         }
@@ -631,7 +833,10 @@ mod base {
                                 // The first column always names the note.
                                 Some(f) if f == "file.name" || f == "file.basename" => {}
                                 Some(f) => {
-                                    let heading = names.iter().find(|(n, _)| *n == f).map_or_else(|| name.strip_prefix("note.").unwrap_or(name).to_owned(), |(_, shown)| shown.clone());
+                                    let heading = names.iter().find(|(n, _)| *n == f).map_or_else(
+                                        || name.strip_prefix("note.").unwrap_or(name).to_owned(),
+                                        |(_, shown)| shown.clone(),
+                                    );
                                     query.show.push(f);
                                     query.headers.push(heading);
                                 }
@@ -643,11 +848,18 @@ mod base {
                         let items = value.items();
                         for (n, item) in items.iter().enumerate() {
                             let (name, direction) = match item {
-                                Yaml::Map(_) => (item.get("property").and_then(Yaml::text).unwrap_or_default(), item.get("direction").and_then(Yaml::text).unwrap_or("ASC")),
+                                Yaml::Map(_) => (
+                                    item.get("property")
+                                        .and_then(Yaml::text)
+                                        .unwrap_or_default(),
+                                    item.get("direction").and_then(Yaml::text).unwrap_or("ASC"),
+                                ),
                                 other => (other.text().unwrap_or_default(), "ASC"),
                             };
                             match field(name) {
-                                Some(f) if n == 0 => query.sort = Some((f, direction.eq_ignore_ascii_case("desc"))),
+                                Some(f) if n == 0 => {
+                                    query.sort = Some((f, direction.eq_ignore_ascii_case("desc")))
+                                }
                                 _ => skipped.push(format!("sorting by {name}")),
                             }
                         }
@@ -662,13 +874,20 @@ mod base {
         }
         let mut shown: Vec<String> = Vec::new();
         for item in skipped {
-            let item: String = if item.chars().count() > 60 { format!("{}\u{2026}", item.chars().take(59).collect::<String>()) } else { item };
+            let item: String = if item.chars().count() > 60 {
+                format!("{}\u{2026}", item.chars().take(59).collect::<String>())
+            } else {
+                item
+            };
             if !shown.contains(&item) {
                 shown.push(item);
             }
         }
         if !shown.is_empty() {
-            query.notice = Some(format!("Not supported here, left out: {}.", shown.join(", ")));
+            query.notice = Some(format!(
+                "Not supported here, left out: {}.",
+                shown.join(", ")
+            ));
         }
         query
     }
@@ -681,7 +900,12 @@ mod tests {
     use serde_json::json;
 
     fn note(id: &str, path: &str, props: Value, tags: &[&str], modified: f64) -> NotesFile {
-        let title = path.rsplit('/').next().unwrap().trim_end_matches(".md").to_owned();
+        let title = path
+            .rsplit('/')
+            .next()
+            .unwrap()
+            .trim_end_matches(".md")
+            .to_owned();
         NotesFile {
             id: id.into(),
             parent_id: String::new(),
@@ -701,28 +925,70 @@ mod tests {
 
     fn index() -> NoteIndex {
         let notes = vec![
-            note("a", "Reading/Dune.md", json!({ "status": "reading", "rating": "5", "author": "Herbert" }), &["book"], 3.0),
-            note("b", "Reading/Emma.md", json!({ "status": "done", "rating": "4" }), &["book/classic"], 2.0),
+            note(
+                "a",
+                "Reading/Dune.md",
+                json!({ "status": "reading", "rating": "5", "author": "Herbert" }),
+                &["book"],
+                3.0,
+            ),
+            note(
+                "b",
+                "Reading/Emma.md",
+                json!({ "status": "done", "rating": "4" }),
+                &["book/classic"],
+                2.0,
+            ),
             note("c", "Reading/Notes on Dune.md", json!({}), &[], 1.0),
             note("d", "Ideas.md", json!({ "rating": "10" }), &["book"], 4.0),
         ];
-        NoteIndex::new(Some(&NotesLibrary { root_id: "r".into(), path: "docs/notes".into(), folders: Vec::new(), notes, truncated: false, legacy: 0 }))
+        NoteIndex::new(Some(&NotesLibrary {
+            root_id: "r".into(),
+            path: "docs/notes".into(),
+            folders: Vec::new(),
+            notes,
+            truncated: false,
+            legacy: 0,
+        }))
     }
 
     #[test]
     fn filters_sorts_and_shows() {
         let ix = index();
-        let out = run(&ix, "x", "tag: #book\nsort: rating desc\nshow: status, rating");
-        assert_eq!(out.rows.iter().map(|r| r.1.as_str()).collect::<Vec<_>>(), ["Ideas", "Dune", "Emma"]);
+        let out = run(
+            &ix,
+            "x",
+            "tag: #book\nsort: rating desc\nshow: status, rating",
+        );
+        assert_eq!(
+            out.rows.iter().map(|r| r.1.as_str()).collect::<Vec<_>>(),
+            ["Ideas", "Dune", "Emma"]
+        );
         assert_eq!(out.rows[1].2, ["reading", "5"]);
         assert_eq!(out.columns, ["status", "rating"]);
-        let out = run(&ix, "x", "folder: Reading\nwhere: rating >= 4\nwhere: status != done");
-        assert_eq!(out.rows.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(), ["Dune"]);
+        let out = run(
+            &ix,
+            "x",
+            "folder: Reading\nwhere: rating >= 4\nwhere: status != done",
+        );
+        assert_eq!(
+            out.rows.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),
+            ["Dune"]
+        );
         let out = run(&ix, "a", "text: dune\nview: list");
         assert!(out.list);
-        assert_eq!(out.rows.iter().map(|r| r.1.as_str()).collect::<Vec<_>>(), ["Notes on Dune"]);
-        assert_eq!(run(&ix, "x", "colour: red").error.as_deref(), Some("Line 1: \u{201c}colour\u{201d} is not a query condition."));
-        assert_eq!(run(&ix, "x", "where: rating").error.as_deref(), Some("Line 1: write `where: field = value`."));
+        assert_eq!(
+            out.rows.iter().map(|r| r.1.as_str()).collect::<Vec<_>>(),
+            ["Notes on Dune"]
+        );
+        assert_eq!(
+            run(&ix, "x", "colour: red").error.as_deref(),
+            Some("Line 1: \u{201c}colour\u{201d} is not a query condition.")
+        );
+        assert_eq!(
+            run(&ix, "x", "where: rating").error.as_deref(),
+            Some("Line 1: write `where: field = value`.")
+        );
         assert_eq!(js_date(86_400_000.0 * 365.0), "1971-01-01");
     }
 
@@ -734,12 +1000,22 @@ mod tests {
     fn reads_base_yaml() {
         use super::base::{Yaml, yaml};
         let text = |t: &str| Yaml::Text(t.into());
-        let (root, complete) = yaml("# comment\na:\n  - x\n  - k: v\n    j: [1, 'two']\nb: \"q: r\"\nc:\n- y\n");
+        let (root, complete) =
+            yaml("# comment\na:\n  - x\n  - k: v\n    j: [1, 'two']\nb: \"q: r\"\nc:\n- y\n");
         assert!(complete);
         assert_eq!(
             root,
             Yaml::Map(vec![
-                ("a".into(), Yaml::List(vec![text("x"), Yaml::Map(vec![("k".into(), text("v")), ("j".into(), Yaml::List(vec![text("1"), text("two")]))])])),
+                (
+                    "a".into(),
+                    Yaml::List(vec![
+                        text("x"),
+                        Yaml::Map(vec![
+                            ("k".into(), text("v")),
+                            ("j".into(), Yaml::List(vec![text("1"), text("two")]))
+                        ])
+                    ])
+                ),
                 ("b".into(), text("q: r")),
                 ("c".into(), Yaml::List(vec![text("y")])),
             ])
@@ -766,12 +1042,24 @@ mod tests {
         let out = run(&ix, "x", partial);
         assert_eq!(out.columns, ["State"]);
         assert_eq!(titles(&out), ["Ideas", "Dune", "Emma"]);
-        assert_eq!(out.notice.as_deref(), Some("Not supported here, left out: formulas, file.hasLink(\"x\"), another view, cards (shown as a table), formula.price, groupBy."));
+        assert_eq!(
+            out.notice.as_deref(),
+            Some(
+                "Not supported here, left out: formulas, file.hasLink(\"x\"), another view, cards (shown as a table), formula.price, groupBy."
+            )
+        );
 
-        let out = run(&ix, "x", "filters: '!file.hasProperty(\"status\") && file.name.contains(\"dune\")'");
+        let out = run(
+            &ix,
+            "x",
+            "filters: '!file.hasProperty(\"status\") && file.name.contains(\"dune\")'",
+        );
         assert_eq!(titles(&out), ["Notes on Dune"]);
         let out = run(&ix, "x", "filters: rating > now()");
         assert_eq!(out.total, 4);
-        assert_eq!(out.notice.as_deref(), Some("Not supported here, left out: rating > now()."));
+        assert_eq!(
+            out.notice.as_deref(),
+            Some("Not supported here, left out: rating > now().")
+        );
     }
 }

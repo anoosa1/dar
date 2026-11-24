@@ -5,12 +5,12 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
 
-use super::types::{file_type_label, FileTile};
 use super::FileEntry;
+use super::types::{FileTile, file_type_label};
 use crate::api;
 use crate::dates::edited;
 use crate::icons::Icon;
-use crate::ui::{active_element, ActionMenu, MenuAction};
+use crate::ui::{ActionMenu, MenuAction, active_element};
 
 /// What the browser can show from the inline content route (`?preview=1`).
 pub fn preview_kind(entry: &FileEntry) -> Option<&'static str> {
@@ -22,8 +22,13 @@ pub fn preview_kind(entry: &FileEntry) -> Option<&'static str> {
         "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/avif" => Some("image"),
         "application/pdf" => Some("pdf"),
         "video/mp4" | "video/webm" | "video/ogg" => Some("video"),
-        "audio/mpeg" | "audio/mp4" | "audio/ogg" | "audio/wav" | "audio/webm" | "audio/flac" | "audio/aac" | "audio/x-wav" | "audio/x-flac" => Some("audio"),
-        _ if (media.starts_with("text/") || media == "application/json") && entry.size <= 1024.0 * 1024.0 => Some("text"),
+        "audio/mpeg" | "audio/mp4" | "audio/ogg" | "audio/wav" | "audio/webm" | "audio/flac"
+        | "audio/aac" | "audio/x-wav" | "audio/x-flac" => Some("audio"),
+        _ if (media.starts_with("text/") || media == "application/json")
+            && entry.size <= 1024.0 * 1024.0 =>
+        {
+            Some("text")
+        }
         _ => None,
     }
 }
@@ -42,7 +47,13 @@ fn format_size(bytes: f64) -> String {
 }
 
 #[component]
-pub fn FilePreview(entry: FileEntry, siblings: Vec<FileEntry>, on_open: Callback<FileEntry>, on_close: Callback<()>, actions: Vec<MenuAction>) -> impl IntoView {
+pub fn FilePreview(
+    entry: FileEntry,
+    siblings: Vec<FileEntry>,
+    on_open: Callback<FileEntry>,
+    on_close: Callback<()>,
+    actions: Vec<MenuAction>,
+) -> impl IntoView {
     let kind = preview_kind(&entry);
     let content = format!("/api/v1/files/{}/content", entry.id);
     let source = format!("{content}?preview=1&v={}", entry.revision);
@@ -55,9 +66,13 @@ pub fn FilePreview(entry: FileEntry, siblings: Vec<FileEntry>, on_open: Callback
     let next = index.and_then(|i| siblings.get(i + 1).cloned());
     let opener = send_wrapper::SendWrapper::new(active_element());
     on_cleanup(move || {
-        let Some(opener) = opener.take().filter(|o| o.is_connected()) else { return };
+        let Some(opener) = opener.take().filter(|o| o.is_connected()) else {
+            return;
+        };
         let active = crate::ui::document().active_element();
-        let inside = root.get_untracked().is_some_and(|r| r.contains(active.as_ref().map(|a| a.unchecked_ref())));
+        let inside = root
+            .get_untracked()
+            .is_some_and(|r| r.contains(active.as_ref().map(|a| a.unchecked_ref())));
         if active.is_none() || active == crate::ui::document().body().map(Into::into) || inside {
             let _ = opener.focus();
         }
@@ -85,7 +100,11 @@ pub fn FilePreview(entry: FileEntry, siblings: Vec<FileEntry>, on_open: Callback
         });
     }
     let label = file_type_label(&entry.kind, &entry.name, &entry.media_type);
-    let (tile_kind, tile_name, tile_media) = (entry.kind.clone(), entry.name.clone(), entry.media_type.clone());
+    let (tile_kind, tile_name, tile_media) = (
+        entry.kind.clone(),
+        entry.name.clone(),
+        entry.media_type.clone(),
+    );
     let tile = move |large: bool| view! { <FileTile kind=tile_kind.clone() name=tile_name.clone() media_type=tile_media.clone() large=large/> };
     let unavailable = {
         let content = content.clone();

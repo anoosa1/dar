@@ -19,7 +19,8 @@ use tokio::sync::{broadcast, watch};
 pub(crate) const ENGINE: &str = include_str!("engine.js");
 
 type Listener<T> = Arc<dyn Fn(&T) + Send + Sync>;
-type RouteHandler = Arc<dyn Fn(Route) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>;
+type RouteHandler =
+    Arc<dyn Fn(Route) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>;
 
 /// How a route or a URL wait names URLs: a Playwright glob (`**/api/v1/files/uploads`,
 /// exact when it has no wildcard) or a predicate.
@@ -66,7 +67,10 @@ pub fn glob_matches(glob: &str, url: &str) -> bool {
         {
             let (head, rest) = glob.split_at(open);
             let (alternatives, tail) = rest[1..].split_at(close - open - 1);
-            return alternatives.split(',').flat_map(|alternative| expand(&format!("{head}{alternative}{}", &tail[1..]))).collect();
+            return alternatives
+                .split(',')
+                .flat_map(|alternative| expand(&format!("{head}{alternative}{}", &tail[1..])))
+                .collect();
         }
         vec![glob.to_owned()]
     }
@@ -91,7 +95,9 @@ pub fn glob_matches(glob: &str, url: &str) -> bool {
         }
     }
     let text: Vec<char> = url.chars().collect();
-    expand(glob).iter().any(|glob| matches(&glob.chars().collect::<Vec<_>>(), &text))
+    expand(glob)
+        .iter()
+        .any(|glob| matches(&glob.chars().collect::<Vec<_>>(), &text))
 }
 
 #[derive(Debug, Clone)]
@@ -137,7 +143,11 @@ pub struct FilePayload {
 
 impl FilePayload {
     pub fn new(name: &str, mime_type: &str, buffer: impl Into<Vec<u8>>) -> Self {
-        Self { name: name.into(), mime_type: mime_type.into(), buffer: buffer.into() }
+        Self {
+            name: name.into(),
+            mime_type: mime_type.into(),
+            buffer: buffer.into(),
+        }
     }
 }
 
@@ -184,10 +194,20 @@ pub struct Fulfill {
 
 impl Fulfill {
     pub fn json(status: u16, body: &Value) -> Self {
-        Self { status, content_type: Some("application/json".into()), headers: Vec::new(), body: serde_json::to_vec(body).unwrap() }
+        Self {
+            status,
+            content_type: Some("application/json".into()),
+            headers: Vec::new(),
+            body: serde_json::to_vec(body).unwrap(),
+        }
     }
     pub fn text(status: u16, content_type: &str, body: impl Into<Vec<u8>>) -> Self {
-        Self { status, content_type: Some(content_type.into()), headers: Vec::new(), body: body.into() }
+        Self {
+            status,
+            content_type: Some(content_type.into()),
+            headers: Vec::new(),
+            body: body.into(),
+        }
     }
 }
 
@@ -251,10 +271,24 @@ pub struct Page {
 impl Page {
     pub(crate) async fn create(context: Context) -> Result<Page> {
         let browser = context.inner.browser.clone();
-        let target = browser.call("Target.createTarget", json!({"url": "about:blank", "browserContextId": context.inner.id})).await?["targetId"]
-            .as_str().ok_or_else(|| Error::new("no target id"))?.to_owned();
-        let session = browser.call("Target.attachToTarget", json!({"targetId": target, "flatten": true})).await?["sessionId"]
-            .as_str().ok_or_else(|| Error::new("no session id"))?.to_owned();
+        let target = browser
+            .call(
+                "Target.createTarget",
+                json!({"url": "about:blank", "browserContextId": context.inner.id}),
+            )
+            .await?["targetId"]
+            .as_str()
+            .ok_or_else(|| Error::new("no target id"))?
+            .to_owned();
+        let session = browser
+            .call(
+                "Target.attachToTarget",
+                json!({"targetId": target, "flatten": true}),
+            )
+            .await?["sessionId"]
+            .as_str()
+            .ok_or_else(|| Error::new("no session id"))?
+            .to_owned();
         let receiver = browser.connection.subscribe_session(&session);
         let options = context.inner.options.clone();
         let (events, _) = broadcast::channel(1024);
@@ -264,7 +298,12 @@ impl Page {
             session,
             target: target.clone(),
             closed: AtomicBool::new(false),
-            navigation: watch::channel(Navigation { url: "about:blank".into(), main_frame: target, ..Navigation::default() }).0,
+            navigation: watch::channel(Navigation {
+                url: "about:blank".into(),
+                main_frame: target,
+                ..Navigation::default()
+            })
+            .0,
             console: Mutex::default(),
             errors: Mutex::default(),
             requests: Mutex::default(),
@@ -280,8 +319,14 @@ impl Page {
             fetch_enabled: AtomicBool::new(false),
             next_id: AtomicU64::new(1),
             media: Mutex::new(Media {
-                color_scheme: options.color_scheme.clone().unwrap_or_else(|| "light".into()),
-                reduced_motion: options.reduced_motion.clone().unwrap_or_else(|| "no-preference".into()),
+                color_scheme: options
+                    .color_scheme
+                    .clone()
+                    .unwrap_or_else(|| "light".into()),
+                reduced_motion: options
+                    .reduced_motion
+                    .clone()
+                    .unwrap_or_else(|| "no-preference".into()),
                 forced_colors: "none".into(),
                 media: String::new(),
             }),
@@ -299,21 +344,39 @@ impl Page {
             ("Network.enable", json!({})),
             ("Log.enable", json!({})),
             ("Accessibility.enable", json!({})),
-            ("Emulation.setFocusEmulationEnabled", json!({"enabled": true})),
-            ("Page.addScriptToEvaluateOnNewDocument", json!({"source": ENGINE})),
+            (
+                "Emulation.setFocusEmulationEnabled",
+                json!({"enabled": true}),
+            ),
+            (
+                "Page.addScriptToEvaluateOnNewDocument",
+                json!({"source": ENGINE}),
+            ),
         ] {
             page.call(method, params).await?;
         }
         if options.ignore_https_errors {
-            page.call("Security.setIgnoreCertificateErrors", json!({"ignore": true})).await?;
+            page.call(
+                "Security.setIgnoreCertificateErrors",
+                json!({"ignore": true}),
+            )
+            .await?;
         }
         if options.has_touch {
-            page.call("Emulation.setTouchEmulationEnabled", json!({"enabled": true, "maxTouchPoints": 1})).await?;
+            page.call(
+                "Emulation.setTouchEmulationEnabled",
+                json!({"enabled": true, "maxTouchPoints": 1}),
+            )
+            .await?;
         }
         page.apply_viewport().await?;
         page.apply_media().await?;
-        page.call("Runtime.evaluate", json!({"expression": ENGINE})).await?;
-        OPEN.lock().unwrap().push((std::thread::current().name().unwrap_or_default().to_owned(), page.clone()));
+        page.call("Runtime.evaluate", json!({"expression": ENGINE}))
+            .await?;
+        OPEN.lock().unwrap().push((
+            std::thread::current().name().unwrap_or_default().to_owned(),
+            page.clone(),
+        ));
         Ok(page)
     }
 
@@ -321,7 +384,10 @@ impl Page {
         if self.is_closed() {
             return Err(Error::new(format!("{method}: the page is closed")));
         }
-        self.inner.connection.call(Some(&self.inner.session), method, params).await
+        self.inner
+            .connection
+            .call(Some(&self.inner.session), method, params)
+            .await
     }
 
     pub fn context(&self) -> Context {
@@ -336,8 +402,16 @@ impl Page {
         if self.inner.closed.swap(true, Ordering::Relaxed) {
             return Ok(());
         }
-        self.inner.context.inner.browser.call("Target.closeTarget", json!({"targetId": self.inner.target})).await.ok();
-        self.inner.connection.unsubscribe_session(&self.inner.session);
+        self.inner
+            .context
+            .inner
+            .browser
+            .call("Target.closeTarget", json!({"targetId": self.inner.target}))
+            .await
+            .ok();
+        self.inner
+            .connection
+            .unsubscribe_session(&self.inner.session);
         Ok(())
     }
 
@@ -349,9 +423,20 @@ impl Page {
             let p = &event.params;
             match event.method.as_str() {
                 "Page.frameNavigated" if p["frame"]["parentId"].is_null() => {
-                    let (url, loader, frame) = (p["frame"]["url"].as_str().unwrap_or_default().to_owned(), p["frame"]["loaderId"].as_str().unwrap_or_default().to_owned(), p["frame"]["id"].as_str().unwrap_or_default().to_owned());
+                    let (url, loader, frame) = (
+                        p["frame"]["url"].as_str().unwrap_or_default().to_owned(),
+                        p["frame"]["loaderId"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_owned(),
+                        p["frame"]["id"].as_str().unwrap_or_default().to_owned(),
+                    );
                     self.inner.in_flight.lock().unwrap().clear();
-                    self.inner.navigation.send_modify(|n| { n.url = url; n.loader = loader; n.main_frame = frame; });
+                    self.inner.navigation.send_modify(|n| {
+                        n.url = url;
+                        n.loader = loader;
+                        n.main_frame = frame;
+                    });
                 }
                 "Page.navigatedWithinDocument" => {
                     let frame = p["frameId"].as_str().unwrap_or_default();
@@ -361,36 +446,75 @@ impl Page {
                     }
                 }
                 "Page.lifecycleEvent" if p["name"] == "load" => {
-                    let (frame, loader) = (p["frameId"].as_str().unwrap_or_default(), p["loaderId"].as_str().unwrap_or_default().to_owned());
+                    let (frame, loader) = (
+                        p["frameId"].as_str().unwrap_or_default(),
+                        p["loaderId"].as_str().unwrap_or_default().to_owned(),
+                    );
                     if frame == self.inner.navigation.borrow().main_frame {
                         self.inner.navigation.send_modify(|n| n.loaded = loader);
                     }
                 }
                 "Runtime.consoleAPICalled" => {
-                    let text = p["args"].as_array().map(|args| args.iter().map(remote_text).collect::<Vec<_>>().join(" ")).unwrap_or_default();
-                    let kind = match p["type"].as_str().unwrap_or("log") { "warning" => "warning", other => other }.to_owned();
+                    let text = p["args"]
+                        .as_array()
+                        .map(|args| args.iter().map(remote_text).collect::<Vec<_>>().join(" "))
+                        .unwrap_or_default();
+                    let kind = match p["type"].as_str().unwrap_or("log") {
+                        "warning" => "warning",
+                        other => other,
+                    }
+                    .to_owned();
                     self.emit(&self.inner.console, &ConsoleMessage { kind, text });
                 }
                 "Log.entryAdded" => {
                     let entry = &p["entry"];
-                    let kind = match entry["level"].as_str().unwrap_or("info") { "verbose" => "debug", other => other }.to_owned();
-                    self.emit(&self.inner.console, &ConsoleMessage { kind, text: entry["text"].as_str().unwrap_or_default().to_owned() });
+                    let kind = match entry["level"].as_str().unwrap_or("info") {
+                        "verbose" => "debug",
+                        other => other,
+                    }
+                    .to_owned();
+                    self.emit(
+                        &self.inner.console,
+                        &ConsoleMessage {
+                            kind,
+                            text: entry["text"].as_str().unwrap_or_default().to_owned(),
+                        },
+                    );
                 }
                 "Runtime.exceptionThrown" => {
                     let details = &p["exceptionDetails"];
-                    let description = details["exception"]["description"].as_str().map(str::to_owned)
+                    let description = details["exception"]["description"]
+                        .as_str()
+                        .map(str::to_owned)
                         .or_else(|| details["exception"]["value"].as_str().map(str::to_owned))
-                        .unwrap_or_else(|| details["text"].as_str().unwrap_or("Uncaught exception").to_owned());
+                        .unwrap_or_else(|| {
+                            details["text"]
+                                .as_str()
+                                .unwrap_or("Uncaught exception")
+                                .to_owned()
+                        });
                     let first = description.lines().next().unwrap_or_default();
-                    let message = first.split_once(": ").filter(|(name, _)| name.ends_with("Error") || name == &"Error").map(|(_, m)| m).unwrap_or(first).to_owned();
+                    let message = first
+                        .split_once(": ")
+                        .filter(|(name, _)| name.ends_with("Error") || name == &"Error")
+                        .map(|(_, m)| m)
+                        .unwrap_or(first)
+                        .to_owned();
                     self.emit(&self.inner.errors, &message);
                 }
                 "Page.javascriptDialogOpening" => {
-                    let dialog = (p["type"].as_str().unwrap_or_default().to_owned(), p["message"].as_str().unwrap_or_default().to_owned());
+                    let dialog = (
+                        p["type"].as_str().unwrap_or_default().to_owned(),
+                        p["message"].as_str().unwrap_or_default().to_owned(),
+                    );
                     self.emit(&self.inner.dialogs, &dialog);
                     let accept = self.inner.accept_next_dialog.swap(false, Ordering::SeqCst);
                     let page = self.clone();
-                    tokio::spawn(async move { page.call("Page.handleJavaScriptDialog", json!({"accept": accept})).await.ok(); });
+                    tokio::spawn(async move {
+                        page.call("Page.handleJavaScriptDialog", json!({"accept": accept}))
+                            .await
+                            .ok();
+                    });
                 }
                 "Network.requestWillBeSent" => {
                     let request = &p["request"];
@@ -402,15 +526,31 @@ impl Page {
                         failure: None,
                         network_id: p["requestId"].as_str().map(str::to_owned),
                     };
-                    self.inner.in_flight.lock().unwrap().insert(p["requestId"].as_str().unwrap_or_default().to_owned(), entry.clone());
+                    self.inner.in_flight.lock().unwrap().insert(
+                        p["requestId"].as_str().unwrap_or_default().to_owned(),
+                        entry.clone(),
+                    );
                     self.emit(&self.inner.requests, &entry);
                 }
                 "Network.responseReceived" => {
                     let response = &p["response"];
-                    self.emit(&self.inner.responses, &Response { url: response["url"].as_str().unwrap_or_default().to_owned(), status: response["status"].as_u64().unwrap_or(0) as u16, headers: headers(&response["headers"]) });
+                    self.emit(
+                        &self.inner.responses,
+                        &Response {
+                            url: response["url"].as_str().unwrap_or_default().to_owned(),
+                            status: response["status"].as_u64().unwrap_or(0) as u16,
+                            headers: headers(&response["headers"]),
+                        },
+                    );
                 }
                 "Network.loadingFinished" => {
-                    if let Some(request) = self.inner.in_flight.lock().unwrap().remove(p["requestId"].as_str().unwrap_or_default()) {
+                    if let Some(request) = self
+                        .inner
+                        .in_flight
+                        .lock()
+                        .unwrap()
+                        .remove(p["requestId"].as_str().unwrap_or_default())
+                    {
                         self.emit(&self.inner.finished, &request);
                     }
                 }
@@ -418,7 +558,8 @@ impl Page {
                     let id = p["requestId"].as_str().unwrap_or_default().to_owned();
                     self.inner.failures.lock().unwrap().insert(id.clone());
                     if let Some(mut request) = self.inner.in_flight.lock().unwrap().remove(&id) {
-                        request.failure = Some(p["errorText"].as_str().unwrap_or("failed").to_owned());
+                        request.failure =
+                            Some(p["errorText"].as_str().unwrap_or("failed").to_owned());
                         self.emit(&self.inner.failed, &request);
                     }
                 }
@@ -427,7 +568,10 @@ impl Page {
                 // the session is unsubscribed: only a page that was not being closed went away.
                 "Inspector.detached" if self.inner.closed.load(Ordering::Relaxed) => {}
                 "Inspector.detached" | "Inspector.targetCrashed" => {
-                    self.emit(&self.inner.errors, &format!("the page went away ({})", event.method));
+                    self.emit(
+                        &self.inner.errors,
+                        &format!("the page went away ({})", event.method),
+                    );
                 }
                 _ => {}
             }
@@ -435,7 +579,12 @@ impl Page {
     }
 
     fn emit<T>(&self, listeners: &Mutex<Vec<(u64, Listener<T>)>>, value: &T) {
-        let listeners: Vec<_> = listeners.lock().unwrap().iter().map(|(_, l)| l.clone()).collect();
+        let listeners: Vec<_> = listeners
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, l)| l.clone())
+            .collect();
         for listener in listeners {
             listener(value);
         }
@@ -480,22 +629,45 @@ impl Page {
     pub fn off(&self, id: u64) {
         self.inner.console.lock().unwrap().retain(|(i, _)| *i != id);
         self.inner.errors.lock().unwrap().retain(|(i, _)| *i != id);
-        self.inner.requests.lock().unwrap().retain(|(i, _)| *i != id);
-        self.inner.finished.lock().unwrap().retain(|(i, _)| *i != id);
+        self.inner
+            .requests
+            .lock()
+            .unwrap()
+            .retain(|(i, _)| *i != id);
+        self.inner
+            .finished
+            .lock()
+            .unwrap()
+            .retain(|(i, _)| *i != id);
         self.inner.failed.lock().unwrap().retain(|(i, _)| *i != id);
-        self.inner.responses.lock().unwrap().retain(|(i, _)| *i != id);
+        self.inner
+            .responses
+            .lock()
+            .unwrap()
+            .retain(|(i, _)| *i != id);
         self.inner.dialogs.lock().unwrap().retain(|(i, _)| *i != id);
     }
 
     /// Collects console errors and page errors into a list, skipping messages `ignore` accepts:
     /// the usual "no errors happened" check of the browser suites.
-    pub fn collect_errors(&self, ignore: impl Fn(&str) -> bool + Send + Sync + 'static) -> Arc<Mutex<Vec<String>>> {
+    pub fn collect_errors(
+        &self,
+        ignore: impl Fn(&str) -> bool + Send + Sync + 'static,
+    ) -> Arc<Mutex<Vec<String>>> {
         let errors = Arc::new(Mutex::new(Vec::new()));
         let ignore = Arc::new(ignore);
         let (sink, filter) = (errors.clone(), ignore.clone());
-        self.on_page_error(move |message| if !filter(message) { sink.lock().unwrap().push(message.clone()) });
+        self.on_page_error(move |message| {
+            if !filter(message) {
+                sink.lock().unwrap().push(message.clone())
+            }
+        });
         let sink = errors.clone();
-        self.on_console(move |message| if message.kind == "error" && !ignore(&message.text) { sink.lock().unwrap().push(message.text.clone()) });
+        self.on_console(move |message| {
+            if message.kind == "error" && !ignore(&message.text) {
+                sink.lock().unwrap().push(message.text.clone())
+            }
+        });
         errors
     }
 
@@ -511,7 +683,9 @@ impl Page {
         if let Some(error) = result["errorText"].as_str().filter(|e| !e.is_empty()) {
             return Err(Error::new(format!("goto {url}: {error}")));
         }
-        let Some(loader) = result["loaderId"].as_str() else { return Ok(()) };
+        let Some(loader) = result["loaderId"].as_str() else {
+            return Ok(());
+        };
         self.wait_loaded(loader).await
     }
 
@@ -548,7 +722,10 @@ impl Page {
                     return Ok(());
                 }
             }
-            if tokio::time::timeout_at(deadline.into(), navigation.changed()).await.is_err() {
+            if tokio::time::timeout_at(deadline.into(), navigation.changed())
+                .await
+                .is_err()
+            {
                 return Err(Error::new("reload did not load in time"));
             }
         }
@@ -569,8 +746,13 @@ impl Page {
             if url::Url::parse(&current).is_ok_and(|u| test(&u)) {
                 return Ok(());
             }
-            if tokio::time::timeout_at(deadline.into(), navigation.changed()).await.is_err() {
-                return Err(Error::new(format!("the URL did not match in time (it is {current})")));
+            if tokio::time::timeout_at(deadline.into(), navigation.changed())
+                .await
+                .is_err()
+            {
+                return Err(Error::new(format!(
+                    "the URL did not match in time (it is {current})"
+                )));
             }
         }
     }
@@ -585,7 +767,10 @@ impl Page {
     }
 
     /// Runs `action` and waits for the subsequent main-frame load event (`waitForEvent("load")`).
-    pub async fn wait_for_next_load<F: Future<Output = Result<()>>>(&self, action: F) -> Result<()> {
+    pub async fn wait_for_next_load<F: Future<Output = Result<()>>>(
+        &self,
+        action: F,
+    ) -> Result<()> {
         let before = self.inner.navigation.borrow().loader.clone();
         let mut navigation = self.inner.navigation.subscribe();
         action.await?;
@@ -597,7 +782,10 @@ impl Page {
                     return Ok(());
                 }
             }
-            if tokio::time::timeout_at(deadline.into(), navigation.changed()).await.is_err() {
+            if tokio::time::timeout_at(deadline.into(), navigation.changed())
+                .await
+                .is_err()
+            {
                 return Err(Error::new("navigation did not load in time"));
             }
         }
@@ -628,17 +816,32 @@ impl Page {
     /// Replaces the main frame's HTML content (Playwright's `page.setContent`).
     pub async fn set_content(&self, html: &str) -> Result<()> {
         let frame_id = self.inner.navigation.borrow().main_frame.clone();
-        self.call("Page.setDocumentContent", json!({"frameId": frame_id, "html": html})).await?;
-        self.call("Runtime.evaluate", json!({"expression": ENGINE})).await?;
+        self.call(
+            "Page.setDocumentContent",
+            json!({"frameId": frame_id, "html": html}),
+        )
+        .await?;
+        self.call("Runtime.evaluate", json!({"expression": ENGINE}))
+            .await?;
         Ok(())
     }
 
     pub async fn title(&self) -> Result<String> {
-        Ok(self.evaluate("() => document.title").await?.as_str().unwrap_or_default().to_owned())
+        Ok(self
+            .evaluate("() => document.title")
+            .await?
+            .as_str()
+            .unwrap_or_default()
+            .to_owned())
     }
 
     pub async fn content(&self) -> Result<String> {
-        Ok(self.evaluate("() => document.documentElement.outerHTML").await?.as_str().unwrap_or_default().to_owned())
+        Ok(self
+            .evaluate("() => document.documentElement.outerHTML")
+            .await?
+            .as_str()
+            .unwrap_or_default()
+            .to_owned())
     }
 
     // ---- scripts ------------------------------------------------------------------------
@@ -651,13 +854,17 @@ impl Page {
 
     /// Runs a function with one JSON argument: `evaluate_with("(n) => n + 1", json!(1))`.
     pub async fn evaluate_with(&self, function: &str, arg: Value) -> Result<Value> {
-        self.evaluate_expression(&invocation(function, Some(&arg))).await
+        self.evaluate_expression(&invocation(function, Some(&arg)))
+            .await
     }
 
     pub(crate) async fn evaluate_expression(&self, expression: &str) -> Result<Value> {
         let result = self.call("Runtime.evaluate", json!({"expression": expression, "returnByValue": true, "awaitPromise": true, "userGesture": true})).await?;
         if let Some(details) = result.get("exceptionDetails") {
-            let description = details["exception"]["description"].as_str().or(details["text"].as_str()).unwrap_or("evaluation failed");
+            let description = details["exception"]["description"]
+                .as_str()
+                .or(details["text"].as_str())
+                .unwrap_or("evaluation failed");
             return Err(Error::new(format!("page script failed: {description}")));
         }
         Ok(result["result"]["value"].clone())
@@ -680,7 +887,10 @@ impl Page {
                 Err(error) => return Err(error),
             }
             if Instant::now() > deadline {
-                return Err(Error::new(format!("waitForFunction timed out after {DEFAULT_TIMEOUT:?}: {function}{}", last_error.map(|e| format!(" ({e})")).unwrap_or_default())));
+                return Err(Error::new(format!(
+                    "waitForFunction timed out after {DEFAULT_TIMEOUT:?}: {function}{}",
+                    last_error.map(|e| format!(" ({e})")).unwrap_or_default()
+                )));
             }
             tokio::time::sleep(Duration::from_millis(30)).await;
         }
@@ -703,19 +913,31 @@ impl Page {
 
     /// How many tracked WebSockets this document has opened.
     pub async fn sockets_opened(&self) -> Result<u64> {
-        Ok(self.evaluate("() => globalThis.__darSockets?.opened() ?? 0").await?.as_u64().unwrap_or_default())
+        Ok(self
+            .evaluate("() => globalThis.__darSockets?.opened() ?? 0")
+            .await?
+            .as_u64()
+            .unwrap_or_default())
     }
 
     /// Closes the tracked WebSockets from the page's side (`code` 4000–4999), as a dropped
     /// connection; the app should reconnect.
     pub async fn drop_sockets(&self, code: u16, reason: &str) -> Result<()> {
-        self.evaluate_with("([code, reason]) => globalThis.__darSockets.drop(code, reason)", json!([code, reason])).await?;
+        self.evaluate_with(
+            "([code, reason]) => globalThis.__darSockets.drop(code, reason)",
+            json!([code, reason]),
+        )
+        .await?;
         Ok(())
     }
 
     /// A script for every document this page loads from now on, before the page's own.
     pub async fn add_init_script(&self, source: &str) -> Result<()> {
-        self.call("Page.addScriptToEvaluateOnNewDocument", json!({"source": source})).await?;
+        self.call(
+            "Page.addScriptToEvaluateOnNewDocument",
+            json!({"source": source}),
+        )
+        .await?;
         Ok(())
     }
 
@@ -772,12 +994,23 @@ impl Page {
     }
 
     /// Playwright's `emulateMedia`: each `Some` changes that feature; the rest stay.
-    pub async fn emulate_media(&self, color_scheme: Option<&str>, reduced_motion: Option<&str>, forced_colors: Option<&str>) -> Result<()> {
+    pub async fn emulate_media(
+        &self,
+        color_scheme: Option<&str>,
+        reduced_motion: Option<&str>,
+        forced_colors: Option<&str>,
+    ) -> Result<()> {
         {
             let mut media = self.inner.media.lock().unwrap();
-            if let Some(value) = color_scheme { media.color_scheme = value.into(); }
-            if let Some(value) = reduced_motion { media.reduced_motion = value.into(); }
-            if let Some(value) = forced_colors { media.forced_colors = value.into(); }
+            if let Some(value) = color_scheme {
+                media.color_scheme = value.into();
+            }
+            if let Some(value) = reduced_motion {
+                media.reduced_motion = value.into();
+            }
+            if let Some(value) = forced_colors {
+                media.forced_colors = value.into();
+            }
         }
         self.apply_media().await
     }
@@ -789,11 +1022,15 @@ impl Page {
 
     async fn apply_media(&self) -> Result<()> {
         let media = self.inner.media.lock().unwrap().clone();
-        self.call("Emulation.setEmulatedMedia", json!({"media": media.media, "features": [
-            {"name": "prefers-color-scheme", "value": media.color_scheme},
-            {"name": "prefers-reduced-motion", "value": media.reduced_motion},
-            {"name": "forced-colors", "value": media.forced_colors},
-        ]})).await?;
+        self.call(
+            "Emulation.setEmulatedMedia",
+            json!({"media": media.media, "features": [
+                {"name": "prefers-color-scheme", "value": media.color_scheme},
+                {"name": "prefers-reduced-motion", "value": media.reduced_motion},
+                {"name": "forced-colors", "value": media.forced_colors},
+            ]}),
+        )
+        .await?;
         Ok(())
     }
 
@@ -815,8 +1052,13 @@ impl Page {
 
     pub(crate) async fn capture(&self, path: &Path, params: Value) -> Result<Vec<u8>> {
         use base64::Engine as _;
-        let data = self.call("Page.captureScreenshot", params).await?["data"].as_str().unwrap_or_default().to_owned();
-        let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| Error::new(e.to_string()))?;
+        let data = self.call("Page.captureScreenshot", params).await?["data"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map_err(|e| Error::new(e.to_string()))?;
         if !path.as_os_str().is_empty() {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
@@ -834,28 +1076,49 @@ impl Page {
     // ---- downloads ----------------------------------------------------------------------
 
     /// Runs `action` and returns the download it starts, once saved.
-    pub async fn wait_for_download<F: Future<Output = Result<()>>>(&self, action: F) -> Result<Download> {
+    pub async fn wait_for_download<F: Future<Output = Result<()>>>(
+        &self,
+        action: F,
+    ) -> Result<Download> {
         let browser = self.inner.context.inner.browser.clone();
         let mut events = browser.connection.subscribe_browser();
         action.await?;
         let deadline = Instant::now() + DEFAULT_TIMEOUT;
         let mut started: Option<(String, String, String)> = None;
         loop {
-            let event = tokio::time::timeout_at(deadline.into(), events.recv()).await
-                .map_err(|_| Error::new("no download finished in time"))?.ok_or_else(|| Error::new("the browser closed"))?;
+            let event = tokio::time::timeout_at(deadline.into(), events.recv())
+                .await
+                .map_err(|_| Error::new("no download finished in time"))?
+                .ok_or_else(|| Error::new("the browser closed"))?;
             match event.method.as_str() {
                 "Browser.downloadWillBegin" if started.is_none() => {
-                    started = Some((event.params["guid"].as_str().unwrap_or_default().into(), event.params["url"].as_str().unwrap_or_default().into(), event.params["suggestedFilename"].as_str().unwrap_or_default().into()));
+                    started = Some((
+                        event.params["guid"].as_str().unwrap_or_default().into(),
+                        event.params["url"].as_str().unwrap_or_default().into(),
+                        event.params["suggestedFilename"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .into(),
+                    ));
                 }
                 "Browser.downloadProgress" => {
-                    let Some((guid, url, name)) = &started else { continue };
+                    let Some((guid, url, name)) = &started else {
+                        continue;
+                    };
                     if event.params["guid"] != json!(guid) {
                         continue;
                     }
                     match event.params["state"].as_str() {
                         Some("completed") => {
-                            let path = event.params["filePath"].as_str().map(PathBuf::from).unwrap_or_else(|| self.inner.context.inner.downloads.join(guid));
-                            return Ok(Download { url: url.clone(), suggested_filename: name.clone(), path });
+                            let path = event.params["filePath"]
+                                .as_str()
+                                .map(PathBuf::from)
+                                .unwrap_or_else(|| self.inner.context.inner.downloads.join(guid));
+                            return Ok(Download {
+                                url: url.clone(),
+                                suggested_filename: name.clone(),
+                                path,
+                            });
                         }
                         Some("canceled") => return Err(Error::new("the download was cancelled")),
                         _ => {}
@@ -870,22 +1133,40 @@ impl Page {
 
     /// Intercepts requests whose URL matches (Playwright's `page.route`). The handler must
     /// fulfill, abort, continue or fetch the route. `times` limits how often it applies.
-    pub async fn route<F, Fut>(&self, pattern: impl Into<RouteMatch>, times: Option<u32>, handler: F) -> Result<u64>
+    pub async fn route<F, Fut>(
+        &self,
+        pattern: impl Into<RouteMatch>,
+        times: Option<u32>,
+        handler: F,
+    ) -> Result<u64>
     where
         F: Fn(Route) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
         let handler: RouteHandler = Arc::new(move |route| Box::pin(handler(route)));
-        self.inner.routes.lock().unwrap().push(RouteEntry { id, pattern: pattern.into(), handler, remaining: times });
+        self.inner.routes.lock().unwrap().push(RouteEntry {
+            id,
+            pattern: pattern.into(),
+            handler,
+            remaining: times,
+        });
         if !self.inner.fetch_enabled.swap(true, Ordering::Relaxed) {
-            self.call("Fetch.enable", json!({"patterns": [{"urlPattern": "*", "requestStage": "Request"}]})).await?;
+            self.call(
+                "Fetch.enable",
+                json!({"patterns": [{"urlPattern": "*", "requestStage": "Request"}]}),
+            )
+            .await?;
         }
         Ok(id)
     }
 
     pub fn unroute(&self, id: u64) {
-        self.inner.routes.lock().unwrap().retain(|entry| entry.id != id);
+        self.inner
+            .routes
+            .lock()
+            .unwrap()
+            .retain(|entry| entry.id != id);
     }
 
     /// Removes every route and waits for handlers still running (`unrouteAll({behavior: "wait"})`).
@@ -902,7 +1183,10 @@ impl Page {
     }
 
     fn paused(&self, params: Value) {
-        let url = params["request"]["url"].as_str().unwrap_or_default().to_owned();
+        let url = params["request"]["url"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
         let handler = {
             let mut routes = self.inner.routes.lock().unwrap();
             // The newest route wins, as in Playwright.
@@ -921,23 +1205,40 @@ impl Page {
         let page = self.clone();
         let request_id = params["requestId"].as_str().unwrap_or_default().to_owned();
         let Some(handler) = handler else {
-            tokio::spawn(async move { page.call("Fetch.continueRequest", json!({"requestId": request_id})).await.ok(); });
+            tokio::spawn(async move {
+                page.call("Fetch.continueRequest", json!({"requestId": request_id}))
+                    .await
+                    .ok();
+            });
             return;
         };
         let request = Request {
             url,
-            method: params["request"]["method"].as_str().unwrap_or("GET").to_owned(),
+            method: params["request"]["method"]
+                .as_str()
+                .unwrap_or("GET")
+                .to_owned(),
             headers: headers(&params["request"]["headers"]),
-            post_data: params["request"]["postData"].as_str().map(|d| d.as_bytes().to_vec()),
+            post_data: params["request"]["postData"]
+                .as_str()
+                .map(|d| d.as_bytes().to_vec()),
             failure: None,
             network_id: params["networkId"].as_str().map(str::to_owned),
         };
-        let route = Route { page: page.clone(), request_id, request, handled: Arc::new(AtomicBool::new(false)) };
+        let route = Route {
+            page: page.clone(),
+            request_id,
+            request,
+            handled: Arc::new(AtomicBool::new(false)),
+        };
         self.inner.active_routes.fetch_add(1, Ordering::Relaxed);
         tokio::spawn(async move {
             let fallback = route.clone();
             if let Err(error) = handler(route).await {
-                page.emit(&page.inner.errors, &format!("route handler failed: {error}"));
+                page.emit(
+                    &page.inner.errors,
+                    &format!("route handler failed: {error}"),
+                );
             }
             if !fallback.handled.load(Ordering::Relaxed) {
                 fallback.continue_().await.ok();
@@ -965,13 +1266,29 @@ impl Page {
             std::fs::write(&path, &file.buffer)?;
             paths.push(path);
         }
-        self.call("DOM.setFileInputFiles", json!({"files": paths, "objectId": object_id})).await?;
+        self.call(
+            "DOM.setFileInputFiles",
+            json!({"files": paths, "objectId": object_id}),
+        )
+        .await?;
         Ok(())
     }
 
-    pub(crate) async fn mouse_event(&self, kind: &str, x: f64, y: f64, button: &str, click_count: u32) -> Result<()> {
+    pub(crate) async fn mouse_event(
+        &self,
+        kind: &str,
+        x: f64,
+        y: f64,
+        button: &str,
+        click_count: u32,
+    ) -> Result<()> {
         let modifiers = *self.inner.modifiers.lock().unwrap();
-        let buttons = match (kind, button) { ("mousePressed", "left") => 1, ("mousePressed", "right") => 2, ("mousePressed", "middle") => 4, _ => 0 };
+        let buttons = match (kind, button) {
+            ("mousePressed", "left") => 1,
+            ("mousePressed", "right") => 2,
+            ("mousePressed", "middle") => 4,
+            _ => 0,
+        };
         self.call("Input.dispatchMouseEvent", json!({"type": kind, "x": x, "y": y, "button": button, "buttons": buttons, "clickCount": click_count, "modifiers": modifiers})).await?;
         *self.inner.mouse.lock().unwrap() = (x, y, buttons);
         Ok(())
@@ -983,7 +1300,19 @@ impl Page {
 }
 
 fn headers(value: &Value) -> HashMap<String, String> {
-    value.as_object().map(|map| map.iter().map(|(k, v)| (k.to_ascii_lowercase(), v.as_str().unwrap_or_default().to_owned())).collect()).unwrap_or_default()
+    value
+        .as_object()
+        .map(|map| {
+            map.iter()
+                .map(|(k, v)| {
+                    (
+                        k.to_ascii_lowercase(),
+                        v.as_str().unwrap_or_default().to_owned(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn remote_text(value: &Value) -> String {
@@ -996,7 +1325,11 @@ fn remote_text(value: &Value) -> String {
     if value["type"] == "undefined" {
         return "undefined".into();
     }
-    value["description"].as_str().or(value["unserializableValue"].as_str()).unwrap_or_default().to_owned()
+    value["description"]
+        .as_str()
+        .or(value["unserializableValue"].as_str())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 pub(crate) fn truthy(value: &Value) -> bool {
@@ -1012,19 +1345,39 @@ pub(crate) fn truthy(value: &Value) -> bool {
 /// Errors that a navigation or re-render causes, which a poll retries.
 pub(crate) fn transient(error: &Error) -> bool {
     let text = error.to_string();
-    ["Execution context was destroyed", "Cannot find context", "Inspected target navigated", "uniqueContextId not found", "__darEngine is not defined", "Cannot read properties of undefined (reading 'resolve')"]
-        .iter().any(|needle| text.contains(needle))
+    [
+        "Execution context was destroyed",
+        "Cannot find context",
+        "Inspected target navigated",
+        "uniqueContextId not found",
+        "__darEngine is not defined",
+        "Cannot read properties of undefined (reading 'resolve')",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle))
 }
 
 /// `script` called with `arg`, or evaluated as an expression when it is not a function.
 pub(crate) fn invocation(script: &str, arg: Option<&Value>) -> String {
     let trimmed = script.trim_start();
-    let function = trimmed.starts_with("function") || trimmed.starts_with("async") || trimmed.starts_with('(') || {
-        let head: String = trimmed.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$').collect();
-        !head.is_empty() && trimmed[head.len()..].trim_start().starts_with("=>")
-    };
-    let arg = arg.map(|a| a.to_string()).unwrap_or_else(|| "undefined".into());
-    if function { format!("({script})({arg})") } else { format!("({script})") }
+    let function = trimmed.starts_with("function")
+        || trimmed.starts_with("async")
+        || trimmed.starts_with('(')
+        || {
+            let head: String = trimmed
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
+                .collect();
+            !head.is_empty() && trimmed[head.len()..].trim_start().starts_with("=>")
+        };
+    let arg = arg
+        .map(|a| a.to_string())
+        .unwrap_or_else(|| "undefined".into());
+    if function {
+        format!("({script})({arg})")
+    } else {
+        format!("({script})")
+    }
 }
 
 /// An intercepted request (Playwright's `Route`).
@@ -1043,13 +1396,21 @@ impl Route {
 
     /// The network error, if the page already gave up on this request.
     pub fn failure(&self) -> Option<String> {
-        self.request.network_id.as_deref().filter(|id| self.page.network_failed(id)).map(|_| "net::ERR_ABORTED".into())
+        self.request
+            .network_id
+            .as_deref()
+            .filter(|id| self.page.network_failed(id))
+            .map(|_| "net::ERR_ABORTED".into())
     }
 
     pub async fn fulfill(&self, response: Fulfill) -> Result<()> {
         use base64::Engine as _;
         self.handled.store(true, Ordering::Relaxed);
-        let mut headers: Vec<Value> = response.headers.iter().map(|(name, value)| json!({"name": name, "value": value})).collect();
+        let mut headers: Vec<Value> = response
+            .headers
+            .iter()
+            .map(|(name, value)| json!({"name": name, "value": value}))
+            .collect();
         if let Some(content_type) = &response.content_type {
             headers.push(json!({"name": "content-type", "value": content_type}));
         }
@@ -1061,20 +1422,34 @@ impl Route {
 
     pub async fn abort(&self) -> Result<()> {
         self.handled.store(true, Ordering::Relaxed);
-        self.page.call("Fetch.failRequest", json!({"requestId": self.request_id, "errorReason": "Failed"})).await?;
+        self.page
+            .call(
+                "Fetch.failRequest",
+                json!({"requestId": self.request_id, "errorReason": "Failed"}),
+            )
+            .await?;
         Ok(())
     }
 
     pub async fn continue_(&self) -> Result<()> {
         self.handled.store(true, Ordering::Relaxed);
-        self.page.call("Fetch.continueRequest", json!({"requestId": self.request_id})).await?;
+        self.page
+            .call(
+                "Fetch.continueRequest",
+                json!({"requestId": self.request_id}),
+            )
+            .await?;
         Ok(())
     }
 
     /// Sends the request to the server from the test (with the page's cookies) and returns
     /// its response without answering the page (Playwright's `route.fetch`).
     pub async fn fetch(&self) -> Result<ApiResponse> {
-        let mut builder = self.page.request().builder(&self.request.method, &self.request.url).await?;
+        let mut builder = self
+            .page
+            .request()
+            .builder(&self.request.method, &self.request.url)
+            .await?;
         for (name, value) in &self.request.headers {
             if !["cookie", "content-length", "host"].contains(&name.as_str()) {
                 builder = builder.header(name, value);
@@ -1095,7 +1470,11 @@ pub struct Keyboard {
 impl Keyboard {
     /// Presses a key or chord: `Enter`, `Escape`, `Control+k`, `Shift+Enter`, `a`.
     pub async fn press(&self, chord: &str) -> Result<()> {
-        let parts: Vec<&str> = if chord == "+" { vec!["+"] } else { chord.split('+').collect() };
+        let parts: Vec<&str> = if chord == "+" {
+            vec!["+"]
+        } else {
+            chord.split('+').collect()
+        };
         let (key, held) = parts.split_last().unwrap();
         for modifier in held {
             self.down(modifier).await?;
@@ -1110,13 +1489,16 @@ impl Keyboard {
 
     pub async fn down(&self, name: &str) -> Result<()> {
         let modifiers = self.page.modifiers();
-        let key = keys::key(name, modifiers & keys::SHIFT != 0).ok_or_else(|| Error::new(format!("unknown key {name}")))?;
+        let key = keys::key(name, modifiers & keys::SHIFT != 0)
+            .ok_or_else(|| Error::new(format!("unknown key {name}")))?;
         if let Some(bit) = keys::modifier(name) {
             *self.page.inner.modifiers.lock().unwrap() |= bit;
         }
         let modifiers = self.page.modifiers();
         // Control, Alt and Meta chords type nothing.
-        let text = key.text.filter(|_| modifiers & (keys::CONTROL | keys::ALT | keys::META) == 0);
+        let text = key
+            .text
+            .filter(|_| modifiers & (keys::CONTROL | keys::ALT | keys::META) == 0);
         let mut params = json!({"type": if text.is_some() { "keyDown" } else { "rawKeyDown" }, "key": key.key, "code": key.code,
             "windowsVirtualKeyCode": key.key_code, "nativeVirtualKeyCode": key.key_code, "modifiers": modifiers, "location": key.location});
         if let Some(text) = text {
@@ -1128,7 +1510,8 @@ impl Keyboard {
     }
 
     pub async fn up(&self, name: &str) -> Result<()> {
-        let key = keys::key(name, false).ok_or_else(|| Error::new(format!("unknown key {name}")))?;
+        let key =
+            keys::key(name, false).ok_or_else(|| Error::new(format!("unknown key {name}")))?;
         if let Some(bit) = keys::modifier(name) {
             *self.page.inner.modifiers.lock().unwrap() &= !bit;
         }
@@ -1153,7 +1536,9 @@ impl Keyboard {
 
     /// Inserts text as an IME would, with an input event and no key events.
     pub async fn insert_text(&self, text: &str) -> Result<()> {
-        self.page.call("Input.insertText", json!({"text": text})).await?;
+        self.page
+            .call("Input.insertText", json!({"text": text}))
+            .await?;
         Ok(())
     }
 }
@@ -1185,13 +1570,19 @@ impl Mouse {
 
     pub async fn up(&self) -> Result<()> {
         let (x, y, _) = *self.page.inner.mouse.lock().unwrap();
-        self.page.mouse_event("mouseReleased", x, y, "left", 1).await
+        self.page
+            .mouse_event("mouseReleased", x, y, "left", 1)
+            .await
     }
 
     pub async fn click(&self, x: f64, y: f64) -> Result<()> {
         self.move_to(x, y, 1).await?;
-        self.page.mouse_event("mousePressed", x, y, "left", 1).await?;
-        self.page.mouse_event("mouseReleased", x, y, "left", 1).await
+        self.page
+            .mouse_event("mousePressed", x, y, "left", 1)
+            .await?;
+        self.page
+            .mouse_event("mouseReleased", x, y, "left", 1)
+            .await
     }
 
     pub async fn wheel(&self, delta_x: f64, delta_y: f64) -> Result<()> {
@@ -1226,10 +1617,18 @@ impl ApiResponse {
         String::from_utf8_lossy(&self.body).into_owned()
     }
     pub fn json(&self) -> Result<Value> {
-        serde_json::from_slice(&self.body).map_err(|error| Error::new(format!("{} is not JSON ({error}): {}", self.url, self.text())))
+        serde_json::from_slice(&self.body).map_err(|error| {
+            Error::new(format!(
+                "{} is not JSON ({error}): {}",
+                self.url,
+                self.text()
+            ))
+        })
     }
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.get(&name.to_ascii_lowercase()).map(String::as_str)
+        self.headers
+            .get(&name.to_ascii_lowercase())
+            .map(String::as_str)
     }
 }
 
@@ -1241,13 +1640,23 @@ impl ApiRequest {
     pub(crate) async fn builder(&self, method: &str, url: &str) -> Result<reqwest::RequestBuilder> {
         let parsed = url::Url::parse(url)?;
         let cookies = self.context.cookies().await?;
-        let header: Vec<String> = cookies.iter().filter(|cookie| {
-            let domain = cookie.domain.trim_start_matches('.');
-            let host = parsed.host_str().unwrap_or_default();
-            (host == domain || host.ends_with(&format!(".{domain}"))) && parsed.path().starts_with(&cookie.path) && (!cookie.secure || parsed.scheme() == "https")
-        }).map(|cookie| format!("{}={}", cookie.name, cookie.value)).collect();
+        let header: Vec<String> = cookies
+            .iter()
+            .filter(|cookie| {
+                let domain = cookie.domain.trim_start_matches('.');
+                let host = parsed.host_str().unwrap_or_default();
+                (host == domain || host.ends_with(&format!(".{domain}")))
+                    && parsed.path().starts_with(&cookie.path)
+                    && (!cookie.secure || parsed.scheme() == "https")
+            })
+            .map(|cookie| format!("{}={}", cookie.name, cookie.value))
+            .collect();
         let client = crate::session::following();
-        let mut builder = client.request(reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| Error::new(e.to_string()))?, url);
+        let mut builder = client.request(
+            reqwest::Method::from_bytes(method.as_bytes())
+                .map_err(|e| Error::new(e.to_string()))?,
+            url,
+        );
         if !header.is_empty() {
             builder = builder.header("cookie", header.join("; "));
         }
@@ -1258,30 +1667,51 @@ impl ApiRequest {
         let response = builder.send().await?;
         let status = response.status().as_u16();
         let url = response.url().to_string();
-        let headers = response.headers().iter().map(|(k, v)| (k.as_str().to_owned(), v.to_str().unwrap_or_default().to_owned())).collect();
+        let headers = response
+            .headers()
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.as_str().to_owned(),
+                    v.to_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect();
         let body = response.bytes().await?.to_vec();
-        Ok(ApiResponse { status, headers, body, url })
+        Ok(ApiResponse {
+            status,
+            headers,
+            body,
+            url,
+        })
     }
 
     async fn store_cookies(&self, url: &str, response: &reqwest::Response) -> Result<()> {
-        let cookies: Vec<super::Cookie> = response.headers().get_all("set-cookie").iter().filter_map(|value| {
-            let text = value.to_str().ok()?;
-            let (pair, attributes) = text.split_once(';').unwrap_or((text, ""));
-            let (name, value) = pair.split_once('=')?;
-            let mut cookie = super::Cookie::for_url(name.trim(), value.trim(), url);
-            for attribute in attributes.split(';') {
-                let (key, value) = attribute.split_once('=').unwrap_or((attribute, ""));
-                match key.trim().to_ascii_lowercase().as_str() {
-                    "path" => cookie.path = value.trim().to_owned(),
-                    "httponly" => cookie.http_only = true,
-                    "secure" => cookie.secure = true,
-                    "samesite" => cookie.same_site = Some(value.trim().to_owned()),
-                    "max-age" if value.trim().starts_with('-') || value.trim() == "0" => cookie.expires = 1.0,
-                    _ => {}
+        let cookies: Vec<super::Cookie> = response
+            .headers()
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|value| {
+                let text = value.to_str().ok()?;
+                let (pair, attributes) = text.split_once(';').unwrap_or((text, ""));
+                let (name, value) = pair.split_once('=')?;
+                let mut cookie = super::Cookie::for_url(name.trim(), value.trim(), url);
+                for attribute in attributes.split(';') {
+                    let (key, value) = attribute.split_once('=').unwrap_or((attribute, ""));
+                    match key.trim().to_ascii_lowercase().as_str() {
+                        "path" => cookie.path = value.trim().to_owned(),
+                        "httponly" => cookie.http_only = true,
+                        "secure" => cookie.secure = true,
+                        "samesite" => cookie.same_site = Some(value.trim().to_owned()),
+                        "max-age" if value.trim().starts_with('-') || value.trim() == "0" => {
+                            cookie.expires = 1.0
+                        }
+                        _ => {}
+                    }
                 }
-            }
-            Some(cookie)
-        }).collect();
+                Some(cookie)
+            })
+            .collect();
         if !cookies.is_empty() {
             self.context.add_cookies(cookies).await?;
         }
@@ -1289,7 +1719,14 @@ impl ApiRequest {
     }
 
     /// Sends a request: `data` is JSON (`Value`), and `body` raw bytes; `headers` are added.
-    pub async fn fetch(&self, method: &str, url: &str, headers: &[(&str, &str)], data: Option<Value>, body: Option<Vec<u8>>) -> Result<ApiResponse> {
+    pub async fn fetch(
+        &self,
+        method: &str,
+        url: &str,
+        headers: &[(&str, &str)],
+        data: Option<Value>,
+        body: Option<Vec<u8>>,
+    ) -> Result<ApiResponse> {
         let mut builder = self.builder(method, url).await?;
         for (name, value) in headers {
             builder = builder.header(*name, *value);
@@ -1304,9 +1741,23 @@ impl ApiRequest {
         self.store_cookies(url, &response).await?;
         let status = response.status().as_u16();
         let final_url = response.url().to_string();
-        let headers = response.headers().iter().map(|(k, v)| (k.as_str().to_owned(), v.to_str().unwrap_or_default().to_owned())).collect();
+        let headers = response
+            .headers()
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.as_str().to_owned(),
+                    v.to_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect();
         let body = response.bytes().await?.to_vec();
-        Ok(ApiResponse { status, headers, body, url: final_url })
+        Ok(ApiResponse {
+            status,
+            headers,
+            body,
+            url: final_url,
+        })
     }
 
     pub async fn get(&self, url: &str) -> Result<ApiResponse> {
@@ -1315,19 +1766,39 @@ impl ApiRequest {
     pub async fn get_with(&self, url: &str, headers: &[(&str, &str)]) -> Result<ApiResponse> {
         self.fetch("GET", url, headers, None, None).await
     }
-    pub async fn post(&self, url: &str, headers: &[(&str, &str)], data: Value) -> Result<ApiResponse> {
+    pub async fn post(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        data: Value,
+    ) -> Result<ApiResponse> {
         self.fetch("POST", url, headers, Some(data), None).await
     }
     pub async fn post_empty(&self, url: &str, headers: &[(&str, &str)]) -> Result<ApiResponse> {
         self.fetch("POST", url, headers, None, None).await
     }
-    pub async fn put(&self, url: &str, headers: &[(&str, &str)], data: Value) -> Result<ApiResponse> {
+    pub async fn put(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        data: Value,
+    ) -> Result<ApiResponse> {
         self.fetch("PUT", url, headers, Some(data), None).await
     }
-    pub async fn put_bytes(&self, url: &str, headers: &[(&str, &str)], body: Vec<u8>) -> Result<ApiResponse> {
+    pub async fn put_bytes(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Vec<u8>,
+    ) -> Result<ApiResponse> {
         self.fetch("PUT", url, headers, None, Some(body)).await
     }
-    pub async fn patch(&self, url: &str, headers: &[(&str, &str)], data: Value) -> Result<ApiResponse> {
+    pub async fn patch(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        data: Value,
+    ) -> Result<ApiResponse> {
         self.fetch("PATCH", url, headers, Some(data), None).await
     }
     pub async fn delete(&self, url: &str, headers: &[(&str, &str)]) -> Result<ApiResponse> {
@@ -1344,7 +1815,10 @@ pub async fn screenshot_open_pages(suite: &str, case: &str, dir: &Path) {
     let pages: Vec<Page> = {
         let mut open = OPEN.lock().unwrap();
         open.retain(|(_, page)| !page.is_closed());
-        open.iter().filter(|(name, _)| name == suite).map(|(_, page)| page.clone()).collect()
+        open.iter()
+            .filter(|(name, _)| name == suite)
+            .map(|(_, page)| page.clone())
+            .collect()
     };
     for (index, page) in pages.iter().enumerate() {
         let path = dir.join(format!("failure-{case}-{index}.png"));

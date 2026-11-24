@@ -11,8 +11,8 @@ use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 
 pub mod cards;
 mod front;
-mod vault;
 pub mod logseq;
+mod vault;
 
 pub use cards::{Card, CardKind, Date as CardDate, Grade, Schedule};
 pub use front::{Prop, front_matter};
@@ -73,10 +73,18 @@ fn mask_run(out: &mut [u8], text: &str, start: usize, end: usize) {
             *byte = b' ';
         }
     }
-    let last = text[start..end].rfind('\n').map_or(start, |i| start + i + 1);
+    let last = text[start..end]
+        .rfind('\n')
+        .map_or(start, |i| start + i + 1);
     let line_start = text[..last].rfind('\n').map_or(0, |i| i + 1);
-    let opens_line = text[line_start..last].trim_start_matches([' ', '\t']).is_empty() || last > start;
-    let text_after = text[end..].split('\n').next().is_some_and(|rest| !rest.trim().is_empty());
+    let opens_line = text[line_start..last]
+        .trim_start_matches([' ', '\t'])
+        .is_empty()
+        || last > start;
+    let text_after = text[end..]
+        .split('\n')
+        .next()
+        .is_some_and(|rest| !rest.trim().is_empty());
     if opens_line && text_after && end - last >= 3 {
         out[last..last + 3].copy_from_slice("\u{200b}".as_bytes());
     }
@@ -137,10 +145,16 @@ pub struct Lines(Vec<usize>);
 
 impl Lines {
     pub fn new(text: &str) -> Self {
-        Self(std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1)).collect())
+        Self(
+            std::iter::once(0)
+                .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+                .collect(),
+        )
     }
     pub fn line(&self, offset: usize) -> usize {
-        self.0.partition_point(|start| *start <= offset).saturating_sub(1)
+        self.0
+            .partition_point(|start| *start <= offset)
+            .saturating_sub(1)
     }
     pub fn start(&self, line: usize) -> usize {
         self.0.get(line).copied().unwrap_or(0)
@@ -176,10 +190,18 @@ pub fn tags_in(source: &str, range: Range<usize>) -> Vec<Range<usize>> {
         if before.is_some_and(|c| !c.is_whitespace() && !"([{,;\"'".contains(c)) {
             continue;
         }
-        let name_len: usize = text[index + 1..].chars().take_while(|c| tag_char(*c)).map(char::len_utf8).sum();
+        let name_len: usize = text[index + 1..]
+            .chars()
+            .take_while(|c| tag_char(*c))
+            .map(char::len_utf8)
+            .sum();
         let mut name = &text[index + 1..index + 1 + name_len];
         name = name.trim_end_matches('/');
-        if name.is_empty() || name.chars().all(|c| c.is_ascii_digit() || c == '/' || c == '-' || c == '_') {
+        if name.is_empty()
+            || name
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == '/' || c == '-' || c == '_')
+        {
             continue;
         }
         found.push(at..at + 1 + name.len());
@@ -195,8 +217,14 @@ pub fn facts(text: &str) -> Facts {
         facts.skip.push(0..body);
         for (key, value) in &properties {
             match key.to_lowercase().as_str() {
-                "tags" | "tag" => value.items().iter().for_each(|t| push_unique(&mut facts.tags, t.trim_start_matches('#'))),
-                "aliases" | "alias" => value.items().iter().for_each(|a| push_unique(&mut facts.aliases, a)),
+                "tags" | "tag" => value
+                    .items()
+                    .iter()
+                    .for_each(|t| push_unique(&mut facts.tags, t.trim_start_matches('#'))),
+                "aliases" | "alias" => value
+                    .items()
+                    .iter()
+                    .for_each(|a| push_unique(&mut facts.aliases, a)),
                 _ => {}
             }
         }
@@ -231,7 +259,11 @@ pub fn facts(text: &str) -> Facts {
                 facts.skip.push(range);
             }
             Event::End(TagEnd::CodeBlock) => in_code = false,
-            Event::Code(_) | Event::Html(_) | Event::InlineHtml(_) | Event::InlineMath(_) | Event::DisplayMath(_) => {
+            Event::Code(_)
+            | Event::Html(_)
+            | Event::InlineHtml(_)
+            | Event::InlineMath(_)
+            | Event::DisplayMath(_) => {
                 if let Some(h) = heading.as_mut()
                     && let Event::Code(code) = &event
                 {
@@ -240,7 +272,12 @@ pub fn facts(text: &str) -> Facts {
                 facts.skip.push(range);
             }
             Event::Start(Tag::Heading { level, .. }) => {
-                heading = Some(Heading { level: level as u8, text: String::new(), line: lines.line(range.start), offset: range.start });
+                heading = Some(Heading {
+                    level: level as u8,
+                    text: String::new(),
+                    line: lines.line(range.start),
+                    offset: range.start,
+                });
             }
             Event::End(TagEnd::Heading(_)) => {
                 if let Some(mut h) = heading.take() {
@@ -250,14 +287,25 @@ pub fn facts(text: &str) -> Facts {
                     }
                 }
             }
-            Event::Start(Tag::Link { link_type, dest_url, .. }) | Event::Start(Tag::Image { link_type, dest_url, .. }) => {
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url,
+                ..
+            })
+            | Event::Start(Tag::Image {
+                link_type,
+                dest_url,
+                ..
+            }) => {
                 in_link += 1;
                 facts.skip.push(range.clone());
                 if let Some(link) = link_at(text, range, link_type, &dest_url, &lines) {
                     facts.links.push(link);
                 }
             }
-            Event::End(TagEnd::Link) | Event::End(TagEnd::Image) => in_link = in_link.saturating_sub(1),
+            Event::End(TagEnd::Link) | Event::End(TagEnd::Image) => {
+                in_link = in_link.saturating_sub(1)
+            }
             Event::TaskListMarker(done) => {
                 if done {
                     facts.tasks.1 += 1;
@@ -289,15 +337,25 @@ pub fn facts(text: &str) -> Facts {
     facts
 }
 
-fn link_at(text: &str, range: Range<usize>, link_type: LinkType, dest: &str, lines: &Lines) -> Option<Link> {
+fn link_at(
+    text: &str,
+    range: Range<usize>,
+    link_type: LinkType,
+    dest: &str,
+    lines: &Lines,
+) -> Option<Link> {
     let raw = &text[range.clone()];
     let line = lines.line(range.start);
     if let LinkType::WikiLink { .. } = link_type {
         let embed = raw.starts_with('!');
         let start = range.start + if embed { 3 } else { 2 };
         let inner = &text[start..range.end.saturating_sub(2).max(start)];
-        let (written, label) = inner.split_once('|').map_or((inner, None), |(t, l)| (t, Some(l.to_owned())));
-        let (target, fragment) = written.split_once('#').map_or((written, None), |(t, f)| (t, Some(f.to_owned())));
+        let (written, label) = inner
+            .split_once('|')
+            .map_or((inner, None), |(t, l)| (t, Some(l.to_owned())));
+        let (target, fragment) = written
+            .split_once('#')
+            .map_or((written, None), |(t, f)| (t, Some(f.to_owned())));
         return Some(Link {
             target: target.trim().to_owned(),
             fragment,
@@ -312,7 +370,9 @@ fn link_at(text: &str, range: Range<usize>, link_type: LinkType, dest: &str, lin
     if !matches!(link_type, LinkType::Inline) || dest.contains(':') || dest.starts_with('#') {
         return None;
     }
-    let (path, fragment) = dest.split_once('#').map_or((dest, None), |(p, f)| (p, Some(percent_decode(f))));
+    let (path, fragment) = dest
+        .split_once('#')
+        .map_or((dest, None), |(p, f)| (p, Some(percent_decode(f))));
     let lower = path.to_lowercase();
     if !(lower.ends_with(".md") || lower.ends_with(".markdown")) {
         return None;
@@ -355,13 +415,18 @@ pub fn block_id(line: &str) -> Option<&str> {
     let at = trimmed.rfind('^')?;
     let id = &trimmed[at + 1..];
     let before_ok = at == 0 || trimmed[..at].ends_with(char::is_whitespace);
-    (before_ok && !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')).then_some(id)
+    (before_ok && !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+        .then_some(id)
 }
 
 /// Whole-word, case-insensitive occurrences of any of `names` outside links, code and properties.
 pub fn mentions(text: &str, facts: &Facts, names: &[String]) -> Vec<Range<usize>> {
     let mut found: Vec<Range<usize>> = Vec::new();
-    let names: Vec<Vec<char>> = names.iter().filter(|n| n.chars().count() >= 3).map(|n| n.to_lowercase().chars().collect()).collect();
+    let names: Vec<Vec<char>> = names
+        .iter()
+        .filter(|n| n.chars().count() >= 3)
+        .map(|n| n.to_lowercase().chars().collect())
+        .collect();
     let mut fence = false;
     let mut line_start = 0;
     for line in text.split_inclusive('\n') {
@@ -379,15 +444,24 @@ pub fn mentions(text: &str, facts: &Facts, names: &[String]) -> Vec<Range<usize>
         }
         for (index, _) in line.char_indices() {
             let at = start + index;
-            if found.last().is_some_and(|r| at < r.end) || facts.skip.iter().any(|r| r.contains(&at)) {
+            if found.last().is_some_and(|r| at < r.end)
+                || facts.skip.iter().any(|r| r.contains(&at))
+            {
                 continue;
             }
-            if line[..index].chars().next_back().is_some_and(char::is_alphanumeric) {
+            if line[..index]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+            {
                 continue;
             }
             for name in &names {
                 if let Some(len) = matches_at(&line[index..], name)
-                    && !line[index + len..].chars().next().is_some_and(char::is_alphanumeric)
+                    && !line[index + len..]
+                        .chars()
+                        .next()
+                        .is_some_and(char::is_alphanumeric)
                 {
                     found.push(at..at + len);
                     break;
@@ -453,14 +527,40 @@ mod tests {
         let f = facts(NOTE);
         assert_eq!(f.tags, ["work", "urgent", "my_tag/sub", "seen"]);
         assert_eq!(f.aliases, ["The plan"]);
-        assert_eq!(f.headings, [Heading { level: 1, text: "Head x".into(), line: 6, offset: NOTE.find("# Head").unwrap() }]);
-        let targets: Vec<_> = f.links.iter().map(|l| (l.target.as_str(), l.fragment.as_deref(), l.embed, l.wiki, &NOTE[l.target_range.clone()])).collect();
+        assert_eq!(
+            f.headings,
+            [Heading {
+                level: 1,
+                text: "Head x".into(),
+                line: 6,
+                offset: NOTE.find("# Head").unwrap()
+            }]
+        );
+        let targets: Vec<_> = f
+            .links
+            .iter()
+            .map(|l| {
+                (
+                    l.target.as_str(),
+                    l.fragment.as_deref(),
+                    l.embed,
+                    l.wiki,
+                    &NOTE[l.target_range.clone()],
+                )
+            })
+            .collect();
         assert_eq!(
             targets,
             [
                 ("Other note", Some("Part"), false, true, "Other note"),
                 ("pic.png", None, true, true, "pic.png"),
-                ("Sub/Other note.md", Some("Top"), false, false, "Sub/Other%20note.md"),
+                (
+                    "Sub/Other note.md",
+                    Some("Top"),
+                    false,
+                    false,
+                    "Sub/Other%20note.md"
+                ),
                 ("a", None, false, true, "a"),
             ]
         );
@@ -481,8 +581,20 @@ mod tests {
     #[test]
     fn rewrites_targets_only() {
         let text = "[[Old]] [[Old#H|label]] ![[Old]] [x](Old.md) [[Other]]";
-        let next = rewrite(text, |l| (l.target == "Old" || l.target == "Old.md").then(|| if l.wiki { "New name".into() } else { "New%20name.md".into() })).unwrap();
-        assert_eq!(next, "[[New name]] [[New name#H|label]] ![[New name]] [x](New%20name.md) [[Other]]");
+        let next = rewrite(text, |l| {
+            (l.target == "Old" || l.target == "Old.md").then(|| {
+                if l.wiki {
+                    "New name".into()
+                } else {
+                    "New%20name.md".into()
+                }
+            })
+        })
+        .unwrap();
+        assert_eq!(
+            next,
+            "[[New name]] [[New name#H|label]] ![[New name]] [x](New%20name.md) [[Other]]"
+        );
         assert_eq!(rewrite(text, |_| None), None);
     }
 
@@ -491,7 +603,10 @@ mod tests {
         let text = "---\ntitle: Project Apollo\n---\nproject apollo starts. [[Project Apollo]] `Project Apollo` Project Apollos\n";
         let f = facts(text);
         let found = mentions(text, &f, &["Project Apollo".into()]);
-        assert_eq!(found.iter().map(|r| &text[r.clone()]).collect::<Vec<_>>(), ["project apollo"]);
+        assert_eq!(
+            found.iter().map(|r| &text[r.clone()]).collect::<Vec<_>>(),
+            ["project apollo"]
+        );
     }
 
     #[test]
@@ -507,16 +622,30 @@ mod tests {
 pub fn section(text: &str, fragment: Option<&str>) -> Option<String> {
     let facts = facts(text);
     let body = &text[facts.body..];
-    let Some(fragment) = fragment.map(str::trim).filter(|f| !f.is_empty()) else { return Some(body.trim().to_owned()) };
+    let Some(fragment) = fragment.map(str::trim).filter(|f| !f.is_empty()) else {
+        return Some(body.trim().to_owned());
+    };
     if let Some(id) = fragment.strip_prefix('^') {
-        let line = text[facts.body..].lines().find(|l| block_id(l) == Some(id))?;
+        let line = text[facts.body..]
+            .lines()
+            .find(|l| block_id(l) == Some(id))?;
         let trimmed = line.trim_end();
-        return Some(trimmed[..trimmed.len() - id.len() - 1].trim_end().to_owned());
+        return Some(
+            trimmed[..trimmed.len() - id.len() - 1]
+                .trim_end()
+                .to_owned(),
+        );
     }
     let wanted = slug(fragment.rsplit('#').next().unwrap_or(fragment));
-    let index = facts.headings.iter().position(|h| slug(&h.text) == wanted)?;
+    let index = facts
+        .headings
+        .iter()
+        .position(|h| slug(&h.text) == wanted)?;
     let heading = &facts.headings[index];
-    let end = facts.headings[index + 1..].iter().find(|h| h.level <= heading.level).map_or(text.len(), |h| h.offset);
+    let end = facts.headings[index + 1..]
+        .iter()
+        .find(|h| h.level <= heading.level)
+        .map_or(text.len(), |h| h.offset);
     Some(text[heading.offset..end].trim().to_owned())
 }
 
@@ -526,9 +655,16 @@ mod section_tests {
 
     #[test]
     fn embeds_sections_and_blocks() {
-        let text = "---\na: b\n---\n# Top\nintro\n## Part\nbody ^b1\n### Deep\nmore\n## Next\nend\n";
-        assert_eq!(section(text, None).unwrap(), "# Top\nintro\n## Part\nbody ^b1\n### Deep\nmore\n## Next\nend");
-        assert_eq!(section(text, Some("Part")).unwrap(), "## Part\nbody ^b1\n### Deep\nmore");
+        let text =
+            "---\na: b\n---\n# Top\nintro\n## Part\nbody ^b1\n### Deep\nmore\n## Next\nend\n";
+        assert_eq!(
+            section(text, None).unwrap(),
+            "# Top\nintro\n## Part\nbody ^b1\n### Deep\nmore\n## Next\nend"
+        );
+        assert_eq!(
+            section(text, Some("Part")).unwrap(),
+            "## Part\nbody ^b1\n### Deep\nmore"
+        );
         assert_eq!(section(text, Some("Top#Next")).unwrap(), "## Next\nend");
         assert_eq!(section(text, Some("^b1")).unwrap(), "body");
         assert_eq!(section(text, Some("Missing")), None);

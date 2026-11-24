@@ -62,7 +62,10 @@ pub fn InstalledAppsSettings(session: BrowserSession) -> impl IntoView {
     let refresh = move |signal: Option<web_sys::AbortSignal>| async move {
         let value = api::request::<Inventory>(
             "/api/v1/admin/installedApps",
-            Req { signal, ..Default::default() },
+            Req {
+                signal,
+                ..Default::default()
+            },
         )
         .await?;
         let _ = inventory.try_set(Some(value));
@@ -84,7 +87,9 @@ pub fn InstalledAppsSettings(session: BrowserSession) -> impl IntoView {
     }
 
     let toggle = move |item: ManagedApp| {
-        let Some(current) = inventory.get_untracked() else { return };
+        let Some(current) = inventory.get_untracked() else {
+            return;
+        };
         busy.set(true);
         error.set(String::new());
         notice.set(String::new());
@@ -109,7 +114,12 @@ pub fn InstalledAppsSettings(session: BrowserSession) -> impl IntoView {
             .await;
             match result {
                 Ok(next) => {
-                    let updated = next.items.iter().find(|app| app.id == item.id).map(|a| a.enabled).unwrap_or(!item.enabled);
+                    let updated = next
+                        .items
+                        .iter()
+                        .find(|app| app.id == item.id)
+                        .map(|a| a.enabled)
+                        .unwrap_or(!item.enabled);
                     let _ = inventory.try_set(Some(next));
                     if let Ok(ev) = web_sys::Event::new("dar:apps") {
                         let _ = window().dispatch_event(&ev);

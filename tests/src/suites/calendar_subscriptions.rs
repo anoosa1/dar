@@ -1,12 +1,12 @@
 //! Port of `test/calendar-subscriptions.integration.test.ts`: calendar subscriptions sync by
 //! link, stay read-only and show dated tasks; Notes live in Files (`docs/notes`).
 
-use axum::http::{StatusCode, header};
 use axum::Router;
+use axum::http::{StatusCode, header};
 use dar_acceptance::prelude::*;
 use dar_acceptance::session::Upload;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 pub const SUITE: Suite = Suite {

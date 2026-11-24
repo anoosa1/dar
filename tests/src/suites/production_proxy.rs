@@ -16,7 +16,12 @@ pub const SUITE: Suite = Suite {
     cases: &[case!(generated_nixos_nginx_proxy, 240)],
 };
 
-fn run_cmd(executable: &Path, args: &[&str], cwd: Option<&Path>, env: &[(&str, &str)]) -> Result<String> {
+fn run_cmd(
+    executable: &Path,
+    args: &[&str],
+    cwd: Option<&Path>,
+    env: &[(&str, &str)],
+) -> Result<String> {
     let mut cmd = Command::new(executable);
     cmd.args(args).stdin(Stdio::null());
     if let Some(dir) = cwd {
@@ -25,7 +30,9 @@ fn run_cmd(executable: &Path, args: &[&str], cwd: Option<&Path>, env: &[(&str, &
     for (k, v) in env {
         cmd.env(k, v);
     }
-    let output = cmd.output().context(format!("running {}", executable.display()))?;
+    let output = cmd
+        .output()
+        .context(format!("running {}", executable.display()))?;
     ensure!(
         output.status.success(),
         "{} {:?} failed:\n{}{}",
@@ -54,11 +61,20 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
     let origin = format!("https://127.0.0.1:{port}");
     let name = format!("dar-proxy-{}", &uuid()[..8]);
 
-    let system = if cfg!(target_arch = "aarch64") { "aarch64-linux" } else { "x86_64-linux" };
+    let system = if cfg!(target_arch = "aarch64") {
+        "aarch64-linux"
+    } else {
+        "x86_64-linux"
+    };
     let nix_bin = dar_acceptance::which("nix").context("nix executable")?;
     let fixture = std::path::PathBuf::from(run_cmd(
         &nix_bin,
-        &["build", &format!(".#checks.{system}.module-evaluation"), "--no-link", "--print-out-paths"],
+        &[
+            "build",
+            &format!(".#checks.{system}.module-evaluation"),
+            "--no-link",
+            "--print-out-paths",
+        ],
         Some(project),
         &[],
     )?);
@@ -102,7 +118,11 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
             .arg(&cli_root)
             .args(["start", "--data-dir"])
             .arg(&db_data)
-            .args(["--listen-addr", &format!("127.0.0.1:{db_port}"), "--non-interactive"])
+            .args([
+                "--listen-addr",
+                &format!("127.0.0.1:{db_port}"),
+                "--non-interactive",
+            ])
             .env("SSL_CERT_FILE", &cert)
             .stdin(Stdio::null())
             .stdout(db_log_file.try_clone()?)
@@ -118,13 +138,20 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
         {
             bail!("fixture SpacetimeDB stopped ({status}):\n{}", tail(&db_log));
         }
-        if let Ok(resp) = session::client().get(format!("{db_url}/v1/ping")).timeout(Duration::from_millis(500)).send().await
+        if let Ok(resp) = session::client()
+            .get(format!("{db_url}/v1/ping"))
+            .timeout(Duration::from_millis(500))
+            .send()
+            .await
             && resp.status().is_success()
         {
             break;
         }
         if Instant::now() > deadline {
-            bail!("fixture SpacetimeDB did not become ready:\n{}", tail(&db_log));
+            bail!(
+                "fixture SpacetimeDB did not become ready:\n{}",
+                tail(&db_log)
+            );
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -150,13 +177,23 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
     let cli_toml = dar_acceptance::read_to_string(cli_root.join("config/cli.toml"))?;
     let token = cli_toml
         .lines()
-        .find_map(|line| line.trim().strip_prefix("spacetimedb_token").map(|r| r.trim_start_matches([' ', '=']).trim().trim_matches('"').to_owned()))
+        .find_map(|line| {
+            line.trim().strip_prefix("spacetimedb_token").map(|r| {
+                r.trim_start_matches([' ', '='])
+                    .trim()
+                    .trim_matches('"')
+                    .to_owned()
+            })
+        })
         .filter(|t| !t.is_empty())
         .context("spacetimedb_token")?;
     let service_token_file = root.join("database-token");
     let bootstrap_token_file = root.join("bootstrap-token");
     write_private(&service_token_file, token.as_bytes())?;
-    write_private(&bootstrap_token_file, dar_acceptance::base64url(&dar_acceptance::random_bytes(32)).as_bytes())?;
+    write_private(
+        &bootstrap_token_file,
+        dar_acceptance::base64url(&dar_acceptance::random_bytes(32)).as_bytes(),
+    )?;
 
     let runtime = Instance::start(InstanceConfig {
         port: 0,
@@ -173,7 +210,8 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
     let backend = format!("http://127.0.0.1:{}", runtime.port);
 
     let mut config = dar_acceptance::read_to_string(fixture.join("nginx.conf"))?;
-    let http_server_re = regex::Regex::new(r"(?s)    server \{\n        listen 0\.0\.0\.0:80;.*?\n    \}\n")?;
+    let http_server_re =
+        regex::Regex::new(r"(?s)    server \{\n        listen 0\.0\.0\.0:80;.*?\n    \}\n")?;
     config = http_server_re.replace(&config, "").into_owned();
     let temps = ["client_body", "proxy", "fastcgi", "uwsgi", "scgi"]
         .iter()
@@ -181,16 +219,34 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
         .collect::<Vec<_>>()
         .join("\n");
     config = config
-        .replace("listen 0.0.0.0:443 ssl;", &format!("listen 127.0.0.1:{port} ssl;"))
+        .replace(
+            "listen 0.0.0.0:443 ssl;",
+            &format!("listen 127.0.0.1:{port} ssl;"),
+        )
         .replace("listen [::0]:443 ssl;", "")
-        .replace("/var/lib/acme/dar.example.test/fullchain.pem", &cert.to_string_lossy())
-        .replace("/var/lib/acme/dar.example.test/key.pem", &key.to_string_lossy())
-        .replace("/var/lib/acme/dar.example.test/chain.pem", &cert.to_string_lossy())
+        .replace(
+            "/var/lib/acme/dar.example.test/fullchain.pem",
+            &cert.to_string_lossy(),
+        )
+        .replace(
+            "/var/lib/acme/dar.example.test/key.pem",
+            &key.to_string_lossy(),
+        )
+        .replace(
+            "/var/lib/acme/dar.example.test/chain.pem",
+            &cert.to_string_lossy(),
+        )
         .replace("dar.example.test", &format!("127.0.0.1:{port}"))
         .replace("http://127.0.0.1:4311", &backend)
         .replace("http://127.0.0.1:4310", &db_url)
-        .replace("/v1/database/dar/subscribe", &format!("/v1/database/{name}/subscribe"))
-        .replace("pid /run/nginx/nginx.pid;", &format!("pid {}/nginx.pid;", root.display()))
+        .replace(
+            "/v1/database/dar/subscribe",
+            &format!("/v1/database/{name}/subscribe"),
+        )
+        .replace(
+            "pid /run/nginx/nginx.pid;",
+            &format!("pid {}/nginx.pid;", root.display()),
+        )
         .replace("http {", &format!("http {{\naccess_log off;\n{temps}"));
     std::fs::create_dir_all(root.join("logs"))?;
     let config_file = root.join("nginx.conf");
@@ -200,7 +256,12 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
     let nginx_log_file = std::fs::File::create(&nginx_log)?;
     let mut proxy = ChildGuard(Some(
         Command::new(fixture.join("nginx"))
-            .args(["-p", &format!("{}/", root.display()), "-c", &config_file.to_string_lossy()])
+            .args([
+                "-p",
+                &format!("{}/", root.display()),
+                "-c",
+                &config_file.to_string_lossy(),
+            ])
             .stdin(Stdio::null())
             .stdout(nginx_log_file.try_clone()?)
             .stderr(nginx_log_file)
@@ -220,11 +281,14 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
             _server_name: &rustls::pki_types::ServerName<'_>,
             _ocsp_response: &[u8],
             _now: rustls::pki_types::UnixTime,
-        ) -> std::result::Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        ) -> std::result::Result<rustls::client::danger::ServerCertVerified, rustls::Error>
+        {
             if end_entity.as_ref() == self.expected.as_slice() {
                 Ok(rustls::client::danger::ServerCertVerified::assertion())
             } else {
-                Err(rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer))
+                Err(rustls::Error::InvalidCertificate(
+                    rustls::CertificateError::UnknownIssuer,
+                ))
             }
         }
         fn verify_tls12_signature(
@@ -232,35 +296,56 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
             message: &[u8],
             cert: &rustls::pki_types::CertificateDer<'_>,
             dss: &rustls::DigitallySignedStruct,
-        ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-            rustls::crypto::verify_tls12_signature(message, cert, dss, &rustls::crypto::ring::default_provider().signature_verification_algorithms)
+        ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error>
+        {
+            rustls::crypto::verify_tls12_signature(
+                message,
+                cert,
+                dss,
+                &rustls::crypto::ring::default_provider().signature_verification_algorithms,
+            )
         }
         fn verify_tls13_signature(
             &self,
             message: &[u8],
             cert: &rustls::pki_types::CertificateDer<'_>,
             dss: &rustls::DigitallySignedStruct,
-        ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-            rustls::crypto::verify_tls13_signature(message, cert, dss, &rustls::crypto::ring::default_provider().signature_verification_algorithms)
+        ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error>
+        {
+            rustls::crypto::verify_tls13_signature(
+                message,
+                cert,
+                dss,
+                &rustls::crypto::ring::default_provider().signature_verification_algorithms,
+            )
         }
         fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-            rustls::crypto::ring::default_provider().signature_verification_algorithms.supported_schemes()
+            rustls::crypto::ring::default_provider()
+                .signature_verification_algorithms
+                .supported_schemes()
         }
     }
 
     let cert_pem = dar_acceptance::read_to_string(&cert)?;
-    let cert_b64: String = cert_pem.lines().filter(|l| !l.starts_with("-----")).collect();
+    let cert_b64: String = cert_pem
+        .lines()
+        .filter(|l| !l.starts_with("-----"))
+        .collect();
     let cert_der = {
         use base64::Engine as _;
-        base64::engine::general_purpose::STANDARD.decode(cert_b64).map_err(|e| Error::new(e.to_string()))?
+        base64::engine::general_purpose::STANDARD
+            .decode(cert_b64)
+            .map_err(|e| Error::new(e.to_string()))?
     };
     let tls_config = Arc::new(
-        rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .with_safe_default_protocol_versions()
-            .map_err(|e| Error::new(e.to_string()))?
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(PinnedCertVerifier { expected: cert_der }))
-            .with_no_client_auth(),
+        rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .map_err(|e| Error::new(e.to_string()))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(PinnedCertVerifier { expected: cert_der }))
+        .with_no_client_auth(),
     );
     let connector = tokio_rustls::TlsConnector::from(tls_config);
 
@@ -272,11 +357,18 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
         async move {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             let tcp = tokio::net::TcpStream::connect(("127.0.0.1", port)).await?;
-            let server_name = rustls::pki_types::ServerName::IpAddress(rustls::pki_types::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST.into()));
-            let mut tls = connector.connect(server_name, tcp).await.map_err(|e| Error::new(format!("TLS connect: {e}")))?;
+            let server_name = rustls::pki_types::ServerName::IpAddress(
+                rustls::pki_types::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST.into()),
+            );
+            let mut tls = connector
+                .connect(server_name, tcp)
+                .await
+                .map_err(|e| Error::new(format!("TLS connect: {e}")))?;
             let payload = body.unwrap_or_default();
             let req = if payload.is_empty() && method == "GET" {
-                format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
+                format!(
+                    "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+                )
             } else {
                 format!(
                     "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
@@ -300,7 +392,11 @@ pub async fn generated_nixos_nginx_proxy(t: &Ctx) -> Result<()> {
 
     let browser = Browser::shared().await?;
     let context = browser
-        .new_context(ContextOptions { ignore_https_errors: true, viewport: (1440, 950), ..ContextOptions::default() })
+        .new_context(ContextOptions {
+            ignore_https_errors: true,
+            viewport: (1440, 950),
+            ..ContextOptions::default()
+        })
         .await?;
 
     let result = async {

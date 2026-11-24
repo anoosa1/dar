@@ -47,7 +47,12 @@ impl Date {
         if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
             return None;
         }
-        if !b[0..4].iter().chain(&b[5..7]).chain(&b[8..10]).all(u8::is_ascii_digit) {
+        if !b[0..4]
+            .iter()
+            .chain(&b[5..7])
+            .chain(&b[8..10])
+            .all(u8::is_ascii_digit)
+        {
             return None;
         }
         let year = value[0..4].parse::<i32>().ok()?;
@@ -63,7 +68,8 @@ impl Date {
     }
 
     pub fn days_since(self, earlier: Self) -> i64 {
-        days_from_civil(self.year, self.month, self.day) - days_from_civil(earlier.year, earlier.month, earlier.day)
+        days_from_civil(self.year, self.month, self.day)
+            - days_from_civil(earlier.year, earlier.month, earlier.day)
     }
 }
 
@@ -158,13 +164,18 @@ pub fn schedule(state: Option<Schedule>, grade: Grade, today: Date) -> Schedule 
         }
         Grade::Easy => {
             let ease = prev_ease.saturating_add(20);
-            let interval = ((prev_interval + delay) * (f64::from(ease) / 100.0) * EASY_BONUS).round();
+            let interval =
+                ((prev_interval + delay) * (f64::from(ease) / 100.0) * EASY_BONUS).round();
             (interval, ease)
         }
     };
 
     let interval = next_interval.clamp(1.0, MAX_INTERVAL as f64) as u32;
-    Schedule { due: today.add_days(interval as i32), interval, ease: next_ease }
+    Schedule {
+        due: today.add_days(interval as i32),
+        interval,
+        ease: next_ease,
+    }
 }
 
 /// Compact human-readable interval label for review buttons (`1d`, `3d`, `2mo`, `1.2y`).
@@ -228,7 +239,9 @@ pub fn deck(path: &str, tags: &[String]) -> String {
     const PREFIX: &[u8] = b"flashcards/";
     for tag in tags {
         let trimmed = tag.trim().trim_start_matches('#');
-        if trimmed.len() > PREFIX.len() && trimmed.as_bytes()[..PREFIX.len()].eq_ignore_ascii_case(PREFIX) {
+        if trimmed.len() > PREFIX.len()
+            && trimmed.as_bytes()[..PREFIX.len()].eq_ignore_ascii_case(PREFIX)
+        {
             let sub = trimmed[PREFIX.len()..].trim_matches('/');
             if !sub.is_empty() {
                 return sub.to_owned();
@@ -260,7 +273,12 @@ fn collect_lines(text: &str, body: usize) -> Vec<SourceLine<'_>> {
         let raw = chunk.strip_suffix('\n').unwrap_or(chunk);
         let raw = raw.strip_suffix('\r').unwrap_or(raw);
         let content_end = offset + raw.len();
-        lines.push(SourceLine { number: base_line + idx, start: offset, content_end, raw });
+        lines.push(SourceLine {
+            number: base_line + idx,
+            start: offset,
+            content_end,
+            raw,
+        });
         offset = end;
     }
     lines
@@ -309,7 +327,9 @@ fn is_hr(raw: &str) -> bool {
         return false;
     }
     for ch in ['-', '*', '_'] {
-        if trimmed.chars().all(|c| c == ch || c == ' ') && trimmed.chars().filter(|&c| c == ch).count() >= 3 {
+        if trimmed.chars().all(|c| c == ch || c == ' ')
+            && trimmed.chars().filter(|&c| c == ch).count() >= 3
+        {
             return true;
         }
     }
@@ -335,7 +355,11 @@ fn parse_sr_groups(inner: &str) -> Option<Vec<Option<Schedule>>> {
         if interval == 0 {
             out.push(None);
         } else {
-            out.push(Some(Schedule { due, interval, ease }));
+            out.push(Some(Schedule {
+                due,
+                interval,
+                ease,
+            }));
         }
     }
     (!out.is_empty()).then_some(out)
@@ -353,7 +377,9 @@ fn parse_standalone_sr(line: &SourceLine<'_>) -> Option<(Range<usize>, Vec<Optio
 }
 
 /// Matches a trailing inline `<!--SR:...-->` comment at the end of a line.
-fn parse_trailing_sr(line: &SourceLine<'_>) -> Option<(Range<usize>, Vec<Option<Schedule>>, usize)> {
+fn parse_trailing_sr(
+    line: &SourceLine<'_>,
+) -> Option<(Range<usize>, Vec<Option<Schedule>>, usize)> {
     let rtrimmed = line.raw.trim_end();
     if !rtrimmed.ends_with("-->") {
         return None;
@@ -507,7 +533,10 @@ fn strip_card_tag(text: &str) -> Option<String> {
             continue;
         }
         if bytes[i] == b'#' {
-            let before_ok = text[..i].chars().next_back().is_none_or(|c| c.is_whitespace() || "([{,;\"'".contains(c));
+            let before_ok = text[..i]
+                .chars()
+                .next_back()
+                .is_none_or(|c| c.is_whitespace() || "([{,;\"'".contains(c));
             if before_ok
                 && i + 5 <= len
                 && bytes[i + 1..i + 5].eq_ignore_ascii_case(b"card")
@@ -639,7 +668,10 @@ pub fn find(text: &str) -> Vec<Card> {
                     j += 1;
                     continue;
                 }
-                if ans_raw.trim().is_empty() || parse_standalone_sr(&lines[j]).is_some() || is_heading(ans_raw) {
+                if ans_raw.trim().is_empty()
+                    || parse_standalone_sr(&lines[j]).is_some()
+                    || is_heading(ans_raw)
+                {
                     break;
                 }
                 if let Some(f) = parse_fence_open(ans_raw) {
@@ -670,8 +702,17 @@ pub fn find(text: &str) -> Vec<Card> {
                     next_i = j + 1;
                 }
 
-                let question = pending_q.iter().map(|&idx| lines[idx].raw).collect::<Vec<_>>().join("\n").trim().to_owned();
-                let mut ans_parts: Vec<&str> = ans_indices[..ans_indices.len() - 1].iter().map(|&idx| lines[idx].raw).collect();
+                let question = pending_q
+                    .iter()
+                    .map(|&idx| lines[idx].raw)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .trim()
+                    .to_owned();
+                let mut ans_parts: Vec<&str> = ans_indices[..ans_indices.len() - 1]
+                    .iter()
+                    .map(|&idx| lines[idx].raw)
+                    .collect();
                 if !last_line_slice.trim().is_empty() || ans_parts.is_empty() {
                     ans_parts.push(last_line_slice);
                 }
@@ -683,7 +724,11 @@ pub fn find(text: &str) -> Vec<Card> {
                     let insert_at = lines[last_ans].content_end;
                     let line_no = lines[first_q].number;
                     let slots = if reversible { 2 } else { 1 };
-                    let kind = if reversible { CardKind::MultiLineReversible } else { CardKind::MultiLine };
+                    let kind = if reversible {
+                        CardKind::MultiLineReversible
+                    } else {
+                        CardKind::MultiLine
+                    };
 
                     cards.push(Card {
                         index: cards.len(),
@@ -778,7 +823,10 @@ pub fn find(text: &str) -> Vec<Card> {
                 }
 
                 let question = cleaned_q.trim().to_owned();
-                let mut ans_raws: Vec<&str> = ans_indices[..ans_indices.len() - 1].iter().map(|&idx| lines[idx].raw).collect();
+                let mut ans_raws: Vec<&str> = ans_indices[..ans_indices.len() - 1]
+                    .iter()
+                    .map(|&idx| lines[idx].raw)
+                    .collect();
                 if !last_line_slice.trim().is_empty() || ans_raws.is_empty() {
                     ans_raws.push(last_line_slice);
                 }
@@ -837,7 +885,11 @@ pub fn find(text: &str) -> Vec<Card> {
                     let insert_at = lines[i].content_end;
                     let line_no = lines[i].number;
                     let slots = if reversible { 2 } else { 1 };
-                    let kind = if reversible { CardKind::SingleLineReversible } else { CardKind::SingleLine };
+                    let kind = if reversible {
+                        CardKind::SingleLineReversible
+                    } else {
+                        CardKind::SingleLine
+                    };
 
                     cards.push(Card {
                         index: cards.len(),
@@ -952,26 +1004,94 @@ mod tests {
     fn sm2_schedule_new_and_reviewed() {
         let today = d("2026-11-23");
         // New card (initial ease 250, interval 1).
-        assert_eq!(schedule(None, Grade::Again, today), Schedule { due: d("2026-11-24"), interval: 1, ease: 230 });
-        assert_eq!(schedule(None, Grade::Hard, today), Schedule { due: d("2026-11-24"), interval: 1, ease: 230 });
-        assert_eq!(schedule(None, Grade::Good, today), Schedule { due: d("2026-11-26"), interval: 3, ease: 250 });
-        assert_eq!(schedule(None, Grade::Easy, today), Schedule { due: d("2026-11-27"), interval: 4, ease: 270 });
+        assert_eq!(
+            schedule(None, Grade::Again, today),
+            Schedule {
+                due: d("2026-11-24"),
+                interval: 1,
+                ease: 230
+            }
+        );
+        assert_eq!(
+            schedule(None, Grade::Hard, today),
+            Schedule {
+                due: d("2026-11-24"),
+                interval: 1,
+                ease: 230
+            }
+        );
+        assert_eq!(
+            schedule(None, Grade::Good, today),
+            Schedule {
+                due: d("2026-11-26"),
+                interval: 3,
+                ease: 250
+            }
+        );
+        assert_eq!(
+            schedule(None, Grade::Easy, today),
+            Schedule {
+                due: d("2026-11-27"),
+                interval: 4,
+                ease: 270
+            }
+        );
 
         // Reviewed on time (delay = 0).
-        let prev = Schedule { due: today, interval: 10, ease: 250 };
-        assert_eq!(schedule(Some(prev), Grade::Again, today), Schedule { due: d("2026-11-24"), interval: 1, ease: 230 });
-        assert_eq!(schedule(Some(prev), Grade::Hard, today), Schedule { due: d("2026-11-28"), interval: 5, ease: 230 });
-        assert_eq!(schedule(Some(prev), Grade::Good, today), Schedule { due: d("2026-12-18"), interval: 25, ease: 250 });
-        assert_eq!(schedule(Some(prev), Grade::Easy, today), Schedule { due: d("2026-12-28"), interval: 35, ease: 270 });
+        let prev = Schedule {
+            due: today,
+            interval: 10,
+            ease: 250,
+        };
+        assert_eq!(
+            schedule(Some(prev), Grade::Again, today),
+            Schedule {
+                due: d("2026-11-24"),
+                interval: 1,
+                ease: 230
+            }
+        );
+        assert_eq!(
+            schedule(Some(prev), Grade::Hard, today),
+            Schedule {
+                due: d("2026-11-28"),
+                interval: 5,
+                ease: 230
+            }
+        );
+        assert_eq!(
+            schedule(Some(prev), Grade::Good, today),
+            Schedule {
+                due: d("2026-12-18"),
+                interval: 25,
+                ease: 250
+            }
+        );
+        assert_eq!(
+            schedule(Some(prev), Grade::Easy, today),
+            Schedule {
+                due: d("2026-12-28"),
+                interval: 35,
+                ease: 270
+            }
+        );
 
         // Overdue by 4 days (delay bonus applies to Hard/Good/Easy).
-        let overdue = Schedule { due: d("2026-11-19"), interval: 10, ease: 250 };
+        let overdue = Schedule {
+            due: d("2026-11-19"),
+            interval: 10,
+            ease: 250,
+        };
         assert_eq!(schedule(Some(overdue), Grade::Hard, today).interval, 6);
         assert_eq!(schedule(Some(overdue), Grade::Good, today).interval, 30);
         assert_eq!(schedule(Some(overdue), Grade::Easy, today).interval, 49);
 
         // Ease never drops below MIN_EASE (130).
-        let low = Schedule { due: today, interval: 4, ease: 140 };
+        let low = Schedule {
+            due: today,
+            interval: 4,
+            ease: 140,
+        };
         assert_eq!(schedule(Some(low), Grade::Again, today).ease, 130);
         assert_eq!(schedule(Some(low), Grade::Hard, today).ease, 130);
     }
@@ -1023,8 +1143,18 @@ Produces ATP.
         assert_eq!(cards[0].kind, CardKind::SingleLine);
         assert_eq!(cards[0].question, "Capital of France");
         assert_eq!(cards[0].answer, "Paris");
-        assert_eq!(cards[0].schedule, Some(Schedule { due: d("2026-11-20"), interval: 5, ease: 250 }));
-        assert_eq!(&note[cards[0].comment_range.clone().unwrap()], "<!--SR:!2026-11-20,5,250-->");
+        assert_eq!(
+            cards[0].schedule,
+            Some(Schedule {
+                due: d("2026-11-20"),
+                interval: 5,
+                ease: 250
+            })
+        );
+        assert_eq!(
+            &note[cards[0].comment_range.clone().unwrap()],
+            "<!--SR:!2026-11-20,5,250-->"
+        );
 
         assert_eq!(cards[1].kind, CardKind::SingleLineReversible);
         assert_eq!(cards[1].question, "Water");
@@ -1047,8 +1177,18 @@ Produces ATP.
 
         assert_eq!(cards[4].kind, CardKind::ListCard);
         assert_eq!(cards[4].question, "What is Rust's ownership rule?");
-        assert_eq!(cards[4].answer, "- Each value has a single owner.\n- Dropped when owner leaves scope.");
-        assert_eq!(cards[4].schedule, Some(Schedule { due: d("2026-11-25"), interval: 3, ease: 250 }));
+        assert_eq!(
+            cards[4].answer,
+            "- Each value has a single owner.\n- Dropped when owner leaves scope."
+        );
+        assert_eq!(
+            cards[4].schedule,
+            Some(Schedule {
+                due: d("2026-11-25"),
+                interval: 3,
+                ease: 250
+            })
+        );
     }
 
     #[test]
@@ -1058,7 +1198,11 @@ Produces ATP.
         assert_eq!(cards.len(), 4);
 
         // Insert comment on single-line card.
-        let s1 = Schedule { due: d("2026-11-26"), interval: 3, ease: 250 };
+        let s1 = Schedule {
+            due: d("2026-11-26"),
+            interval: 3,
+            ease: 250,
+        };
         let step1 = rewrite(note, &cards[0], s1);
         assert_eq!(
             step1,
@@ -1067,7 +1211,11 @@ Produces ATP.
 
         // Update existing single-line comment in place.
         let cards1 = find(&step1);
-        let s1_next = Schedule { due: d("2026-12-04"), interval: 8, ease: 250 };
+        let s1_next = Schedule {
+            due: d("2026-12-04"),
+            interval: 8,
+            ease: 250,
+        };
         let step2 = rewrite(&step1, &cards1[0], s1_next);
         assert_eq!(
             step2,
@@ -1076,7 +1224,11 @@ Produces ATP.
 
         // Schedule forward side of reversible card, then reverse side; both groups live in one comment.
         let cards2 = find(&step2);
-        let rev_fwd = Schedule { due: d("2026-11-26"), interval: 3, ease: 250 };
+        let rev_fwd = Schedule {
+            due: d("2026-11-26"),
+            interval: 3,
+            ease: 250,
+        };
         let step3 = rewrite(&step2, &cards2[1], rev_fwd);
         assert!(step3.contains("C:::D\n<!--SR:!2026-11-26,3,250!2000-01-01,0,250-->\n"));
 
@@ -1084,7 +1236,11 @@ Produces ATP.
         assert_eq!(cards3[1].schedule, Some(rev_fwd));
         assert_eq!(cards3[2].schedule, None);
 
-        let rev_back = Schedule { due: d("2026-11-24"), interval: 1, ease: 230 };
+        let rev_back = Schedule {
+            due: d("2026-11-24"),
+            interval: 1,
+            ease: 230,
+        };
         let step4 = rewrite(&step3, &cards3[2], rev_back);
         assert!(step4.contains("C:::D\n<!--SR:!2026-11-26,3,250!2026-11-24,1,230-->\n"));
         assert!(step4.contains("A::B\n<!--SR:!2026-12-04,8,250-->\n"));
@@ -1095,7 +1251,9 @@ Produces ATP.
         assert_eq!(cards4[1].schedule, Some(rev_fwd));
         assert_eq!(cards4[2].schedule, Some(rev_back));
         let step5 = rewrite(&step4, &cards4[3], s1);
-        assert!(step5.ends_with("- List Q #card\n  - List A\n<!--SR:!2026-11-26,3,250-->\n\nFooter.\n"));
+        assert!(
+            step5.ends_with("- List Q #card\n  - List A\n<!--SR:!2026-11-26,3,250-->\n\nFooter.\n")
+        );
     }
 
     #[test]
@@ -1104,20 +1262,55 @@ Produces ATP.
         let cards = find(note);
         assert_eq!(cards.len(), 2);
         assert_eq!(cards[0].answer, "A");
-        assert_eq!(cards[0].schedule, Some(Schedule { due: d("2026-11-20"), interval: 2, ease: 250 }));
+        assert_eq!(
+            cards[0].schedule,
+            Some(Schedule {
+                due: d("2026-11-20"),
+                interval: 2,
+                ease: 250
+            })
+        );
 
-        let updated = rewrite(note, &cards[0], Schedule { due: d("2026-11-28"), interval: 5, ease: 250 });
-        assert_eq!(updated, "Q::A <!--SR:!2026-11-28,5,250-->\r\nNext::Line\r\n");
+        let updated = rewrite(
+            note,
+            &cards[0],
+            Schedule {
+                due: d("2026-11-28"),
+                interval: 5,
+                ease: 250,
+            },
+        );
+        assert_eq!(
+            updated,
+            "Q::A <!--SR:!2026-11-28,5,250-->\r\nNext::Line\r\n"
+        );
 
         let cards2 = find(&updated);
-        let updated2 = rewrite(&updated, &cards2[1], Schedule { due: d("2026-11-26"), interval: 3, ease: 250 });
-        assert_eq!(updated2, "Q::A <!--SR:!2026-11-28,5,250-->\r\nNext::Line\r\n<!--SR:!2026-11-26,3,250-->\r\n");
+        let updated2 = rewrite(
+            &updated,
+            &cards2[1],
+            Schedule {
+                due: d("2026-11-26"),
+                interval: 3,
+                ease: 250,
+            },
+        );
+        assert_eq!(
+            updated2,
+            "Q::A <!--SR:!2026-11-28,5,250-->\r\nNext::Line\r\n<!--SR:!2026-11-26,3,250-->\r\n"
+        );
     }
 
     #[test]
     fn deck_resolution() {
-        assert_eq!(deck("Languages/Spanish.md", &["flashcards/vocab".into()]), "vocab");
-        assert_eq!(deck("Languages/Spanish.md", &["Flashcards/ES/Verbs".into()]), "ES/Verbs");
+        assert_eq!(
+            deck("Languages/Spanish.md", &["flashcards/vocab".into()]),
+            "vocab"
+        );
+        assert_eq!(
+            deck("Languages/Spanish.md", &["Flashcards/ES/Verbs".into()]),
+            "ES/Verbs"
+        );
         assert_eq!(deck("Languages/Spanish.md", &["study".into()]), "Languages");
         assert_eq!(deck("Science/Bio/Cells.md", &[]), "Science/Bio");
         assert_eq!(deck("Loose.md", &[]), "Notes");

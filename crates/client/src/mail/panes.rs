@@ -13,17 +13,35 @@ use crate::settings::{Saver, Segmented, SettingRow, SettingsSheet};
 use crate::ui::{Dialog, EditorPane, window};
 
 fn provider_for(providers: &[Provider], address: &str) -> Option<String> {
-    let domain = address.rsplit_once('@').map(|(_, d)| d.trim().to_lowercase())?;
-    providers.iter().find(|p| p.domains.iter().any(|d| d.to_lowercase() == domain)).map(|p| p.id.clone())
+    let domain = address
+        .rsplit_once('@')
+        .map(|(_, d)| d.trim().to_lowercase())?;
+    providers
+        .iter()
+        .find(|p| p.domains.iter().any(|d| d.to_lowercase() == domain))
+        .map(|p| p.id.clone())
 }
 
 #[component]
 pub(crate) fn AddAccountPane(state: MailState, account: Option<String>) -> impl IntoView {
-    let providers = state.overview.with_untracked(|o| o.as_ref().map(|o| o.providers.clone()).unwrap_or_default());
+    let providers = state
+        .overview
+        .with_untracked(|o| o.as_ref().map(|o| o.providers.clone()).unwrap_or_default());
     let existing = account.as_deref().and_then(|id| state.account(id));
     let renew = existing.is_some();
-    let address = RwSignal::new(existing.as_ref().map(|a| a.address.clone()).unwrap_or_default());
-    let provider = RwSignal::new(existing.as_ref().map(|a| a.provider_id.clone()).or_else(|| (providers.len() == 1).then(|| providers[0].id.clone())).unwrap_or_default());
+    let address = RwSignal::new(
+        existing
+            .as_ref()
+            .map(|a| a.address.clone())
+            .unwrap_or_default(),
+    );
+    let provider = RwSignal::new(
+        existing
+            .as_ref()
+            .map(|a| a.provider_id.clone())
+            .or_else(|| (providers.len() == 1).then(|| providers[0].id.clone()))
+            .unwrap_or_default(),
+    );
     let chosen = RwSignal::new(renew || providers.len() == 1);
     let name = RwSignal::new(String::new());
     let display = RwSignal::new(state.session.with_value(|s| s.user.display_name.clone()));
@@ -32,7 +50,9 @@ pub(crate) fn AddAccountPane(state: MailState, account: Option<String>) -> impl 
     let error = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let providers = StoredValue::new(providers);
-    let current = Memo::new(move |_| providers.with_value(|list| list.iter().find(|p| p.id == provider.get()).cloned()));
+    let current = Memo::new(move |_| {
+        providers.with_value(|list| list.iter().find(|p| p.id == provider.get()).cloned())
+    });
     let account_id = StoredValue::new(account.clone());
     let submit = move |e: leptos::ev::SubmitEvent| {
         e.prevent_default();
@@ -49,12 +69,29 @@ pub(crate) fn AddAccountPane(state: MailState, account: Option<String>) -> impl 
         error.set(String::new());
         let csrf = state.csrf();
         spawn_local(async move {
-            let label = if name.get_untracked().trim().is_empty() { addr.split('@').nth(1).map(|d| d.split('.').next().unwrap_or(d)).map(|d| { let mut c = d.chars(); c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default() }).unwrap_or_else(|| addr.clone()) } else { name.get_untracked().trim().to_owned() };
+            let label = if name.get_untracked().trim().is_empty() {
+                addr.split('@')
+                    .nth(1)
+                    .map(|d| d.split('.').next().unwrap_or(d))
+                    .map(|d| {
+                        let mut c = d.chars();
+                        c.next()
+                            .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+                            .unwrap_or_default()
+                    })
+                    .unwrap_or_else(|| addr.clone())
+            } else {
+                name.get_untracked().trim().to_owned()
+            };
             if p.auth == "oauth" {
                 let body = json!({ "providerId": p.id, "name": label, "address": addr, "displayName": display.get_untracked(), "accountId": account_id.get_value() });
-                match api::send::<Value>(&format!("{BASE}/oauth/start"), "POST", Some(body), &csrf).await {
+                match api::send::<Value>(&format!("{BASE}/oauth/start"), "POST", Some(body), &csrf)
+                    .await
+                {
                     Ok(v) => {
-                        let _ = window().location().set_href(v["url"].as_str().unwrap_or("/mail"));
+                        let _ = window()
+                            .location()
+                            .set_href(v["url"].as_str().unwrap_or("/mail"));
                     }
                     Err(e) => {
                         let _ = error.try_set(e.message);
@@ -63,7 +100,11 @@ pub(crate) fn AddAccountPane(state: MailState, account: Option<String>) -> impl 
                 }
                 return;
             }
-            let key = if p.auth == "token" { "token" } else { "password" };
+            let key = if p.auth == "token" {
+                "token"
+            } else {
+                "password"
+            };
             let result = match account_id.get_value() {
                 Some(id) => api::send::<Value>(&format!("{BASE}/accounts/{}", encode(&id)), "PATCH", Some(json!({ key: secret.get_untracked() })), &csrf).await,
                 None => api::send::<Value>(&format!("{BASE}/accounts"), "POST", Some(json!({
@@ -73,7 +114,11 @@ pub(crate) fn AddAccountPane(state: MailState, account: Option<String>) -> impl 
             match result {
                 Ok(_) => {
                     let _ = state.pane.try_set(None);
-                    state.notify(if renew { "Signed in again" } else { "Account added; its mail is being mirrored" });
+                    state.notify(if renew {
+                        "Signed in again"
+                    } else {
+                        "Account added; its mail is being mirrored"
+                    });
                     state.reload();
                     if !renew {
                         state.choose(View::Unified("inbox"));
@@ -86,7 +131,11 @@ pub(crate) fn AddAccountPane(state: MailState, account: Option<String>) -> impl 
             }
         });
     };
-    let folder = StoredValue::new(state.overview.with_untracked(|o| o.as_ref().map(|o| o.mail_folder.clone()).unwrap_or_else(|| "docs/mail".into())));
+    let folder = StoredValue::new(state.overview.with_untracked(|o| {
+        o.as_ref()
+            .map(|o| o.mail_folder.clone())
+            .unwrap_or_else(|| "docs/mail".into())
+    }));
     view! {
         <EditorPane title=if renew { "Sign in again" } else { "Add account" } on_close=Callback::new(move |_| state.pane.set(None))>
             <form class="mail-form" on:submit=submit>
@@ -181,7 +230,14 @@ fn AccountRow(state: MailState, account: Account, on_remove: Callback<Account>) 
         let csrf = state.csrf();
         let body = json!({ "name": name.get_untracked(), "displayName": display.get_untracked(), "signature": signature.get_untracked(), "color": color.get_untracked() });
         spawn_local(async move {
-            match api::send::<Value>(&format!("{BASE}/accounts/{}", encode(&id.get_value())), "PATCH", Some(body), &csrf).await {
+            match api::send::<Value>(
+                &format!("{BASE}/accounts/{}", encode(&id.get_value())),
+                "PATCH",
+                Some(body),
+                &csrf,
+            )
+            .await
+            {
                 Ok(_) => {
                     let _ = editing.try_set(false);
                     state.notify("Account saved");
@@ -193,7 +249,11 @@ fn AccountRow(state: MailState, account: Account, on_remove: Callback<Account>) 
             }
         });
     };
-    let kind = if account.protocol == "jmap" { "JMAP" } else { "IMAP and SMTP" };
+    let kind = if account.protocol == "jmap" {
+        "JMAP"
+    } else {
+        "IMAP and SMTP"
+    };
     view! {
         <div class="mail-account-setting">
             <div class="mail-account-line">
@@ -230,31 +290,64 @@ fn AccountRow(state: MailState, account: Account, on_remove: Callback<Account>) 
 
 #[component]
 pub(crate) fn MailSettings(state: MailState, section: &'static str) -> impl IntoView {
-    let administrator = state.overview.with_untracked(|o| o.as_ref().is_some_and(|o| o.administrator));
+    let administrator = state
+        .overview
+        .with_untracked(|o| o.as_ref().is_some_and(|o| o.administrator));
     let mut sections = vec!["Accounts", "Reading"];
     if administrator {
         sections.push("Providers");
     }
-    let section = RwSignal::new(if sections.contains(&section) { section } else { "Accounts" });
+    let section = RwSignal::new(if sections.contains(&section) {
+        section
+    } else {
+        "Accounts"
+    });
     let saver = Saver::new(state.session.get_value());
     let removing = RwSignal::new(None::<Account>);
     let keep = RwSignal::new(true);
     let remove = move |_| {
-        let Some(a) = removing.get_untracked() else { return };
+        let Some(a) = removing.get_untracked() else {
+            return;
+        };
         removing.set(None);
         let csrf = state.csrf();
         let keep = keep.get_untracked();
         spawn_local(async move {
-            match api::send::<Value>(&format!("{BASE}/accounts/{}?keepFiles={}", encode(&a.id), if keep { 1 } else { 0 }), "DELETE", None, &csrf).await {
+            match api::send::<Value>(
+                &format!(
+                    "{BASE}/accounts/{}?keepFiles={}",
+                    encode(&a.id),
+                    if keep { 1 } else { 0 }
+                ),
+                "DELETE",
+                None,
+                &csrf,
+            )
+            .await
+            {
                 Ok(_) => {
-                    state.notify(if keep { format!("{} removed; its .eml files stay in Files", a.name) } else { format!("{} removed; its files moved to deleted files", a.name) });
+                    state.notify(if keep {
+                        format!("{} removed; its .eml files stay in Files", a.name)
+                    } else {
+                        format!("{} removed; its files moved to deleted files", a.name)
+                    });
                     state.reload();
                 }
                 Err(e) => state.fail(e.message),
             }
         });
     };
-    let value = move |key: &'static str, fallback: &'static str| Signal::derive(move || saver.preferences.with(|p| p.as_ref().and_then(|p| p.rest.get(key)).and_then(Value::as_str).unwrap_or(fallback).to_owned()));
+    let value = move |key: &'static str, fallback: &'static str| {
+        Signal::derive(move || {
+            saver.preferences.with(|p| {
+                p.as_ref()
+                    .and_then(|p| p.rest.get(key))
+                    .and_then(Value::as_str)
+                    .unwrap_or(fallback)
+                    .to_owned()
+            })
+        })
+    };
     view! {
         <SettingsSheet title="Mail settings" icon="mail" sections=sections section=section on_close=Callback::new(move |_| state.pane.set(None)) notice=saver.notice>
             {move || match section.get() {
@@ -313,21 +406,36 @@ pub(crate) fn MailSettings(state: MailState, section: &'static str) -> impl Into
 
 fn template(kind: &str) -> (String, Value) {
     match kind {
-        "google" => ("Google".into(), json!({
-            "protocol": "imap", "auth": "oauth", "domains": ["gmail.com", "googlemail.com"], "saveSent": false,
-            "imap": { "host": "imap.gmail.com", "port": 993, "security": "tls" }, "smtp": { "host": "smtp.gmail.com", "port": 465, "security": "tls" },
-            "oauth": { "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth", "tokenUrl": "https://oauth2.googleapis.com/token", "clientId": "",
-                "scopes": ["https://mail.google.com/"], "params": { "access_type": "offline", "prompt": "consent" } },
-        })),
-        "microsoft" => ("Microsoft".into(), json!({
-            "protocol": "imap", "auth": "oauth", "domains": ["outlook.com", "hotmail.com", "live.com"], "saveSent": false,
-            "imap": { "host": "outlook.office365.com", "port": 993, "security": "tls" }, "smtp": { "host": "smtp.office365.com", "port": 587, "security": "starttls" },
-            "oauth": { "authorizeUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize", "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token", "clientId": "",
-                "scopes": ["https://outlook.office.com/IMAP.AccessAsUser.All", "https://outlook.office.com/SMTP.Send", "offline_access"], "params": {} },
-        })),
-        "fastmail" => ("Fastmail".into(), json!({ "protocol": "jmap", "auth": "token", "domains": ["fastmail.com"], "jmap": { "url": "https://api.fastmail.com/jmap/session" } })),
-        "jmap" => (String::new(), json!({ "protocol": "jmap", "auth": "password", "domains": [], "jmap": { "url": "https://" } })),
-        _ => (String::new(), json!({ "protocol": "imap", "auth": "password", "domains": [], "imap": { "host": "", "port": 993, "security": "tls" }, "smtp": { "host": "", "port": 465, "security": "tls" } })),
+        "google" => (
+            "Google".into(),
+            json!({
+                "protocol": "imap", "auth": "oauth", "domains": ["gmail.com", "googlemail.com"], "saveSent": false,
+                "imap": { "host": "imap.gmail.com", "port": 993, "security": "tls" }, "smtp": { "host": "smtp.gmail.com", "port": 465, "security": "tls" },
+                "oauth": { "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth", "tokenUrl": "https://oauth2.googleapis.com/token", "clientId": "",
+                    "scopes": ["https://mail.google.com/"], "params": { "access_type": "offline", "prompt": "consent" } },
+            }),
+        ),
+        "microsoft" => (
+            "Microsoft".into(),
+            json!({
+                "protocol": "imap", "auth": "oauth", "domains": ["outlook.com", "hotmail.com", "live.com"], "saveSent": false,
+                "imap": { "host": "outlook.office365.com", "port": 993, "security": "tls" }, "smtp": { "host": "smtp.office365.com", "port": 587, "security": "starttls" },
+                "oauth": { "authorizeUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize", "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token", "clientId": "",
+                    "scopes": ["https://outlook.office.com/IMAP.AccessAsUser.All", "https://outlook.office.com/SMTP.Send", "offline_access"], "params": {} },
+            }),
+        ),
+        "fastmail" => (
+            "Fastmail".into(),
+            json!({ "protocol": "jmap", "auth": "token", "domains": ["fastmail.com"], "jmap": { "url": "https://api.fastmail.com/jmap/session" } }),
+        ),
+        "jmap" => (
+            String::new(),
+            json!({ "protocol": "jmap", "auth": "password", "domains": [], "jmap": { "url": "https://" } }),
+        ),
+        _ => (
+            String::new(),
+            json!({ "protocol": "imap", "auth": "password", "domains": [], "imap": { "host": "", "port": 993, "security": "tls" }, "smtp": { "host": "", "port": 465, "security": "tls" } }),
+        ),
     }
 }
 
@@ -353,9 +461,20 @@ fn Providers(state: MailState) -> impl IntoView {
     let toggle = move |p: Provider| {
         let csrf = state.csrf();
         spawn_local(async move {
-            match api::send::<Value>(&format!("{BASE}/admin/providers/{}", encode(&p.id)), "PUT", Some(json!({ "name": p.name, "document": p.document, "enabled": !p.enabled })), &csrf).await {
+            match api::send::<Value>(
+                &format!("{BASE}/admin/providers/{}", encode(&p.id)),
+                "PUT",
+                Some(json!({ "name": p.name, "document": p.document, "enabled": !p.enabled })),
+                &csrf,
+            )
+            .await
+            {
                 Ok(_) => {
-                    state.notify(if p.enabled { format!("{} turned off", p.name) } else { format!("{} turned on", p.name) });
+                    state.notify(if p.enabled {
+                        format!("{} turned off", p.name)
+                    } else {
+                        format!("{} turned on", p.name)
+                    });
                     load();
                     state.reload();
                 }
@@ -364,11 +483,20 @@ fn Providers(state: MailState) -> impl IntoView {
         });
     };
     let delete = move |_| {
-        let Some(p) = deleting.get_untracked() else { return };
+        let Some(p) = deleting.get_untracked() else {
+            return;
+        };
         deleting.set(None);
         let csrf = state.csrf();
         spawn_local(async move {
-            match api::send::<Value>(&format!("{BASE}/admin/providers/{}", encode(&p.id)), "DELETE", None, &csrf).await {
+            match api::send::<Value>(
+                &format!("{BASE}/admin/providers/{}", encode(&p.id)),
+                "DELETE",
+                None,
+                &csrf,
+            )
+            .await
+            {
                 Ok(_) => {
                     state.notify(format!("{} removed", p.name));
                     load();
@@ -425,17 +553,40 @@ fn Providers(state: MailState) -> impl IntoView {
 }
 
 #[component]
-fn ProviderForm(state: MailState, provider: Option<Provider>, on_done: Callback<()>, on_cancel: Callback<()>) -> impl IntoView {
+fn ProviderForm(
+    state: MailState,
+    provider: Option<Provider>,
+    on_done: Callback<()>,
+    on_cancel: Callback<()>,
+) -> impl IntoView {
     let is_new = provider.is_none();
-    let doc = provider.as_ref().map(|p| p.document.clone()).unwrap_or_else(|| template("imap").1);
+    let doc = provider
+        .as_ref()
+        .map(|p| p.document.clone())
+        .unwrap_or_else(|| template("imap").1);
     let id = RwSignal::new(provider.as_ref().map(|p| p.id.clone()).unwrap_or_default());
-    let name = RwSignal::new(provider.as_ref().map(|p| p.name.clone()).unwrap_or_default());
+    let name = RwSignal::new(
+        provider
+            .as_ref()
+            .map(|p| p.name.clone())
+            .unwrap_or_default(),
+    );
     let has_secret = provider.as_ref().is_some_and(|p| p.has_secret);
     let s = |v: &Value| v.as_str().unwrap_or_default().to_owned();
     let n = |v: &Value, d: u64| v.as_u64().unwrap_or(d).to_string();
     let protocol = RwSignal::new(s(&doc["protocol"]));
     let auth = RwSignal::new(s(&doc["auth"]));
-    let domains = RwSignal::new(doc["domains"].as_array().map(|a| a.iter().filter_map(|d| d.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default());
+    let domains = RwSignal::new(
+        doc["domains"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|d| d.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default(),
+    );
     let imap_host = RwSignal::new(s(&doc["imap"]["host"]));
     let imap_port = RwSignal::new(n(&doc["imap"]["port"], 993));
     let imap_security = RwSignal::new(doc["imap"]["security"].as_str().unwrap_or("tls").to_owned());
@@ -447,8 +598,28 @@ fn ProviderForm(state: MailState, provider: Option<Provider>, on_done: Callback<
     let token = RwSignal::new(s(&doc["oauth"]["tokenUrl"]));
     let client = RwSignal::new(s(&doc["oauth"]["clientId"]));
     let secret = RwSignal::new(String::new());
-    let scopes = RwSignal::new(doc["oauth"]["scopes"].as_array().map(|a| a.iter().filter_map(|d| d.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default());
-    let params = RwSignal::new(doc["oauth"]["params"].as_object().map(|m| m.iter().map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or_default())).collect::<Vec<_>>().join("\n")).unwrap_or_default());
+    let scopes = RwSignal::new(
+        doc["oauth"]["scopes"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|d| d.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default(),
+    );
+    let params = RwSignal::new(
+        doc["oauth"]["params"]
+            .as_object()
+            .map(|m| {
+                m.iter()
+                    .map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or_default()))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default(),
+    );
     let save_sent = RwSignal::new(doc["saveSent"] != false);
     let error = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
@@ -462,7 +633,17 @@ fn ProviderForm(state: MailState, provider: Option<Provider>, on_done: Callback<
         }
         protocol.set(s(&d["protocol"]));
         auth.set(s(&d["auth"]));
-        domains.set(d["domains"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default());
+        domains.set(
+            d["domains"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default(),
+        );
         imap_host.set(s(&d["imap"]["host"]));
         imap_port.set(n(&d["imap"]["port"], 993));
         imap_security.set(d["imap"]["security"].as_str().unwrap_or("tls").into());
@@ -472,11 +653,34 @@ fn ProviderForm(state: MailState, provider: Option<Provider>, on_done: Callback<
         jmap_url.set(s(&d["jmap"]["url"]));
         authorize.set(s(&d["oauth"]["authorizeUrl"]));
         token.set(s(&d["oauth"]["tokenUrl"]));
-        scopes.set(d["oauth"]["scopes"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default());
-        params.set(d["oauth"]["params"].as_object().map(|m| m.iter().map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or_default())).collect::<Vec<_>>().join("\n")).unwrap_or_default());
+        scopes.set(
+            d["oauth"]["scopes"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default(),
+        );
+        params.set(
+            d["oauth"]["params"]
+                .as_object()
+                .map(|m| {
+                    m.iter()
+                        .map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or_default()))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default(),
+        );
         save_sent.set(d["saveSent"] != false);
     };
-    let redirect = format!("{}/api/v1/mail/oauth/callback", window().location().origin().unwrap_or_default());
+    let redirect = format!(
+        "{}/api/v1/mail/oauth/callback",
+        window().location().origin().unwrap_or_default()
+    );
     let submit = move |e: leptos::ev::SubmitEvent| {
         e.prevent_default();
         let port = |v: RwSignal<String>| v.get_untracked().trim().parse::<u16>().unwrap_or(0);
@@ -491,13 +695,20 @@ fn ProviderForm(state: MailState, provider: Option<Provider>, on_done: Callback<
             document["smtp"] = json!({ "host": smtp_host.get_untracked().trim(), "port": port(smtp_port), "security": smtp_security.get_untracked() });
         }
         if auth.get_untracked() == "oauth" {
-            let extra: serde_json::Map<String, Value> = params.get_untracked().lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.trim().to_owned(), json!(v.trim()))).filter(|(k, _)| !k.is_empty()).collect();
+            let extra: serde_json::Map<String, Value> = params
+                .get_untracked()
+                .lines()
+                .filter_map(|l| l.split_once('='))
+                .map(|(k, v)| (k.trim().to_owned(), json!(v.trim())))
+                .filter(|(k, _)| !k.is_empty())
+                .collect();
             document["oauth"] = json!({
                 "authorizeUrl": authorize.get_untracked().trim(), "tokenUrl": token.get_untracked().trim(), "clientId": client.get_untracked().trim(),
                 "scopes": scopes.get_untracked().split_whitespace().collect::<Vec<_>>(), "params": extra,
             });
         }
-        let mut body = json!({ "name": name.get_untracked().trim(), "document": document, "create": is_new });
+        let mut body =
+            json!({ "name": name.get_untracked().trim(), "document": document, "create": is_new });
         if !secret.get_untracked().is_empty() {
             body["secret"] = json!(secret.get_untracked());
         }
@@ -506,7 +717,14 @@ fn ProviderForm(state: MailState, provider: Option<Provider>, on_done: Callback<
         let csrf = state.csrf();
         let target = id.get_untracked().trim().to_lowercase();
         spawn_local(async move {
-            match api::send::<Value>(&format!("{BASE}/admin/providers/{}", encode(&target)), "PUT", Some(body), &csrf).await {
+            match api::send::<Value>(
+                &format!("{BASE}/admin/providers/{}", encode(&target)),
+                "PUT",
+                Some(body),
+                &csrf,
+            )
+            .await
+            {
                 Ok(_) => {
                     state.notify("Provider saved");
                     on_done.try_run(());
@@ -518,11 +736,18 @@ fn ProviderForm(state: MailState, provider: Option<Provider>, on_done: Callback<
             }
         });
     };
-    let field = |label: &'static str, value: RwSignal<String>, kind: &'static str, placeholder: &'static str| view! {
-        <label>{label}<input type=kind placeholder=placeholder prop:value=move || value.get() on:input=move |e| value.set(event_target_value(&e))/></label>
+    let field = |label: &'static str,
+                 value: RwSignal<String>,
+                 kind: &'static str,
+                 placeholder: &'static str| {
+        view! {
+            <label>{label}<input type=kind placeholder=placeholder prop:value=move || value.get() on:input=move |e| value.set(event_target_value(&e))/></label>
+        }
     };
-    let security = |label: &'static str, value: RwSignal<String>| view! {
-        <label>{label}<select prop:value=move || value.get() on:change=move |e| value.set(event_target_value(&e))><option value="tls">"TLS"</option><option value="starttls">"STARTTLS"</option></select></label>
+    let security = |label: &'static str, value: RwSignal<String>| {
+        view! {
+            <label>{label}<select prop:value=move || value.get() on:change=move |e| value.set(event_target_value(&e))><option value="tls">"TLS"</option><option value="starttls">"STARTTLS"</option></select></label>
+        }
     };
     view! {
         <form class="mail-form settings-section" on:submit=submit>

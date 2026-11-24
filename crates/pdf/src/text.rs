@@ -129,7 +129,10 @@ mod tests {
         assert_eq!(decode_pdf_text_string(b"Hello, PDF!"), "Hello, PDF!");
         // 0x84 = em dash, 0xA0 = euro sign, 0xE9 = é, 0x8D/0x8E = smart double quotes
         let bytes = [b'A', 0x84, b'B', b' ', 0xA0, b'5', b' ', 0x8D, 0xE9, 0x8E];
-        assert_eq!(decode_pdf_text_string(&bytes), "A\u{2014}B \u{20AC}5 \u{201C}\u{00E9}\u{201D}");
+        assert_eq!(
+            decode_pdf_text_string(&bytes),
+            "A\u{2014}B \u{20AC}5 \u{201C}\u{00E9}\u{201D}"
+        );
     }
 
     #[test]

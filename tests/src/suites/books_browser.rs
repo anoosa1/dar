@@ -7,7 +7,10 @@ use dar_acceptance::prelude::*;
 use dar_acceptance::session::Upload;
 use std::sync::{Arc, Mutex};
 
-pub const SUITE: Suite = Suite { name: "books-browser", cases: &[case!(books_journey, 180)] };
+pub const SUITE: Suite = Suite {
+    name: "books-browser",
+    cases: &[case!(books_journey, 180)],
+};
 
 /// A two-page PDF with title, author, an outline pointing to both pages and lines of text
 /// ('lighthouse' on both pages, for Find).
@@ -33,11 +36,17 @@ fn pdf_with_outline() -> Vec<u8> {
         body.push_str(&format!("{} 0 obj\n{object}\nendobj\n", index + 1));
     }
     let xref = body.len();
-    body.push_str(&format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1));
+    body.push_str(&format!(
+        "xref\n0 {}\n0000000000 65535 f \n",
+        objects.len() + 1
+    ));
     for offset in offsets {
         body.push_str(&format!("{offset:010} 00000 n \n"));
     }
-    body.push_str(&format!("trailer\n<< /Size {} /Root 1 0 R /Info 8 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1));
+    body.push_str(&format!(
+        "trailer\n<< /Size {} /Root 1 0 R /Info 8 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+        objects.len() + 1
+    ));
     body.into_bytes()
 }
 
@@ -52,18 +61,31 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
         .as_str()
         .context("books rootId")?
         .to_owned();
-    let up = Upload { parent_id: &root, ..Upload::default() };
+    let up = Upload {
+        parent_id: &root,
+        ..Upload::default()
+    };
     let voyage = upload_with(
         &reader,
         "the-test-voyage.epub",
-        epub("The Test Voyage", "Ishmael Fixture", Some(("Fixture Series", 2)), false),
+        epub(
+            "The Test Voyage",
+            "Ishmael Fixture",
+            Some(("Fixture Series", 2)),
+            false,
+        ),
         up.clone(),
     )
     .await?;
     upload_with(
         &reader,
         "second.epub",
-        epub("A Second Voyage", "Ishmael Fixture", Some(("Fixture Series", 3)), false),
+        epub(
+            "A Second Voyage",
+            "Ishmael Fixture",
+            Some(("Fixture Series", 3)),
+            false,
+        ),
         up.clone(),
     )
     .await?;
@@ -72,12 +94,18 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
         &reader,
         "paper.pdf",
         pdf_with_outline(),
-        Upload { parent_id: &root, media_type: "application/pdf", ..Upload::default() },
+        Upload {
+            parent_id: &root,
+            media_type: "application/pdf",
+            ..Upload::default()
+        },
     )
     .await?;
 
     let browser = Browser::shared().await?;
-    let context = browser.new_context(ContextOptions::sized(1440, 960)).await?;
+    let context = browser
+        .new_context(ContextOptions::sized(1440, 960))
+        .await?;
     let page = context.new_page().await?;
     // The fixture's own <script> is blocked (expected), and the other-device step answers 409 on purpose.
     let errors = page.collect_errors(|text| {
@@ -91,25 +119,55 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     page.get_by_label("Username").fill(&username).await?;
     page.get_by_label("Password").fill(PASSWORD).await?;
     page.get_by_role("button", "Sign in").click().await?;
-    page.get_by_role("navigation", "Applications").get_by_role("link", "Books").click().await?;
+    page.get_by_role("navigation", "Applications")
+        .get_by_role("link", "Books")
+        .click()
+        .await?;
     page.wait_for_url(|u| u.path().contains("/books")).await?;
 
     let main = page.get_by_role("main", "Home");
-    main.get_by_role("heading", "Recently added").wait_for().await?;
-    main.get_by_role("button", regex("The Test Voyage")).first().wait_for().await?;
+    main.get_by_role("heading", "Recently added")
+        .wait_for()
+        .await?;
+    main.get_by_role("button", regex("The Test Voyage"))
+        .first()
+        .wait_for()
+        .await?;
     // Covers come from the files (EPUB cover image, first PDF page, first comic page).
     page.wait_for_function("() => [...document.querySelectorAll('.books-cover img')].filter(img => img.complete && img.naturalWidth > 0).length >= 4").await?;
-    page.screenshot(t.screenshot("books-home-1440.png"), false).await?;
+    page.screenshot(t.screenshot("books-home-1440.png"), false)
+        .await?;
 
     // Details: series, actions and Want to read.
-    main.get_by_role("button", regex("The Test Voyage")).first().click().await?;
+    main.get_by_role("button", regex("The Test Voyage"))
+        .first()
+        .click()
+        .await?;
     let details = page.get_by_role("complementary", "Book details");
-    details.get_by_role("heading", "The Test Voyage").wait_for().await?;
-    details.get_by_text("Fixture Series \u{00b7} Book 2 of 2").wait_for().await?;
-    details.get_by_role("button", "Want to read").click().await?;
-    page.get_by_text("Marked as want to read").wait_for().await?;
-    assert_eq!(details.get_by_role("button", "Want to read").get_attribute("aria-pressed").await?, Some("true".into()));
-    page.screenshot(t.screenshot("books-details-1440.png"), false).await?;
+    details
+        .get_by_role("heading", "The Test Voyage")
+        .wait_for()
+        .await?;
+    details
+        .get_by_text("Fixture Series \u{00b7} Book 2 of 2")
+        .wait_for()
+        .await?;
+    details
+        .get_by_role("button", "Want to read")
+        .click()
+        .await?;
+    page.get_by_text("Marked as want to read")
+        .wait_for()
+        .await?;
+    assert_eq!(
+        details
+            .get_by_role("button", "Want to read")
+            .get_attribute("aria-pressed")
+            .await?,
+        Some("true".into())
+    );
+    page.screenshot(t.screenshot("books-details-1440.png"), false)
+        .await?;
 
     // EPUB reader: pages turn, typography applies inside the chapter, contents jump, place is saved.
     details.get_by_role("button", "Read").click().await?;
@@ -118,7 +176,8 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     let frame = page.frame_locator("iframe.epub-view");
     frame.get_by_role("heading", "Departure").wait_for().await?;
     assert_eq!(
-        page.evaluate("() => document.querySelector('iframe.epub-view').contentDocument.title").await?,
+        page.evaluate("() => document.querySelector('iframe.epub-view').contentDocument.title")
+            .await?,
         json!("Departure"),
         "book scripts do not run"
     );
@@ -130,40 +189,80 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     page.keyboard().press("ArrowRight").await?;
     page.wait_for_function("() => { const d = document.querySelector('iframe.epub-view').contentDocument; return (d.scrollingElement ?? d.documentElement).scrollLeft > 0; }").await?;
 
-    book.get_by_role("button", "Text and layout").click().await?;
+    book.get_by_role("button", "Text and layout")
+        .click()
+        .await?;
     let typography = page.get_by_role("dialog", "Text and layout");
-    typography.get_by_role("button", regex("Sepia")).click().await?;
+    typography
+        .get_by_role("button", regex("Sepia"))
+        .click()
+        .await?;
     page.wait_for_function("() => getComputedStyle(document.querySelector('iframe.epub-view').contentDocument.documentElement).backgroundColor === 'rgb(244, 236, 216)'").await?;
-    typography.get_by_role("button", "Larger text").click().await?;
+    typography
+        .get_by_role("button", "Larger text")
+        .click()
+        .await?;
     page.wait_for_function("() => getComputedStyle(document.querySelector('iframe.epub-view').contentDocument.documentElement).fontSize === '19px'").await?;
-    page.screenshot(t.screenshot("books-reader-epub-1440.png"), false).await?;
+    page.screenshot(t.screenshot("books-reader-epub-1440.png"), false)
+        .await?;
     page.keyboard().press("Escape").await?;
     typography.wait_for_state(State::Detached).await?;
 
     let panel = book.get_by_role("complementary", "Contents and bookmarks");
     if !panel.is_visible().await? {
-        book.get_by_role("button", "Contents and bookmarks").click().await?;
+        book.get_by_role("button", "Contents and bookmarks")
+            .click()
+            .await?;
     }
-    panel.get_by_role("button", "The mast breaks").click().await?;
-    frame.get_by_text(contains("Paragraph 3 of The Storm.")).wait_for().await?;
-    page.wait_for_function("() => document.querySelector('iframe.epub-view').contentDocument.title === 'The Storm'").await?;
+    panel
+        .get_by_role("button", "The mast breaks")
+        .click()
+        .await?;
+    frame
+        .get_by_text(contains("Paragraph 3 of The Storm."))
+        .wait_for()
+        .await?;
+    page.wait_for_function(
+        "() => document.querySelector('iframe.epub-view').contentDocument.title === 'The Storm'",
+    )
+    .await?;
     book.get_by_role("button", "Add bookmark").click().await?;
-    book.get_by_role("button", "Remove bookmark").wait_for().await?;
+    book.get_by_role("button", "Remove bookmark")
+        .wait_for()
+        .await?;
     panel.get_by_role("tab", regex("Bookmarks")).click().await?;
-    panel.get_by_role("button", regex("^The mast breaks")).wait_for().await?;
+    panel
+        .get_by_role("button", regex("^The mast breaks"))
+        .wait_for()
+        .await?;
 
     // Internal links stay in the reader.
     page.wait_for_timeout(1600).await;
-    let state = reader.get_json(&format!("/api/v1/books/{}", voyage.file_id)).await?;
-    assert_eq!(state["state"]["position"]["spine"], 1, "the place is saved to the account");
+    let state = reader
+        .get_json(&format!("/api/v1/books/{}", voyage.file_id))
+        .await?;
+    assert_eq!(
+        state["state"]["position"]["spine"], 1,
+        "the place is saved to the account"
+    );
     assert_eq!(state["state"]["status"], "reading");
-    assert!(state["state"]["device"].as_str().unwrap_or_default().contains("on"));
+    assert!(
+        state["state"]["device"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("on")
+    );
     assert_eq!(state["marks"].as_array().map(Vec::len), Some(1));
 
     // Reload: the reader reopens at the saved chapter, with the account's typography.
     page.reload().await?;
-    page.get_by_role("main", "Reading The Test Voyage").wait_for().await?;
-    page.wait_for_function("() => document.querySelector('iframe.epub-view')?.contentDocument?.title === 'The Storm'").await?;
+    page.get_by_role("main", "Reading The Test Voyage")
+        .wait_for()
+        .await?;
+    page.wait_for_function(
+        "() => document.querySelector('iframe.epub-view')?.contentDocument?.title === 'The Storm'",
+    )
+    .await?;
     page.wait_for_function("() => getComputedStyle(document.querySelector('iframe.epub-view').contentDocument.documentElement).backgroundColor === 'rgb(244, 236, 216)'").await?;
 
     // Another device moved on: saving here offers to go there instead of overwriting.
@@ -174,32 +273,54 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
         )
         .await?;
     assert_eq!(remote.status, 200);
-    page.get_by_role("main", "Reading The Test Voyage").focus().await?;
+    page.get_by_role("main", "Reading The Test Voyage")
+        .focus()
+        .await?;
     page.keyboard().press("ArrowRight").await?;
     let conflict = page.get_by_role("alertdialog", "Your place changed on another device");
     conflict.wait_for().await?;
     conflict.get_by_text(regex("on Phone")).wait_for().await?;
-    page.screenshot(t.screenshot("books-reader-conflict-1440.png"), false).await?;
+    page.screenshot(t.screenshot("books-reader-conflict-1440.png"), false)
+        .await?;
     conflict.get_by_role("button", "Go there").click().await?;
-    page.wait_for_function("() => document.querySelector('iframe.epub-view')?.contentDocument?.title === 'Departure'").await?;
-    page.get_by_role("button", "Back to library").click().await?;
-    page.get_by_role("heading", "Continue reading").wait_for().await?;
+    page.wait_for_function(
+        "() => document.querySelector('iframe.epub-view')?.contentDocument?.title === 'Departure'",
+    )
+    .await?;
+    page.get_by_role("button", "Back to library")
+        .click()
+        .await?;
+    page.get_by_role("heading", "Continue reading")
+        .wait_for()
+        .await?;
 
     // Comic: pages turn right to left from the comic's own metadata.
-    page.goto(&format!("{base}/books?book={}&read=1", comic.file_id)).await?;
+    page.goto(&format!("{base}/books?book={}&read=1", comic.file_id))
+        .await?;
     let comic_reader = page.get_by_role("main", regex("^Reading "));
     comic_reader.wait_for().await?;
-    comic_reader.get_by_role("img", "Page 1 of 3").wait_for().await?;
+    comic_reader
+        .get_by_role("img", "Page 1 of 3")
+        .wait_for()
+        .await?;
     comic_reader.focus().await?;
     page.keyboard().press("ArrowLeft").await?;
-    comic_reader.get_by_role("img", "Page 2 of 3").wait_for().await?;
-    page.screenshot(t.screenshot("books-reader-comic-1440.png"), false).await?;
+    comic_reader
+        .get_by_role("img", "Page 2 of 3")
+        .wait_for()
+        .await?;
+    page.screenshot(t.screenshot("books-reader-comic-1440.png"), false)
+        .await?;
 
     // PDF: drawn by the hayro Web Worker, with page tracking, zoom and outline navigation.
-    page.goto(&format!("{base}/books?book={}&read=1", paper.file_id)).await?;
+    page.goto(&format!("{base}/books?book={}&read=1", paper.file_id))
+        .await?;
     let pdf_reader = page.get_by_role("main", "Reading A Fixture Paper");
     pdf_reader.wait_for().await?;
-    page.locator(".pdf-view-page.is-drawn").first().wait_for().await?;
+    page.locator(".pdf-view-page.is-drawn")
+        .first()
+        .wait_for()
+        .await?;
     assert_eq!(
         page.evaluate("() => { const c = document.querySelector('.pdf-view-page.is-drawn canvas'); return !!c && c.width > 0 && c.height > 0; }").await?,
         json!(true),
@@ -219,14 +340,29 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
                left: (r.left - pb.left) / scale, top: (r.top - pb.top) / scale, width: r.width / scale, height: r.height / scale, role: p.getAttribute('role') }; }",
         )
         .await?;
-    assert_eq!(layer["texts"], json!(["Page one", "The lighthouse keeper", "counted every wave."]), "{layer}");
-    assert_eq!(layer["color"], "rgba(0, 0, 0, 0)", "the text layer is invisible");
+    assert_eq!(
+        layer["texts"],
+        json!(["Page one", "The lighthouse keeper", "counted every wave."]),
+        "{layer}"
+    );
+    assert_eq!(
+        layer["color"], "rgba(0, 0, 0, 0)",
+        "the text layer is invisible"
+    );
     assert_ne!(layer["select"], "none", "the text layer is selectable");
     assert_eq!(layer["role"], "group");
     // "The lighthouse keeper" sits at (40, 400 - 300) points, 12 points high, over its ink.
-    let near = |key: &str, want: f64, slack: f64| (layer[key].as_f64().unwrap_or(-1.0) - want).abs() <= slack;
-    assert!(near("left", 40.0, 1.5) && near("top", 100.0 - 9.6, 2.0) && near("height", 12.0, 2.0), "{layer}");
-    assert!(near("width", 118.0, 6.0), "the span is stretched to the run's length: {layer}");
+    let near = |key: &str, want: f64, slack: f64| {
+        (layer[key].as_f64().unwrap_or(-1.0) - want).abs() <= slack
+    };
+    assert!(
+        near("left", 40.0, 1.5) && near("top", 100.0 - 9.6, 2.0) && near("height", 12.0, 2.0),
+        "{layer}"
+    );
+    assert!(
+        near("width", 118.0, 6.0),
+        "the span is stretched to the run's length: {layer}"
+    );
 
     // Selecting two lines offers Highlight; it lands in Notes › Highlights with a link back.
     page.evaluate(&format!(
@@ -237,24 +373,57 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
          getSelection().removeAllRanges(); getSelection().addRange(r); }}"
     ))
     .await?;
-    assert_eq!(page.evaluate("() => getSelection().toString()").await?, json!("lighthouse keeper\ncounted every"));
-    pdf_reader.get_by_role("button", "Highlight").click().await?;
-    pdf_reader.get_by_text(contains("Highlight saved to Notes")).wait_for().await?;
-    page.locator(&format!("{first_page} .pdf-view-highlight")).first().wait_for().await?;
+    assert_eq!(
+        page.evaluate("() => getSelection().toString()").await?,
+        json!("lighthouse keeper\ncounted every")
+    );
+    pdf_reader
+        .get_by_role("button", "Highlight")
+        .click()
+        .await?;
+    pdf_reader
+        .get_by_text(contains("Highlight saved to Notes"))
+        .wait_for()
+        .await?;
+    page.locator(&format!("{first_page} .pdf-view-highlight"))
+        .first()
+        .wait_for()
+        .await?;
     let notes = reader.get_json("/api/v1/notes/library").await?;
     let folder = notes["folders"]
         .as_array()
-        .and_then(|f| f.iter().find(|f| f["name"] == "Highlights" && f["parentId"] == notes["rootId"]))
+        .and_then(|f| {
+            f.iter()
+                .find(|f| f["name"] == "Highlights" && f["parentId"] == notes["rootId"])
+        })
         .context("Highlights folder in Notes")?;
     let note = notes["notes"]
         .as_array()
-        .and_then(|n| n.iter().find(|n| n["parentId"] == folder["id"] && n["name"] == "A Fixture Paper.md"))
+        .and_then(|n| {
+            n.iter()
+                .find(|n| n["parentId"] == folder["id"] && n["name"] == "A Fixture Paper.md")
+        })
         .context("highlights note")?;
-    let text = reader.get(&format!("/api/v1/files/{}/content", note["id"].as_str().unwrap_or_default())).await?.text();
+    let text = reader
+        .get(&format!(
+            "/api/v1/files/{}/content",
+            note["id"].as_str().unwrap_or_default()
+        ))
+        .await?
+        .text();
     let link = format!("/books?book={}&page=1", paper.file_id);
-    assert!(text.starts_with("# Highlights: A Fixture Paper\n\n> lighthouse keeper\n> counted every\n"), "{text}");
-    assert!(text.contains(&format!("> \u{2014} [A Fixture Paper, p. 1]({link}) ^hl-")), "{text}");
-    assert!(text.contains(&format!("]: {link} \"dar-highlight 1:")), "{text}");
+    assert!(
+        text.starts_with("# Highlights: A Fixture Paper\n\n> lighthouse keeper\n> counted every\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("> \u{2014} [A Fixture Paper, p. 1]({link}) ^hl-")),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("]: {link} \"dar-highlight 1:")),
+        "{text}"
+    );
     let initial_width = page
         .evaluate("() => document.querySelector('.pdf-view-page').getBoundingClientRect().width")
         .await?
@@ -266,35 +435,62 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
         json!(initial_width),
     )
     .await?;
-    pdf_reader.get_by_role("button", "Fit width").click().await?;
+    pdf_reader
+        .get_by_role("button", "Fit width")
+        .click()
+        .await?;
     let pdf_panel = pdf_reader.get_by_role("complementary", "Contents and bookmarks");
     if !pdf_panel.is_visible().await? {
-        pdf_reader.get_by_role("button", "Contents and bookmarks").click().await?;
+        pdf_reader
+            .get_by_role("button", "Contents and bookmarks")
+            .click()
+            .await?;
     }
     pdf_panel.get_by_role("tab", "Contents").click().await?;
-    pdf_panel.get_by_role("button", regex("Second section")).click().await?;
+    pdf_panel
+        .get_by_role("button", regex("Second section"))
+        .click()
+        .await?;
     pdf_reader.get_by_text("Page 2 of 2").wait_for().await?;
-    page.screenshot(t.screenshot("books-reader-pdf-1440.png"), false).await?;
+    page.screenshot(t.screenshot("books-reader-pdf-1440.png"), false)
+        .await?;
 
     // Find (Ctrl+F): counts matches over every page, starts at this page, moves and scrolls.
     let count_is = |want: &'static str| {
         let page = page.clone();
-        async move { page.wait_for_function_with("(want) => document.querySelector('.books-find-count')?.textContent === want", json!(want)).await }
+        async move {
+            page.wait_for_function_with(
+                "(want) => document.querySelector('.books-find-count')?.textContent === want",
+                json!(want),
+            )
+            .await
+        }
     };
     pdf_reader.focus().await?;
     page.keyboard().press("Control+f").await?;
     let find = pdf_reader.get_by_role("searchbox", "Find in book");
     find.wait_for().await?;
-    page.wait_for_function("() => document.activeElement?.getAttribute('aria-label') === 'Find in book'").await?;
+    page.wait_for_function(
+        "() => document.activeElement?.getAttribute('aria-label') === 'Find in book'",
+    )
+    .await?;
     find.fill("LIGHTHOUSE").await?;
     count_is("2 of 2").await?;
-    page.locator(".pdf-view-page[data-page=\"1\"] .pdf-view-match.is-current").wait_for().await?;
+    page.locator(".pdf-view-page[data-page=\"1\"] .pdf-view-match.is-current")
+        .wait_for()
+        .await?;
     find.press("Enter").await?;
     count_is("1 of 2").await?;
     pdf_reader.get_by_text("Page 1 of 2").wait_for().await?;
-    page.locator(&format!("{first_page} .pdf-view-match.is-current")).wait_for().await?;
-    page.screenshot(t.screenshot("books-reader-pdf-find-1440.png"), false).await?;
-    pdf_reader.get_by_role("button", "Next match").click().await?;
+    page.locator(&format!("{first_page} .pdf-view-match.is-current"))
+        .wait_for()
+        .await?;
+    page.screenshot(t.screenshot("books-reader-pdf-find-1440.png"), false)
+        .await?;
+    pdf_reader
+        .get_by_role("button", "Next match")
+        .click()
+        .await?;
     count_is("2 of 2").await?;
     pdf_reader.get_by_text("Page 2 of 2").wait_for().await?;
     find.fill("no such words").await?;
@@ -306,32 +502,54 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
 
     // The note's link opens the book at the highlight's page, with the highlight drawn again.
     page.wait_for_timeout(1600).await;
-    let saved = reader.get_json(&format!("/api/v1/books/{}", paper.file_id)).await?;
-    assert_eq!(saved["state"]["position"]["page"], 1, "the saved place is page 2");
+    let saved = reader
+        .get_json(&format!("/api/v1/books/{}", paper.file_id))
+        .await?;
+    assert_eq!(
+        saved["state"]["position"]["page"], 1,
+        "the saved place is page 2"
+    );
     page.goto(&format!("{base}{link}")).await?;
     let pdf_reader = page.get_by_role("main", "Reading A Fixture Paper");
     pdf_reader.get_by_text("Page 1 of 2").wait_for().await?;
-    page.locator(&format!("{first_page} .pdf-view-highlight")).first().wait_for().await?;
-    page.locator(&format!("{first_page}.is-drawn")).wait_for().await?;
-    page.screenshot(t.screenshot("books-reader-pdf-highlight-1440.png"), false).await?;
+    page.locator(&format!("{first_page} .pdf-view-highlight"))
+        .first()
+        .wait_for()
+        .await?;
+    page.locator(&format!("{first_page}.is-drawn"))
+        .wait_for()
+        .await?;
+    page.screenshot(t.screenshot("books-reader-pdf-highlight-1440.png"), false)
+        .await?;
     page.emulate_media(Some("dark"), None, None).await?;
     page.wait_for_timeout(300).await;
-    page.screenshot(t.screenshot("books-reader-pdf-highlight-dark-1440.png"), false).await?;
+    page.screenshot(
+        t.screenshot("books-reader-pdf-highlight-dark-1440.png"),
+        false,
+    )
+    .await?;
     page.emulate_media(Some("light"), None, None).await?;
 
     // Files' PDF preview uses the same viewer.
     page.goto(&format!("{base}/?folder={root}")).await?;
-    page.get_by_role("button", "Actions for paper.pdf").click().await?;
+    page.get_by_role("button", "Actions for paper.pdf")
+        .click()
+        .await?;
     page.get_by_role("menuitem", "Details").click().await?;
     page.get_by_role("button", "Preview").click().await?;
     let preview = page.get_by_role("region", "Preview of paper.pdf");
-    preview.locator(".pdf-view-page.is-drawn").first().wait_for().await?;
+    preview
+        .locator(".pdf-view-page.is-drawn")
+        .first()
+        .wait_for()
+        .await?;
     assert_eq!(
         page.evaluate("() => { const c = document.querySelector('[aria-label=\"Preview of paper.pdf\"] .pdf-view-page.is-drawn canvas'); return !!c && c.width > 0 && c.height > 0; }").await?,
         json!(true),
         "preview PDF canvas has non-zero pixel dimensions"
     );
-    page.screenshot(t.screenshot("books-files-pdf-preview-1440.png"), false).await?;
+    page.screenshot(t.screenshot("books-files-pdf-preview-1440.png"), false)
+        .await?;
 
     // Phones: chips, full-screen details and reader.
     let phone = browser.new_context(ContextOptions::phone(390, 844)).await?;
@@ -343,24 +561,53 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     mobile.get_by_label("Username").fill(&username).await?;
     mobile.get_by_label("Password").fill(PASSWORD).await?;
     mobile.get_by_role("button", "Sign in").click().await?;
-    mobile.get_by_role("navigation", "Applications").wait_for().await?;
+    mobile
+        .get_by_role("navigation", "Applications")
+        .wait_for()
+        .await?;
     mobile.goto(&format!("{base}/books")).await?;
-    if let Err(error) = mobile.get_by_role("heading", "Continue reading").wait_for().await {
-        let _ = mobile.screenshot(t.screenshot("books-failure-390.png"), false).await;
+    if let Err(error) = mobile
+        .get_by_role("heading", "Continue reading")
+        .wait_for()
+        .await
+    {
+        let _ = mobile
+            .screenshot(t.screenshot("books-failure-390.png"), false)
+            .await;
         return Err(error);
     }
     assert_eq!(
-        mobile.evaluate("() => document.documentElement.scrollWidth <= innerWidth + 1").await?,
+        mobile
+            .evaluate("() => document.documentElement.scrollWidth <= innerWidth + 1")
+            .await?,
         json!(true),
         "no sideways scrolling on phones"
     );
-    mobile.screenshot(t.screenshot("books-home-390.png"), false).await?;
-    mobile.get_by_role("button", regex("A Second Voyage")).first().click().await?;
-    mobile.get_by_role("complementary", "Book details").get_by_role("heading", "A Second Voyage").wait_for().await?;
-    mobile.screenshot(t.screenshot("books-details-390.png"), false).await?;
+    mobile
+        .screenshot(t.screenshot("books-home-390.png"), false)
+        .await?;
+    mobile
+        .get_by_role("button", regex("A Second Voyage"))
+        .first()
+        .click()
+        .await?;
+    mobile
+        .get_by_role("complementary", "Book details")
+        .get_by_role("heading", "A Second Voyage")
+        .wait_for()
+        .await?;
+    mobile
+        .screenshot(t.screenshot("books-details-390.png"), false)
+        .await?;
     mobile.get_by_role("button", "Read").click().await?;
-    mobile.frame_locator("iframe.epub-view").get_by_role("heading", "Departure").wait_for().await?;
-    mobile.screenshot(t.screenshot("books-reader-390.png"), false).await?;
+    mobile
+        .frame_locator("iframe.epub-view")
+        .get_by_role("heading", "Departure")
+        .wait_for()
+        .await?;
+    mobile
+        .screenshot(t.screenshot("books-reader-390.png"), false)
+        .await?;
 
     phone.close().await?;
     context.close().await?;

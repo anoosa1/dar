@@ -14,9 +14,11 @@ use serde_json::{Value, json};
 
 use super::note_canvas::{self, NoteCanvas};
 use super::note_cards::{CardSummary, NoteCards};
-use super::note_graph::NoteGraph;
 use super::note_editor;
-use super::note_links::{self, LinkSuggestions, NoteIndex, NoteReferences, Suggestion, Trigger, has_tag};
+use super::note_graph::NoteGraph;
+use super::note_links::{
+    self, LinkSuggestions, NoteIndex, NoteReferences, Suggestion, Trigger, has_tag,
+};
 use super::note_tabs::{self, NoteTabStrip, NoteTabs, OpenIn};
 use super::{ReactiveSelect, WorkspaceShell, search_params};
 use crate::api::{self, BrowserSession};
@@ -26,8 +28,12 @@ use crate::files::editor::{TextFile, editable_text, write_text_file};
 use crate::files::types::{FileTile, file_type_label};
 use crate::icons::Icon;
 use crate::live::{Connection, Live, answered, procedure, reducer, replied};
-use crate::markdown::{Markdown, MarkdownToolbar, NoteLinks, byte_index, format_markdown, utf16_len};
-use crate::module_bindings::{create_folder, favorite_entry, file_details, move_entry, rename_entry, trash_entry};
+use crate::markdown::{
+    Markdown, MarkdownToolbar, NoteLinks, byte_index, format_markdown, utf16_len,
+};
+use crate::module_bindings::{
+    create_folder, favorite_entry, file_details, move_entry, rename_entry, trash_entry,
+};
 use crate::pim::{Collection, use_pim};
 use crate::shared::{context, save_preferences};
 use crate::ui::{ActionMenu, Dialog, EditorPane, MenuAction, listen, unique_id, window};
@@ -144,7 +150,13 @@ pub(super) fn has_md_ext(name: &str) -> bool {
 fn file_name(title: &str) -> String {
     let cleaned: String = title
         .chars()
-        .map(|c| if (c as u32) < 0x20 || c == '/' || c == '\\' { ' ' } else { c })
+        .map(|c| {
+            if (c as u32) < 0x20 || c == '/' || c == '\\' {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect();
     let collapsed: String = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
     let trimmed: String = collapsed.chars().take(200).collect();
@@ -156,7 +168,13 @@ fn canvas_file_name(title: &str) -> String {
     let base = note_canvas::stem(title.trim());
     let cleaned: String = base
         .chars()
-        .map(|c| if (c as u32) < 0x20 || c == '/' || c == '\\' { ' ' } else { c })
+        .map(|c| {
+            if (c as u32) < 0x20 || c == '/' || c == '\\' {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect();
     let collapsed: String = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
     let trimmed: String = collapsed.chars().take(200).collect();
@@ -169,7 +187,11 @@ fn unique_name(name: &str, taken: &HashSet<String>) -> String {
         return name.to_owned();
     }
     let lower = name.to_lowercase();
-    let base = if lower.ends_with(".md") { &name[..name.len() - 3] } else { name };
+    let base = if lower.ends_with(".md") {
+        &name[..name.len() - 3]
+    } else {
+        name
+    };
     for n in 2..1000 {
         let next = format!("{base} {n}.md");
         if !taken.contains(&next.to_lowercase()) {
@@ -181,12 +203,17 @@ fn unique_name(name: &str, taken: &HashSet<String>) -> String {
 
 fn is_untitled_md(name: &str) -> bool {
     let lower = name.to_lowercase();
-    let Some(stem) = lower.strip_suffix(".md") else { return false };
-    let Some(rest) = stem.strip_prefix("untitled") else { return false };
+    let Some(stem) = lower.strip_suffix(".md") else {
+        return false;
+    };
+    let Some(rest) = stem.strip_prefix("untitled") else {
+        return false;
+    };
     if rest.is_empty() {
         return true;
     }
-    rest.strip_prefix(' ').is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+    rest.strip_prefix(' ')
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn extract_heading(content: &str) -> Option<String> {
@@ -213,7 +240,9 @@ fn session_storage() -> Option<web_sys::Storage> {
 }
 
 fn event_element(event: &web_sys::Event) -> Option<web_sys::Element> {
-    event.target().and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::Element>(t).ok())
+    event
+        .target()
+        .and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::Element>(t).ok())
 }
 
 fn closest(el: &web_sys::Element, selector: &str) -> Option<web_sys::Element> {
@@ -230,13 +259,19 @@ fn pane_of(el: &web_sys::Element) -> Option<usize> {
 }
 
 pub(super) async fn read_file_content(id: &str) -> Result<String, String> {
-    let response = api::fetch(&format!("/api/v1/files/{id}/content"), Default::default()).await.map_err(|e| e.message)?;
+    let response = api::fetch(&format!("/api/v1/files/{id}/content"), Default::default())
+        .await
+        .map_err(|e| e.message)?;
     if !response.ok() {
         return Err("The file could not be loaded.".into());
     }
-    let text = wasm_bindgen_futures::JsFuture::from(response.text().map_err(|_| "The file could not be loaded.")?)
-        .await
-        .map_err(|_| "The file could not be loaded.")?;
+    let text = wasm_bindgen_futures::JsFuture::from(
+        response
+            .text()
+            .map_err(|_| "The file could not be loaded.")?,
+    )
+    .await
+    .map_err(|_| "The file could not be loaded.")?;
     Ok(text.as_string().unwrap_or_default())
 }
 
@@ -244,16 +279,24 @@ pub(super) async fn read_file_content(id: &str) -> Result<String, String> {
 pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoView {
     let pim = use_pim(on_signed_out);
     let live = expect_context::<Live>();
-    let params = web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default()).expect("params");
+    let params =
+        web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default())
+            .expect("params");
     let initial_scope = params.get("folder").unwrap_or_else(|| "all".into());
-    let initial_note: RwSignal<Option<String>> = RwSignal::new(params.get("note").or_else(|| params.get("file")));
+    let initial_note: RwSignal<Option<String>> =
+        RwSignal::new(params.get("note").or_else(|| params.get("file")));
 
     let library: RwSignal<Option<NotesLibrary>> = RwSignal::new(None);
     // The whole library (the list may show a search result), for links, tags and suggestions.
     let all_notes: RwSignal<Option<NotesLibrary>> = RwSignal::new(None);
     let attachments: RwSignal<Option<note_links::NoteFiles>> = RwSignal::new(None);
     let index = RwSignal::new(Arc::new(NoteIndex::new(None)));
-    Effect::new(move |_| all_notes.with(|l| attachments.with(|a| index.set(Arc::new(NoteIndex::new(l.as_ref()).with_files(a.as_ref()))))));
+    Effect::new(move |_| {
+        all_notes.with(|l| {
+            attachments
+                .with(|a| index.set(Arc::new(NoteIndex::new(l.as_ref()).with_files(a.as_ref()))))
+        })
+    });
     // A heading or block to show once a note opens: (note ID, fragment).
     let anchor: RwSignal<Option<(String, String)>> = RwSignal::new(None);
     // Bumped when other notes were rewritten (link updates), so a clean editor reloads.
@@ -271,9 +314,15 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     // How the latest click or key in the note sheet asks a followed link to open, and when.
     let intent: StoredValue<(OpenIn, f64)> = StoredValue::new((OpenIn::Current, 0.0));
     let take_intent = move || {
-        let (how, at) = intent.try_with_value(|i| *i).unwrap_or((OpenIn::Current, 0.0));
+        let (how, at) = intent
+            .try_with_value(|i| *i)
+            .unwrap_or((OpenIn::Current, 0.0));
         intent.try_update_value(|i| *i = (OpenIn::Current, 0.0));
-        if js_sys::Date::now() - at < 1500.0 { how } else { OpenIn::Current }
+        if js_sys::Date::now() - at < 1500.0 {
+            how
+        } else {
+            OpenIn::Current
+        }
     };
     let pane: RwSignal<Option<NotesPaneKind>> = RwSignal::new(None);
     let confirm: RwSignal<Option<ConfirmState>> = RwSignal::new(None);
@@ -322,7 +371,11 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             }
             let filtered = !q.is_empty();
             let qs = search_params(&[("q", q)]);
-            let whole = if filtered { api::get::<NotesLibrary>("/api/v1/notes/library").await.ok() } else { None };
+            let whole = if filtered {
+                api::get::<NotesLibrary>("/api/v1/notes/library").await.ok()
+            } else {
+                None
+            };
             if let Ok(files) = api::get::<note_links::NoteFiles>("/api/v1/notes/attachments").await
                 && load_seq.try_get_untracked() == Some(seq)
             {
@@ -330,7 +383,11 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             }
             match api::get::<NotesLibrary>(&format!("/api/v1/notes/library?{qs}")).await {
                 Ok(value) if load_seq.try_get_untracked() == Some(seq) => {
-                    all_notes.set(if filtered { whole.or_else(|| all_notes.get_untracked()) } else { Some(value.clone()) });
+                    all_notes.set(if filtered {
+                        whole.or_else(|| all_notes.get_untracked())
+                    } else {
+                        Some(value.clone())
+                    });
                     library.set(Some(value));
                     error.set(String::new());
                 }
@@ -370,13 +427,17 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         });
     }
 
-    listen(&window(), "focus", false, move |_| reload.update(|n| *n += 1));
+    listen(&window(), "focus", false, move |_| {
+        reload.update(|n| *n += 1)
+    });
 
     // Keep URL query params (?note=, ?folder=) synchronized.
     Effect::new(move |_| {
         let open_id = open.with(|o| o.as_ref().map(|e| e.id.clone()));
         let current_scope = scope.get();
-        let Ok(url) = web_sys::Url::new(&window().location().href().unwrap_or_default()) else { return };
+        let Ok(url) = web_sys::Url::new(&window().location().href().unwrap_or_default()) else {
+            return;
+        };
         let sp = url.search_params();
         sp.delete("file");
         match open_id {
@@ -389,7 +450,11 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             sp.set("folder", &current_scope);
         }
         let search = sp.to_string().as_string().unwrap_or_default();
-        let next = if search.is_empty() { url.pathname() } else { format!("{}?{search}", url.pathname()) };
+        let next = if search.is_empty() {
+            url.pathname()
+        } else {
+            format!("{}?{search}", url.pathname())
+        };
         if let Ok(history) = window().history() {
             let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&next));
         }
@@ -398,20 +463,39 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     // Open the deep-linked note once the live connection is ready, with the tabs this browser
     // tab had open (a reload keeps `?note=`, so it brings the whole set back).
     Effect::new(move |_| {
-        let Some(conn) = live.connection.get() else { return };
-        let Some(id) = initial_note.get_untracked() else { return };
+        let Some(conn) = live.connection.get() else {
+            return;
+        };
+        let Some(id) = initial_note.get_untracked() else {
+            return;
+        };
         initial_note.set(None);
         let saved = note_tabs::load(&tabs_key.get_value());
         spawn_local(async move {
             let first = fetch_detail(&conn, &id).await;
-            let others: Vec<String> = saved.tabs.iter().map(|(tab, _)| tab.clone()).filter(|tab| *tab != id).collect();
-            let found = futures::future::join_all(others.iter().map(|tab| fetch_detail(&conn, tab))).await;
+            let others: Vec<String> = saved
+                .tabs
+                .iter()
+                .map(|(tab, _)| tab.clone())
+                .filter(|tab| *tab != id)
+                .collect();
+            let found =
+                futures::future::join_all(others.iter().map(|tab| fetch_detail(&conn, tab))).await;
             let entries: Vec<(FileEntry, usize)> = saved
                 .tabs
                 .iter()
                 .filter_map(|(tab, pane)| {
-                    let detail = if *tab == id { first.as_ref().ok() } else { others.iter().position(|o| o == tab).and_then(|i| found[i].as_ref().ok()) };
-                    detail.filter(|d| !d.entry.trashed).map(|d| (d.entry.clone(), *pane))
+                    let detail = if *tab == id {
+                        first.as_ref().ok()
+                    } else {
+                        others
+                            .iter()
+                            .position(|o| o == tab)
+                            .and_then(|i| found[i].as_ref().ok())
+                    };
+                    detail
+                        .filter(|d| !d.entry.trashed)
+                        .map(|d| (d.entry.clone(), *pane))
                 })
                 .collect();
             tabs.restore(entries, &saved);
@@ -433,18 +517,30 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     let folder_name = move |id: &str| -> String {
         library.with(|lib| {
-            let Some(lib) = lib else { return "Notes".into() };
+            let Some(lib) = lib else {
+                return "Notes".into();
+            };
             if id == lib.root_id {
                 return "Notes".into();
             }
-            lib.folders.iter().find(|f| f.id == id).map(|f| f.name.clone()).unwrap_or_else(|| "Notes".into())
+            lib.folders
+                .iter()
+                .find(|f| f.id == id)
+                .map(|f| f.name.clone())
+                .unwrap_or_else(|| "Notes".into())
         })
     };
 
     let siblings = move |parent_id: &str| -> HashSet<String> {
         library.with_untracked(|lib| {
             lib.as_ref()
-                .map(|l| l.notes.iter().filter(|n| n.parent_id == parent_id).map(|n| n.name.to_lowercase()).collect())
+                .map(|l| {
+                    l.notes
+                        .iter()
+                        .filter(|n| n.parent_id == parent_id)
+                        .map(|n| n.name.to_lowercase())
+                        .collect()
+                })
                 .unwrap_or_default()
         })
     };
@@ -453,7 +549,8 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         let s = scope.get_untracked();
         library.with_untracked(|lib| {
             let Some(lib) = lib else { return String::new() };
-            if s != "all" && s != "favorites"
+            if s != "all"
+                && s != "favorites"
                 && let Some(folder) = lib.folders.iter().find(|f| f.id == s)
             {
                 return folder.id.clone();
@@ -473,10 +570,20 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             busy.set(true);
             error.set(String::new());
             let result: Result<(), String> = async {
-                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let conn = live
+                    .connection
+                    .get_untracked()
+                    .ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
                 let id = write_text_file(
                     &sess,
-                    TextFile { name: &name, parent_id: &target, content: "", media_type: "text/markdown", file_id: None, expected_revision: None },
+                    TextFile {
+                        name: &name,
+                        parent_id: &target,
+                        content: "",
+                        media_type: "text/markdown",
+                        file_id: None,
+                        expected_revision: None,
+                    },
                 )
                 .await
                 .map_err(|e| e.message)?;
@@ -501,7 +608,15 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         }
         let target = current_target();
         let taken: Vec<String> = attachments.with_untracked(|a| {
-            a.as_ref().map(|a| a.files.iter().filter(|f| f.parent_id == target).map(|f| f.name.to_lowercase()).collect()).unwrap_or_default()
+            a.as_ref()
+                .map(|a| {
+                    a.files
+                        .iter()
+                        .filter(|f| f.parent_id == target)
+                        .map(|f| f.name.to_lowercase())
+                        .collect()
+                })
+                .unwrap_or_default()
         });
         let name = note_canvas::unique_name("Untitled", &taken);
         let sess = session_sv.get_value();
@@ -509,9 +624,19 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             busy.set(true);
             error.set(String::new());
             let result: Result<(), String> = async {
-                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let conn = live
+                    .connection
+                    .get_untracked()
+                    .ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
                 let content = note_canvas::empty_canvas();
-                let file = TextFile { name: &name, parent_id: &target, content: &content, media_type: note_canvas::MEDIA_TYPE, file_id: None, expected_revision: None };
+                let file = TextFile {
+                    name: &name,
+                    parent_id: &target,
+                    content: &content,
+                    media_type: note_canvas::MEDIA_TYPE,
+                    file_id: None,
+                    expected_revision: None,
+                };
                 let id = write_text_file(&sess, file).await.map_err(|e| e.message)?;
                 let detail = fetch_detail(&conn, &id).await?;
                 tabs.open(detail.entry, OpenIn::Current);
@@ -548,15 +673,33 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     // A link to a missing note creates it (in the folder the link names, else the linking note's
     // folder for a Markdown link, else the Notes folder) and opens it.
     let create_linked = move |source_id: String, target: String, wiki: bool, how: OpenIn| {
-        let Some(root) = library.with_untracked(|l| l.as_ref().map(|l| l.root_id.clone())) else { return };
+        let Some(root) = library.with_untracked(|l| l.as_ref().map(|l| l.root_id.clone())) else {
+            return;
+        };
         let stem = strip_md_ext(target.rsplit('/').next().unwrap_or(&target).trim());
         let folder_path = if wiki {
-            target.rfind('/').map(|i| target[..i].trim_matches('/').to_owned()).unwrap_or_default()
+            target
+                .rfind('/')
+                .map(|i| target[..i].trim_matches('/').to_owned())
+                .unwrap_or_default()
         } else {
-            index.with_untracked(|ix| ix.path_of(&source_id).and_then(|p| p.rfind('/').map(|i| p[..i].to_owned()))).unwrap_or_default()
+            index
+                .with_untracked(|ix| {
+                    ix.path_of(&source_id)
+                        .and_then(|p| p.rfind('/').map(|i| p[..i].to_owned()))
+                })
+                .unwrap_or_default()
         };
         let parent = all_notes.with_untracked(|l| {
-            l.as_ref().and_then(|l| l.folders.iter().find(|f| !folder_path.is_empty() && f.path.to_lowercase() == folder_path.to_lowercase()).map(|f| f.id.clone()))
+            l.as_ref().and_then(|l| {
+                l.folders
+                    .iter()
+                    .find(|f| {
+                        !folder_path.is_empty()
+                            && f.path.to_lowercase() == folder_path.to_lowercase()
+                    })
+                    .map(|f| f.id.clone())
+            })
         });
         let parent = parent.unwrap_or(root);
         let name = unique_name(&file_name(&stem), &siblings(&parent));
@@ -564,8 +707,18 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         spawn_local(async move {
             busy.set(true);
             let result: Result<(), String> = async {
-                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
-                let file = TextFile { name: &name, parent_id: &parent, content: "", media_type: "text/markdown", file_id: None, expected_revision: None };
+                let conn = live
+                    .connection
+                    .get_untracked()
+                    .ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let file = TextFile {
+                    name: &name,
+                    parent_id: &parent,
+                    content: "",
+                    media_type: "text/markdown",
+                    file_id: None,
+                    expected_revision: None,
+                };
                 let id = write_text_file(&sess, file).await.map_err(|e| e.message)?;
                 tabs.open(fetch_detail(&conn, &id).await?.entry, how);
                 Ok(())
@@ -579,8 +732,13 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         });
     };
 
-    let follow_link_in = move |source_id: String, target: String, wiki: bool, fragment: Option<String>, how: OpenIn| {
-        let hit = index.with_untracked(|ix| ix.resolve(&source_id, &target, wiki).map(|n| n.id.clone()));
+    let follow_link_in = move |source_id: String,
+                               target: String,
+                               wiki: bool,
+                               fragment: Option<String>,
+                               how: OpenIn| {
+        let hit =
+            index.with_untracked(|ix| ix.resolve(&source_id, &target, wiki).map(|n| n.id.clone()));
         match hit {
             Some(id) => {
                 anchor.set(fragment.map(|f| (id.clone(), f)));
@@ -588,21 +746,31 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                     open_note_in(id, how);
                 }
             }
-            None if wiki && !dar_notes::is_note_target(&target) => notice.set(format!("\u{201c}{target}\u{201d} is not a note in this folder.")),
+            None if wiki && !dar_notes::is_note_target(&target) => notice.set(format!(
+                "\u{201c}{target}\u{201d} is not a note in this folder."
+            )),
             None => create_linked(source_id, target, wiki, how),
         }
     };
     // Links followed from the editor open as the click or key that followed them asks.
-    let follow_link = move |source_id: String, target: String, wiki: bool, fragment: Option<String>| follow_link_in(source_id, target, wiki, fragment, take_intent());
+    let follow_link =
+        move |source_id: String, target: String, wiki: bool, fragment: Option<String>| {
+            follow_link_in(source_id, target, wiki, fragment, take_intent())
+        };
 
     // After a rename or move: links elsewhere follow the note (Obsidian's automatic link updates).
-    let relink = move |moves: Vec<(String, String)>, sources: Vec<String>, before: Arc<NoteIndex>| async move {
+    let relink = move |moves: Vec<(String, String)>,
+                       sources: Vec<String>,
+                       before: Arc<NoteIndex>| async move {
         let sess = session_sv.get_value();
         let outcome = note_links::retarget_links(live, &sess, &before, &moves, sources).await;
         refresh.update(|n| *n += 1);
         match outcome {
             Ok(0) => String::new(),
-            Ok(n) => format!(" Updated links in {n} {}.", if n == 1 { "note" } else { "notes" }),
+            Ok(n) => format!(
+                " Updated links in {n} {}.",
+                if n == 1 { "note" } else { "notes" }
+            ),
             Err(e) => {
                 error.set(e);
                 String::new()
@@ -610,19 +778,43 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         }
     };
     let folder_path = move |folder_id: &str| -> String {
-        all_notes.with_untracked(|l| l.as_ref().filter(|l| l.root_id != folder_id).and_then(|l| l.folders.iter().find(|f| f.id == folder_id).map(|f| f.path.clone()))).unwrap_or_default()
+        all_notes
+            .with_untracked(|l| {
+                l.as_ref().filter(|l| l.root_id != folder_id).and_then(|l| {
+                    l.folders
+                        .iter()
+                        .find(|f| f.id == folder_id)
+                        .map(|f| f.path.clone())
+                })
+            })
+            .unwrap_or_default()
     };
-    let joined = |folder: String, name: &str| if folder.is_empty() { name.to_owned() } else { format!("{folder}/{name}") };
+    let joined = |folder: String, name: &str| {
+        if folder.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{folder}/{name}")
+        }
+    };
 
     // Random note (Obsidian's core plugin): any note but the open one and the templates.
     let open_random = move || {
         let current = open.with_untracked(|o| o.as_ref().map(|e| e.id.clone()));
-        let choices: Vec<String> = index.with_untracked(|ix| ix.notes.iter().filter(|n| current.as_deref() != Some(n.id.as_str()) && !note_links::is_template(n)).map(|n| n.id.clone()).collect());
+        let choices: Vec<String> = index.with_untracked(|ix| {
+            ix.notes
+                .iter()
+                .filter(|n| {
+                    current.as_deref() != Some(n.id.as_str()) && !note_links::is_template(n)
+                })
+                .map(|n| n.id.clone())
+                .collect()
+        });
         if choices.is_empty() {
             notice.set("There is no other note to open.".into());
             return;
         }
-        let pick = ((js_sys::Math::random() * choices.len() as f64) as usize).min(choices.len() - 1);
+        let pick =
+            ((js_sys::Math::random() * choices.len() as f64) as usize).min(choices.len() - 1);
         open_note(choices[pick].clone());
     };
 
@@ -638,27 +830,63 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             return;
         }
         let sess = session_sv.get_value();
-        let journal = all_notes.with_untracked(|l| l.as_ref().and_then(|l| l.folders.iter().find(|f| f.path.eq_ignore_ascii_case("journal")).map(|f| f.id.clone())));
+        let journal = all_notes.with_untracked(|l| {
+            l.as_ref().and_then(|l| {
+                l.folders
+                    .iter()
+                    .find(|f| f.path.eq_ignore_ascii_case("journal"))
+                    .map(|f| f.id.clone())
+            })
+        });
         spawn_local(async move {
             busy.set(true);
             let result: Result<(), String> = async {
-                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let conn = live
+                    .connection
+                    .get_untracked()
+                    .ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
                 let folder = match journal {
                     Some(id) => id,
                     None => {
                         let id = crate::random_uuid();
                         let (folder, parent) = (id.clone(), ix.root_id.clone());
-                        reducer(|tx| conn.reducers.create_folder_then(folder, parent, "Journal".into(), replied(tx))).await?;
+                        reducer(|tx| {
+                            conn.reducers.create_folder_then(
+                                folder,
+                                parent,
+                                "Journal".into(),
+                                replied(tx),
+                            )
+                        })
+                        .await?;
                         id
                     }
                 };
-                let template = ix.notes.iter().find(|n| note_links::is_template(n) && matches!(strip_md_ext(&n.name).to_lowercase().as_str(), "daily" | "daily note" | "journal"));
+                let template = ix.notes.iter().find(|n| {
+                    note_links::is_template(n)
+                        && matches!(
+                            strip_md_ext(&n.name).to_lowercase().as_str(),
+                            "daily" | "daily note" | "journal"
+                        )
+                });
                 let content = match template {
-                    Some(t) => note_links::fill_template(&read_file_content(&t.id).await?, &date, &date, &time),
+                    Some(t) => note_links::fill_template(
+                        &read_file_content(&t.id).await?,
+                        &date,
+                        &date,
+                        &time,
+                    ),
                     None => String::new(),
                 };
                 let name = format!("{date}.md");
-                let file = TextFile { name: &name, parent_id: &folder, content: &content, media_type: "text/markdown", file_id: None, expected_revision: None };
+                let file = TextFile {
+                    name: &name,
+                    parent_id: &folder,
+                    content: &content,
+                    media_type: "text/markdown",
+                    file_id: None,
+                    expected_revision: None,
+                };
                 let id = write_text_file(&sess, file).await.map_err(|e| e.message)?;
                 tabs.open(fetch_detail(&conn, &id).await?.entry, OpenIn::Current);
                 Ok(())
@@ -677,9 +905,20 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             busy.set(true);
             error.set(String::new());
             let result: Result<(), String> = async {
-                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let conn = live
+                    .connection
+                    .get_untracked()
+                    .ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
                 let entry = fetch_detail(&conn, &note_id).await?.entry;
-                reducer(|tx| conn.reducers.favorite_entry_then(entry.id, !entry.favorite, entry.revision, replied(tx))).await
+                reducer(|tx| {
+                    conn.reducers.favorite_entry_then(
+                        entry.id,
+                        !entry.favorite,
+                        entry.revision,
+                        replied(tx),
+                    )
+                })
+                .await
             }
             .await;
             if let Err(e) = result {
@@ -693,9 +932,17 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     let request_remove_note = move |note: NotesFile| {
         confirm.set(Some(ConfirmState {
-            title: if note_canvas::is_canvas(&note.name) { "Move canvas to deleted files?" } else { "Move note to deleted files?" }.into(),
+            title: if note_canvas::is_canvas(&note.name) {
+                "Move canvas to deleted files?"
+            } else {
+                "Move note to deleted files?"
+            }
+            .into(),
             action: "Move to deleted files".into(),
-            text: format!("\u{201c}{}\u{201d} can be restored from Files \u{203a} Deleted files.", note.title),
+            text: format!(
+                "\u{201c}{}\u{201d} can be restored from Files \u{203a} Deleted files.",
+                note.title
+            ),
             target: ConfirmTarget::Note(note),
         }));
     };
@@ -703,7 +950,14 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     let request_remove_folder = move |folder: NotesFolder| {
         let prefix = format!("{}/", folder.path);
         let count = library.with_untracked(|lib| {
-            lib.as_ref().map(|l| l.notes.iter().filter(|n| n.path.starts_with(&prefix)).count()).unwrap_or(0)
+            lib.as_ref()
+                .map(|l| {
+                    l.notes
+                        .iter()
+                        .filter(|n| n.path.starts_with(&prefix))
+                        .count()
+                })
+                .unwrap_or(0)
         });
         confirm.set(Some(ConfirmState {
             title: "Move folder to deleted files?".into(),
@@ -719,15 +973,23 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     let build_note_actions = move |note: NotesFile| -> Vec<MenuAction> {
         let is_busy = busy.get_untracked();
-        let has_folders = library.with_untracked(|lib| lib.as_ref().is_some_and(|l| !l.folders.is_empty()));
+        let has_folders =
+            library.with_untracked(|lib| lib.as_ref().is_some_and(|l| !l.folders.is_empty()));
         let n_fav = note.id.clone();
         let n_ren = note.clone();
         let n_mov = note.clone();
         let n_del = note.clone();
         vec![
-            MenuAction::new(if note.favorite { "Remove from favorites" } else { "Add to favorites" }, "star")
-                .disabled(is_busy)
-                .run(move || toggle_favorite(n_fav.clone())),
+            MenuAction::new(
+                if note.favorite {
+                    "Remove from favorites"
+                } else {
+                    "Add to favorites"
+                },
+                "star",
+            )
+            .disabled(is_busy)
+            .run(move || toggle_favorite(n_fav.clone())),
             MenuAction::new("Rename", "pencil")
                 .disabled(is_busy)
                 .run(move || pane.set(Some(NotesPaneKind::RenameNote(n_ren.clone())))),
@@ -747,8 +1009,10 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     let row_actions = move |note: NotesFile| -> Vec<MenuAction> {
         let (tab_id, right_id) = (note.id.clone(), note.id.clone());
         let mut list = vec![
-            MenuAction::new("Open in new tab", "plus").run(move || open_note_in(tab_id.clone(), OpenIn::NewTab)),
-            MenuAction::new("Open to the right", "panel").run(move || open_note_in(right_id.clone(), OpenIn::Right)),
+            MenuAction::new("Open in new tab", "plus")
+                .run(move || open_note_in(tab_id.clone(), OpenIn::NewTab)),
+            MenuAction::new("Open to the right", "panel")
+                .run(move || open_note_in(right_id.clone(), OpenIn::Right)),
         ];
         let mut rest = build_note_actions(note);
         if let Some(first) = rest.first_mut() {
@@ -776,20 +1040,32 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     };
     let build_canvas_actions = move |canvas: NotesFile| -> Vec<MenuAction> {
         let is_busy = busy.get_untracked();
-        let has_folders = library.with_untracked(|lib| lib.as_ref().is_some_and(|l| !l.folders.is_empty()));
+        let has_folders =
+            library.with_untracked(|lib| lib.as_ref().is_some_and(|l| !l.folders.is_empty()));
         let (renamed, moved, removed) = (canvas.clone(), canvas.clone(), canvas.clone());
         vec![
-            MenuAction::new("Rename", "pencil").disabled(is_busy).run(move || pane.set(Some(NotesPaneKind::RenameNote(renamed.clone())))),
-            MenuAction::new("Move to\u{2026}", "move").disabled(is_busy || !has_folders).run(move || pane.set(Some(NotesPaneKind::Move(moved.clone())))),
-            MenuAction::new("Show in Files", "folder").href(format!("/?folder={}&file={}", canvas.parent_id, canvas.id)),
-            MenuAction::new("Move to deleted files", "trash").danger().separator().disabled(is_busy).run(move || request_remove_note(removed.clone())),
+            MenuAction::new("Rename", "pencil")
+                .disabled(is_busy)
+                .run(move || pane.set(Some(NotesPaneKind::RenameNote(renamed.clone())))),
+            MenuAction::new("Move to\u{2026}", "move")
+                .disabled(is_busy || !has_folders)
+                .run(move || pane.set(Some(NotesPaneKind::Move(moved.clone())))),
+            MenuAction::new("Show in Files", "folder")
+                .href(format!("/?folder={}&file={}", canvas.parent_id, canvas.id)),
+            MenuAction::new("Move to deleted files", "trash")
+                .danger()
+                .separator()
+                .disabled(is_busy)
+                .run(move || request_remove_note(removed.clone())),
         ]
     };
     let canvas_row_actions = move |canvas: NotesFile| -> Vec<MenuAction> {
         let (tab_id, right_id) = (canvas.id.clone(), canvas.id.clone());
         let mut list = vec![
-            MenuAction::new("Open in new tab", "plus").run(move || open_note_in(tab_id.clone(), OpenIn::NewTab)),
-            MenuAction::new("Open to the right", "panel").run(move || open_note_in(right_id.clone(), OpenIn::Right)),
+            MenuAction::new("Open in new tab", "plus")
+                .run(move || open_note_in(tab_id.clone(), OpenIn::NewTab)),
+            MenuAction::new("Open to the right", "panel")
+                .run(move || open_note_in(right_id.clone(), OpenIn::Right)),
         ];
         let mut rest = build_canvas_actions(canvas);
         if let Some(first) = rest.first_mut() {
@@ -804,29 +1080,53 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         let folder = if s == "all" {
             Some(String::new())
         } else {
-            library.with(|lib| lib.as_ref().and_then(|l| l.folders.iter().find(|f| f.id == s).map(|f| format!("{}/", f.path))))
+            library.with(|lib| {
+                lib.as_ref().and_then(|l| {
+                    l.folders
+                        .iter()
+                        .find(|f| f.id == s)
+                        .map(|f| format!("{}/", f.path))
+                })
+            })
         };
         // Favorites, tags, graph and review cover notes only.
-        let Some(prefix) = folder else { return Vec::new() };
+        let Some(prefix) = folder else {
+            return Vec::new();
+        };
         attachments.with(|a| {
             let mut list: Vec<NotesFile> = a
                 .as_ref()
                 .map(|a| {
                     a.files
                         .iter()
-                        .filter(|f| note_canvas::is_canvas(&f.name) && f.path.starts_with(&prefix) && (q.is_empty() || f.name.to_lowercase().contains(&q)))
+                        .filter(|f| {
+                            note_canvas::is_canvas(&f.name)
+                                && f.path.starts_with(&prefix)
+                                && (q.is_empty() || f.name.to_lowercase().contains(&q))
+                        })
                         .map(canvas_note)
                         .collect()
                 })
                 .unwrap_or_default();
-            list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()).then_with(|| a.path.cmp(&b.path)));
+            list.sort_by(|a, b| {
+                a.title
+                    .to_lowercase()
+                    .cmp(&b.title.to_lowercase())
+                    .then_with(|| a.path.cmp(&b.path))
+            });
             list
         })
     });
 
     let sorted_folders = Memo::new(move |_| {
-        let mut folders = library.with(|lib| lib.as_ref().map(|l| l.folders.clone()).unwrap_or_default());
-        folders.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()).then_with(|| a.path.cmp(&b.path)));
+        let mut folders =
+            library.with(|lib| lib.as_ref().map(|l| l.folders.clone()).unwrap_or_default());
+        folders.sort_by(|a, b| {
+            a.path
+                .to_lowercase()
+                .cmp(&b.path.to_lowercase())
+                .then_with(|| a.path.cmp(&b.path))
+        });
         folders
     });
 
@@ -861,7 +1161,12 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 .cloned()
                 .collect();
             if current_sort == "title" {
-                list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()).then_with(|| a.title.cmp(&b.title)));
+                list.sort_by(|a, b| {
+                    a.title
+                        .to_lowercase()
+                        .cmp(&b.title.to_lowercase())
+                        .then_with(|| a.title.cmp(&b.title))
+                });
             } else {
                 list.sort_by(|a, b| b.modified_at.total_cmp(&a.modified_at));
             }
@@ -884,7 +1189,10 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             return format!("#{tag}");
         }
         if s != "all"
-            && let Some(name) = library.with(|lib| lib.as_ref().and_then(|l| l.folders.iter().find(|f| f.id == s).map(|f| f.name.clone())))
+            && let Some(name) = library.with(|lib| {
+                lib.as_ref()
+                    .and_then(|l| l.folders.iter().find(|f| f.id == s).map(|f| f.name.clone()))
+            })
         {
             return name;
         }
@@ -896,7 +1204,10 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         if s == "all" || s == "favorites" || s == "graph" || s == "review" {
             return None;
         }
-        library.with(|lib| lib.as_ref().and_then(|l| l.folders.iter().find(|f| f.id == s).map(|f| f.path.clone())))
+        library.with(|lib| {
+            lib.as_ref()
+                .and_then(|l| l.folders.iter().find(|f| f.id == s).map(|f| f.path.clone()))
+        })
     });
 
     let sidebar: ChildrenFn = Arc::new(move || {
@@ -1024,7 +1335,10 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             Some((t, f)) => (t.to_owned(), Some(f.to_owned())),
             None => (named.clone(), None),
         };
-        match link.get_attribute("href").and_then(|h| h.strip_prefix("/notes?note=").map(str::to_owned)) {
+        match link
+            .get_attribute("href")
+            .and_then(|h| h.strip_prefix("/notes?note=").map(str::to_owned))
+        {
             Some(id) => {
                 anchor.set(fragment.map(|f| (id.clone(), f)));
                 open_note_in(id, how);
@@ -1040,7 +1354,9 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         let source = attribute_of(&link, "[data-note-id]", "data-note-id").unwrap_or_default();
         let dest = link.get_attribute("data-href").unwrap_or_default();
         let wiki = link.get_attribute("data-wiki").as_deref() == Some("true");
-        if let note_editor::LinkAction::Note(target, wiki, fragment) = note_editor::link_action(&dest, wiki) {
+        if let note_editor::LinkAction::Note(target, wiki, fragment) =
+            note_editor::link_action(&dest, wiki)
+        {
             follow_link_in(source, target, wiki, fragment, OpenIn::NewTab);
         }
     };
@@ -1051,17 +1367,29 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         Effect::new(move |_| {
             let Some(el) = root.get() else { return };
             listen(&el, "mousedown", true, move |event| {
-                let (Some(e), Some(target)) = (wasm_bindgen::JsCast::dyn_ref::<web_sys::MouseEvent>(&event), event_element(&event)) else { return };
+                let (Some(e), Some(target)) = (
+                    wasm_bindgen::JsCast::dyn_ref::<web_sys::MouseEvent>(&event),
+                    event_element(&event),
+                ) else {
+                    return;
+                };
                 if let Some(pane) = pane_of(&target) {
                     tabs.focus_pane(pane);
                 }
                 set_intent(OpenIn::from_live_click(e));
-                if e.button() == 1 && closest(&target, ".cm-dar-link, a.note-link, a.note-embed").is_some() {
+                if e.button() == 1
+                    && closest(&target, ".cm-dar-link, a.note-link, a.note-embed").is_some()
+                {
                     e.prevent_default();
                 }
             });
             listen(&el, "click", true, move |event| {
-                let (Some(e), Some(target)) = (wasm_bindgen::JsCast::dyn_ref::<web_sys::MouseEvent>(&event), event_element(&event)) else { return };
+                let (Some(e), Some(target)) = (
+                    wasm_bindgen::JsCast::dyn_ref::<web_sys::MouseEvent>(&event),
+                    event_element(&event),
+                ) else {
+                    return;
+                };
                 // Live preview follows on mousedown, with its own modifiers.
                 if closest(&target, ".cm-editor").is_some() {
                     return;
@@ -1071,18 +1399,31 @@ pub fn Notes(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 if how == OpenIn::Current {
                     return;
                 }
-                if let Some(link) = closest(&target, "a.note-link[data-target], a.note-embed[data-target]") {
+                if let Some(link) = closest(
+                    &target,
+                    "a.note-link[data-target], a.note-embed[data-target]",
+                ) {
                     e.prevent_default();
                     e.stop_propagation();
                     open_link(link, how);
                 }
             });
             listen(&el, "auxclick", true, move |event| {
-                let (Some(e), Some(target)) = (wasm_bindgen::JsCast::dyn_ref::<web_sys::MouseEvent>(&event), event_element(&event)) else { return };
+                let (Some(e), Some(target)) = (
+                    wasm_bindgen::JsCast::dyn_ref::<web_sys::MouseEvent>(&event),
+                    event_element(&event),
+                ) else {
+                    return;
+                };
                 if e.button() != 1 {
                     return;
                 }
-                if let Some(link) = closest(&target, "a.note-link[data-target], a.note-embed[data-target]").filter(|l| closest(l, ".cm-editor").is_none()) {
+                if let Some(link) = closest(
+                    &target,
+                    "a.note-link[data-target], a.note-embed[data-target]",
+                )
+                .filter(|l| closest(l, ".cm-editor").is_none())
+                {
                     e.prevent_default();
                     e.stop_propagation();
                     open_link(link, OpenIn::NewTab);
@@ -1755,7 +2096,11 @@ fn NotesPane(
         let root_id = library.with(|l| l.as_ref().map(|l| l.root_id.clone()).unwrap_or_default());
         let mut opts = vec![(root_id, "Notes (top level)".to_owned())];
         for folder in folders.get() {
-            let label = folder.path.split('/').collect::<Vec<_>>().join(" \u{203a} ");
+            let label = folder
+                .path
+                .split('/')
+                .collect::<Vec<_>>()
+                .join(" \u{203a} ");
             opts.push((folder.id, label));
         }
         opts
@@ -1847,9 +2192,18 @@ fn LegacyImport(
     let library = StoredValue::new(library);
 
     let save_imported = move || {
-        let rev = shared_prefs.value.with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
+        let rev = shared_prefs
+            .value
+            .with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
         let sess = session.get_value();
-        async move { save_preferences(json!({ "revision": rev, "notesImported": true }), rev, &sess).await }
+        async move {
+            save_preferences(
+                json!({ "revision": rev, "notesImported": true }),
+                rev,
+                &sess,
+            )
+            .await
+        }
     };
 
     let copy = move || {
@@ -1859,66 +2213,118 @@ fn LegacyImport(
         spawn_local(async move {
             let Some(conn) = live.connection.get_untracked() else {
                 progress.set(None);
-                { on_error.try_run("Notes are reconnecting. Try again in a moment.".into()); };
+                {
+                    on_error.try_run("Notes are reconnecting. Try again in a moment.".into());
+                };
                 return;
             };
             let result: Result<u64, String> = async {
-                let books = api::get::<NotebookList>("/api/v1/notes/notebooks").await.map_err(|e| e.message)?;
+                let books = api::get::<NotebookList>("/api/v1/notes/notebooks")
+                    .await
+                    .map_err(|e| e.message)?;
                 let mut copied = 0u64;
                 for book in books.items.into_iter().filter(|b| b.role == "owner") {
                     let cleaned: String = book
                         .name
                         .chars()
-                        .map(|c| if (c as u32) < 0x20 || c == '/' || c == '\\' { ' ' } else { c })
+                        .map(|c| {
+                            if (c as u32) < 0x20 || c == '/' || c == '\\' {
+                                ' '
+                            } else {
+                                c
+                            }
+                        })
                         .collect();
                     let folder_name: String = {
                         let t: String = cleaned.trim().chars().take(200).collect();
                         if t.is_empty() { "Notebook".into() } else { t }
                     };
-                    let folder = match lib.folders.iter().find(|r| r.parent_id == lib.root_id && r.name.to_lowercase() == folder_name.to_lowercase()) {
+                    let folder = match lib.folders.iter().find(|r| {
+                        r.parent_id == lib.root_id
+                            && r.name.to_lowercase() == folder_name.to_lowercase()
+                    }) {
                         Some(f) => f.id.clone(),
                         None => {
                             let id = crate::random_uuid();
-                            reducer(|tx| conn.reducers.create_folder_then(id.clone(), lib.root_id.clone(), folder_name.clone(), replied(tx))).await?;
+                            reducer(|tx| {
+                                conn.reducers.create_folder_then(
+                                    id.clone(),
+                                    lib.root_id.clone(),
+                                    folder_name.clone(),
+                                    replied(tx),
+                                )
+                            })
+                            .await?;
                             id
                         }
                     };
                     let mut taken = HashSet::new();
                     let mut cursor = String::new();
                     loop {
-                        let qs = search_params(&[("collection", book.id.clone()), ("cursor", cursor.clone())]);
-                        let page = api::get::<LegacyPage>(&format!("/api/v1/notes/items?{qs}")).await.map_err(|e| e.message)?;
+                        let qs = search_params(&[
+                            ("collection", book.id.clone()),
+                            ("cursor", cursor.clone()),
+                        ]);
+                        let page = api::get::<LegacyPage>(&format!("/api/v1/notes/items?{qs}"))
+                            .await
+                            .map_err(|e| e.message)?;
                         for row in page.items {
-                            let item = api::get::<LegacyNote>(&format!("/api/v1/notes/items/{}", row.id)).await.map_err(|e| e.message)?;
+                            let item =
+                                api::get::<LegacyNote>(&format!("/api/v1/notes/items/{}", row.id))
+                                    .await
+                                    .map_err(|e| e.message)?;
                             let first_line = item.content.split('\n').next().unwrap_or("");
                             let has_same_heading = !item.data.title.is_empty()
-                                && first_line.strip_prefix('#').is_some_and(|r| r.starts_with(char::is_whitespace) && r.trim() == item.data.title);
+                                && first_line.strip_prefix('#').is_some_and(|r| {
+                                    r.starts_with(char::is_whitespace)
+                                        && r.trim() == item.data.title
+                                });
                             let heading = if !item.data.title.is_empty() && !has_same_heading {
                                 format!("# {}\n\n", item.data.title)
                             } else {
                                 String::new()
                             };
                             let front = if !item.data.tags.is_empty() {
-                                let tags_json: Vec<String> = item.data.tags.iter().map(|t| serde_json::to_string(t).unwrap_or_default()).collect();
+                                let tags_json: Vec<String> = item
+                                    .data
+                                    .tags
+                                    .iter()
+                                    .map(|t| serde_json::to_string(t).unwrap_or_default())
+                                    .collect();
                                 format!("---\ntags: [{}]\n---\n", tags_json.join(", "))
                             } else {
                                 String::new()
                             };
-                            let stem = if item.data.title.is_empty() { "Untitled" } else { &item.data.title };
+                            let stem = if item.data.title.is_empty() {
+                                "Untitled"
+                            } else {
+                                &item.data.title
+                            };
                             let name = unique_name(&file_name(stem), &taken);
                             taken.insert(name.to_lowercase());
                             let full_content = format!("{front}{heading}{}", item.content);
                             let id = write_text_file(
                                 &sess,
-                                TextFile { name: &name, parent_id: &folder, content: &full_content, media_type: "text/markdown", file_id: None, expected_revision: None },
+                                TextFile {
+                                    name: &name,
+                                    parent_id: &folder,
+                                    content: &full_content,
+                                    media_type: "text/markdown",
+                                    file_id: None,
+                                    expected_revision: None,
+                                },
                             )
                             .await
                             .map_err(|e| e.message)?;
                             if item.data.favorite {
-                                let _ = reducer(|tx| conn.reducers.favorite_entry_then(id, true, 1, replied(tx))).await;
+                                let _ = reducer(|tx| {
+                                    conn.reducers.favorite_entry_then(id, true, 1, replied(tx))
+                                })
+                                .await;
                             }
                             copied += 1;
-                            progress.set(Some(format!("Copied {copied} of {}\u{2026}", lib.legacy)));
+                            progress
+                                .set(Some(format!("Copied {copied} of {}\u{2026}", lib.legacy)));
                         }
                         if page.next_cursor.is_empty() {
                             break;
@@ -1931,10 +2337,18 @@ fn LegacyImport(
             }
             .await;
             match result {
-                Ok(copied) => { on_done.try_run(format!("Copied {copied} {} into Files \u{203a} {}.", if copied == 1 { "note" } else { "notes" }, lib.path)); },
+                Ok(copied) => {
+                    on_done.try_run(format!(
+                        "Copied {copied} {} into Files \u{203a} {}.",
+                        if copied == 1 { "note" } else { "notes" },
+                        lib.path
+                    ));
+                }
                 Err(e) => {
                     progress.set(None);
-                    { on_error.try_run(error_message(&e)); };
+                    {
+                        on_error.try_run(error_message(&e));
+                    };
                 }
             }
         });
@@ -1944,7 +2358,11 @@ fn LegacyImport(
     let lib_path = library.with_value(|l| l.path.clone());
     let prompt = format!(
         "{legacy_count} {} still in the old notes storage. Copy them into Files \u{203a} {lib_path} as Markdown files, one folder per notebook.",
-        if legacy_count == 1 { "note is" } else { "notes are" }
+        if legacy_count == 1 {
+            "note is"
+        } else {
+            "notes are"
+        }
     );
     let prompt = StoredValue::new(prompt);
 
@@ -2013,14 +2431,19 @@ fn NoteTextEditor(
     // The CodeMirror editor (note_editor.rs), made once its module has loaded. `synced` is the
     // text both sides last agreed on, so a change is passed on once in each direction.
     let host = NodeRef::<html::Div>::new();
-    let editor: StoredValue<Option<note_editor::Editor>, LocalStorage> = StoredValue::new_local(None);
+    let editor: StoredValue<Option<note_editor::Editor>, LocalStorage> =
+        StoredValue::new_local(None);
     let editor_on = RwSignal::new(false);
     let editor_failed = RwSignal::new(String::new());
     let synced = StoredValue::new(String::new());
     let loaded_in_editor = StoredValue::new(false);
     let can_undo = RwSignal::new(false);
     let can_redo = RwSignal::new(false);
-    let cm = move || editor.try_with_value(|e| e.as_ref().map(note_editor::Editor::handle)).flatten();
+    let cm = move || {
+        editor
+            .try_with_value(|e| e.as_ref().map(note_editor::Editor::handle))
+            .flatten()
+    };
     let key = StoredValue::new(format!("dar.file-draft.{}.{}", session.user.id, initial.id));
     let session = StoredValue::new(session);
     let alive = Arc::new(AtomicBool::new(true));
@@ -2114,7 +2537,11 @@ fn NoteTextEditor(
             return;
         }
         if let Some(s) = session_storage() {
-            let result = if d { s.set_item(&key.get_value(), &t) } else { s.remove_item(&key.get_value()) };
+            let result = if d {
+                s.set_item(&key.get_value(), &t)
+            } else {
+                s.remove_item(&key.get_value())
+            };
             if result.is_err() {
                 error.set("Recovery storage is unavailable. Keep this editor open until the file is saved.".into());
             }
@@ -2132,9 +2559,14 @@ fn NoteTextEditor(
         spawn_local(async move {
             let id = entry.with_untracked(|e| e.id.clone());
             let outcome: Result<(String, FileEntry), String> = async {
-                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let conn = live
+                    .connection
+                    .get_untracked()
+                    .ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
                 let detail = fetch_detail(&conn, &id).await?;
-                let content = read_file_content(&id).await.map_err(|_| "Saved version unavailable.".to_owned())?;
+                let content = read_file_content(&id)
+                    .await
+                    .map_err(|_| "Saved version unavailable.".to_owned())?;
                 Ok((content, detail.entry))
             }
             .await;
@@ -2188,7 +2620,9 @@ fn NoteTextEditor(
                         saved.set(content.clone());
                         modified.set(js_sys::Date::now());
                         status.set("Saved");
-                        { on_saved.try_run((expected + 1, content)); };
+                        {
+                            on_saved.try_run((expected + 1, content));
+                        };
                     }
                     Err(e) => {
                         error.set(e.message.clone());
@@ -2209,7 +2643,12 @@ fn NoteTextEditor(
     Effect::new(move |_| {
         text.track();
         saved.track();
-        if !dirty.get() || !error.with(String::is_empty) || !ready.get() || recovery.with(Option::is_some) || conflict.with(Option::is_some) {
+        if !dirty.get()
+            || !error.with(String::is_empty)
+            || !ready.get()
+            || recovery.with(Option::is_some)
+            || conflict.with(Option::is_some)
+        {
             return;
         }
         let id = typed.get_untracked() + 1;
@@ -2236,13 +2675,26 @@ fn NoteTextEditor(
     let alive_refresh = alive.clone();
     Effect::new(move |previous: Option<u32>| {
         let tick = refresh.get();
-        if previous.is_some_and(|p| p != tick) && ready.get_untracked() && !dirty.get_untracked() && !saving.get_untracked() {
+        if previous.is_some_and(|p| p != tick)
+            && ready.get_untracked()
+            && !dirty.get_untracked()
+            && !saving.get_untracked()
+        {
             let alive = alive_refresh.clone();
             let id = entry.with_untracked(|e| e.id.clone());
             spawn_local(async move {
-                let Some(conn) = live.connection.get_untracked() else { return };
-                let (Ok(detail), Ok(content)) = (fetch_detail(&conn, &id).await, read_file_content(&id).await) else { return };
-                if alive.load(Ordering::Relaxed) && !dirty.get_untracked() && detail.entry.revision > revision.get_untracked() {
+                let Some(conn) = live.connection.get_untracked() else {
+                    return;
+                };
+                let (Ok(detail), Ok(content)) =
+                    (fetch_detail(&conn, &id).await, read_file_content(&id).await)
+                else {
+                    return;
+                };
+                if alive.load(Ordering::Relaxed)
+                    && !dirty.get_untracked()
+                    && detail.entry.revision > revision.get_untracked()
+                {
                     revision.set(detail.entry.revision);
                     modified.set(detail.entry.modified_at);
                     text.set(content.clone());
@@ -2253,7 +2705,15 @@ fn NoteTextEditor(
         tick
     });
 
-    let headings = Memo::new(move |_| text.with(|t| dar_notes::facts(t).headings.into_iter().map(|h| (h.level, h.text, h.offset)).collect::<Vec<_>>()));
+    let headings = Memo::new(move |_| {
+        text.with(|t| {
+            dar_notes::facts(t)
+                .headings
+                .into_iter()
+                .map(|h| (h.level, h.text, h.offset))
+                .collect::<Vec<_>>()
+        })
+    });
     let section = NodeRef::<html::Section>::new();
     // Shows a heading (`Heading`, `Heading#Sub`) or block (`^id`): scrolled to in the preview,
     // selected in the source.
@@ -2261,7 +2721,9 @@ fn NoteTextEditor(
         let block = fragment.strip_prefix('^').map(str::to_owned);
         let wanted = dar_notes::slug(fragment.rsplit('#').next().unwrap_or(&fragment));
         if preview.get_untracked() {
-            let Some(root) = section.get_untracked() else { return };
+            let Some(root) = section.get_untracked() else {
+                return;
+            };
             let selector = match &block {
                 Some(id) => format!("[data-block=\"{}\"]", id.replace('"', "")),
                 None => format!("[data-anchor=\"{}\"]", wanted.replace('"', "")),
@@ -2283,7 +2745,11 @@ fn NoteTextEditor(
                     (dar_notes::block_id(line.trim_end()) == Some(id.as_str())).then_some(start)
                 })
             }
-            None => headings.get_untracked().into_iter().find(|(_, t, _)| dar_notes::slug(t) == wanted).map(|(_, _, o)| o),
+            None => headings
+                .get_untracked()
+                .into_iter()
+                .find(|(_, t, _)| dar_notes::slug(t) == wanted)
+                .map(|(_, _, o)| o),
         };
         if let (Some(offset), Some(cm)) = (offset, cm()) {
             let caret = utf16_len(&source[..offset]);
@@ -2292,8 +2758,13 @@ fn NoteTextEditor(
         }
     };
     Effect::new(move |_| {
-        let Some((id, fragment)) = anchor.get() else { return };
-        if !ready.get() || (!preview.get() && !editor_on.get()) || id != entry.with_untracked(|e| e.id.clone()) {
+        let Some((id, fragment)) = anchor.get() else {
+            return;
+        };
+        if !ready.get()
+            || (!preview.get() && !editor_on.get())
+            || id != entry.with_untracked(|e| e.id.clone())
+        {
             return;
         }
         anchor.set(None);
@@ -2337,7 +2808,8 @@ fn NoteTextEditor(
         let alive = alive_hover_close.clone();
         spawn_local(async move {
             crate::sleep(180).await;
-            if alive.load(Ordering::Relaxed) && hover_close_seq.try_get_untracked() == Some(ticket) {
+            if alive.load(Ordering::Relaxed) && hover_close_seq.try_get_untracked() == Some(ticket)
+            {
                 hover_preview.try_set(None);
             }
         });
@@ -2347,11 +2819,16 @@ fn NoteTextEditor(
         if !preview.get_untracked() {
             return;
         }
-        let Some(next) = index.with_untracked(|ix| note_links::preview_target_from_element(&target_el, ix)) else {
+        let Some(next) =
+            index.with_untracked(|ix| note_links::preview_target_from_element(&target_el, ix))
+        else {
             return;
         };
         hover_close_seq.try_update(|n| *n += 1);
-        let same = hover_preview.try_with_untracked(|cur| cur.as_ref().is_some_and(|c| c.id == next.id && c.fragment == next.fragment)) == Some(true);
+        let same = hover_preview.try_with_untracked(|cur| {
+            cur.as_ref()
+                .is_some_and(|c| c.id == next.id && c.fragment == next.fragment)
+        }) == Some(true);
         if same {
             return;
         }
@@ -2413,7 +2890,11 @@ fn NoteTextEditor(
         spawn_local(async move {
             let copied = note_links::copy_to_clipboard(&link).await.is_ok();
             if alive.load(Ordering::Relaxed) {
-                notice.try_set(if copied { "Block link copied.".to_owned() } else { link });
+                notice.try_set(if copied {
+                    "Block link copied.".to_owned()
+                } else {
+                    link
+                });
             }
         });
     });
@@ -2443,10 +2924,19 @@ fn NoteTextEditor(
             choices.try_set(Vec::new());
             return;
         }
-        let Some(source) = text.try_get_untracked() else { return };
+        let Some(source) = text.try_get_untracked() else {
+            return;
+        };
         let caret = byte_index(&source, from);
         let found = note_links::trigger(&source, caret);
-        let list = found.as_ref().map(|t| index.with_untracked(|ix| note_links::suggestions(ix, t, &entry.with_untracked(|e| e.id.clone())))).unwrap_or_default();
+        let list = found
+            .as_ref()
+            .map(|t| {
+                index.with_untracked(|ix| {
+                    note_links::suggestions(ix, t, &entry.with_untracked(|e| e.id.clone()))
+                })
+            })
+            .unwrap_or_default();
         if !list.is_empty() {
             point.set(cm.point_below(from));
         }
@@ -2470,7 +2960,13 @@ fn NoteTextEditor(
     };
     let insert_at_caret = StoredValue::new(insert_at_caret);
     let pick = Callback::new(move |i: usize| {
-        let (Some(trigger), Some(choice), Some(cm)) = (suggest.get_untracked(), choices.with_untracked(|c| c.get(i).cloned()), cm()) else { return };
+        let (Some(trigger), Some(choice), Some(cm)) = (
+            suggest.get_untracked(),
+            choices.with_untracked(|c| c.get(i).cloned()),
+            cm(),
+        ) else {
+            return;
+        };
         let source = cm.text();
         let caret = byte_index(&source, cm.selection().0);
         let (next, at) = note_links::accept(&source, caret, &trigger, &choice.insert);
@@ -2528,7 +3024,12 @@ fn NoteTextEditor(
     // continues the list. Outside lists Tab keeps moving focus.
     let outline_keys = move |e: &web_sys::KeyboardEvent| -> bool {
         let Some(cm) = cm() else { return false };
-        if !markdown.get_untracked() || read_only.get_untracked() || e.ctrl_key() || e.meta_key() || e.is_composing() {
+        if !markdown.get_untracked()
+            || read_only.get_untracked()
+            || e.ctrl_key()
+            || e.meta_key()
+            || e.is_composing()
+        {
             return false;
         }
         let source = cm.text();
@@ -2536,18 +3037,31 @@ fn NoteTextEditor(
         let (start, end) = (byte_index(&source, from), byte_index(&source, to));
         let edit = match e.key().as_str() {
             "Tab" if !e.alt_key() => crate::outline::indent(&source, start, end, e.shift_key()),
-            "ArrowUp" | "ArrowDown" if e.alt_key() && e.shift_key() => crate::outline::move_lines(&source, start, end, e.key() == "ArrowUp"),
-            "Enter" if !e.alt_key() && !e.shift_key() && start == end => crate::outline::continue_list(&source, start).map(|(t, c)| (t, c, c)),
+            "ArrowUp" | "ArrowDown" if e.alt_key() && e.shift_key() => {
+                crate::outline::move_lines(&source, start, end, e.key() == "ArrowUp")
+            }
+            "Enter" if !e.alt_key() && !e.shift_key() && start == end => {
+                crate::outline::continue_list(&source, start).map(|(t, c)| (t, c, c))
+            }
             _ => None,
         };
-        let Some((next, s, en)) = edit else { return false };
+        let Some((next, s, en)) = edit else {
+            return false;
+        };
         cm.replace(&next, utf16_len(&next[..s]), utf16_len(&next[..en]));
         true
     };
     // The editor's keys go here first: the suggestion list, Ctrl/Cmd+B and +I, then the outliner.
     let editor_keys = move |e: web_sys::KeyboardEvent| -> bool {
-        let editable = ready.get_untracked() && !read_only.get_untracked() && recovery.with_untracked(Option::is_none);
-        if (e.ctrl_key() || e.meta_key()) && !e.alt_key() && !e.shift_key() && markdown.get_untracked() && editable {
+        let editable = ready.get_untracked()
+            && !read_only.get_untracked()
+            && recovery.with_untracked(Option::is_none);
+        if (e.ctrl_key() || e.meta_key())
+            && !e.alt_key()
+            && !e.shift_key()
+            && markdown.get_untracked()
+            && editable
+        {
             let wrap = match e.key().to_lowercase().as_str() {
                 "b" => Some(("**", "**")),
                 "i" => Some(("*", "*")),
@@ -2581,7 +3095,9 @@ fn NoteTextEditor(
         if started == Some(true) {
             return true;
         }
-        let Some(parent) = host.get() else { return false };
+        let Some(parent) = host.get() else {
+            return false;
+        };
         let alive = alive_editor.clone();
         let listbox = listbox_for_editor.clone();
         spawn_local(async move {
@@ -2624,17 +3140,23 @@ fn NoteTextEditor(
                     attach_files(files);
                     true
                 }),
-                link: Box::new(move |dest, wiki| match note_editor::link_action(&dest, wiki) {
-                    note_editor::LinkAction::Note(target, wiki, fragment) => {
-                        if let Some(follow) = follow {
-                            follow.try_run((target, wiki, fragment));
+                link: Box::new(
+                    move |dest, wiki| match note_editor::link_action(&dest, wiki) {
+                        note_editor::LinkAction::Note(target, wiki, fragment) => {
+                            if let Some(follow) = follow {
+                                follow.try_run((target, wiki, fragment));
+                            }
                         }
-                    }
-                    note_editor::LinkAction::Open(url) => {
-                        let _ = window().open_with_url_and_target_and_features(&url, "_blank", "noopener,noreferrer");
-                    }
-                    note_editor::LinkAction::None => {}
-                }),
+                        note_editor::LinkAction::Open(url) => {
+                            let _ = window().open_with_url_and_target_and_features(
+                                &url,
+                                "_blank",
+                                "noopener,noreferrer",
+                            );
+                        }
+                        note_editor::LinkAction::None => {}
+                    },
+                ),
                 tag: Box::new(move |name| {
                     if let Some(tag) = tag {
                         tag.try_run(name);
@@ -2643,21 +3165,33 @@ fn NoteTextEditor(
                 blur: Box::new(move || {
                     choices.try_set(Vec::new());
                 }),
-                resolve: Box::new(move |dest, wiki| match note_editor::link_action(&dest, wiki) {
-                    note_editor::LinkAction::Note(target, wiki, _) => {
-                        let found = resolve.and_then(|r| r.try_run((target, wiki))).flatten();
-                        if found.is_some() { String::new() } else { "is-unresolved".into() }
-                    }
-                    note_editor::LinkAction::Open(_) => "is-external".into(),
-                    note_editor::LinkAction::None if wiki => "is-file".into(),
-                    note_editor::LinkAction::None => "is-plain".into(),
-                }),
+                resolve: Box::new(
+                    move |dest, wiki| match note_editor::link_action(&dest, wiki) {
+                        note_editor::LinkAction::Note(target, wiki, _) => {
+                            let found = resolve.and_then(|r| r.try_run((target, wiki))).flatten();
+                            if found.is_some() {
+                                String::new()
+                            } else {
+                                "is-unresolved".into()
+                            }
+                        }
+                        note_editor::LinkAction::Open(_) => "is-external".into(),
+                        note_editor::LinkAction::None if wiki => "is-file".into(),
+                        note_editor::LinkAction::None => "is-plain".into(),
+                    },
+                ),
             };
-            let attributes = [("aria-label", "File contents".to_owned()), ("aria-autocomplete", "list".to_owned()), ("aria-controls", listbox)];
+            let attributes = [
+                ("aria-label", "File contents".to_owned()),
+                ("aria-autocomplete", "list".to_owned()),
+                ("aria-controls", listbox),
+            ];
             let options = note_editor::Options {
                 text: &initial,
                 markdown: markdown.get_untracked(),
-                read_only: read_only.get_untracked() || !ready.get_untracked() || recovery.with_untracked(Option::is_some),
+                read_only: read_only.get_untracked()
+                    || !ready.get_untracked()
+                    || recovery.with_untracked(Option::is_some),
                 placeholder: "Start writing\u{2026}",
                 attributes: &attributes,
             };
@@ -2724,7 +3258,10 @@ fn NoteTextEditor(
         let content = cm.content();
         let _ = content.set_attribute("aria-expanded", if open { "true" } else { "false" });
         if open {
-            let _ = content.set_attribute("aria-activedescendant", &format!("{listbox_for_aria}-{current}"));
+            let _ = content.set_attribute(
+                "aria-activedescendant",
+                &format!("{listbox_for_aria}-{current}"),
+            );
         } else {
             let _ = content.remove_attribute("aria-activedescendant");
         }
@@ -2749,10 +3286,17 @@ fn NoteTextEditor(
     let phase = move || {
         if read_only.get() {
             "read"
-        } else if matches!(status.get(), "Saving\u{2026}" | "Loading\u{2026}" | "Uploading\u{2026}") {
+        } else if matches!(
+            status.get(),
+            "Saving\u{2026}" | "Loading\u{2026}" | "Uploading\u{2026}"
+        ) {
             "saving"
         } else if dirty.get() {
-            if status.get() == "Save failed" { "error" } else { "dirty" }
+            if status.get() == "Save failed" {
+                "error"
+            } else {
+                "dirty"
+            }
         } else {
             "saved"
         }
@@ -2760,10 +3304,18 @@ fn NoteTextEditor(
 
     let label = move || {
         let s = status.get();
-        if matches!(s, "Loading\u{2026}" | "Saving\u{2026}" | "Uploading\u{2026}") || read_only.get() {
+        if matches!(
+            s,
+            "Loading\u{2026}" | "Saving\u{2026}" | "Uploading\u{2026}"
+        ) || read_only.get()
+        {
             s
         } else if dirty.get() {
-            if s == "Save failed" { "Not saved" } else { "Unsaved changes" }
+            if s == "Save failed" {
+                "Not saved"
+            } else {
+                "Unsaved changes"
+            }
         } else {
             "All changes saved"
         }
@@ -2773,7 +3325,9 @@ fn NoteTextEditor(
         if dirty.get_untracked() || saving.get_untracked() {
             discard.set(true);
         } else {
-            { on_close.try_run(()); };
+            {
+                on_close.try_run(());
+            };
         }
     };
     if let Some(request) = close_request {

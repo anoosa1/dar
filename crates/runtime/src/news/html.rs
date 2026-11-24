@@ -10,7 +10,11 @@ use regex::{Captures, Regex};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Token {
     Text(String),
-    Open { name: String, attrs: HashMap<String, String>, self_closing: bool },
+    Open {
+        name: String,
+        attrs: HashMap<String, String>,
+        self_closing: bool,
+    },
     Close(String),
 }
 
@@ -21,16 +25,104 @@ pub struct Alternate {
     pub media_type: String,
 }
 
-const RAW: &[&str] = &["script", "style", "textarea", "title", "noscript", "iframe", "xmp", "template", "noembed", "noframes"];
+const RAW: &[&str] = &[
+    "script", "style", "textarea", "title", "noscript", "iframe", "xmp", "template", "noembed",
+    "noframes",
+];
 const ALLOWED: &[&str] = &[
-    "a", "abbr", "b", "blockquote", "br", "caption", "cite", "code", "dd", "del", "dfn", "div", "dl", "dt", "em", "figcaption", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "ins",
-    "kbd", "li", "mark", "ol", "p", "pre", "q", "s", "samp", "small", "span", "strong", "sub", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "time", "tr", "u", "ul",
+    "a",
+    "abbr",
+    "b",
+    "blockquote",
+    "br",
+    "caption",
+    "cite",
+    "code",
+    "dd",
+    "del",
+    "dfn",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "figcaption",
+    "figure",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "hr",
+    "i",
+    "img",
+    "ins",
+    "kbd",
+    "li",
+    "mark",
+    "ol",
+    "p",
+    "pre",
+    "q",
+    "s",
+    "samp",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "time",
+    "tr",
+    "u",
+    "ul",
 ];
 const DROPPED: &[&str] = &[
-    "script", "style", "textarea", "title", "noscript", "iframe", "xmp", "template", "noembed", "noframes", "svg", "math", "form", "button", "input", "select", "option", "object", "embed", "applet",
-    "canvas", "audio", "video", "head", "frameset", "frame", "base", "link", "meta", "source", "track", "param", "picture>source", "dialog", "portal",
+    "script",
+    "style",
+    "textarea",
+    "title",
+    "noscript",
+    "iframe",
+    "xmp",
+    "template",
+    "noembed",
+    "noframes",
+    "svg",
+    "math",
+    "form",
+    "button",
+    "input",
+    "select",
+    "option",
+    "object",
+    "embed",
+    "applet",
+    "canvas",
+    "audio",
+    "video",
+    "head",
+    "frameset",
+    "frame",
+    "base",
+    "link",
+    "meta",
+    "source",
+    "track",
+    "param",
+    "picture>source",
+    "dialog",
+    "portal",
 ];
-const VOIDS: &[&str] = &["br", "hr", "img", "source", "track", "wbr", "input", "meta", "link", "base", "col", "area", "param", "embed"];
+const VOIDS: &[&str] = &[
+    "br", "hr", "img", "source", "track", "wbr", "input", "meta", "link", "base", "col", "area",
+    "param", "embed",
+];
 const BLOCK_TEXT: &[&str] = &["br", "p", "div", "li", "h1", "h2", "h3", "h4", "tr"];
 
 /// Truncates `s` to at most `max` UTF-16 code units, matching JavaScript `.slice(0, max)`.
@@ -142,16 +234,20 @@ pub fn entity(name: &str) -> Option<&'static str> {
 
 pub fn decode(value: &str) -> String {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"(?i)&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{1,31});?").expect("entity regex"));
+    let re = RE.get_or_init(|| {
+        Regex::new(r"(?i)&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{1,31});?")
+            .expect("entity regex")
+    });
     re.replace_all(value, |caps: &Captures<'_>| {
         let full = caps.get(0).map_or("", |m| m.as_str());
         let code = caps.get(1).map_or("", |m| m.as_str());
         if let Some(rest) = code.strip_prefix('#') {
-            let parsed = if let Some(hex) = rest.strip_prefix('x').or_else(|| rest.strip_prefix('X')) {
-                u32::from_str_radix(hex, 16).ok()
-            } else {
-                rest.parse::<u32>().ok()
-            };
+            let parsed =
+                if let Some(hex) = rest.strip_prefix('x').or_else(|| rest.strip_prefix('X')) {
+                    u32::from_str_radix(hex, 16).ok()
+                } else {
+                    rest.parse::<u32>().ok()
+                };
             match parsed {
                 Some(n) if n > 0 && n <= 0x10ffff && !(0xd800..=0xdfff).contains(&n) => {
                     char::from_u32(n).map_or_else(|| "\u{fffd}".to_owned(), |c| c.to_string())
@@ -185,12 +281,18 @@ fn find_ascii_ci(haystack: &str, needle_lower: &str) -> Option<usize> {
     if nb.is_empty() {
         return Some(0);
     }
-    haystack.as_bytes().windows(nb.len()).position(|w| w.iter().zip(nb).all(|(a, b)| a.to_ascii_lowercase() == *b))
+    haystack
+        .as_bytes()
+        .windows(nb.len())
+        .position(|w| w.iter().zip(nb).all(|(a, b)| a.to_ascii_lowercase() == *b))
 }
 
 pub fn tokenize(html: &str, limit: usize) -> Vec<Token> {
     static ATTR_RE: OnceLock<Regex> = OnceLock::new();
-    let attr_re = ATTR_RE.get_or_init(|| Regex::new(r#"([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?"#).expect("attr regex"));
+    let attr_re = ATTR_RE.get_or_init(|| {
+        Regex::new(r#"([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?"#)
+            .expect("attr regex")
+    });
 
     let mut tokens = Vec::new();
     let bytes = html.as_bytes();
@@ -209,7 +311,9 @@ pub fn tokenize(html: &str, limit: usize) -> Vec<Token> {
         let lt = i + rel_lt;
         push_text(&mut tokens, &html[i..lt]);
         if html[lt..].starts_with("<!--") {
-            i = html[lt + 4..].find("-->").map_or(bytes.len(), |end| lt + 4 + end + 3);
+            i = html[lt + 4..]
+                .find("-->")
+                .map_or(bytes.len(), |end| lt + 4 + end + 3);
             continue;
         }
         if matches!(bytes.get(lt + 1), Some(b'!' | b'?')) {
@@ -221,7 +325,10 @@ pub fn tokenize(html: &str, limit: usize) -> Vec<Token> {
         let name_len = {
             let slice = &bytes[start..bytes.len().min(start + 64)];
             if slice.first().is_some_and(u8::is_ascii_alphabetic) {
-                1 + slice[1..].iter().take_while(|b| b.is_ascii_alphanumeric() || **b == b':' || **b == b'-').count()
+                1 + slice[1..]
+                    .iter()
+                    .take_while(|b| b.is_ascii_alphanumeric() || **b == b':' || **b == b'-')
+                    .count()
             } else {
                 0
             }
@@ -259,19 +366,35 @@ pub fn tokenize(html: &str, limit: usize) -> Vec<Token> {
         for caps in attr_re.captures_iter(inner) {
             let key = caps[1].to_ascii_lowercase();
             if !attrs.contains_key(&key) && attrs.len() < 40 {
-                let raw_val = caps.get(2).or_else(|| caps.get(3)).or_else(|| caps.get(4)).map_or("", |m| m.as_str());
+                let raw_val = caps
+                    .get(2)
+                    .or_else(|| caps.get(3))
+                    .or_else(|| caps.get(4))
+                    .map_or("", |m| m.as_str());
                 attrs.insert(key, decode(raw_val));
             }
         }
         let self_closing = inner.trim_end().ends_with('/');
         let is_raw = RAW.contains(&lower.as_str());
         let is_title = lower == "title";
-        let close_needle = if is_raw { Some(format!("</{lower}")) } else { None };
-        tokens.push(Token::Open { name: lower, attrs, self_closing });
+        let close_needle = if is_raw {
+            Some(format!("</{lower}"))
+        } else {
+            None
+        };
+        tokens.push(Token::Open {
+            name: lower,
+            attrs,
+            self_closing,
+        });
         if let Some(needle) = close_needle {
             let end = find_ascii_ci(&html[i..], &needle).map_or(bytes.len(), |pos| i + pos);
             let body = &html[i..end];
-            tokens.push(Token::Text(if is_title { decode(body) } else { String::new() }));
+            tokens.push(Token::Text(if is_title {
+                decode(body)
+            } else {
+                String::new()
+            }));
             i = end;
         }
     }
@@ -285,12 +408,21 @@ pub fn absolute(value: &str, base: &str, schemes: &[&str]) -> String {
         return String::new();
     }
     let parsed = if !base.is_empty() {
-        url::Url::parse(base).ok().and_then(|b| b.join(trimmed).ok())
+        url::Url::parse(base)
+            .ok()
+            .and_then(|b| b.join(trimmed).ok())
     } else {
         url::Url::parse(trimmed).ok()
     };
     match parsed {
-        Some(u) if schemes.contains(&u.scheme()) && u.username().is_empty() && u.password().is_none() && u.as_str().len() <= 2048 => u.to_string(),
+        Some(u)
+            if schemes.contains(&u.scheme())
+                && u.username().is_empty()
+                && u.password().is_none()
+                && u.as_str().len() <= 2048 =>
+        {
+            u.to_string()
+        }
         _ => String::new(),
     }
 }
@@ -312,7 +444,9 @@ pub fn sanitize_tokens(tokens: &[Token], base: &str, max_bytes: usize) -> String
         }
         if skip > 0 {
             match token {
-                Token::Open { name, self_closing, .. } if name == skip_name && !self_closing => skip += 1,
+                Token::Open {
+                    name, self_closing, ..
+                } if name == skip_name && !self_closing => skip += 1,
                 Token::Close(name) if name == skip_name => skip -= 1,
                 _ => {}
             }
@@ -320,7 +454,11 @@ pub fn sanitize_tokens(tokens: &[Token], base: &str, max_bytes: usize) -> String
         }
         match token {
             Token::Text(text) => out.push_str(&escape_html(text)),
-            Token::Open { name, attrs: a, self_closing } => {
+            Token::Open {
+                name,
+                attrs: a,
+                self_closing,
+            } => {
                 if DROPPED.contains(&name.as_str()) {
                     if !self_closing && !VOIDS.contains(&name.as_str()) {
                         skip = 1;
@@ -349,8 +487,16 @@ pub fn sanitize_tokens(tokens: &[Token], base: &str, max_bytes: usize) -> String
                         .get("src")
                         .map(String::as_str)
                         .filter(|s| !s.is_empty() && !s.starts_with("data:"))
-                        .or_else(|| a.get("data-src").map(String::as_str).filter(|s| !s.is_empty()))
-                        .or_else(|| a.get("data-original").map(String::as_str).filter(|s| !s.is_empty()))
+                        .or_else(|| {
+                            a.get("data-src")
+                                .map(String::as_str)
+                                .filter(|s| !s.is_empty())
+                        })
+                        .or_else(|| {
+                            a.get("data-original")
+                                .map(String::as_str)
+                                .filter(|s| !s.is_empty())
+                        })
                         .or_else(|| {
                             a.get("srcset")
                                 .and_then(|s| s.split(',').next())
@@ -449,7 +595,12 @@ pub fn text_of_tokens(tokens: &[Token], max: usize) -> String {
             continue;
         }
         match token {
-            Token::Open { name, self_closing, .. } if DROPPED.contains(&name.as_str()) && !self_closing && !VOIDS.contains(&name.as_str()) => {
+            Token::Open {
+                name, self_closing, ..
+            } if DROPPED.contains(&name.as_str())
+                && !self_closing
+                && !VOIDS.contains(&name.as_str()) =>
+            {
                 skip = 1;
                 skip_name = name.as_str();
                 continue;
@@ -479,7 +630,9 @@ pub fn discover_feeds(html: &str, base: &str) -> Vec<Alternate> {
     let mut found: Vec<Alternate> = Vec::new();
     let mut page_base = base.to_owned();
     for token in tokenize(html, 20_000) {
-        let Token::Open { name, attrs, .. } = token else { continue };
+        let Token::Open { name, attrs, .. } = token else {
+            continue;
+        };
         if name == "base"
             && let Some(href) = attrs.get("href")
             && !href.is_empty()
@@ -496,8 +649,16 @@ pub fn discover_feeds(html: &str, base: &str) -> Vec<Alternate> {
                 let href = attrs.get("href").map(String::as_str).unwrap_or("");
                 let url = absolute(href, &page_base, &["http", "https"]);
                 if !url.is_empty() && !found.iter().any(|f| f.url == url) {
-                    let title = trunc_utf16(attrs.get("title").map(String::as_str).unwrap_or("").trim(), 300).to_owned();
-                    found.push(Alternate { url, title, media_type: media_type.to_ascii_lowercase() });
+                    let title = trunc_utf16(
+                        attrs.get("title").map(String::as_str).unwrap_or("").trim(),
+                        300,
+                    )
+                    .to_owned();
+                    found.push(Alternate {
+                        url,
+                        title,
+                        media_type: media_type.to_ascii_lowercase(),
+                    });
                 }
             }
         }
@@ -522,7 +683,9 @@ pub fn extract_article(html: &str, base: &str) -> String {
     let mut stack: Vec<(usize, &str)> = Vec::new();
     for (i, token) in tokens.iter().enumerate() {
         match token {
-            Token::Open { name, self_closing, .. } if !self_closing && !VOIDS.contains(&name.as_str()) => {
+            Token::Open {
+                name, self_closing, ..
+            } if !self_closing && !VOIDS.contains(&name.as_str()) => {
                 if let Some(&(parent_idx, _)) = stack.last() {
                     parents.insert(i, parent_idx);
                 }
@@ -543,11 +706,19 @@ pub fn extract_article(html: &str, base: &str) -> String {
 
     let body_of = |start: usize| -> &[Token] {
         let end = ends.get(&start).copied().unwrap_or(tokens.len());
-        if start + 1 <= end && end <= tokens.len() { &tokens[start + 1..end] } else { &[] }
+        if start + 1 <= end && end <= tokens.len() {
+            &tokens[start + 1..end]
+        } else {
+            &[]
+        }
     };
     let attrs_of = |t: &Token| -> String {
         match t {
-            Token::Open { attrs, .. } => format!("{} {}", attrs.get("class").map(String::as_str).unwrap_or(""), attrs.get("id").map(String::as_str).unwrap_or("")),
+            Token::Open { attrs, .. } => format!(
+                "{} {}",
+                attrs.get("class").map(String::as_str).unwrap_or(""),
+                attrs.get("id").map(String::as_str).unwrap_or("")
+            ),
             _ => String::new(),
         }
     };
@@ -555,7 +726,9 @@ pub fn extract_article(html: &str, base: &str) -> String {
     let mut best: Option<usize> = None;
     let mut best_score = 0.0f64;
     for (i, t) in tokens.iter().enumerate() {
-        let Token::Open { name, attrs, .. } = t else { continue };
+        let Token::Open { name, attrs, .. } = t else {
+            continue;
+        };
         if !ends.contains_key(&i) {
             continue;
         }
@@ -570,7 +743,11 @@ pub fn extract_article(html: &str, base: &str) -> String {
             } else {
                 1.2
             };
-            let penalty = if negative.is_match(&attrs_of(t)) { 0.3 } else { 1.0 };
+            let penalty = if negative.is_match(&attrs_of(t)) {
+                0.3
+            } else {
+                1.0
+            };
             let score = length * boost * penalty;
             if length > 400.0 && score > best_score {
                 best = Some(i);
@@ -581,27 +758,42 @@ pub fn extract_article(html: &str, base: &str) -> String {
     if best.is_none() {
         let mut scores: BTreeMap<usize, f64> = BTreeMap::new();
         for (i, t) in tokens.iter().enumerate() {
-            let Token::Open { name, .. } = t else { continue };
+            let Token::Open { name, .. } = t else {
+                continue;
+            };
             if name != "p" || !ends.contains_key(&i) {
                 continue;
             }
-            let Some(&parent) = parents.get(&i) else { continue };
+            let Some(&parent) = parents.get(&i) else {
+                continue;
+            };
             let length = text_of_tokens(body_of(i), 100_000).encode_utf16().count() as f64;
             if length > 40.0 {
                 *scores.entry(parent).or_insert(0.0) += length;
             }
         }
         for (index, score) in scores {
-            let adjusted = score * if negative.is_match(&attrs_of(&tokens[index])) { 0.3 } else { 1.0 };
+            let adjusted = score
+                * if negative.is_match(&attrs_of(&tokens[index])) {
+                    0.3
+                } else {
+                    1.0
+                };
             if adjusted > best_score {
                 best = Some(index);
                 best_score = adjusted;
             }
         }
     }
-    let Some(best_idx) = best else { return String::new() };
+    let Some(best_idx) = best else {
+        return String::new();
+    };
     let content = sanitize_tokens(body_of(best_idx), base, 200 * 1024);
-    if text_of(&content, 100_000).encode_utf16().count() >= 300 { content } else { String::new() }
+    if text_of(&content, 100_000).encode_utf16().count() >= 300 {
+        content
+    } else {
+        String::new()
+    }
 }
 
 #[cfg(test)]
@@ -614,19 +806,46 @@ mod tests {
     <a href="javascript:alert(1)">bad</a><a href="/post?a=1&amp;b=2" target="_blank">good</a><img src="data:image/png;base64,AA" data-src="img/a.png" onerror="x()"><img src="https://cdn.example/b.jpg" width="640" height="x">
     <form><input value="secret"></form><svg><script>bad()</script></svg><unknown-tag>kept text</unknown-tag><p>&lt;not a tag&gt; &amp; &hellip;</p></div>"#;
         let out = sanitize(input, "https://site.example/blog/", 200 * 1024);
-        for forbidden in ["script", "style=", "onclick", "onerror", "iframe", "javascript:", "<form", "<input", "<svg", "secret", "bad()"] {
+        for forbidden in [
+            "script",
+            "style=",
+            "onclick",
+            "onerror",
+            "iframe",
+            "javascript:",
+            "<form",
+            "<input",
+            "<svg",
+            "secret",
+            "bad()",
+        ] {
             assert!(!out.contains(forbidden), "unexpected {forbidden} in {out}");
         }
-        assert!(out.contains(r#"<a href="https://site.example/post?a=1&amp;b=2">good</a>"#), "{out}");
+        assert!(
+            out.contains(r#"<a href="https://site.example/post?a=1&amp;b=2">good</a>"#),
+            "{out}"
+        );
         assert!(out.contains("<a>bad</a>"), "{out}");
-        assert!(out.contains(r#"<img src="https://site.example/blog/img/a.png">"#), "{out}");
-        assert!(out.contains(r#"<img src="https://cdn.example/b.jpg" width="640">"#), "{out}");
+        assert!(
+            out.contains(r#"<img src="https://site.example/blog/img/a.png">"#),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#"<img src="https://cdn.example/b.jpg" width="640">"#),
+            "{out}"
+        );
         assert!(out.contains("<p>Hi <b>there<i>!</i></b></p>"), "{out}");
         assert!(out.contains("kept text"), "{out}");
         assert!(out.contains("&lt;not a tag&gt; &amp; \u{2026}"), "{out}");
-        assert_eq!(sanitize("<p>open <em>tags", "", 200 * 1024), "<p>open <em>tags</em></p>");
+        assert_eq!(
+            sanitize("<p>open <em>tags", "", 200 * 1024),
+            "<p>open <em>tags</em></p>"
+        );
         assert_eq!(decode("&#x1F600;&#0;&bogus;"), "\u{1f600}\u{fffd}&bogus;");
-        assert_eq!(text_of("<p>One</p><p>Two <script>no</script>three</p>", 100_000), "One Two three");
+        assert_eq!(
+            text_of("<p>One</p><p>Two <script>no</script>three</p>", 100_000),
+            "One Two three"
+        );
     }
 
     #[test]
@@ -635,11 +854,24 @@ mod tests {
         assert_eq!(
             discover_feeds(html, "https://site.example/blog/"),
             vec![
-                Alternate { url: "https://site.example/feed.xml".into(), title: "Posts".into(), media_type: "application/rss+xml".into() },
-                Alternate { url: "https://other.example/atom".into(), title: "".into(), media_type: "application/atom+xml".into() },
+                Alternate {
+                    url: "https://site.example/feed.xml".into(),
+                    title: "Posts".into(),
+                    media_type: "application/rss+xml".into()
+                },
+                Alternate {
+                    url: "https://other.example/atom".into(),
+                    title: "".into(),
+                    media_type: "application/atom+xml".into()
+                },
             ]
         );
-        let paragraph = |n: usize| format!("<p>{}{n}</p>", "Paragraph text that is long enough to count as real article content. ".repeat(3));
+        let paragraph = |n: usize| {
+            format!(
+                "<p>{}{n}</p>",
+                "Paragraph text that is long enough to count as real article content. ".repeat(3)
+            )
+        };
         let page = format!(
             r#"<html><body><nav class="menu"><p>{}</p></nav><div id="content">{}<script>track()</script></div><div class="comments">{}</div></body></html>"#,
             "Navigation link text repeated many times. ".repeat(20),
@@ -652,7 +884,11 @@ mod tests {
         assert!(!article.contains("track"));
         assert!(!article.contains("9</p>"));
 
-        let with_article = format!("<body><div>{}</div><article><h1>Title</h1>{}</article></body>", paragraph(1), (1..=6).map(paragraph).collect::<String>());
+        let with_article = format!(
+            "<body><div>{}</div><article><h1>Title</h1>{}</article></body>",
+            paragraph(1),
+            (1..=6).map(paragraph).collect::<String>()
+        );
         assert!(extract_article(&with_article, "https://a.example/").starts_with("<h1>Title</h1>"));
         assert_eq!(extract_article("<p>short</p>", "https://a.example/"), "");
     }

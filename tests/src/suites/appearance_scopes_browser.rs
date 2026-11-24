@@ -8,13 +8,16 @@ pub const SUITE: Suite = Suite {
     cases: &[case!(appearance_and_scopes_browser, 120)],
 };
 
-const LOGO_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=";
+const LOGO_B64: &str =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=";
 
 pub async fn appearance_and_scopes_browser(t: &Ctx) -> Result<()> {
     let base = t.fixture().await?.base.clone();
     let png = {
         use base64::Engine as _;
-        base64::engine::general_purpose::STANDARD.decode(LOGO_B64).map_err(|e| Error::new(e.to_string()))?
+        base64::engine::general_purpose::STANDARD
+            .decode(LOGO_B64)
+            .map_err(|e| Error::new(e.to_string()))?
     };
 
     let browser = Browser::shared().await?;

@@ -34,18 +34,38 @@ struct Summary {
 
 impl Summary {
     fn lines(&self) -> Vec<String> {
-        let plural = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {one}") } else { format!("{n} {many}") };
-        let mut lines = vec![format!("Imported {} into Notes.", plural(self.imported, "note", "notes"))];
+        let plural = |n: usize, one: &str, many: &str| {
+            if n == 1 {
+                format!("1 {one}")
+            } else {
+                format!("{n} {many}")
+            }
+        };
+        let mut lines = vec![format!(
+            "Imported {} into Notes.",
+            plural(self.imported, "note", "notes")
+        )];
         if self.folders > 0 {
-            lines.push(format!("Made {}.", plural(self.folders, "folder", "folders")));
+            lines.push(format!(
+                "Made {}.",
+                plural(self.folders, "folder", "folders")
+            ));
         }
         if self.references > 0 {
-            lines.push(format!("Linked {}.", plural(self.references, "block reference", "block references")));
+            lines.push(format!(
+                "Linked {}.",
+                plural(self.references, "block reference", "block references")
+            ));
         }
         match self.unresolved {
             0 => {}
-            1 => lines.push("1 block reference names a block that was not imported; it stays as written.".into()),
-            n => lines.push(format!("{n} block references name blocks that were not imported; they stay as written.")),
+            1 => lines.push(
+                "1 block reference names a block that was not imported; it stays as written."
+                    .into(),
+            ),
+            n => lines.push(format!(
+                "{n} block references name blocks that were not imported; they stay as written."
+            )),
         }
         match self.skipped {
             0 => {}
@@ -57,27 +77,50 @@ impl Summary {
 }
 
 fn picked(input: NodeRef<html::Input>) -> Vec<web_sys::File> {
-    input.get_untracked().and_then(|i| i.files()).map(|list| (0..list.length()).filter_map(|i| list.item(i)).collect()).unwrap_or_default()
+    input
+        .get_untracked()
+        .and_then(|i| i.files())
+        .map(|list| (0..list.length()).filter_map(|i| list.item(i)).collect())
+        .unwrap_or_default()
 }
 
 /// The file's path inside the picked folder, or its name for single files.
 fn relative_path(file: &web_sys::File) -> String {
-    js_sys::Reflect::get(file, &"webkitRelativePath".into()).ok().and_then(|v| v.as_string()).filter(|p| !p.is_empty()).unwrap_or_else(|| file.name())
+    js_sys::Reflect::get(file, &"webkitRelativePath".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| file.name())
 }
 
 /// The folder at `dir` (relative to the Notes folder), made with its parents when missing.
-async fn folder_id(conn: &Connection, root: &str, dir: &str, folders: &mut HashMap<String, String>, made: &mut usize) -> Result<String, String> {
+async fn folder_id(
+    conn: &Connection,
+    root: &str,
+    dir: &str,
+    folders: &mut HashMap<String, String>,
+    made: &mut usize,
+) -> Result<String, String> {
     let mut parent = root.to_owned();
     let mut path = String::new();
     for part in dir.split('/').filter(|p| !p.is_empty()) {
-        path = if path.is_empty() { part.to_owned() } else { format!("{path}/{part}") };
+        path = if path.is_empty() {
+            part.to_owned()
+        } else {
+            format!("{path}/{part}")
+        };
         if let Some(id) = folders.get(&path.to_lowercase()) {
             parent = id.clone();
             continue;
         }
         let id = crate::random_uuid();
         let (folder, under, name) = (id.clone(), parent.clone(), part.to_owned());
-        reducer(|tx| conn.reducers.create_folder_then(folder, under, name, replied(tx))).await.map_err(|_| format!("the folder {path} could not be made"))?;
+        reducer(|tx| {
+            conn.reducers
+                .create_folder_then(folder, under, name, replied(tx))
+        })
+        .await
+        .map_err(|_| format!("the folder {path} could not be made"))?;
         folders.insert(path.to_lowercase(), id.clone());
         *made += 1;
         parent = id;
@@ -85,16 +128,29 @@ async fn folder_id(conn: &Connection, root: &str, dir: &str, folders: &mut HashM
     Ok(parent)
 }
 
-async fn import(live: Live, session: &BrowserSession, files: Vec<web_sys::File>, progress: RwSignal<String>) -> Result<Summary, String> {
-    let conn = live.connection.get_untracked().ok_or("Notes are reconnecting. Try again in a moment.")?;
+async fn import(
+    live: Live,
+    session: &BrowserSession,
+    files: Vec<web_sys::File>,
+    progress: RwSignal<String>,
+) -> Result<Summary, String> {
+    let conn = live
+        .connection
+        .get_untracked()
+        .ok_or("Notes are reconnecting. Try again in a moment.")?;
     if files.len() > MAX_FILES {
         return Err(format!("A Logseq import takes at most {MAX_FILES} files."));
     }
-    let library: NotesLibrary = api::get("/api/v1/notes/library").await.map_err(|e| e.message)?;
+    let library: NotesLibrary = api::get("/api/v1/notes/library")
+        .await
+        .map_err(|e| e.message)?;
     if library.root_id.is_empty() {
         return Err("The Notes folder is not available.".into());
     }
-    let others = api::get::<NoteFiles>("/api/v1/notes/attachments").await.map(|f| f.files).unwrap_or_default();
+    let others = api::get::<NoteFiles>("/api/v1/notes/attachments")
+        .await
+        .map(|f| f.files)
+        .unwrap_or_default();
     let mut summary = Summary::default();
     let mut sources: Vec<Source> = Vec::new();
     let total = files.len();
@@ -102,7 +158,10 @@ async fn import(live: Live, session: &BrowserSession, files: Vec<web_sys::File>,
         let path = relative_path(&file);
         // Files that are not pages or journals are only counted, never read.
         if logseq::note_path(&path).is_none() {
-            sources.push(Source { path, text: String::new() });
+            sources.push(Source {
+                path,
+                text: String::new(),
+            });
             continue;
         }
         if file.size() > MAX_BYTES {
@@ -110,12 +169,21 @@ async fn import(live: Live, session: &BrowserSession, files: Vec<web_sys::File>,
             continue;
         }
         progress.try_set(format!("Reading {} of {total}\u{2026}", n + 1));
-        match wasm_bindgen_futures::JsFuture::from(file.text()).await.ok().and_then(|v| v.as_string()) {
+        match wasm_bindgen_futures::JsFuture::from(file.text())
+            .await
+            .ok()
+            .and_then(|v| v.as_string())
+        {
             Some(text) => sources.push(Source { path, text }),
             None => summary.failed.push(format!("{path}: could not be read")),
         }
     }
-    let existing: Vec<String> = library.notes.iter().map(|n| n.path.clone()).chain(others.iter().map(|f| f.path.clone())).collect();
+    let existing: Vec<String> = library
+        .notes
+        .iter()
+        .map(|n| n.path.clone())
+        .chain(others.iter().map(|f| f.path.clone()))
+        .collect();
     let converted = logseq::convert(&sources, &existing);
     summary.skipped = converted.skipped.len();
     summary.references = converted.references;
@@ -123,22 +191,46 @@ async fn import(live: Live, session: &BrowserSession, files: Vec<web_sys::File>,
     if converted.notes.is_empty() {
         return Err("No Logseq pages or journals were found. Pick the Markdown files in the graph\u{2019}s pages and journals folders, or the graph folder.".into());
     }
-    let mut folders: HashMap<String, String> = library.folders.iter().map(|f| (f.path.to_lowercase(), f.id.clone())).collect();
+    let mut folders: HashMap<String, String> = library
+        .folders
+        .iter()
+        .map(|f| (f.path.to_lowercase(), f.id.clone()))
+        .collect();
     let count = converted.notes.len();
     for (n, note) in converted.notes.iter().enumerate() {
         progress.try_set(format!("Importing {} of {count}\u{2026}", n + 1));
-        let (dir, name) = note.path.rsplit_once('/').unwrap_or(("", note.path.as_str()));
-        let parent = match folder_id(&conn, &library.root_id, dir, &mut folders, &mut summary.folders).await {
+        let (dir, name) = note
+            .path
+            .rsplit_once('/')
+            .unwrap_or(("", note.path.as_str()));
+        let parent = match folder_id(
+            &conn,
+            &library.root_id,
+            dir,
+            &mut folders,
+            &mut summary.folders,
+        )
+        .await
+        {
             Ok(id) => id,
             Err(e) => {
                 summary.failed.push(format!("{}: {e}", note.source));
                 continue;
             }
         };
-        let file = TextFile { name, parent_id: &parent, content: &note.text, media_type: "text/markdown", file_id: None, expected_revision: None };
+        let file = TextFile {
+            name,
+            parent_id: &parent,
+            content: &note.text,
+            media_type: "text/markdown",
+            file_id: None,
+            expected_revision: None,
+        };
         match write_text_file(session, file).await {
             Ok(_) => summary.imported += 1,
-            Err(e) => summary.failed.push(format!("{}: {}", note.source, e.message)),
+            Err(e) => summary
+                .failed
+                .push(format!("{}: {}", note.source, e.message)),
         }
     }
     Ok(summary)
@@ -165,7 +257,10 @@ pub(super) fn LogseqImport(session: BrowserSession, pim: PimLive) -> impl IntoVi
     let count = move || selected.set(picked(files_input).len() + picked(folder_input).len());
 
     let start = move || {
-        let files: Vec<web_sys::File> = picked(files_input).into_iter().chain(picked(folder_input)).collect();
+        let files: Vec<web_sys::File> = picked(files_input)
+            .into_iter()
+            .chain(picked(folder_input))
+            .collect();
         if files.is_empty() || busy.get_untracked() {
             return;
         }
@@ -229,7 +324,14 @@ mod tests {
 
     #[test]
     fn summary_lines() {
-        let summary = Summary { imported: 1, folders: 2, references: 3, unresolved: 1, skipped: 4, failed: Vec::new() };
+        let summary = Summary {
+            imported: 1,
+            folders: 2,
+            references: 3,
+            unresolved: 1,
+            skipped: 4,
+            failed: Vec::new(),
+        };
         assert_eq!(
             summary.lines(),
             [
@@ -240,8 +342,18 @@ mod tests {
                 "Skipped 4 files that are not pages or journals.",
             ]
         );
-        let one = Summary { imported: 2, skipped: 1, ..Summary::default() };
-        assert_eq!(one.lines(), ["Imported 2 notes into Notes.", "Skipped 1 file that is not a page or journal."]);
+        let one = Summary {
+            imported: 2,
+            skipped: 1,
+            ..Summary::default()
+        };
+        assert_eq!(
+            one.lines(),
+            [
+                "Imported 2 notes into Notes.",
+                "Skipped 1 file that is not a page or journal."
+            ]
+        );
         assert_eq!(Summary::default().lines(), ["Imported 0 notes into Notes."]);
     }
 }

@@ -44,10 +44,16 @@ impl Params {
         Params { map, valid }
     }
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.map.get(key).map(String::as_str).filter(|v| !v.is_empty())
+        self.map
+            .get(key)
+            .map(String::as_str)
+            .filter(|v| !v.is_empty())
     }
     pub fn pairs(&self) -> Vec<(String, String)> {
-        self.map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        self.map
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 }
 
@@ -74,27 +80,49 @@ impl<'a> Clients<'a> {
 
 impl Registrar for Clients<'_> {
     fn bound_redirect<'a>(&self, bound: ClientUrl<'a>) -> Result<BoundClient<'a>, RegistrarError> {
-        let client = self.get(&bound.client_id).ok_or(RegistrarError::Unspecified)?;
+        let client = self
+            .get(&bound.client_id)
+            .ok_or(RegistrarError::Unspecified)?;
         // OpenID Connect requires redirect_uri, compared as an exact string.
-        let requested = bound.redirect_uri.as_ref().ok_or(RegistrarError::Unspecified)?;
-        if !client.redirect_uris.iter().any(|uri| uri == requested.as_str()) {
+        let requested = bound
+            .redirect_uri
+            .as_ref()
+            .ok_or(RegistrarError::Unspecified)?;
+        if !client
+            .redirect_uris
+            .iter()
+            .any(|uri| uri == requested.as_str())
+        {
             return Err(RegistrarError::Unspecified);
         }
         let redirect = RegisteredUrl::Exact(requested.as_ref().clone());
-        Ok(BoundClient { client_id: bound.client_id, redirect_uri: Cow::Owned(redirect) })
+        Ok(BoundClient {
+            client_id: bound.client_id,
+            redirect_uri: Cow::Owned(redirect),
+        })
     }
 
-    fn negotiate(&self, bound: BoundClient, scope: Option<Scope>) -> Result<PreGrant, RegistrarError> {
+    fn negotiate(
+        &self,
+        bound: BoundClient,
+        scope: Option<Scope>,
+    ) -> Result<PreGrant, RegistrarError> {
         // `AuthRequest::scope` already dropped scopes the client may not use.
         let scope = scope.ok_or(RegistrarError::Unspecified)?;
         if !scope.iter().any(|s| s == "openid") {
             return Err(RegistrarError::Unspecified);
         }
-        Ok(PreGrant { client_id: bound.client_id.into_owned(), redirect_uri: bound.redirect_uri.into_owned(), scope })
+        Ok(PreGrant {
+            client_id: bound.client_id.into_owned(),
+            redirect_uri: bound.redirect_uri.into_owned(),
+            scope,
+        })
     }
 
     fn check(&self, client_id: &str, passphrase: Option<&[u8]>) -> Result<(), RegistrarError> {
-        self.authenticate(client_id, passphrase).map(|_| ()).ok_or(RegistrarError::Unspecified)
+        self.authenticate(client_id, passphrase)
+            .map(|_| ())
+            .ok_or(RegistrarError::Unspecified)
     }
 }
 
@@ -109,11 +137,14 @@ pub struct AuthRequest<'a> {
 
 impl<'a> AuthRequest<'a> {
     pub fn new(params: &'a Params, client: Option<&Client>) -> Self {
-        let consent = params.get("prompt").is_some_and(|p| p.split(' ').any(|v| v == "consent"));
+        let consent = params
+            .get("prompt")
+            .is_some_and(|p| p.split(' ').any(|v| v == "consent"));
         let scope = params.get("scope").map(|requested| {
             let mut kept: Vec<&str> = Vec::new();
             for s in requested.split(' ') {
-                let allowed = client.is_some_and(|c| c.scopes.contains(s)) && (s != "offline_access" || consent);
+                let allowed = client.is_some_and(|c| c.scopes.contains(s))
+                    && (s != "offline_access" || consent);
                 if allowed && !kept.contains(&s) {
                     kept.push(s);
                 }
@@ -132,7 +163,10 @@ impl authorization::Request for AuthRequest<'_> {
         self.params.get("client_id").map(Cow::Borrowed)
     }
     fn scope(&self) -> Option<Cow<'_, str>> {
-        self.scope.as_deref().filter(|s| !s.is_empty()).map(Cow::Borrowed)
+        self.scope
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(Cow::Borrowed)
     }
     fn redirect_uri(&self) -> Option<Cow<'_, str>> {
         self.params.get("redirect_uri").map(Cow::Borrowed)
@@ -157,12 +191,18 @@ pub struct TokenRequest {
 }
 
 fn form_decode(value: &str) -> Option<String> {
-    url::form_urlencoded::parse(format!("v={value}").as_bytes()).next().map(|(_, v)| v.into_owned())
+    url::form_urlencoded::parse(format!("v={value}").as_bytes())
+        .next()
+        .map(|(_, v)| v.into_owned())
 }
 
 impl TokenRequest {
     pub fn new(form: Params, authorization: Option<&str>) -> TokenRequest {
-        let mut request = TokenRequest { form, basic: None, malformed_auth: false };
+        let mut request = TokenRequest {
+            form,
+            basic: None,
+            malformed_auth: false,
+        };
         if let Some(header) = authorization {
             let parsed = header
                 .strip_prefix("Basic ")
@@ -182,7 +222,10 @@ impl TokenRequest {
 
     /// The client this request claims to come from.
     pub fn client_id(&self) -> Option<&str> {
-        self.basic.as_ref().map(|(id, _)| id.as_str()).or(self.form.get("client_id"))
+        self.basic
+            .as_ref()
+            .map(|(id, _)| id.as_str())
+            .or(self.form.get("client_id"))
     }
 
     /// Authenticate the client the way the token endpoint does.
@@ -191,7 +234,9 @@ impl TokenRequest {
             return None;
         }
         match (&self.basic, self.form.get("client_id")) {
-            (Some((id, secret)), body) if body.is_none_or(|b| b == id) => clients.authenticate(id, Some(secret)),
+            (Some((id, secret)), body) if body.is_none_or(|b| b == id) => {
+                clients.authenticate(id, Some(secret))
+            }
             (None, Some(id)) => clients.authenticate(id, None),
             _ => None,
         }
@@ -207,7 +252,10 @@ impl accesstoken::Request for TokenRequest {
     }
     fn authorization(&self) -> accesstoken::Authorization<'_> {
         match &self.basic {
-            Some((id, secret)) => accesstoken::Authorization::UsernamePassword(Cow::Borrowed(id), Cow::Borrowed(secret)),
+            Some((id, secret)) => accesstoken::Authorization::UsernamePassword(
+                Cow::Borrowed(id),
+                Cow::Borrowed(secret),
+            ),
             None => accesstoken::Authorization::None,
         }
     }
@@ -239,7 +287,9 @@ impl refresh::Request for TokenRequest {
         self.form.get("grant_type").map(Cow::Borrowed)
     }
     fn authorization(&self) -> Option<(Cow<'_, str>, Cow<'_, [u8]>)> {
-        self.basic.as_ref().map(|(id, secret)| (Cow::Borrowed(id.as_str()), Cow::Borrowed(secret.as_slice())))
+        self.basic
+            .as_ref()
+            .map(|(id, secret)| (Cow::Borrowed(id.as_str()), Cow::Borrowed(secret.as_slice())))
     }
     fn extension(&self, key: &str) -> Option<Cow<'_, str>> {
         self.form.get(key).map(Cow::Borrowed)
@@ -253,18 +303,27 @@ pub struct PkceExtension(pub Pkce);
 
 impl PkceExtension {
     pub fn for_client(client: Option<&Client>) -> Self {
-        PkceExtension(if client.is_some_and(|c| !c.require_pkce) { Pkce::optional() } else { Pkce::required() })
+        PkceExtension(if client.is_some_and(|c| !c.require_pkce) {
+            Pkce::optional()
+        } else {
+            Pkce::required()
+        })
     }
 }
 
 pub(crate) fn valid_verifier(v: &str) -> bool {
-    (43..=128).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'~' | b'-'))
+    (43..=128).contains(&v.len())
+        && v.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'~' | b'-'))
 }
 
 impl authorization::Extension for PkceExtension {
     fn extend(&mut self, request: &dyn authorization::Request) -> Result<Extensions, ()> {
         let mut data = Extensions::new();
-        if let Some(value) = self.0.challenge(request.extension("code_challenge_method"), request.extension("code_challenge"))? {
+        if let Some(value) = self.0.challenge(
+            request.extension("code_challenge_method"),
+            request.extension("code_challenge"),
+        )? {
             data.set(&self.0, value);
         }
         Ok(data)
@@ -272,7 +331,11 @@ impl authorization::Extension for PkceExtension {
 }
 
 impl accesstoken::Extension for PkceExtension {
-    fn extend(&mut self, request: &dyn accesstoken::Request, mut data: Extensions) -> Result<Extensions, ()> {
+    fn extend(
+        &mut self,
+        request: &dyn accesstoken::Request,
+        mut data: Extensions,
+    ) -> Result<Extensions, ()> {
         let verifier = request.extension("code_verifier");
         if verifier.as_deref().is_some_and(|v| !valid_verifier(v)) {
             return Err(());
@@ -320,11 +383,20 @@ fn time(ms: i64) -> DateTime<Utc> {
 impl Records<'_> {
     /// A record stays usable while its native Dar session and account are.
     fn alive(&self, native_session_id: &str, account_id: &str) -> bool {
-        self.directory.native_session(native_session_id).is_some_and(|s| s.account_id == account_id)
+        self.directory
+            .native_session(native_session_id)
+            .is_some_and(|s| s.account_id == account_id)
             && self.directory.account(account_id).is_some()
     }
 
-    fn id_token(&self, client_id: &str, account_id: &str, auth_time: i64, nonce: Option<&str>, access: &str) -> Option<String> {
+    fn id_token(
+        &self,
+        client_id: &str,
+        account_id: &str,
+        auth_time: i64,
+        nonce: Option<&str>,
+        access: &str,
+    ) -> Option<String> {
         let at = now() / 1000;
         let hash = Sha256::digest(access.as_bytes());
         let mut claims = json!({
@@ -338,18 +410,44 @@ impl Records<'_> {
         self.keys.sign(&claims).ok()
     }
 
-    fn mint(&mut self, client_id: &str, scope: &Scope, from: &TokenRecord) -> (String, Option<String>, i64) {
+    fn mint(
+        &mut self,
+        client_id: &str,
+        scope: &Scope,
+        from: &TokenRecord,
+    ) -> (String, Option<String>, i64) {
         let at = now();
         let access = random_token(32);
         let access_expiry = at + self.config.lifetimes.access_token * 1000;
-        let record = TokenRecord { kind: TokenKind::Access, scope: scope.to_string(), issued_at: at, expires_at: access_expiry, consumed: false, ..from.clone() };
+        let record = TokenRecord {
+            kind: TokenKind::Access,
+            scope: scope.to_string(),
+            issued_at: at,
+            expires_at: access_expiry,
+            consumed: false,
+            ..from.clone()
+        };
         self.store.save_token(&key(&access), record);
-        let refreshable = scope.iter().any(|s| s == "offline_access") && self.clients.get(client_id).is_some_and(Client::allows_refresh);
+        let refreshable = scope.iter().any(|s| s == "offline_access")
+            && self
+                .clients
+                .get(client_id)
+                .is_some_and(Client::allows_refresh);
         let refresh = refreshable.then(|| {
             let token = random_token(32);
             // Refresh tokens rotate and never outlive their grant (and so their session).
-            let grant_expiry = self.store.grant(&from.grant_id).map_or(at, |g| g.expires_at);
-            let record = TokenRecord { kind: TokenKind::Refresh, scope: scope.to_string(), issued_at: at, expires_at: grant_expiry, consumed: false, ..from.clone() };
+            let grant_expiry = self
+                .store
+                .grant(&from.grant_id)
+                .map_or(at, |g| g.expires_at);
+            let record = TokenRecord {
+                kind: TokenKind::Refresh,
+                scope: scope.to_string(),
+                issued_at: at,
+                expires_at: grant_expiry,
+                consumed: false,
+                ..from.clone()
+            };
             self.store.save_token(&key(&token), record);
             token
         });
@@ -360,7 +458,10 @@ impl Records<'_> {
         Grant {
             owner_id: record.account_id.clone(),
             client_id: record.client_id.clone(),
-            scope: record.scope.parse().unwrap_or_else(|_| "openid".parse().unwrap()),
+            scope: record
+                .scope
+                .parse()
+                .unwrap_or_else(|_| "openid".parse().unwrap()),
             redirect_uri: Url::parse(&self.config.issuer()).expect("issuer is a URL"),
             until: time(record.expires_at),
             extensions: Extensions::new(),
@@ -409,7 +510,10 @@ impl Authorizer for Records<'_> {
                 return Ok(None);
             }
         };
-        if record.expires_at <= now() || self.store.grant(&record.grant_id).is_none() || !self.alive(&record.native_session_id, &record.account_id) {
+        if record.expires_at <= now()
+            || self.store.grant(&record.grant_id).is_none()
+            || !self.alive(&record.native_session_id, &record.account_id)
+        {
             self.rejected_code = true;
             return Ok(None);
         }
@@ -448,37 +552,78 @@ impl Issuer for Records<'_> {
             consumed: false,
         };
         let (access, refresh, until) = self.mint(&grant.client_id, &grant.scope, &base);
-        self.id_token = self.id_token(&grant.client_id, &code.account_id, code.auth_time, code.nonce.as_deref(), &access);
-        Ok(IssuedToken { token: access, refresh, until: time(until), token_type: TokenType::Bearer })
+        self.id_token = self.id_token(
+            &grant.client_id,
+            &code.account_id,
+            code.auth_time,
+            code.nonce.as_deref(),
+            &access,
+        );
+        Ok(IssuedToken {
+            token: access,
+            refresh,
+            until: time(until),
+            token_type: TokenType::Bearer,
+        })
     }
 
     fn refresh(&mut self, refresh: &str, grant: Grant) -> Result<RefreshedToken, ()> {
         let refresh_key = key(refresh);
-        let mut old = self.store.token(&refresh_key).filter(|t| t.kind == TokenKind::Refresh && !t.consumed).ok_or(())?;
+        let mut old = self
+            .store
+            .token(&refresh_key)
+            .filter(|t| t.kind == TokenKind::Refresh && !t.consumed)
+            .ok_or(())?;
         old.consumed = true;
         self.store.save_token(&refresh_key, old.clone());
         let (access, next, until) = self.mint(&grant.client_id, &grant.scope, &old);
-        self.id_token = grant.scope.iter().any(|s| s == "openid").then(|| self.id_token(&grant.client_id, &old.account_id, old.auth_time, None, &access)).flatten();
-        Ok(RefreshedToken { token: access, refresh: next, until: time(until), token_type: TokenType::Bearer })
+        self.id_token = grant
+            .scope
+            .iter()
+            .any(|s| s == "openid")
+            .then(|| {
+                self.id_token(
+                    &grant.client_id,
+                    &old.account_id,
+                    old.auth_time,
+                    None,
+                    &access,
+                )
+            })
+            .flatten();
+        Ok(RefreshedToken {
+            token: access,
+            refresh: next,
+            until: time(until),
+            token_type: TokenType::Bearer,
+        })
     }
 
     fn recover_token<'a>(&'a self, token: &'a str) -> Result<Option<Grant>, ()> {
         Ok(self
             .store
             .token(&key(token))
-            .filter(|t| t.kind == TokenKind::Access && self.alive(&t.native_session_id, &t.account_id))
+            .filter(|t| {
+                t.kind == TokenKind::Access && self.alive(&t.native_session_id, &t.account_id)
+            })
             .map(|t| self.grant_for(&t)))
     }
 
     fn recover_refresh<'a>(&'a self, token: &'a str) -> Result<Option<Grant>, ()> {
-        let Some(record) = self.store.token(&key(token)).filter(|t| t.kind == TokenKind::Refresh) else {
+        let Some(record) = self
+            .store
+            .token(&key(token))
+            .filter(|t| t.kind == TokenKind::Refresh)
+        else {
             return Ok(None);
         };
         if record.consumed {
             *self.replayed_grant.borrow_mut() = Some(record.grant_id);
             return Ok(None);
         }
-        if self.store.grant(&record.grant_id).is_none() || !self.alive(&record.native_session_id, &record.account_id) {
+        if self.store.grant(&record.grant_id).is_none()
+            || !self.alive(&record.native_session_id, &record.account_id)
+        {
             return Ok(None);
         }
         Ok(Some(self.grant_for(&record)))
@@ -527,4 +672,3 @@ impl refresh::Endpoint for Flow<'_> {
         &mut self.records
     }
 }
-

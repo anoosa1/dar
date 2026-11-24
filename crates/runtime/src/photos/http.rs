@@ -60,13 +60,15 @@ fn friendly_message(operation: &str, code: &str) -> Option<&'static str> {
     match (operation, code) {
         ("createAlbum", "quotaExceeded") => Some("You have reached the limit of 500 albums."),
         ("editAlbum", "conflict") => Some("This album changed elsewhere. Reload it and try again."),
-        ("describe", "conflict") => Some("This description changed elsewhere. Reload it and try again."),
+        ("describe", "conflict") => {
+            Some("This description changed elsewhere. Reload it and try again.")
+        }
         ("uploadTarget", "conflict") | ("unlock", "conflict") => Some(
             "A file is in the way of the Photos folder (or a year or month inside it). Rename it in Files or choose another folder in Photos settings.",
         ),
-        ("restore", "conflict") => {
-            Some("A file with the same name is already where this photo was. Rename it in Files and try again.")
-        }
+        ("restore", "conflict") => Some(
+            "A file with the same name is already where this photo was. Rename it in Files and try again.",
+        ),
         ("resolveDuplicates", "conflict") => {
             Some("These duplicates changed. Reload the list and try again.")
         }
@@ -99,7 +101,11 @@ pub async fn send_file(
 ) -> std::io::Result<Response> {
     let mut f = tokio::fs::File::open(file).await?;
     let size = f.metadata().await?.len();
-    if headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some(tag) {
+    if headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        == Some(tag)
+    {
         return Ok(Response::builder()
             .status(StatusCode::NOT_MODIFIED)
             .header(header::ETAG, tag)
@@ -200,7 +206,11 @@ async fn call_photos(
         })
 }
 
-async fn input_object(body: Body, headers: &HeaderMap, allowed: &[&str]) -> Result<Map<String, Value>> {
+async fn input_object(
+    body: Body,
+    headers: &HeaderMap,
+    allowed: &[&str],
+) -> Result<Map<String, Value>> {
     let map = body_object(body, 128 * 1024, headers).await?;
     if map.keys().any(|k| !allowed.contains(&k.as_str())) {
         return Err(AppError::invalid());
@@ -225,7 +235,10 @@ fn present_link(photos: &PhotosRuntime, origin: &str, mut link: Value) -> Value 
     link
 }
 
-async fn link_input(photos: &PhotosRuntime, mut map: Map<String, Value>) -> Result<Map<String, Value>> {
+async fn link_input(
+    photos: &PhotosRuntime,
+    mut map: Map<String, Value>,
+) -> Result<Map<String, Value>> {
     if let Some(password) = map.remove("password") {
         match password {
             Value::Null => {
@@ -274,7 +287,10 @@ pub async fn handle_http(
         if let Some(obj) = value.as_object_mut() {
             obj.insert(
                 "immich".into(),
-                immich.progress(user_id).map(|p| json!(p)).unwrap_or(Value::Null),
+                immich
+                    .progress(user_id)
+                    .map(|p| json!(p))
+                    .unwrap_or(Value::Null),
             );
         }
         return ok(value);
@@ -311,7 +327,11 @@ pub async fn handle_http(
         && ["trash", "restore", "delete", "lock", "unlock"].contains(&action)
         && *method == Method::POST
     {
-        let allowed: &[&str] = if action == "unlock" { &["ids", "to"] } else { &["ids"] };
+        let allowed: &[&str] = if action == "unlock" {
+            &["ids", "to"]
+        } else {
+            &["ids"]
+        };
         let map = input_object(body, headers, allowed).await?;
         return ok(call_photos(runtime, session_id, action, Value::Object(map)).await?);
     }
@@ -334,17 +354,27 @@ pub async fn handle_http(
 
     if route == "/duplicates" && *method == Method::GET {
         let cursor = query.get("cursor").map(String::as_str).unwrap_or("");
-        return ok(call_photos(runtime, session_id, "duplicates", json!({ "cursor": cursor })).await?);
+        return ok(call_photos(
+            runtime,
+            session_id,
+            "duplicates",
+            json!({ "cursor": cursor }),
+        )
+        .await?);
     }
 
     if route == "/duplicates/resolve" && *method == Method::POST {
         let map = input_object(body, headers, &["key", "keep"]).await?;
-        return ok(call_photos(runtime, session_id, "resolveDuplicates", Value::Object(map)).await?);
+        return ok(
+            call_photos(runtime, session_id, "resolveDuplicates", Value::Object(map)).await?,
+        );
     }
 
     if route == "/duplicates/dismiss" && *method == Method::POST {
         let map = input_object(body, headers, &["key"]).await?;
-        return ok(call_photos(runtime, session_id, "dismissDuplicates", Value::Object(map)).await?);
+        return ok(
+            call_photos(runtime, session_id, "dismissDuplicates", Value::Object(map)).await?,
+        );
     }
 
     // Immich: devices signed in with the mobile app, and Dar's connection to an Immich server.
@@ -363,7 +393,10 @@ pub async fn handle_http(
         out.insert("connection".into(), connection);
         out.insert(
             "progress".into(),
-            immich.progress(user_id).map(|p| json!(p)).unwrap_or(Value::Null),
+            immich
+                .progress(user_id)
+                .map(|p| json!(p))
+                .unwrap_or(Value::Null),
         );
         return ok(Value::Object(out));
     }
@@ -372,10 +405,13 @@ pub async fn handle_http(
         && is_uuid(device_id)
         && *method == Method::DELETE
     {
-        return ok(
-            call_photos(runtime, session_id, "revokeImmichDevice", json!({ "id": device_id }))
-                .await?,
-        );
+        return ok(call_photos(
+            runtime,
+            session_id,
+            "revokeImmichDevice",
+            json!({ "id": device_id }),
+        )
+        .await?);
     }
 
     if route == "/immich/connection" && *method == Method::PUT {
@@ -409,9 +445,13 @@ pub async fn handle_http(
             }
             let enabled = map.get("enabled") != Some(&json!(false));
             map.insert("sealedKey".into(), json!(photos.seal_immich_key(&key)));
-            let saved =
-                call_photos(runtime, session_id, "saveImmichConnection", Value::Object(map))
-                    .await?;
+            let saved = call_photos(
+                runtime,
+                session_id,
+                "saveImmichConnection",
+                Value::Object(map),
+            )
+            .await?;
             if enabled {
                 immich.sync_now(user_id);
             }
@@ -426,9 +466,13 @@ pub async fn handle_http(
                 "Enter the API key for this Immich server.",
             ));
         }
-        return ok(
-            call_photos(runtime, session_id, "saveImmichConnection", Value::Object(map)).await?,
-        );
+        return ok(call_photos(
+            runtime,
+            session_id,
+            "saveImmichConnection",
+            Value::Object(map),
+        )
+        .await?);
     }
 
     if route == "/immich/connection" && *method == Method::DELETE {
@@ -437,7 +481,10 @@ pub async fn handle_http(
 
     if route == "/immich/connection/sync" && *method == Method::POST {
         immich.sync_now(user_id);
-        return Ok(json_response(&json!({ "started": true }), StatusCode::ACCEPTED));
+        return Ok(json_response(
+            &json!({ "started": true }),
+            StatusCode::ACCEPTED,
+        ));
     }
 
     if route == "/stacks" && *method == Method::POST {
@@ -481,7 +528,10 @@ pub async fn handle_http(
         map.insert("digest".into(), json!(digest));
         map.insert("sealed".into(), json!(photos.seal_link(&secret)));
         let created = call_photos(runtime, session_id, "createLink", Value::Object(map)).await?;
-        return Ok(json_response(&present_link(photos, origin, created), StatusCode::CREATED));
+        return Ok(json_response(
+            &present_link(photos, origin, created),
+            StatusCode::CREATED,
+        ));
     }
 
     if let Some(id) = route.strip_prefix("/links/")
@@ -525,9 +575,13 @@ pub async fn handle_http(
                 return Err(AppError::not_found());
             }
             if kind == "sharing" && member_id.is_none() && *method == Method::GET {
-                let value =
-                    call_photos(runtime, session_id, "albumSharing", json!({ "id": album_id }))
-                        .await?;
+                let value = call_photos(
+                    runtime,
+                    session_id,
+                    "albumSharing",
+                    json!({ "id": album_id }),
+                )
+                .await?;
                 let links: Vec<Value> = value
                     .get("links")
                     .and_then(Value::as_array)
@@ -621,24 +675,37 @@ pub async fn handle_http(
             return ok(json!({ "indexed": photos.index_now(job).await? }));
         }
         if action == Some("original") && (*method == Method::GET || *method == Method::HEAD) {
-            let info: AssetInfo =
-                serde_json::from_value(call_photos(runtime, session_id, "asset", json!({ "id": id })).await?)
-                    .map_err(|_| AppError::internal())?;
+            let info: AssetInfo = serde_json::from_value(
+                call_photos(runtime, session_id, "asset", json!({ "id": id })).await?,
+            )
+            .map_err(|_| AppError::internal())?;
             return runtime
                 .blobs
                 .download(method, headers, &info.to_blob_file(), false)
                 .await;
         }
         if action == Some("thumbnail") && (*method == Method::GET || *method == Method::HEAD) {
-            let size = if query.get("size").map(String::as_str) == Some("m") { "m" } else { "s" };
-            let info: AssetInfo =
-                serde_json::from_value(call_photos(runtime, session_id, "asset", json!({ "id": id })).await?)
-                    .map_err(|_| AppError::internal())?;
+            let size = if query.get("size").map(String::as_str) == Some("m") {
+                "m"
+            } else {
+                "s"
+            };
+            let info: AssetInfo = serde_json::from_value(
+                call_photos(runtime, session_id, "asset", json!({ "id": id })).await?,
+            )
+            .map_err(|_| AppError::internal())?;
             let tag = format!("\"{}-{size}\"", info.blob_id);
-            if headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some(tag.as_str()) {
+            if headers
+                .get(header::IF_NONE_MATCH)
+                .and_then(|v| v.to_str().ok())
+                == Some(tag.as_str())
+            {
                 return Ok((
                     StatusCode::NOT_MODIFIED,
-                    [(header::ETAG, tag), (header::CACHE_CONTROL, "private, max-age=86400".into())],
+                    [
+                        (header::ETAG, tag),
+                        (header::CACHE_CONTROL, "private, max-age=86400".into()),
+                    ],
                 )
                     .into_response());
             }
@@ -659,14 +726,22 @@ pub async fn handle_http(
                     "No preview is available for this file.",
                 ));
             };
-            return send_file(method, headers, &file, "image/webp", &tag, "private, max-age=86400")
-                .await
-                .map_err(|_| AppError::internal());
+            return send_file(
+                method,
+                headers,
+                &file,
+                "image/webp",
+                &tag,
+                "private, max-age=86400",
+            )
+            .await
+            .map_err(|_| AppError::internal());
         }
         if action == Some("playback") && *method == Method::POST {
-            let info: AssetInfo =
-                serde_json::from_value(call_photos(runtime, session_id, "asset", json!({ "id": id })).await?)
-                    .map_err(|_| AppError::internal())?;
+            let info: AssetInfo = serde_json::from_value(
+                call_photos(runtime, session_id, "asset", json!({ "id": id })).await?,
+            )
+            .map_err(|_| AppError::internal())?;
             if info.kind != "video" {
                 return Err(AppError::invalid());
             }
@@ -697,9 +772,10 @@ pub async fn handle_http(
             return ok(json!({ "state": state.state, "progress": state.progress, "url": url }));
         }
         if action == Some("video") && (*method == Method::GET || *method == Method::HEAD) {
-            let info: AssetInfo =
-                serde_json::from_value(call_photos(runtime, session_id, "asset", json!({ "id": id })).await?)
-                    .map_err(|_| AppError::internal())?;
+            let info: AssetInfo = serde_json::from_value(
+                call_photos(runtime, session_id, "asset", json!({ "id": id })).await?,
+            )
+            .map_err(|_| AppError::internal())?;
             if info.kind != "video" {
                 return Err(AppError::not_found());
             }
@@ -752,8 +828,12 @@ pub async fn handle_http(
             return Err(AppError::not_found());
         }
         if action.is_none() && *method == Method::PATCH {
-            let mut map =
-                input_object(body, headers, &["name", "description", "coverId", "revision"]).await?;
+            let mut map = input_object(
+                body,
+                headers,
+                &["name", "description", "coverId", "revision"],
+            )
+            .await?;
             map.insert("id".into(), json!(id));
             return ok(call_photos(runtime, session_id, "editAlbum", Value::Object(map)).await?);
         }

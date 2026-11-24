@@ -24,8 +24,21 @@ pub struct AppError {
     pub status: u16,
 }
 
-const CODES: &[(&str, u16)] = &[("lockedFolder", 423), ("nothingToCommit", 409), ("uncommittedChanges", 409), ("conflict", 409), ("alreadyExists", 409), ("notFound", 404),
-    ("forbidden", 403), ("unauthenticated", 401), ("invalidInput", 400), ("invalidName", 400), ("quotaExceeded", 507), ("operationTooLarge", 413), ("contentUnavailable", 503)];
+const CODES: &[(&str, u16)] = &[
+    ("lockedFolder", 423),
+    ("nothingToCommit", 409),
+    ("uncommittedChanges", 409),
+    ("conflict", 409),
+    ("alreadyExists", 409),
+    ("notFound", 404),
+    ("forbidden", 403),
+    ("unauthenticated", 401),
+    ("invalidInput", 400),
+    ("invalidName", 400),
+    ("quotaExceeded", 507),
+    ("operationTooLarge", 413),
+    ("contentUnavailable", 503),
+];
 
 impl Database {
     pub fn new(url: &str, name: &str, token_file: &Path) -> Result<Database> {
@@ -33,19 +46,47 @@ impl Database {
         if token.is_empty() {
             bail!("a database service credential is required");
         }
-        Ok(Database { url: url.trim_end_matches('/').to_owned(), name: name.to_owned(), token_file: token_file.to_path_buf(), token })
+        Ok(Database {
+            url: url.trim_end_matches('/').to_owned(),
+            name: name.to_owned(),
+            token_file: token_file.to_path_buf(),
+            token,
+        })
     }
 
-    async fn invoke(&self, function: &str, args: &Value, confirmed: bool) -> std::result::Result<Value, AppError> {
-        let url = format!("{}/v1/database/{}/call/{function}{}", self.url, self.name, if confirmed { "" } else { "?confirmed=false" });
-        let unavailable = || AppError { code: "databaseUnavailable".into(), status: 503 };
-        let response = crate::session::client().post(url).bearer_auth(&self.token).json(args).timeout(Duration::from_secs(15)).send().await.map_err(|_| unavailable())?;
+    async fn invoke(
+        &self,
+        function: &str,
+        args: &Value,
+        confirmed: bool,
+    ) -> std::result::Result<Value, AppError> {
+        let url = format!(
+            "{}/v1/database/{}/call/{function}{}",
+            self.url,
+            self.name,
+            if confirmed { "" } else { "?confirmed=false" }
+        );
+        let unavailable = || AppError {
+            code: "databaseUnavailable".into(),
+            status: 503,
+        };
+        let response = crate::session::client()
+            .post(url)
+            .bearer_auth(&self.token)
+            .json(args)
+            .timeout(Duration::from_secs(15))
+            .send()
+            .await
+            .map_err(|_| unavailable())?;
         let ok = response.status().is_success();
         let text = response.text().await.map_err(|_| unavailable())?;
         if !ok {
             for (code, status) in CODES {
                 if text.contains(code) {
-                    return Err(AppError { code: (*code).into(), status: *status });
+                    return Err(AppError {
+                        code: (*code).into(),
+                        status: *status,
+                    });
                 }
             }
             return Err(unavailable());
@@ -73,7 +114,12 @@ impl Database {
 
     /// A SQL query as the owner (`/v1/database/<name>/sql`), rows as JSON arrays.
     pub async fn sql(&self, query: &str) -> Result<Value> {
-        let response = crate::session::client().post(format!("{}/v1/database/{}/sql", self.url, self.name)).bearer_auth(&self.token).body(query.to_owned()).send().await?;
+        let response = crate::session::client()
+            .post(format!("{}/v1/database/{}/sql", self.url, self.name))
+            .bearer_auth(&self.token)
+            .body(query.to_owned())
+            .send()
+            .await?;
         let status = response.status();
         let text = response.text().await?;
         if !status.is_success() {
@@ -83,13 +129,25 @@ impl Database {
     }
 
     /// The provider's own records (`service_provider`), as its store reads and writes them.
-    pub async fn provider(&self, operation: &str, payload: Value) -> std::result::Result<Value, AppError> {
-        self.call("service_provider", json!([operation, payload.to_string()])).await
+    pub async fn provider(
+        &self,
+        operation: &str,
+        payload: Value,
+    ) -> std::result::Result<Value, AppError> {
+        self.call("service_provider", json!([operation, payload.to_string()]))
+            .await
     }
 
     /// The environment `dar-runtime` operator commands need for this database.
     pub fn env(&self) -> [(&'static str, String); 3] {
-        [("DAR_DATABASE_URL", self.url.clone()), ("DAR_DATABASE_NAME", self.name.clone()), ("DAR_DATABASE_TOKEN_FILE", self.token_file.to_string_lossy().into_owned())]
+        [
+            ("DAR_DATABASE_URL", self.url.clone()),
+            ("DAR_DATABASE_NAME", self.name.clone()),
+            (
+                "DAR_DATABASE_TOKEN_FILE",
+                self.token_file.to_string_lossy().into_owned(),
+            ),
+        ]
     }
 }
 
@@ -121,14 +179,29 @@ pub fn backup(db: &Database, root: &Path, destination: &Path) -> Result<Value> {
 pub fn restore(db: &Database, source: &Path, root: &Path) -> Result<Value> {
     operator_json(db, Some(root), &["restore", &source.to_string_lossy()])
 }
-pub fn export_files(db: &Database, root: &Path, username: &str, destination: &Path) -> Result<Value> {
-    operator_json(db, Some(root), &["export-files", username, &destination.to_string_lossy()])
+pub fn export_files(
+    db: &Database,
+    root: &Path,
+    username: &str,
+    destination: &Path,
+) -> Result<Value> {
+    operator_json(
+        db,
+        Some(root),
+        &["export-files", username, &destination.to_string_lossy()],
+    )
 }
 pub fn reconcile_storage(db: &Database, root: &Path) -> Result<u64> {
-    Ok(operator_json(db, Some(root), &["reconcile-storage"])?["count"].as_u64().unwrap_or_default())
+    Ok(
+        operator_json(db, Some(root), &["reconcile-storage"])?["count"]
+            .as_u64()
+            .unwrap_or_default(),
+    )
 }
 pub fn sweep_orphans(db: &Database, root: &Path) -> Result<u64> {
-    Ok(operator_json(db, Some(root), &["sweep-orphans"])?["count"].as_u64().unwrap_or_default())
+    Ok(operator_json(db, Some(root), &["sweep-orphans"])?["count"]
+        .as_u64()
+        .unwrap_or_default())
 }
 /// `apps-install|apps-enable|apps-disable|apps-uninstall <root> [argument]`, offline.
 pub fn manage_apps(root: &Path, command: &str, argument: Option<&str>) -> Result<String> {
@@ -138,7 +211,12 @@ pub fn manage_apps(root: &Path, command: &str, argument: Option<&str>) -> Result
     operator(None, None, &args)
 }
 /// Runs `dar-runtime <args>` with extra environment variables.
-pub fn operator_env(db: Option<&Database>, root: Option<&Path>, env: &[(&str, &str)], args: &[&str]) -> Result<String> {
+pub fn operator_env(
+    db: Option<&Database>,
+    root: Option<&Path>,
+    env: &[(&str, &str)],
+    args: &[&str],
+) -> Result<String> {
     let mut command = Command::new(&stack().artifacts.runtime);
     command.args(args).stdin(Stdio::null());
     if let Some(db) = db {
@@ -150,22 +228,47 @@ pub fn operator_env(db: Option<&Database>, root: Option<&Path>, env: &[(&str, &s
     for (k, v) in env {
         command.env(k, v);
     }
-    let output = command.output().map_err(|e| Error::new(format!("dar-runtime {}: {e}", args.first().unwrap_or(&""))))?;
-    let (stdout, stderr) = (String::from_utf8_lossy(&output.stdout).trim().to_owned(), String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    let output = command
+        .output()
+        .map_err(|e| Error::new(format!("dar-runtime {}: {e}", args.first().unwrap_or(&""))))?;
+    let (stdout, stderr) = (
+        String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+        String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+    );
     if !output.status.success() {
-        bail!("{}", if !stderr.is_empty() { stderr } else if !stdout.is_empty() { stdout } else { format!("dar-runtime {} failed", args.first().unwrap_or(&"")) });
+        bail!(
+            "{}",
+            if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                format!("dar-runtime {} failed", args.first().unwrap_or(&""))
+            }
+        );
     }
     Ok(stdout)
 }
 
 /// Applies an OIDC client file to the database, as the runtime does with `DAR_OIDC_FILE`.
-pub fn configure_oidc(db: &Database, root: &Path, origin: &str, file: &Path, optional: bool) -> Result<String> {
+pub fn configure_oidc(
+    db: &Database,
+    root: &Path,
+    origin: &str,
+    file: &Path,
+    optional: bool,
+) -> Result<String> {
     let file = file.to_string_lossy();
     let mut args = vec!["configure-oidc", file.as_ref()];
     if optional {
         args.push("optional");
     }
-    operator_env(Some(db), Some(root), &[("DAR_ORIGIN", origin), ("DAR_DEVELOPMENT", "1")], &args)
+    operator_env(
+        Some(db),
+        Some(root),
+        &[("DAR_ORIGIN", origin), ("DAR_DEVELOPMENT", "1")],
+        &args,
+    )
 }
 
 /// SHA-256 of a token, as Dar stores token digests.
@@ -182,8 +285,17 @@ pub fn create_opaque_token() -> (String, String) {
 
 /// A procedure's JSON result; `{error:{code}}` becomes an error with the code.
 pub fn read_procedure(value: &Value) -> Result<Value> {
-    if let Some(code) = value.get("error").and_then(|e| e.get("code").or(Some(e))).filter(|_| value.get("error").is_some()) {
-        bail!("{}", code.as_str().map(str::to_owned).unwrap_or_else(|| code.to_string()));
+    if let Some(code) = value
+        .get("error")
+        .and_then(|e| e.get("code").or(Some(e)))
+        .filter(|_| value.get("error").is_some())
+    {
+        bail!(
+            "{}",
+            code.as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| code.to_string())
+        );
     }
     Ok(value.clone())
 }
@@ -196,8 +308,13 @@ pub fn hash_password(password: &str) -> Result<String> {
     let salt = crate::random_bytes(16);
     let params = scrypt::Params::new(17, 8, 1, 32).map_err(|e| Error::new(e.to_string()))?;
     let mut digest = [0u8; 32];
-    scrypt::scrypt(password.as_bytes(), &salt, &params, &mut digest).map_err(|e| Error::new(e.to_string()))?;
-    Ok(format!("scrypt$131072$8$1${}${}", crate::base64url(&salt), crate::base64url(&digest)))
+    scrypt::scrypt(password.as_bytes(), &salt, &params, &mut digest)
+        .map_err(|e| Error::new(e.to_string()))?;
+    Ok(format!(
+        "scrypt$131072$8$1${}${}",
+        crate::base64url(&salt),
+        crate::base64url(&digest)
+    ))
 }
 
 /// The instance's identity signing key, unsealed from `secrets/` (for suites that forge
@@ -205,9 +322,16 @@ pub fn hash_password(password: &str) -> Result<String> {
 pub fn signing_jwk(secrets: &Path) -> Result<Value> {
     use aes_gcm::aead::{Aead, KeyInit, Payload};
     use base64::Engine as _;
-    let decode = |text: &str| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(text.trim().trim_end_matches('=')).map_err(|e| Error::new(e.to_string()));
-    let key = decode(&crate::read_to_string(secrets.join("identity-keyring.key"))?)?;
-    let envelope: Value = serde_json::from_str(&crate::read_to_string(secrets.join("signing-key.json"))?)?;
+    let decode = |text: &str| {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(text.trim().trim_end_matches('='))
+            .map_err(|e| Error::new(e.to_string()))
+    };
+    let key = decode(&crate::read_to_string(
+        secrets.join("identity-keyring.key"),
+    )?)?;
+    let envelope: Value =
+        serde_json::from_str(&crate::read_to_string(secrets.join("signing-key.json"))?)?;
     if envelope["format"] != "dar-keyring-v1" {
         bail!("unrecognized signing key");
     }
@@ -215,7 +339,15 @@ pub fn signing_jwk(secrets: &Path) -> Result<Value> {
     let mut sealed = decode(envelope["ciphertext"].as_str().unwrap_or_default())?;
     sealed.extend(decode(envelope["tag"].as_str().unwrap_or_default())?);
     let iv = decode(envelope["iv"].as_str().unwrap_or_default())?;
-    let plain = cipher.decrypt(aes_gcm::Nonce::from_slice(&iv), Payload { msg: &sealed, aad: b"dar.identity.signing-key.v1" }).map_err(|_| Error::new("the signing key did not unseal"))?;
+    let plain = cipher
+        .decrypt(
+            aes_gcm::Nonce::from_slice(&iv),
+            Payload {
+                msg: &sealed,
+                aad: b"dar.identity.signing-key.v1",
+            },
+        )
+        .map_err(|_| Error::new("the signing key did not unseal"))?;
     Ok(serde_json::from_slice(&plain)?)
 }
 
@@ -223,26 +355,48 @@ pub fn signing_jwk(secrets: &Path) -> Result<Value> {
 pub fn sign_es256(jwk: &Value, claims: &Value) -> Result<String> {
     use base64::Engine as _;
     use p256::ecdsa::signature::Signer as _;
-    let d = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(jwk["d"].as_str().unwrap_or_default()).map_err(|e| Error::new(e.to_string()))?;
+    let d = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(jwk["d"].as_str().unwrap_or_default())
+        .map_err(|e| Error::new(e.to_string()))?;
     let key = p256::ecdsa::SigningKey::from_slice(&d).map_err(|e| Error::new(e.to_string()))?;
     let header = json!({"alg": "ES256", "kid": jwk["kid"], "typ": "JWT"});
-    let input = format!("{}.{}", crate::base64url(header.to_string().as_bytes()), crate::base64url(claims.to_string().as_bytes()));
+    let input = format!(
+        "{}.{}",
+        crate::base64url(header.to_string().as_bytes()),
+        crate::base64url(claims.to_string().as_bytes())
+    );
     let signature: p256::ecdsa::Signature = key.sign(input.as_bytes());
-    Ok(format!("{input}.{}", crate::base64url(&signature.to_bytes())))
+    Ok(format!(
+        "{input}.{}",
+        crate::base64url(&signature.to_bytes())
+    ))
 }
 
 /// A JWT's claims, unverified (`decodeJwt`).
 pub fn jwt_claims(token: &str) -> Result<Value> {
     use base64::Engine as _;
-    let payload = token.split('.').nth(1).ok_or_else(|| Error::new("not a JWT"))?;
-    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload).map_err(|e| Error::new(e.to_string()))?;
+    let payload = token
+        .split('.')
+        .nth(1)
+        .ok_or_else(|| Error::new("not a JWT"))?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|e| Error::new(e.to_string()))?;
     Ok(serde_json::from_slice(&bytes)?)
 }
 
 /// A browser token for a session, signed as the runtime's issuer signs them (`/auth/issuer`).
-pub fn browser_token(secrets: &Path, issuer: &str, session_id: &str, expires_at_ms: u64) -> Result<String> {
+pub fn browser_token(
+    secrets: &Path,
+    issuer: &str,
+    session_id: &str,
+    expires_at_ms: u64,
+) -> Result<String> {
     let jwk = signing_jwk(secrets)?;
     let now = chrono::Utc::now().timestamp() as u64;
     let exp = (expires_at_ms / 1000).min(now + 300);
-    sign_es256(&jwk, &json!({"sid": session_id, "iss": issuer, "aud": "dar-browser", "sub": format!("{session_id}:{}", crate::uuid()), "iat": now, "exp": exp}))
+    sign_es256(
+        &jwk,
+        &json!({"sid": session_id, "iss": issuer, "aud": "dar-browser", "sub": format!("{session_id}:{}", crate::uuid()), "iat": now, "exp": exp}),
+    )
 }

@@ -7,11 +7,23 @@ use super::photos_books_apps_support::{
 use dar_acceptance::prelude::*;
 use std::path::Path;
 
-pub const SUITE: Suite = Suite { name: "photos-sharing", cases: &[case!(photos_sharing_and_links, 240)] };
+pub const SUITE: Suite = Suite {
+    name: "photos-sharing",
+    cases: &[case!(photos_sharing_and_links, 240)],
+};
 
 async fn still(dir: &Path, source: &str, name: &str) -> Result<Vec<u8>> {
     let path = dir.join(name);
-    ffmpeg(&["-f", "lavfi", "-i", &format!("{source}=size=320x240"), "-frames:v", "1", &path.to_string_lossy()]).await?;
+    ffmpeg(&[
+        "-f",
+        "lavfi",
+        "-i",
+        &format!("{source}=size=320x240"),
+        "-frames:v",
+        "1",
+        &path.to_string_lossy(),
+    ])
+    .await?;
     Ok(std::fs::read(path)?)
 }
 

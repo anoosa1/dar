@@ -116,7 +116,9 @@ pub fn InstalledAppPage(
     let started = RwSignal::new(false);
     let effect_state = send_wrapper::SendWrapper::new(state);
     Effect::new(move |_| {
-        let Some(mount_el) = element.get() else { return };
+        let Some(mount_el) = element.get() else {
+            return;
+        };
         if started.get_untracked() {
             return;
         }
@@ -145,7 +147,9 @@ pub fn InstalledAppPage(
     });
 
     // Once mounted, the app shows the SDK's own rail and top bar in place of the frame's.
-    crate::shell::Frame::own_chrome(Signal::derive(move || !loading.get() && error.with(String::is_empty)));
+    crate::shell::Frame::own_chrome(Signal::derive(move || {
+        !loading.get() && error.with(String::is_empty)
+    }));
     view! {
         <Show when=move || loading.get() || !error.with(String::is_empty)>
             <div class="app-shell">
@@ -192,7 +196,10 @@ async fn mount_app(
 ) -> Result<(), ()> {
     let apps: InstalledAppsResponse = api::request(
         "/api/v1/apps",
-        Req { signal: Some(signal.clone()), ..Default::default() },
+        Req {
+            signal: Some(signal.clone()),
+            ..Default::default()
+        },
     )
     .await
     .map_err(|_| ())?;
@@ -202,10 +209,8 @@ async fn mount_app(
     let app = apps.items.into_iter().find(|a| a.id == id).ok_or(())?;
 
     if !app.styles.is_empty() {
-        futures::future::try_join_all(
-            app.styles.iter().map(|href| load_stylesheet(href, state)),
-        )
-        .await?;
+        futures::future::try_join_all(app.styles.iter().map(|href| load_stylesheet(href, state)))
+            .await?;
     }
     if signal.aborted() {
         return Ok(());
@@ -327,7 +332,9 @@ fn build_host(
         Closure::<dyn FnMut(JsValue) -> js_sys::Promise>::new(move |key: JsValue| {
             let url = format!("{base}/{}", encode_uri(&js_string(&key)));
             let signal = signal.clone();
-            future_to_promise(async move { js_request(&url, "GET", None, None, None, &signal).await })
+            future_to_promise(
+                async move { js_request(&url, "GET", None, None, None, &signal).await },
+            )
         })
     };
 
@@ -354,7 +361,15 @@ fn build_host(
                 let signal = signal.clone();
                 let csrf = csrf.clone();
                 future_to_promise(async move {
-                    js_request(&url, "PUT", Some(&body), Some(&csrf), Some(&if_match), &signal).await
+                    js_request(
+                        &url,
+                        "PUT",
+                        Some(&body),
+                        Some(&csrf),
+                        Some(&if_match),
+                        &signal,
+                    )
+                    .await
                 })
             },
         )
@@ -382,10 +397,16 @@ fn build_host(
         let base = base.clone();
         let signal = signal.clone();
         Closure::<dyn FnMut(JsValue) -> js_sys::Promise>::new(move |cursor: JsValue| {
-            let cursor = if cursor.is_undefined() { String::new() } else { js_string(&cursor) };
+            let cursor = if cursor.is_undefined() {
+                String::new()
+            } else {
+                js_string(&cursor)
+            };
             let url = format!("{base}?cursor={}", encode_uri(&cursor));
             let signal = signal.clone();
-            future_to_promise(async move { js_request(&url, "GET", None, None, None, &signal).await })
+            future_to_promise(
+                async move { js_request(&url, "GET", None, None, None, &signal).await },
+            )
         })
     };
 
@@ -458,10 +479,16 @@ async fn js_request(
         .unchecked_into();
     let status = response.status();
     let json_promise = response.json().map_err(|_| {
-        js_request_error("The instance returned an unexpected response. Try again shortly.", status)
+        js_request_error(
+            "The instance returned an unexpected response. Try again shortly.",
+            status,
+        )
     })?;
     let value = JsFuture::from(json_promise).await.map_err(|_| {
-        js_request_error("The instance returned an unexpected response. Try again shortly.", status)
+        js_request_error(
+            "The instance returned an unexpected response. Try again shortly.",
+            status,
+        )
     })?;
     if !response.ok() {
         let message = js_sys::Reflect::get(&value, &JsValue::from_str("error"))
@@ -477,17 +504,37 @@ async fn js_request(
 
 fn js_request_error(message: &str, status: u16) -> JsValue {
     let err = js_sys::Error::new(message);
-    let _ = js_sys::Reflect::set(&err, &JsValue::from_str("name"), &JsValue::from_str("RequestError"));
-    let _ = js_sys::Reflect::set(&err, &JsValue::from_str("status"), &JsValue::from_f64(f64::from(status)));
+    let _ = js_sys::Reflect::set(
+        &err,
+        &JsValue::from_str("name"),
+        &JsValue::from_str("RequestError"),
+    );
+    let _ = js_sys::Reflect::set(
+        &err,
+        &JsValue::from_str("status"),
+        &JsValue::from_f64(f64::from(status)),
+    );
     err.into()
 }
 
 fn session_to_js(session: &BrowserSession) -> JsValue {
     let user = js_sys::Object::new();
     set_prop(&user, "id", &JsValue::from_str(&session.user.id));
-    set_prop(&user, "username", &JsValue::from_str(&session.user.username));
-    set_prop(&user, "displayName", &JsValue::from_str(&session.user.display_name));
-    set_prop(&user, "administrator", &JsValue::from_bool(session.user.administrator));
+    set_prop(
+        &user,
+        "username",
+        &JsValue::from_str(&session.user.username),
+    );
+    set_prop(
+        &user,
+        "displayName",
+        &JsValue::from_str(&session.user.display_name),
+    );
+    set_prop(
+        &user,
+        "administrator",
+        &JsValue::from_bool(session.user.administrator),
+    );
 
     let obj = js_sys::Object::new();
     set_prop(&obj, "user", &user);

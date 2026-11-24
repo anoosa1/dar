@@ -44,9 +44,13 @@ fn format_zone_clock(zone: &str, now: f64) -> String {
         .ok()
         .and_then(|intl| Reflect::get(&intl, &"DateTimeFormat".into()).ok())
         .and_then(|f| f.dyn_into::<js_sys::Function>().ok());
-    let Some(ctor) = ctor else { return String::new() };
+    let Some(ctor) = ctor else {
+        return String::new();
+    };
     let args = Array::of2(&JsValue::UNDEFINED, &options);
-    let Ok(formatter) = Reflect::construct(&ctor, &args) else { return String::new() };
+    let Ok(formatter) = Reflect::construct(&ctor, &args) else {
+        return String::new();
+    };
     let formatter: Intl::DateTimeFormat = formatter.unchecked_into();
     let date = Date::new(&JsValue::from_f64(now));
     formatter
@@ -120,20 +124,44 @@ pub fn SettingsOverview(
 
         let sig1 = signal.clone();
         spawn_local(async move {
-            if let Ok(v) = api::request::<AppPasswordsResp>("/api/v1/auth/app-passwords", Req { signal: Some(sig1), ..Default::default() }).await {
+            if let Ok(v) = api::request::<AppPasswordsResp>(
+                "/api/v1/auth/app-passwords",
+                Req {
+                    signal: Some(sig1),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
                 let _ = passwords.try_set(Some(v.items.len()));
             }
         });
         if admin {
             let sig2 = signal.clone();
             spawn_local(async move {
-                if let Ok(v) = api::request::<ManagedAppsResp>("/api/v1/admin/installedApps", Req { signal: Some(sig2), ..Default::default() }).await {
+                if let Ok(v) = api::request::<ManagedAppsResp>(
+                    "/api/v1/admin/installedApps",
+                    Req {
+                        signal: Some(sig2),
+                        ..Default::default()
+                    },
+                )
+                .await
+                {
                     let _ = apps.try_set(Some(v.items));
                 }
             });
             let sig3 = signal;
             spawn_local(async move {
-                if let Ok(v) = api::request::<InstanceAppearance>("/api/v1/appearance", Req { signal: Some(sig3), ..Default::default() }).await {
+                if let Ok(v) = api::request::<InstanceAppearance>(
+                    "/api/v1/appearance",
+                    Req {
+                        signal: Some(sig3),
+                        ..Default::default()
+                    },
+                )
+                .await
+                {
                     let _ = logo.try_set(Some(v));
                 }
             });
@@ -143,7 +171,10 @@ pub fn SettingsOverview(
     let tick = Closure::<dyn FnMut()>::new(move || {
         let _ = now.try_set(Date::now());
     });
-    if let Ok(interval_id) = window().set_interval_with_callback_and_timeout_and_arguments_0(tick.as_ref().unchecked_ref(), 30_000) {
+    if let Ok(interval_id) = window().set_interval_with_callback_and_timeout_and_arguments_0(
+        tick.as_ref().unchecked_ref(),
+        30_000,
+    ) {
         let kept = SendWrapper::new((interval_id, tick));
         on_cleanup(move || {
             let (id, _cb) = kept.take();
@@ -152,7 +183,13 @@ pub fn SettingsOverview(
     }
 
     let appearance_state = saver.state("appearance");
-    let theme = Signal::derive(move || saver.value("appearance").as_str().unwrap_or("system").to_owned());
+    let theme = Signal::derive(move || {
+        saver
+            .value("appearance")
+            .as_str()
+            .unwrap_or("system")
+            .to_owned()
+    });
     let zone = Signal::derive(move || saver.value("timezone").as_str().unwrap_or("UTC").to_owned());
     let has_prefs = Memo::new(move |_| saver.preferences.with(Option::is_some));
 

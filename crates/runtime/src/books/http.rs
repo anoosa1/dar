@@ -59,7 +59,11 @@ fn build_bytes_response(
 ) -> Response {
     let len = data.len();
     let etag = format!("\"{blob_id}-{len}\"");
-    if headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some(etag.as_str()) {
+    if headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        == Some(etag.as_str())
+    {
         return Response::builder()
             .status(StatusCode::NOT_MODIFIED)
             .header(header::ETAG, &etag)
@@ -67,7 +71,11 @@ fn build_bytes_response(
             .body(Body::empty())
             .expect("304 response");
     }
-    let body = if *method == Method::HEAD { Body::empty() } else { Body::from(data) };
+    let body = if *method == Method::HEAD {
+        Body::empty()
+    } else {
+        Body::from(data)
+    };
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type)
@@ -75,7 +83,10 @@ fn build_bytes_response(
         .header(header::ETAG, &etag)
         .header(header::CACHE_CONTROL, CACHED)
         .header("x-content-type-options", "nosniff")
-        .header(header::CONTENT_SECURITY_POLICY, csp.unwrap_or("default-src 'none'; sandbox"))
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            csp.unwrap_or("default-src 'none'; sandbox"),
+        )
         .body(body)
         .expect("bytes response")
 }
@@ -89,9 +100,19 @@ async fn send_file(
     tag: &str,
     cache: &str,
 ) -> Result<Response> {
-    let mut file = tokio::fs::File::open(path).await.map_err(|_| AppError::not_found())?;
-    let size = file.metadata().await.map_err(|_| AppError::not_found())?.len();
-    if headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some(tag) {
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|_| AppError::not_found())?;
+    let size = file
+        .metadata()
+        .await
+        .map_err(|_| AppError::not_found())?
+        .len();
+    if headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        == Some(tag)
+    {
         return Ok(Response::builder()
             .status(StatusCode::NOT_MODIFIED)
             .header(header::ETAG, tag)
@@ -167,9 +188,13 @@ async fn send_file(
     if *method == Method::HEAD || size == 0 {
         return Ok(builder.body(Body::empty()).expect("file head response"));
     }
-    file.seek(std::io::SeekFrom::Start(start)).await.map_err(|_| AppError::internal())?;
+    file.seek(std::io::SeekFrom::Start(start))
+        .await
+        .map_err(|_| AppError::internal())?;
     let stream = tokio_util::io::ReaderStream::new(file.take(length));
-    Ok(builder.body(Body::from_stream(stream)).expect("file stream response"))
+    Ok(builder
+        .body(Body::from_stream(stream))
+        .expect("file stream response"))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -192,7 +217,10 @@ pub async fn handle_http(
         return Err(AppError::not_found());
     };
 
-    let raw_entry = runtime.db.read("service_download", json!([session_id, id, ""])).await?;
+    let raw_entry = runtime
+        .db
+        .read("service_download", json!([session_id, id, ""]))
+        .await?;
     let locked = raw_entry.get("locked") != Some(&Value::Bool(false));
     let entry: BlobFile = serde_json::from_value(raw_entry).map_err(|_| AppError::internal())?;
 
@@ -208,8 +236,13 @@ pub async fn handle_http(
         let db = runtime.db.clone();
         let session = session_id.to_owned();
         async move {
-            db.operation("service_books", operation, BOOKS_READ_OPERATIONS, json!([session, operation, value.to_string()]))
-                .await
+            db.operation(
+                "service_books",
+                operation,
+                BOOKS_READ_OPERATIONS,
+                json!([session, operation, value.to_string()]),
+            )
+            .await
         }
     };
 
@@ -238,7 +271,10 @@ pub async fn handle_http(
             _ => serde_json::Map::new(),
         };
         out.insert("manifest".into(), manifest);
-        out.insert("meta".into(), serde_json::to_value(&info.meta).map_err(|_| AppError::internal())?);
+        out.insert(
+            "meta".into(),
+            serde_json::to_value(&info.meta).map_err(|_| AppError::internal())?,
+        );
         return ok(Value::Object(out));
     }
 
@@ -265,10 +301,18 @@ pub async fn handle_http(
         let Ok(index) = rest_str.parse::<usize>() else {
             return Err(AppError::not_found());
         };
-        let Some((data, mime)) = books.page(&entry.blob_id, format, &entry.name, index).await else {
+        let Some((data, mime)) = books.page(&entry.blob_id, format, &entry.name, index).await
+        else {
             return Err(AppError::not_found());
         };
-        return Ok(build_bytes_response(method, headers, data, mime, &entry.blob_id, None));
+        return Ok(build_bytes_response(
+            method,
+            headers,
+            data,
+            mime,
+            &entry.blob_id,
+            None,
+        ));
     }
 
     if part == Some("epub")
@@ -292,8 +336,16 @@ pub async fn handle_http(
         if mime == "application/xhtml+xml" && query.get("as").map(String::as_str) == Some("html") {
             mime = "text/html; charset=utf-8";
         }
-        let csp = (mime.contains("xhtml") || mime.contains("html") || mime.contains("svg")).then_some(DOCUMENT_POLICY);
-        return Ok(build_bytes_response(method, headers, data, mime, &entry.blob_id, csp));
+        let csp = (mime.contains("xhtml") || mime.contains("html") || mime.contains("svg"))
+            .then_some(DOCUMENT_POLICY);
+        return Ok(build_bytes_response(
+            method,
+            headers,
+            data,
+            mime,
+            &entry.blob_id,
+            csp,
+        ));
     }
 
     if part == Some("state") && *method == Method::PUT {

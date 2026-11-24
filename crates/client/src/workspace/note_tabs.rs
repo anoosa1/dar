@@ -92,7 +92,10 @@ pub(super) fn panel_id(note: &str) -> String {
 
 /// Focuses a note's tab in the strip.
 pub(super) fn focus_tab(note: &str) {
-    if let Some(el) = document().get_element_by_id(&tab_id(note)).and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok()) {
+    if let Some(el) = document()
+        .get_element_by_id(&tab_id(note))
+        .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+    {
         let _ = el.focus();
     }
 }
@@ -161,7 +164,9 @@ impl NoteTabs {
     }
 
     fn find<U>(self, id: &str, f: impl FnOnce(&NoteTab) -> U) -> Option<U> {
-        self.tabs.try_with_untracked(|list| list.iter().find(|t| t.entry.id == id).map(f)).flatten()
+        self.tabs
+            .try_with_untracked(|list| list.iter().find(|t| t.entry.id == id).map(f))
+            .flatten()
     }
 
     pub(super) fn contains(self, id: &str) -> bool {
@@ -177,7 +182,9 @@ impl NoteTabs {
     }
 
     pub(super) fn is_dirty(self, id: &str) -> bool {
-        self.dirty.try_with_untracked(|d| d.contains(id)).unwrap_or(false)
+        self.dirty
+            .try_with_untracked(|d| d.contains(id))
+            .unwrap_or(false)
     }
 
     fn pane_of(self, id: &str) -> Option<usize> {
@@ -185,11 +192,15 @@ impl NoteTabs {
     }
 
     fn count(self, pane: usize) -> usize {
-        self.tabs.try_with_untracked(|list| list.iter().filter(|t| t.pane == pane).count()).unwrap_or(0)
+        self.tabs
+            .try_with_untracked(|list| list.iter().filter(|t| t.pane == pane).count())
+            .unwrap_or(0)
     }
 
     pub(super) fn active_in(self, pane: usize) -> Option<String> {
-        self.active.try_with_untracked(|a| a[pane.min(1)].clone()).flatten()
+        self.active
+            .try_with_untracked(|a| a[pane.min(1)].clone())
+            .flatten()
     }
 
     pub(super) fn focused(self) -> usize {
@@ -200,7 +211,11 @@ impl NoteTabs {
     pub(super) fn current(self) -> Option<FileEntry> {
         let pane = self.focus.get();
         let id = self.active.with(|a| a[pane].clone())?;
-        self.tabs.with(|list| list.iter().find(|t| t.entry.id == id).map(|t| t.entry.clone()))
+        self.tabs.with(|list| {
+            list.iter()
+                .find(|t| t.entry.id == id)
+                .map(|t| t.entry.clone())
+        })
     }
 
     /// Whether the sheet shows two panes (tracked).
@@ -215,13 +230,22 @@ impl NoteTabs {
 
     /// A pane's tabs in strip order (tracked).
     pub(super) fn ids(self, pane: usize) -> Vec<String> {
-        self.tabs.with(|list| list.iter().filter(|t| t.pane == pane).map(|t| t.entry.id.clone()).collect())
+        self.tabs.with(|list| {
+            list.iter()
+                .filter(|t| t.pane == pane)
+                .map(|t| t.entry.id.clone())
+                .collect()
+        })
     }
 
     /// The notes whose editor is in the page, in the order they opened (tracked).
     pub(super) fn mounted_ids(self) -> Vec<String> {
         self.tabs.with(|list| {
-            let mut open: Vec<(u64, String)> = list.iter().filter(|t| t.mounted).map(|t| (t.opened, t.entry.id.clone())).collect();
+            let mut open: Vec<(u64, String)> = list
+                .iter()
+                .filter(|t| t.mounted)
+                .map(|t| (t.opened, t.entry.id.clone()))
+                .collect();
             open.sort();
             open.into_iter().map(|(_, id)| id).collect()
         })
@@ -230,7 +254,9 @@ impl NoteTabs {
     /// What to remember (tracked).
     pub(super) fn snapshot(self) -> SavedTabs {
         SavedTabs {
-            tabs: self.tabs.with(|list| list.iter().map(|t| (t.entry.id.clone(), t.pane)).collect()),
+            tabs: self
+                .tabs
+                .with(|list| list.iter().map(|t| (t.entry.id.clone(), t.pane)).collect()),
             active: self.active.get(),
             focus: self.focus.get(),
         }
@@ -267,7 +293,12 @@ impl NoteTabs {
 
     fn latest(self, pane: usize) -> Option<String> {
         self.tabs
-            .try_with_untracked(|list| list.iter().filter(|t| t.pane == pane).max_by_key(|t| t.shown).map(|t| t.entry.id.clone()))
+            .try_with_untracked(|list| {
+                list.iter()
+                    .filter(|t| t.pane == pane)
+                    .max_by_key(|t| t.shown)
+                    .map(|t| t.entry.id.clone())
+            })
             .flatten()
     }
 
@@ -298,13 +329,26 @@ impl NoteTabs {
             self.show(&id);
             return;
         }
-        let pane = if how == OpenIn::Right && self.count(0) > 0 { 1 } else { self.focused() };
+        let pane = if how == OpenIn::Right && self.count(0) > 0 {
+            1
+        } else {
+            self.focused()
+        };
         let active = self.active_in(pane);
-        let replace = how == OpenIn::Current && active.as_deref().is_some_and(|a| !self.is_dirty(a));
+        let replace =
+            how == OpenIn::Current && active.as_deref().is_some_and(|a| !self.is_dirty(a));
         let now = self.tick();
-        let tab = NoteTab { entry, pane, mounted: true, shown: now, opened: now };
+        let tab = NoteTab {
+            entry,
+            pane,
+            mounted: true,
+            shown: now,
+            opened: now,
+        };
         self.tabs.try_update(move |list| {
-            let at = active.as_deref().and_then(|a| list.iter().position(|t| t.entry.id == a));
+            let at = active
+                .as_deref()
+                .and_then(|a| list.iter().position(|t| t.entry.id == a));
             match at {
                 Some(i) if replace => list[i] = tab,
                 Some(i) => list.insert(i + 1, tab),
@@ -330,13 +374,15 @@ impl NoteTabs {
 
     /// Asks a mounted editor to close its tab (it keeps unsaved text until the person decides).
     pub(super) fn request_close(self, id: &str) {
-        self.close.try_update(|requests| *requests.entry(id.to_owned()).or_insert(0) += 1);
+        self.close
+            .try_update(|requests| *requests.entry(id.to_owned()).or_insert(0) += 1);
     }
 
     /// Closes a tab now; its pane shows the tab seen last.
     pub(super) fn remove(self, id: &str) {
         let Some(pane) = self.pane_of(id) else { return };
-        self.tabs.try_update(|list| list.retain(|t| t.entry.id != id));
+        self.tabs
+            .try_update(|list| list.retain(|t| t.entry.id != id));
         if self.is_dirty(id) {
             self.dirty.try_update(|d| {
                 d.remove(id);
@@ -356,7 +402,8 @@ impl NoteTabs {
     /// The right pane exists only beside a left one.
     fn normalize(self) {
         if self.count(0) == 0 && self.count(1) > 0 {
-            self.tabs.try_update(|list| list.iter_mut().for_each(|t| t.pane = 0));
+            self.tabs
+                .try_update(|list| list.iter_mut().for_each(|t| t.pane = 0));
             let right = self.active_in(1);
             self.active.try_set([right, None]);
             self.set_focus(0);
@@ -374,7 +421,9 @@ impl NoteTabs {
             return;
         }
         self.tabs.try_update(|list| {
-            let Some(i) = list.iter().position(|t| t.entry.id == id) else { return };
+            let Some(i) = list.iter().position(|t| t.entry.id == id) else {
+                return;
+            };
             let mut tab = list.remove(i);
             tab.pane = pane;
             let at = before
@@ -397,11 +446,19 @@ impl NoteTabs {
 
     /// Shows the next (or previous) tab of a pane, wrapping around; returns it.
     pub(super) fn cycle(self, pane: usize, step: isize) -> Option<String> {
-        let ids = self.tabs.try_with_untracked(|list| list.iter().filter(|t| t.pane == pane).map(|t| t.entry.id.clone()).collect::<Vec<_>>())?;
+        let ids = self.tabs.try_with_untracked(|list| {
+            list.iter()
+                .filter(|t| t.pane == pane)
+                .map(|t| t.entry.id.clone())
+                .collect::<Vec<_>>()
+        })?;
         if ids.len() < 2 {
             return None;
         }
-        let at = self.active_in(pane).and_then(|a| ids.iter().position(|i| *i == a)).unwrap_or(0) as isize;
+        let at = self
+            .active_in(pane)
+            .and_then(|a| ids.iter().position(|i| *i == a))
+            .unwrap_or(0) as isize;
         let next = ids[(at + step).rem_euclid(ids.len() as isize) as usize].clone();
         self.show(&next);
         Some(next)
@@ -433,27 +490,51 @@ impl NoteTabs {
                 let mounted = list.iter().filter(|t| t.mounted).count();
                 let mut idle: Vec<&NoteTab> = list
                     .iter()
-                    .filter(|t| t.mounted && !dirty.contains(&t.entry.id) && !actives.iter().any(|a| a.as_deref() == Some(t.entry.id.as_str())))
+                    .filter(|t| {
+                        t.mounted
+                            && !dirty.contains(&t.entry.id)
+                            && !actives
+                                .iter()
+                                .any(|a| a.as_deref() == Some(t.entry.id.as_str()))
+                    })
                     .collect();
                 idle.sort_by_key(|t| t.shown);
-                idle.into_iter().take(mounted.saturating_sub(MOUNTED)).map(|t| t.entry.id.clone()).collect::<Vec<String>>()
+                idle.into_iter()
+                    .take(mounted.saturating_sub(MOUNTED))
+                    .map(|t| t.entry.id.clone())
+                    .collect::<Vec<String>>()
             })
             .unwrap_or_default();
         if !spare.is_empty() {
-            self.tabs.try_update(|list| list.iter_mut().filter(|t| spare.contains(&t.entry.id)).for_each(|t| t.mounted = false));
+            self.tabs.try_update(|list| {
+                list.iter_mut()
+                    .filter(|t| spare.contains(&t.entry.id))
+                    .for_each(|t| t.mounted = false)
+            });
         }
     }
 
     /// Brings back a remembered tab set (only into an empty sheet); the shown tabs mount.
     pub(super) fn restore(self, entries: Vec<(FileEntry, usize)>, saved: &SavedTabs) {
-        if entries.is_empty() || self.tabs.try_with_untracked(|list| !list.is_empty()).unwrap_or(true) {
+        if entries.is_empty()
+            || self
+                .tabs
+                .try_with_untracked(|list| !list.is_empty())
+                .unwrap_or(true)
+        {
             return;
         }
         let mut list: Vec<NoteTab> = entries
             .into_iter()
             .map(|(entry, pane)| {
                 let now = self.tick();
-                NoteTab { entry, pane: pane.min(1), mounted: false, shown: now, opened: now }
+                NoteTab {
+                    entry,
+                    pane: pane.min(1),
+                    mounted: false,
+                    shown: now,
+                    opened: now,
+                }
             })
             .collect();
         if !list.iter().any(|t| t.pane == 0) {
@@ -473,7 +554,11 @@ impl NoteTabs {
                 *slot = Some(list[i].entry.id.clone());
             }
         }
-        let focus = if active[1].is_some() { saved.focus.min(1) } else { 0 };
+        let focus = if active[1].is_some() {
+            saved.focus.min(1)
+        } else {
+            0
+        };
         self.tabs.try_set(list);
         self.active.try_set(active);
         self.set_focus(focus);
@@ -505,14 +590,26 @@ impl NoteTabs {
 /// A pane's tab strip: the tabs (a roving tablist: arrows, Home/End, Delete closes; middle-click
 /// closes), drag to reorder or move between panes, and the shown tab's options.
 #[component]
-pub(super) fn NoteTabStrip(tabs: NoteTabs, pane: usize, on_close: Callback<String>) -> impl IntoView {
+pub(super) fn NoteTabStrip(
+    tabs: NoteTabs,
+    pane: usize,
+    on_close: Callback<String>,
+) -> impl IntoView {
     let bar = NodeRef::<html::Div>::new();
     let ids = Memo::new(move |_| tabs.ids(pane));
-    let label = if pane == 0 { "Open notes" } else { "Open notes on the right" };
+    let label = if pane == 0 {
+        "Open notes"
+    } else {
+        "Open notes on the right"
+    };
     let keys = move |e: web_sys::KeyboardEvent| {
         let list = ids.get_untracked();
-        let Some(current) = tabs.active_in(pane) else { return };
-        let Some(at) = list.iter().position(|id| *id == current) else { return };
+        let Some(current) = tabs.active_in(pane) else {
+            return;
+        };
+        let Some(at) = list.iter().position(|id| *id == current) else {
+            return;
+        };
         let last = list.len() - 1;
         let next = match e.key().as_str() {
             "ArrowRight" => {
@@ -543,24 +640,33 @@ pub(super) fn NoteTabStrip(tabs: NoteTabs, pane: usize, on_close: Callback<Strin
         focus_tab(&list[next]);
     };
     let menu = move |_| {
-        let Some(id) = tabs.active_in(pane) else { return Vec::new() };
+        let Some(id) = tabs.active_in(pane) else {
+            return Vec::new();
+        };
         let here = ids.get_untracked();
         let others: Vec<String> = here.iter().filter(|i| **i != id).cloned().collect();
         let (move_id, close_id) = (id.clone(), id);
         vec![
             if pane == 0 {
-                MenuAction::new("Open to the right", "panel").disabled(here.len() < 2).run(move || tabs.move_tab(&move_id, 1, None))
+                MenuAction::new("Open to the right", "panel")
+                    .disabled(here.len() < 2)
+                    .run(move || tabs.move_tab(&move_id, 1, None))
             } else {
-                MenuAction::new("Move to the left", "back").run(move || tabs.move_tab(&move_id, 0, None))
+                MenuAction::new("Move to the left", "back")
+                    .run(move || tabs.move_tab(&move_id, 0, None))
             },
-            MenuAction::new("Close tab", "close").separator().run(move || on_close.run(close_id.clone())),
-            MenuAction::new("Close other tabs", "close").disabled(others.is_empty()).run(move || {
-                for other in &others {
-                    if !tabs.is_dirty(other) {
-                        on_close.run(other.clone());
+            MenuAction::new("Close tab", "close")
+                .separator()
+                .run(move || on_close.run(close_id.clone())),
+            MenuAction::new("Close other tabs", "close")
+                .disabled(others.is_empty())
+                .run(move || {
+                    for other in &others {
+                        if !tabs.is_dirty(other) {
+                            on_close.run(other.clone());
+                        }
                     }
-                }
-            }),
+                }),
         ]
     };
     view! {
@@ -587,7 +693,13 @@ pub(super) fn NoteTabStrip(tabs: NoteTabs, pane: usize, on_close: Callback<Strin
     }
 }
 
-fn note_tab(tabs: NoteTabs, pane: usize, id: String, on_close: Callback<String>, bar: NodeRef<html::Div>) -> impl IntoView {
+fn note_tab(
+    tabs: NoteTabs,
+    pane: usize,
+    id: String,
+    on_close: Callback<String>,
+    bar: NodeRef<html::Div>,
+) -> impl IntoView {
     let title = Memo::new({
         let id = id.clone();
         move |_| {
@@ -607,13 +719,23 @@ fn note_tab(tabs: NoteTabs, pane: usize, id: String, on_close: Callback<String>,
     });
     let selected = Memo::new({
         let id = id.clone();
-        move |_| tabs.active.with(|a| a[pane].as_deref() == Some(id.as_str()))
+        move |_| {
+            tabs.active
+                .with(|a| a[pane].as_deref() == Some(id.as_str()))
+        }
     });
     let dirty = Memo::new({
         let id = id.clone();
         move |_| tabs.dirty.with(|d| d.contains(&id))
     });
-    let (show_id, close_id, aux_id, drag_id, drop_id, menu_id) = (id.clone(), id.clone(), id.clone(), id.clone(), id.clone(), id.clone());
+    let (show_id, close_id, aux_id, drag_id, drop_id, menu_id) = (
+        id.clone(),
+        id.clone(),
+        id.clone(),
+        id.clone(),
+        id.clone(),
+        id.clone(),
+    );
     view! {
         <div role="presentation" class=move || if selected.get() { "note-tab is-active" } else { "note-tab" }
             on:dragover=move |e: web_sys::DragEvent| {

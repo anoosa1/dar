@@ -30,19 +30,23 @@ pub async fn identity_v3_upgrade_and_restore(t: &Ctx) -> Result<()> {
     ])?)
     .map_err(|e| Error::new(e.to_string()))?;
     let files: Vec<&str> = tree_out.trim().lines().filter(|l| !l.is_empty()).collect();
-    assert!(files.len() > 1, "expected multiple files in {baseline}:next/module/src");
+    assert!(
+        files.len() > 1,
+        "expected multiple files in {baseline}:next/module/src"
+    );
     for file in files {
         let content = run_git(&["show", &format!("{baseline}:{file}")])?;
-        let base_name = Path::new(file)
-            .file_name()
-            .context("file name")?;
+        let base_name = Path::new(file).file_name().context("file name")?;
         std::fs::write(old.join("src").join(base_name), content)?;
     }
     std::fs::write(
         old.join("package.json"),
         json!({"type": "module", "dependencies": {"spacetimedb": "2.14.1"}}).to_string(),
     )?;
-    symlink(s.artifacts.repo.join("node_modules"), old.join("node_modules"))?;
+    symlink(
+        s.artifacts.repo.join("node_modules"),
+        old.join("node_modules"),
+    )?;
     let tsconfig = run_git(&["show", &format!("{baseline}:next/module/tsconfig.json")])?;
     std::fs::write(old.join("tsconfig.json"), tsconfig)?;
 
@@ -101,11 +105,8 @@ pub async fn identity_v3_upgrade_and_restore(t: &Ctx) -> Result<()> {
         "color": "#2563eb"
     })
     .to_string();
-    db.call(
-        "service_pim",
-        json!([sid, "createCollection", pim_payload]),
-    )
-    .await?;
+    db.call("service_pim", json!([sid, "createCollection", pim_payload]))
+        .await?;
 
     let pin = uuid();
     let snapshot = db.call("service_backup", json!([pin])).await?;

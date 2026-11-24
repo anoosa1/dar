@@ -22,11 +22,6 @@ use wasm_bindgen::closure::Closure;
 
 use super::note_links::NoteIndex;
 use super::notes::{fetch_detail, read_file_content};
-use board::{Board, CanvasDialog};
-use cards::{CanvasCard, CanvasEdge, ConnectPreview, Marquee};
-use dialogs::CanvasDialogs;
-use gestures::Gestures;
-use model::{End, Rect};
 use crate::api::BrowserSession;
 use crate::dates::edited;
 use crate::files::FileEntry;
@@ -35,6 +30,11 @@ use crate::icons::Icon;
 use crate::live::Live;
 use crate::markdown::NoteLinks;
 use crate::ui::{ActionMenu, Listener, MenuAction, listen, unique_id, use_body_class, window};
+use board::{Board, CanvasDialog};
+use cards::{CanvasCard, CanvasEdge, ConnectPreview, Marquee};
+use dialogs::CanvasDialogs;
+use gestures::Gestures;
+use model::{End, Rect};
 
 /// The media type new canvases are written with (Obsidian's files are JSON).
 pub const MEDIA_TYPE: &str = "application/json";
@@ -60,14 +60,23 @@ impl WheelListener {
         let callback = Closure::<dyn FnMut(web_sys::Event)>::new(f);
         let options = web_sys::AddEventListenerOptions::new();
         options.set_passive(false);
-        let _ = target.add_event_listener_with_callback_and_add_event_listener_options("wheel", callback.as_ref().unchecked_ref(), &options);
-        Self { target: target.clone(), callback }
+        let _ = target.add_event_listener_with_callback_and_add_event_listener_options(
+            "wheel",
+            callback.as_ref().unchecked_ref(),
+            &options,
+        );
+        Self {
+            target: target.clone(),
+            callback,
+        }
     }
 }
 
 impl Drop for WheelListener {
     fn drop(&mut self) {
-        let _ = self.target.remove_event_listener_with_callback("wheel", self.callback.as_ref().unchecked_ref());
+        let _ = self
+            .target
+            .remove_event_listener_with_callback("wheel", self.callback.as_ref().unchecked_ref());
     }
 }
 
@@ -104,12 +113,18 @@ pub fn NoteCanvas(
     // The canvas as last saved, in the form Dar writes it.
     let saved = RwSignal::new(String::new());
     let locked = Signal::from(Memo::new(move |_| {
-        read_only.get() || !ready.get() || invalid.get() || recovery.with(Option::is_some) || conflict.with(Option::is_some)
+        read_only.get()
+            || !ready.get()
+            || invalid.get()
+            || recovery.with(Option::is_some)
+            || conflict.with(Option::is_some)
     }));
     let board = Board::new(locked, index, links, on_open);
     let gestures = Gestures::new();
     let serialized = Memo::new(move |_| board.doc.with(model::serialize));
-    let dirty = Memo::new(move |_| ready.get() && !invalid.get() && serialized.with(|s| saved.with(|v| s != v)));
+    let dirty = Memo::new(move |_| {
+        ready.get() && !invalid.get() && serialized.with(|s| saved.with(|v| s != v))
+    });
     let key = StoredValue::new(format!("dar.file-draft.{}.{}", session.user.id, initial.id));
     let session = StoredValue::new(session);
     let alive = Arc::new(AtomicBool::new(true));
@@ -132,9 +147,15 @@ pub fn NoteCanvas(
         let id = initial.id.clone();
         spawn_local(async move {
             let outcome: Result<(super::notes::NoteDetail, String), String> = async {
-                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let conn = live
+                    .connection
+                    .get_untracked()
+                    .ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
                 let detail = fetch_detail(&conn, &id).await?;
-                if detail.entry.kind != "file" || detail.entry.trashed || detail.entry.size > MAX_BYTES {
+                if detail.entry.kind != "file"
+                    || detail.entry.trashed
+                    || detail.entry.size > MAX_BYTES
+                {
                     return Err("This canvas cannot be opened here.".into());
                 }
                 let content = read_file_content(&id).await?;
@@ -184,9 +205,16 @@ pub fn NoteCanvas(
             return;
         }
         if let Some(storage) = session_storage() {
-            let result = if unsaved { storage.set_item(&key.get_value(), &text) } else { storage.remove_item(&key.get_value()) };
+            let result = if unsaved {
+                storage.set_item(&key.get_value(), &text)
+            } else {
+                storage.remove_item(&key.get_value())
+            };
             if result.is_err() {
-                error.set("Recovery storage is unavailable. Keep this canvas open until it is saved.".into());
+                error.set(
+                    "Recovery storage is unavailable. Keep this canvas open until it is saved."
+                        .into(),
+                );
             }
         }
     });
@@ -202,9 +230,14 @@ pub fn NoteCanvas(
         spawn_local(async move {
             let id = entry.with_untracked(|e| e.id.clone());
             let outcome: Result<(String, FileEntry), String> = async {
-                let conn = live.connection.get_untracked().ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
+                let conn = live
+                    .connection
+                    .get_untracked()
+                    .ok_or_else(|| "Notes are reconnecting. Try again in a moment.".to_owned())?;
                 let detail = fetch_detail(&conn, &id).await?;
-                let content = read_file_content(&id).await.map_err(|_| "Saved version unavailable.".to_owned())?;
+                let content = read_file_content(&id)
+                    .await
+                    .map_err(|_| "Saved version unavailable.".to_owned())?;
                 Ok((content, detail.entry))
             }
             .await;
@@ -240,7 +273,13 @@ pub fn NoteCanvas(
         let compare_now = compare_for_save.clone();
         spawn_local(async move {
             let (current, sess) = (entry.get_untracked(), session.get_value());
-            let media_type = if current.media_type.contains('/') && current.media_type != "application/octet-stream" { current.media_type.clone() } else { MEDIA_TYPE.to_owned() };
+            let media_type = if current.media_type.contains('/')
+                && current.media_type != "application/octet-stream"
+            {
+                current.media_type.clone()
+            } else {
+                MEDIA_TYPE.to_owned()
+            };
             let file = TextFile {
                 name: &current.name,
                 parent_id: &current.parent_id,
@@ -278,7 +317,12 @@ pub fn NoteCanvas(
     Effect::new(move |_| {
         serialized.track();
         saved.track();
-        if !dirty.get() || !error.with(String::is_empty) || !ready.get() || recovery.with(Option::is_some) || conflict.with(Option::is_some) {
+        if !dirty.get()
+            || !error.with(String::is_empty)
+            || !ready.get()
+            || recovery.with(Option::is_some)
+            || conflict.with(Option::is_some)
+        {
             return;
         }
         let ticket = typed.get_untracked() + 1;
@@ -323,7 +367,8 @@ pub fn NoteCanvas(
             let rect = measured.get_bounding_client_rect();
             let _ = board.size.try_set((rect.width(), rect.height()));
         });
-        let observer = web_sys::ResizeObserver::new(observer_callback.as_ref().unchecked_ref()).ok();
+        let observer =
+            web_sys::ResizeObserver::new(observer_callback.as_ref().unchecked_ref()).ok();
         if let Some(observer) = &observer {
             observer.observe(&element);
         }
@@ -332,7 +377,9 @@ pub fn NoteCanvas(
 
         let on = |name: &'static str, f: fn(Gestures, Board, &web_sys::Element, web_sys::Event)| {
             let element = element.clone();
-            Listener::new(&target, name, false, move |event| f(gestures, board, &element, event))
+            Listener::new(&target, name, false, move |event| {
+                f(gestures, board, &element, event)
+            })
         };
         let down = on("pointerdown", |g, b, el, event| {
             if let Ok(e) = event.dyn_into::<web_sys::PointerEvent>() {
@@ -378,8 +425,16 @@ pub fn NoteCanvas(
                 }
             })
         };
-        let blur = Listener::new(&window(), "blur", false, move |_| gestures.space.set_value(false));
-        let kept = send_wrapper::SendWrapper::new((observer, observer_callback, (down, moved, up, cancel, double, keys, keys_up, click), wheel, blur));
+        let blur = Listener::new(&window(), "blur", false, move |_| {
+            gestures.space.set_value(false)
+        });
+        let kept = send_wrapper::SendWrapper::new((
+            observer,
+            observer_callback,
+            (down, moved, up, cancel, double, keys, keys_up, click),
+            wheel,
+            blur,
+        ));
         on_cleanup(move || {
             let (observer, callback, listeners, wheel, blur) = kept.take();
             if let Some(observer) = observer {
@@ -395,7 +450,11 @@ pub fn NoteCanvas(
         } else if matches!(status.get(), "Saving\u{2026}" | "Loading\u{2026}") {
             "saving"
         } else if dirty.get() {
-            if status.get() == "Save failed" { "error" } else { "dirty" }
+            if status.get() == "Save failed" {
+                "error"
+            } else {
+                "dirty"
+            }
         } else {
             "saved"
         }
@@ -405,7 +464,11 @@ pub fn NoteCanvas(
         if matches!(s, "Loading\u{2026}" | "Saving\u{2026}") || read_only.get() || invalid.get() {
             s
         } else if dirty.get() {
-            if s == "Save failed" { "Not saved" } else { "Unsaved changes" }
+            if s == "Save failed" {
+                "Not saved"
+            } else {
+                "Unsaved changes"
+            }
         } else {
             "All changes saved"
         }
@@ -421,7 +484,9 @@ pub fn NoteCanvas(
 
     let add_group = move || {
         let selected = board.selected.get_untracked();
-        let area = board.doc.with_untracked(|c| model::bounds(c.nodes.iter().filter(|n| selected.contains(&n.id))));
+        let area = board
+            .doc
+            .with_untracked(|c| model::bounds(c.nodes.iter().filter(|n| selected.contains(&n.id))));
         let made = match area {
             Some(r) => {
                 let r = Rect::new(r.x - 40.0, r.y - 70.0, r.width + 80.0, r.height + 110.0);
@@ -441,28 +506,66 @@ pub fn NoteCanvas(
 
     let color_actions = move |_: ()| {
         let usable = board.has_selection() && !locked.get_untracked();
-        let current = board.doc.with_untracked(|c| match board.selected_edge.get_untracked() {
-            Some(edge) => c.edges.iter().find(|e| e.id == edge).and_then(|e| e.color.clone()),
-            None => board.selected.with_untracked(|s| s.first().and_then(|id| c.node(id)).and_then(|n| n.color.clone())),
-        });
-        let mut list = vec![MenuAction::plain("No colour").current(current.is_none()).disabled(!usable).run(move || board.set_color(None))];
+        let current = board
+            .doc
+            .with_untracked(|c| match board.selected_edge.get_untracked() {
+                Some(edge) => c
+                    .edges
+                    .iter()
+                    .find(|e| e.id == edge)
+                    .and_then(|e| e.color.clone()),
+                None => board.selected.with_untracked(|s| {
+                    s.first()
+                        .and_then(|id| c.node(id))
+                        .and_then(|n| n.color.clone())
+                }),
+            });
+        let mut list = vec![
+            MenuAction::plain("No colour")
+                .current(current.is_none())
+                .disabled(!usable)
+                .run(move || board.set_color(None)),
+        ];
         for (value, name) in COLORS {
-            list.push(MenuAction::plain(name).current(current.as_deref() == Some(value)).disabled(!usable).run(move || board.set_color(Some(value.to_owned()))));
+            list.push(
+                MenuAction::plain(name)
+                    .current(current.as_deref() == Some(value))
+                    .disabled(!usable)
+                    .run(move || board.set_color(Some(value.to_owned()))),
+            );
         }
         list
     };
     let edge_actions = move |_: ()| {
         let usable = board.selected_edge.with_untracked(Option::is_some) && !locked.get_untracked();
-        let ends = board.doc.with_untracked(|c| board.selected_edge.with_untracked(|id| id.as_ref().and_then(|id| c.edges.iter().find(|e| &e.id == id)).map(|e| (e.from_end, e.to_end))));
+        let ends = board.doc.with_untracked(|c| {
+            board.selected_edge.with_untracked(|id| {
+                id.as_ref()
+                    .and_then(|id| c.edges.iter().find(|e| &e.id == id))
+                    .map(|e| (e.from_end, e.to_end))
+            })
+        });
         vec![
-            MenuAction::new("Edit label", "pencil").disabled(!usable).run(move || {
-                if let Some(id) = board.selected_edge.get_untracked() {
-                    board.begin_edge_edit(&id);
-                }
-            }),
-            MenuAction::plain("Arrow at the end").separator().current(ends == Some((End::None, End::Arrow))).disabled(!usable).run(move || board.set_ends(End::None, End::Arrow)),
-            MenuAction::plain("Arrows at both ends").current(ends == Some((End::Arrow, End::Arrow))).disabled(!usable).run(move || board.set_ends(End::Arrow, End::Arrow)),
-            MenuAction::plain("No arrows").current(ends == Some((End::None, End::None))).disabled(!usable).run(move || board.set_ends(End::None, End::None)),
+            MenuAction::new("Edit label", "pencil")
+                .disabled(!usable)
+                .run(move || {
+                    if let Some(id) = board.selected_edge.get_untracked() {
+                        board.begin_edge_edit(&id);
+                    }
+                }),
+            MenuAction::plain("Arrow at the end")
+                .separator()
+                .current(ends == Some((End::None, End::Arrow)))
+                .disabled(!usable)
+                .run(move || board.set_ends(End::None, End::Arrow)),
+            MenuAction::plain("Arrows at both ends")
+                .current(ends == Some((End::Arrow, End::Arrow)))
+                .disabled(!usable)
+                .run(move || board.set_ends(End::Arrow, End::Arrow)),
+            MenuAction::plain("No arrows")
+                .current(ends == Some((End::None, End::None)))
+                .disabled(!usable)
+                .run(move || board.set_ends(End::None, End::None)),
         ]
     };
 
@@ -664,15 +767,43 @@ pub fn NoteCanvas(
 /// The cards and connections as lists: the keyboard and screen reader alternative to the canvas.
 #[component]
 fn CardOutline(board: Board) -> impl IntoView {
-    let cards = Memo::new(move |_| board.doc.with(|c| c.nodes.iter().map(|n| (n.id.clone(), format!("{}: {}", model::kind_label(&n.kind), model::summary(n)))).collect::<Vec<_>>()));
+    let cards = Memo::new(move |_| {
+        board.doc.with(|c| {
+            c.nodes
+                .iter()
+                .map(|n| {
+                    (
+                        n.id.clone(),
+                        format!("{}: {}", model::kind_label(&n.kind), model::summary(n)),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+    });
     let connections = Memo::new(move |_| {
         board.doc.with(|c| {
-            let name = |id: &str| c.node(id).map(model::summary).unwrap_or_else(|| "Missing card".into());
+            let name = |id: &str| {
+                c.node(id)
+                    .map(model::summary)
+                    .unwrap_or_else(|| "Missing card".into())
+            };
             c.edges
                 .iter()
                 .map(|e| {
-                    let label = e.label.as_deref().filter(|l| !l.is_empty()).map(|l| format!(" ({l})")).unwrap_or_default();
-                    (e.id.clone(), format!("{} \u{2192} {}{label}", name(&e.from_node), name(&e.to_node)))
+                    let label = e
+                        .label
+                        .as_deref()
+                        .filter(|l| !l.is_empty())
+                        .map(|l| format!(" ({l})"))
+                        .unwrap_or_default();
+                    (
+                        e.id.clone(),
+                        format!(
+                            "{} \u{2192} {}{label}",
+                            name(&e.from_node),
+                            name(&e.to_node)
+                        ),
+                    )
                 })
                 .collect::<Vec<_>>()
         })

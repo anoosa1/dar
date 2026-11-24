@@ -270,8 +270,16 @@ fn post_text(request: u32, runs: &[TextRun]) {
             chars.set(j as u32, JsValue::from_str(&c.text));
         }
         set_prop(&item, "chars", &chars);
-        set_prop(&item, "offsets", &f32_array(run.chars.iter().map(|c| c.offset)));
-        set_prop(&item, "advances", &f32_array(run.chars.iter().map(|c| c.advance)));
+        set_prop(
+            &item,
+            "offsets",
+            &f32_array(run.chars.iter().map(|c| c.offset)),
+        );
+        set_prop(
+            &item,
+            "advances",
+            &f32_array(run.chars.iter().map(|c| c.advance)),
+        );
         set_prop(&item, "endsLine", &JsValue::from_bool(run.ends_line));
         list.set(i as u32, item.into());
     }
@@ -290,7 +298,9 @@ pub fn handle_message(data: JsValue) {
     };
     match kind.as_str() {
         "open" => {
-            let Some(id) = get_u32(&data, "id") else { return };
+            let Some(id) = get_u32(&data, "id") else {
+                return;
+            };
             let Some(url) = get_str(&data, "url") else {
                 post_open_error(id, "The PDF could not be loaded.");
                 return;
@@ -298,7 +308,9 @@ pub fn handle_message(data: JsValue) {
             start_open(id, url);
         }
         "render" => {
-            let Some(request) = get_u32(&data, "request") else { return };
+            let Some(request) = get_u32(&data, "request") else {
+                return;
+            };
             let Some(doc) = get_u32(&data, "doc") else {
                 post_render_error(request, "Invalid render request.");
                 return;
@@ -326,7 +338,9 @@ pub fn handle_message(data: JsValue) {
             schedule_drain();
         }
         "text" => {
-            let Some(request) = get_u32(&data, "request") else { return };
+            let Some(request) = get_u32(&data, "request") else {
+                return;
+            };
             let (Some(doc), Some(page)) = (get_u32(&data, "doc"), get_u32(&data, "page")) else {
                 post_render_error(request, "Invalid text request.");
                 return;
@@ -536,10 +550,30 @@ mod tests {
     #[test]
     fn render_queue_is_lifo_and_honors_cancel_and_close() {
         let mut q = RenderQueue::default();
-        q.push(RenderJob { request: 1, doc: 10, page: 0, kind: JobKind::Render(1.0) });
-        q.push(RenderJob { request: 2, doc: 10, page: 1, kind: JobKind::Render(1.0) });
-        q.push(RenderJob { request: 3, doc: 20, page: 0, kind: JobKind::Text });
-        q.push(RenderJob { request: 4, doc: 10, page: 2, kind: JobKind::Render(1.0) });
+        q.push(RenderJob {
+            request: 1,
+            doc: 10,
+            page: 0,
+            kind: JobKind::Render(1.0),
+        });
+        q.push(RenderJob {
+            request: 2,
+            doc: 10,
+            page: 1,
+            kind: JobKind::Render(1.0),
+        });
+        q.push(RenderJob {
+            request: 3,
+            doc: 20,
+            page: 0,
+            kind: JobKind::Text,
+        });
+        q.push(RenderJob {
+            request: 4,
+            doc: 10,
+            page: 2,
+            kind: JobKind::Render(1.0),
+        });
 
         q.cancel(2);
         assert_eq!(q.pop_next().map(|j| j.request), Some(4));

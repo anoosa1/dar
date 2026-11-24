@@ -8,7 +8,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::presentation::contact_href;
-use super::{Collection, CollectionDot, CollectionEditor, Done, Item, PimShell, Sharing, avatar_hue, etag, initials, send, use_pim};
+use super::{
+    Collection, CollectionDot, CollectionEditor, Done, Item, PimShell, Sharing, avatar_hue, etag,
+    initials, send, use_pim,
+};
 use crate::api::{self, BrowserSession};
 use crate::icons::Icon;
 use crate::shared::context;
@@ -43,24 +46,56 @@ fn is_mark(c: char) -> bool {
 
 /// The letter heading for a row under the current name sort (`sortLetter`).
 fn sort_letter(data: &Value, sort: &str) -> String {
-    let preferred = s(data, if sort == "lastName" { "lastName" } else { "firstName" });
-    let key = if preferred.is_empty() { s(data, "displayName") } else { preferred };
+    let preferred = s(
+        data,
+        if sort == "lastName" {
+            "lastName"
+        } else {
+            "firstName"
+        },
+    );
+    let key = if preferred.is_empty() {
+        s(data, "displayName")
+    } else {
+        preferred
+    };
     let decomposed: String = js_sys::JsString::from(key.trim()).normalize("NFD").into();
-    let first = decomposed.chars().find(|c| !is_mark(*c)).map(|c| c.to_uppercase().collect::<String>()).unwrap_or_default();
-    if first.chars().next().is_some_and(char::is_alphabetic) { first } else { "#".into() }
+    let first = decomposed
+        .chars()
+        .find(|c| !is_mark(*c))
+        .map(|c| c.to_uppercase().collect::<String>())
+        .unwrap_or_default();
+    if first.chars().next().is_some_and(char::is_alphabetic) {
+        first
+    } else {
+        "#".into()
+    }
 }
 
 /// vCard birthdays (YYYY-MM-DD or --MM-DD) without time zone shifts.
 fn birthday(value: &str) -> String {
-    let date = |y: i32, m: u32, d: u32| js_sys::Date::utc(y as f64, (m - 1) as f64) + (d as f64 - 1.0) * 86_400_000.0;
+    let date = |y: i32, m: u32, d: u32| {
+        js_sys::Date::utc(y as f64, (m - 1) as f64) + (d as f64 - 1.0) * 86_400_000.0
+    };
     let parts: Vec<&str> = value.split('-').collect();
     match parts.as_slice() {
         [y, m, d] if y.len() == 4 => match (y.parse(), m.parse(), d.parse()) {
-            (Ok(y), Ok(m), Ok(d)) => crate::dates::local_date(date(y, m, d), &[("year", "numeric"), ("month", "long"), ("day", "numeric"), ("timeZone", "UTC")]),
+            (Ok(y), Ok(m), Ok(d)) => crate::dates::local_date(
+                date(y, m, d),
+                &[
+                    ("year", "numeric"),
+                    ("month", "long"),
+                    ("day", "numeric"),
+                    ("timeZone", "UTC"),
+                ],
+            ),
             _ => value.into(),
         },
         ["", "", m, d] => match (m.parse(), d.parse()) {
-            (Ok(m), Ok(d)) => crate::dates::local_date(date(2000, m, d), &[("month", "long"), ("day", "numeric"), ("timeZone", "UTC")]),
+            (Ok(m), Ok(d)) => crate::dates::local_date(
+                date(2000, m, d),
+                &[("month", "long"), ("day", "numeric"), ("timeZone", "UTC")],
+            ),
             _ => value.into(),
         },
         _ => value.into(),
@@ -69,7 +104,10 @@ fn birthday(value: &str) -> String {
 
 fn capitalized(value: &str) -> String {
     let mut chars = value.chars();
-    chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+    chars
+        .next()
+        .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
+        .unwrap_or_default()
 }
 
 fn search_params(pairs: &[(&str, String)]) -> String {
@@ -83,7 +121,9 @@ fn search_params(pairs: &[(&str, String)]) -> String {
 #[component]
 pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoView {
     let pim = use_pim(on_signed_out);
-    let initial = web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default()).expect("params");
+    let initial =
+        web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default())
+            .expect("params");
     let books: RwSignal<Vec<Collection>> = RwSignal::new(Vec::new());
     let book = RwSignal::new(initial.get("book").unwrap_or_default());
     let favorite = RwSignal::new(false);
@@ -94,10 +134,11 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
     let cursor = RwSignal::new(String::new());
     let next = RwSignal::new(String::new());
     let previous: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
-    let selected: RwSignal<Option<(String, String)>> = RwSignal::new(match (initial.get("book"), initial.get("contact")) {
-        (Some(b), Some(c)) => Some((b, c)),
-        _ => None,
-    });
+    let selected: RwSignal<Option<(String, String)>> =
+        RwSignal::new(match (initial.get("book"), initial.get("contact")) {
+            (Some(b), Some(c)) => Some((b, c)),
+            _ => None,
+        });
     let detail: RwSignal<Option<Item>> = RwSignal::new(None);
     let modal: RwSignal<Option<&'static str>> = RwSignal::new(None);
     let error = RwSignal::new(String::new());
@@ -119,7 +160,12 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
 
     let preferences = context().preferences;
     Effect::new(move |_| {
-        if let Some(p) = preferences.value.get().and_then(|p| p.rest.get("contactSort").and_then(Value::as_str).map(str::to_owned)) {
+        if let Some(p) = preferences.value.get().and_then(|p| {
+            p.rest
+                .get("contactSort")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        }) {
             sort.set(p);
         }
     });
@@ -128,9 +174,18 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         books.track();
         groups.track();
         let Some(node) = book_list.get() else { return };
-        let width = window().inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(1000.0);
+        let width = window()
+            .inner_width()
+            .ok()
+            .and_then(|v| v.as_f64())
+            .unwrap_or(1000.0);
         let groups_height = group_list.get().map_or(0, |g| g.offset_height()) as f64;
-        page_size.set(if width <= 800.0 { 1000 } else { (((node.client_height() as f64 - groups_height - 40.0) / 42.0).floor() as usize).clamp(1, 8) });
+        page_size.set(if width <= 800.0 {
+            1000
+        } else {
+            (((node.client_height() as f64 - groups_height - 40.0) / 42.0).floor() as usize)
+                .clamp(1, 8)
+        });
     });
     Effect::new(move |_| {
         let (list, size) = (books.get(), page_size.get());
@@ -139,19 +194,47 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         }
         book_page.update(|p| *p = (*p).min(list.len().div_ceil(size).max(1) - 1));
     });
-    let collection = Memo::new(move |_| books.with(|b| b.iter().find(|x| x.id == book.get()).cloned()));
-    let detail_book = Memo::new(move |_| detail.with(|d| d.as_ref().and_then(|d| books.with(|b| b.iter().find(|x| x.id == d.collection_id).cloned()))));
-    let writable = Memo::new(move |_| detail_book.with(|b| b.as_ref().is_some_and(|b| b.role != "read")));
+    let collection =
+        Memo::new(move |_| books.with(|b| b.iter().find(|x| x.id == book.get()).cloned()));
+    let detail_book = Memo::new(move |_| {
+        detail.with(|d| {
+            d.as_ref()
+                .and_then(|d| books.with(|b| b.iter().find(|x| x.id == d.collection_id).cloned()))
+        })
+    });
+    let writable =
+        Memo::new(move |_| detail_book.with(|b| b.as_ref().is_some_and(|b| b.role != "read")));
 
     Effect::new(move |_| {
         pim.epoch.track();
-        let key = json!([book.get(), sort.get(), group.get(), favorite.get(), cursor.get()]).to_string();
+        let key = json!([
+            book.get(),
+            sort.get(),
+            group.get(),
+            favorite.get(),
+            cursor.get()
+        ])
+        .to_string();
         if loaded_list.get_value() != key {
             loading.set(true);
         }
         let id = sequence.get_untracked() + 1;
         sequence.set(id);
-        let query = search_params(&[("book", book.get_untracked()), ("q", String::new()), ("sort", sort.get_untracked()), ("group", group.get_untracked()), ("favorite", if favorite.get_untracked() { "1".into() } else { "0".into() }), ("cursor", cursor.get_untracked())]);
+        let query = search_params(&[
+            ("book", book.get_untracked()),
+            ("q", String::new()),
+            ("sort", sort.get_untracked()),
+            ("group", group.get_untracked()),
+            (
+                "favorite",
+                if favorite.get_untracked() {
+                    "1".into()
+                } else {
+                    "0".into()
+                },
+            ),
+            ("cursor", cursor.get_untracked()),
+        ]);
         spawn_local(async move {
             let b = api::get::<Books>(BASE).await;
             let list = api::get::<People>(&format!("/api/v1/contacts/people?{query}")).await;
@@ -178,12 +261,17 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
     Effect::new(move |_| {
         pim.epoch.track();
         let current = selected.get();
-        let key = current.as_ref().map(|(c, h)| format!("{c}/{h}")).unwrap_or_default();
+        let key = current
+            .as_ref()
+            .map(|(c, h)| format!("{c}/{h}"))
+            .unwrap_or_default();
         if loaded_detail.get_value() != key {
             detail.set(None);
         }
         loaded_detail.set_value(key.clone());
-        let Some((collection_id, href)) = current else { return };
+        let Some((collection_id, href)) = current else {
+            return;
+        };
         spawn_local(async move {
             let result = api::get::<Item>(&format!("{BASE}/{collection_id}/items/{href}")).await;
             if loaded_detail.try_get_value().as_deref() != Some(key.as_str()) {
@@ -200,7 +288,10 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         });
     });
     crate::ui::listen(&window(), "popstate", false, move |_| {
-        let params = web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default()).expect("params");
+        let params = web_sys::UrlSearchParams::new_with_str(
+            &window().location().search().unwrap_or_default(),
+        )
+        .expect("params");
         book.set(params.get("book").unwrap_or_default());
         selected.set(match (params.get("book"), params.get("contact")) {
             (Some(b), Some(c)) => Some((b, c)),
@@ -213,33 +304,48 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         selected.set(None);
     };
     let push = |url: &str| {
-        let _ = window().history().expect("history").push_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(url));
+        let _ = window().history().expect("history").push_state_with_url(
+            &wasm_bindgen::JsValue::NULL,
+            "",
+            Some(url),
+        );
     };
     let scope = move |id: String, starred: bool| {
         book.set(id.clone());
         favorite.set(starred);
         group.set(String::new());
         reset();
-        push(&if id.is_empty() { "/contacts".into() } else { format!("/contacts?book={id}") });
+        push(&if id.is_empty() {
+            "/contacts".into()
+        } else {
+            format!("/contacts?book={id}")
+        });
     };
     let choose = move |row: &Item| {
         selected.set(Some((row.collection_id.clone(), row.href.clone())));
-        push(&format!("/contacts?{}", search_params(&[("book", row.collection_id.clone()), ("contact", row.href.clone())])));
+        push(&format!(
+            "/contacts?{}",
+            search_params(&[
+                ("book", row.collection_id.clone()),
+                ("contact", row.href.clone())
+            ])
+        ));
     };
-    let run = move |work: std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>| {
-        spawn_local(async move {
-            busy.set(true);
-            error.set(String::new());
-            match work.await {
-                Ok(()) => {
-                    pim.refresh();
-                    modal.set(None);
+    let run =
+        move |work: std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>| {
+            spawn_local(async move {
+                busy.set(true);
+                error.set(String::new());
+                match work.await {
+                    Ok(()) => {
+                        pim.refresh();
+                        modal.set(None);
+                    }
+                    Err(e) => error.set(e),
                 }
-                Err(e) => error.set(e),
-            }
-            busy.set(false);
-        });
-    };
+                busy.set(false);
+            });
+        };
     let book_action = move |target: Collection, kind: &'static str| {
         let id = action_sequence.get_untracked() + 1;
         action_sequence.set(id);
@@ -250,8 +356,12 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
             delete_count.set(None);
             spawn_local(async move {
                 match api::get::<Value>(&format!("{BASE}/{}", target.id)).await {
-                    Ok(v) if action_sequence.try_get_untracked() == Some(id) => delete_count.set(v["count"].as_u64().map(|c| c as usize)),
-                    Err(e) if action_sequence.try_get_untracked() == Some(id) => error.set(e.message),
+                    Ok(v) if action_sequence.try_get_untracked() == Some(id) => {
+                        delete_count.set(v["count"].as_u64().map(|c| c as usize))
+                    }
+                    Err(e) if action_sequence.try_get_untracked() == Some(id) => {
+                        error.set(e.message)
+                    }
                     _ => {}
                 }
             });
@@ -333,7 +443,16 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         .into_any()
     });
 
-    let title = move || if favorite.get() { "Favorites".to_owned() } else { collection.get().map(|c| c.name).unwrap_or_else(|| "All contacts".into()) };
+    let title = move || {
+        if favorite.get() {
+            "Favorites".to_owned()
+        } else {
+            collection
+                .get()
+                .map(|c| c.name)
+                .unwrap_or_else(|| "All contacts".into())
+        }
+    };
     let list = move || {
         if loading.get() {
             return view! { <p role="status">"Loading contacts…"</p> }.into_any();
@@ -385,18 +504,34 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
         let current = detail.get_untracked();
         spawn_local(async move {
             let (url, method, if_match) = match (editing, &current) {
-                (true, Some(d)) => (format!("{BASE}/{}/items/{}", d.collection_id, d.href), "PUT", Some(etag(&d.id, d.revision))),
+                (true, Some(d)) => (
+                    format!("{BASE}/{}/items/{}", d.collection_id, d.href),
+                    "PUT",
+                    Some(etag(&d.id, d.revision)),
+                ),
                 _ => (format!("{BASE}/{target}/items"), "POST", None),
             };
-            match send::<Item>(&url, method, Some(json!({ "data": data })), &csrf(), if_match).await {
+            match send::<Item>(
+                &url,
+                method,
+                Some(json!({ "data": data })),
+                &csrf(),
+                if_match,
+            )
+            .await
+            {
                 Ok(row) => {
                     choose(&row);
                     pim.refresh();
                     modal.set(None);
                     notice.set("Contact saved.".into());
-                    { done.try_run(Ok(())); };
+                    {
+                        done.try_run(Ok(()));
+                    };
                 }
-                Err(e) => { done.try_run(Err(e.message)); },
+                Err(e) => {
+                    done.try_run(Err(e.message));
+                }
             }
         });
     });
@@ -474,10 +609,26 @@ pub fn Contacts(session: BrowserSession, on_signed_out: Callback<()>) -> impl In
 }
 
 #[allow(clippy::too_many_arguments)]
-fn contact_details(d: Item, book: Option<Collection>, writable: bool, busy: RwSignal<bool>, modal: RwSignal<Option<&'static str>>, run: impl Fn(std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>) + Copy + Send + Sync + 'static, csrf: String) -> impl IntoView {
+fn contact_details(
+    d: Item,
+    book: Option<Collection>,
+    writable: bool,
+    busy: RwSignal<bool>,
+    modal: RwSignal<Option<&'static str>>,
+    run: impl Fn(std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>)
+    + Copy
+    + Send
+    + Sync
+    + 'static,
+    csrf: String,
+) -> impl IntoView {
     let data = d.data.clone();
     let name = s(&data, "displayName");
-    let work = [s(&data, "title"), s(&data, "organization")].into_iter().filter(|v| !v.is_empty()).collect::<Vec<_>>().join(" · ");
+    let work = [s(&data, "title"), s(&data, "organization")]
+        .into_iter()
+        .filter(|v| !v.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
     let first = |key: &str| data[key][0]["value"].as_str().map(str::to_owned);
     let email = first("emails");
     let phone = first("phones").filter(|p| contact_href("Phone", p).is_some());
@@ -485,8 +636,15 @@ fn contact_details(d: Item, book: Option<Collection>, writable: bool, busy: RwSi
     let item = StoredValue::new(d.clone());
     let csrf = StoredValue::new(csrf);
     let list = |key: &str| data[key].as_array().cloned().unwrap_or_default();
-    let has_card = !list("emails").is_empty() || !list("phones").is_empty() || !list("urls").is_empty() || !list("addresses").is_empty() || !s(&data, "birthday").is_empty();
-    let groups: Vec<String> = list("groups").iter().filter_map(|g| g.as_str().map(str::to_owned)).collect();
+    let has_card = !list("emails").is_empty()
+        || !list("phones").is_empty()
+        || !list("urls").is_empty()
+        || !list("addresses").is_empty()
+        || !s(&data, "birthday").is_empty();
+    let groups: Vec<String> = list("groups")
+        .iter()
+        .filter_map(|g| g.as_str().map(str::to_owned))
+        .collect();
     let notes = s(&data, "notes");
     let values = [("Email", "mail", list("emails")), ("Phone", "phone", list("phones")), ("Website", "globe", list("urls"))]
         .into_iter()
@@ -552,37 +710,79 @@ fn contact_details(d: Item, book: Option<Collection>, writable: bool, busy: RwSi
     }
 }
 
-const ADDRESS_LABELS: [(&str, &str); 8] = [("label", "Label"), ("street", "Street"), ("extended", "Apartment or suite"), ("poBox", "PO box"), ("city", "City"), ("region", "Region"), ("postalCode", "Postal code"), ("country", "Country")];
+const ADDRESS_LABELS: [(&str, &str); 8] = [
+    ("label", "Label"),
+    ("street", "Street"),
+    ("extended", "Apartment or suite"),
+    ("poBox", "PO box"),
+    ("city", "City"),
+    ("region", "Region"),
+    ("postalCode", "Postal code"),
+    ("country", "Country"),
+];
 
 /// The contact form (`ContactEditor`).
 #[component]
-fn ContactEditor(books: Vec<Collection>, initial: Option<Value>, #[prop(into)] initial_book: String, on_save: Callback<(Value, String, Done)>, on_close: Callback<()>) -> impl IntoView {
+fn ContactEditor(
+    books: Vec<Collection>,
+    initial: Option<Value>,
+    #[prop(into)] initial_book: String,
+    on_save: Callback<(Value, String, Done)>,
+    on_close: Callback<()>,
+) -> impl IntoView {
     let editing = initial.is_some();
     let start = initial.clone().unwrap_or_else(empty);
     let data = RwSignal::new(start.clone());
     let first_book = books.first().map(|b| b.id.clone()).unwrap_or_default();
-    let book = RwSignal::new(if initial_book.is_empty() { first_book } else { initial_book });
+    let book = RwSignal::new(if initial_book.is_empty() {
+        first_book
+    } else {
+        initial_book
+    });
     let error = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let original = json!({ "data": start, "book": book.get_untracked() });
-    let dirty = Signal::derive(move || json!({ "data": data.get(), "book": book.get() }) != original);
+    let dirty =
+        Signal::derive(move || json!({ "data": data.get(), "book": book.get() }) != original);
     let extra_names = initial.as_ref().is_some_and(|i| {
-        let joined = [s(i, "firstName"), s(i, "lastName")].into_iter().filter(|v| !v.is_empty()).collect::<Vec<_>>().join(" ");
-        !s(i, "prefix").is_empty() || !s(i, "middleName").is_empty() || !s(i, "suffix").is_empty() || !s(i, "displayName").is_empty() && s(i, "displayName") != joined
+        let joined = [s(i, "firstName"), s(i, "lastName")]
+            .into_iter()
+            .filter(|v| !v.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        !s(i, "prefix").is_empty()
+            || !s(i, "middleName").is_empty()
+            || !s(i, "suffix").is_empty()
+            || !s(i, "displayName").is_empty() && s(i, "displayName") != joined
     });
     let set = move |key: &'static str, value: Value| data.update(|d| d[key] = value);
     let input = move |key: &'static str, label: &'static str, autofocus: bool| {
         view! { <label>{label}<input prop:value=move || data.with(|d| s(d, key)) on:input=move |e| set(key, json!(event_target_value(&e))) maxlength="1024" autofocus=autofocus/></label> }
     };
-    let display_placeholder = move || data.with(|d| [s(d, "firstName"), s(d, "lastName")].into_iter().filter(|v| !v.is_empty()).collect::<Vec<_>>().join(" "));
-    let book_options: Vec<(String, String)> = books.iter().map(|b| (b.id.clone(), b.name.clone())).collect();
+    let display_placeholder = move || {
+        data.with(|d| {
+            [s(d, "firstName"), s(d, "lastName")]
+                .into_iter()
+                .filter(|v| !v.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+    };
+    let book_options: Vec<(String, String)> = books
+        .iter()
+        .map(|b| (b.id.clone(), b.name.clone()))
+        .collect();
     let multi = move |key: &'static str, label: &'static str, icon: &'static str| {
         let kind = match key {
             "emails" => "email",
             "phones" => "tel",
             _ => "url",
         };
-        let options: &'static [&'static str] = if key == "phones" { &["mobile", "home", "work", "other"] } else { &["home", "work", "other"] };
+        let options: &'static [&'static str] = if key == "phones" {
+            &["mobile", "home", "work", "other"]
+        } else {
+            &["home", "work", "other"]
+        };
         view! {
             <fieldset class="form-section"><legend><Icon name=icon/>{label}</legend>
                 {move || data.with(|d| d[key].as_array().cloned().unwrap_or_default()).into_iter().enumerate().map(|(i, v)| {

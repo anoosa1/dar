@@ -167,7 +167,16 @@ pub fn ImmichSettings(session: BrowserSession) -> impl IntoView {
         notice.set(String::new());
         let (was_connected, revision) = state.with_untracked(|s| {
             s.as_ref()
-                .map(|s| (s.connection.connected, if s.connection.connected { s.connection.revision } else { 0 }))
+                .map(|s| {
+                    (
+                        s.connection.connected,
+                        if s.connection.connected {
+                            s.connection.revision
+                        } else {
+                            0
+                        },
+                    )
+                })
                 .unwrap_or((false, 0))
         });
         let mut body = serde_json::json!({
@@ -182,7 +191,13 @@ pub fn ImmichSettings(session: BrowserSession) -> impl IntoView {
         }
         let csrf = session.with_value(|s| s.csrf_token.clone());
         spawn_local(async move {
-            let result = api::send::<serde_json::Value>(&format!("{IMMICH_BASE}/connection"), "PUT", Some(body), &csrf).await;
+            let result = api::send::<serde_json::Value>(
+                &format!("{IMMICH_BASE}/connection"),
+                "PUT",
+                Some(body),
+                &csrf,
+            )
+            .await;
             match result {
                 Ok(_) => {
                     api_key.try_set(String::new());
@@ -210,7 +225,11 @@ pub fn ImmichSettings(session: BrowserSession) -> impl IntoView {
         spawn_local(async move {
             let result = api::request::<serde_json::Value>(
                 &format!("{IMMICH_BASE}{path}"),
-                Req { method, csrf: Some(&csrf), ..Default::default() },
+                Req {
+                    method,
+                    csrf: Some(&csrf),
+                    ..Default::default()
+                },
             )
             .await;
             match result {
@@ -228,7 +247,10 @@ pub fn ImmichSettings(session: BrowserSession) -> impl IntoView {
 
     let loaded = Memo::new(move |_| state.with(Option::is_some));
     let none_state = Signal::derive(|| None);
-    let interval_options: Vec<(String, String)> = INTERVALS.iter().map(|(v, l)| ((*v).to_owned(), (*l).to_owned())).collect();
+    let interval_options: Vec<(String, String)> = INTERVALS
+        .iter()
+        .map(|(v, l)| ((*v).to_owned(), (*l).to_owned()))
+        .collect();
     let switch_id = unique_id();
 
     move || {
@@ -242,8 +264,11 @@ pub fn ImmichSettings(session: BrowserSession) -> impl IntoView {
         let username = session.with_value(|s| s.user.username.clone());
         let interval_options = interval_options.clone();
         let switch_id = switch_id.clone();
-        let connected = Memo::new(move |_| state.with(|s| s.as_ref().is_some_and(|s| s.connection.connected)));
-        let has_progress = Memo::new(move |_| state.with(|s| s.as_ref().and_then(|s| s.progress.as_ref()).is_some()));
+        let connected =
+            Memo::new(move |_| state.with(|s| s.as_ref().is_some_and(|s| s.connection.connected)));
+        let has_progress = Memo::new(move |_| {
+            state.with(|s| s.as_ref().and_then(|s| s.progress.as_ref()).is_some())
+        });
         let progress_signal = Signal::derive(move || {
             state.with(|s| {
                 s.as_ref()
@@ -457,7 +482,11 @@ pub fn ImmichProgressBar(
     #[prop(into)] progress: Signal<PhotoImmichProgress>,
     #[prop(optional)] compact: bool,
 ) -> impl IntoView {
-    let class = if compact { "photos-sync-progress is-compact" } else { "photos-sync-progress" };
+    let class = if compact {
+        "photos-sync-progress is-compact"
+    } else {
+        "photos-sync-progress"
+    };
     let known = move || progress.with(|p| p.total > 0);
     let percent = move || {
         progress.with(|p| {

@@ -31,11 +31,18 @@ struct RpState {
     last_claims: Option<Value>,
 }
 
-async fn rp_start(AxumState(state): AxumState<Arc<Mutex<RpState>>>, Query(params): Query<HashMap<String, String>>) -> Response {
+async fn rp_start(
+    AxumState(state): AxumState<Arc<Mutex<RpState>>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
     let dest = {
         let mut s = state.lock().unwrap();
         let Some(client) = s.client.clone() else {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "RP client not configured").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "RP client not configured",
+            )
+                .into_response();
         };
         let verifier = dar_acceptance::base64url(&dar_acceptance::random_bytes(32));
         let challenge = {
@@ -44,11 +51,20 @@ async fn rp_start(AxumState(state): AxumState<Arc<Mutex<RpState>>>, Query(params
         };
         let st = dar_acceptance::base64url(&dar_acceptance::random_bytes(16));
         let nonce = dar_acceptance::base64url(&dar_acceptance::random_bytes(16));
-        s.flows.insert(st.clone(), RpFlow { verifier, nonce: nonce.clone() });
+        s.flows.insert(
+            st.clone(),
+            RpFlow {
+                verifier,
+                nonce: nonce.clone(),
+            },
+        );
         let mut auth_params = vec![
             ("redirect_uri".into(), s.redirect.clone()),
             ("response_type".into(), "code".into()),
-            ("scope".into(), "openid profile email groups offline_access".into()),
+            (
+                "scope".into(),
+                "openid profile email groups offline_access".into(),
+            ),
             ("code_challenge".into(), challenge),
             ("code_challenge_method".into(), "S256".into()),
             ("state".into(), st),
@@ -60,7 +76,13 @@ async fn rp_start(AxumState(state): AxumState<Arc<Mutex<RpState>>>, Query(params
         }
         match client.authorization_url(&auth_params) {
             Ok(url) => url.to_string(),
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Relying-party verification failed.").into_response(),
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Relying-party verification failed.",
+                )
+                    .into_response();
+            }
         }
     };
     Redirect::to(&dest).into_response()
@@ -68,24 +90,47 @@ async fn rp_start(AxumState(state): AxumState<Arc<Mutex<RpState>>>, Query(params
 
 async fn finish_callback(state: Arc<Mutex<RpState>>, pairs: HashMap<String, String>) -> Response {
     if pairs.contains_key("error") {
-        return (StatusCode::OK, [("content-type", "text/plain")], "Access denied").into_response();
+        return (
+            StatusCode::OK,
+            [("content-type", "text/plain")],
+            "Access denied",
+        )
+            .into_response();
     }
     let (client, redirect, flow, st) = {
         let mut s = state.lock().unwrap();
         let Some(st) = pairs.get("state").cloned() else {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Relying-party verification failed.").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Relying-party verification failed.",
+            )
+                .into_response();
         };
         let Some(flow) = s.flows.remove(&st) else {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Relying-party verification failed.").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Relying-party verification failed.",
+            )
+                .into_response();
         };
         let Some(client) = s.client.clone() else {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Relying-party verification failed.").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Relying-party verification failed.",
+            )
+                .into_response();
         };
         (client, s.redirect.clone(), flow, st)
     };
     let mut callback = match url::Url::parse(&redirect) {
         Ok(u) => u,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Relying-party verification failed.").into_response(),
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Relying-party verification failed.",
+            )
+                .into_response();
+        }
     };
     callback.query_pairs_mut().extend_pairs(pairs.iter());
     let flow_struct = Flow {
@@ -98,22 +143,45 @@ async fn finish_callback(state: Arc<Mutex<RpState>>, pairs: HashMap<String, Stri
     };
     match client.exchange(&flow_struct).await {
         Ok(tokens) => {
-            let sub = tokens.claims.as_ref().and_then(|c| c["sub"].as_str()).unwrap_or_default().to_owned();
+            let sub = tokens
+                .claims
+                .as_ref()
+                .and_then(|c| c["sub"].as_str())
+                .unwrap_or_default()
+                .to_owned();
             let mut s = state.lock().unwrap();
             s.last_claims = tokens.claims.clone();
             s.last_tokens = Some(tokens);
-            (StatusCode::OK, [("content-type", "text/plain")], format!("Signed in as {sub}")).into_response()
+            (
+                StatusCode::OK,
+                [("content-type", "text/plain")],
+                format!("Signed in as {sub}"),
+            )
+                .into_response()
         }
-        Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Relying-party verification failed: {err}")).into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Relying-party verification failed: {err}"),
+        )
+            .into_response(),
     }
 }
 
-async fn rp_callback_get(AxumState(state): AxumState<Arc<Mutex<RpState>>>, Query(params): Query<HashMap<String, String>>) -> Response {
+async fn rp_callback_get(
+    AxumState(state): AxumState<Arc<Mutex<RpState>>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
     finish_callback(state, params).await
 }
 
-async fn rp_callback_post(AxumState(state): AxumState<Arc<Mutex<RpState>>>, _headers: HeaderMap, body: String) -> Response {
-    let pairs: HashMap<String, String> = url::form_urlencoded::parse(body.as_bytes()).into_owned().collect();
+async fn rp_callback_post(
+    AxumState(state): AxumState<Arc<Mutex<RpState>>>,
+    _headers: HeaderMap,
+    body: String,
+) -> Response {
+    let pairs: HashMap<String, String> = url::form_urlencoded::parse(body.as_bytes())
+        .into_owned()
+        .collect();
     finish_callback(state, pairs).await
 }
 
@@ -124,7 +192,10 @@ pub async fn identity_browser_journey(t: &Ctx) -> Result<()> {
 
     // Configure the host-configured PKCE-optional client (`gitea-compatible-rp`) for the edit/persistence check.
     let cfg_dir = t.temp("gitea-oidc")?;
-    write_private(&cfg_dir.join("secret"), b"isolated-pkce-compatibility-secret-1234567890")?;
+    write_private(
+        &cfg_dir.join("secret"),
+        b"isolated-pkce-compatibility-secret-1234567890",
+    )?;
     let cfg_file = cfg_dir.join("oidc.json");
     std::fs::write(
         &cfg_file,
@@ -148,7 +219,10 @@ pub async fn identity_browser_journey(t: &Ctx) -> Result<()> {
     let rp_origin = format!("http://localhost:{rp_port}");
     let redirect = format!("{rp_origin}/callback");
 
-    let rp_state = Arc::new(Mutex::new(RpState { redirect: redirect.clone(), ..RpState::default() }));
+    let rp_state = Arc::new(Mutex::new(RpState {
+        redirect: redirect.clone(),
+        ..RpState::default()
+    }));
     let app = axum::Router::new()
         .route("/start", get(rp_start))
         .route("/callback", get(rp_callback_get).post(rp_callback_post))
@@ -169,44 +243,88 @@ pub async fn identity_browser_journey(t: &Ctx) -> Result<()> {
         };
         let failures = page.collect_errors(ignore);
 
-        page.goto(&format!("{base}/settings?section=applications")).await?;
+        page.goto(&format!("{base}/settings?section=applications"))
+            .await?;
         page.get_by_label("Username").fill("admin").await?;
         page.get_by_label("Password").fill(PASSWORD).await?;
         page.get_by_role("button", "Sign in").click().await?;
-        page.get_by_role("heading", "Registered applications").wait_for().await?;
+        page.get_by_role("heading", "Registered applications")
+            .wait_for()
+            .await?;
 
         let name = format!("Browser identity {}", &uuid()[..6]);
-        page.get_by_role("button", "Register application").click().await?;
+        page.get_by_role("button", "Register application")
+            .click()
+            .await?;
         let dialog = page.get_by_role("dialog", ()).last();
         dialog.get_by_label("Application name").fill(&name).await?;
         dialog.get_by_label("Redirect URLs").fill(&redirect).await?;
-        dialog.get_by_label("Post-logout redirect URLs").fill(&format!("{rp_origin}/signed-out")).await?;
-        dialog.get_by_label("Allowed permissions").fill("openid profile email groups offline_access").await?;
+        dialog
+            .get_by_label("Post-logout redirect URLs")
+            .fill(&format!("{rp_origin}/signed-out"))
+            .await?;
+        dialog
+            .get_by_label("Allowed permissions")
+            .fill("openid profile email groups offline_access")
+            .await?;
         dialog.get_by_role("button", "Save").click().await?;
 
         let confirm = page.get_by_role("dialog", "Confirm your identity");
-        confirm.get_by_label("Current password").fill(PASSWORD).await?;
-        confirm.get_by_role("button", "Confirm identity").click().await?;
+        confirm
+            .get_by_label("Current password")
+            .fill(PASSWORD)
+            .await?;
+        confirm
+            .get_by_role("button", "Confirm identity")
+            .click()
+            .await?;
 
         let cred_dialog = page.get_by_role("dialog", "Save your credential");
         cred_dialog.wait_for().await?;
         let client_id = cred_dialog.get_by_label("Identifier").input_value().await?;
         let secret = cred_dialog.get_by_label("Secret").input_value().await?;
         assert!(!secret.is_empty());
-        cred_dialog.get_by_role("button", "I saved it").click().await?;
-        page.wait_for_function(r#"() => document.activeElement?.textContent === "Register application""#).await?;
+        cred_dialog
+            .get_by_role("button", "I saved it")
+            .click()
+            .await?;
+        page.wait_for_function(
+            r#"() => document.activeElement?.textContent === "Register application""#,
+        )
+        .await?;
 
-        let compatible = page.locator(".identity-card").filter_has_text("Gitea compatible");
-        compatible.get_by_text("Confidential client · PKCE optional").wait_for().await?;
-        compatible.get_by_role("button", "Edit application").click().await?;
+        let compatible = page
+            .locator(".identity-card")
+            .filter_has_text("Gitea compatible");
+        compatible
+            .get_by_text("Confidential client · PKCE optional")
+            .wait_for()
+            .await?;
+        compatible
+            .get_by_role("button", "Edit application")
+            .click()
+            .await?;
         let edit_dialog = page.get_by_role("dialog", ()).last();
         edit_dialog.get_by_role("button", "Save").click().await?;
         edit_dialog.wait_for_state(State::Hidden).await?;
 
         let persisted_page = context.new_page().await?;
-        persisted_page.goto(&format!("{base}/settings?section=applications")).await?;
-        persisted_page.locator(".identity-card").filter_has_text("Gitea compatible").get_by_text("Confidential client · PKCE optional").wait_for().await?;
-        let preserved = persisted_page.request().get(&format!("{base}/api/v1/identity/clients/gitea-compatible-rp")).await?.json()?;
+        persisted_page
+            .goto(&format!("{base}/settings?section=applications"))
+            .await?;
+        persisted_page
+            .locator(".identity-card")
+            .filter_has_text("Gitea compatible")
+            .get_by_text("Confidential client · PKCE optional")
+            .wait_for()
+            .await?;
+        let preserved = persisted_page
+            .request()
+            .get(&format!(
+                "{base}/api/v1/identity/clients/gitea-compatible-rp"
+            ))
+            .await?
+            .json()?;
         assert_eq!(preserved["requirePkce"], json!(false));
         persisted_page.close().await?;
 
@@ -216,47 +334,103 @@ pub async fn identity_browser_journey(t: &Ctx) -> Result<()> {
         ui::open_search(&page).await?.fill(&name).await?;
         assert!(page.locator(".identity-card").count().await? >= 1);
         ui::close_search(&page).await?;
-        page.screenshot(t.screenshot("identity-settings-desktop.png"), true).await?;
+        page.screenshot(t.screenshot("identity-settings-desktop.png"), true)
+            .await?;
 
         page.get_by_role("button", "Directory").click().await?;
         page.get_by_role("button", "Edit profile").click().await?;
         let profile_dialog = page.get_by_role("dialog", ()).last();
-        assert_eq!(profile_dialog.get_by_label("Username").get_attribute("readonly").await?, Some(String::new()));
-        assert!(profile_dialog.get_by_label("Replacement password (optional)").is_disabled().await?);
-        profile_dialog.get_by_label("Email addresses").fill("operator@example.test").await?;
+        assert_eq!(
+            profile_dialog
+                .get_by_label("Username")
+                .get_attribute("readonly")
+                .await?,
+            Some(String::new())
+        );
+        assert!(
+            profile_dialog
+                .get_by_label("Replacement password (optional)")
+                .is_disabled()
+                .await?
+        );
+        profile_dialog
+            .get_by_label("Email addresses")
+            .fill("operator@example.test")
+            .await?;
         profile_dialog.get_by_role("button", "Save").click().await?;
         profile_dialog.wait_for_state(State::Hidden).await?;
 
         page.get_by_role("button", "Create user").click().await?;
         let username = format!("browser-id-{}", &uuid()[..6]);
         let create_dialog = page.get_by_role("dialog", ()).last();
-        create_dialog.get_by_label("Username").fill(&username).await?;
-        create_dialog.get_by_label("Display name").fill("Browser directory person").await?;
-        create_dialog.get_by_label("Email addresses").fill("browser@example.com").await?;
-        create_dialog.get_by_label("Local password (optional)").fill(PASSWORD).await?;
+        create_dialog
+            .get_by_label("Username")
+            .fill(&username)
+            .await?;
+        create_dialog
+            .get_by_label("Display name")
+            .fill("Browser directory person")
+            .await?;
+        create_dialog
+            .get_by_label("Email addresses")
+            .fill("browser@example.com")
+            .await?;
+        create_dialog
+            .get_by_label("Local password (optional)")
+            .fill(PASSWORD)
+            .await?;
         create_dialog.get_by_role("button", "Save").click().await?;
-        page.get_by_role("button", format!("Edit {username}")).wait_for().await?;
+        page.get_by_role("button", format!("Edit {username}"))
+            .wait_for()
+            .await?;
 
         // Storage is unlimited by default; the Directory editor sets and clears a per-account limit.
-        let person_row = page.locator(".identity-row").filter_has_text(format!("@{username}"));
-        person_row.get_by_text(regex("Unlimited")).wait_for().await?;
-        page.get_by_role("button", format!("Edit {username}")).click().await?;
+        let person_row = page
+            .locator(".identity-row")
+            .filter_has_text(format!("@{username}"));
+        person_row
+            .get_by_text(regex("Unlimited"))
+            .wait_for()
+            .await?;
+        page.get_by_role("button", format!("Edit {username}"))
+            .click()
+            .await?;
         let quota_dialog = page.get_by_role("dialog", ()).last();
-        assert_eq!(quota_dialog.get_by_label("Storage limit (GB)").input_value().await?, "");
-        quota_dialog.get_by_label("Storage limit (GB)").fill("2").await?;
+        assert_eq!(
+            quota_dialog
+                .get_by_label("Storage limit (GB)")
+                .input_value()
+                .await?,
+            ""
+        );
+        quota_dialog
+            .get_by_label("Storage limit (GB)")
+            .fill("2")
+            .await?;
         quota_dialog.get_by_role("button", "Save").click().await?;
         quota_dialog.wait_for_state(State::Hidden).await?;
-        person_row.get_by_text(regex(r"of 2\.0 GB")).wait_for().await?;
+        person_row
+            .get_by_text(regex(r"of 2\.0 GB"))
+            .wait_for()
+            .await?;
 
         {
-            let users = page.request().get(&format!("{base}/api/v1/identity/users")).await?.json()?;
+            let users = page
+                .request()
+                .get(&format!("{base}/api/v1/identity/users"))
+                .await?
+                .json()?;
             let uid = users["items"]
                 .as_array()
                 .and_then(|arr| arr.iter().find(|u| u["userName"] == username.as_str()))
                 .and_then(|u| u["id"].as_str())
                 .context("created user id")?
                 .to_owned();
-            let storage = page.request().get(&format!("{base}/api/v1/identity/storage")).await?.json()?;
+            let storage = page
+                .request()
+                .get(&format!("{base}/api/v1/identity/storage"))
+                .await?
+                .json()?;
             let row = storage["items"]
                 .as_array()
                 .and_then(|arr| arr.iter().find(|r| r["userId"] == uid.as_str()))
@@ -264,52 +438,107 @@ pub async fn identity_browser_journey(t: &Ctx) -> Result<()> {
             assert_eq!(row["quota"], json!(2u64 * 1024 * 1024 * 1024));
         }
 
-        page.get_by_role("button", format!("Edit {username}")).click().await?;
+        page.get_by_role("button", format!("Edit {username}"))
+            .click()
+            .await?;
         let quota_dialog = page.get_by_role("dialog", ()).last();
-        assert_eq!(quota_dialog.get_by_label("Storage limit (GB)").input_value().await?, "2");
-        quota_dialog.get_by_label("Storage limit (GB)").fill("").await?;
+        assert_eq!(
+            quota_dialog
+                .get_by_label("Storage limit (GB)")
+                .input_value()
+                .await?,
+            "2"
+        );
+        quota_dialog
+            .get_by_label("Storage limit (GB)")
+            .fill("")
+            .await?;
         quota_dialog.get_by_role("button", "Save").click().await?;
         quota_dialog.wait_for_state(State::Hidden).await?;
-        person_row.get_by_text(regex("Unlimited")).wait_for().await?;
+        person_row
+            .get_by_text(regex("Unlimited"))
+            .wait_for()
+            .await?;
 
         page.get_by_role("button", "Create group").click().await?;
         let group_dialog = page.get_by_role("dialog", ()).last();
-        group_dialog.get_by_label("Group name").fill("Browser identity team").await?;
-        group_dialog.get_by_label(format!("Browser directory person (@{username})")).check().await?;
+        group_dialog
+            .get_by_label("Group name")
+            .fill("Browser identity team")
+            .await?;
+        group_dialog
+            .get_by_label(format!("Browser directory person (@{username})"))
+            .check()
+            .await?;
         group_dialog.get_by_role("button", "Save").click().await?;
-        page.get_by_role("button", "Edit Browser identity team").wait_for().await?;
+        page.get_by_role("button", "Edit Browser identity team")
+            .wait_for()
+            .await?;
 
-        let users = page.request().get(&format!("{base}/api/v1/identity/users")).await?.json()?;
+        let users = page
+            .request()
+            .get(&format!("{base}/api/v1/identity/users"))
+            .await?
+            .json()?;
         let person = users["items"]
             .as_array()
             .and_then(|arr| arr.iter().find(|u| u["userName"] == username.as_str()))
             .context("person")?
             .clone();
         let person_id = person["id"].as_str().context("person id")?.to_owned();
-        let groups = page.request().get(&format!("{base}/api/v1/identity/groups")).await?.json()?;
+        let groups = page
+            .request()
+            .get(&format!("{base}/api/v1/identity/groups"))
+            .await?
+            .json()?;
         let group = groups["items"]
             .as_array()
-            .and_then(|arr| arr.iter().find(|g| g["displayName"] == "Browser identity team"))
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|g| g["displayName"] == "Browser identity team")
+            })
             .context("group")?
             .clone();
         let group_id = group["id"].as_str().context("group id")?.to_owned();
         assert_eq!(person["groups"][0]["value"], json!(group_id));
 
         page.get_by_role("button", "SCIM").click().await?;
-        page.get_by_role("button", "Create SCIM credential").click().await?;
+        page.get_by_role("button", "Create SCIM credential")
+            .click()
+            .await?;
         let scim_dialog = page.get_by_role("dialog", ()).last();
-        scim_dialog.get_by_label("Credential name").fill("Browser provisioner").await?;
+        scim_dialog
+            .get_by_label("Credential name")
+            .fill("Browser provisioner")
+            .await?;
         scim_dialog.get_by_role("button", "Save").click().await?;
         let save_scim = page.get_by_role("dialog", "Save your credential");
         let scim_secret = save_scim.get_by_label("Secret").input_value().await?;
-        save_scim.get_by_role("button", "I saved it").click().await?;
-        assert_eq!(session::client().get(format!("{base}/scim/v2/Users")).bearer_auth(&scim_secret).send().await?.status().as_u16(), 200);
+        save_scim
+            .get_by_role("button", "I saved it")
+            .click()
+            .await?;
+        assert_eq!(
+            session::client()
+                .get(format!("{base}/scim/v2/Users"))
+                .bearer_auth(&scim_secret)
+                .send()
+                .await?
+                .status()
+                .as_u16(),
+            200
+        );
 
         page.set_viewport_size(390, 844).await?;
         page.get_by_role("button", "Applications").click().await?;
         ui::open_search(&page).await?.fill(&name).await?;
-        page.screenshot(t.screenshot("identity-settings-phone.png"), true).await?;
-        assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
+        page.screenshot(t.screenshot("identity-settings-phone.png"), true)
+            .await?;
+        assert_eq!(
+            page.evaluate("() => document.documentElement.scrollWidth > innerWidth")
+                .await?,
+            json!(false)
+        );
         ui::close_search(&page).await?;
         page.set_viewport_size(1440, 950).await?;
 
@@ -321,38 +550,67 @@ pub async fn identity_browser_journey(t: &Ctx) -> Result<()> {
             password_field.fill(PASSWORD).await?;
         }
         page.get_by_role("button", "Continue").click().await?;
-        page.get_by_role("heading", "Review requested access").wait_for().await?;
-        page.screenshot(t.screenshot("identity-consent-desktop.png"), true).await?;
+        page.get_by_role("heading", "Review requested access")
+            .wait_for()
+            .await?;
+        page.screenshot(t.screenshot("identity-consent-desktop.png"), true)
+            .await?;
         page.get_by_role("button", "Allow access").click().await?;
         page.get_by_text(regex("^Signed in as ")).wait_for().await?;
         let (admin_tokens, admin_claims) = {
             let s = rp_state.lock().unwrap();
-            (s.last_tokens.clone().context("admin tokens")?, s.last_claims.clone().context("admin claims")?)
+            (
+                s.last_tokens.clone().context("admin tokens")?,
+                s.last_claims.clone().context("admin claims")?,
+            )
         };
         assert!(admin_tokens.id_token().is_some());
         assert!(admin_claims.get("preferred_username").is_none());
 
         let cookies = context.cookies().await?;
-        let native_session = cookies.iter().find(|c| c.name == "dar_session").context("dar_session cookie")?;
-        let oidc_cookie = cookies.iter().find(|c| c.name == "dar_oidc").context("dar_oidc cookie")?;
+        let native_session = cookies
+            .iter()
+            .find(|c| c.name == "dar_session")
+            .context("dar_session cookie")?;
+        let oidc_cookie = cookies
+            .iter()
+            .find(|c| c.name == "dar_oidc")
+            .context("dar_oidc cookie")?;
         assert_eq!(native_session.same_site.as_deref(), Some("Strict"));
         assert_eq!(oidc_cookie.same_site.as_deref(), Some("Lax"));
 
         let parallel_page = context.new_page().await?;
         let parallel_failures = parallel_page.collect_errors(ignore);
         page.goto(&format!("{rp_origin}/start")).await?;
-        page.get_by_role("heading", "Review requested access").wait_for().await?;
+        page.get_by_role("heading", "Review requested access")
+            .wait_for()
+            .await?;
         parallel_page.goto(&format!("{rp_origin}/start")).await?;
-        parallel_page.get_by_role("heading", "Review requested access").wait_for().await?;
+        parallel_page
+            .get_by_role("heading", "Review requested access")
+            .wait_for()
+            .await?;
         page.get_by_role("button", "Allow access").click().await?;
         page.get_by_text(regex("^Signed in as ")).wait_for().await?;
-        parallel_page.get_by_role("button", "Allow access").click().await?;
-        parallel_page.get_by_text(regex("^Signed in as ")).wait_for().await?;
-        assert!(parallel_failures.lock().unwrap().is_empty(), "parallel page errors: {:?}", *parallel_failures.lock().unwrap());
+        parallel_page
+            .get_by_role("button", "Allow access")
+            .click()
+            .await?;
+        parallel_page
+            .get_by_text(regex("^Signed in as "))
+            .wait_for()
+            .await?;
+        assert!(
+            parallel_failures.lock().unwrap().is_empty(),
+            "parallel page errors: {:?}",
+            *parallel_failures.lock().unwrap()
+        );
         parallel_page.close().await?;
 
         page.goto(&format!("{rp_origin}/start")).await?;
-        page.get_by_role("heading", "Review requested access").wait_for().await?;
+        page.get_by_role("heading", "Review requested access")
+            .wait_for()
+            .await?;
         page.get_by_role("button", "Deny").click().await?;
         page.get_by_text("Access denied").wait_for().await?;
 
@@ -361,16 +619,26 @@ pub async fn identity_browser_journey(t: &Ctx) -> Result<()> {
         page.get_by_label("Username").fill(&username).await?;
         page.get_by_label("Password").fill(PASSWORD).await?;
         page.get_by_role("button", "Sign in").click().await?;
-        page.get_by_role("heading", "Review requested access").wait_for().await?;
+        page.get_by_role("heading", "Review requested access")
+            .wait_for()
+            .await?;
         page.set_viewport_size(390, 844).await?;
-        page.screenshot(t.screenshot("identity-consent-phone.png"), true).await?;
-        assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
+        page.screenshot(t.screenshot("identity-consent-phone.png"), true)
+            .await?;
+        assert_eq!(
+            page.evaluate("() => document.documentElement.scrollWidth > innerWidth")
+                .await?,
+            json!(false)
+        );
         page.get_by_role("button", "Allow access").click().await?;
         page.get_by_text(regex("^Signed in as ")).wait_for().await?;
 
         let (person_tokens, person_claims) = {
             let s = rp_state.lock().unwrap();
-            (s.last_tokens.clone().context("person tokens")?, s.last_claims.clone().context("person claims")?)
+            (
+                s.last_tokens.clone().context("person tokens")?,
+                s.last_claims.clone().context("person claims")?,
+            )
         };
         assert_eq!(person_claims["sub"], json!(person_id));
         assert_ne!(person_claims["sub"], admin_claims["sub"]);
@@ -380,22 +648,41 @@ pub async fn identity_browser_journey(t: &Ctx) -> Result<()> {
         assert_eq!(info["email_verified"], json!(false));
         assert_eq!(info["groups"], json!([group_id]));
 
-        page.goto(&format!("{base}/settings?section=connected")).await?;
-        page.get_by_role("heading", "Connected applications").wait_for().await?;
+        page.goto(&format!("{base}/settings?section=connected"))
+            .await?;
+        page.get_by_role("heading", "Connected applications")
+            .wait_for()
+            .await?;
         assert_eq!(page.get_by_role("button", "Directory").count().await?, 0);
         page.get_by_role("button", "Revoke").click().await?;
-        page.get_by_role("dialog", ()).get_by_role("button", "Revoke access").click().await?;
-        page.get_by_text("No connected applications yet.").wait_for().await?;
-        assert!(client.user_info(person_tokens.access_token()).await.is_err());
+        page.get_by_role("dialog", ())
+            .get_by_role("button", "Revoke access")
+            .click()
+            .await?;
+        page.get_by_text("No connected applications yet.")
+            .wait_for()
+            .await?;
+        assert!(
+            client
+                .user_info(person_tokens.access_token())
+                .await
+                .is_err()
+        );
 
         // form_post uses a self-hosted script and a registered form destination, without inline code.
-        page.goto(&format!("{rp_origin}/start?mode=form_post")).await?;
-        page.get_by_role("heading", "Review requested access").wait_for().await?;
+        page.goto(&format!("{rp_origin}/start?mode=form_post"))
+            .await?;
+        page.get_by_role("heading", "Review requested access")
+            .wait_for()
+            .await?;
         page.get_by_role("button", "Allow access").click().await?;
         page.get_by_text(regex("^Signed in as ")).wait_for().await?;
         let (form_post_tokens, form_post_claims) = {
             let s = rp_state.lock().unwrap();
-            (s.last_tokens.clone().context("form_post tokens")?, s.last_claims.clone().context("form_post claims")?)
+            (
+                s.last_tokens.clone().context("form_post tokens")?,
+                s.last_claims.clone().context("form_post claims")?,
+            )
         };
         assert_eq!(form_post_claims["sub"], json!(person_id));
 
@@ -409,13 +696,27 @@ pub async fn identity_browser_journey(t: &Ctx) -> Result<()> {
         page.goto(logout.as_str()).await?;
         page.get_by_role("link", "Cancel").click().await?;
         page.get_by_role("heading", "Overview").wait_for().await?;
-        assert_eq!(client.user_info(form_post_tokens.access_token()).await?["sub"], json!(person_id));
+        assert_eq!(
+            client.user_info(form_post_tokens.access_token()).await?["sub"],
+            json!(person_id)
+        );
 
         page.goto(logout.as_str()).await?;
         page.get_by_role("button", "Sign out").click().await?;
         page.get_by_text("Signed out of RP").wait_for().await?;
-        assert!(client.user_info(form_post_tokens.access_token()).await.is_err());
-        assert_eq!(page.request().get(&format!("{base}/api/v1/auth/session")).await?.status, 200);
+        assert!(
+            client
+                .user_info(form_post_tokens.access_token())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            page.request()
+                .get(&format!("{base}/api/v1/auth/session"))
+                .await?
+                .status,
+            200
+        );
         assert!(admin_tokens.id_token().is_some());
 
         let collected = failures.lock().unwrap().clone();

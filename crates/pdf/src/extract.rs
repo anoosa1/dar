@@ -61,7 +61,10 @@ impl<'a> Device<'a> for Collector {
     fn draw_glyph_run(&mut self, run: &GlyphRun<'_, 'a>, props: DrawProps<'a>, _: &DrawMode) {
         let glyphs = run.glyphs();
         let Some(first) = glyphs.first() else { return };
-        let signature = (glyphs.len(), (props.transform * first.transform()).as_coeffs());
+        let signature = (
+            glyphs.len(),
+            (props.transform * first.transform()).as_coeffs(),
+        );
         if self.last_call == Some(signature) {
             return;
         }
@@ -74,7 +77,10 @@ impl<'a> Device<'a> for Collector {
             }) else {
                 continue;
             };
-            let text: String = text.chars().filter(|c| !c.is_control() || *c == '\t').collect();
+            let text: String = text
+                .chars()
+                .filter(|c| !c.is_control() || *c == '\t')
+                .collect();
             if text.is_empty() {
                 continue;
             }
@@ -95,9 +101,19 @@ impl<'a> Device<'a> for Collector {
             };
             let mut advance = units.map_or(-1.0, |u| f64::from(u) / 1000.0 * width);
             if !advance.is_finite() || advance <= 0.0 || advance > size * 3.0 {
-                advance = if text.trim().is_empty() { size * 0.25 } else { size * 0.5 };
+                advance = if text.trim().is_empty() {
+                    size * 0.25
+                } else {
+                    size * 0.5
+                };
             }
-            self.glyphs.push(Placed { text, origin, dir, size, advance });
+            self.glyphs.push(Placed {
+                text,
+                origin,
+                dir,
+                size,
+                advance,
+            });
         }
     }
 }
@@ -119,7 +135,11 @@ impl Building {
             origin: g.origin,
             dir: g.dir,
             size: g.size,
-            chars: vec![TextChar { text: g.text, offset: 0.0, advance: advance as f32 }],
+            chars: vec![TextChar {
+                text: g.text,
+                offset: 0.0,
+                advance: advance as f32,
+            }],
             end: advance,
         }
     }
@@ -137,18 +157,31 @@ impl Building {
 
     /// Adds `g` when it continues this run's line; otherwise hands it back.
     fn push(&mut self, g: Placed) -> Result<(), Placed> {
-        let Some((along, across)) = self.place(&g) else { return Err(g) };
+        let Some((along, across)) = self.place(&g) else {
+            return Err(g);
+        };
         let gap = along - self.end;
         if across > self.size * 0.25 || gap < -self.size * 0.5 || gap > self.size * RUN_GAP {
             return Err(g);
         }
-        let last_space = self.chars.last().is_some_and(|c| c.text.ends_with(char::is_whitespace));
+        let last_space = self
+            .chars
+            .last()
+            .is_some_and(|c| c.text.ends_with(char::is_whitespace));
         if gap > self.size * WORD_GAP && !last_space && !g.text.starts_with(char::is_whitespace) {
-            self.chars.push(TextChar { text: " ".into(), offset: self.end as f32, advance: gap as f32 });
+            self.chars.push(TextChar {
+                text: " ".into(),
+                offset: self.end as f32,
+                advance: gap as f32,
+            });
         }
         let offset = along.max(0.0);
         self.end = self.end.max(offset + g.advance);
-        self.chars.push(TextChar { text: g.text, offset: offset as f32, advance: g.advance as f32 });
+        self.chars.push(TextChar {
+            text: g.text,
+            offset: offset as f32,
+            advance: g.advance as f32,
+        });
         Ok(())
     }
 
@@ -199,7 +232,11 @@ fn group(glyphs: Vec<Placed>) -> Vec<TextRun> {
         };
         built.push(Building::new(g));
     }
-    let same_line: Vec<bool> = built.windows(2).map(|w| continues_line(&w[0], &w[1])).chain([false]).collect();
+    let same_line: Vec<bool> = built
+        .windows(2)
+        .map(|w| continues_line(&w[0], &w[1]))
+        .chain([false])
+        .collect();
     built
         .into_iter()
         .zip(same_line)

@@ -37,7 +37,11 @@ async fn call_link(
         .await
 }
 
-async fn input_object(body: Body, headers: &HeaderMap, allowed: &[&str]) -> Result<Map<String, Value>> {
+async fn input_object(
+    body: Body,
+    headers: &HeaderMap,
+    allowed: &[&str],
+) -> Result<Map<String, Value>> {
     let map = body_object(body, 16 * 1024, headers).await?;
     if map.keys().any(|k| !allowed.contains(&k.as_str())) {
         return Err(AppError::invalid());
@@ -80,9 +84,11 @@ pub async fn handle_public(
     .await;
 
     match result {
-        Err(err) if err.code == "notFound" && route.is_empty() => {
-            Err(AppError::with("notFound", 404, "This link is no longer available."))
-        }
+        Err(err) if err.code == "notFound" && route.is_empty() => Err(AppError::with(
+            "notFound",
+            404,
+            "This link is no longer available.",
+        )),
         other => other,
     }
 }
@@ -117,9 +123,16 @@ async fn dispatch(
         let v = call_link(runtime, digest, pass, "verifier", json!({})).await?;
         let verifier = v.get("verifier").and_then(Value::as_str).unwrap_or("");
         if verifier.is_empty() {
-            return Err(AppError::with("invalidInput", 400, "This link has no password."));
+            return Err(AppError::with(
+                "invalidInput",
+                400,
+                "This link has no password.",
+            ));
         }
-        if !photos.check_link_password(password, verifier.to_owned()).await? {
+        if !photos
+            .check_link_password(password, verifier.to_owned())
+            .await?
+        {
             return Err(AppError::with(
                 "invalidCredentials",
                 403,
@@ -127,15 +140,28 @@ async fn dispatch(
             ));
         }
         let (grant_secret, grant_digest) = auth::opaque_token();
-        call_link(runtime, digest, pass, "grantPass", json!({ "digest": grant_digest })).await?;
+        call_link(
+            runtime,
+            digest,
+            pass,
+            "grantPass",
+            json!({ "digest": grant_digest }),
+        )
+        .await?;
         let age = (PASSWORD_DAYS * 86_400.0).round() as u64;
-        let secure = if !runtime.config.development { "; Secure" } else { "" };
+        let secure = if !runtime.config.development {
+            "; Secure"
+        } else {
+            ""
+        };
         let cookie = format!(
             "{PASS_COOKIE}={grant_secret}; Path={base}; HttpOnly; SameSite=Strict; Max-Age={age}{secure}"
         );
         let mut resp = json_response(&json!({ "ok": true }), StatusCode::OK);
-        resp.headers_mut()
-            .insert(header::SET_COOKIE, HeaderValue::from_str(&cookie).expect("cookie"));
+        resp.headers_mut().insert(
+            header::SET_COOKIE,
+            HeaderValue::from_str(&cookie).expect("cookie"),
+        );
         return Ok(resp);
     }
 
@@ -149,10 +175,14 @@ async fn dispatch(
                 _ => Value::Null,
             },
         };
-        return ok(
-            call_link(runtime, digest, pass, "page", json!({ "cursor": cursor, "limit": limit }))
-                .await?,
-        );
+        return ok(call_link(
+            runtime,
+            digest,
+            pass,
+            "page",
+            json!({ "cursor": cursor, "limit": limit }),
+        )
+        .await?);
     }
 
     if let Some(rest) = route.strip_prefix("/assets/") {
@@ -171,11 +201,14 @@ async fn dispatch(
         }
         let raw_info = call_link(runtime, digest, pass, "asset", json!({ "id": id })).await?;
         let allow_download = raw_info.get("allowDownload") == Some(&json!(true));
-        let info: AssetInfo =
-            serde_json::from_value(raw_info).map_err(|_| AppError::internal())?;
+        let info: AssetInfo = serde_json::from_value(raw_info).map_err(|_| AppError::internal())?;
 
         if action == Some("thumbnail") && (*method == Method::GET || *method == Method::HEAD) {
-            let size = if query.get("size").map(String::as_str) == Some("m") { "m" } else { "s" };
+            let size = if query.get("size").map(String::as_str) == Some("m") {
+                "m"
+            } else {
+                "s"
+            };
             let Some(file) = photos.thumbnail_file(&info.blob_id, &info.kind, size).await else {
                 return Err(AppError::with(
                     "notFound",
@@ -282,10 +315,13 @@ async fn dispatch(
 
     // Visitor uploads go into the owner's Photos folder and this link's album.
     if route == "/uploads" && *method == Method::POST {
-        let map =
-            input_object(body, headers, &["name", "size", "mediaType", "year", "month"]).await?;
-        let created =
-            call_link(runtime, digest, pass, "beginUpload", Value::Object(map)).await?;
+        let map = input_object(
+            body,
+            headers,
+            &["name", "size", "mediaType", "year", "month"],
+        )
+        .await?;
+        let created = call_link(runtime, digest, pass, "beginUpload", Value::Object(map)).await?;
         return Ok(json_response(&created, StatusCode::CREATED));
     }
 
@@ -293,7 +329,9 @@ async fn dispatch(
         && is_uuid(id)
     {
         if *method == Method::DELETE {
-            return ok(call_link(runtime, digest, pass, "cancelUpload", json!({ "id": id })).await?);
+            return ok(
+                call_link(runtime, digest, pass, "cancelUpload", json!({ "id": id })).await?,
+            );
         }
         if *method == Method::PUT {
             let reserved = call_link(runtime, digest, pass, "upload", json!({ "id": id })).await?;

@@ -38,11 +38,19 @@ pub async fn app_launcher_and_installed_apps(t: &Ctx) -> Result<()> {
     let initial = read().await?;
     let external = initial["items"]
         .as_array()
-        .and_then(|arr| arr.iter().find(|app| app["version"].as_str().is_some_and(|v| !v.is_empty()) && app["canToggle"] == json!(true)))
+        .and_then(|arr| {
+            arr.iter().find(|app| {
+                app["version"].as_str().is_some_and(|v| !v.is_empty())
+                    && app["canToggle"] == json!(true)
+            })
+        })
         .context("external toggleable app")?
         .clone();
     let ext_id = external["id"].as_str().context("external id")?.to_owned();
-    let ext_name = external["name"].as_str().context("external name")?.to_owned();
+    let ext_name = external["name"]
+        .as_str()
+        .context("external name")?
+        .to_owned();
 
     let marker = format!("launcher-{}", &uuid()[..8]);
     let data_url = format!("/api/v1/apps/{ext_id}/userData/{marker}");
@@ -208,8 +216,18 @@ pub async fn app_launcher_and_installed_apps(t: &Ctx) -> Result<()> {
         let rev = read().await?["revision"].as_u64().context("rev")?;
         assert_eq!(change(id, true, rev).await?.status, 200);
     }
-    assert_eq!(admin.get_json(&data_url).await?["value"], json!({ "marker": marker }));
-    let _ = Reply::from(admin.request("DELETE", &data_url).header("if-match", "\"1\"").send().await?).await;
+    assert_eq!(
+        admin.get_json(&data_url).await?["value"],
+        json!({ "marker": marker })
+    );
+    let _ = Reply::from(
+        admin
+            .request("DELETE", &data_url)
+            .header("if-match", "\"1\"")
+            .send()
+            .await?,
+    )
+    .await;
 
     context.close().await.ok();
     result

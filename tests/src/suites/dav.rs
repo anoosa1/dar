@@ -262,10 +262,12 @@ pub async fn webdav_clients_times_locks_and_streaming(t: &Ctx) -> Result<()> {
 
     let options = dav_request("OPTIONS", dav_url, &[], None).await?;
     assert_eq!(options.header("dav"), Some("1, 2"));
-    assert!(options
-        .header("allow")
-        .unwrap_or_default()
-        .contains("LOCK, UNLOCK"));
+    assert!(
+        options
+            .header("allow")
+            .unwrap_or_default()
+            .contains("LOCK, UNLOCK")
+    );
 
     // A missing parent is 409, which clients answer by creating it; an existing folder is 405.
     assert_eq!(
@@ -392,9 +394,11 @@ pub async fn webdav_clients_times_locks_and_streaming(t: &Ctx) -> Result<()> {
 
     let patched = proppatch("<d:lastmodified>1600000000</d:lastmodified>").await?;
     assert_eq!(patched.status, 207);
-    assert!(Regex::new(r"(?s)lastmodified.*HTTP/1\.1 200 OK")
-        .unwrap()
-        .is_match(&patched.text()));
+    assert!(
+        Regex::new(r"(?s)lastmodified.*HTTP/1\.1 200 OK")
+            .unwrap()
+            .is_match(&patched.text())
+    );
     assert_eq!(modified(dated.clone()).await?, 1_600_000_000_000);
 
     // Windows sets its file times and attributes after each save.
@@ -426,14 +430,19 @@ pub async fn webdav_clients_times_locks_and_streaming(t: &Ctx) -> Result<()> {
 
     // Properties apply together: an unsupported one fails the request and changes nothing.
     let patched =
-        proppatch("<d:lastmodified>1500000000</d:lastmodified><d:author>someone</d:author>").await?;
+        proppatch("<d:lastmodified>1500000000</d:lastmodified><d:author>someone</d:author>")
+            .await?;
     let failed = patched.text();
-    assert!(Regex::new(r"(?s)author.*403 Forbidden")
-        .unwrap()
-        .is_match(&failed));
-    assert!(Regex::new(r"(?s)lastmodified.*424 Failed Dependency")
-        .unwrap()
-        .is_match(&failed));
+    assert!(
+        Regex::new(r"(?s)author.*403 Forbidden")
+            .unwrap()
+            .is_match(&failed)
+    );
+    assert!(
+        Regex::new(r"(?s)lastmodified.*424 Failed Dependency")
+            .unwrap()
+            .is_match(&failed)
+    );
     assert_eq!(modified(dated.clone()).await?, win_time);
 
     // Locks are advisory: Finder and Windows mount writable, and a lock on a new name creates an empty file.
@@ -447,9 +456,11 @@ pub async fn webdav_clients_times_locks_and_streaming(t: &Ctx) -> Result<()> {
     .await?;
     assert_eq!(lock.status, 200);
     let token = lock.header("lock-token").context("lock-token")?.to_owned();
-    assert!(Regex::new(r"^<opaquelocktoken:[0-9a-f-]+>$")
-        .unwrap()
-        .is_match(&token));
+    assert!(
+        Regex::new(r"^<opaquelocktoken:[0-9a-f-]+>$")
+            .unwrap()
+            .is_match(&token)
+    );
     assert!(lock.text().contains("<d:timeout>Second-600</d:timeout>"));
 
     let if_header = format!("({token})");
@@ -501,15 +512,17 @@ pub async fn webdav_clients_times_locks_and_streaming(t: &Ctx) -> Result<()> {
     let empty = dav_request("GET", &placeholder, &[("authorization", &auth)], None).await?;
     assert_eq!(empty.status, 200);
     assert_eq!(empty.text(), "");
-    assert!(dav_request(
-        "PROPFIND",
-        &folder,
-        &[("authorization", &auth), ("depth", "1")],
-        None,
-    )
-    .await?
-    .text()
-    .contains("<d:supportedlock>"));
+    assert!(
+        dav_request(
+            "PROPFIND",
+            &folder,
+            &[("authorization", &auth), ("depth", "1")],
+            None,
+        )
+        .await?
+        .text()
+        .contains("<d:supportedlock>")
+    );
 
     // Finder streams uploads in chunks and states the size in X-Expected-Entity-Length.
     let streamed = format!("{folder}streamed.bin");

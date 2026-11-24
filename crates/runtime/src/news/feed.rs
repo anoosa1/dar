@@ -68,7 +68,10 @@ struct Node {
 
 impl Node {
     fn attr(&self, key: &str) -> Option<&str> {
-        self.attrs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        self.attrs
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     fn set_attr(&mut self, key: String, value: String) {
@@ -87,13 +90,19 @@ fn md5(value: &str) -> String {
 }
 
 fn not_a_feed() -> AppError {
-    AppError::with("notAFeed", 422, "That address is not an RSS, Atom or JSON feed.")
+    AppError::with(
+        "notAFeed",
+        422,
+        "That address is not an RSS, Atom or JSON feed.",
+    )
 }
 
 /// Windows-1252 mapping for bytes `0x80..=0x9f`.
 const WIN1252: [char; 32] = [
-    '\u{20ac}', '\u{0081}', '\u{201a}', '\u{0192}', '\u{201e}', '\u{2026}', '\u{2020}', '\u{2021}', '\u{02c6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{008d}', '\u{017d}', '\u{008f}',
-    '\u{0090}', '\u{2018}', '\u{2019}', '\u{201c}', '\u{201d}', '\u{2022}', '\u{2013}', '\u{2014}', '\u{02dc}', '\u{2122}', '\u{0161}', '\u{203a}', '\u{0153}', '\u{009d}', '\u{017e}', '\u{0178}',
+    '\u{20ac}', '\u{0081}', '\u{201a}', '\u{0192}', '\u{201e}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{02c6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{008d}', '\u{017d}', '\u{008f}',
+    '\u{0090}', '\u{2018}', '\u{2019}', '\u{201c}', '\u{201d}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{02dc}', '\u{2122}', '\u{0161}', '\u{203a}', '\u{0153}', '\u{009d}', '\u{017e}', '\u{0178}',
 ];
 
 fn decode_windows_1252(bytes: &[u8]) -> String {
@@ -128,7 +137,16 @@ fn decode_iso_8859_15(bytes: &[u8]) -> String {
 }
 
 fn decode_utf16(bytes: &[u8], le: bool) -> String {
-    let units: Vec<u16> = bytes.chunks_exact(2).map(|c| if le { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) }).collect();
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|c| {
+            if le {
+                u16::from_le_bytes([c[0], c[1]])
+            } else {
+                u16::from_be_bytes([c[0], c[1]])
+            }
+        })
+        .collect();
     String::from_utf16_lossy(&units)
 }
 
@@ -136,8 +154,11 @@ fn decode_utf16(bytes: &[u8], le: bool) -> String {
 pub fn decode_body(body: &[u8], content_type: &str) -> String {
     static ENC_RE: OnceLock<Regex> = OnceLock::new();
     static CHARSET_RE: OnceLock<Regex> = OnceLock::new();
-    let enc_re = ENC_RE.get_or_init(|| Regex::new(r#"encoding=["']([A-Za-z0-9._-]{1,40})["']"#).expect("enc regex"));
-    let charset_re = CHARSET_RE.get_or_init(|| Regex::new(r"(?i)charset=([A-Za-z0-9._-]{1,40})").expect("charset regex"));
+    let enc_re = ENC_RE.get_or_init(|| {
+        Regex::new(r#"encoding=["']([A-Za-z0-9._-]{1,40})["']"#).expect("enc regex")
+    });
+    let charset_re = CHARSET_RE
+        .get_or_init(|| Regex::new(r"(?i)charset=([A-Za-z0-9._-]{1,40})").expect("charset regex"));
 
     if body.starts_with(&[0xef, 0xbb, 0xbf]) {
         return String::from_utf8_lossy(&body[3..]).into_owned();
@@ -156,11 +177,17 @@ pub fn decode_body(body: &[u8], content_type: &str) -> String {
         .map(|m| m.as_str().to_ascii_lowercase());
 
     match label.as_deref() {
-        None | Some("utf-8" | "utf8" | "unicode-1-1-utf-8") => String::from_utf8_lossy(body).into_owned(),
-        Some("windows-1252" | "cp1252" | "x-cp1252" | "iso-8859-1" | "iso8859-1" | "iso88591" | "iso_8859-1" | "iso_8859-1:1987" | "latin1" | "latin-1" | "l1" | "us-ascii" | "ascii" | "ansi_x3.4-1968") => {
-            decode_windows_1252(body)
+        None | Some("utf-8" | "utf8" | "unicode-1-1-utf-8") => {
+            String::from_utf8_lossy(body).into_owned()
         }
-        Some("iso-8859-15" | "iso8859-15" | "iso885915" | "iso_8859-15" | "latin9" | "l9") => decode_iso_8859_15(body),
+        Some(
+            "windows-1252" | "cp1252" | "x-cp1252" | "iso-8859-1" | "iso8859-1" | "iso88591"
+            | "iso_8859-1" | "iso_8859-1:1987" | "latin1" | "latin-1" | "l1" | "us-ascii" | "ascii"
+            | "ansi_x3.4-1968",
+        ) => decode_windows_1252(body),
+        Some("iso-8859-15" | "iso8859-15" | "iso885915" | "iso_8859-15" | "latin9" | "l9") => {
+            decode_iso_8859_15(body)
+        }
         Some("utf-16le" | "utf-16") => decode_utf16(body, true),
         Some("utf-16be") => decode_utf16(body, false),
         _ => String::from_utf8_lossy(body).into_owned(),
@@ -200,9 +227,18 @@ fn parse_xml(text: &str) -> Result<Node> {
             Event::Start(ref e) | Event::Empty(ref e) => {
                 nodes += 1;
                 if nodes > 200_000 || stack.len() > 64 {
-                    return Err(AppError::with("feedTooLarge", 413, "The feed is too large."));
+                    return Err(AppError::with(
+                        "feedTooLarge",
+                        413,
+                        "The feed is too large.",
+                    ));
                 }
-                let mut node = Node { name: e.local_name().as_ref().to_owned(), uri, attrs: Vec::new(), content: Vec::new() };
+                let mut node = Node {
+                    name: e.local_name().as_ref().to_owned(),
+                    uri,
+                    attrs: Vec::new(),
+                    content: Vec::new(),
+                };
                 let mut raw_attrs = e.attributes();
                 raw_attrs.with_checks(false);
                 for attr in raw_attrs.flatten() {
@@ -230,12 +266,14 @@ fn parse_xml(text: &str) -> Result<Node> {
             }
             Event::Text(t) => {
                 if let Some(top) = stack.last_mut() {
-                    top.content.push(Child::Text(t.xml10_content().into_owned()));
+                    top.content
+                        .push(Child::Text(t.xml10_content().into_owned()));
                 }
             }
             Event::CData(t) => {
                 if let Some(top) = stack.last_mut() {
-                    top.content.push(Child::Text(t.xml10_content().into_owned()));
+                    top.content
+                        .push(Child::Text(t.xml10_content().into_owned()));
                 }
             }
             Event::GeneralRef(r) => {
@@ -266,7 +304,11 @@ fn kids<'a>(node: Option<&'a Node>, name: Option<&str>, uri: Option<&str>) -> Ve
     node.content
         .iter()
         .filter_map(|c| match c {
-            Child::Node(n) if name.is_none_or(|k| n.name == k) && uri.is_none_or(|u| n.uri == u) => Some(n),
+            Child::Node(n)
+                if name.is_none_or(|k| n.name == k) && uri.is_none_or(|u| n.uri == u) =>
+            {
+                Some(n)
+            }
             _ => None,
         })
         .collect()
@@ -277,7 +319,9 @@ fn kid<'a>(node: Option<&'a Node>, name: &str, uri: Option<&str>) -> Option<&'a 
 }
 
 fn text_in(node: Option<&Node>) -> String {
-    let Some(node) = node else { return String::new() };
+    let Some(node) = node else {
+        return String::new();
+    };
     let mut out = String::new();
     for c in &node.content {
         match c {
@@ -333,21 +377,39 @@ fn parse_one_date(raw: &str) -> i64 {
         .or_else(|_| DateTime::parse_from_rfc2822(trimmed))
         .map(|d| d.timestamp_millis())
         .ok()
-        .or_else(|| httpdate::parse_http_date(candidate).ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as i64))
+        .or_else(|| {
+            httpdate::parse_http_date(candidate)
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+        })
         .or_else(|| {
             // Common feed date variants: space instead of T, missing weekday, missing seconds, date-only.
-            for fmt in ["%Y-%m-%d %H:%M:%S%.f%:z", "%Y-%m-%d %H:%M:%S%.f%#z", "%d %b %Y %H:%M:%S %z", "%a, %d %b %Y %H:%M %z"] {
+            for fmt in [
+                "%Y-%m-%d %H:%M:%S%.f%:z",
+                "%Y-%m-%d %H:%M:%S%.f%#z",
+                "%d %b %Y %H:%M:%S %z",
+                "%a, %d %b %Y %H:%M %z",
+            ] {
                 if let Ok(dt) = DateTime::parse_from_str(trimmed, fmt) {
                     return Some(dt.timestamp_millis());
                 }
             }
-            for fmt in ["%Y-%m-%d %H:%M:%S%.f GMT", "%d %b %Y %H:%M:%S GMT", "%a, %d %b %Y %H:%M GMT", "%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"] {
+            for fmt in [
+                "%Y-%m-%d %H:%M:%S%.f GMT",
+                "%d %b %Y %H:%M:%S GMT",
+                "%a, %d %b %Y %H:%M GMT",
+                "%Y-%m-%dT%H:%M:%S%.f",
+                "%Y-%m-%d %H:%M:%S%.f",
+            ] {
                 if let Ok(ndt) = NaiveDateTime::parse_from_str(candidate, fmt) {
                     return Some(ndt.and_utc().timestamp_millis());
                 }
             }
             if let Ok(nd) = NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
-                return nd.and_hms_opt(0, 0, 0).map(|ndt| ndt.and_utc().timestamp_millis());
+                return nd
+                    .and_hms_opt(0, 0, 0)
+                    .map(|ndt| ndt.and_utc().timestamp_millis());
             }
             None
         });
@@ -366,7 +428,9 @@ fn parse_dates(values: &[&str]) -> i64 {
 
 fn rtl_language(lang: &str) -> bool {
     static RTL_RE: OnceLock<Regex> = OnceLock::new();
-    let re = RTL_RE.get_or_init(|| Regex::new(r"(?i)^(ar|fa|he|iw|ur|ps|sd|yi|dv|ckb|ug)\b").expect("rtl regex"));
+    let re = RTL_RE.get_or_init(|| {
+        Regex::new(r"(?i)^(ar|fa|he|iw|ur|ps|sd|yi|dv|ckb|ug)\b").expect("rtl regex")
+    });
     re.is_match(lang.trim())
 }
 
@@ -405,15 +469,26 @@ fn make_entry(input: EntryInput<'_>, base: &str, fetched_at: i64) -> NewsEntry {
     };
     let guid = trunc_utf16(&guid_raw, LIMIT_URL).to_owned();
     let enclosure_link = absolute(input.enclosure_link, base, &["http", "https"]);
-    let pub_date = if input.pub_date > 0 { input.pub_date } else { fetched_at };
-    let updated_date = if input.updated_date > 0 { input.updated_date } else { pub_date };
+    let pub_date = if input.pub_date > 0 {
+        input.pub_date
+    } else {
+        fetched_at
+    };
+    let updated_date = if input.updated_date > 0 {
+        input.updated_date
+    } else {
+        pub_date
+    };
     let author = trunc_utf16(&text_of(input.author, 100_000), 500).to_owned();
     let media_thumbnail = absolute(input.thumbnail, base, &["http", "https"]);
-    let media_description = trunc_utf16(&text_of(input.media_description, 100_000), 4000).to_owned();
+    let media_description =
+        trunc_utf16(&text_of(input.media_description, 100_000), 4000).to_owned();
     let enclosure_mime = trunc_utf16(input.enclosure_mime, 200).to_owned();
     let guid_hash = md5(&guid);
     let fingerprint = md5(&format!("{title}\n{url}\n{body}\n{enclosure_link}"));
-    let content_hash = md5(&format!("{title}\n{author}\n{url}\n{body}\n{enclosure_link}\n{media_thumbnail}"));
+    let content_hash = md5(&format!(
+        "{title}\n{author}\n{url}\n{body}\n{enclosure_link}\n{media_thumbnail}"
+    ));
     let excerpt = trunc_utf16(&text_of(&body, 2000), 300).to_owned();
 
     NewsEntry {
@@ -445,14 +520,23 @@ struct MediaInfo {
 
 fn media(node: &Node) -> MediaInfo {
     let group = kid(Some(node), "group", None).unwrap_or(node);
-    let content = kids(Some(group), Some("content"), None).into_iter().find(|c| {
-        let t = c.attr("type").unwrap_or("");
-        let m = c.attr("medium").unwrap_or("");
-        t.starts_with("audio/") || t.starts_with("video/") || m == "audio" || m == "video"
-    });
+    let content = kids(Some(group), Some("content"), None)
+        .into_iter()
+        .find(|c| {
+            let t = c.attr("type").unwrap_or("");
+            let m = c.attr("medium").unwrap_or("");
+            t.starts_with("audio/") || t.starts_with("video/") || m == "audio" || m == "video"
+        });
     let thumb = kid(Some(group), "thumbnail", None)
         .or_else(|| kid(Some(node), "thumbnail", None))
-        .or_else(|| kids(Some(group), Some("content"), None).into_iter().find(|c| c.attr("medium") == Some("image") || c.attr("type").unwrap_or("").starts_with("image/")));
+        .or_else(|| {
+            kids(Some(group), Some("content"), None)
+                .into_iter()
+                .find(|c| {
+                    c.attr("medium") == Some("image")
+                        || c.attr("type").unwrap_or("").starts_with("image/")
+                })
+        });
     let image = kid(Some(node), "image", None);
     let thumbnail = thumb
         .and_then(|t| t.attr("url").or_else(|| t.attr("href")))
@@ -462,20 +546,42 @@ fn media(node: &Node) -> MediaInfo {
     let description = value(Some(group), "description", Some(MEDIA));
     let link = content.and_then(|c| c.attr("url")).unwrap_or("").to_owned();
     let media_type = content
-        .and_then(|c| c.attr("type").map(str::to_owned).or_else(|| c.attr("medium").filter(|m| !m.is_empty()).map(|m| format!("{m}/*"))))
+        .and_then(|c| {
+            c.attr("type").map(str::to_owned).or_else(|| {
+                c.attr("medium")
+                    .filter(|m| !m.is_empty())
+                    .map(|m| format!("{m}/*"))
+            })
+        })
         .unwrap_or_default();
-    MediaInfo { thumbnail, description, link, media_type }
+    MediaInfo {
+        thumbnail,
+        description,
+        link,
+        media_type,
+    }
 }
 
 fn hostname_of(feed_url: &str) -> String {
-    url::Url::parse(feed_url).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default()
+    url::Url::parse(feed_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
-pub fn parse_feed(body: &[u8], content_type: &str, feed_url: &str, fetched_at: i64) -> Result<ParsedFeed> {
+pub fn parse_feed(
+    body: &[u8],
+    content_type: &str,
+    feed_url: &str,
+    fetched_at: i64,
+) -> Result<ParsedFeed> {
     static XML_START_RE: OnceLock<Regex> = OnceLock::new();
     static FEED_TAG_RE: OnceLock<Regex> = OnceLock::new();
-    let xml_start_re = XML_START_RE.get_or_init(|| Regex::new(r"(?i)^<(\?xml|rss|feed|rdf:RDF|!--|!DOCTYPE)").expect("xml start regex"));
-    let feed_tag_re = FEED_TAG_RE.get_or_init(|| Regex::new(r"(?i)<(rss|feed|rdf:RDF)[\s>]").expect("feed tag regex"));
+    let xml_start_re = XML_START_RE.get_or_init(|| {
+        Regex::new(r"(?i)^<(\?xml|rss|feed|rdf:RDF|!--|!DOCTYPE)").expect("xml start regex")
+    });
+    let feed_tag_re = FEED_TAG_RE
+        .get_or_init(|| Regex::new(r"(?i)<(rss|feed|rdf:RDF)[\s>]").expect("feed tag regex"));
 
     let text = decode_body(body, content_type);
     let start = text.trim_start();
@@ -498,11 +604,17 @@ pub fn parse_feed(body: &[u8], content_type: &str, feed_url: &str, fetched_at: i
         };
         let site = {
             let resolved = absolute(&atom_link(&root, "alternate"), feed_url, &["http", "https"]);
-            if resolved.is_empty() { feed_url.to_owned() } else { resolved }
+            if resolved.is_empty() {
+                feed_url.to_owned()
+            } else {
+                resolved
+            }
         };
         let rtl = rtl_language(root.attr("lang").unwrap_or(""));
         let atom_content = |node: Option<&Node>| -> String {
-            let Some(node) = node else { return String::new() };
+            let Some(node) = node else {
+                return String::new();
+            };
             let kind = node.attr("type").unwrap_or("text").to_ascii_lowercase();
             if kind == "xhtml" {
                 serialize(kid(Some(node), "div", None).unwrap_or(node))
@@ -516,13 +628,23 @@ pub fn parse_feed(body: &[u8], content_type: &str, feed_url: &str, fetched_at: i
             .into_iter()
             .take(LIMIT_ITEMS_PER_FEED)
             .map(|e| {
-                let enclosure = kids(Some(e), Some("link"), None).into_iter().find(|l| l.attr("rel") == Some("enclosure"));
+                let enclosure = kids(Some(e), Some("link"), None)
+                    .into_iter()
+                    .find(|l| l.attr("rel") == Some("enclosure"));
                 let m = media(e);
                 let guid = value(Some(e), "id", None);
                 let alt = atom_link(e, "alternate");
-                let url = if !alt.is_empty() { alt } else { atom_link(e, "related") };
+                let url = if !alt.is_empty() {
+                    alt
+                } else {
+                    atom_link(e, "related")
+                };
                 let title = text_in(kid(Some(e), "title", None));
-                let author = value(kid(Some(e), "author", None).or_else(|| kid(Some(&root), "author", None)), "name", None);
+                let author = value(
+                    kid(Some(e), "author", None).or_else(|| kid(Some(&root), "author", None)),
+                    "name",
+                    None,
+                );
                 let pub_s = value(Some(e), "published", None);
                 let upd_s = value(Some(e), "updated", None);
                 let iss_s = value(Some(e), "issued", None);
@@ -530,9 +652,15 @@ pub fn parse_feed(body: &[u8], content_type: &str, feed_url: &str, fetched_at: i
                 let updated_date = parse_dates(&[&upd_s]);
                 let html_body = {
                     let c = atom_content(kid(Some(e), "content", None));
-                    if !c.is_empty() { c } else { atom_content(kid(Some(e), "summary", None)) }
+                    if !c.is_empty() {
+                        c
+                    } else {
+                        atom_content(kid(Some(e), "summary", None))
+                    }
                 };
-                let enclosure_mime = enclosure.and_then(|l| l.attr("type")).unwrap_or(&m.media_type);
+                let enclosure_mime = enclosure
+                    .and_then(|l| l.attr("type"))
+                    .unwrap_or(&m.media_type);
                 let enclosure_link = enclosure.and_then(|l| l.attr("href")).unwrap_or(&m.link);
                 make_entry(
                     EntryInput {
@@ -556,19 +684,46 @@ pub fn parse_feed(body: &[u8], content_type: &str, feed_url: &str, fetched_at: i
             .collect();
         let raw_title = text_of(&text_in(kid(Some(&root), "title", None)), 100_000);
         let title = trunc_utf16(&raw_title, LIMIT_TITLE);
-        let title = if title.is_empty() { hostname_of(feed_url) } else { title.to_owned() };
-        return Ok(ParsedFeed { kind: "Atom", title, link: site, entries });
+        let title = if title.is_empty() {
+            hostname_of(feed_url)
+        } else {
+            title.to_owned()
+        };
+        return Ok(ParsedFeed {
+            kind: "Atom",
+            title,
+            link: site,
+            entries,
+        });
     }
 
-    let channel = if root.name == "rss" || root.name == "RDF" { kid(Some(&root), "channel", None) } else { None };
-    let Some(channel) = channel else { return Err(not_a_feed()) };
-    let channel_link = kids(Some(channel), Some("link"), None).into_iter().find(|l| l.uri != ATOM).map(|l| text_in(Some(l)).trim().to_owned()).unwrap_or_default();
+    let channel = if root.name == "rss" || root.name == "RDF" {
+        kid(Some(&root), "channel", None)
+    } else {
+        None
+    };
+    let Some(channel) = channel else {
+        return Err(not_a_feed());
+    };
+    let channel_link = kids(Some(channel), Some("link"), None)
+        .into_iter()
+        .find(|l| l.uri != ATOM)
+        .map(|l| text_in(Some(l)).trim().to_owned())
+        .unwrap_or_default();
     let site = {
         let resolved = absolute(&channel_link, feed_url, &["http", "https"]);
-        if resolved.is_empty() { feed_url.to_owned() } else { resolved }
+        if resolved.is_empty() {
+            feed_url.to_owned()
+        } else {
+            resolved
+        }
     };
     let rtl = rtl_language(&value(Some(channel), "language", None));
-    let item_nodes = if root.name == "RDF" { kids(Some(&root), Some("item"), None) } else { kids(Some(channel), Some("item"), None) };
+    let item_nodes = if root.name == "RDF" {
+        kids(Some(&root), Some("item"), None)
+    } else {
+        kids(Some(channel), Some("item"), None)
+    };
     let entries = item_nodes
         .into_iter()
         .take(LIMIT_ITEMS_PER_FEED)
@@ -576,22 +731,34 @@ pub fn parse_feed(body: &[u8], content_type: &str, feed_url: &str, fetched_at: i
             let enclosure = kid(Some(i), "enclosure", None);
             let m = media(i);
             let guid_node = kid(Some(i), "guid", None);
-            let link_node = kids(Some(i), Some("link"), None).into_iter().find(|l| l.uri != ATOM);
+            let link_node = kids(Some(i), Some("link"), None)
+                .into_iter()
+                .find(|l| l.uri != ATOM);
             let guid_text = text_in(guid_node).trim().to_owned();
             let link_text = text_in(link_node).trim().to_owned();
             let about = i.attr("about").unwrap_or("");
             let url = if !link_text.is_empty() {
                 link_text
-            } else if guid_node.is_some_and(|g| g.attr("isPermaLink") != Some("false")) && (guid_text.starts_with("http:") || guid_text.starts_with("https:")) {
+            } else if guid_node.is_some_and(|g| g.attr("isPermaLink") != Some("false"))
+                && (guid_text.starts_with("http:") || guid_text.starts_with("https:"))
+            {
                 guid_text.clone()
             } else {
                 about.to_owned()
             };
-            let guid = if !guid_text.is_empty() { guid_text } else { about.to_owned() };
+            let guid = if !guid_text.is_empty() {
+                guid_text
+            } else {
+                about.to_owned()
+            };
             let title = text_in(kid(Some(i), "title", None));
             let author = {
                 let c = value(Some(i), "creator", None);
-                if !c.is_empty() { c } else { value(Some(i), "author", None) }
+                if !c.is_empty() {
+                    c
+                } else {
+                    value(Some(i), "author", None)
+                }
             };
             let d1 = value(Some(i), "pubDate", None);
             let d2 = value(Some(i), "date", None);
@@ -602,11 +769,23 @@ pub fn parse_feed(body: &[u8], content_type: &str, feed_url: &str, fetched_at: i
             let updated_date = parse_dates(&[&u1, &u2]);
             let html_body = {
                 let enc = value(Some(i), "encoded", None);
-                if !enc.is_empty() { enc } else { text_in(kid(Some(i), "description", None)) }
+                if !enc.is_empty() {
+                    enc
+                } else {
+                    text_in(kid(Some(i), "description", None))
+                }
             };
-            let enclosure_mime = enclosure.and_then(|e| e.attr("type")).unwrap_or(&m.media_type);
+            let enclosure_mime = enclosure
+                .and_then(|e| e.attr("type"))
+                .unwrap_or(&m.media_type);
             let enclosure_link = enclosure.and_then(|e| e.attr("url")).unwrap_or(&m.link);
-            let thumbnail = if !m.thumbnail.is_empty() { m.thumbnail.as_str() } else { kid(Some(i), "image", None).and_then(|img| img.attr("href")).unwrap_or("") };
+            let thumbnail = if !m.thumbnail.is_empty() {
+                m.thumbnail.as_str()
+            } else {
+                kid(Some(i), "image", None)
+                    .and_then(|img| img.attr("href"))
+                    .unwrap_or("")
+            };
             make_entry(
                 EntryInput {
                     guid: &guid,
@@ -630,8 +809,17 @@ pub fn parse_feed(body: &[u8], content_type: &str, feed_url: &str, fetched_at: i
 
     let raw_title = text_of(&value(Some(channel), "title", None), 100_000);
     let title = trunc_utf16(&raw_title, LIMIT_TITLE);
-    let title = if title.is_empty() { hostname_of(feed_url) } else { title.to_owned() };
-    Ok(ParsedFeed { kind: "RSS", title, link: site, entries })
+    let title = if title.is_empty() {
+        hostname_of(feed_url)
+    } else {
+        title.to_owned()
+    };
+    Ok(ParsedFeed {
+        kind: "RSS",
+        title,
+        link: site,
+        entries,
+    })
 }
 
 fn json_str(value: Option<&Value>) -> &str {
@@ -650,14 +838,30 @@ fn json_id(value: Option<&Value>) -> String {
 
 fn parse_json_feed(text: &str, feed_url: &str, fetched_at: i64) -> Result<ParsedFeed> {
     let data: Value = serde_json::from_str(text).map_err(|_| not_a_feed())?;
-    let Some(obj) = data.as_object() else { return Err(not_a_feed()) };
-    if !obj.get("version").and_then(Value::as_str).is_some_and(|v| v.starts_with("https://jsonfeed.org/version/")) {
+    let Some(obj) = data.as_object() else {
+        return Err(not_a_feed());
+    };
+    if !obj
+        .get("version")
+        .and_then(Value::as_str)
+        .is_some_and(|v| v.starts_with("https://jsonfeed.org/version/"))
+    {
         return Err(not_a_feed());
     }
-    let Some(items) = obj.get("items").and_then(Value::as_array) else { return Err(not_a_feed()) };
+    let Some(items) = obj.get("items").and_then(Value::as_array) else {
+        return Err(not_a_feed());
+    };
     let site = {
-        let resolved = absolute(json_str(obj.get("home_page_url")), feed_url, &["http", "https"]);
-        if resolved.is_empty() { feed_url.to_owned() } else { resolved }
+        let resolved = absolute(
+            json_str(obj.get("home_page_url")),
+            feed_url,
+            &["http", "https"],
+        );
+        if resolved.is_empty() {
+            feed_url.to_owned()
+        } else {
+            resolved
+        }
     };
     let rtl = rtl_language(json_str(obj.get("language")));
     let entries = items
@@ -673,26 +877,42 @@ fn parse_json_feed(text: &str, feed_url: &str, fetched_at: i64) -> Result<Parsed
                 .and_then(Value::as_object)
                 .map(|a| json_str(a.get("name")))
                 .unwrap_or("");
-            let attachment = i.get("attachments").and_then(Value::as_array).and_then(|a| a.first()).and_then(Value::as_object);
+            let attachment = i
+                .get("attachments")
+                .and_then(Value::as_array)
+                .and_then(|a| a.first())
+                .and_then(Value::as_object);
             let html_body = {
                 let ch = json_str(i.get("content_html"));
                 if !ch.is_empty() {
                     ch.to_owned()
                 } else {
                     let ct = json_str(i.get("content_text"));
-                    if !ct.is_empty() { paragraphs(ct) } else { escape_html(json_str(i.get("summary"))) }
+                    if !ct.is_empty() {
+                        paragraphs(ct)
+                    } else {
+                        escape_html(json_str(i.get("summary")))
+                    }
                 }
             };
             let guid = json_id(i.get("id"));
             let url = {
                 let u = json_str(i.get("url"));
-                if !u.is_empty() { u } else { json_str(i.get("external_url")) }
+                if !u.is_empty() {
+                    u
+                } else {
+                    json_str(i.get("external_url"))
+                }
             };
             let pub_s = json_str(i.get("date_published"));
             let mod_s = json_str(i.get("date_modified"));
             let thumb = {
                 let img = json_str(i.get("image"));
-                if !img.is_empty() { img } else { json_str(i.get("banner_image")) }
+                if !img.is_empty() {
+                    img
+                } else {
+                    json_str(i.get("banner_image"))
+                }
             };
             make_entry(
                 EntryInput {
@@ -703,7 +923,9 @@ fn parse_json_feed(text: &str, feed_url: &str, fetched_at: i64) -> Result<Parsed
                     pub_date: parse_dates(&[pub_s, mod_s]),
                     updated_date: parse_dates(&[mod_s]),
                     html: &html_body,
-                    enclosure_mime: attachment.map(|a| json_str(a.get("mime_type"))).unwrap_or(""),
+                    enclosure_mime: attachment
+                        .map(|a| json_str(a.get("mime_type")))
+                        .unwrap_or(""),
                     enclosure_link: attachment.map(|a| json_str(a.get("url"))).unwrap_or(""),
                     thumbnail: thumb,
                     media_description: json_str(i.get("summary")),
@@ -715,8 +937,17 @@ fn parse_json_feed(text: &str, feed_url: &str, fetched_at: i64) -> Result<Parsed
         })
         .collect();
     let title = trunc_utf16(json_str(obj.get("title")), LIMIT_TITLE);
-    let title = if title.is_empty() { hostname_of(feed_url) } else { title.to_owned() };
-    Ok(ParsedFeed { kind: "JSON Feed", title, link: site, entries })
+    let title = if title.is_empty() {
+        hostname_of(feed_url)
+    } else {
+        title.to_owned()
+    };
+    Ok(ParsedFeed {
+        kind: "JSON Feed",
+        title,
+        link: site,
+        entries,
+    })
 }
 
 #[cfg(test)]
@@ -729,7 +960,13 @@ mod tests {
     <item><title>First</title><link>/posts/1</link><guid isPermaLink="false">post-1</guid><pubDate>Tue, 10 Nov 2026 09:00:00 GMT</pubDate><dc:creator>Sara</dc:creator><description>Short</description><content:encoded><![CDATA[<p>Full <script>x</script>body</p>]]></content:encoded>
     <enclosure url="https://cdn.example.com/ep1.mp3" type="audio/mpeg" length="1"/><media:thumbnail url="https://cdn.example.com/t.jpg"/></item>
     <item><title>Second &nbsp; entity</title><link>https://example.com/posts/2</link><description>&lt;b&gt;Bold&lt;/b&gt; summary</description></item></channel></rss>"#;
-        let rss = parse_feed(rss_xml, "application/rss+xml", "https://example.com/feed", 1000).unwrap();
+        let rss = parse_feed(
+            rss_xml,
+            "application/rss+xml",
+            "https://example.com/feed",
+            1000,
+        )
+        .unwrap();
         assert_eq!(rss.kind, "RSS");
         assert_eq!(rss.title, "Example & Co");
         assert_eq!(rss.entries.len(), 2);
@@ -737,7 +974,12 @@ mod tests {
         assert_eq!(first.url, "https://example.com/posts/1");
         assert_eq!(first.guid, "post-1");
         assert_eq!(first.author, "Sara");
-        assert_eq!(first.pub_date, DateTime::parse_from_rfc3339("2026-11-10T09:00:00Z").unwrap().timestamp_millis());
+        assert_eq!(
+            first.pub_date,
+            DateTime::parse_from_rfc3339("2026-11-10T09:00:00Z")
+                .unwrap()
+                .timestamp_millis()
+        );
         assert_eq!(first.body, "<p>Full body</p>");
         assert_eq!(first.enclosure_link, "https://cdn.example.com/ep1.mp3");
         assert_eq!(first.enclosure_mime, "audio/mpeg");
@@ -752,20 +994,45 @@ mod tests {
         let atom_xml = br#"<feed xmlns="http://www.w3.org/2005/Atom"><title type="text">Atom site</title><link href="https://atom.example/"/><link rel="self" href="https://atom.example/feed"/>
     <entry><id>tag:atom.example,2026:1</id><title type="html">A &lt;em&gt;title&lt;/em&gt;</title><link rel="alternate" href="https://atom.example/1"/><link rel="enclosure" href="https://atom.example/v.mp4" type="video/mp4"/><updated>2026-11-11T10:00:00Z</updated><author><name>Omar</name></author>
     <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>XHTML <a href="/x">link</a></p></div></content></entry></feed>"#;
-        let atom = parse_feed(atom_xml, "application/atom+xml", "https://atom.example/feed", 1000).unwrap();
+        let atom = parse_feed(
+            atom_xml,
+            "application/atom+xml",
+            "https://atom.example/feed",
+            1000,
+        )
+        .unwrap();
         assert_eq!(atom.kind, "Atom");
         assert_eq!(atom.link, "https://atom.example/");
         let a = &atom.entries[0];
         assert_eq!(a.title, "A title");
         assert_eq!(a.author, "Omar");
         assert_eq!(a.enclosure_mime, "video/mp4");
-        assert!(a.body.contains(r#"<p>XHTML <a href="https://atom.example/x">link</a></p>"#));
-        assert_eq!(a.pub_date, DateTime::parse_from_rfc3339("2026-11-11T10:00:00Z").unwrap().timestamp_millis());
+        assert!(
+            a.body
+                .contains(r#"<p>XHTML <a href="https://atom.example/x">link</a></p>"#)
+        );
+        assert_eq!(
+            a.pub_date,
+            DateTime::parse_from_rfc3339("2026-11-11T10:00:00Z")
+                .unwrap()
+                .timestamp_millis()
+        );
 
         let rdf_xml = br#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel rdf:about="https://rdf.example/"><title>RDF</title><link>https://rdf.example/</link></channel><item rdf:about="https://rdf.example/a"><title>Item A</title><link>https://rdf.example/a</link><dc:date>2026-11-09T08:00:00Z</dc:date></item></rdf:RDF>"#;
-        let rdf = parse_feed(rdf_xml, "application/rdf+xml", "https://rdf.example/rss", 1000).unwrap();
+        let rdf = parse_feed(
+            rdf_xml,
+            "application/rdf+xml",
+            "https://rdf.example/rss",
+            1000,
+        )
+        .unwrap();
         assert_eq!(rdf.entries[0].url, "https://rdf.example/a");
-        assert_eq!(rdf.entries[0].pub_date, DateTime::parse_from_rfc3339("2026-11-09T08:00:00Z").unwrap().timestamp_millis());
+        assert_eq!(
+            rdf.entries[0].pub_date,
+            DateTime::parse_from_rfc3339("2026-11-09T08:00:00Z")
+                .unwrap()
+                .timestamp_millis()
+        );
 
         let json_body = serde_json::json!({
             "version": "https://jsonfeed.org/version/1.1",
@@ -774,7 +1041,13 @@ mod tests {
             "items": [{ "id": 7, "url": "https://json.example/7", "title": "Seven", "content_text": "Plain\n\nText", "date_published": "2026-11-08T00:00:00Z", "authors": [{ "name": "Ali" }], "attachments": [{ "url": "https://json.example/a.mp3", "mime_type": "audio/mpeg" }] }]
         })
         .to_string();
-        let jf = parse_feed(json_body.as_bytes(), "application/feed+json", "https://json.example/feed.json", 1000).unwrap();
+        let jf = parse_feed(
+            json_body.as_bytes(),
+            "application/feed+json",
+            "https://json.example/feed.json",
+            1000,
+        )
+        .unwrap();
         assert_eq!(jf.kind, "JSON Feed");
         assert_eq!(jf.entries[0].guid, "7");
         assert_eq!(jf.entries[0].body, "<p>Plain</p><p>Text</p>");
@@ -782,12 +1055,25 @@ mod tests {
         assert_eq!(jf.entries[0].enclosure_link, "https://json.example/a.mp3");
 
         let mut latin = Vec::new();
-        latin.extend_from_slice(br#"<?xml version="1.0" encoding="windows-1252"?><rss><channel><title>Caf"#);
+        latin.extend_from_slice(
+            br#"<?xml version="1.0" encoding="windows-1252"?><rss><channel><title>Caf"#,
+        );
         latin.push(0xe9);
         latin.extend_from_slice(br#"</title><item><title>x</title><link>https://l.example/</link></item></channel></rss>"#);
-        assert_eq!(parse_feed(&latin, "text/xml", "https://l.example/f", 1000).unwrap().title, "Caf\u{00e9}");
+        assert_eq!(
+            parse_feed(&latin, "text/xml", "https://l.example/f", 1000)
+                .unwrap()
+                .title,
+            "Caf\u{00e9}"
+        );
 
-        let err = parse_feed(b"<html><body>hi</body></html>", "text/html", "https://x.example/", 1000).unwrap_err();
+        let err = parse_feed(
+            b"<html><body>hi</body></html>",
+            "text/html",
+            "https://x.example/",
+            1000,
+        )
+        .unwrap_err();
         assert_eq!(err.code, "notAFeed");
     }
 }

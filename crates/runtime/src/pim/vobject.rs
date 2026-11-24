@@ -12,7 +12,9 @@ pub fn invalid(message: &str) -> AppError {
 /// A checked text field: at most `max` UTF-16 units, no NUL, CRLF as LF (`field`).
 pub fn field(value: &serde_json::Value, max: usize) -> Result<String, AppError> {
     match value.as_str() {
-        Some(s) if s.encode_utf16().count() <= max && !s.contains('\0') => Ok(s.replace("\r\n", "\n").replace('\r', "\n")),
+        Some(s) if s.encode_utf16().count() <= max && !s.contains('\0') => {
+            Ok(s.replace("\r\n", "\n").replace('\r', "\n"))
+        }
         _ => Err(invalid("Invalid text field.")),
     }
 }
@@ -23,7 +25,12 @@ pub fn parse(text: &str, expected: &str) -> Result<Component, AppError> {
 
 /// TEXT escaping (`escapeText`).
 pub fn escape(value: &str) -> String {
-    value.replace('\\', "\\\\").replace("\r\n", "\n").replace('\n', "\\n").replace(';', "\\;").replace(',', "\\,")
+    value
+        .replace('\\', "\\\\")
+        .replace("\r\n", "\n")
+        .replace('\n', "\\n")
+        .replace(';', "\\;")
+        .replace(',', "\\,")
 }
 
 /// One TEXT value, unescaped.
@@ -66,12 +73,18 @@ pub fn split(value: &str, sep: char) -> Vec<String> {
 
 /// A structured value's components (N, ADR, ORG), unescaped.
 pub fn structured(value: &str) -> Vec<String> {
-    split(value, ';').iter().map(|part| unescape(part)).collect()
+    split(value, ';')
+        .iter()
+        .map(|part| unescape(part))
+        .collect()
 }
 
 /// A list value (CATEGORIES), unescaped.
 pub fn list(value: &str) -> Vec<String> {
-    split(value, ',').iter().map(|part| unescape(part)).collect()
+    split(value, ',')
+        .iter()
+        .map(|part| unescape(part))
+        .collect()
 }
 
 pub fn text(c: &Component, name: &str) -> String {
@@ -79,7 +92,14 @@ pub fn text(c: &Component, name: &str) -> String {
 }
 
 pub fn prop(name: &str, params: &[(&str, &str)], value: &str) -> Property {
-    Property { name: name.to_ascii_uppercase(), params: params.iter().map(|(k, v)| (k.to_ascii_uppercase(), (*v).to_owned())).collect(), value: value.to_owned() }
+    Property {
+        name: name.to_ascii_uppercase(),
+        params: params
+            .iter()
+            .map(|(k, v)| (k.to_ascii_uppercase(), (*v).to_owned()))
+            .collect(),
+        value: value.to_owned(),
+    }
 }
 
 /// Replaces every `name` property with one TEXT value (`updatePropertyWithValue`).
@@ -113,7 +133,11 @@ pub fn remove(c: &mut Component, name: &str) {
 }
 
 fn param_value(value: &str) -> String {
-    if value.contains([':', ';', ',']) && !value.contains('"') { format!("\"{value}\"") } else { value.to_owned() }
+    if value.contains([':', ';', ',']) && !value.contains('"') {
+        format!("\"{value}\"")
+    } else {
+        value.to_owned()
+    }
 }
 
 fn line(p: &Property) -> String {
@@ -166,7 +190,10 @@ pub fn resources(text: &str, kind: &str) -> Result<Vec<String>, AppError> {
     if text.len() > 2 * 1024 * 1024 {
         return Err(invalid("Import exceeds 2 MiB."));
     }
-    let (begin, end) = (format!("BEGIN:{}", kind.to_uppercase()), format!("END:{}", kind.to_uppercase()));
+    let (begin, end) = (
+        format!("BEGIN:{}", kind.to_uppercase()),
+        format!("END:{}", kind.to_uppercase()),
+    );
     let mut result = Vec::new();
     let mut current: Option<Vec<&str>> = None;
     for raw in text.trim_start_matches('\u{feff}').split('\n') {
@@ -177,7 +204,9 @@ pub fn resources(text: &str, kind: &str) -> Result<Vec<String>, AppError> {
             }
             current = Some(vec![line]);
         } else if line.to_uppercase() == end {
-            let mut lines = current.take().ok_or_else(|| invalid("Unexpected resource ending."))?;
+            let mut lines = current
+                .take()
+                .ok_or_else(|| invalid("Unexpected resource ending."))?;
             lines.push(line);
             result.push(lines.join("\r\n"));
         } else if let Some(lines) = current.as_mut() {
@@ -201,13 +230,28 @@ mod tests {
 
     #[test]
     fn round_trips_and_folds() {
-        let c = parse("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:A\\, B\r\nN:Doe;Jane;;;\r\nEND:VCARD\r\n", "VCARD").unwrap();
+        let c = parse(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:A\\, B\r\nN:Doe;Jane;;;\r\nEND:VCARD\r\n",
+            "VCARD",
+        )
+        .unwrap();
         assert_eq!(text(&c, "FN"), "A, B");
-        assert_eq!(structured(&c.prop("N").unwrap().value), ["Doe", "Jane", "", "", ""]);
+        assert_eq!(
+            structured(&c.prop("N").unwrap().value),
+            ["Doe", "Jane", "", "", ""]
+        );
         let long = format!("BEGIN:VCARD\r\nNOTE:{}\r\nEND:VCARD\r\n", "é".repeat(60));
         let out = serialize(&parse(&long, "VCARD").unwrap());
         assert!(out.split("\r\n").all(|l| l.len() <= 75), "{out}");
         assert_eq!(text(&parse(&out, "VCARD").unwrap(), "NOTE"), "é".repeat(60));
-        assert_eq!(resources("BEGIN:VCARD\nFN:a\nEND:VCARD\nBEGIN:VCARD\nFN:b\nEND:VCARD\n", "vcard").unwrap().len(), 2);
+        assert_eq!(
+            resources(
+                "BEGIN:VCARD\nFN:a\nEND:VCARD\nBEGIN:VCARD\nFN:b\nEND:VCARD\n",
+                "vcard"
+            )
+            .unwrap()
+            .len(),
+            2
+        );
     }
 }

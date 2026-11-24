@@ -101,13 +101,33 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
         .wait_for()
         .await?;
     // Live preview styles the Markdown in place; source HTML stays text and unsafe links are inert.
-    editor.locator(".cm-dar-strong").filter_has_text("Keep this safe").wait_for().await?;
-    editor.locator(".cm-dar-link.is-plain").filter_has_text("unsafe").wait_for().await?;
-    editor.locator(".cm-line").filter_has_text("<script>window.noteInjected=true</script>").wait_for().await?;
-    page.screenshot(t.screenshot("notes-editor-live.png"), true).await?;
+    editor
+        .locator(".cm-dar-strong")
+        .filter_has_text("Keep this safe")
+        .wait_for()
+        .await?;
+    editor
+        .locator(".cm-dar-link.is-plain")
+        .filter_has_text("unsafe")
+        .wait_for()
+        .await?;
+    editor
+        .locator(".cm-line")
+        .filter_has_text("<script>window.noteInjected=true</script>")
+        .wait_for()
+        .await?;
+    page.screenshot(t.screenshot("notes-editor-live.png"), true)
+        .await?;
     editor.get_by_role("button", "Reading").click().await?;
-    editor.locator(".markdown-preview").get_by_text("Keep this safe").wait_for().await?;
-    assert_eq!(page.evaluate("() => window.noteInjected").await?, Value::Null);
+    editor
+        .locator(".markdown-preview")
+        .get_by_text("Keep this safe")
+        .wait_for()
+        .await?;
+    assert_eq!(
+        page.evaluate("() => window.noteInjected").await?,
+        Value::Null
+    );
     assert_eq!(
         editor.locator(r#"a[href^="javascript:"]"#).count().await?,
         0
@@ -123,12 +143,19 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
         .await?;
 
     let expected_name = format!("{title}.md");
-    let note = eventually(Duration::from_secs(5), "note renamed after heading", || async {
-        let lib = library().await?;
-        Ok(lib["notes"]
-            .as_array()
-            .and_then(|notes| notes.iter().find(|n| n["name"] == expected_name.as_str()).cloned()))
-    })
+    let note = eventually(
+        Duration::from_secs(5),
+        "note renamed after heading",
+        || async {
+            let lib = library().await?;
+            Ok(lib["notes"].as_array().and_then(|notes| {
+                notes
+                    .iter()
+                    .find(|n| n["name"] == expected_name.as_str())
+                    .cloned()
+            }))
+        },
+    )
     .await?;
     assert_eq!(note["path"], format!("{name}/{title}.md"));
     let note_id = note["id"].as_str().context("note id")?.to_owned();
@@ -151,9 +178,18 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
     // On a phone the live editor fills the sheet without sideways scrolling.
     page.set_viewport_size(390, 844).await?;
     ui::note_source(&deep_editor).await?;
-    deep_editor.locator(".cm-line.cm-dar-h1").filter_has_text(&title).wait_for().await?;
-    page.screenshot(t.screenshot("notes-editor-phone.png"), true).await?;
-    assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
+    deep_editor
+        .locator(".cm-line.cm-dar-h1")
+        .filter_has_text(&title)
+        .wait_for()
+        .await?;
+    page.screenshot(t.screenshot("notes-editor-phone.png"), true)
+        .await?;
+    assert_eq!(
+        page.evaluate("() => document.documentElement.scrollWidth > innerWidth")
+            .await?,
+        json!(false)
+    );
     page.set_viewport_size(1440, 950).await?;
     page.get_by_role("button", "Close editor").click().await?;
 
@@ -206,11 +242,13 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
         .filter_has_text(&title)
         .wait_for_state(State::Hidden)
         .await?;
-    assert!(!library().await?["notes"]
-        .as_array()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .any(|n| n["id"] == note_id.as_str()));
+    assert!(
+        !library().await?["notes"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .any(|n| n["id"] == note_id.as_str())
+    );
 
     page.set_viewport_size(390, 844).await?;
     page.screenshot(t.screenshot("notes-phone.png"), true)
@@ -400,11 +438,13 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
         .await?;
     page.get_by_role("button", "Complete task").click().await?;
     dialog.get_by_label("Edit scope").wait_for().await?;
-    assert!(dialog
-        .get_by_label("Edit scope")
-        .text_content()
-        .await?
-        .contains("2026-11-06"));
+    assert!(
+        dialog
+            .get_by_label("Edit scope")
+            .text_content()
+            .await?
+            .contains("2026-11-06")
+    );
     dialog.get_by_role("button", "Save task").click().await?;
     page.get_by_text("Next pending occurrence: Nov 7, 2026")
         .wait_for()
@@ -418,8 +458,16 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
         .await?;
 
     page.get_by_role("button", "Edit task").click().await?;
-    ui::choose(&dialog.get_by_label("Edit scope"), Choice::Value("2026-11-06")).await?;
-    ui::choose(&dialog.get_by_label("Status"), Choice::Value("NEEDS-ACTION")).await?;
+    ui::choose(
+        &dialog.get_by_label("Edit scope"),
+        Choice::Value("2026-11-06"),
+    )
+    .await?;
+    ui::choose(
+        &dialog.get_by_label("Status"),
+        Choice::Value("NEEDS-ACTION"),
+    )
+    .await?;
     dialog.get_by_label("Progress (%)").fill("0").await?;
     dialog.get_by_role("button", "Save task").click().await?;
     page.get_by_text("Next pending occurrence: Nov 6, 2026")

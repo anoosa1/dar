@@ -7,7 +7,10 @@ use dar_acceptance::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-pub const SUITE: Suite = Suite { name: "prayer-times-browser", cases: &[case!(prayer_times_journey, 120)] };
+pub const SUITE: Suite = Suite {
+    name: "prayer-times-browser",
+    cases: &[case!(prayer_times_journey, 120)],
+};
 
 /// Installs a fake `Date` clock (matching Playwright's `page.clock.install` + `setFixedTime`).
 const FAKE_CLOCK_INIT: &str = r#"(() => {
@@ -55,7 +58,9 @@ pub async fn prayer_times_journey(t: &Ctx) -> Result<()> {
     }
 
     let browser = Browser::shared().await?;
-    let context = browser.new_context(ContextOptions::sized(1440, 950)).await?;
+    let context = browser
+        .new_context(ContextOptions::sized(1440, 950))
+        .await?;
     let page = context.new_page().await?;
     let expected_conflict = Arc::new(AtomicBool::new(false));
     let errors = Arc::new(Mutex::new(Vec::new()));
@@ -222,7 +227,9 @@ pub async fn prayer_times_journey(t: &Ctx) -> Result<()> {
     .await;
 
     if let Err(error) = outcome {
-        let _ = page.screenshot(t.screenshot("prayer-times-failure.png"), true).await;
+        let _ = page
+            .screenshot(t.screenshot("prayer-times-failure.png"), true)
+            .await;
         context.close().await?;
         return Err(error);
     }

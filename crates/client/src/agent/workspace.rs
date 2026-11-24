@@ -9,7 +9,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use send_wrapper::SendWrapper;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
@@ -18,7 +18,7 @@ use crate::agent::terminal::ThreadTerminal;
 use crate::api::{self, BrowserSession, Req, RequestError};
 use crate::dates::{local_date_time, local_time};
 use crate::files::types::FileTile;
-use crate::git::diff::{count_lines, unified_hunks, Diff, DiffStat};
+use crate::git::diff::{Diff, DiffStat, count_lines, unified_hunks};
 use crate::git::parts::HistoryBranch;
 use crate::history::history_failure;
 use crate::icons::Icon;
@@ -28,8 +28,8 @@ use crate::settings::{AppSettingsButton, Notice, SettingsSheet};
 use crate::shared::{self, Preferences};
 use crate::shell::WorkspaceHeader;
 use crate::ui::{
-    document, listen, use_body_class, use_floating, window, ActionMenu, Dialog, EditorPane,
-    Listener, MenuAction, Select,
+    ActionMenu, Dialog, EditorPane, Listener, MenuAction, Select, document, listen, use_body_class,
+    use_floating, window,
 };
 
 const BASE: &str = "/api/v1/agent";
@@ -147,7 +147,9 @@ fn merge_messages(current: &[AgentMessage], incoming: &[AgentMessage]) -> Vec<Ag
 }
 
 fn encode_uri(value: &str) -> String {
-    js_sys::encode_uri_component(value).as_string().unwrap_or_default()
+    js_sys::encode_uri_component(value)
+        .as_string()
+        .unwrap_or_default()
 }
 
 fn local_storage() -> Option<web_sys::Storage> {
@@ -190,11 +192,18 @@ fn scroll_into_view_block(el: &web_sys::Element, block: web_sys::ScrollLogicalPo
 }
 
 fn is_narrow() -> bool {
-    window().match_media("(max-width:800px)").ok().flatten().is_some_and(|m| m.matches())
+    window()
+        .match_media("(max-width:800px)")
+        .ok()
+        .flatten()
+        .is_some_and(|m| m.matches())
 }
 
 fn iso_string(ms: f64) -> String {
-    js_sys::Date::new(&JsValue::from_f64(ms)).to_iso_string().as_string().unwrap_or_default()
+    js_sys::Date::new(&JsValue::from_f64(ms))
+        .to_iso_string()
+        .as_string()
+        .unwrap_or_default()
 }
 
 fn locale_string(ms: f64) -> String {
@@ -205,7 +214,10 @@ fn locale_string(ms: f64) -> String {
     let Ok(func) = func.dyn_into::<js_sys::Function>() else {
         return iso_string(ms);
     };
-    func.call0(&date).ok().and_then(|v| v.as_string()).unwrap_or_else(|| iso_string(ms))
+    func.call0(&date)
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| iso_string(ms))
 }
 
 async fn write_clipboard(text: &str) -> Result<(), ()> {
@@ -255,7 +267,9 @@ async fn request_notification_permission() -> String {
 }
 
 fn show_notification(title: &str, body: &str, tag: &str, on_click: Option<Box<dyn FnMut()>>) {
-    let Some(ctor) = notification_ctor() else { return };
+    let Some(ctor) = notification_ctor() else {
+        return;
+    };
     if notification_permission() != "granted" {
         return;
     }
@@ -263,7 +277,9 @@ fn show_notification(title: &str, body: &str, tag: &str, on_click: Option<Box<dy
     let _ = js_sys::Reflect::set(&opts, &JsValue::from_str("body"), &JsValue::from_str(body));
     let _ = js_sys::Reflect::set(&opts, &JsValue::from_str("tag"), &JsValue::from_str(tag));
     let args = js_sys::Array::of2(&JsValue::from_str(title), &opts);
-    let Ok(note) = js_sys::Reflect::construct(&ctor, &args) else { return };
+    let Ok(note) = js_sys::Reflect::construct(&ctor, &args) else {
+        return;
+    };
     if let Some(mut f) = on_click {
         let note_clone = note.clone();
         let cb = Closure::<dyn FnMut()>::new(move || {
@@ -280,8 +296,12 @@ fn show_notification(title: &str, body: &str, tag: &str, on_click: Option<Box<dy
 }
 
 fn data_transfer_has_image(event: &web_sys::DragEvent) -> bool {
-    let Some(dt) = event.data_transfer() else { return false };
-    let Ok(items) = js_sys::Reflect::get(&dt, &JsValue::from_str("items")) else { return false };
+    let Some(dt) = event.data_transfer() else {
+        return false;
+    };
+    let Ok(items) = js_sys::Reflect::get(&dt, &JsValue::from_str("items")) else {
+        return false;
+    };
     let len = js_sys::Reflect::get(&items, &JsValue::from_str("length"))
         .ok()
         .and_then(|v| v.as_f64())
@@ -321,7 +341,10 @@ fn use_now(active: Signal<bool>, interval_ms: u32) -> RwSignal<f64> {
             now.try_set(js_sys::Date::now());
         });
         let id = window()
-            .set_interval_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), interval_ms as i32)
+            .set_interval_with_callback_and_timeout_and_arguments_0(
+                cb.as_ref().unchecked_ref(),
+                interval_ms as i32,
+            )
             .ok();
         let kept = SendWrapper::new((id, cb));
         on_cleanup(move || {
@@ -341,7 +364,9 @@ fn set_timeout(ms: i32, f: impl FnOnce() + 'static) -> Option<(i32, Closure<dyn 
             func();
         }
     });
-    let id = window().set_timeout_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), ms).ok()?;
+    let id = window()
+        .set_timeout_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), ms)
+        .ok()?;
     Some((id, cb))
 }
 
@@ -443,14 +468,29 @@ fn snooze_presets() -> Vec<(&'static str, f64)> {
 }
 
 fn wake_label(until: f64) -> String {
-    local_date_time(until, &[("weekday", "short"), ("hour", "numeric"), ("minute", "2-digit")])
+    local_date_time(
+        until,
+        &[
+            ("weekday", "short"),
+            ("hour", "numeric"),
+            ("minute", "2-digit"),
+        ],
+    )
 }
 
 fn markdown_thread(thread: &AgentThread, project: &str, items: &[AgentMessage]) -> String {
-    let mut lines = vec![format!("# {}", thread.title), String::new(), format!("Project: {project}"), String::new()];
+    let mut lines = vec![
+        format!("# {}", thread.title),
+        String::new(),
+        format!("Project: {project}"),
+        String::new(),
+    ];
     for item in items {
         let who = if item.role == "user" { "You" } else { "Agent" };
-        lines.push(format!("## {who} \u{00b7} {}", locale_string(item.created_at)));
+        lines.push(format!(
+            "## {who} \u{00b7} {}",
+            locale_string(item.created_at)
+        ));
         lines.push(String::new());
         lines.push(item.content.clone());
         lines.push(String::new());
@@ -847,12 +887,24 @@ fn saved_layout(user_id: &str) -> Layout {
     if let Some(raw) = storage_get(local_storage(), &format!("dar.agent.layout.{user_id}"))
         && let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&raw)
     {
-        if let Some(v) = map.get("nav").and_then(Value::as_bool) { defaults.nav = v; }
-        if let Some(v) = map.get("details").and_then(Value::as_bool) { defaults.details = v; }
-        if let Some(v) = map.get("review").and_then(Value::as_bool) { defaults.review = v; }
-        if let Some(v) = map.get("terminal").and_then(Value::as_bool) { defaults.terminal = v; }
-        if let Some(v) = map.get("sidebarWidth").and_then(Value::as_f64) { defaults.sidebar_width = v; }
-        if let Some(v) = map.get("reviewWidth").and_then(Value::as_f64) { defaults.review_width = v; }
+        if let Some(v) = map.get("nav").and_then(Value::as_bool) {
+            defaults.nav = v;
+        }
+        if let Some(v) = map.get("details").and_then(Value::as_bool) {
+            defaults.details = v;
+        }
+        if let Some(v) = map.get("review").and_then(Value::as_bool) {
+            defaults.review = v;
+        }
+        if let Some(v) = map.get("terminal").and_then(Value::as_bool) {
+            defaults.terminal = v;
+        }
+        if let Some(v) = map.get("sidebarWidth").and_then(Value::as_f64) {
+            defaults.sidebar_width = v;
+        }
+        if let Some(v) = map.get("reviewWidth").and_then(Value::as_f64) {
+            defaults.review_width = v;
+        }
     }
     defaults
 }
@@ -911,21 +963,33 @@ fn pref_snoozed(prefs: &Option<Preferences>) -> Vec<SnoozedEntry> {
 }
 
 fn pref_send_key(prefs: &Option<Preferences>) -> &'static str {
-    match prefs.as_ref().and_then(|p| p.rest.get("agentSendKey")).and_then(Value::as_str) {
+    match prefs
+        .as_ref()
+        .and_then(|p| p.rest.get("agentSendKey"))
+        .and_then(Value::as_str)
+    {
         Some("modEnter") => "modEnter",
         _ => "enter",
     }
 }
 
 fn pref_grouping(prefs: &Option<Preferences>) -> &'static str {
-    match prefs.as_ref().and_then(|p| p.rest.get("agentGrouping")).and_then(Value::as_str) {
+    match prefs
+        .as_ref()
+        .and_then(|p| p.rest.get("agentGrouping"))
+        .and_then(Value::as_str)
+    {
         Some("project") => "project",
         _ => "recent",
     }
 }
 
 fn pref_notify(prefs: &Option<Preferences>) -> bool {
-    prefs.as_ref().and_then(|p| p.rest.get("agentNotify")).and_then(Value::as_bool).unwrap_or(false)
+    prefs
+        .as_ref()
+        .and_then(|p| p.rest.get("agentNotify"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
 }
 
 #[derive(Clone)]
@@ -951,13 +1015,21 @@ fn ProjectMark(#[prop(into)] name: String) -> impl IntoView {
     for ch in name.chars() {
         hash = hash.wrapping_mul(31).wrapping_add(ch as u32);
     }
-    let initial = name.trim().chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_else(|| "?".into());
+    let initial = name
+        .trim()
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_else(|| "?".into());
     view! { <span class="agent-project-mark" data-tint=(hash % 5).to_string() aria-hidden="true">{initial}</span> }
 }
 
 /// Inline Files folder picker (`DarFilePicker` with `mode="folder"` and `allowRoot=false`).
 #[component]
-fn AgentFolderPicker(#[prop(into)] disabled: Signal<bool>, on_change: Callback<Option<PickerSelection>>) -> impl IntoView {
+fn AgentFolderPicker(
+    #[prop(into)] disabled: Signal<bool>,
+    on_change: Callback<Option<PickerSelection>>,
+) -> impl IntoView {
     let parent = RwSignal::new(String::new());
     let cursor = RwSignal::new(String::new());
     let previous: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
@@ -966,10 +1038,17 @@ fn AgentFolderPicker(#[prop(into)] disabled: Signal<bool>, on_change: Callback<O
     let attempt = RwSignal::new(0u32);
     let query = RwSignal::new(String::new());
     let selected: RwSignal<Option<PickerSelection>> = RwSignal::new(None);
-    let abort_ctrl: StoredValue<RefCell<Option<web_sys::AbortController>>, LocalStorage> = StoredValue::new_local(RefCell::new(None));
+    let abort_ctrl: StoredValue<RefCell<Option<web_sys::AbortController>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(None));
 
     let here = |value: &Option<PickerPage>| -> Option<PickerSelection> {
-        value.as_ref().and_then(|p| p.folder.clone()).map(|f| PickerSelection { kind: "folder".into(), ..f })
+        value
+            .as_ref()
+            .and_then(|p| p.folder.clone())
+            .map(|f| PickerSelection {
+                kind: "folder".into(),
+                ..f
+            })
     };
 
     Effect::new(move |_| {
@@ -987,21 +1066,44 @@ fn AgentFolderPicker(#[prop(into)] disabled: Signal<bool>, on_change: Callback<O
         page.set(None);
         error.set(String::new());
         selected.set(None);
-        { on_change.try_run(None); };
-        let url = format!("/api/v1/files/picker?parentId={}&cursor={}&kind=folder", encode_uri(&p), encode_uri(&c));
+        {
+            on_change.try_run(None);
+        };
+        let url = format!(
+            "/api/v1/files/picker?parentId={}&cursor={}&kind=folder",
+            encode_uri(&p),
+            encode_uri(&c)
+        );
         spawn_local(async move {
-            match api::request::<PickerPage>(&url, Req { signal: Some(signal.clone()), ..Default::default() }).await {
+            match api::request::<PickerPage>(
+                &url,
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
                 Ok(value) => {
                     if signal.aborted() {
                         return;
                     }
-                    let dest = value.folder.clone().map(|f| PickerSelection { kind: "folder".into(), ..f });
+                    let dest = value.folder.clone().map(|f| PickerSelection {
+                        kind: "folder".into(),
+                        ..f
+                    });
                     page.try_set(Some(value));
-                    { on_change.try_run(dest); };
+                    {
+                        on_change.try_run(dest);
+                    };
                 }
                 Err(e) => {
                     if !signal.aborted() {
-                        error.try_set(if e.message.is_empty() { "Folders could not be loaded.".into() } else { e.message });
+                        error.try_set(if e.message.is_empty() {
+                            "Folders could not be loaded.".into()
+                        } else {
+                            e.message
+                        });
                     }
                 }
             }
@@ -1030,14 +1132,22 @@ fn AgentFolderPicker(#[prop(into)] disabled: Signal<bool>, on_change: Callback<O
             Some(item)
         };
         selected.set(next.clone());
-        { on_change.try_run(next.or_else(|| page.with_untracked(|p| here(p)))); };
+        {
+            on_change.try_run(next.or_else(|| page.with_untracked(|p| here(p))));
+        };
     };
 
     let items = Memo::new(move |_| {
         let needle = query.get().trim().to_lowercase();
         page.with(|p| {
             p.as_ref()
-                .map(|p| p.items.iter().filter(|item| item.name.to_lowercase().contains(&needle)).cloned().collect::<Vec<_>>())
+                .map(|p| {
+                    p.items
+                        .iter()
+                        .filter(|item| item.name.to_lowercase().contains(&needle))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default()
         })
     });
@@ -1045,7 +1155,9 @@ fn AgentFolderPicker(#[prop(into)] disabled: Signal<bool>, on_change: Callback<O
     let up = move || -> Option<String> {
         page.with(|p| {
             p.as_ref().and_then(|p| {
-                p.folder.as_ref().map(|_| p.ancestors.last().map(|a| a.id.clone()).unwrap_or_default())
+                p.folder
+                    .as_ref()
+                    .map(|_| p.ancestors.last().map(|a| a.id.clone()).unwrap_or_default())
             })
         })
     };
@@ -1169,7 +1281,8 @@ fn ProjectEditor(
     let error = RwSignal::new(String::new());
     let id = StoredValue::new(random_uuid());
     let csrf = StoredValue::new(session.csrf_token);
-    let controller = StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
+    let controller =
+        StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
     on_cleanup(move || controller.with_value(|c| c.abort()));
 
     let name = Memo::new(move |_| {
@@ -1208,15 +1321,25 @@ fn ProjectEditor(
         spawn_local(async move {
             let result = api::request::<AgentProject>(
                 &format!("{BASE}/projects"),
-                Req { method: "POST", body: Some(body), csrf: Some(&token), signal: Some(signal.clone()), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
             )
             .await;
             if signal.aborted() {
                 return;
             }
             match result {
-                Ok(project) => { on_created.try_run(project); },
-                Err(e) => { error.try_set(failure(&e)); }
+                Ok(project) => {
+                    on_created.try_run(project);
+                }
+                Err(e) => {
+                    error.try_set(failure(&e));
+                }
             }
             busy.try_set(false);
         });
@@ -1278,7 +1401,12 @@ fn ThreadChooser(
     let query = RwSignal::new(String::new());
     let matches = Memo::new(move |_| {
         let needle = query.get().to_lowercase();
-        projects.with(|list| list.iter().filter(|p| p.name.to_lowercase().contains(&needle)).cloned().collect::<Vec<_>>())
+        projects.with(|list| {
+            list.iter()
+                .filter(|p| p.name.to_lowercase().contains(&needle))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
     });
 
     view! {
@@ -1342,7 +1470,9 @@ fn ModelPicker(
             all.iter()
                 .filter(|m| {
                     let prov = provider_display_name(m.provider.as_deref().unwrap_or("codex"));
-                    format!("{} {} {prov}", m.name, m.id).to_lowercase().contains(&needle)
+                    format!("{} {} {prov}", m.name, m.id)
+                        .to_lowercase()
+                        .contains(&needle)
                 })
                 .cloned()
                 .collect::<Vec<_>>()
@@ -1356,7 +1486,10 @@ fn ModelPicker(
 
     let grouped = Memo::new(move |_| {
         models.with(|all| {
-            let set: HashSet<&str> = all.iter().map(|m| m.provider.as_deref().unwrap_or("codex")).collect();
+            let set: HashSet<&str> = all
+                .iter()
+                .map(|m| m.provider.as_deref().unwrap_or("codex"))
+                .collect();
             set.len() > 1
         })
     });
@@ -1367,7 +1500,8 @@ fn ModelPicker(
         }
         query.set(String::new());
         let current = value.get_untracked();
-        let idx = models.with_untracked(|all| all.iter().position(|m| m.id == current).unwrap_or(0));
+        let idx =
+            models.with_untracked(|all| all.iter().position(|m| m.id == current).unwrap_or(0));
         active.set(idx);
         request_animation_frame(move || {
             if let Some(el) = search.get_untracked() {
@@ -1377,7 +1511,9 @@ fn ModelPicker(
             }
         });
         listen(&document(), "pointerdown", false, move |event| {
-            let target = event.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok());
+            let target = event
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Node>().ok());
             if let Some(root_el) = root.get_untracked()
                 && !root_el.contains(target.as_ref())
             {
@@ -1399,11 +1535,20 @@ fn ModelPicker(
     });
 
     let choose = move |id: String| {
-        let prev_has_efforts = selected.with_untracked(|s| s.as_ref().and_then(|m| m.efforts.as_ref()).is_some_and(|e| !e.is_empty()));
-        let next_has_efforts = models.with_untracked(|all| {
-            all.iter().find(|m| m.id == id).and_then(|m| m.efforts.as_ref()).is_some_and(|e| !e.is_empty())
+        let prev_has_efforts = selected.with_untracked(|s| {
+            s.as_ref()
+                .and_then(|m| m.efforts.as_ref())
+                .is_some_and(|e| !e.is_empty())
         });
-        { on_change.try_run(id); };
+        let next_has_efforts = models.with_untracked(|all| {
+            all.iter()
+                .find(|m| m.id == id)
+                .and_then(|m| m.efforts.as_ref())
+                .is_some_and(|e| !e.is_empty())
+        });
+        {
+            on_change.try_run(id);
+        };
         if !prev_has_efforts || !next_has_efforts {
             open.set(false);
             if let Some(el) = trigger.get_untracked() {
@@ -1414,7 +1559,9 @@ fn ModelPicker(
 
     let on_keydown = move |event: web_sys::KeyboardEvent| {
         let key = event.key();
-        let target_el = event.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+        let target_el = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
         if key == "Escape" {
             event.prevent_default();
             event.stop_propagation();
@@ -1423,7 +1570,10 @@ fn ModelPicker(
                 let _ = el.focus();
             }
         } else if (key == "ArrowDown" || key == "ArrowUp")
-            && target_el.as_ref().and_then(|e| e.closest(".agent-effort").ok().flatten()).is_none()
+            && target_el
+                .as_ref()
+                .and_then(|e| e.closest(".agent-effort").ok().flatten())
+                .is_none()
         {
             event.prevent_default();
             let len = shown.with_untracked(Vec::len);
@@ -1434,12 +1584,18 @@ fn ModelPicker(
                 active.set(0);
             }
         } else if key == "Enter"
-            && target_el.as_ref().and_then(|e| e.closest("button").ok().flatten()).is_none()
+            && target_el
+                .as_ref()
+                .and_then(|e| e.closest("button").ok().flatten())
+                .is_none()
         {
-            let chosen = shown.with_untracked(|list| list.get(active.get_untracked()).map(|m| m.id.clone()));
+            let chosen =
+                shown.with_untracked(|list| list.get(active.get_untracked()).map(|m| m.id.clone()));
             if let Some(id) = chosen {
                 event.prevent_default();
-                { on_change.try_run(id); };
+                {
+                    on_change.try_run(id);
+                };
                 open.set(false);
                 if let Some(el) = trigger.get_untracked() {
                     let _ = el.focus();
@@ -1566,8 +1722,12 @@ fn use_model_choice(
     provider: Signal<Option<AgentProvider>>,
     storage_key: String,
 ) -> (RwSignal<String>, RwSignal<String>, Memo<String>) {
-    let model = RwSignal::new(storage_get(session_storage(), &format!("{storage_key}.model")).unwrap_or_default());
-    let effort = RwSignal::new(storage_get(session_storage(), &format!("{storage_key}.effort")).unwrap_or_default());
+    let model = RwSignal::new(
+        storage_get(session_storage(), &format!("{storage_key}.model")).unwrap_or_default(),
+    );
+    let effort = RwSignal::new(
+        storage_get(session_storage(), &format!("{storage_key}.effort")).unwrap_or_default(),
+    );
     let key_stored = StoredValue::new(storage_key);
 
     Effect::new(move |_| {
@@ -1576,7 +1736,13 @@ fn use_model_choice(
         {
             let cur = model.get_untracked();
             if !p.models.iter().any(|m| m.id == cur) {
-                let default_id = p.models.iter().find(|m| m.is_default).unwrap_or(&p.models[0]).id.clone();
+                let default_id = p
+                    .models
+                    .iter()
+                    .find(|m| m.is_default)
+                    .unwrap_or(&p.models[0])
+                    .id
+                    .clone();
                 model.set(default_id);
             }
         }
@@ -1584,10 +1750,16 @@ fn use_model_choice(
 
     Effect::new(move |_| {
         let cur_model = model.get();
-        let selected = provider.with(|p| p.as_ref().and_then(|p| p.models.iter().find(|m| m.id == cur_model).cloned()));
+        let selected = provider.with(|p| {
+            p.as_ref()
+                .and_then(|p| p.models.iter().find(|m| m.id == cur_model).cloned())
+        });
         if let Some(sel) = selected {
             let cur_eff = effort.get_untracked();
-            let valid = sel.efforts.as_ref().is_some_and(|list| list.contains(&cur_eff));
+            let valid = sel
+                .efforts
+                .as_ref()
+                .is_some_and(|list| list.contains(&cur_eff));
             if !valid {
                 effort.set(sel.default_effort.unwrap_or_default());
             }
@@ -1852,9 +2024,25 @@ fn EarlierRun(summary: AgentRunSummary) -> impl IntoView {
         on_cleanup(move || ctrl_keep.abort());
         let id = summary_id.get_value();
         spawn_local(async move {
-            match api::request::<AgentRun>(&format!("{BASE}/runs/{id}"), Req { signal: Some(signal.clone()), ..Default::default() }).await {
-                Ok(val) => if !signal.aborted() { run.try_set(Some(val)); },
-                Err(e) => if !signal.aborted() { error.try_set(failure(&e)); },
+            match api::request::<AgentRun>(
+                &format!("{BASE}/runs/{id}"),
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(val) => {
+                    if !signal.aborted() {
+                        run.try_set(Some(val));
+                    }
+                }
+                Err(e) => {
+                    if !signal.aborted() {
+                        error.try_set(failure(&e));
+                    }
+                }
             }
         });
     });
@@ -1884,7 +2072,11 @@ fn EarlierRun(summary: AgentRunSummary) -> impl IntoView {
 #[component]
 fn WorkLogOpen(run: AgentRun, on_close: Callback<()>) -> impl IntoView {
     let spent = duration(run.modified_at - run.created_at);
-    let verb = if run.status == "completed" { "Worked" } else { "Ran" };
+    let verb = if run.status == "completed" {
+        "Worked"
+    } else {
+        "Ran"
+    };
     let steps = run.document.steps;
     let activity = run.document.activity;
     let count = steps.as_ref().map(Vec::len).unwrap_or(activity.len());
@@ -1936,7 +2128,8 @@ struct PicturesState {
 impl PicturesState {
     fn new(thread_id: Option<String>, csrf: String) -> Self {
         let items = RwSignal::new(Vec::<Picture>::new());
-        let controller = StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
+        let controller =
+            StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
         on_cleanup(move || {
             controller.with_value(|c| c.abort());
             items.with_untracked(|list| {
@@ -1945,18 +2138,37 @@ impl PicturesState {
                 }
             });
         });
-        Self { items, thread_id: StoredValue::new(thread_id), csrf: StoredValue::new(csrf), controller }
+        Self {
+            items,
+            thread_id: StoredValue::new(thread_id),
+            csrf: StoredValue::new(csrf),
+            controller,
+        }
     }
 
     fn upload(self, item: &Picture, thread: String) {
         let safe_name: String = item
             .name
             .chars()
-            .map(|c| if (c as u32) < 0x20 || c == '/' || c == '\\' { '_' } else { c })
+            .map(|c| {
+                if (c as u32) < 0x20 || c == '/' || c == '\\' {
+                    '_'
+                } else {
+                    c
+                }
+            })
             .take(200)
             .collect();
-        let safe_name = if safe_name.is_empty() { "image".to_owned() } else { safe_name };
-        let url = format!("{BASE}/threads/{thread}/attachments/{}?name={}", item.id, encode_uri(&safe_name));
+        let safe_name = if safe_name.is_empty() {
+            "image".to_owned()
+        } else {
+            safe_name
+        };
+        let url = format!(
+            "{BASE}/threads/{thread}/attachments/{}?name={}",
+            item.id,
+            encode_uri(&safe_name)
+        );
         let content_type = item.file.type_();
         let raw_file: JsValue = item.file.clone().take().into();
         let id = item.id.clone();
@@ -2004,7 +2216,10 @@ impl PicturesState {
         let remaining = AGENT_ATTACHMENT_MAX_COUNT.saturating_sub(current_len);
         let accepted: Vec<web_sys::File> = files
             .iter()
-            .filter(|f| AGENT_IMAGE_TYPES.contains(&f.type_().as_str()) && (f.size() as u64) <= AGENT_ATTACHMENT_MAX_BYTES)
+            .filter(|f| {
+                AGENT_IMAGE_TYPES.contains(&f.type_().as_str())
+                    && (f.size() as u64) <= AGENT_ATTACHMENT_MAX_BYTES
+            })
             .take(remaining)
             .cloned()
             .collect();
@@ -2018,7 +2233,11 @@ impl PicturesState {
                     name: f.name(),
                     file: SendWrapper::new(f.clone()),
                     url,
-                    status: if thread.is_some() { "uploading" } else { "ready" },
+                    status: if thread.is_some() {
+                        "uploading"
+                    } else {
+                        "ready"
+                    },
                     error: None,
                 }
             })
@@ -2032,7 +2251,9 @@ impl PicturesState {
         if accepted.len() == files.len() {
             String::new()
         } else {
-            format!("Only PNG, JPEG, GIF or WebP images up to 8 MiB, at most {AGENT_ATTACHMENT_MAX_COUNT} per message.")
+            format!(
+                "Only PNG, JPEG, GIF or WebP images up to 8 MiB, at most {AGENT_ATTACHMENT_MAX_COUNT} per message."
+            )
         }
     }
 
@@ -2054,11 +2275,13 @@ impl PicturesState {
     }
 
     fn busy(self) -> bool {
-        self.items.with(|list| list.iter().any(|item| item.status == "uploading"))
+        self.items
+            .with(|list| list.iter().any(|item| item.status == "uploading"))
     }
 
     fn failed(self) -> bool {
-        self.items.with(|list| list.iter().any(|item| item.status == "failed"))
+        self.items
+            .with(|list| list.iter().any(|item| item.status == "failed"))
     }
 }
 
@@ -2087,7 +2310,10 @@ fn PictureTray(pictures: PicturesState) -> impl IntoView {
 }
 
 #[component]
-fn AttachButton(on_files: Callback<Vec<web_sys::File>>, #[prop(into)] disabled: Signal<bool>) -> impl IntoView {
+fn AttachButton(
+    on_files: Callback<Vec<web_sys::File>>,
+    #[prop(into)] disabled: Signal<bool>,
+) -> impl IntoView {
     let input = NodeRef::<html::Input>::new();
     let accept = AGENT_IMAGE_TYPES.join(",");
     view! {
@@ -2110,7 +2336,10 @@ fn AttachButton(on_files: Callback<Vec<web_sys::File>>, #[prop(into)] disabled: 
 // ---------------------------------------------------------------------------
 
 #[component]
-fn ContextMeter(#[prop(into)] used: Signal<Option<f64>>, #[prop(into)] window_size: Signal<Option<f64>>) -> impl IntoView {
+fn ContextMeter(
+    #[prop(into)] used: Signal<Option<f64>>,
+    #[prop(into)] window_size: Signal<Option<f64>>,
+) -> impl IntoView {
     view! {
         {move || {
             let u = used.get().filter(|&v| v > 0.0)?;
@@ -2144,7 +2373,13 @@ fn QuestionCard(#[prop(into)] run: Signal<AgentRun>, session: BrowserSession) ->
     let last_pending_id = StoredValue::new_local(RefCell::new(String::new()));
 
     Effect::new(move |_| {
-        let pid = run.with(|r| r.document.pending.as_ref().map(|p| p.id.clone()).unwrap_or_default());
+        let pid = run.with(|r| {
+            r.document
+                .pending
+                .as_ref()
+                .map(|p| p.id.clone())
+                .unwrap_or_default()
+        });
         let changed = last_pending_id.with_value(|c| {
             let mut cur = c.borrow_mut();
             if *cur != pid {
@@ -2173,8 +2408,13 @@ fn QuestionCard(#[prop(into)] run: Signal<AgentRun>, session: BrowserSession) ->
 
     let ready = Memo::new(move |_| {
         run.with(|r| {
-            let Some(pending) = r.document.pending.as_ref() else { return false };
-            pending.questions.iter().all(|q| !answer_value(&q.id).is_empty())
+            let Some(pending) = r.document.pending.as_ref() else {
+                return false;
+            };
+            pending
+                .questions
+                .iter()
+                .all(|q| !answer_value(&q.id).is_empty())
         })
     });
 
@@ -2184,7 +2424,9 @@ fn QuestionCard(#[prop(into)] run: Signal<AgentRun>, session: BrowserSession) ->
             return;
         }
         let r = run.get_untracked();
-        let Some(pending) = r.document.pending else { return };
+        let Some(pending) = r.document.pending else {
+            return;
+        };
         busy.set(true);
         error.set(String::new());
         let mut ans_map = serde_json::Map::new();
@@ -2197,7 +2439,12 @@ fn QuestionCard(#[prop(into)] run: Signal<AgentRun>, session: BrowserSession) ->
         spawn_local(async move {
             if let Err(e) = api::request::<Value>(
                 &format!("{BASE}/runs/{run_id}/answer"),
-                Req { method: "POST", body: Some(body), csrf: Some(&token), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    ..Default::default()
+                },
             )
             .await
             {
@@ -2303,7 +2550,9 @@ fn Minimap(
 
     Effect::new(move |_| {
         let _ver = version.get();
-        let (Some(vp), Some(node)) = (viewport.get(), content.get()) else { return };
+        let (Some(vp), Some(node)) = (viewport.get(), content.get()) else {
+            return;
+        };
         let measure = {
             let vp = vp.clone();
             let node = node.clone();
@@ -2312,17 +2561,32 @@ fn Minimap(
                 let mut next_marks = Vec::new();
                 if let Ok(list) = node.query_selector_all("[data-message-id]") {
                     for i in 0..list.length() {
-                        if let Some(el) = list.item(i).and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok()) {
+                        if let Some(el) = list
+                            .item(i)
+                            .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+                        {
                             let top = (el.offset_top() as f64) / total;
                             let height = ((el.offset_height() as f64) / total).max(0.004);
-                            let role = if el.class_list().contains("agent-message-user") { "user" } else { "assistant" };
+                            let role = if el.class_list().contains("agent-message-user") {
+                                "user"
+                            } else {
+                                "assistant"
+                            };
                             let id = el.get_attribute("data-message-id").unwrap_or_default();
-                            next_marks.push(MinimapMark { top, height, role, id });
+                            next_marks.push(MinimapMark {
+                                top,
+                                height,
+                                role,
+                                id,
+                            });
                         }
                     }
                 }
                 marks.try_set(next_marks);
-                view_range.try_set(((vp.scroll_top() as f64) / total, ((vp.client_height() as f64) / total).min(1.0)));
+                view_range.try_set((
+                    (vp.scroll_top() as f64) / total,
+                    ((vp.client_height() as f64) / total).min(1.0),
+                ));
             }
         };
         measure();
@@ -2330,7 +2594,8 @@ fn Minimap(
             let m = measure.clone();
             Closure::<dyn FnMut()>::new(move || m())
         };
-        let observer = web_sys::ResizeObserver::new(cb_obs.as_ref().unchecked_ref()).expect("ResizeObserver");
+        let observer =
+            web_sys::ResizeObserver::new(cb_obs.as_ref().unchecked_ref()).expect("ResizeObserver");
         observer.observe(&node);
         observer.observe(&vp);
         let scroll_listener = Listener::new(&vp, "scroll", false, move |_| measure());
@@ -2347,14 +2612,20 @@ fn Minimap(
         let Some(node) = rail.get() else { return };
         if let Ok(items) = node.query_selector_all(".agent-minimap-mark") {
             for (index, mark) in list.iter().enumerate() {
-                if let Some(el) = items.item(index as u32).and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok()) {
+                if let Some(el) = items
+                    .item(index as u32)
+                    .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+                {
                     let _ = el.style().set_property("--top", &mark.top.to_string());
-                    let _ = el.style().set_property("--height", &mark.height.to_string());
+                    let _ = el
+                        .style()
+                        .set_property("--height", &mark.height.to_string());
                 }
             }
         }
         let _ = web_sys::HtmlElement::style(&node).set_property("--view-top", &vtop.to_string());
-        let _ = web_sys::HtmlElement::style(&node).set_property("--view-height", &vheight.to_string());
+        let _ =
+            web_sys::HtmlElement::style(&node).set_property("--view-height", &vheight.to_string());
     });
 
     view! {
@@ -2390,7 +2661,9 @@ fn Minimap(
 fn parse_slash(value: &str) -> Option<(String, Option<String>)> {
     let rest = value.strip_prefix('/')?;
     if let Some((cmd, arg)) = rest.split_once(' ') {
-        if cmd.bytes().all(|b| b.is_ascii_lowercase() || b == b'-') && arg.bytes().all(|b| b.is_ascii_lowercase()) {
+        if cmd.bytes().all(|b| b.is_ascii_lowercase() || b == b'-')
+            && arg.bytes().all(|b| b.is_ascii_lowercase())
+        {
             return Some((cmd.to_owned(), Some(arg.to_owned())));
         }
         None
@@ -2479,7 +2752,14 @@ fn PromptInput(
         let timer = set_timeout(120, move || {
             let url = format!("{BASE}/threads/{tid}/files?query={}", encode_uri(&query));
             spawn_local(async move {
-                if let Ok(res) = api::request::<ThreadFilesResult>(&url, Req { signal: Some(signal.clone()), ..Default::default() }).await
+                if let Ok(res) = api::request::<ThreadFilesResult>(
+                    &url,
+                    Req {
+                        signal: Some(signal.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await
                     && !signal.aborted()
                 {
                     files.try_set(Some((query, res)));
@@ -2527,13 +2807,18 @@ fn PromptInput(
                         detail: None,
                         apply: Callback::new(move |_| {
                             run_cb.run(arg_s.clone());
-                            { on_change.try_run(String::new()); };
+                            {
+                                on_change.try_run(String::new());
+                            };
                         }),
                     });
                 }
             } else {
                 heading = "Commands".into();
-                for item in cmds.into_iter().filter(|c| c.name.starts_with(cmd_name.as_str())) {
+                for item in cmds
+                    .into_iter()
+                    .filter(|c| c.name.starts_with(cmd_name.as_str()))
+                {
                     let name_clone = item.name.clone();
                     let has_arg = item.argument.is_some();
                     let run_cb = item.run;
@@ -2544,11 +2829,15 @@ fn PromptInput(
                             if has_arg {
                                 let next = format!("/{name_clone} ");
                                 let pos = next.encode_utf16().count();
-                                { on_change.try_run(next); };
+                                {
+                                    on_change.try_run(next);
+                                };
                                 caret.set(pos);
                             } else {
                                 run_cb.run(String::new());
-                                { on_change.try_run(String::new()); };
+                                {
+                                    on_change.try_run(String::new());
+                                };
                             }
                         }),
                     });
@@ -2585,7 +2874,9 @@ fn PromptInput(
                             let suffix = &cur_val[slice_utf16(&cur_val, cur_caret).len()..];
                             let next = format!("{prefix}@{path_cl} {suffix}");
                             let pos = start_u16 + path_cl.encode_utf16().count() + 2;
-                            { on_change.try_run(next); };
+                            {
+                                on_change.try_run(next);
+                            };
                             caret.set(pos);
                             request_animation_frame(move || {
                                 if let Some(el) = input_ref.get_untracked() {
@@ -2624,7 +2915,10 @@ fn PromptInput(
             active.update(|idx| *idx = (*idx + delta) % len);
             return;
         }
-        if open && let Some(item) = suggestions.get(active.get_untracked()) && (key == "Tab" || (key == "Enter" && !event.shift_key())) {
+        if open
+            && let Some(item) = suggestions.get(active.get_untracked())
+            && (key == "Tab" || (key == "Enter" && !event.shift_key()))
+        {
             event.prevent_default();
             item.apply.run(());
             return;
@@ -2655,11 +2949,16 @@ fn PromptInput(
                 *h = (*h + 1).min((prompt_list.len() as i32) - 1);
                 *h as usize
             });
-            { on_change.try_run(prompt_list[prompt_list.len() - 1 - idx].clone()); };
+            {
+                on_change.try_run(prompt_list[prompt_list.len() - 1 - idx].clone());
+            };
             return;
         }
         let val_u16_len = cur_val.encode_utf16().count() as u32;
-        if key == "ArrowDown" && history_index.with_value(|h| *h.borrow() >= 0) && sel_start == val_u16_len {
+        if key == "ArrowDown"
+            && history_index.with_value(|h| *h.borrow() >= 0)
+            && sel_start == val_u16_len
+        {
             event.prevent_default();
             let next_idx = history_index.with_value(|h| {
                 let mut h = h.borrow_mut();
@@ -2667,28 +2966,42 @@ fn PromptInput(
                 *h
             });
             if next_idx < 0 {
-                { on_change.try_run(stash.with_value(|s| s.borrow().clone())); };
+                {
+                    on_change.try_run(stash.with_value(|s| s.borrow().clone()));
+                };
             } else {
-                { on_change.try_run(prompt_list[prompt_list.len() - 1 - (next_idx as usize)].clone()); };
+                {
+                    on_change
+                        .try_run(prompt_list[prompt_list.len() - 1 - (next_idx as usize)].clone());
+                };
             }
             return;
         }
         let modifier = event.ctrl_key() || event.meta_key();
-        if key == "Enter" && !event.shift_key() && !event.alt_key() && (send_key.get_untracked() == "enter" || modifier) {
+        if key == "Enter"
+            && !event.shift_key()
+            && !event.alt_key()
+            && (send_key.get_untracked() == "enter" || modifier)
+        {
             event.prevent_default();
             if is_slash && let Some((cmd_name, arg_opt)) = parse_slash(&cur_val) {
                 let cmds = commands.get_untracked();
                 let arg_str = arg_opt.unwrap_or_default();
                 if let Some(cmd) = cmds.iter().find(|c| c.name == cmd_name)
-                    && (cmd.argument.is_none() || cmd.argument.as_ref().is_some_and(|a| a.contains(&arg_str)))
+                    && (cmd.argument.is_none()
+                        || cmd.argument.as_ref().is_some_and(|a| a.contains(&arg_str)))
                 {
                     cmd.run.run(arg_str);
-                    { on_change.try_run(String::new()); };
+                    {
+                        on_change.try_run(String::new());
+                    };
                     return;
                 }
             }
             history_index.with_value(|h| *h.borrow_mut() = -1);
-            { on_submit.try_run(()); };
+            {
+                on_submit.try_run(());
+            };
         }
     };
 
@@ -2846,20 +3159,25 @@ fn Conversation(
     let reload = RwSignal::new(0u64);
     // The history is being reloaded; a send made meanwhile waits for it (`save_action`).
     let refreshing = RwSignal::new(false);
-    let deferred: RwSignal<Option<(bool, Option<String>, Option<&'static str>)>> = RwSignal::new(None);
+    let deferred: RwSignal<Option<(bool, Option<String>, Option<&'static str>)>> =
+        RwSignal::new(None);
     let loading_earlier = RwSignal::new(false);
 
-    let controller = StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
+    let controller =
+        StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
     on_cleanup(move || controller.with_value(|c| c.abort()));
 
     let composer = NodeRef::<html::Textarea>::new();
-    let pending: StoredValue<RefCell<Option<PendingOp>>, LocalStorage> = StoredValue::new_local(RefCell::new(None));
-    let steer_op: StoredValue<RefCell<Option<PendingOp>>, LocalStorage> = StoredValue::new_local(RefCell::new(None));
+    let pending: StoredValue<RefCell<Option<PendingOp>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(None));
+    let steer_op: StoredValue<RefCell<Option<PendingOp>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(None));
     let viewport = NodeRef::<html::Div>::new();
     let content = NodeRef::<html::Div>::new();
     let following = StoredValue::new_local(RefCell::new(true));
     let positioned = StoredValue::new_local(RefCell::new(false));
-    let prepend: StoredValue<RefCell<Option<(i32, i32)>>, LocalStorage> = StoredValue::new_local(RefCell::new(None));
+    let prepend: StoredValue<RefCell<Option<(i32, i32)>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(None));
     let find_input = NodeRef::<html::Input>::new();
     let at_end = RwSignal::new(true);
     let find = RwSignal::new(String::new());
@@ -2871,12 +3189,18 @@ fn Conversation(
         if let Some(r) = run.get() {
             active_agent_run(&r.status)
         } else {
-            history.with(|h| h.as_ref().is_some_and(|h| h.runs.iter().any(|item| active_agent_run(&item.status))))
+            history.with(|h| {
+                h.as_ref()
+                    .is_some_and(|h| h.runs.iter().any(|item| active_agent_run(&item.status)))
+            })
         }
     });
 
-    let queued = RwSignal::new(storage_get(session_storage(), &format!("{key}.queued")).unwrap_or_default());
-    let plan = RwSignal::new(storage_get(session_storage(), &format!("{key}.mode")).as_deref() == Some("plan"));
+    let queued =
+        RwSignal::new(storage_get(session_storage(), &format!("{key}.queued")).unwrap_or_default());
+    let plan = RwSignal::new(
+        storage_get(session_storage(), &format!("{key}.mode")).as_deref() == Some("plan"),
+    );
     let images = PicturesState::new(Some(thread_id.clone()), session.csrf_token.clone());
 
     Effect::new(move |_| {
@@ -2927,7 +3251,10 @@ fn Conversation(
     Effect::new(move |_| {
         let text = draft.get();
         if let Some(field) = composer.get() {
-            let rows: usize = text.split('\n').map(|line| ((line.chars().count() as f64 / 75.0).ceil() as usize).max(1)).sum();
+            let rows: usize = text
+                .split('\n')
+                .map(|line| ((line.chars().count() as f64 / 75.0).ceil() as usize).max(1))
+                .sum();
             field.set_rows(rows.clamp(2, 7) as u32);
         }
     });
@@ -2950,7 +3277,13 @@ fn Conversation(
             let tid = thread_id_sv.get_value();
             let fol = following.with_value(|f| *f.borrow());
             positions.with_value(|map| {
-                map.borrow_mut().insert(tid, ScrollPosition { top: el.scroll_top(), following: fol });
+                map.borrow_mut().insert(
+                    tid,
+                    ScrollPosition {
+                        top: el.scroll_top(),
+                        following: fol,
+                    },
+                );
             });
         }
     });
@@ -2975,7 +3308,11 @@ fn Conversation(
             let saved = positions.with_value(|m| m.borrow().get(&tid).copied());
             let fol = saved.map(|s| s.following).unwrap_or(true);
             following.with_value(|f| *f.borrow_mut() = fol);
-            el.set_scroll_top(if fol { el.scroll_height() } else { saved.map(|s| s.top).unwrap_or(0) });
+            el.set_scroll_top(if fol {
+                el.scroll_height()
+            } else {
+                saved.map(|s| s.top).unwrap_or(0)
+            });
             positioned.with_value(|p| *p.borrow_mut() = true);
         } else if following.with_value(|f| *f.borrow()) {
             el.set_scroll_top(el.scroll_height());
@@ -2985,14 +3322,17 @@ fn Conversation(
 
     // ResizeObserver to keep pinned to bottom.
     Effect::new(move |_| {
-        let (Some(vp), Some(node)) = (viewport.get(), content.get()) else { return };
+        let (Some(vp), Some(node)) = (viewport.get(), content.get()) else {
+            return;
+        };
         let vp_cl = vp.clone();
         let cb = Closure::<dyn FnMut()>::new(move || {
             if following.with_value(|f| *f.borrow()) && positioned.with_value(|p| *p.borrow()) {
                 vp_cl.set_scroll_top(vp_cl.scroll_height());
             }
         });
-        let observer = web_sys::ResizeObserver::new(cb.as_ref().unchecked_ref()).expect("ResizeObserver");
+        let observer =
+            web_sys::ResizeObserver::new(cb.as_ref().unchecked_ref()).expect("ResizeObserver");
         observer.observe(&node);
         observer.observe(&vp);
         let kept = SendWrapper::new((observer, cb));
@@ -3016,7 +3356,10 @@ fn Conversation(
         spawn_local(async move {
             match api::request::<AgentHistory>(
                 &format!("{BASE}/threads/{tid}/messages"),
-                Req { signal: Some(signal.clone()), ..Default::default() },
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
             )
             .await
             {
@@ -3028,9 +3371,13 @@ fn Conversation(
                     let first_run = value.runs.first().map(|r| r.id.clone());
                     history.try_set(Some(value));
                     refreshing.try_set(false);
-                    { on_changed.try_run(updated_thread); };
+                    {
+                        on_changed.try_run(updated_thread);
+                    };
                     if let Some(rid) = first_run {
-                        { on_run.try_run(rid); };
+                        {
+                            on_run.try_run(rid);
+                        };
                     }
                 }
                 Err(e) => {
@@ -3059,26 +3406,36 @@ fn Conversation(
         if res.is_ok() {
             storage_error.set(String::new());
         } else {
-            storage_error.set("Draft recovery is unavailable in this browser. Save your message before leaving.".into());
+            storage_error.set(
+                "Draft recovery is unavailable in this browser. Save your message before leaving."
+                    .into(),
+            );
         }
     });
 
     // beforeunload protection when storage failed.
     listen(&window(), "beforeunload", false, move |event| {
-        if !storage_error.with_untracked(String::is_empty) && !draft.with_untracked(String::is_empty) {
+        if !storage_error.with_untracked(String::is_empty)
+            && !draft.with_untracked(String::is_empty)
+        {
             event.prevent_default();
         }
     });
 
     let steer = move |text: String| {
-        let Some(cur_run) = run.get_untracked() else { return };
+        let Some(cur_run) = run.get_untracked() else {
+            return;
+        };
         if !active_agent_run(&cur_run.status) {
             return;
         }
         let op = steer_op.with_value(|cell| {
             let mut slot = cell.borrow_mut();
             if slot.as_ref().is_none_or(|p| p.content != text) {
-                *slot = Some(PendingOp { id: random_uuid(), content: text.clone() });
+                *slot = Some(PendingOp {
+                    id: random_uuid(),
+                    content: text.clone(),
+                });
             }
             slot.clone().unwrap()
         });
@@ -3091,7 +3448,13 @@ fn Conversation(
         spawn_local(async move {
             let res = api::request::<MessageCreated>(
                 &format!("{BASE}/runs/{run_id}/steer"),
-                Req { method: "POST", body: Some(body), csrf: Some(&token), signal: Some(signal.clone()), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
             )
             .await;
             if signal.aborted() {
@@ -3106,207 +3469,237 @@ fn Conversation(
                             cur.items = merge_messages(&cur.items, &[val.message]);
                         }
                     });
-                    { on_changed.try_run(val.thread); };
+                    {
+                        on_changed.try_run(val.thread);
+                    };
                     draft.try_set(String::new());
                     let k = key_sv.get_value();
-                    draft_cache.with_value(|c| { c.borrow_mut().insert(k.clone(), String::new()); });
+                    draft_cache.with_value(|c| {
+                        c.borrow_mut().insert(k.clone(), String::new());
+                    });
                     storage_remove(session_storage(), &k);
                     notice.try_set("Sent to the running turn.".into());
                     following.with_value(|f| *f.borrow_mut() = true);
                 }
-                Err(e) => { error.try_set(failure(&e)); }
+                Err(e) => {
+                    error.try_set(failure(&e));
+                }
             }
             busy.try_set(false);
         });
     };
 
-    let save_action = Callback::new(move |(execute, text_opt, special): (bool, Option<String>, Option<&'static str>)| {
-        let cur_draft = draft.get_untracked();
-        let requested = text_opt.clone();
-        let text = text_opt.unwrap_or_else(|| cur_draft.clone());
-        let from_queue = text != cur_draft && special.is_none();
-        let Some(cur_hist) = history.get_untracked() else { return };
-        if text.trim().is_empty() || busy.get_untracked() {
-            return;
-        }
-        if running.get_untracked() {
-            if execute && !from_queue {
-                steer(text);
-            }
-            return;
-        }
-        // A turn that just ended changed the thread: its revision arrives with the history being
-        // reloaded, and sending before that would be refused as a conflict.
-        if refreshing.get_untracked() {
-            deferred.set(Some((execute, requested, special)));
-            return;
-        }
-        let has_pics = images.items.with_untracked(|v| !v.is_empty());
-        if special.is_none() && has_pics && (!execute || images.busy() || images.failed()) {
-            error.set(if !execute {
-                "Images are sent with an agent run, not saved on their own.".into()
-            } else if images.failed() {
-                "Remove images that failed to upload.".into()
-            } else {
-                "Wait for images to finish uploading.".into()
-            });
-            return;
-        }
-        if text.len() > AGENT_MESSAGE_MAX_BYTES {
-            error.set("Keep each message within 16 KiB.".into());
-            return;
-        }
-        busy.set(true);
-        error.set(String::new());
-        notice.set(String::new());
-
-        let op_key = operation_key.get_value();
-        let op = pending.with_value(|cell| {
-            let mut slot = cell.borrow_mut();
-            if slot.as_ref().is_none_or(|p| p.content != text) {
-                let saved = storage_get(session_storage(), &op_key)
-                    .and_then(|raw| serde_json::from_str::<PendingOp>(&raw).ok())
-                    .filter(|p| p.content == text);
-                *slot = Some(saved.unwrap_or_else(|| PendingOp { id: random_uuid(), content: text.clone() }));
-            }
-            slot.clone().unwrap()
-        });
-        if let Ok(json_op) = serde_json::to_string(&op) {
-            let _ = storage_set(session_storage(), &op_key, &json_op);
-        }
-
-        let tid = thread_id_sv.get_value();
-        let revision = cur_hist.thread.revision;
-        let signal = controller.with_value(|c| c.signal());
-        let token = csrf.get_value();
-        let k = key_sv.get_value();
-
-        if execute {
-            let cur_model = model.get_untracked();
-            let cur_effort = effort.get_untracked();
-            let cur_plan = plan.get_untracked();
-            let mode_str = special.map(str::to_owned).or_else(|| cur_plan.then(|| "plan".to_owned()));
-            let attachments: Vec<String> = if from_queue || special.is_some() {
-                Vec::new()
-            } else {
-                images.items.with_untracked(|list| list.iter().map(|i| i.id.clone()).collect())
+    let save_action = Callback::new(
+        move |(execute, text_opt, special): (bool, Option<String>, Option<&'static str>)| {
+            let cur_draft = draft.get_untracked();
+            let requested = text_opt.clone();
+            let text = text_opt.unwrap_or_else(|| cur_draft.clone());
+            let from_queue = text != cur_draft && special.is_none();
+            let Some(cur_hist) = history.get_untracked() else {
+                return;
             };
-            let run_key = format!("{k}.run-operation");
-            let mut req_op = RunOp {
-                id: random_uuid(),
-                message_id: op.id.clone(),
-                content: op.content.clone(),
-                model: cur_model.clone(),
-                effort: (!cur_effort.is_empty()).then(|| cur_effort.clone()),
-                mode: mode_str.clone(),
-                attachments: (!attachments.is_empty()).then(|| attachments.clone()),
-            };
-            if let Some(saved) = storage_get(session_storage(), &run_key)
-                .and_then(|raw| serde_json::from_str::<RunOp>(&raw).ok())
-                && saved.content == text
-                && saved.model == cur_model
-                && saved.effort.as_deref().unwrap_or("") == cur_effort
-                && saved.mode.as_deref().unwrap_or("") == mode_str.as_deref().unwrap_or("")
-                && saved.attachments.as_deref().unwrap_or(&[]) == attachments.as_slice()
-            {
-                req_op = saved;
+            if text.trim().is_empty() || busy.get_untracked() {
+                return;
             }
-            if let Ok(raw) = serde_json::to_string(&req_op) {
-                let _ = storage_set(session_storage(), &run_key, &raw);
-            }
-            let body = serde_json::to_string(&req_op).unwrap_or_default();
-            let if_match = format!("\"{revision}\"");
-            spawn_local(async move {
-                let res = api::request::<AgentRun>(
-                    &format!("{BASE}/threads/{tid}/runs"),
-                    Req {
-                        method: "POST",
-                        body: Some(body),
-                        csrf: Some(&token),
-                        headers: &[("if-match", &if_match)],
-                        signal: Some(signal.clone()),
-                        ..Default::default()
-                    },
-                )
-                .await;
-                if signal.aborted() {
-                    return;
+            if running.get_untracked() {
+                if execute && !from_queue {
+                    steer(text);
                 }
-                match res {
-                    Ok(value) => {
-                        { on_run.try_run(value.id); };
-                        reload.try_update(|n| *n += 1);
-                        pending.with_value(|c| *c.borrow_mut() = None);
-                        if !from_queue && special.is_none() {
-                            images.clear();
+                return;
+            }
+            // A turn that just ended changed the thread: its revision arrives with the history being
+            // reloaded, and sending before that would be refused as a conflict.
+            if refreshing.get_untracked() {
+                deferred.set(Some((execute, requested, special)));
+                return;
+            }
+            let has_pics = images.items.with_untracked(|v| !v.is_empty());
+            if special.is_none() && has_pics && (!execute || images.busy() || images.failed()) {
+                error.set(if !execute {
+                    "Images are sent with an agent run, not saved on their own.".into()
+                } else if images.failed() {
+                    "Remove images that failed to upload.".into()
+                } else {
+                    "Wait for images to finish uploading.".into()
+                });
+                return;
+            }
+            if text.len() > AGENT_MESSAGE_MAX_BYTES {
+                error.set("Keep each message within 16 KiB.".into());
+                return;
+            }
+            busy.set(true);
+            error.set(String::new());
+            notice.set(String::new());
+
+            let op_key = operation_key.get_value();
+            let op = pending.with_value(|cell| {
+                let mut slot = cell.borrow_mut();
+                if slot.as_ref().is_none_or(|p| p.content != text) {
+                    let saved = storage_get(session_storage(), &op_key)
+                        .and_then(|raw| serde_json::from_str::<PendingOp>(&raw).ok())
+                        .filter(|p| p.content == text);
+                    *slot = Some(saved.unwrap_or_else(|| PendingOp {
+                        id: random_uuid(),
+                        content: text.clone(),
+                    }));
+                }
+                slot.clone().unwrap()
+            });
+            if let Ok(json_op) = serde_json::to_string(&op) {
+                let _ = storage_set(session_storage(), &op_key, &json_op);
+            }
+
+            let tid = thread_id_sv.get_value();
+            let revision = cur_hist.thread.revision;
+            let signal = controller.with_value(|c| c.signal());
+            let token = csrf.get_value();
+            let k = key_sv.get_value();
+
+            if execute {
+                let cur_model = model.get_untracked();
+                let cur_effort = effort.get_untracked();
+                let cur_plan = plan.get_untracked();
+                let mode_str = special
+                    .map(str::to_owned)
+                    .or_else(|| cur_plan.then(|| "plan".to_owned()));
+                let attachments: Vec<String> = if from_queue || special.is_some() {
+                    Vec::new()
+                } else {
+                    images
+                        .items
+                        .with_untracked(|list| list.iter().map(|i| i.id.clone()).collect())
+                };
+                let run_key = format!("{k}.run-operation");
+                let mut req_op = RunOp {
+                    id: random_uuid(),
+                    message_id: op.id.clone(),
+                    content: op.content.clone(),
+                    model: cur_model.clone(),
+                    effort: (!cur_effort.is_empty()).then(|| cur_effort.clone()),
+                    mode: mode_str.clone(),
+                    attachments: (!attachments.is_empty()).then(|| attachments.clone()),
+                };
+                if let Some(saved) = storage_get(session_storage(), &run_key)
+                    .and_then(|raw| serde_json::from_str::<RunOp>(&raw).ok())
+                    && saved.content == text
+                    && saved.model == cur_model
+                    && saved.effort.as_deref().unwrap_or("") == cur_effort
+                    && saved.mode.as_deref().unwrap_or("") == mode_str.as_deref().unwrap_or("")
+                    && saved.attachments.as_deref().unwrap_or(&[]) == attachments.as_slice()
+                {
+                    req_op = saved;
+                }
+                if let Ok(raw) = serde_json::to_string(&req_op) {
+                    let _ = storage_set(session_storage(), &run_key, &raw);
+                }
+                let body = serde_json::to_string(&req_op).unwrap_or_default();
+                let if_match = format!("\"{revision}\"");
+                spawn_local(async move {
+                    let res = api::request::<AgentRun>(
+                        &format!("{BASE}/threads/{tid}/runs"),
+                        Req {
+                            method: "POST",
+                            body: Some(body),
+                            csrf: Some(&token),
+                            headers: &[("if-match", &if_match)],
+                            signal: Some(signal.clone()),
+                            ..Default::default()
+                        },
+                    )
+                    .await;
+                    if signal.aborted() {
+                        return;
+                    }
+                    match res {
+                        Ok(value) => {
+                            {
+                                on_run.try_run(value.id);
+                            };
+                            reload.try_update(|n| *n += 1);
+                            pending.with_value(|c| *c.borrow_mut() = None);
+                            if !from_queue && special.is_none() {
+                                images.clear();
+                            }
+                            if from_queue {
+                                queued.try_set(String::new());
+                            } else if special.is_none() {
+                                draft.try_set(String::new());
+                                draft_cache.with_value(|c| {
+                                    c.borrow_mut().insert(k.clone(), String::new());
+                                });
+                            }
+                            storage_remove(session_storage(), &op_key);
+                            storage_remove(session_storage(), &run_key);
+                            if !from_queue && special.is_none() {
+                                storage_remove(session_storage(), &k);
+                            }
+                            notice.try_set(format!("Task sent to {}.", provider_name(&cur_model)));
                         }
-                        if from_queue {
-                            queued.try_set(String::new());
-                        } else if special.is_none() {
+                        Err(e) => {
+                            error.try_set(failure(&e));
+                        }
+                    }
+                    busy.try_set(false);
+                });
+            } else {
+                let body = serde_json::to_string(&op).unwrap_or_default();
+                let if_match = format!("\"{revision}\"");
+                spawn_local(async move {
+                    let res = api::request::<MessageCreated>(
+                        &format!("{BASE}/threads/{tid}/messages"),
+                        Req {
+                            method: "POST",
+                            body: Some(body),
+                            csrf: Some(&token),
+                            headers: &[("if-match", &if_match)],
+                            signal: Some(signal.clone()),
+                            ..Default::default()
+                        },
+                    )
+                    .await;
+                    if signal.aborted() {
+                        return;
+                    }
+                    match res {
+                        Ok(value) => {
+                            history.try_update(|h| {
+                                if let Some(cur) = h {
+                                    cur.thread = value.thread.clone();
+                                    cur.items = merge_messages(&cur.items, &[value.message]);
+                                }
+                            });
+                            {
+                                on_changed.try_run(value.thread);
+                            };
                             draft.try_set(String::new());
-                            draft_cache.with_value(|c| { c.borrow_mut().insert(k.clone(), String::new()); });
-                        }
-                        storage_remove(session_storage(), &op_key);
-                        storage_remove(session_storage(), &run_key);
-                        if !from_queue && special.is_none() {
+                            draft_cache.with_value(|c| {
+                                c.borrow_mut().insert(k.clone(), String::new());
+                            });
+                            pending.with_value(|c| *c.borrow_mut() = None);
+                            storage_remove(session_storage(), &op_key);
                             storage_remove(session_storage(), &k);
-                        }
-                        notice.try_set(format!("Task sent to {}.", provider_name(&cur_model)));
-                    }
-                    Err(e) => { error.try_set(failure(&e)); }
-                }
-                busy.try_set(false);
-            });
-        } else {
-            let body = serde_json::to_string(&op).unwrap_or_default();
-            let if_match = format!("\"{revision}\"");
-            spawn_local(async move {
-                let res = api::request::<MessageCreated>(
-                    &format!("{BASE}/threads/{tid}/messages"),
-                    Req {
-                        method: "POST",
-                        body: Some(body),
-                        csrf: Some(&token),
-                        headers: &[("if-match", &if_match)],
-                        signal: Some(signal.clone()),
-                        ..Default::default()
-                    },
-                )
-                .await;
-                if signal.aborted() {
-                    return;
-                }
-                match res {
-                    Ok(value) => {
-                        history.try_update(|h| {
-                            if let Some(cur) = h {
-                                cur.thread = value.thread.clone();
-                                cur.items = merge_messages(&cur.items, &[value.message]);
+                            notice
+                                .try_set("Message saved. It has not been sent to a model.".into());
+                            if let Some(el) = composer.get_untracked() {
+                                let _ = el.focus();
                             }
-                        });
-                        { on_changed.try_run(value.thread); };
-                        draft.try_set(String::new());
-                        draft_cache.with_value(|c| { c.borrow_mut().insert(k.clone(), String::new()); });
-                        pending.with_value(|c| *c.borrow_mut() = None);
-                        storage_remove(session_storage(), &op_key);
-                        storage_remove(session_storage(), &k);
-                        notice.try_set("Message saved. It has not been sent to a model.".into());
-                        if let Some(el) = composer.get_untracked() {
-                            let _ = el.focus();
+                            following.with_value(|f| *f.borrow_mut() = true);
+                            request_animation_frame(move || {
+                                if let Some(vp) = viewport.get_untracked() {
+                                    vp.set_scroll_top(vp.scroll_height());
+                                }
+                            });
                         }
-                        following.with_value(|f| *f.borrow_mut() = true);
-                        request_animation_frame(move || {
-                            if let Some(vp) = viewport.get_untracked() {
-                                vp.set_scroll_top(vp.scroll_height());
-                            }
-                        });
+                        Err(e) => {
+                            error.try_set(failure(&e));
+                        }
                     }
-                    Err(e) => { error.try_set(failure(&e)); }
-                }
-                busy.try_set(false);
-            });
-        }
-    });
+                    busy.try_set(false);
+                });
+            }
+        },
+    );
     // A send held while the history reloaded goes out once it has loaded.
     Effect::new(move |_| {
         if !refreshing.get()
@@ -3320,12 +3713,24 @@ fn Conversation(
     listen(&window(), "dar:agent-special", false, move |event| {
         if let Ok(ce) = event.dyn_into::<web_sys::CustomEvent>() {
             let detail = ce.detail();
-            let t = js_sys::Reflect::get(&detail, &JsValue::from_str("thread")).ok().and_then(|v| v.as_string());
-            let m = js_sys::Reflect::get(&detail, &JsValue::from_str("mode")).ok().and_then(|v| v.as_string());
+            let t = js_sys::Reflect::get(&detail, &JsValue::from_str("thread"))
+                .ok()
+                .and_then(|v| v.as_string());
+            let m = js_sys::Reflect::get(&detail, &JsValue::from_str("mode"))
+                .ok()
+                .and_then(|v| v.as_string());
             if t.as_deref() == Some(thread_id_sv.get_value().as_str()) {
                 match m.as_deref() {
-                    Some("review") => save_action.run((true, Some("Review the uncommitted changes in this working copy.".into()), Some("review"))),
-                    Some("compact") => save_action.run((true, Some("Compact the conversation context.".into()), Some("compact"))),
+                    Some("review") => save_action.run((
+                        true,
+                        Some("Review the uncommitted changes in this working copy.".into()),
+                        Some("review"),
+                    )),
+                    Some("compact") => save_action.run((
+                        true,
+                        Some("Compact the conversation context.".into()),
+                        Some("compact"),
+                    )),
                     _ => {}
                 }
             }
@@ -3343,11 +3748,17 @@ fn Conversation(
         let checking = checking_provider.get();
         let pics_busy = images.busy();
         let connected = provider.with(|p| p.as_ref().is_some_and(|p| p.connected));
-        if !has_hist || draft.with_untracked(|d| d.trim().is_empty()) || (auto && checking) || pics_busy {
+        if !has_hist
+            || draft.with_untracked(|d| d.trim().is_empty())
+            || (auto && checking)
+            || pics_busy
+        {
             return;
         }
         started_flag.with_value(|f| *f.borrow_mut() = true);
-        { on_started.try_run(()); };
+        {
+            on_started.try_run(());
+        };
         save_action.run((auto && connected, None, None));
     });
 
@@ -3362,7 +3773,12 @@ fn Conversation(
                 .and_then(|h| h.runs.first())
                 .map(|r| (r.id.clone(), r.status == "completed"))
         });
-        if !q.is_empty() && !is_running && !is_busy && connected && latest_completed.is_some_and(|(_, done)| done) {
+        if !q.is_empty()
+            && !is_running
+            && !is_busy
+            && connected
+            && latest_completed.is_some_and(|(_, done)| done)
+        {
             save_action.run((true, Some(q), None));
         }
     });
@@ -3375,12 +3791,28 @@ fn Conversation(
         spawn_local(async move {
             match api::request::<AgentThread>(
                 &format!("{BASE}/threads/{tid}/fork"),
-                Req { method: "POST", body: Some(body), csrf: Some(&token), signal: Some(signal.clone()), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
             )
             .await
             {
-                Ok(row) => if !signal.aborted() { { on_forked.try_run(row); }; },
-                Err(e) => if !signal.aborted() { error.try_set(failure(&e)); },
+                Ok(row) => {
+                    if !signal.aborted() {
+                        {
+                            on_forked.try_run(row);
+                        };
+                    }
+                }
+                Err(e) => {
+                    if !signal.aborted() {
+                        error.try_set(failure(&e));
+                    }
+                }
             }
         });
     };
@@ -3397,7 +3829,9 @@ fn Conversation(
         queued.set(text);
         draft.set(String::new());
         let k = key_sv.get_value();
-        draft_cache.with_value(|c| { c.borrow_mut().insert(k, String::new()); });
+        draft_cache.with_value(|c| {
+            c.borrow_mut().insert(k, String::new());
+        });
         notice.set("Queued. It is sent when the agent finishes.".into());
     };
 
@@ -3414,7 +3848,10 @@ fn Conversation(
         spawn_local(async move {
             let res = api::request::<AgentHistory>(
                 &format!("{BASE}/threads/{tid}/messages?before={before}"),
-                Req { signal: Some(signal.clone()), ..Default::default() },
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
             )
             .await;
             if signal.aborted() {
@@ -3423,7 +3860,9 @@ fn Conversation(
             match res {
                 Ok(value) => {
                     if let Some(el) = viewport.get_untracked() {
-                        prepend.with_value(|p| *p.borrow_mut() = Some((el.scroll_height(), el.scroll_top())));
+                        prepend.with_value(|p| {
+                            *p.borrow_mut() = Some((el.scroll_height(), el.scroll_top()))
+                        });
                     }
                     history.try_update(|h| {
                         if let Some(cur) = h {
@@ -3432,7 +3871,9 @@ fn Conversation(
                         }
                     });
                 }
-                Err(e) => { error.try_set(failure(&e)); }
+                Err(e) => {
+                    error.try_set(failure(&e));
+                }
             }
             loading_earlier.try_set(false);
         });
@@ -3473,7 +3914,9 @@ fn Conversation(
             && let Ok(nodes) = vp.query_selector_all("[data-message-id]")
         {
             for i in 0..nodes.length() {
-                if let Some(el) = nodes.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+                if let Some(el) = nodes
+                    .item(i)
+                    .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
                     && el.get_attribute("data-message-id").as_deref() == Some(mid.as_str())
                 {
                     scroll_into_view_block(&el, web_sys::ScrollLogicalPosition::Center);
@@ -3490,7 +3933,10 @@ fn Conversation(
                     notice.try_set("Copied to clipboard.".into());
                     copy_error.try_set(String::new());
                 }
-                Err(()) => { copy_error.try_set("Could not copy. Select the message text to copy it.".into()); }
+                Err(()) => {
+                    copy_error
+                        .try_set("Could not copy. Select the message text to copy it.".into());
+                }
             }
         });
     };
@@ -3517,14 +3963,26 @@ fn Conversation(
             name: "review".into(),
             hint: "Ask the agent to review uncommitted changes".into(),
             argument: None,
-            run: Callback::new(move |_| save_action.run((true, Some("Review the uncommitted changes in this working copy.".into()), Some("review")))),
+            run: Callback::new(move |_| {
+                save_action.run((
+                    true,
+                    Some("Review the uncommitted changes in this working copy.".into()),
+                    Some("review"),
+                ))
+            }),
         });
         if provider_of(&cur_model) != "claude" {
             list.push(SlashCommand {
                 name: "compact".into(),
                 hint: "Compact the conversation context".into(),
                 argument: None,
-                run: Callback::new(move |_| save_action.run((true, Some("Compact the conversation context.".into()), Some("compact")))),
+                run: Callback::new(move |_| {
+                    save_action.run((
+                        true,
+                        Some("Compact the conversation context.".into()),
+                        Some("compact"),
+                    ))
+                }),
             });
         }
         list
@@ -3533,7 +3991,13 @@ fn Conversation(
     let prompts_sig = Signal::derive(move || {
         history.with(|h| {
             h.as_ref()
-                .map(|h| h.items.iter().filter(|m| m.role == "user").map(|m| m.content.clone()).collect())
+                .map(|h| {
+                    h.items
+                        .iter()
+                        .filter(|m| m.role == "user")
+                        .map(|m| m.content.clone())
+                        .collect()
+                })
                 .unwrap_or_default()
         })
     });
@@ -3542,17 +4006,33 @@ fn Conversation(
         if running.get() {
             "Steer the running turn, or queue a follow-up\u{2026}".into()
         } else if provider.with(|p| p.as_ref().is_some_and(|p| p.connected)) {
-            format!("Ask {} to plan, change or explain\u{2026} @ files, / commands", provider_name(&model.get()))
+            format!(
+                "Ask {} to plan, change or explain\u{2026} @ files, / commands",
+                provider_name(&model.get())
+            )
         } else {
             "Write a message to save\u{2026}".into()
         }
     });
 
     let minimap_version = Signal::derive(move || {
-        let len = history.with(|h| h.as_ref().map(|h| h.items.len().to_string()).unwrap_or_default());
+        let len = history.with(|h| {
+            h.as_ref()
+                .map(|h| h.items.len().to_string())
+                .unwrap_or_default()
+        });
         let (st, steps) = run.with(|r| {
             r.as_ref()
-                .map(|r| (r.status.clone(), r.document.steps.as_ref().map(|s| s.len().to_string()).unwrap_or_default()))
+                .map(|r| {
+                    (
+                        r.status.clone(),
+                        r.document
+                            .steps
+                            .as_ref()
+                            .map(|s| s.len().to_string())
+                            .unwrap_or_default(),
+                    )
+                })
                 .unwrap_or_default()
         });
         format!("{len}-{st}-{steps}")
@@ -4019,9 +4499,11 @@ fn DraftComposer(
     let images = PicturesState::new(None, session.csrf_token.clone());
     let plan = RwSignal::new(false);
 
-    let pending: StoredValue<RefCell<Option<(String, String)>>, LocalStorage> = StoredValue::new_local(RefCell::new(None));
+    let pending: StoredValue<RefCell<Option<(String, String)>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(None));
     let composer = NodeRef::<html::Textarea>::new();
-    let controller = StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
+    let controller =
+        StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
     on_cleanup(move || controller.with_value(|c| c.abort()));
 
     Effect::new(move |_| {
@@ -4039,7 +4521,10 @@ fn DraftComposer(
             storage_remove(session_storage(), &k);
         }
         if let Some(field) = composer.get() {
-            let rows: usize = text.split('\n').map(|line| ((line.chars().count() as f64 / 75.0).ceil() as usize).max(1)).sum();
+            let rows: usize = text
+                .split('\n')
+                .map(|line| ((line.chars().count() as f64 / 75.0).ceil() as usize).max(1))
+                .sum();
             field.set_rows(rows.clamp(3, 9) as u32);
         }
     });
@@ -4080,11 +4565,19 @@ fn DraftComposer(
         let token = csrf.get_value();
         let cur_effort = effort.get_untracked();
         let cur_plan = plan.get_untracked();
-        let files: Vec<SendWrapper<web_sys::File>> = images.items.with_untracked(|list| list.iter().map(|i| i.file.clone()).collect());
+        let files: Vec<SendWrapper<web_sys::File>> = images
+            .items
+            .with_untracked(|list| list.iter().map(|i| i.file.clone()).collect());
         spawn_local(async move {
             let res = api::request::<AgentThread>(
                 &format!("{BASE}/threads"),
-                Req { method: "POST", body: Some(body), csrf: Some(&token), signal: Some(signal.clone()), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
             )
             .await;
             if signal.aborted() {
@@ -4093,20 +4586,29 @@ fn DraftComposer(
             match res {
                 Ok(row) => {
                     let target = format!("dar.agent.draft.{}.{}", user_id_sv.get_value(), row.id);
-                    draft_cache.with_value(|c| { c.borrow_mut().insert(target.clone(), text.clone()); });
+                    draft_cache.with_value(|c| {
+                        c.borrow_mut().insert(target.clone(), text.clone());
+                    });
                     let _ = storage_set(session_storage(), &target, &text);
                     if !cur_model.is_empty() {
-                        let _ = storage_set(session_storage(), &format!("{target}.model"), &cur_model);
+                        let _ =
+                            storage_set(session_storage(), &format!("{target}.model"), &cur_model);
                     }
                     if !cur_effort.is_empty() {
-                        let _ = storage_set(session_storage(), &format!("{target}.effort"), &cur_effort);
+                        let _ = storage_set(
+                            session_storage(),
+                            &format!("{target}.effort"),
+                            &cur_effort,
+                        );
                     }
                     if cur_plan {
                         let _ = storage_set(session_storage(), &format!("{target}.mode"), "plan");
                     }
                     storage_remove(session_storage(), &key_sv.get_value());
                     pending.with_value(|c| *c.borrow_mut() = None);
-                    { on_created.try_run((row, execute, files)); };
+                    {
+                        on_created.try_run((row, execute, files));
+                    };
                 }
                 Err(e) => {
                     error.try_set(failure(&e));
@@ -4130,7 +4632,12 @@ fn DraftComposer(
                 efforts,
             })
             .into_iter()
-            .filter(|item| !matches!(item.name.as_str(), "find" | "review" | "terminal" | "settle" | "rename"))
+            .filter(|item| {
+                !matches!(
+                    item.name.as_str(),
+                    "find" | "review" | "terminal" | "settle" | "rename"
+                )
+            })
             .collect();
         list.push(SlashCommand {
             name: "plan".into(),
@@ -4143,7 +4650,10 @@ fn DraftComposer(
 
     let placeholder_sig = Signal::derive(move || {
         if provider.with(|p| p.as_ref().is_some_and(|p| p.connected)) {
-            format!("Ask {} to plan, change or explain\u{2026} / commands", provider_name(&model.get()))
+            format!(
+                "Ask {} to plan, change or explain\u{2026} / commands",
+                provider_name(&model.get())
+            )
         } else {
             "Write a message to save\u{2026}".into()
         }
@@ -4300,15 +4810,24 @@ fn HistoryBranchCard(
         spawn_local(async move {
             match api::request::<BranchState>(
                 &format!("{BASE}/threads/{tid}/branch"),
-                Req { method: "POST", body: Some("{}".into()), csrf: Some(&token), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some("{}".into()),
+                    csrf: Some(&token),
+                    ..Default::default()
+                },
             )
             .await
             {
                 Ok(next) => {
-                    { on_state.try_run(next); };
+                    {
+                        on_state.try_run(next);
+                    };
                     notice.try_set("Changes committed to the branch.".into());
                 }
-                Err(e) => { error.try_set(history_failure(&e.message)); }
+                Err(e) => {
+                    error.try_set(history_failure(&e.message));
+                }
             }
             busy.try_set(String::new());
         });
@@ -4316,7 +4835,9 @@ fn HistoryBranchCard(
 
     let finish = Callback::new(move |action: &'static str| {
         let st = state.get_untracked();
-        let (Some(branch), Some(folder_id)) = (st.branch, st.folder_id) else { return };
+        let (Some(branch), Some(folder_id)) = (st.branch, st.folder_id) else {
+            return;
+        };
         busy.set(action.into());
         error.set(String::new());
         conflicts.set(Vec::new());
@@ -4327,7 +4848,12 @@ fn HistoryBranchCard(
         spawn_local(async move {
             let res = api::request::<MergeResult>(
                 &format!("/api/v1/files/history/{folder_id}/branches/{action}"),
-                Req { method: "POST", body: Some(body), csrf: Some(&token), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    ..Default::default()
+                },
             )
             .await;
             match res {
@@ -4340,12 +4866,18 @@ fn HistoryBranchCard(
                         } else {
                             "Branch discarded. The folder was not changed.".into()
                         });
-                        if let Ok(refreshed) = api::get::<BranchState>(&format!("{BASE}/threads/{tid}/branch")).await {
-                            { on_state.try_run(refreshed); };
+                        if let Ok(refreshed) =
+                            api::get::<BranchState>(&format!("{BASE}/threads/{tid}/branch")).await
+                        {
+                            {
+                                on_state.try_run(refreshed);
+                            };
                         }
                     }
                 }
-                Err(e) => { error.try_set(history_failure(&e.message)); }
+                Err(e) => {
+                    error.try_set(history_failure(&e.message));
+                }
             }
             busy.try_set(String::new());
             confirm.try_set(false);
@@ -4425,7 +4957,10 @@ struct UploadReservation {
 }
 
 #[component]
-fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSession) -> impl IntoView {
+fn ChangeReview(
+    #[prop(into)] run: Signal<Option<AgentRun>>,
+    session: BrowserSession,
+) -> impl IntoView {
     let busy = RwSignal::new(String::new());
     let error = RwSignal::new(String::new());
     let applied: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
@@ -4436,7 +4971,8 @@ fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSes
     let notice = RwSignal::new(String::new());
     let csrf = StoredValue::new(session.csrf_token.clone());
     let session_sv = StoredValue::new(session);
-    let controller = StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
+    let controller =
+        StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
     on_cleanup(move || controller.with_value(|c| c.abort()));
 
     let thread_id = Memo::new(move |_| run.with(|r| r.as_ref().map(|r| r.thread_id.clone())));
@@ -4447,7 +4983,14 @@ fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSes
         let keep = SendWrapper::new(abort);
         on_cleanup(move || keep.abort());
         spawn_local(async move {
-            if let Ok(st) = api::request::<BranchState>(&format!("{BASE}/threads/{tid}/branch"), Req { signal: Some(signal.clone()), ..Default::default() }).await
+            if let Ok(st) = api::request::<BranchState>(
+                &format!("{BASE}/threads/{tid}/branch"),
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
                 && !signal.aborted()
             {
                 branch_state.try_set(st);
@@ -4462,7 +5005,13 @@ fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSes
                     r.document
                         .changes
                         .iter()
-                        .map(|change| (change.clone(), unified_patch(&change.diff), diff_counts(&change.diff)))
+                        .map(|change| {
+                            (
+                                change.clone(),
+                                unified_patch(&change.diff),
+                                diff_counts(&change.diff),
+                            )
+                        })
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default()
@@ -4475,7 +5024,11 @@ fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSes
             download.set(String::new());
             return;
         }
-        let joined = list.iter().map(|(_, p, _)| p.as_str()).collect::<Vec<_>>().join("\n\n");
+        let joined = list
+            .iter()
+            .map(|(_, p, _)| p.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n");
         let parts = js_sys::Array::of1(&JsValue::from_str(&joined));
         let bag = web_sys::BlobPropertyBag::new();
         bag.set_type("text/plain");
@@ -4483,12 +5036,16 @@ fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSes
             && let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob)
         {
             download.set(url.clone());
-            on_cleanup(move || { let _ = web_sys::Url::revoke_object_url(&url); });
+            on_cleanup(move || {
+                let _ = web_sys::Url::revoke_object_url(&url);
+            });
         }
     });
 
     let apply = move |change: AgentChange| {
-        let (Some(content), Some(file_id), Some(expected_revision)) = (change.content, change.file_id, change.expected_revision) else {
+        let (Some(content), Some(file_id), Some(expected_revision)) =
+            (change.content, change.file_id, change.expected_revision)
+        else {
             return;
         };
         let path = change.path.clone();
@@ -4510,7 +5067,13 @@ fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSes
             .to_string();
             let reservation = api::request::<UploadReservation>(
                 "/api/v1/files/uploads",
-                Req { method: "POST", body: Some(res_body), csrf: Some(&token), signal: Some(signal.clone()), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(res_body),
+                    csrf: Some(&token),
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
             )
             .await;
             let result = match reservation {
@@ -4518,10 +5081,17 @@ fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSes
                     let parts = js_sys::Array::of1(&JsValue::from_str(&content));
                     let bag = web_sys::BlobPropertyBag::new();
                     bag.set_type(&media_type);
-                    let blob = web_sys::Blob::new_with_str_sequence_and_options(&parts, &bag).expect("blob");
+                    let blob = web_sys::Blob::new_with_str_sequence_and_options(&parts, &bag)
+                        .expect("blob");
                     api::request::<Value>(
                         &format!("/api/v1/files/uploads/{}", res.id),
-                        Req { method: "PUT", raw: Some(blob.into()), csrf: Some(&token), signal: Some(signal.clone()), ..Default::default() },
+                        Req {
+                            method: "PUT",
+                            raw: Some(blob.into()),
+                            csrf: Some(&token),
+                            signal: Some(signal.clone()),
+                            ..Default::default()
+                        },
                     )
                     .await
                     .map(|_| ())
@@ -4532,12 +5102,16 @@ fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSes
                 return;
             }
             match result {
-                Ok(()) => { applied.try_update(|v| v.push(path)); }
-                Err(e) => { error.try_set(if e.status == 409 {
+                Ok(()) => {
+                    applied.try_update(|v| v.push(path));
+                }
+                Err(e) => {
+                    error.try_set(if e.status == 409 {
                     "The file changed since this workspace was created. Your proposed edit is retained; open Files to resolve the conflict.".into()
                 } else {
                     failure(&e)
-                }); }
+                });
+                }
             }
             busy.try_set(String::new());
         });
@@ -4546,8 +5120,12 @@ fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSes
     let copy_diff = move |text: String| {
         spawn_local(async move {
             match write_clipboard(&text).await {
-                Ok(()) => { notice.try_set("Diff copied.".into()); }
-                Err(()) => { error.try_set("Could not copy. Use Download review instead.".into()); }
+                Ok(()) => {
+                    notice.try_set("Diff copied.".into());
+                }
+                Err(()) => {
+                    error.try_set("Could not copy. Use Download review instead.".into());
+                }
             }
         });
     };
@@ -4657,7 +5235,11 @@ fn ChangeReview(#[prop(into)] run: Signal<Option<AgentRun>>, session: BrowserSes
 // ---------------------------------------------------------------------------
 
 #[component]
-fn GitCard(#[prop(into)] thread_id: Signal<String>, session: BrowserSession, #[prop(into)] epoch: Signal<u64>) -> impl IntoView {
+fn GitCard(
+    #[prop(into)] thread_id: Signal<String>,
+    session: BrowserSession,
+    #[prop(into)] epoch: Signal<u64>,
+) -> impl IntoView {
     let state: RwSignal<Option<GitState>> = RwSignal::new(None);
     let dialog: RwSignal<Option<&'static str>> = RwSignal::new(None);
     let value = RwSignal::new(String::new());
@@ -4673,16 +5255,34 @@ fn GitCard(#[prop(into)] thread_id: Signal<String>, session: BrowserSession, #[p
         let keep = SendWrapper::new(abort);
         on_cleanup(move || keep.abort());
         spawn_local(async move {
-            match api::request::<GitState>(&format!("{BASE}/threads/{tid}/git"), Req { signal: Some(signal.clone()), ..Default::default() }).await {
-                Ok(st) => if !signal.aborted() { state.try_set(Some(st)); },
-                Err(_) => if !signal.aborted() { state.try_set(Some(GitState::default())); },
+            match api::request::<GitState>(
+                &format!("{BASE}/threads/{tid}/git"),
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(st) => {
+                    if !signal.aborted() {
+                        state.try_set(Some(st));
+                    }
+                }
+                Err(_) => {
+                    if !signal.aborted() {
+                        state.try_set(Some(GitState::default()));
+                    }
+                }
             }
         });
     });
 
     let submit = move |event: web_sys::SubmitEvent| {
         event.prevent_default();
-        let Some(kind) = dialog.get_untracked() else { return };
+        let Some(kind) = dialog.get_untracked() else {
+            return;
+        };
         busy.set(true);
         error.set(String::new());
         let tid = thread_id.get_untracked();
@@ -4696,7 +5296,12 @@ fn GitCard(#[prop(into)] thread_id: Signal<String>, session: BrowserSession, #[p
         spawn_local(async move {
             match api::request::<GitState>(
                 &format!("{BASE}/threads/{tid}/git"),
-                Req { method: "POST", body: Some(body), csrf: Some(&token), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    ..Default::default()
+                },
             )
             .await
             {
@@ -4704,7 +5309,9 @@ fn GitCard(#[prop(into)] thread_id: Signal<String>, session: BrowserSession, #[p
                     state.try_set(Some(next));
                     dialog.try_set(None);
                 }
-                Err(e) => { error.try_set(failure(&e)); }
+                Err(e) => {
+                    error.try_set(failure(&e));
+                }
             }
             busy.try_set(false);
         });
@@ -4776,7 +5383,11 @@ struct ShareList {
 }
 
 #[component]
-fn ShareDialog(thread: AgentThread, session: BrowserSession, on_close: Callback<()>) -> impl IntoView {
+fn ShareDialog(
+    thread: AgentThread,
+    session: BrowserSession,
+    on_close: Callback<()>,
+) -> impl IntoView {
     let rows: RwSignal<Option<Vec<ShareRow>>> = RwSignal::new(None);
     let username = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
@@ -4792,9 +5403,25 @@ fn ShareDialog(thread: AgentThread, session: BrowserSession, on_close: Callback<
         let keep = SendWrapper::new(abort);
         on_cleanup(move || keep.abort());
         spawn_local(async move {
-            match api::request::<ShareList>(&format!("{BASE}/threads/{tid}/shares"), Req { signal: Some(signal.clone()), ..Default::default() }).await {
-                Ok(val) => if !signal.aborted() { rows.try_set(Some(val.items)); },
-                Err(e) => if !signal.aborted() { error.try_set(failure(&e)); },
+            match api::request::<ShareList>(
+                &format!("{BASE}/threads/{tid}/shares"),
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(val) => {
+                    if !signal.aborted() {
+                        rows.try_set(Some(val.items));
+                    }
+                }
+                Err(e) => {
+                    if !signal.aborted() {
+                        error.try_set(failure(&e));
+                    }
+                }
             }
         });
     });
@@ -4811,7 +5438,12 @@ fn ShareDialog(thread: AgentThread, session: BrowserSession, on_close: Callback<
         spawn_local(async move {
             match api::request::<ShareRow>(
                 &format!("{BASE}/threads/{tid}/shares"),
-                Req { method: "POST", body: Some(body), csrf: Some(&token), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    ..Default::default()
+                },
             )
             .await
             {
@@ -4825,11 +5457,13 @@ fn ShareDialog(thread: AgentThread, session: BrowserSession, on_close: Callback<
                     username.try_set(String::new());
                     operation.with_value(|c| *c.borrow_mut() = random_uuid());
                 }
-                Err(e) => { error.try_set(match e.status {
-                    404 => "No active Dar account has that username.".into(),
-                    400 => "Enter another person\u{2019}s username.".into(),
-                    _ => failure(&e),
-                }); }
+                Err(e) => {
+                    error.try_set(match e.status {
+                        404 => "No active Dar account has that username.".into(),
+                        400 => "Enter another person\u{2019}s username.".into(),
+                        _ => failure(&e),
+                    });
+                }
             }
             busy.try_set(false);
         });
@@ -4841,12 +5475,24 @@ fn ShareDialog(thread: AgentThread, session: BrowserSession, on_close: Callback<
         spawn_local(async move {
             match api::request::<Value>(
                 &format!("{BASE}/threads/{tid}/shares/{row_id}"),
-                Req { method: "DELETE", csrf: Some(&token), ..Default::default() },
+                Req {
+                    method: "DELETE",
+                    csrf: Some(&token),
+                    ..Default::default()
+                },
             )
             .await
             {
-                Ok(_) => { rows.try_update(|list| { if let Some(v) = list { v.retain(|item| item.id != row_id); } }); }
-                Err(e) => { error.try_set(failure(&e)); }
+                Ok(_) => {
+                    rows.try_update(|list| {
+                        if let Some(v) = list {
+                            v.retain(|item| item.id != row_id);
+                        }
+                    });
+                }
+                Err(e) => {
+                    error.try_set(failure(&e));
+                }
             }
         });
     });
@@ -4914,19 +5560,42 @@ fn SharedConversation(#[prop(into)] item: Signal<SharedThread>) -> impl IntoView
         items.set(None);
         error.set(String::new());
         spawn_local(async move {
-            match api::request::<SharedMessages>(&format!("{BASE}/shared/{tid}/messages"), Req { signal: Some(signal.clone()), ..Default::default() }).await {
-                Ok(val) => if !signal.aborted() { items.try_set(Some(val.items)); next.try_set(val.next_before); },
-                Err(e) => if !signal.aborted() { error.try_set(failure(&e)); },
+            match api::request::<SharedMessages>(
+                &format!("{BASE}/shared/{tid}/messages"),
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(val) => {
+                    if !signal.aborted() {
+                        items.try_set(Some(val.items));
+                        next.try_set(val.next_before);
+                    }
+                }
+                Err(e) => {
+                    if !signal.aborted() {
+                        error.try_set(failure(&e));
+                    }
+                }
             }
         });
     });
 
     let earlier = move || {
-        let Some(before) = next.get_untracked() else { return };
+        let Some(before) = next.get_untracked() else {
+            return;
+        };
         let tid = item.with_untracked(|i| i.thread.id.clone());
         loading.set(true);
         spawn_local(async move {
-            match api::get::<SharedMessages>(&format!("{BASE}/shared/{tid}/messages?before={before}")).await {
+            match api::get::<SharedMessages>(&format!(
+                "{BASE}/shared/{tid}/messages?before={before}"
+            ))
+            .await
+            {
                 Ok(val) => {
                     items.try_update(|cur| {
                         let existing = cur.as_deref().unwrap_or(&[]);
@@ -4934,7 +5603,9 @@ fn SharedConversation(#[prop(into)] item: Signal<SharedThread>) -> impl IntoView
                     });
                     next.try_set(val.next_before);
                 }
-                Err(e) => { error.try_set(failure(&e)); }
+                Err(e) => {
+                    error.try_set(failure(&e));
+                }
             }
             loading.try_set(false);
         });
@@ -5010,7 +5681,13 @@ fn CommandPalette(items: Vec<PaletteItem>, on_close: Callback<()>) -> impl IntoV
             all.iter()
                 .enumerate()
                 .filter(|(_, item)| {
-                    let hay = format!("{} {} {}", item.label, item.detail.as_deref().unwrap_or(""), item.group).to_lowercase();
+                    let hay = format!(
+                        "{} {} {}",
+                        item.label,
+                        item.detail.as_deref().unwrap_or(""),
+                        item.group
+                    )
+                    .to_lowercase();
                     words.iter().all(|w| hay.contains(w))
                 })
                 .take(60)
@@ -5036,7 +5713,9 @@ fn CommandPalette(items: Vec<PaletteItem>, on_close: Callback<()>) -> impl IntoV
     // The items belong to the palette's owner, which closing disposes: run first, then close.
     let choose = move |run_cb: Callback<()>| {
         run_cb.run(());
-        { on_close.try_run(()); };
+        {
+            on_close.try_run(());
+        };
     };
 
     view! {
@@ -5122,7 +5801,8 @@ fn Resizer(
     on_change: Callback<f64>,
     side: &'static str,
 ) -> impl IntoView {
-    let drag_listeners: StoredValue<RefCell<Vec<Listener>>, LocalStorage> = StoredValue::new_local(RefCell::new(Vec::new()));
+    let drag_listeners: StoredValue<RefCell<Vec<Listener>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(Vec::new()));
     on_cleanup(move || drag_listeners.with_value(|v| v.borrow_mut().clear()));
 
     view! {
@@ -5198,8 +5878,16 @@ struct SharedList {
 
 fn dispatch_agent_special(thread_id: &str, mode: &str) {
     let detail = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("thread"), &JsValue::from_str(thread_id));
-    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("mode"), &JsValue::from_str(mode));
+    let _ = js_sys::Reflect::set(
+        &detail,
+        &JsValue::from_str("thread"),
+        &JsValue::from_str(thread_id),
+    );
+    let _ = js_sys::Reflect::set(
+        &detail,
+        &JsValue::from_str("mode"),
+        &JsValue::from_str(mode),
+    );
     let init = web_sys::CustomEventInit::new();
     init.set_detail(&detail);
     if let Ok(ev) = web_sys::CustomEvent::new_with_event_init_dict("dar:agent-special", &init) {
@@ -5237,8 +5925,14 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
 
     let initial_search = window().location().search().unwrap_or_default();
     let initial_params = web_sys::UrlSearchParams::new_with_str(&initial_search).ok();
-    let initial_project = initial_params.as_ref().and_then(|p| p.get("project")).unwrap_or_default();
-    let initial_thread = initial_params.as_ref().and_then(|p| p.get("thread")).unwrap_or_default();
+    let initial_project = initial_params
+        .as_ref()
+        .and_then(|p| p.get("project"))
+        .unwrap_or_default();
+    let initial_thread = initial_params
+        .as_ref()
+        .and_then(|p| p.get("thread"))
+        .unwrap_or_default();
     let has_initial_thread = initial_params.as_ref().is_some_and(|p| p.has("thread"));
 
     let init_layout = saved_layout(&session.user.id);
@@ -5254,11 +5948,17 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let error = RwSignal::new(String::new());
     let thread_error = RwSignal::new(String::new());
     let reload = RwSignal::new(0u64);
-    let view = RwSignal::new(if is_narrow() && !has_initial_thread { View::Threads } else { View::Conversation });
+    let view = RwSignal::new(if is_narrow() && !has_initial_thread {
+        View::Threads
+    } else {
+        View::Conversation
+    });
     // Phones hide the shared rail and top bar outside the thread list (frame.css).
     Effect::new(move |_| {
         if let Some(body) = document().body() {
-            let _ = body.class_list().toggle_with_force("agent-outside-threads", view.get() != View::Threads);
+            let _ = body
+                .class_list()
+                .toggle_with_force("agent-outside-threads", view.get() != View::Threads);
         }
     });
     on_cleanup(|| {
@@ -5302,7 +6002,8 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let tabs_ref = NodeRef::<html::Nav>::new();
     let search_ref = NodeRef::<html::Input>::new();
 
-    let statuses: StoredValue<RefCell<HashMap<String, String>>, LocalStorage> = StoredValue::new_local(RefCell::new(HashMap::new()));
+    let statuses: StoredValue<RefCell<HashMap<String, String>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(HashMap::new()));
     let provider: RwSignal<Option<AgentProvider>> = RwSignal::new(None);
     let provider_epoch = RwSignal::new(0u64);
     let checking_provider = RwSignal::new(true);
@@ -5318,36 +6019,52 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let prefs_loaded = Signal::derive(move || prefs_shared.value.with(Option::is_some));
     let prefs_error = Signal::derive(move || prefs_shared.error.get());
 
-    let completed_seen: StoredValue<RefCell<HashSet<String>>, LocalStorage> = StoredValue::new_local(RefCell::new(HashSet::new()));
-    let auto_start: StoredValue<RefCell<HashMap<String, bool>>, LocalStorage> = StoredValue::new_local(RefCell::new(HashMap::new()));
-    let start_files: StoredValue<RefCell<HashMap<String, Vec<SendWrapper<web_sys::File>>>>, LocalStorage> =
+    let completed_seen: StoredValue<RefCell<HashSet<String>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(HashSet::new()));
+    let auto_start: StoredValue<RefCell<HashMap<String, bool>>, LocalStorage> =
         StoredValue::new_local(RefCell::new(HashMap::new()));
-    let lifetime = StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
+    let start_files: StoredValue<
+        RefCell<HashMap<String, Vec<SendWrapper<web_sys::File>>>>,
+        LocalStorage,
+    > = StoredValue::new_local(RefCell::new(HashMap::new()));
+    let lifetime =
+        StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
     on_cleanup(move || lifetime.with_value(|c| c.abort()));
 
     let now = use_now(Signal::derive(|| true), 30000);
     let previous_view = StoredValue::new_local(RefCell::new(view.get_untracked()));
     let return_to_tabs = StoredValue::new_local(RefCell::new(false));
-    let draft_cache: StoredValue<RefCell<HashMap<String, String>>, LocalStorage> = StoredValue::new_local(RefCell::new(HashMap::new()));
-    let positions: StoredValue<RefCell<HashMap<String, ScrollPosition>>, LocalStorage> = StoredValue::new_local(RefCell::new(HashMap::new()));
+    let draft_cache: StoredValue<RefCell<HashMap<String, String>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(HashMap::new()));
+    let positions: StoredValue<RefCell<HashMap<String, ScrollPosition>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(HashMap::new()));
 
     let thread = Memo::new(move |_| {
         let tid = thread_id.get();
         if tid.is_empty() {
             return None;
         }
-        threads.with(|list| list.as_ref().and_then(|v| v.iter().find(|t| t.id == tid).cloned()))
+        threads.with(|list| {
+            list.as_ref()
+                .and_then(|v| v.iter().find(|t| t.id == tid).cloned())
+        })
     });
 
     let project = Memo::new(move |_| {
         let t = thread.get();
-        let pid = t.as_ref().map(|t| t.project_id.clone()).unwrap_or_else(|| project_id.get());
+        let pid = t
+            .as_ref()
+            .map(|t| t.project_id.clone())
+            .unwrap_or_else(|| project_id.get());
         projects.with(|list| {
             let list = list.as_ref()?;
-            list.iter()
-                .find(|p| p.id == pid)
-                .cloned()
-                .or_else(|| if t.is_none() { list.first().cloned() } else { None })
+            list.iter().find(|p| p.id == pid).cloned().or_else(|| {
+                if t.is_none() {
+                    list.first().cloned()
+                } else {
+                    None
+                }
+            })
         })
     });
 
@@ -5361,8 +6078,10 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         let sw = sidebar_width.get();
         let rw = review_width.get();
         if let Some(el) = shell_ref.get() {
-            let _ = web_sys::HtmlElement::style(&el).set_property("--agent-sidebar-width", &format!("{sw}px"));
-            let _ = web_sys::HtmlElement::style(&el).set_property("--agent-review-width", &format!("{rw}px"));
+            let _ = web_sys::HtmlElement::style(&el)
+                .set_property("--agent-sidebar-width", &format!("{sw}px"));
+            let _ = web_sys::HtmlElement::style(&el)
+                .set_property("--agent-review-width", &format!("{rw}px"));
         }
     });
 
@@ -5388,19 +6107,27 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     });
 
     let choose_new_thread = Callback::new(move |()| {
-        let Some(proj_list) = projects.get_untracked() else { return };
+        let Some(proj_list) = projects.get_untracked() else {
+            return;
+        };
         create_error.set(String::new());
         if proj_list.is_empty() {
             editor.set(Some("project"));
             return;
         }
-        let target_pid = project.get_untracked().map(|p| p.id).unwrap_or_else(|| proj_list[0].id.clone());
+        let target_pid = project
+            .get_untracked()
+            .map(|p| p.id)
+            .unwrap_or_else(|| proj_list[0].id.clone());
         thread_id.set(String::new());
         project_id.set(target_pid);
         find_open.set(false);
         view.set(View::Conversation);
         request_animation_frame(|| {
-            if let Some(el) = document().get_element_by_id("agent-message").and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok()) {
+            if let Some(el) = document()
+                .get_element_by_id("agent-message")
+                .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+            {
                 let _ = el.focus();
             }
         });
@@ -5408,11 +6135,18 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
 
     // Global keyboard shortcuts.
     listen(&document(), "keydown", false, move |event| {
-        let Ok(ke) = event.dyn_into::<web_sys::KeyboardEvent>() else { return };
+        let Ok(ke) = event.dyn_into::<web_sys::KeyboardEvent>() else {
+            return;
+        };
         if !(ke.ctrl_key() || ke.meta_key()) || ke.default_prevented() {
             return;
         }
-        if document().query_selector("dialog[open],[data-editor-pane]").ok().flatten().is_some() {
+        if document()
+            .query_selector("dialog[open],[data-editor-pane]")
+            .ok()
+            .flatten()
+            .is_some()
+        {
             return;
         }
         let key = ke.key().to_lowercase();
@@ -5442,9 +6176,25 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         checking_provider.set(true);
         connection_error.set(String::new());
         spawn_local(async move {
-            match api::request::<AgentProvider>(&format!("{BASE}/provider"), Req { signal: Some(signal.clone()), ..Default::default() }).await {
-                Ok(val) => if !signal.aborted() { provider.try_set(Some(val)); },
-                Err(e) => if !signal.aborted() { connection_error.try_set(failure(&e)); },
+            match api::request::<AgentProvider>(
+                &format!("{BASE}/provider"),
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(val) => {
+                    if !signal.aborted() {
+                        provider.try_set(Some(val));
+                    }
+                }
+                Err(e) => {
+                    if !signal.aborted() {
+                        connection_error.try_set(failure(&e));
+                    }
+                }
             }
             if !signal.aborted() {
                 checking_provider.try_set(false);
@@ -5461,14 +6211,30 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         spawn_local(async move {
             match api::request::<AgentProvider>(
                 &format!("{BASE}/provider/connect"),
-                Req { method: "POST", body: Some(body), csrf: Some(&token), signal: Some(signal.clone()), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
             )
             .await
             {
-                Ok(val) => if !signal.aborted() { provider.try_set(Some(val)); },
-                Err(e) => if !signal.aborted() {
-                    connection_error.try_set(if e.message.is_empty() { "The agent could not be connected.".into() } else { e.message });
-                },
+                Ok(val) => {
+                    if !signal.aborted() {
+                        provider.try_set(Some(val));
+                    }
+                }
+                Err(e) => {
+                    if !signal.aborted() {
+                        connection_error.try_set(if e.message.is_empty() {
+                            "The agent could not be connected.".into()
+                        } else {
+                            e.message
+                        });
+                    }
+                }
             }
             if !signal.aborted() {
                 checking_provider.try_set(false);
@@ -5499,8 +6265,20 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         spawn_local(async move {
             let mut tag = String::new();
             while !signal.aborted() {
-                let headers: Vec<(&str, &str)> = if tag.is_empty() { Vec::new() } else { vec![("if-none-match", tag.as_str())] };
-                let fetch_res = api::fetch(&format!("{BASE}/runs/{rid}"), Req { headers: &headers, signal: Some(signal.clone()), ..Default::default() }).await;
+                let headers: Vec<(&str, &str)> = if tag.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![("if-none-match", tag.as_str())]
+                };
+                let fetch_res = api::fetch(
+                    &format!("{BASE}/runs/{rid}"),
+                    Req {
+                        headers: &headers,
+                        signal: Some(signal.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await;
                 if signal.aborted() {
                     return;
                 }
@@ -5527,11 +6305,21 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                                     .and_then(|v| v["error"]["message"].as_str())
                                     .unwrap_or("The request could not be completed.")
                                     .to_owned();
-                                let err = RequestError { status, message: msg };
+                                let err = RequestError {
+                                    status,
+                                    message: msg,
+                                };
                                 run_error.try_set(failure(&err));
                                 3000
-                            } else if let Ok(value) = serde_json::from_value::<AgentRun>(body_json.unwrap()) {
-                                tag = response.headers().get("etag").ok().flatten().unwrap_or_default();
+                            } else if let Ok(value) =
+                                serde_json::from_value::<AgentRun>(body_json.unwrap())
+                            {
+                                tag = response
+                                    .headers()
+                                    .get("etag")
+                                    .ok()
+                                    .flatten()
+                                    .unwrap_or_default();
                                 if value.thread_id != tid {
                                     return;
                                 }
@@ -5551,7 +6339,8 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                                 if active {
                                     1000
                                 } else {
-                                    let newly_completed = completed_seen.with_value(|set| set.borrow_mut().insert(val_id));
+                                    let newly_completed = completed_seen
+                                        .with_value(|set| set.borrow_mut().insert(val_id));
                                     if newly_completed {
                                         history_epoch.try_update(|n| *n += 1);
                                         reload.try_update(|n| *n += 1);
@@ -5583,9 +6372,25 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         on_cleanup(move || keep.abort());
         error.set(String::new());
         spawn_local(async move {
-            match api::request::<ProjectList>(&format!("{BASE}/projects"), Req { signal: Some(signal.clone()), ..Default::default() }).await {
-                Ok(val) => if !signal.aborted() { projects.try_set(Some(val.items)); },
-                Err(e) => if !signal.aborted() { error.try_set(failure(&e)); },
+            match api::request::<ProjectList>(
+                &format!("{BASE}/projects"),
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(val) => {
+                    if !signal.aborted() {
+                        projects.try_set(Some(val.items));
+                    }
+                }
+                Err(e) => {
+                    if !signal.aborted() {
+                        error.try_set(failure(&e));
+                    }
+                }
             }
         });
     });
@@ -5608,13 +6413,23 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
             let sig = signal.clone();
             let t_cl = timer.clone();
             spawn_local(async move {
-                let res = api::request::<ThreadList>(&format!("{BASE}/threads"), Req { signal: Some(sig.clone()), ..Default::default() }).await;
+                let res = api::request::<ThreadList>(
+                    &format!("{BASE}/threads"),
+                    Req {
+                        signal: Some(sig.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await;
                 if sig.aborted() {
                     return;
                 }
                 let delay = match res {
                     Ok(value) => {
-                        let any_active = value.items.iter().any(|i| active_agent_run(i.run_status.as_deref().unwrap_or("")));
+                        let any_active = value
+                            .items
+                            .iter()
+                            .any(|i| active_agent_run(i.run_status.as_deref().unwrap_or("")));
                         let cur_tid = thread_id.get_untracked();
                         if !cur_tid.is_empty() && !value.items.iter().any(|t| t.id == cur_tid) {
                             thread_id.try_set(String::new());
@@ -5631,17 +6446,31 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                 if !sig.aborted() {
                     let sig2 = sig.clone();
                     let t2 = t_cl.clone();
-                    let next = set_timeout(delay, move || schedule_refresh(sig2, t2, threads, thread_error, thread_id));
+                    let next = set_timeout(delay, move || {
+                        schedule_refresh(sig2, t2, threads, thread_error, thread_id)
+                    });
                     *t_cl.borrow_mut() = next;
                 }
             });
         }
 
-        schedule_refresh(signal.clone(), timer.clone(), threads, thread_error, thread_id);
+        schedule_refresh(
+            signal.clone(),
+            timer.clone(),
+            threads,
+            thread_error,
+            thread_id,
+        );
         let sig_f = signal.clone();
         let timer_f = timer.clone();
         let focus_listener = Listener::new(&window(), "focus", false, move |_| {
-            schedule_refresh(sig_f.clone(), timer_f.clone(), threads, thread_error, thread_id);
+            schedule_refresh(
+                sig_f.clone(),
+                timer_f.clone(),
+                threads,
+                thread_error,
+                thread_id,
+            );
         });
         let kept = SendWrapper::new((abort, timer, focus_listener));
         on_cleanup(move || {
@@ -5654,7 +6483,9 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     // Keep URL search params synced (?project=...&thread=...).
     Effect::new(move |_| {
         let tid = thread_id.get();
-        let selected_project = thread.with(|t| t.as_ref().map(|t| t.project_id.clone())).unwrap_or_else(|| project_id.get());
+        let selected_project = thread
+            .with(|t| t.as_ref().map(|t| t.project_id.clone()))
+            .unwrap_or_else(|| project_id.get());
         if let Ok(href) = window().location().href()
             && let Ok(url) = web_sys::Url::new(&href)
         {
@@ -5691,7 +6522,11 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                 }
             } else if let Some(el) = panel_ref
                 .get_untracked()
-                .and_then(|p| p.query_selector(&format!("[data-agent-panel={}]", cur.as_str())).ok().flatten())
+                .and_then(|p| {
+                    p.query_selector(&format!("[data-agent-panel={}]", cur.as_str()))
+                        .ok()
+                        .flatten()
+                })
                 .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
             {
                 focus_prevent_scroll(&el);
@@ -5703,19 +6538,33 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
 
     let update_preferences = Callback::new(move |patch: serde_json::Map<String, Value>| {
         thread_error.set(String::new());
-        let rev = prefs_shared.value.with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
+        let rev = prefs_shared
+            .value
+            .with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
         let sess = session_sv.get_value();
         spawn_local(async move {
             match shared::save_preferences(Value::Object(patch), rev, &sess).await {
-                Ok(updated) => { prefs_shared.value.try_set(Some(updated)); }
-                Err(e) => { thread_error.try_set(failure(&e)); }
+                Ok(updated) => {
+                    prefs_shared.value.try_set(Some(updated));
+                }
+                Err(e) => {
+                    thread_error.try_set(failure(&e));
+                }
             }
         });
     });
 
     let snoozed = Memo::new(move |_| prefs_shared.value.with(pref_snoozed));
-    let pinned = Memo::new(move |_| prefs_shared.value.with(|p| pref_string_vec(p, "agentPinnedThreads")));
-    let archived = Memo::new(move |_| prefs_shared.value.with(|p| pref_string_vec(p, "agentArchivedThreads")));
+    let pinned = Memo::new(move |_| {
+        prefs_shared
+            .value
+            .with(|p| pref_string_vec(p, "agentPinnedThreads"))
+    });
+    let archived = Memo::new(move |_| {
+        prefs_shared
+            .value
+            .with(|p| pref_string_vec(p, "agentArchivedThreads"))
+    });
     let send_key = Signal::derive(move || prefs_shared.value.with(pref_send_key));
     let grouping = Signal::derive(move || prefs_shared.value.with(pref_grouping));
     let notify_enabled = Signal::derive(move || prefs_shared.value.with(pref_notify));
@@ -5725,13 +6574,11 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         snoozed.with(|list| list.iter().find(|s| s.id == row_id).map(|s| s.until))
     };
 
-    let is_snoozed = move |row_id: &str| -> bool {
-        snoozed_until(row_id).unwrap_or(0.0) > now.get()
-    };
+    let is_snoozed =
+        move |row_id: &str| -> bool { snoozed_until(row_id).unwrap_or(0.0) > now.get() };
 
-    let is_woke = move |row_id: &str| -> bool {
-        snoozed_until(row_id).is_some_and(|u| u <= now.get())
-    };
+    let is_woke =
+        move |row_id: &str| -> bool { snoozed_until(row_id).is_some_and(|u| u <= now.get()) };
 
     let snooze_thread = Callback::new(move |(row_id, until): (String, Option<f64>)| {
         if until.is_some() && row_id == thread_id.get_untracked() {
@@ -5744,32 +6591,46 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
             .filter(|item| item.id != row_id && item.until > cutoff)
             .collect();
         if let Some(u) = until {
-            list.push(SnoozedEntry { id: row_id, until: u });
+            list.push(SnoozedEntry {
+                id: row_id,
+                until: u,
+            });
         }
         if list.len() > 128 {
             list.drain(0..(list.len() - 128));
         }
         let mut map = serde_json::Map::new();
-        map.insert("agentSnoozed".into(), serde_json::to_value(list).unwrap_or(Value::Array(Vec::new())));
+        map.insert(
+            "agentSnoozed".into(),
+            serde_json::to_value(list).unwrap_or(Value::Array(Vec::new())),
+        );
         update_preferences.run(map);
     });
 
     // Wake notifications.
-    let wake_notified: StoredValue<RefCell<HashSet<String>>, LocalStorage> = StoredValue::new_local(RefCell::new(HashSet::new()));
+    let wake_notified: StoredValue<RefCell<HashSet<String>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(HashSet::new()));
     Effect::new(move |_| {
         let cur_now = now.get();
         let sn = snoozed.get();
         let notify = notify_enabled.get();
         let Some(list) = threads.get() else { return };
         for row in list {
-            let Some(until) = sn.iter().find(|s| s.id == row.id).map(|s| s.until) else { continue };
+            let Some(until) = sn.iter().find(|s| s.id == row.id).map(|s| s.until) else {
+                continue;
+            };
             if until > cur_now {
                 continue;
             }
             let key = format!("{}{}", row.id, until);
             let first = wake_notified.with_value(|s| s.borrow_mut().insert(key));
             if first && notify && (js_sys::Date::now() - until) < 120000.0 {
-                show_notification("Snoozed thread is back", &row.title, &format!("wake-{}", row.id), None);
+                show_notification(
+                    "Snoozed thread is back",
+                    &row.title,
+                    &format!("wake-{}", row.id),
+                    None,
+                );
             }
         }
     });
@@ -5778,7 +6639,11 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     Effect::new(move |_| {
         let cur_now = now.get();
         let Some(t) = thread.get() else { return };
-        if snoozed.with_untracked(|list| list.iter().find(|s| s.id == t.id).is_some_and(|s| s.until <= cur_now)) {
+        if snoozed.with_untracked(|list| {
+            list.iter()
+                .find(|s| s.id == t.id)
+                .is_some_and(|s| s.until <= cur_now)
+        }) {
             snooze_thread.run((t.id, None));
         }
     });
@@ -5796,7 +6661,14 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         let keep = SendWrapper::new(abort);
         on_cleanup(move || keep.abort());
         spawn_local(async move {
-            if let Ok(val) = api::request::<AgentLimits>(&format!("{BASE}/provider/limits"), Req { signal: Some(signal.clone()), ..Default::default() }).await
+            if let Ok(val) = api::request::<AgentLimits>(
+                &format!("{BASE}/provider/limits"),
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
                 && !signal.aborted()
             {
                 limits.try_set(Some(val));
@@ -5807,7 +6679,13 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let export_thread = Callback::new(move |(row, mode): (AgentThread, &'static str)| {
         let signal = lifetime.with_value(|c| c.signal());
         let project_name = projects
-            .with_untracked(|p| p.as_ref().and_then(|list| list.iter().find(|item| item.id == row.project_id).map(|i| i.name.clone())))
+            .with_untracked(|p| {
+                p.as_ref().and_then(|list| {
+                    list.iter()
+                        .find(|item| item.id == row.project_id)
+                        .map(|i| i.name.clone())
+                })
+            })
             .unwrap_or_else(|| "Project".into());
         spawn_local(async move {
             let mut items: Vec<AgentMessage> = Vec::new();
@@ -5817,7 +6695,15 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                     Some(b) => format!("{BASE}/threads/{}/messages?before={b}", row.id),
                     None => format!("{BASE}/threads/{}/messages", row.id),
                 };
-                match api::request::<AgentHistory>(&url, Req { signal: Some(signal.clone()), ..Default::default() }).await {
+                match api::request::<AgentHistory>(
+                    &url,
+                    Req {
+                        signal: Some(signal.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                {
                     Ok(page) => {
                         let mut combined = page.items;
                         combined.extend(items);
@@ -5869,7 +6755,14 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         on_cleanup(move || keep.abort());
         spawn_local(async move {
             while !signal.aborted() {
-                if let Ok(val) = api::request::<SharedList>(&format!("{BASE}/shared"), Req { signal: Some(signal.clone()), ..Default::default() }).await
+                if let Ok(val) = api::request::<SharedList>(
+                    &format!("{BASE}/shared"),
+                    Req {
+                        signal: Some(signal.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await
                     && !signal.aborted()
                 {
                     let cur = shared_id.get_untracked();
@@ -5902,7 +6795,11 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let has_thread = Memo::new(move |_| thread.with(Option::is_some));
     let has_projects = Memo::new(move |_| projects.with(Option::is_some));
     let review_run_id = Memo::new(move |_| {
-        run.with(|r| r.as_ref().map(|r| r.id.clone()).unwrap_or_else(|| "empty".into()))
+        run.with(|r| {
+            r.as_ref()
+                .map(|r| r.id.clone())
+                .unwrap_or_else(|| "empty".into())
+        })
     });
     let chat_slot = Memo::new(move |_| {
         if let Some(t) = thread.get() {
@@ -5935,7 +6832,10 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         };
         next.truncate(128);
         let mut map = serde_json::Map::new();
-        map.insert("agentPinnedThreads".into(), serde_json::to_value(next).unwrap_or(Value::Array(Vec::new())));
+        map.insert(
+            "agentPinnedThreads".into(),
+            serde_json::to_value(next).unwrap_or(Value::Array(Vec::new())),
+        );
         update_preferences.run(map);
     });
 
@@ -5953,24 +6853,37 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
             v.truncate(128);
             v
         };
-        let next_pin: Vec<String> = pinned.get_untracked().into_iter().filter(|id| id != &row_id).collect();
+        let next_pin: Vec<String> = pinned
+            .get_untracked()
+            .into_iter()
+            .filter(|id| id != &row_id)
+            .collect();
         let mut map = serde_json::Map::new();
-        map.insert("agentArchivedThreads".into(), serde_json::to_value(next_arch).unwrap_or(Value::Array(Vec::new())));
-        map.insert("agentPinnedThreads".into(), serde_json::to_value(next_pin).unwrap_or(Value::Array(Vec::new())));
+        map.insert(
+            "agentArchivedThreads".into(),
+            serde_json::to_value(next_arch).unwrap_or(Value::Array(Vec::new())),
+        );
+        map.insert(
+            "agentPinnedThreads".into(),
+            serde_json::to_value(next_pin).unwrap_or(Value::Array(Vec::new())),
+        );
         update_preferences.run(map);
     });
 
     // Per-browser read markers.
     let seen_key = StoredValue::new(format!("dar.agent.seen.{}", session.user.id));
     let seen: RwSignal<Option<HashMap<String, u64>>> = RwSignal::new(
-        storage_get(local_storage(), &seen_key.get_value()).and_then(|raw| serde_json::from_str(&raw).ok()),
+        storage_get(local_storage(), &seen_key.get_value())
+            .and_then(|raw| serde_json::from_str(&raw).ok()),
     );
 
     Effect::new(move |_| {
         let Some(list) = threads.get() else { return };
         let cur_thread = thread.get();
         seen.update(|cur| {
-            let mut next = cur.clone().unwrap_or_else(|| list.iter().map(|r| (r.id.clone(), r.revision)).collect());
+            let mut next = cur
+                .clone()
+                .unwrap_or_else(|| list.iter().map(|r| (r.id.clone(), r.revision)).collect());
             if let Some(ref t) = cur_thread {
                 next.insert(t.id.clone(), t.revision);
             }
@@ -6007,7 +6920,10 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         let cur_tid = thread_id.get();
         row.id != cur_tid
             && !is_working(row)
-            && seen.with(|s| s.as_ref().is_some_and(|map| row.revision > *map.get(&row.id).unwrap_or(&0)))
+            && seen.with(|s| {
+                s.as_ref()
+                    .is_some_and(|map| row.revision > *map.get(&row.id).unwrap_or(&0))
+            })
     };
 
     // Desktop notifications when a background run finishes.
@@ -6017,14 +6933,19 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         let cur_selected = thread_id.get_untracked();
         for row in list {
             let after = row.run_status.clone().unwrap_or_default();
-            let before = statuses.with_value(|m| m.borrow_mut().insert(row.id.clone(), after.clone()));
+            let before =
+                statuses.with_value(|m| m.borrow_mut().insert(row.id.clone(), after.clone()));
             if let Some(prev) = before
                 && active_agent_run(&prev)
                 && !active_agent_run(&after)
                 && notify
                 && (document().hidden() || row.id != cur_selected)
             {
-                let title = if after == "completed" { "Agent finished".into() } else { format!("Agent {after}") };
+                let title = if after == "completed" {
+                    "Agent finished".into()
+                } else {
+                    format!("Agent {after}")
+                };
                 let rid = row.id.clone();
                 let pid = row.project_id.clone();
                 show_notification(
@@ -6054,7 +6975,11 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     });
 
     let is_settled = move |row: &AgentThread| -> bool {
-        !is_working(row) && settled_prefs.with(|list| list.iter().any(|s| s.id == row.id && s.revision == row.revision))
+        !is_working(row)
+            && settled_prefs.with(|list| {
+                list.iter()
+                    .any(|s| s.id == row.id && s.revision == row.revision)
+            })
     };
 
     let settle = Callback::new(move |row: AgentThread| {
@@ -6064,19 +6989,34 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         settling.set(true);
         thread_error.set(String::new());
         let cur_settled = settled_prefs.get_untracked();
-        let already = cur_settled.iter().any(|s| s.id == row.id && s.revision == row.revision);
-        let mut entries: Vec<SettledEntry> = cur_settled.into_iter().filter(|s| s.id != row.id).collect();
+        let already = cur_settled
+            .iter()
+            .any(|s| s.id == row.id && s.revision == row.revision);
+        let mut entries: Vec<SettledEntry> =
+            cur_settled.into_iter().filter(|s| s.id != row.id).collect();
         if !already {
-            entries.push(SettledEntry { id: row.id, revision: row.revision });
+            entries.push(SettledEntry {
+                id: row.id,
+                revision: row.revision,
+            });
         }
-        let rev = prefs_shared.value.with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
+        let rev = prefs_shared
+            .value
+            .with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
         let sess = session_sv.get_value();
         spawn_local(async move {
             let mut map = serde_json::Map::new();
-            map.insert("agentSettledThreads".into(), serde_json::to_value(entries).unwrap_or(Value::Array(Vec::new())));
+            map.insert(
+                "agentSettledThreads".into(),
+                serde_json::to_value(entries).unwrap_or(Value::Array(Vec::new())),
+            );
             match shared::save_preferences(Value::Object(map), rev, &sess).await {
-                Ok(updated) => { prefs_shared.value.try_set(Some(updated)); }
-                Err(e) => { thread_error.try_set(failure(&e)); }
+                Ok(updated) => {
+                    prefs_shared.value.try_set(Some(updated));
+                }
+                Err(e) => {
+                    thread_error.try_set(failure(&e));
+                }
             }
             settling.try_set(false);
         });
@@ -6102,7 +7042,13 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         spawn_local(async move {
             match api::request::<AgentThread>(
                 &format!("{BASE}/threads/{}", row.id),
-                Req { method: "PATCH", body: Some(body), csrf: Some(&token), signal: Some(signal), ..Default::default() },
+                Req {
+                    method: "PATCH",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    signal: Some(signal),
+                    ..Default::default()
+                },
             )
             .await
             {
@@ -6124,27 +7070,53 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         spawn_local(async move {
             match api::request::<Value>(
                 &format!("{BASE}/threads/{}", row.id),
-                Req { method: "DELETE", csrf: Some(&token), signal: Some(signal), ..Default::default() },
+                Req {
+                    method: "DELETE",
+                    csrf: Some(&token),
+                    signal: Some(signal),
+                    ..Default::default()
+                },
             )
             .await
             {
                 Ok(_) => {
-                    threads.try_update(|cur| { if let Some(list) = cur { list.retain(|i| i.id != row.id); } });
+                    threads.try_update(|cur| {
+                        if let Some(list) = cur {
+                            list.retain(|i| i.id != row.id);
+                        }
+                    });
                     if row.id == thread_id.get_untracked() {
                         thread_id.try_set(String::new());
                     }
                     deleting.try_set(None);
-                    storage_remove(session_storage(), &format!("dar.agent.draft.{uid}.{}", row.id));
+                    storage_remove(
+                        session_storage(),
+                        &format!("dar.agent.draft.{uid}.{}", row.id),
+                    );
                     let p = pinned.get_untracked();
                     let a = archived.get_untracked();
                     if p.contains(&row.id) || a.contains(&row.id) {
                         let mut map = serde_json::Map::new();
-                        map.insert("agentPinnedThreads".into(), serde_json::to_value(p.into_iter().filter(|id| id != &row.id).collect::<Vec<_>>()).unwrap_or(Value::Array(Vec::new())));
-                        map.insert("agentArchivedThreads".into(), serde_json::to_value(a.into_iter().filter(|id| id != &row.id).collect::<Vec<_>>()).unwrap_or(Value::Array(Vec::new())));
+                        map.insert(
+                            "agentPinnedThreads".into(),
+                            serde_json::to_value(
+                                p.into_iter().filter(|id| id != &row.id).collect::<Vec<_>>(),
+                            )
+                            .unwrap_or(Value::Array(Vec::new())),
+                        );
+                        map.insert(
+                            "agentArchivedThreads".into(),
+                            serde_json::to_value(
+                                a.into_iter().filter(|id| id != &row.id).collect::<Vec<_>>(),
+                            )
+                            .unwrap_or(Value::Array(Vec::new())),
+                        );
                         update_preferences.run(map);
                     }
                 }
-                Err(e) => { delete_error.try_set(failure(&e)); }
+                Err(e) => {
+                    delete_error.try_set(failure(&e));
+                }
             }
             delete_busy.try_set(false);
         });
@@ -6162,7 +7134,11 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         request_animation_frame(move || {
             if let Some(btn) = panel_ref
                 .get_untracked()
-                .and_then(|p| p.query_selector("[aria-label=\"Show changes\"]").ok().flatten())
+                .and_then(|p| {
+                    p.query_selector("[aria-label=\"Show changes\"]")
+                        .ok()
+                        .flatten()
+                })
                 .and_then(|e| e.dyn_into::<web_sys::HtmlButtonElement>().ok())
             {
                 let _ = btn.focus();
@@ -6186,12 +7162,25 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         spawn_local(async move {
             match api::request::<AgentRun>(
                 &format!("{BASE}/runs/{rid}/cancel"),
-                Req { method: "POST", csrf: Some(&token), signal: Some(signal.clone()), ..Default::default() },
+                Req {
+                    method: "POST",
+                    csrf: Some(&token),
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
             )
             .await
             {
-                Ok(val) => if !signal.aborted() { stored_run.try_set(Some(val)); },
-                Err(e) => if !signal.aborted() { run_error.try_set(failure(&e)); },
+                Ok(val) => {
+                    if !signal.aborted() {
+                        stored_run.try_set(Some(val));
+                    }
+                }
+                Err(e) => {
+                    if !signal.aborted() {
+                        run_error.try_set(failure(&e));
+                    }
+                }
             }
         });
     });
@@ -6209,40 +7198,58 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                 false
             };
             if !copied {
-                thread_error.try_set("Could not copy the thread link. Open the thread and copy its address.".into());
+                thread_error.try_set(
+                    "Could not copy the thread link. Open the thread and copy its address.".into(),
+                );
             }
         });
     });
 
-    let started = Callback::new(move |(row, execute, files): (AgentThread, bool, Vec<SendWrapper<web_sys::File>>)| {
-        auto_start.with_value(|m| { m.borrow_mut().insert(row.id.clone(), execute); });
-        if !files.is_empty() {
-            start_files.with_value(|m| { m.borrow_mut().insert(row.id.clone(), files); });
-        }
-        let rid = row.id.clone();
-        let pid = row.project_id.clone();
-        threads.update(|cur| {
-            let mut next = vec![row];
-            if let Some(existing) = cur.take() {
-                next.extend(existing.into_iter().filter(|item| item.id != rid));
+    let started = Callback::new(
+        move |(row, execute, files): (AgentThread, bool, Vec<SendWrapper<web_sys::File>>)| {
+            auto_start.with_value(|m| {
+                m.borrow_mut().insert(row.id.clone(), execute);
+            });
+            if !files.is_empty() {
+                start_files.with_value(|m| {
+                    m.borrow_mut().insert(row.id.clone(), files);
+                });
             }
-            *cur = Some(next);
-        });
-        project_id.set(pid);
-        thread_id.set(rid);
-        view.set(View::Conversation);
-    });
+            let rid = row.id.clone();
+            let pid = row.project_id.clone();
+            threads.update(|cur| {
+                let mut next = vec![row];
+                if let Some(existing) = cur.take() {
+                    next.extend(existing.into_iter().filter(|item| item.id != rid));
+                }
+                *cur = Some(next);
+            });
+            project_id.set(pid);
+            thread_id.set(rid);
+            view.set(View::Conversation);
+        },
+    );
 
     let slash_commands = Callback::new(move |controls: SlashControls| -> Vec<SlashCommand> {
         let mut list = vec![
-            SlashCommand { name: "new".into(), hint: "Start a new thread".into(), argument: None, run: Callback::new(move |_| choose_new_thread.run(())) },
+            SlashCommand {
+                name: "new".into(),
+                hint: "Start a new thread".into(),
+                argument: None,
+                run: Callback::new(move |_| choose_new_thread.run(())),
+            },
             SlashCommand {
                 name: "model".into(),
                 hint: "Choose the model".into(),
                 argument: None,
                 run: Callback::new(move |_| {
                     request_animation_frame(|| {
-                        if let Some(btn) = document().query_selector(".agent-model-trigger").ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlButtonElement>().ok()) {
+                        if let Some(btn) = document()
+                            .query_selector(".agent-model-trigger")
+                            .ok()
+                            .flatten()
+                            .and_then(|e| e.dyn_into::<web_sys::HtmlButtonElement>().ok())
+                        {
                             btn.click();
                         }
                     });
@@ -6258,13 +7265,62 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
             });
         }
         list.extend([
-            SlashCommand { name: "changes".into(), hint: "Open the changes panel".into(), argument: None, run: Callback::new(move |_| open_review.run(())) },
-            SlashCommand { name: "terminal".into(), hint: "Show command output".into(), argument: None, run: Callback::new(move |_| { drawer_tab.set("output"); terminal.set(true); }) },
-            SlashCommand { name: "shell".into(), hint: "Open an interactive terminal in the working copy".into(), argument: None, run: Callback::new(move |_| { drawer_tab.set("shell"); terminal.set(true); }) },
-            SlashCommand { name: "find".into(), hint: "Find in this thread".into(), argument: None, run: Callback::new(move |_| find_open.set(true)) },
-            SlashCommand { name: "rename".into(), hint: "Rename this thread".into(), argument: None, run: Callback::new(move |_| { if let Some(t) = thread.get_untracked() { start_rename.run(t); } }) },
-            SlashCommand { name: "settle".into(), hint: "Settle or restore this thread".into(), argument: None, run: Callback::new(move |_| { if let Some(t) = thread.get_untracked() { settle.run(t); } }) },
-            SlashCommand { name: "settings".into(), hint: "Open Agent settings".into(), argument: None, run: Callback::new(move |_| settings.set(true)) },
+            SlashCommand {
+                name: "changes".into(),
+                hint: "Open the changes panel".into(),
+                argument: None,
+                run: Callback::new(move |_| open_review.run(())),
+            },
+            SlashCommand {
+                name: "terminal".into(),
+                hint: "Show command output".into(),
+                argument: None,
+                run: Callback::new(move |_| {
+                    drawer_tab.set("output");
+                    terminal.set(true);
+                }),
+            },
+            SlashCommand {
+                name: "shell".into(),
+                hint: "Open an interactive terminal in the working copy".into(),
+                argument: None,
+                run: Callback::new(move |_| {
+                    drawer_tab.set("shell");
+                    terminal.set(true);
+                }),
+            },
+            SlashCommand {
+                name: "find".into(),
+                hint: "Find in this thread".into(),
+                argument: None,
+                run: Callback::new(move |_| find_open.set(true)),
+            },
+            SlashCommand {
+                name: "rename".into(),
+                hint: "Rename this thread".into(),
+                argument: None,
+                run: Callback::new(move |_| {
+                    if let Some(t) = thread.get_untracked() {
+                        start_rename.run(t);
+                    }
+                }),
+            },
+            SlashCommand {
+                name: "settle".into(),
+                hint: "Settle or restore this thread".into(),
+                argument: None,
+                run: Callback::new(move |_| {
+                    if let Some(t) = thread.get_untracked() {
+                        settle.run(t);
+                    }
+                }),
+            },
+            SlashCommand {
+                name: "settings".into(),
+                hint: "Open Agent settings".into(),
+                argument: None,
+                run: Callback::new(move |_| settings.set(true)),
+            },
         ]);
         list
     });
@@ -6507,10 +7563,18 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
 
     let shell_class = move || {
         let mut cls = format!("app-shell agent-shell agent-view-{}", view.get().as_str());
-        if !review.get() { cls.push_str(" agent-review-hidden"); }
-        if !nav.get() { cls.push_str(" agent-nav-hidden"); }
-        if !details.get() { cls.push_str(" agent-details-hidden"); }
-        if maximized.get() && review.get() { cls.push_str(" agent-review-maximized"); }
+        if !review.get() {
+            cls.push_str(" agent-review-hidden");
+        }
+        if !nav.get() {
+            cls.push_str(" agent-nav-hidden");
+        }
+        if !details.get() {
+            cls.push_str(" agent-details-hidden");
+        }
+        if maximized.get() && review.get() {
+            cls.push_str(" agent-review-maximized");
+        }
         cls
     };
 

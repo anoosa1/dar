@@ -15,7 +15,10 @@ pub(crate) fn sync_directory(directory: &Path) -> io::Result<()> {
 }
 
 fn temporary(filename: &Path) -> PathBuf {
-    let name = filename.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+    let name = filename
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
     filename.with_file_name(format!("{name}.{}.tmp", uuid()))
 }
 
@@ -26,14 +29,26 @@ pub fn uuid() -> String {
     b[6] = b[6] & 0x0f | 0x40;
     b[8] = b[8] & 0x3f | 0x80;
     let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
-    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
 }
 
 /// Publishes a new private file; never replaces an existing one or follows a link.
 pub fn create_durable_file(filename: &Path, content: &[u8]) -> io::Result<()> {
     let staged = temporary(filename);
     let result = (|| {
-        let mut file = OpenOptions::new().write(true).create_new(true).mode(0o600).custom_flags(libc_nofollow()).open(&staged)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc_nofollow())
+            .open(&staged)?;
         file.write_all(content)?;
         file.sync_all()?;
         drop(file);
@@ -52,7 +67,12 @@ pub fn replace_durable_file(filename: &Path, content: &[u8]) -> io::Result<()> {
     }
     let staged = temporary(filename);
     let result = (|| {
-        let mut file = OpenOptions::new().write(true).create_new(true).mode(0o600).custom_flags(libc_nofollow()).open(&staged)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc_nofollow())
+            .open(&staged)?;
         file.write_all(content)?;
         file.sync_all()?;
         drop(file);
@@ -81,19 +101,33 @@ pub(crate) const fn libc_nofollow() -> i32 {
 /// Resolves the root (it cannot be a link), marks it and creates the managed directories.
 pub fn open_root(root: &Path) -> io::Result<PathBuf> {
     let root = std::path::absolute(root)?;
-    let parent = root.parent().ok_or_else(|| other("Invalid storage root."))?;
+    let parent = root
+        .parent()
+        .ok_or_else(|| other("Invalid storage root."))?;
     fs::create_dir_all(parent)?;
-    let root = fs::canonicalize(parent)?.join(root.file_name().ok_or_else(|| other("Invalid storage root."))?);
+    let root = fs::canonicalize(parent)?.join(
+        root.file_name()
+            .ok_or_else(|| other("Invalid storage root."))?,
+    );
     match fs::symlink_metadata(&root) {
-        Ok(m) if !m.is_dir() || m.file_type().is_symlink() => return Err(other("Managed storage root cannot be a symlink or non-directory.")),
+        Ok(m) if !m.is_dir() || m.file_type().is_symlink() => {
+            return Err(other(
+                "Managed storage root cannot be a symlink or non-directory.",
+            ));
+        }
         Ok(_) => {}
-        Err(e) if e.kind() == io::ErrorKind::NotFound => fs::DirBuilder::new().mode(0o700).create(&root)?,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            fs::DirBuilder::new().mode(0o700).create(&root)?
+        }
         Err(e) => return Err(e),
     }
     let marker = root.join("instance.json");
     match fs::symlink_metadata(&marker) {
         Ok(m) => {
-            let format = fs::read_to_string(&marker).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).and_then(|v| v["format"].as_str().map(str::to_owned));
+            let format = fs::read_to_string(&marker)
+                .ok()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                .and_then(|v| v["format"].as_str().map(str::to_owned));
             if !m.is_file() || format.as_deref() != Some("dar-spacetime-v1") {
                 return Err(other("Unsupported storage root."));
             }
@@ -106,7 +140,15 @@ pub fn open_root(root: &Path) -> io::Result<PathBuf> {
         }
         Err(e) => return Err(e),
     }
-    for name in ["secrets", "blobs", "uploads", "agent-workspaces", "photo-cache", "book-cache", "git"] {
+    for name in [
+        "secrets",
+        "blobs",
+        "uploads",
+        "agent-workspaces",
+        "photo-cache",
+        "book-cache",
+        "git",
+    ] {
         let directory = root.join(name);
         match fs::DirBuilder::new().mode(0o700).create(&directory) {
             Ok(()) => {}
@@ -124,7 +166,9 @@ pub fn open_root(root: &Path) -> io::Result<PathBuf> {
 use std::os::unix::fs::DirBuilderExt;
 
 fn hostname() -> String {
-    fs::read_to_string("/proc/sys/kernel/hostname").map(|h| h.trim().to_owned()).unwrap_or_default()
+    fs::read_to_string("/proc/sys/kernel/hostname")
+        .map(|h| h.trim().to_owned())
+        .unwrap_or_default()
 }
 
 /// The root's single-runtime lock (`runtime.lock`); released when dropped.
@@ -138,8 +182,13 @@ impl RootLock {
                 if !m.is_file() {
                     return Err(other("Unsafe runtime lock."));
                 }
-                let record: serde_json::Value = serde_json::from_str(&fs::read_to_string(&filename)?).map_err(|_| other("Unrecognized runtime lock."))?;
-                let pid = record["pid"].as_u64().filter(|p| *p > 0).ok_or_else(|| other("Unrecognized runtime lock."))?;
+                let record: serde_json::Value =
+                    serde_json::from_str(&fs::read_to_string(&filename)?)
+                        .map_err(|_| other("Unrecognized runtime lock."))?;
+                let pid = record["pid"]
+                    .as_u64()
+                    .filter(|p| *p > 0)
+                    .ok_or_else(|| other("Unrecognized runtime lock."))?;
                 if record["host"].as_str() != Some(hostname().as_str()) {
                     return Err(other("Unrecognized runtime lock."));
                 }
@@ -151,7 +200,12 @@ impl RootLock {
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Err(e) => return Err(e),
         }
-        create_durable_file(&filename, serde_json::json!({ "pid": std::process::id(), "host": hostname() }).to_string().as_bytes())?;
+        create_durable_file(
+            &filename,
+            serde_json::json!({ "pid": std::process::id(), "host": hostname() })
+                .to_string()
+                .as_bytes(),
+        )?;
         Ok(Self(filename))
     }
 }
@@ -176,7 +230,13 @@ mod tests {
         drop(lock);
         assert!(!root.join("runtime.lock").exists());
         // A stale lock from a stopped process is replaced.
-        create_durable_file(&root.join("runtime.lock"), serde_json::json!({ "pid": 999_999_999u64, "host": hostname() }).to_string().as_bytes()).unwrap();
+        create_durable_file(
+            &root.join("runtime.lock"),
+            serde_json::json!({ "pid": 999_999_999u64, "host": hostname() })
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
         drop(RootLock::acquire(&root).unwrap());
         fs::write(base.join("other"), "x").unwrap();
         assert!(open_root(&base).is_err());

@@ -27,8 +27,8 @@ use crate::db::Database;
 use crate::error::{AppError, Result};
 
 use super::formats::{
-    BookFormat, BookMeta, BookTocEntry, SpineItem, book_format, book_position, comic_pages, empty_meta,
-    read_comic_info, read_epub, truncate_chars,
+    BookFormat, BookMeta, BookTocEntry, SpineItem, book_format, book_position, comic_pages,
+    empty_meta, read_comic_info, read_epub, truncate_chars,
 };
 use super::pdf::{PDF_COVER_MAX_PX, PdfInfoOutcome, configure_child_limits, parse_info_output};
 use super::zip::{DEFAULT_MAX_ENTRIES, Zip, ZipError};
@@ -110,7 +110,10 @@ struct InfoCache {
 
 impl InfoCache {
     fn new() -> Self {
-        Self { map: HashMap::new(), order: VecDeque::new() }
+        Self {
+            map: HashMap::new(),
+            order: VecDeque::new(),
+        }
     }
 }
 
@@ -151,7 +154,10 @@ async fn run_command(mut cmd: Command, timeout: Duration, max_buffer: usize) -> 
         .kill_on_drop(true);
 
     let Ok(mut child) = cmd.spawn() else {
-        return RunOutput { stdout: String::new(), ok: false };
+        return RunOutput {
+            stdout: String::new(),
+            ok: false,
+        };
     };
 
     let work = async {
@@ -160,20 +166,32 @@ async fn run_command(mut cmd: Command, timeout: Duration, max_buffer: usize) -> 
             let mut limited = stdout.take((max_buffer as u64).saturating_add(1));
             if limited.read_to_end(&mut buf).await.is_err() {
                 let _ = child.kill().await;
-                return RunOutput { stdout: String::new(), ok: false };
+                return RunOutput {
+                    stdout: String::new(),
+                    ok: false,
+                };
             }
             if buf.len() > max_buffer {
                 let _ = child.kill().await;
-                return RunOutput { stdout: String::new(), ok: false };
+                return RunOutput {
+                    stdout: String::new(),
+                    ok: false,
+                };
             }
         }
         let ok = child.wait().await.is_ok_and(|s| s.success());
-        RunOutput { stdout: String::from_utf8_lossy(&buf).into_owned(), ok }
+        RunOutput {
+            stdout: String::from_utf8_lossy(&buf).into_owned(),
+            ok,
+        }
     };
 
     match tokio::time::timeout(timeout, work).await {
         Ok(out) => out,
-        Err(_) => RunOutput { stdout: String::new(), ok: false },
+        Err(_) => RunOutput {
+            stdout: String::new(),
+            ok: false,
+        },
     }
 }
 
@@ -189,7 +207,10 @@ async fn run_tool(name: &str, args: &[String], timeout: Duration, max_buffer: us
 
 async fn run_pdf_helper(args: &[String], timeout: Duration, max_buffer: usize) -> RunOutput {
     let Ok(exe) = std::env::current_exe() else {
-        return RunOutput { stdout: String::new(), ok: false };
+        return RunOutput {
+            stdout: String::new(),
+            ok: false,
+        };
     };
     let mut cmd = Command::new(exe);
     cmd.args(args)
@@ -205,11 +226,17 @@ async fn exists_nonempty(path: &Path) -> bool {
 }
 
 async fn is_dir_nofollow(path: &Path) -> bool {
-    tokio::fs::symlink_metadata(path).await.is_ok_and(|m| m.is_dir())
+    tokio::fs::symlink_metadata(path)
+        .await
+        .is_ok_and(|m| m.is_dir())
 }
 
 async fn mkdir_private(path: &Path) -> std::io::Result<()> {
-    tokio::fs::DirBuilder::new().recursive(true).mode(0o700).create(path).await
+    tokio::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(path)
+        .await
 }
 
 async fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -275,9 +302,15 @@ fn strip_ext(name: &str) -> &str {
 fn fallback_title(name: &str) -> String {
     static UNDERSCORES: OnceLock<Regex> = OnceLock::new();
     let stripped = strip_ext(name);
-    let cleaned = UNDERSCORES.get_or_init(|| Regex::new(r"_+").expect("regex")).replace_all(stripped, " ");
+    let cleaned = UNDERSCORES
+        .get_or_init(|| Regex::new(r"_+").expect("regex"))
+        .replace_all(stripped, " ");
     let trimmed = cleaned.trim();
-    if trimmed.is_empty() { name.to_owned() } else { trimmed.to_owned() }
+    if trimmed.is_empty() {
+        name.to_owned()
+    } else {
+        trimmed.to_owned()
+    }
 }
 
 fn cover_ext(name: &str) -> String {
@@ -299,11 +332,19 @@ async fn list_files(directory: &Path) -> std::io::Result<Vec<String>> {
     let mut out = Vec::new();
     let mut stack = vec![String::new()];
     while let Some(prefix) = stack.pop() {
-        let dir_path = if prefix.is_empty() { directory.to_path_buf() } else { directory.join(&prefix) };
+        let dir_path = if prefix.is_empty() {
+            directory.to_path_buf()
+        } else {
+            directory.join(&prefix)
+        };
         let mut entries = tokio::fs::read_dir(&dir_path).await?;
         while let Some(entry) = entries.next_entry().await? {
             let file_name = entry.file_name().to_string_lossy().into_owned();
-            let name = if prefix.is_empty() { file_name } else { format!("{prefix}/{file_name}") };
+            let name = if prefix.is_empty() {
+                file_name
+            } else {
+                format!("{prefix}/{file_name}")
+            };
             let ft = entry.file_type().await?;
             if ft.is_dir() && !ft.is_symlink() {
                 stack.push(name);
@@ -318,7 +359,11 @@ async fn list_files(directory: &Path) -> std::io::Result<Vec<String>> {
     Ok(out)
 }
 
-async fn read_page_file(directory: &Path, name: &str, max: usize) -> std::result::Result<Vec<u8>, String> {
+async fn read_page_file(
+    directory: &Path,
+    name: &str,
+    max: usize,
+) -> std::result::Result<Vec<u8>, String> {
     let rel = Path::new(name);
     if rel.as_os_str().is_empty() || !rel.components().all(|c| matches!(c, Component::Normal(_))) {
         return Err("Invalid page path.".into());
@@ -338,7 +383,8 @@ async fn read_page_file(directory: &Path, name: &str, max: usize) -> std::result
             return Err("Page too large.".into());
         }
         let mut out = Vec::with_capacity(meta.len() as usize);
-        file.read_to_end(&mut out).map_err(|_| "Unreadable page.".to_owned())?;
+        file.read_to_end(&mut out)
+            .map_err(|_| "Unreadable page.".to_owned())?;
         Ok(out)
     })
     .await
@@ -393,8 +439,22 @@ impl BooksRuntime {
         if let Some(handle) = self.inner.sweep_handle.lock().await.take() {
             let _ = handle.await;
         }
-        let unpack_futs: Vec<_> = self.inner.unpacks.lock().expect("unpacks").values().cloned().collect();
-        let cover_futs: Vec<_> = self.inner.covers.lock().expect("covers").values().cloned().collect();
+        let unpack_futs: Vec<_> = self
+            .inner
+            .unpacks
+            .lock()
+            .expect("unpacks")
+            .values()
+            .cloned()
+            .collect();
+        let cover_futs: Vec<_> = self
+            .inner
+            .covers
+            .lock()
+            .expect("covers")
+            .values()
+            .cloned()
+            .collect();
         join_all(unpack_futs).await;
         join_all(cover_futs).await;
         self.inner.zips.lock().expect("zips").clear();
@@ -404,7 +464,11 @@ impl BooksRuntime {
         if !is_blob_id(blob_id) {
             return Err("Unexpected blob ID.".into());
         }
-        Ok(self.inner.cache.join(&blob_id[..2]).join(format!("{blob_id}-{suffix}")))
+        Ok(self
+            .inner
+            .cache
+            .join(&blob_id[..2])
+            .join(format!("{blob_id}-{suffix}")))
     }
 
     fn blob_path(&self, blob_id: &str) -> std::result::Result<PathBuf, String> {
@@ -431,13 +495,25 @@ impl BooksRuntime {
                     }
                     result
                 });
-                let mapped: BoxFuture<std::result::Result<Arc<Zip>, ZipError>> = Box::pin(async move {
-                    handle.await.unwrap_or_else(|_| Err(ZipError("Damaged archive.".into())))
-                });
+                let mapped: BoxFuture<std::result::Result<Arc<Zip>, ZipError>> =
+                    Box::pin(async move {
+                        handle
+                            .await
+                            .unwrap_or_else(|_| Err(ZipError("Damaged archive.".into())))
+                    });
                 let shared = mapped.shared();
-                zips.insert(blob_id.to_owned(), OpenZip { zip: shared.clone(), used: Instant::now() });
+                zips.insert(
+                    blob_id.to_owned(),
+                    OpenZip {
+                        zip: shared.clone(),
+                        used: Instant::now(),
+                    },
+                );
                 if zips.len() > 16
-                    && let Some(oldest) = zips.iter().min_by_key(|(_, v)| v.used).map(|(k, _)| k.clone())
+                    && let Some(oldest) = zips
+                        .iter()
+                        .min_by_key(|(_, v)| v.used)
+                        .map(|(k, _)| k.clone())
                 {
                     zips.remove(&oldest);
                 }
@@ -466,9 +542,8 @@ impl BooksRuntime {
                     rt.inner.unpacks.lock().expect("unpacks").remove(&id);
                     result
                 });
-                let mapped: BoxFuture<std::result::Result<PathBuf, String>> = Box::pin(async move {
-                    handle.await.unwrap_or_else(|_| Err("damaged".into()))
-                });
+                let mapped: BoxFuture<std::result::Result<PathBuf, String>> =
+                    Box::pin(async move { handle.await.unwrap_or_else(|_| Err("damaged".into())) });
                 let shared = mapped.shared();
                 unpacks.insert(blob_id.to_owned(), shared.clone());
                 shared
@@ -477,8 +552,17 @@ impl BooksRuntime {
         fut.await
     }
 
-    async fn do_unpack(&self, blob_id: &str, target: &Path) -> std::result::Result<PathBuf, String> {
-        let _permit = self.inner.slots.acquire().await.map_err(|_| "damaged".to_owned())?;
+    async fn do_unpack(
+        &self,
+        blob_id: &str,
+        target: &Path,
+    ) -> std::result::Result<PathBuf, String> {
+        let _permit = self
+            .inner
+            .slots
+            .acquire()
+            .await
+            .map_err(|_| "damaged".to_owned())?;
         if is_dir_nofollow(target).await {
             return Ok(target.to_path_buf());
         }
@@ -496,7 +580,8 @@ impl BooksRuntime {
         }
 
         static TAR_SIZE: OnceLock<Regex> = OnceLock::new();
-        let tar_size = TAR_SIZE.get_or_init(|| Regex::new(r"^\S+\s+\d+\s+\S+\s+\S+\s+(\d+)\s").expect("regex"));
+        let tar_size = TAR_SIZE
+            .get_or_init(|| Regex::new(r"^\S+\s+\d+\s+\S+\s+\S+\s+(\d+)\s").expect("regex"));
         let mut total = 0u64;
         let mut count = 0usize;
         for line in listing.stdout.lines() {
@@ -512,10 +597,17 @@ impl BooksRuntime {
         }
 
         if let Some(parent) = target.parent() {
-            mkdir_private(parent).await.map_err(|_| "damaged".to_owned())?;
+            mkdir_private(parent)
+                .await
+                .map_err(|_| "damaged".to_owned())?;
         }
-        let work = self.inner.cache.join(format!(".work-{}", crate::auth::uuid()));
-        mkdir_private(&work).await.map_err(|_| "damaged".to_owned())?;
+        let work = self
+            .inner
+            .cache
+            .join(format!(".work-{}", crate::auth::uuid()));
+        mkdir_private(&work)
+            .await
+            .map_err(|_| "damaged".to_owned())?;
         let work_str = work.to_string_lossy().into_owned();
 
         let extracted = run_tool(
@@ -551,7 +643,11 @@ impl BooksRuntime {
         let Ok(source) = self.blob_path(blob_id) else {
             let mut meta = empty_meta(title);
             meta.error = "damaged".into();
-            return Info { meta, epub: None, pages: None };
+            return Info {
+                meta,
+                epub: None,
+                pages: None,
+            };
         };
 
         if format == BookFormat::Pdf {
@@ -559,7 +655,11 @@ impl BooksRuntime {
                 let Ok(_permit) = self.inner.slots.acquire().await else {
                     let mut meta = empty_meta(title);
                     meta.error = "damaged".into();
-                    return Info { meta, epub: None, pages: None };
+                    return Info {
+                        meta,
+                        epub: None,
+                        pages: None,
+                    };
                 };
                 run_pdf_helper(
                     &["pdf-info".into(), source.to_string_lossy().into_owned()],
@@ -569,7 +669,11 @@ impl BooksRuntime {
                 .await
             };
             let meta = apply_pdf_info(parse_info_output(output.ok, &output.stdout), title);
-            return Info { meta, epub: None, pages: None };
+            return Info {
+                meta,
+                epub: None,
+                pages: None,
+            };
         }
 
         if format == BookFormat::Epub {
@@ -590,7 +694,12 @@ impl BooksRuntime {
                 }
                 Ok::<Info, String>(Info {
                     meta: epub.meta,
-                    epub: Some(EpubInfo { opf: epub.opf, spine: epub.spine, toc: epub.toc, cover: epub.cover }),
+                    epub: Some(EpubInfo {
+                        opf: epub.opf,
+                        spine: epub.spine,
+                        toc: epub.toc,
+                        cover: epub.cover,
+                    }),
                     pages: None,
                 })
             }
@@ -600,21 +709,35 @@ impl BooksRuntime {
                 Err(_) => {
                     let mut meta = empty_meta(title);
                     meta.error = "damaged".into();
-                    Info { meta, epub: None, pages: None }
+                    Info {
+                        meta,
+                        epub: None,
+                        pages: None,
+                    }
                 }
             };
         }
 
         // Comic formats: CBZ (ZIP) or CBR/CB7/CBT (bsdtar).
         static COMIC_INFO: OnceLock<Regex> = OnceLock::new();
-        let comic_info_re = COMIC_INFO.get_or_init(|| Regex::new(r"(?i)(^|/)ComicInfo\.xml$").expect("regex"));
+        let comic_info_re =
+            COMIC_INFO.get_or_init(|| Regex::new(r"(?i)(^|/)ComicInfo\.xml$").expect("regex"));
 
         let mut meta = empty_meta(title);
         let parsed = async {
             let (names, info_bytes): (Vec<String>, Option<Vec<u8>>) = if format == BookFormat::Cbz {
                 let zip = self.zip_for(blob_id).await.map_err(|e| e.0)?;
-                let names = zip.entries().iter().filter(|e| !e.encrypted).map(|e| e.name.clone()).collect();
-                let ci = zip.entries().iter().find(|e| comic_info_re.is_match(&e.name)).cloned();
+                let names = zip
+                    .entries()
+                    .iter()
+                    .filter(|e| !e.encrypted)
+                    .map(|e| e.name.clone())
+                    .collect();
+                let ci = zip
+                    .entries()
+                    .iter()
+                    .find(|e| comic_info_re.is_match(&e.name))
+                    .cloned();
                 let bytes = match ci {
                     Some(entry) => Some(zip.read(&entry, 1024 * 1024).await.map_err(|e| e.0)?),
                     None => None,
@@ -639,23 +762,44 @@ impl BooksRuntime {
                 let pages = comic_pages(names);
                 if pages.is_empty() {
                     meta.error = "damaged".into();
-                    return Info { meta, epub: None, pages: None };
+                    return Info {
+                        meta,
+                        epub: None,
+                        pages: None,
+                    };
                 }
                 if let Some(bytes) = info_bytes {
                     read_comic_info(&String::from_utf8_lossy(&bytes), &mut meta);
                 }
                 meta.pages = pages.len() as u64;
                 meta.cover = true;
-                Info { meta, epub: None, pages: Some(pages) }
+                Info {
+                    meta,
+                    epub: None,
+                    pages: Some(pages),
+                }
             }
             Err(err) => {
-                meta.error = if err == "unsupported" { "unsupported".into() } else { "damaged".into() };
-                Info { meta, epub: None, pages: None }
+                meta.error = if err == "unsupported" {
+                    "unsupported".into()
+                } else {
+                    "damaged".into()
+                };
+                Info {
+                    meta,
+                    epub: None,
+                    pages: None,
+                }
             }
         }
     }
 
-    fn info_future(&self, blob_id: &str, format: BookFormat, name: &str) -> SharedFuture<Arc<Info>> {
+    fn info_future(
+        &self,
+        blob_id: &str,
+        format: BookFormat,
+        name: &str,
+    ) -> SharedFuture<Arc<Info>> {
         let mut cache = self.inner.infos.lock().expect("infos");
         if let Some(existing) = cache.map.get(blob_id) {
             return existing.clone();
@@ -678,7 +822,10 @@ impl BooksRuntime {
                 && let Ok(saved_path) = saved
                 && let Some(parent) = saved_path.parent()
                 && mkdir_private(parent).await.is_ok()
-                && let Ok(json_bytes) = serde_json::to_vec(&SavedInfo { version: INFO_VERSION, info: value.clone() })
+                && let Ok(json_bytes) = serde_json::to_vec(&SavedInfo {
+                    version: INFO_VERSION,
+                    info: value.clone(),
+                })
             {
                 let tmp = parent.join(format!(".info-{}.tmp", crate::auth::uuid()));
                 if write_private(&tmp, &json_bytes).await.is_ok() {
@@ -695,7 +842,11 @@ impl BooksRuntime {
             handle.await.unwrap_or_else(|_| {
                 let mut meta = empty_meta(fallback_name);
                 meta.error = "damaged".into();
-                Arc::new(Info { meta, epub: None, pages: None })
+                Arc::new(Info {
+                    meta,
+                    epub: None,
+                    pages: None,
+                })
             })
         });
         let shared = mapped.shared();
@@ -738,11 +889,14 @@ impl BooksRuntime {
                 let file_name = name.to_owned();
                 let target_clone = target.clone();
                 let handle = tokio::spawn(async move {
-                    let result = rt.make_cover(&id, format, &file_name, &book, &target_clone).await;
+                    let result = rt
+                        .make_cover(&id, format, &file_name, &book, &target_clone)
+                        .await;
                     rt.inner.covers.lock().expect("covers").remove(&id);
                     result
                 });
-                let mapped: BoxFuture<Option<PathBuf>> = Box::pin(async move { handle.await.ok().flatten() });
+                let mapped: BoxFuture<Option<PathBuf>> =
+                    Box::pin(async move { handle.await.ok().flatten() });
                 let shared = mapped.shared();
                 covers.insert(blob_id.to_owned(), shared.clone());
                 shared
@@ -765,7 +919,10 @@ impl BooksRuntime {
         if let Some(parent) = target.parent() {
             mkdir_private(parent).await.ok()?;
         }
-        let work = self.inner.cache.join(format!(".work-{}", crate::auth::uuid()));
+        let work = self
+            .inner
+            .cache
+            .join(format!(".work-{}", crate::auth::uuid()));
         mkdir_private(&work).await.ok()?;
 
         let result = async {
@@ -815,7 +972,13 @@ impl BooksRuntime {
                 let _permit = self.inner.slots.acquire().await.ok()?;
                 run_tool(
                     "vipsthumbnail",
-                    &[input, "--size".into(), "320x480>".into(), "-o".into(), out_arg],
+                    &[
+                        input,
+                        "--size".into(),
+                        "320x480>".into(),
+                        "-o".into(),
+                        out_arg,
+                    ],
                     Duration::from_secs(120),
                     4 * 1024 * 1024,
                 )
@@ -870,15 +1033,23 @@ impl BooksRuntime {
     /// The library with metadata; books still being read for the first time show their file name
     /// until ready.
     pub async fn library(&self, session_id: &str) -> Result<Value> {
-        let raw = self.inner.db.call("service_books", json!([session_id, "library", "{}"])).await?;
-        let listing: LibraryListing = serde_json::from_value(raw).map_err(|_| AppError::internal())?;
+        let raw = self
+            .inner
+            .db
+            .call("service_books", json!([session_id, "library", "{}"]))
+            .await?;
+        let listing: LibraryListing =
+            serde_json::from_value(raw).map_err(|_| AppError::internal())?;
 
         let mut states: HashMap<String, Value> = HashMap::with_capacity(listing.states.len());
         for mut state in listing.states {
             if let Some(obj) = state.as_object_mut()
                 && let Some(file_id) = obj.get("fileId").and_then(Value::as_str).map(str::to_owned)
             {
-                let normalized = obj.get("position").and_then(book_position).unwrap_or(Value::Null);
+                let normalized = obj
+                    .get("position")
+                    .and_then(book_position)
+                    .unwrap_or(Value::Null);
                 obj.insert("position".into(), normalized);
                 states.insert(file_id, state);
             }
@@ -930,7 +1101,10 @@ impl BooksRuntime {
             item.insert("modifiedAt".into(), f.modified_at);
             item.insert("library".into(), json!(f.library));
             item.insert("path".into(), json!(f.path));
-            item.insert("state".into(), states.get(&f.id).cloned().unwrap_or(Value::Null));
+            item.insert(
+                "state".into(),
+                states.get(&f.id).cloned().unwrap_or(Value::Null),
+            );
             books.push(Value::Object(item));
         }
 
@@ -960,11 +1134,16 @@ fn apply_pdf_info(outcome: PdfInfoOutcome, fallback_title: String) -> BookMeta {
         PdfInfoOutcome::Ok(info) => {
             meta.pages = info.pages;
             let pdf_title = truncate_chars(info.title.trim(), 300);
-            meta.title = if pdf_title.is_empty() { fallback_title } else { pdf_title };
+            meta.title = if pdf_title.is_empty() {
+                fallback_title
+            } else {
+                pdf_title
+            };
             let author = info.author.trim();
             if !author.is_empty() {
                 static AUTHOR_SPLIT: OnceLock<Regex> = OnceLock::new();
-                let split = AUTHOR_SPLIT.get_or_init(|| Regex::new(r"\s*[;&]\s*|\s+and\s+").expect("regex"));
+                let split = AUTHOR_SPLIT
+                    .get_or_init(|| Regex::new(r"\s*[;&]\s*|\s+and\s+").expect("regex"));
                 meta.authors = split
                     .split(author)
                     .map(str::trim)
@@ -1002,12 +1181,19 @@ mod tests {
         );
         assert_eq!(meta.pages, 12);
         assert_eq!(meta.title, "A Fixture Paper");
-        assert_eq!(meta.authors, vec!["Grace Columns", "Ada Page", "Alan Ink", "Ada Two"]);
+        assert_eq!(
+            meta.authors,
+            vec!["Grace Columns", "Ada Page", "Alan Ink", "Ada Two"]
+        );
         assert!(meta.cover);
         assert!(meta.error.is_empty());
 
         let untitled = apply_pdf_info(
-            PdfInfoOutcome::Ok(PdfInfo { pages: 0, title: "   ".into(), author: String::new() }),
+            PdfInfoOutcome::Ok(PdfInfo {
+                pages: 0,
+                title: "   ".into(),
+                author: String::new(),
+            }),
             "My Book".into(),
         );
         assert_eq!(untitled.title, "My Book");

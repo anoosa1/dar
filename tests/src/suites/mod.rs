@@ -54,6 +54,11 @@ mod mail;
 mod mail_browser;
 mod news;
 mod news_browser;
+mod notes_canvas;
+mod notes_cards;
+mod notes_extras;
+mod notes_graph;
+mod notes_links;
 mod oidc_config;
 mod pagination;
 mod photos;
@@ -75,29 +80,84 @@ mod themed_controls_browser;
 mod twilight_browser;
 mod ui_settings;
 mod upload_timeout;
-mod notes_canvas;
-mod notes_cards;
-mod notes_extras;
-mod notes_graph;
-mod notes_links;
 mod workspace;
 mod workspace_browser;
 mod workspace_upgrade;
 
 pub const SUITES: &[Suite] = &[
     // Long-running first (times from the sequential Node runs).
-    twilight_browser::SUITE, upload_timeout::SUITE, codex::SUITE, mail_browser::SUITE, photos_immich::SUITE, restart::SUITE,
-    chat::SUITE, chat_discord::SUITE, shared_ui_browser::SUITE, chat_browser::SUITE, production_proxy::SUITE, pim_browser::SUITE,
-    agent::SUITE, claude::SUITE, mail::SUITE, photos::SUITE, photos_library::SUITE, photos_sharing::SUITE, photos_browser::SUITE,
-    identity::SUITE, identity_lifecycle::SUITE, identity_browser::SUITE, oidc_config::SUITE, workspace::SUITE, workspace_browser::SUITE, notes_links::SUITE, notes_graph::SUITE, notes_cards::SUITE, notes_extras::SUITE, notes_canvas::SUITE,
-    agent_browser::SUITE, news::SUITE, news_browser::SUITE, git_interop::SUITE, git_tracker::SUITE, git::SUITE, git_app::SUITE,
-    git_browser::SUITE, git_tracker_browser::SUITE, history::SUITE, history_browser::SUITE, books::SUITE, books_browser::SUITE,
-    pim::SUITE, pim_upgrade::SUITE, pim_dav_client::SUITE, calendar_subscriptions::SUITE, davx5::SUITE, dav::SUITE,
-    contacts_layout_browser::SUITE, workspace_upgrade::SUITE, ui_settings::SUITE, refinement_browser::SUITE, backup::SUITE,
-    browser::SUITE, files::SUITE, auth::SUITE, auth_security::SUITE, http_security::SUITE, gc::SUITE, blob_migration::SUITE,
-    pagination::SUITE, identity_upgrade::SUITE, identity_proxy::SUITE, apps::SUITE, prayer_times_browser::SUITE,
-    appearance_scopes::SUITE, appearance_scopes_browser::SUITE, app_launcher_browser::SUITE, themed_controls_browser::SUITE,
-    global_search::SUITE, smoke::SUITE,
+    twilight_browser::SUITE,
+    upload_timeout::SUITE,
+    codex::SUITE,
+    mail_browser::SUITE,
+    photos_immich::SUITE,
+    restart::SUITE,
+    chat::SUITE,
+    chat_discord::SUITE,
+    shared_ui_browser::SUITE,
+    chat_browser::SUITE,
+    production_proxy::SUITE,
+    pim_browser::SUITE,
+    agent::SUITE,
+    claude::SUITE,
+    mail::SUITE,
+    photos::SUITE,
+    photos_library::SUITE,
+    photos_sharing::SUITE,
+    photos_browser::SUITE,
+    identity::SUITE,
+    identity_lifecycle::SUITE,
+    identity_browser::SUITE,
+    oidc_config::SUITE,
+    workspace::SUITE,
+    workspace_browser::SUITE,
+    notes_links::SUITE,
+    notes_graph::SUITE,
+    notes_cards::SUITE,
+    notes_extras::SUITE,
+    notes_canvas::SUITE,
+    agent_browser::SUITE,
+    news::SUITE,
+    news_browser::SUITE,
+    git_interop::SUITE,
+    git_tracker::SUITE,
+    git::SUITE,
+    git_app::SUITE,
+    git_browser::SUITE,
+    git_tracker_browser::SUITE,
+    history::SUITE,
+    history_browser::SUITE,
+    books::SUITE,
+    books_browser::SUITE,
+    pim::SUITE,
+    pim_upgrade::SUITE,
+    pim_dav_client::SUITE,
+    calendar_subscriptions::SUITE,
+    davx5::SUITE,
+    dav::SUITE,
+    contacts_layout_browser::SUITE,
+    workspace_upgrade::SUITE,
+    ui_settings::SUITE,
+    refinement_browser::SUITE,
+    backup::SUITE,
+    browser::SUITE,
+    files::SUITE,
+    auth::SUITE,
+    auth_security::SUITE,
+    http_security::SUITE,
+    gc::SUITE,
+    blob_migration::SUITE,
+    pagination::SUITE,
+    identity_upgrade::SUITE,
+    identity_proxy::SUITE,
+    apps::SUITE,
+    prayer_times_browser::SUITE,
+    appearance_scopes::SUITE,
+    appearance_scopes_browser::SUITE,
+    app_launcher_browser::SUITE,
+    themed_controls_browser::SUITE,
+    global_search::SUITE,
+    smoke::SUITE,
 ];
 
 /// Fixture programs suites start as separate processes (`dar-acceptance fixture <name> …`;

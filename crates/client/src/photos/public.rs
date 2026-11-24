@@ -77,7 +77,8 @@ pub fn PublicPhotos() -> impl IntoView {
                 }
                 Err(cause) => {
                     let msg = if cause.status == 404 {
-                        "This link is no longer available. It may have expired or been removed.".to_owned()
+                        "This link is no longer available. It may have expired or been removed."
+                            .to_owned()
                     } else {
                         error_message(&cause.message)
                     };
@@ -138,7 +139,9 @@ pub fn PublicPhotos() -> impl IntoView {
     });
 
     listen(&document(), "keydown", false, move |event| {
-        let Some(open_id) = open.get_untracked() else { return };
+        let Some(open_id) = open.get_untracked() else {
+            return;
+        };
         let event: web_sys::KeyboardEvent = event.unchecked_into();
         let in_field = event
             .target()
@@ -149,7 +152,9 @@ pub fn PublicPhotos() -> impl IntoView {
             return;
         }
         let list = items.get_untracked();
-        let Some(index) = list.iter().position(|i| i.id == open_id) else { return };
+        let Some(index) = list.iter().position(|i| i.id == open_id) else {
+            return;
+        };
         match event.key().as_str() {
             "ArrowRight" => {
                 if let Some(next) = list.get(index + 1) {
@@ -209,15 +214,24 @@ pub fn PublicPhotos() -> impl IntoView {
                 let result: Result<(), String> = async {
                     let res: UploadReservation = api::request(
                         &format!("{api}/uploads"),
-                        Req { method: "POST", body: Some(body.to_string()), ..Default::default() },
+                        Req {
+                            method: "POST",
+                            body: Some(body.to_string()),
+                            ..Default::default()
+                        },
                     )
                     .await
                     .map_err(|e| error_message(&e.message))?;
                     upload_id = res.id;
                     let progress_id = id.clone();
-                    put_upload_file(&format!("{api}/uploads/{upload_id}"), None, &file, move |p| {
-                        update_transfer(&progress_id, &|t| t.progress = p);
-                    })
+                    put_upload_file(
+                        &format!("{api}/uploads/{upload_id}"),
+                        None,
+                        &file,
+                        move |p| {
+                            update_transfer(&progress_id, &|t| t.progress = p);
+                        },
+                    )
                     .await?;
                     Ok(())
                 }
@@ -235,7 +249,10 @@ pub fn PublicPhotos() -> impl IntoView {
                         if !upload_id.is_empty() {
                             let _ = api::request::<Value>(
                                 &format!("{api}/uploads/{upload_id}"),
-                                Req { method: "DELETE", ..Default::default() },
+                                Req {
+                                    method: "DELETE",
+                                    ..Default::default()
+                                },
                             )
                             .await;
                         }
@@ -282,7 +299,8 @@ pub fn PublicPhotos() -> impl IntoView {
         items.with(|list| {
             list.iter()
                 .map(|item| {
-                    let month = local_date(item.taken_at, &[("month", "long"), ("year", "numeric")]);
+                    let month =
+                        local_date(item.taken_at, &[("month", "long"), ("year", "numeric")]);
                     let heading = if show_meta && month != last_month {
                         last_month = month.clone();
                         Some(month)
@@ -519,8 +537,19 @@ fn PasswordForm(api: String, on_unlocked: Callback<()>) -> impl IntoView {
         let url = format!("{}/password", api.get_value());
         spawn_local(async move {
             let body = json!({ "password": pw }).to_string();
-            match api::request::<Value>(&url, Req { method: "POST", body: Some(body), ..Default::default() }).await {
-                Ok(_) => { on_unlocked.try_run(()); },
+            match api::request::<Value>(
+                &url,
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(_) => {
+                    on_unlocked.try_run(());
+                }
                 Err(cause) => {
                     error.try_set(error_message(&cause.message));
                     busy.try_set(false);
@@ -567,8 +596,16 @@ fn PublicThumb(api: String, asset: PhotoAsset, size: &'static str) -> impl IntoV
         if size == "m" { "size=m&" } else { "" },
         asset.revision
     );
-    let alt = if size == "m" { asset.name.clone() } else { String::new() };
-    let icon = if asset.kind == "video" { "video" } else { "image" };
+    let alt = if size == "m" {
+        asset.name.clone()
+    } else {
+        String::new()
+    };
+    let icon = if asset.kind == "video" {
+        "video"
+    } else {
+        "image"
+    };
     let name = asset.name;
     move || {
         if failed.get() {
@@ -613,7 +650,8 @@ fn PublicViewer(
         }
     });
 
-    let asset_id = Memo::new(move |_| asset.with(|a| a.as_ref().map(|a| a.id.clone()).unwrap_or_default()));
+    let asset_id =
+        Memo::new(move |_| asset.with(|a| a.as_ref().map(|a| a.id.clone()).unwrap_or_default()));
 
     Effect::new(move |_| {
         let id = asset_id.get();
@@ -636,27 +674,34 @@ fn PublicViewer(
     let meta_text = move || {
         detail.with(|d| {
             let d = d.as_ref()?;
-            let camera = d.exif.as_ref().map(|e| {
-                let mut parts = Vec::new();
-                if let (Some(make), Some(model)) = (&e.make, &e.model)
-                    && !make.is_empty()
-                    && !model.is_empty()
-                    && !model.starts_with(make.as_str())
-                {
-                    parts.push(make.clone());
-                }
-                if let Some(model) = &e.model
-                    && !model.is_empty()
-                {
-                    parts.push(model.clone());
-                }
-                parts.join(" ")
-            }).unwrap_or_default();
+            let camera = d
+                .exif
+                .as_ref()
+                .map(|e| {
+                    let mut parts = Vec::new();
+                    if let (Some(make), Some(model)) = (&e.make, &e.model)
+                        && !make.is_empty()
+                        && !model.is_empty()
+                        && !model.starts_with(make.as_str())
+                    {
+                        parts.push(make.clone());
+                    }
+                    if let Some(model) = &e.model
+                        && !model.is_empty()
+                    {
+                        parts.push(model.clone());
+                    }
+                    parts.join(" ")
+                })
+                .unwrap_or_default();
             let mut bits = Vec::new();
             if let Some(taken) = d.taken_at
                 && taken > 0.0
             {
-                bits.push(local_date_time(taken, &[("dateStyle", "long"), ("timeStyle", "short")]));
+                bits.push(local_date_time(
+                    taken,
+                    &[("dateStyle", "long"), ("timeStyle", "short")],
+                ));
             }
             if !camera.is_empty() {
                 bits.push(camera);
@@ -666,7 +711,11 @@ fn PublicViewer(
             {
                 bits.push(desc.clone());
             }
-            if bits.is_empty() { None } else { Some(bits.join(" \u{00b7} ")) }
+            if bits.is_empty() {
+                None
+            } else {
+                Some(bits.join(" \u{00b7} "))
+            }
         })
     };
 
@@ -730,7 +779,15 @@ fn PublicVideo(api: String, asset: PhotoAsset) -> impl IntoView {
                 if poll_id.try_get_untracked() != Some(id) {
                     return;
                 }
-                match api::request::<Playback>(&url, Req { method: "POST", ..Default::default() }).await {
+                match api::request::<Playback>(
+                    &url,
+                    Req {
+                        method: "POST",
+                        ..Default::default()
+                    },
+                )
+                .await
+                {
                     Ok(val) => {
                         let preparing = val.state == "preparing";
                         state.try_set(Some(val));
@@ -740,7 +797,11 @@ fn PublicVideo(api: String, asset: PhotoAsset) -> impl IntoView {
                         crate::sleep(1500).await;
                     }
                     Err(_) => {
-                        state.try_set(Some(Playback { state: "failed".to_owned(), progress: 0.0, url: String::new() }));
+                        state.try_set(Some(Playback {
+                            state: "failed".to_owned(),
+                            progress: 0.0,
+                            url: String::new(),
+                        }));
                         return;
                     }
                 }
@@ -748,7 +809,8 @@ fn PublicVideo(api: String, asset: PhotoAsset) -> impl IntoView {
         });
     }
 
-    move || match state.get() {
+    move || {
+        match state.get() {
         None => view! {
             <div class="photos-video-wait" role="status">
                 <span class="photos-spinner" aria-hidden="true"></span>
@@ -781,5 +843,6 @@ fn PublicVideo(api: String, asset: PhotoAsset) -> impl IntoView {
             <video src=pb.url controls playsinline preload="metadata" aria-label=name.clone()></video>
         }
         .into_any(),
+    }
     }
 }

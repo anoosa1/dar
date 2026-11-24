@@ -10,7 +10,11 @@ mod page;
 
 pub use cdp::Event;
 pub use locator::{Locator, Pattern, State, contains, regex};
-pub use page::{screenshot_open_pages, ApiRequest, ApiResponse, ClickOptions, ConsoleMessage, Download, FilePayload, Fulfill, Keyboard, Mouse, Page, Rect, Request, Response, Route, RouteMatch, glob_matches};
+pub use page::{
+    ApiRequest, ApiResponse, ClickOptions, ConsoleMessage, Download, FilePayload, Fulfill,
+    Keyboard, Mouse, Page, Rect, Request, Response, Route, RouteMatch, glob_matches,
+    screenshot_open_pages,
+};
 
 use crate::{Error, Result};
 use cdp::Connection;
@@ -32,7 +36,8 @@ pub struct Browser {
 /// One Chromium per suite, keyed by the suite's runtime threads (the runner names them after
 /// the suite), as each Node browser script launched its own: pages of parallel suites sharing
 /// one browser process starved each other's input and timers under load.
-static SHARED: std::sync::Mutex<Vec<(String, Arc<OnceCell<Arc<Browser>>>)>> = std::sync::Mutex::new(Vec::new());
+static SHARED: std::sync::Mutex<Vec<(String, Arc<OnceCell<Arc<Browser>>>)>> =
+    std::sync::Mutex::new(Vec::new());
 
 impl Browser {
     /// The suite's Chromium (started on first use). `DAR_CHROMIUM` names the executable,
@@ -50,7 +55,9 @@ impl Browser {
                 }
             }
         };
-        cell.get_or_try_init(|| async { Browser::launch().map(Arc::new) }).await.cloned()
+        cell.get_or_try_init(|| async { Browser::launch().map(Arc::new) })
+            .await
+            .cloned()
     }
 
     pub fn launch() -> Result<Browser> {
@@ -58,11 +65,16 @@ impl Browser {
     }
 
     pub fn launch_with(hide_scrollbars: bool) -> Result<Browser> {
-        let executable = std::env::var_os("DAR_CHROMIUM").map(PathBuf::from).or_else(|| crate::which("chromium"))
-            .ok_or_else(|| Error::new("Chromium is required: use Dar's dev shell or set DAR_CHROMIUM"))?;
+        let executable = std::env::var_os("DAR_CHROMIUM")
+            .map(PathBuf::from)
+            .or_else(|| crate::which("chromium"))
+            .ok_or_else(|| {
+                Error::new("Chromium is required: use Dar's dev shell or set DAR_CHROMIUM")
+            })?;
         // Chromium creates Unix sockets (`SingletonSocket`) inside both $TMPDIR and --user-data-dir.
         // Linux limits AF_UNIX sun_path to 108 bytes, so fall back to /tmp when TMPDIR is long.
-        let tmp_base = if std::env::temp_dir().as_os_str().len() > 40 && Path::new("/tmp").is_dir() {
+        let tmp_base = if std::env::temp_dir().as_os_str().len() > 40 && Path::new("/tmp").is_dir()
+        {
             PathBuf::from("/tmp")
         } else {
             std::env::temp_dir()
@@ -99,9 +111,15 @@ impl Browser {
             .stdin(Stdio::from(chrome_reads))
             .stdout(Stdio::from(chrome_writes))
             .stderr(log);
-        let child = command.spawn().map_err(|error| Error::new(format!("Chromium did not start: {error}")))?;
+        let child = command
+            .spawn()
+            .map_err(|error| Error::new(format!("Chromium did not start: {error}")))?;
         drop(command);
-        Ok(Browser { connection: Connection::new(we_write, we_read), child: Mutex::new(child), profile })
+        Ok(Browser {
+            connection: Connection::new(we_write, we_read),
+            child: Mutex::new(child),
+            profile,
+        })
     }
 
     pub(crate) async fn call(&self, method: &str, params: Value) -> Result<Value> {
@@ -109,20 +127,40 @@ impl Browser {
     }
 
     pub async fn new_context(self: &Arc<Self>, options: ContextOptions) -> Result<Context> {
-        let id = self.call("Target.createBrowserContext", json!({"disposeOnDetach": true})).await?["browserContextId"]
-            .as_str().ok_or_else(|| Error::new("no browser context id"))?.to_owned();
+        let id = self
+            .call(
+                "Target.createBrowserContext",
+                json!({"disposeOnDetach": true}),
+            )
+            .await?["browserContextId"]
+            .as_str()
+            .ok_or_else(|| Error::new("no browser context id"))?
+            .to_owned();
         let downloads = crate::temp_dir("dar-downloads-")?;
         self.call("Browser.setDownloadBehavior", json!({"behavior": "allowAndName", "browserContextId": id, "downloadPath": downloads, "eventsEnabled": true})).await?;
         if !options.permissions.is_empty() {
             self.call("Browser.grantPermissions", json!({"browserContextId": id, "permissions": options.permissions.iter().map(|p| permission(p)).collect::<Vec<_>>()})).await?;
         }
-        let context = Context { inner: Arc::new(ContextInner { browser: self.clone(), id, options, downloads, pages: Mutex::default() }) };
+        let context = Context {
+            inner: Arc::new(ContextInner {
+                browser: self.clone(),
+                id,
+                options,
+                downloads,
+                pages: Mutex::default(),
+            }),
+        };
         if let Some(state) = context.inner.options.storage_state.clone() {
             context.add_cookies(state.cookies).await?;
             if !state.origins.is_empty() {
                 // Local storage is restored by visiting each origin once, as Playwright does.
                 let page = context.new_page().await?;
-                page.route("**/*", None, |route| async move { route.fulfill(Fulfill::text(200, "text/html", "<!doctype html>")).await }).await?;
+                page.route("**/*", None, |route| async move {
+                    route
+                        .fulfill(Fulfill::text(200, "text/html", "<!doctype html>"))
+                        .await
+                })
+                .await?;
                 for origin in &state.origins {
                     page.goto(&format!("{}/", origin.origin)).await?;
                     page.evaluate_with("(entries) => { for (const [k, v] of entries) localStorage.setItem(k, v); }", json!(origin.local_storage)).await?;
@@ -135,7 +173,11 @@ impl Browser {
 
     /// A context with the given viewport and Playwright's other defaults.
     pub async fn new_context_sized(self: &Arc<Self>, width: u32, height: u32) -> Result<Context> {
-        self.new_context(ContextOptions { viewport: (width, height), ..ContextOptions::default() }).await
+        self.new_context(ContextOptions {
+            viewport: (width, height),
+            ..ContextOptions::default()
+        })
+        .await
     }
 }
 
@@ -166,16 +208,25 @@ impl Drop for Browser {
 pub async fn close_suite(suite: &str) {
     let browsers: Vec<Arc<Browser>> = {
         let mut shared = SHARED.lock().unwrap();
-        let (closing, kept): (Vec<_>, Vec<_>) = shared.drain(..).partition(|(name, _)| name == suite);
+        let (closing, kept): (Vec<_>, Vec<_>) =
+            shared.drain(..).partition(|(name, _)| name == suite);
         *shared = kept;
-        closing.into_iter().filter_map(|(_, cell)| cell.get().cloned()).collect()
+        closing
+            .into_iter()
+            .filter_map(|(_, cell)| cell.get().cloned())
+            .collect()
     };
     close_all(browsers).await;
 }
 
 /// Closes every browser still open (the runner calls this before exiting).
 pub async fn shutdown() {
-    let browsers: Vec<Arc<Browser>> = SHARED.lock().unwrap().drain(..).filter_map(|(_, cell)| cell.get().cloned()).collect();
+    let browsers: Vec<Arc<Browser>> = SHARED
+        .lock()
+        .unwrap()
+        .drain(..)
+        .filter_map(|(_, cell)| cell.get().cloned())
+        .collect();
     close_all(browsers).await;
 }
 
@@ -204,18 +255,35 @@ pub struct ContextOptions {
 
 impl Default for ContextOptions {
     fn default() -> Self {
-        Self { viewport: (1280, 720), is_mobile: false, has_touch: false, device_scale_factor: 1.0, color_scheme: None, reduced_motion: None,
-            ignore_https_errors: false, permissions: Vec::new(), storage_state: None }
+        Self {
+            viewport: (1280, 720),
+            is_mobile: false,
+            has_touch: false,
+            device_scale_factor: 1.0,
+            color_scheme: None,
+            reduced_motion: None,
+            ignore_https_errors: false,
+            permissions: Vec::new(),
+            storage_state: None,
+        }
     }
 }
 
 impl ContextOptions {
     pub fn sized(width: u32, height: u32) -> Self {
-        Self { viewport: (width, height), ..Self::default() }
+        Self {
+            viewport: (width, height),
+            ..Self::default()
+        }
     }
     /// A phone: viewport, mobile layout and touch (Playwright's `isMobile` and `hasTouch`).
     pub fn phone(width: u32, height: u32) -> Self {
-        Self { viewport: (width, height), is_mobile: true, has_touch: true, ..Self::default() }
+        Self {
+            viewport: (width, height),
+            is_mobile: true,
+            has_touch: true,
+            ..Self::default()
+        }
     }
 }
 
@@ -259,7 +327,17 @@ fn root_path() -> String {
 impl Cookie {
     /// A cookie for `url`'s host, like Playwright's `{name, value, url}`.
     pub fn for_url(name: &str, value: &str, url: &str) -> Self {
-        Self { name: name.into(), value: value.into(), domain: String::new(), path: "/".into(), url: Some(url.into()), expires: -1.0, http_only: false, secure: false, same_site: None }
+        Self {
+            name: name.into(),
+            value: value.into(),
+            domain: String::new(),
+            path: "/".into(),
+            url: Some(url.into()),
+            expires: -1.0,
+            http_only: false,
+            secure: false,
+            same_site: None,
+        }
     }
 }
 
@@ -284,7 +362,14 @@ impl Context {
     }
 
     pub fn pages(&self) -> Vec<Page> {
-        self.inner.pages.lock().unwrap().iter().filter(|page| !page.is_closed()).cloned().collect()
+        self.inner
+            .pages
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|page| !page.is_closed())
+            .cloned()
+            .collect()
     }
 
     pub fn options(&self) -> &ContextOptions {
@@ -296,27 +381,49 @@ impl Context {
     }
 
     pub async fn cookies(&self) -> Result<Vec<Cookie>> {
-        let result = self.inner.browser.call("Storage.getCookies", json!({"browserContextId": self.inner.id})).await?;
+        let result = self
+            .inner
+            .browser
+            .call(
+                "Storage.getCookies",
+                json!({"browserContextId": self.inner.id}),
+            )
+            .await?;
         Ok(serde_json::from_value(result["cookies"].clone())?)
     }
 
     pub async fn add_cookies(&self, cookies: Vec<Cookie>) -> Result<()> {
-        let cookies: Vec<Value> = cookies.into_iter().map(|cookie| {
-            let mut value = serde_json::to_value(&cookie).unwrap();
-            if cookie.url.is_some() {
-                value.as_object_mut().unwrap().remove("domain");
-            }
-            if cookie.expires <= 0.0 {
-                value.as_object_mut().unwrap().remove("expires");
-            }
-            value
-        }).collect();
-        self.inner.browser.call("Storage.setCookies", json!({"browserContextId": self.inner.id, "cookies": cookies})).await?;
+        let cookies: Vec<Value> = cookies
+            .into_iter()
+            .map(|cookie| {
+                let mut value = serde_json::to_value(&cookie).unwrap();
+                if cookie.url.is_some() {
+                    value.as_object_mut().unwrap().remove("domain");
+                }
+                if cookie.expires <= 0.0 {
+                    value.as_object_mut().unwrap().remove("expires");
+                }
+                value
+            })
+            .collect();
+        self.inner
+            .browser
+            .call(
+                "Storage.setCookies",
+                json!({"browserContextId": self.inner.id, "cookies": cookies}),
+            )
+            .await?;
         Ok(())
     }
 
     pub async fn clear_cookies(&self) -> Result<()> {
-        self.inner.browser.call("Storage.clearCookies", json!({"browserContextId": self.inner.id})).await?;
+        self.inner
+            .browser
+            .call(
+                "Storage.clearCookies",
+                json!({"browserContextId": self.inner.id}),
+            )
+            .await?;
         Ok(())
     }
 
@@ -324,21 +431,39 @@ impl Context {
     pub async fn storage_state(&self) -> Result<StorageState> {
         let mut origins: Vec<OriginStorage> = Vec::new();
         for page in self.pages() {
-            let found = page.evaluate("() => ({origin: location.origin, entries: Object.entries(localStorage)})").await?;
+            let found = page
+                .evaluate(
+                    "() => ({origin: location.origin, entries: Object.entries(localStorage)})",
+                )
+                .await?;
             let origin = found["origin"].as_str().unwrap_or_default().to_owned();
             if origin.starts_with("http") && !origins.iter().any(|o| o.origin == origin) {
-                origins.push(OriginStorage { origin, local_storage: serde_json::from_value(found["entries"].clone()).unwrap_or_default() });
+                origins.push(OriginStorage {
+                    origin,
+                    local_storage: serde_json::from_value(found["entries"].clone())
+                        .unwrap_or_default(),
+                });
             }
         }
-        Ok(StorageState { cookies: self.cookies().await?, origins })
+        Ok(StorageState {
+            cookies: self.cookies().await?,
+            origins,
+        })
     }
 
-    pub async fn grant_permissions(&self, permissions: &[&str], origin: Option<&str>) -> Result<()> {
+    pub async fn grant_permissions(
+        &self,
+        permissions: &[&str],
+        origin: Option<&str>,
+    ) -> Result<()> {
         let mut params = json!({"browserContextId": self.inner.id, "permissions": permissions.iter().map(|p| permission(p)).collect::<Vec<_>>()});
         if let Some(origin) = origin {
             params["origin"] = json!(origin);
         }
-        self.inner.browser.call("Browser.grantPermissions", params).await?;
+        self.inner
+            .browser
+            .call("Browser.grantPermissions", params)
+            .await?;
         Ok(())
     }
 
@@ -351,7 +476,14 @@ impl Context {
         for page in self.pages() {
             page.close().await.ok();
         }
-        self.inner.browser.call("Target.disposeBrowserContext", json!({"browserContextId": self.inner.id})).await.ok();
+        self.inner
+            .browser
+            .call(
+                "Target.disposeBrowserContext",
+                json!({"browserContextId": self.inner.id}),
+            )
+            .await
+            .ok();
         let _ = std::fs::remove_dir_all(&self.inner.downloads);
         Ok(())
     }

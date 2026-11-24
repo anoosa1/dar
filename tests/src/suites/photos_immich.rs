@@ -5,17 +5,20 @@
 use super::photos_books_apps_support::{
     ffmpeg, multipart_immich, setup_admin_as, sha1_base64, upload_raw,
 };
+use axum::Router;
 use axum::body::Bytes;
 use axum::http::{HeaderMap, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
-use axum::Router;
 use dar_acceptance::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
 
-pub const SUITE: Suite = Suite { name: "photos-immich", cases: &[case!(photos_immich_api_and_connector, 300)] };
+pub const SUITE: Suite = Suite {
+    name: "photos-immich",
+    cases: &[case!(photos_immich_api_and_connector, 300)],
+};
 
 #[derive(Clone)]
 struct FakeAsset {
@@ -45,10 +48,12 @@ impl FakeImmich {
     async fn start(assets: Vec<FakeAsset>, albums: Vec<FakeAlbum>) -> Result<Self> {
         let received = Arc::new(Mutex::new(Vec::new()));
         let state = Arc::new((assets, albums, received.clone()));
-        let app = Router::new().fallback(move |method: Method, uri: Uri, headers: HeaderMap, body: Bytes| {
-            let state = state.clone();
-            async move { handle_fake_immich(method, uri, headers, body, state).await }
-        });
+        let app = Router::new().fallback(
+            move |method: Method, uri: Uri, headers: HeaderMap, body: Bytes| {
+                let state = state.clone();
+                async move { handle_fake_immich(method, uri, headers, body, state).await }
+            },
+        );
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let port = listener.local_addr()?.port();
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
@@ -59,7 +64,11 @@ impl FakeImmich {
                 })
                 .await;
         });
-        Ok(FakeImmich { url: format!("http://127.0.0.1:{port}"), received, shutdown: Some(tx) })
+        Ok(FakeImmich {
+            url: format!("http://127.0.0.1:{port}"),
+            received,
+            shutdown: Some(tx),
+        })
     }
 
     fn close(&mut self) {
@@ -74,38 +83,64 @@ async fn handle_fake_immich(
     uri: Uri,
     headers: HeaderMap,
     body: Bytes,
-    state: Arc<(Vec<FakeAsset>, Vec<FakeAlbum>, Arc<Mutex<Vec<(String, String)>>>)>,
+    state: Arc<(
+        Vec<FakeAsset>,
+        Vec<FakeAlbum>,
+        Arc<Mutex<Vec<(String, String)>>>,
+    )>,
 ) -> Response {
     let (assets, albums, received) = state.as_ref();
     let path = uri.path();
     let query = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
     let json_resp = |status: StatusCode, value: Value| {
-        (status, [(header::CONTENT_TYPE, "application/json")], value.to_string()).into_response()
+        (
+            status,
+            [(header::CONTENT_TYPE, "application/json")],
+            value.to_string(),
+        )
+            .into_response()
     };
 
     // A proxy in front that moved Immich: same host, permanent redirect.
     if let Some(rest) = path.strip_prefix("/old") {
         let location = format!("{rest}{query}");
-        return (StatusCode::PERMANENT_REDIRECT, [(header::LOCATION, location)]).into_response();
+        return (
+            StatusCode::PERMANENT_REDIRECT,
+            [(header::LOCATION, location)],
+        )
+            .into_response();
     }
     if path == "/api/server/ping" {
         return json_resp(StatusCode::OK, json!({"res": "pong"}));
     }
     if headers.get("x-api-key").and_then(|v| v.to_str().ok()) != Some("good-key") {
-        return json_resp(StatusCode::UNAUTHORIZED, json!({"message": "Invalid API key", "statusCode": 401}));
+        return json_resp(
+            StatusCode::UNAUTHORIZED,
+            json!({"message": "Invalid API key", "statusCode": 401}),
+        );
     }
     if path == "/api/users/me" {
-        return json_resp(StatusCode::OK, json!({"id": uuid(), "name": "Remote", "email": "remote@example.com"}));
+        return json_resp(
+            StatusCode::OK,
+            json!({"id": uuid(), "name": "Remote", "email": "remote@example.com"}),
+        );
     }
     if path == "/api/search/metadata" && method == Method::POST {
         let payload: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
-        let list: Vec<&FakeAsset> = if let Some(album_id) = payload["albumIds"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()) {
+        let list: Vec<&FakeAsset> = if let Some(album_id) = payload["albumIds"]
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|v| v.as_str())
+        {
             let member_ids: HashSet<&str> = albums
                 .iter()
                 .find(|al| al.id == album_id)
                 .map(|al| al.asset_ids.iter().map(String::as_str).collect())
                 .unwrap_or_default();
-            assets.iter().filter(|a| member_ids.contains(a.id.as_str())).collect()
+            assets
+                .iter()
+                .filter(|a| member_ids.contains(a.id.as_str()))
+                .collect()
         } else {
             assets.iter().collect()
         };
@@ -144,7 +179,12 @@ async fn handle_fake_immich(
         && !id.contains('/')
     {
         if let Some(asset) = assets.iter().find(|x| x.id == id) {
-            return (StatusCode::OK, [(header::CONTENT_TYPE, asset.content_type.clone())], asset.bytes.clone()).into_response();
+            return (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, asset.content_type.clone())],
+                asset.bytes.clone(),
+            )
+                .into_response();
         }
         return json_resp(StatusCode::NOT_FOUND, json!({}));
     }
@@ -156,7 +196,11 @@ async fn handle_fake_immich(
         return json_resp(StatusCode::OK, Value::Array(items));
     }
     if path == "/api/assets" && method == Method::POST {
-        let checksum = headers.get("x-immich-checksum").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+        let checksum = headers
+            .get("x-immich-checksum")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
         let text = String::from_utf8_lossy(&body);
         let name = regex::Regex::new(r#"filename="([^"]+)""#)
             .unwrap()
@@ -165,7 +209,10 @@ async fn handle_fake_immich(
             .map(|m| m.as_str().to_owned())
             .unwrap_or_default();
         received.lock().unwrap().push((checksum, name));
-        return json_resp(StatusCode::CREATED, json!({"id": uuid(), "status": "created"}));
+        return json_resp(
+            StatusCode::CREATED,
+            json!({"id": uuid(), "status": "created"}),
+        );
     }
     json_resp(StatusCode::NOT_FOUND, json!({}))
 }
@@ -184,7 +231,10 @@ impl DeviceState {
         let kind = line["type"].as_str().context("line type")?;
         let d = &line["data"];
         let need = |held: &HashSet<String>, id: Option<&str>, what: &str| -> Result<()> {
-            ensure!(id.is_some_and(|i| held.contains(i)), "{kind} names {what} {id:?} the app does not hold");
+            ensure!(
+                id.is_some_and(|i| held.contains(i)),
+                "{kind} names {what} {id:?} the app does not hold"
+            );
             Ok(())
         };
         match kind {
@@ -195,7 +245,8 @@ impl DeviceState {
                 self.checksums.clear();
             }
             "UserV1" => {
-                self.users.insert(d["id"].as_str().context("UserV1 id")?.to_owned());
+                self.users
+                    .insert(d["id"].as_str().context("UserV1 id")?.to_owned());
             }
             "AssetV2" | "AlbumAssetCreateV2" => {
                 let owner_id = d["ownerId"].as_str();
@@ -228,10 +279,12 @@ impl DeviceState {
                 if let Some(cover) = d["thumbnailAssetId"].as_str() {
                     need(&self.assets, Some(cover), "cover")?;
                 }
-                self.albums.insert(d["id"].as_str().context("album id")?.to_owned());
+                self.albums
+                    .insert(d["id"].as_str().context("album id")?.to_owned());
             }
             "AlbumDeleteV1" => {
-                self.albums.remove(d["albumId"].as_str().context("albumId")?);
+                self.albums
+                    .remove(d["albumId"].as_str().context("albumId")?);
             }
             "AlbumUserV1" => {
                 need(&self.albums, d["albumId"].as_str(), "album")?;
@@ -265,10 +318,48 @@ pub async fn photos_immich_api_and_connector(t: &Ctx) -> Result<()> {
     let wave_path = root.join("wave.mp4");
     let remote_path = root.join("remote.jpg");
     let solo_path = root.join("solo.jpg");
-    ffmpeg(&["-f", "lavfi", "-i", "testsrc2=size=320x240", "-frames:v", "1", &beach_path.to_string_lossy()]).await?;
-    ffmpeg(&["-f", "lavfi", "-i", "testsrc=size=320x240:rate=10", "-t", "2", "-pix_fmt", "yuv420p", &wave_path.to_string_lossy()]).await?;
-    ffmpeg(&["-f", "lavfi", "-i", "mandelbrot=size=320x240", "-frames:v", "1", &remote_path.to_string_lossy()]).await?;
-    ffmpeg(&["-f", "lavfi", "-i", "rgbtestsrc=size=320x240", "-frames:v", "1", &solo_path.to_string_lossy()]).await?;
+    ffmpeg(&[
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x240",
+        "-frames:v",
+        "1",
+        &beach_path.to_string_lossy(),
+    ])
+    .await?;
+    ffmpeg(&[
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=320x240:rate=10",
+        "-t",
+        "2",
+        "-pix_fmt",
+        "yuv420p",
+        &wave_path.to_string_lossy(),
+    ])
+    .await?;
+    ffmpeg(&[
+        "-f",
+        "lavfi",
+        "-i",
+        "mandelbrot=size=320x240",
+        "-frames:v",
+        "1",
+        &remote_path.to_string_lossy(),
+    ])
+    .await?;
+    ffmpeg(&[
+        "-f",
+        "lavfi",
+        "-i",
+        "rgbtestsrc=size=320x240",
+        "-frames:v",
+        "1",
+        &solo_path.to_string_lossy(),
+    ])
+    .await?;
     let beach = std::fs::read(&beach_path)?;
     let wave = std::fs::read(&wave_path)?;
     let remote_bytes = std::fs::read(&remote_path)?;

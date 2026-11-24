@@ -48,19 +48,36 @@ struct Request<'a> {
 impl Request<'_> {
     fn json(&self, mut value: Value, status: StatusCode, row: Option<&Value>) -> Response {
         isoify(&mut value);
-        let mut response = (status, [(header::CONTENT_TYPE, "application/json; charset=utf-8"), (header::CACHE_CONTROL, "no-store")], value.to_string()).into_response();
+        let mut response = (
+            status,
+            [
+                (header::CONTENT_TYPE, "application/json; charset=utf-8"),
+                (header::CACHE_CONTROL, "no-store"),
+            ],
+            value.to_string(),
+        )
+            .into_response();
         if let Some(row) = row
             && let Ok(tag) = HeaderValue::from_str(&etag(row))
         {
             response.headers_mut().insert(header::ETAG, tag);
         }
         if self.pim.revision() > 0 {
-            response.headers_mut().insert("x-dar-pim-revision", HeaderValue::from(self.pim.revision()));
+            response
+                .headers_mut()
+                .insert("x-dar-pim-revision", HeaderValue::from(self.pim.revision()));
         }
         response
     }
     async fn workspace(&self, operation: &str, p: Value) -> Result<Value> {
-        self.db.operation("service_workspace", operation, &READS, json!([self.session, operation, p.to_string()])).await
+        self.db
+            .operation(
+                "service_workspace",
+                operation,
+                &READS,
+                json!([self.session, operation, p.to_string()]),
+            )
+            .await
     }
     async fn body(&self, body: Body) -> Result<Map<String, Value>> {
         crate::http::body_object(body, 3 * 1024 * 1024, self.headers).await
@@ -68,7 +85,18 @@ impl Request<'_> {
 }
 
 fn send(content: String, name: &str, media: &str) -> Response {
-    ([(header::CONTENT_TYPE, media.to_owned()), (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{name}\"")), (header::CACHE_CONTROL, "no-store".to_owned())], content).into_response()
+    (
+        [
+            (header::CONTENT_TYPE, media.to_owned()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{name}\""),
+            ),
+            (header::CACHE_CONTROL, "no-store".to_owned()),
+        ],
+        content,
+    )
+        .into_response()
 }
 
 fn put_operation(collection_id: &str, row: &Value, content: &str, data: &Value) -> Value {
@@ -98,20 +126,48 @@ fn subtree<'a>(row: &'a Value, rows: &'a [Value], limit: usize) -> Result<Vec<&'
 }
 
 fn today(zone: chrono_tz::Tz) -> String {
-    chrono::Utc::now().with_timezone(&zone).format("%Y-%m-%d").to_string()
+    chrono::Utc::now()
+        .with_timezone(&zone)
+        .format("%Y-%m-%d")
+        .to_string()
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn handle(db: &Database, session: &str, method: &Method, path_full: &str, query: &HashMap<String, String>, headers: &HeaderMap, body: Body) -> Result<Response> {
+pub async fn handle(
+    db: &Database,
+    session: &str,
+    method: &Method,
+    path_full: &str,
+    query: &HashMap<String, String>,
+    headers: &HeaderMap,
+    body: Body,
+) -> Result<Response> {
     let q = |name: &str| query.get(name).cloned();
     let viewer_zone = q("timezone").unwrap_or_else(|| "UTC".into());
     let viewer = super::calendar::zone(&viewer_zone)?;
     let notes = path_full.starts_with("/api/v1/notes");
-    let (base, kind) = if notes { ("/api/v1/notes", "notes") } else { ("/api/v1/tasks", "calendar") };
+    let (base, kind) = if notes {
+        ("/api/v1/notes", "notes")
+    } else {
+        ("/api/v1/tasks", "calendar")
+    };
     let path = &path_full[base.len()..];
-    let r = Request { db, session, pim: Pim::new(db, session), headers };
+    let r = Request {
+        db,
+        session,
+        pim: Pim::new(db, session),
+        headers,
+    };
     if notes && path == "/trash" && *method == Method::GET {
-        return Ok(r.json(r.workspace("trash", json!({ "cursor": q("cursor").unwrap_or_default() })).await?, StatusCode::OK, None));
+        return Ok(r.json(
+            r.workspace(
+                "trash",
+                json!({ "cursor": q("cursor").unwrap_or_default() }),
+            )
+            .await?,
+            StatusCode::OK,
+            None,
+        ));
     }
     if notes && let Some(rest) = path.strip_prefix("/trash/") {
         let (id, restore) = match rest.split_once('/') {
@@ -121,38 +177,76 @@ pub async fn handle(db: &Database, session: &str, method: &Method, path_full: &s
         };
         if !id.is_empty() {
             let rows = r.workspace("trash", json!({ "id": id })).await?;
-            let row = rows["items"].as_array().and_then(|i| i.iter().find(|x| x["id"] == json!(id)).cloned()).ok_or_else(AppError::not_found)?;
+            let row = rows["items"]
+                .as_array()
+                .and_then(|i| i.iter().find(|x| x["id"] == json!(id)).cloned())
+                .ok_or_else(AppError::not_found)?;
             if *method == Method::GET && !restore {
                 return Ok(r.json(row.clone(), StatusCode::OK, Some(&row["resource"])));
             }
             if *method == Method::DELETE && !restore || *method == Method::POST && restore {
-                let mut p = if restore { r.body(body).await? } else { Map::new() };
+                let mut p = if restore {
+                    r.body(body).await?
+                } else {
+                    Map::new()
+                };
                 p.insert("id".into(), row["id"].clone());
-                p.insert("revision".into(), json!(require_match(headers, &row["resource"])?));
-                return Ok(r.json(r.workspace(if restore { "restore" } else { "purge" }, Value::Object(p)).await?, StatusCode::OK, None));
+                p.insert(
+                    "revision".into(),
+                    json!(require_match(headers, &row["resource"])?),
+                );
+                return Ok(r.json(
+                    r.workspace(if restore { "restore" } else { "purge" }, Value::Object(p))
+                        .await?,
+                    StatusCode::OK,
+                    None,
+                ));
             }
         }
     }
-    let collections: Vec<Value> = r.pim.collections().await?.into_iter().filter(|c| c["kind"] == kind && c["subscription"].is_null()).collect();
+    let collections: Vec<Value> = r
+        .pim
+        .collections()
+        .await?
+        .into_iter()
+        .filter(|c| c["kind"] == kind && c["subscription"].is_null())
+        .collect();
     let group = if notes { "/notebooks" } else { "/lists" };
-    if let Some(rest) = path.strip_prefix(group).filter(|rest| rest.is_empty() || rest.starts_with('/')) {
+    if let Some(rest) = path
+        .strip_prefix(group)
+        .filter(|rest| rest.is_empty() || rest.starts_with('/'))
+    {
         let parts: Vec<&str> = rest.split('/').skip(1).collect();
         let (id, sub) = (parts.first().copied(), parts.get(1).copied());
-        let valid = parts.len() <= 2 && sub.is_none_or(|s| ["grants", "export", "import"].contains(&s)) && id.is_none_or(|i| !i.is_empty());
+        let valid = parts.len() <= 2
+            && sub.is_none_or(|s| ["grants", "export", "import"].contains(&s))
+            && id.is_none_or(|i| !i.is_empty());
         if valid {
             let Some(id) = id else {
                 if *method == Method::GET {
-                    return Ok(r.json(json!({ "items": collections, "nextCursor": "" }), StatusCode::OK, None));
+                    return Ok(r.json(
+                        json!({ "items": collections, "nextCursor": "" }),
+                        StatusCode::OK,
+                        None,
+                    ));
                 }
                 if *method == Method::POST {
                     let p = r.body(body).await?;
-                    let color = p.get("color").cloned().filter(|c| !c.is_null()).unwrap_or(json!("#2563eb"));
+                    let color = p
+                        .get("color")
+                        .cloned()
+                        .filter(|c| !c.is_null())
+                        .unwrap_or(json!("#2563eb"));
                     let row = r.pim.call("createCollection", json!({ "id": crate::auth::uuid(), "kind": kind, "name": field(p.get("name").unwrap_or(&Value::Null), 255)?, "color": field(&color, 7)? })).await?;
                     return Ok(r.json(row.clone(), StatusCode::CREATED, Some(&row)));
                 }
                 return Err(AppError::new("methodNotAllowed", 405));
             };
-            let c = collections.iter().find(|c| c["id"] == json!(id)).cloned().ok_or_else(AppError::not_found)?;
+            let c = collections
+                .iter()
+                .find(|c| c["id"] == json!(id))
+                .cloned()
+                .ok_or_else(AppError::not_found)?;
             match (sub, method.clone()) {
                 (Some("grants"), Method::GET) => return Ok(r.json(json!({ "items": r.pim.call("grants", json!({ "collectionId": id })).await?, "nextCursor": "" }), StatusCode::OK, None)),
                 (Some("grants"), Method::POST | Method::DELETE) => {
@@ -224,10 +318,20 @@ pub async fn handle(db: &Database, session: &str, method: &Method, path_full: &s
             }
         }
     }
-    let rest = path.strip_prefix("/items").filter(|rest| rest.is_empty() || rest.starts_with('/')).ok_or_else(AppError::not_found)?;
+    let rest = path
+        .strip_prefix("/items")
+        .filter(|rest| rest.is_empty() || rest.starts_with('/'))
+        .ok_or_else(AppError::not_found)?;
     let parts: Vec<&str> = rest.split('/').skip(1).collect();
-    let (id, action) = (parts.first().copied().filter(|i| !i.is_empty()), parts.get(1).copied());
-    if parts.len() > 2 || action.is_some_and(|a| !["export", "move", "copy", "complete", "occurrences"].contains(&a)) || (!parts.is_empty() && id.is_none()) {
+    let (id, action) = (
+        parts.first().copied().filter(|i| !i.is_empty()),
+        parts.get(1).copied(),
+    );
+    if parts.len() > 2
+        || action
+            .is_some_and(|a| !["export", "move", "copy", "complete", "occurrences"].contains(&a))
+        || (!parts.is_empty() && id.is_none())
+    {
         return Err(AppError::not_found());
     }
     let Some(id) = id else {
@@ -236,12 +340,24 @@ pub async fn handle(db: &Database, session: &str, method: &Method, path_full: &s
         }
         if *method == Method::POST {
             let p = r.body(body).await?;
-            let c = collections.iter().find(|c| Some(&c["id"]) == p.get("collectionId")).cloned().ok_or_else(AppError::not_found)?;
-            let href = format!("{}.{}", crate::auth::uuid(), if notes { "md" } else { "ics" });
+            let c = collections
+                .iter()
+                .find(|c| Some(&c["id"]) == p.get("collectionId"))
+                .cloned()
+                .ok_or_else(AppError::not_found)?;
+            let href = format!(
+                "{}.{}",
+                crate::auth::uuid(),
+                if notes { "md" } else { "ics" }
+            );
             let input = if notes {
                 Value::Object(p)
             } else {
-                let data = p.get("data").cloned().filter(|d| !d.is_null()).unwrap_or(Value::Object(p.clone()));
+                let data = p
+                    .get("data")
+                    .cloned()
+                    .filter(|d| !d.is_null())
+                    .unwrap_or(Value::Object(p.clone()));
                 json!({ "component": "task", "data": data })
             };
             let row = r.pim.put(&c, &href, &input, 0, None).await?;
@@ -252,12 +368,30 @@ pub async fn handle(db: &Database, session: &str, method: &Method, path_full: &s
         return Err(AppError::new("methodNotAllowed", 405));
     };
     let row = r.pim.call("resource", json!({ "id": id })).await?;
-    let c = collections.iter().find(|c| c["id"] == row["collectionId"]).cloned();
+    let c = collections
+        .iter()
+        .find(|c| c["id"] == row["collectionId"])
+        .cloned();
     let content = row["content"].as_str().unwrap_or_default().to_owned();
-    let Some(c) = c.filter(|_| notes || tasks::is_task(&content)) else { return Err(AppError::not_found()) };
+    let Some(c) = c.filter(|_| notes || tasks::is_task(&content)) else {
+        return Err(AppError::not_found());
+    };
     let collection_id = c["id"].as_str().unwrap_or_default().to_owned();
-    let needs_rows = !notes && (action.is_none() && *method == Method::GET || *method == Method::DELETE || action.is_some_and(|a| ["move", "copy", "complete"].contains(&a)));
-    let rows: Vec<Value> = if needs_rows { r.pim.list(&collection_id).await?["items"].as_array().cloned().unwrap_or_default().into_iter().filter(|x| tasks::is_task(x["content"].as_str().unwrap_or_default())).collect() } else { Vec::new() };
+    let needs_rows = !notes
+        && (action.is_none() && *method == Method::GET
+            || *method == Method::DELETE
+            || action.is_some_and(|a| ["move", "copy", "complete"].contains(&a)));
+    let rows: Vec<Value> = if needs_rows {
+        r.pim.list(&collection_id).await?["items"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|x| tasks::is_task(x["content"].as_str().unwrap_or_default()))
+            .collect()
+    } else {
+        Vec::new()
+    };
     let data = projection(&row);
     match (action, method.clone()) {
         (None, Method::GET) => {
@@ -290,29 +424,70 @@ pub async fn handle(db: &Database, session: &str, method: &Method, path_full: &s
             let p = r.body(body).await?;
             let selected = subtree(&row, &rows, 500)?;
             if selected.len() > 1 && p.get("children") != Some(&json!("complete")) {
-                return Err(AppError::with("conflict", 409, "Choose whether to complete all subtasks."));
+                return Err(AppError::with(
+                    "conflict",
+                    409,
+                    "Choose whether to complete all subtasks.",
+                ));
             }
             let mut operations = Vec::new();
             for entry in selected.iter().rev() {
-                let next = tasks::write_task(&json!({ "status": "COMPLETED", "progress": 100 }), entry["content"].as_str(), None)?;
-                operations.push(put_operation(&collection_id, entry, &next.content, &next.data));
+                let next = tasks::write_task(
+                    &json!({ "status": "COMPLETED", "progress": 100 }),
+                    entry["content"].as_str(),
+                    None,
+                )?;
+                operations.push(put_operation(
+                    &collection_id,
+                    entry,
+                    &next.content,
+                    &next.data,
+                ));
             }
             let mut revisions = Map::new();
             revisions.insert(collection_id.clone(), c["revision"].clone());
-            Ok(r.json(r.workspace("batch", json!({ "collections": revisions, "operations": operations })).await?, StatusCode::OK, None))
+            Ok(r.json(
+                r.workspace(
+                    "batch",
+                    json!({ "collections": revisions, "operations": operations }),
+                )
+                .await?,
+                StatusCode::OK,
+                None,
+            ))
         }
         (Some("occurrences"), Method::GET) if !notes => {
             let zone_name = q("timezone").unwrap_or_else(|| "UTC".into());
-            let items = tasks::task_occurrences(&row, &zone_name, date_param(query.get("from")), date_param(query.get("to")), false, false)?;
-            Ok(r.json(json!({ "items": items, "nextCursor": "" }), StatusCode::OK, None))
+            let items = tasks::task_occurrences(
+                &row,
+                &zone_name,
+                date_param(query.get("from")),
+                date_param(query.get("to")),
+                false,
+                false,
+            )?;
+            Ok(r.json(
+                json!({ "items": items, "nextCursor": "" }),
+                StatusCode::OK,
+                None,
+            ))
         }
-        (Some("export"), Method::GET) => Ok(if notes { send(content, "note.md", "text/markdown; charset=utf-8") } else { send(content, "task.ics", "text/calendar; charset=utf-8") }),
+        (Some("export"), Method::GET) => Ok(if notes {
+            send(content, "note.md", "text/markdown; charset=utf-8")
+        } else {
+            send(content, "task.ics", "text/calendar; charset=utf-8")
+        }),
         (None, Method::PUT) => {
             let p = r.body(body).await?;
             let revision = require_match(headers, &row)?;
             let input = if notes {
                 Value::Object(p)
-            } else if p.get("data").is_some_and(|d| !d.is_null() && d != &json!(false)) || p.get("content").is_some_and(|d| !d.is_null() && d != &json!("")) {
+            } else if p
+                .get("data")
+                .is_some_and(|d| !d.is_null() && d != &json!(false))
+                || p.get("content")
+                    .is_some_and(|d| !d.is_null() && d != &json!(""))
+            {
                 let mut m = p.clone();
                 m.insert("component".into(), json!("task"));
                 Value::Object(m)
@@ -320,7 +495,10 @@ pub async fn handle(db: &Database, session: &str, method: &Method, path_full: &s
                 json!({ "component": "task", "data": Value::Object(p) })
             };
             let href = row["href"].as_str().unwrap_or_default();
-            let updated = r.pim.put(&c, href, &input, revision, Some(&content)).await?;
+            let updated = r
+                .pim
+                .put(&c, href, &input, revision, Some(&content))
+                .await?;
             let mut value = updated.clone();
             value["data"] = projection(&updated);
             Ok(r.json(value, StatusCode::OK, Some(&updated)))
@@ -331,20 +509,38 @@ pub async fn handle(db: &Database, session: &str, method: &Method, path_full: &s
             if notes {
                 return Ok(r.json(r.pim.call("delete", delete).await?, StatusCode::OK, None));
             }
-            let direct: Vec<&Value> = rows.iter().filter(|x| projection(x)["parentUid"] == row["uid"]).collect();
+            let direct: Vec<&Value> = rows
+                .iter()
+                .filter(|x| projection(x)["parentUid"] == row["uid"])
+                .collect();
             if direct.is_empty() {
                 return Ok(r.json(r.pim.call("delete", delete).await?, StatusCode::OK, None));
             }
-            if headers.get(header::CONTENT_LENGTH).is_none() && headers.get(header::TRANSFER_ENCODING).is_none() {
-                return Err(AppError::with("conflict", 409, "Choose whether to detach or delete subtasks."));
+            if headers.get(header::CONTENT_LENGTH).is_none()
+                && headers.get(header::TRANSFER_ENCODING).is_none()
+            {
+                return Err(AppError::with(
+                    "conflict",
+                    409,
+                    "Choose whether to detach or delete subtasks.",
+                ));
             }
             let p = r.body(body).await?;
             let mut operations = Vec::new();
             match p.get("children").and_then(Value::as_str) {
                 Some("detach") => {
                     for child in &direct {
-                        let next = tasks::write_task(&json!({ "parentUid": "" }), child["content"].as_str(), None)?;
-                        operations.push(put_operation(&collection_id, child, &next.content, &next.data));
+                        let next = tasks::write_task(
+                            &json!({ "parentUid": "" }),
+                            child["content"].as_str(),
+                            None,
+                        )?;
+                        operations.push(put_operation(
+                            &collection_id,
+                            child,
+                            &next.content,
+                            &next.data,
+                        ));
                     }
                 }
                 Some("delete") => {
@@ -358,38 +554,76 @@ pub async fn handle(db: &Database, session: &str, method: &Method, path_full: &s
             operations.push(json!({ "operation": "delete", "collectionId": collection_id, "href": row["href"], "revision": row["revision"] }));
             let mut revisions = Map::new();
             revisions.insert(collection_id.clone(), c["revision"].clone());
-            Ok(r.json(r.workspace("batch", json!({ "collections": revisions, "operations": operations })).await?, StatusCode::OK, None))
+            Ok(r.json(
+                r.workspace(
+                    "batch",
+                    json!({ "collections": revisions, "operations": operations }),
+                )
+                .await?,
+                StatusCode::OK,
+                None,
+            ))
         }
         (Some(action @ ("move" | "copy")), Method::POST) => {
             let p = r.body(body).await?;
             require_match(headers, &row)?;
-            let target = collections.iter().find(|t| Some(&t["id"]) == p.get("collectionId")).cloned().ok_or_else(AppError::not_found)?;
+            let target = collections
+                .iter()
+                .find(|t| Some(&t["id"]) == p.get("collectionId"))
+                .cloned()
+                .ok_or_else(AppError::not_found)?;
             if action == "move" && target["ownerId"] != c["ownerId"] {
                 return Err(AppError::new("forbidden", 403));
             }
             let mut operations = Vec::new();
             if notes {
                 if action == "copy" {
-                    let title: String = data["title"].as_str().unwrap_or_default().encode_utf16().take(248).collect::<Vec<u16>>().pipe_string();
+                    let title: String = data["title"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .encode_utf16()
+                        .take(248)
+                        .collect::<Vec<u16>>()
+                        .pipe_string();
                     let mut note = data.as_object().cloned().unwrap_or_default();
                     note.insert("title".into(), json!(format!("{title} (copy)")));
                     note.insert("content".into(), json!(content));
-                    let result = r.pim.put(&target, &format!("{}.md", crate::auth::uuid()), &Value::Object(note), 0, None).await?;
+                    let result = r
+                        .pim
+                        .put(
+                            &target,
+                            &format!("{}.md", crate::auth::uuid()),
+                            &Value::Object(note),
+                            0,
+                            None,
+                        )
+                        .await?;
                     return Ok(r.json(result.clone(), StatusCode::CREATED, Some(&result)));
                 }
                 operations.push(json!({ "operation": "move", "collectionId": collection_id, "targetCollectionId": target["id"], "href": row["href"], "revision": row["revision"] }));
             } else {
                 let selected = subtree(&row, &rows, 500)?;
-                let ids: HashMap<String, String> = selected.iter().map(|x| {
-                    let uid = x["uid"].as_str().unwrap_or_default().to_owned();
-                    let next = if action == "copy" { crate::auth::uuid() } else { uid.clone() };
-                    (uid, next)
-                }).collect();
+                let ids: HashMap<String, String> = selected
+                    .iter()
+                    .map(|x| {
+                        let uid = x["uid"].as_str().unwrap_or_default().to_owned();
+                        let next = if action == "copy" {
+                            crate::auth::uuid()
+                        } else {
+                            uid.clone()
+                        };
+                        (uid, next)
+                    })
+                    .collect();
                 for (index, entry) in selected.iter().enumerate() {
                     let old = tasks::read_task(entry["content"].as_str().unwrap_or_default())?;
                     let mut input = old.data.clone();
                     let parent = old.data["parentUid"].as_str().unwrap_or_default();
-                    input["parentUid"] = json!(if index == 0 { String::new() } else { ids.get(parent).cloned().unwrap_or_default() });
+                    input["parentUid"] = json!(if index == 0 {
+                        String::new()
+                    } else {
+                        ids.get(parent).cloned().unwrap_or_default()
+                    });
                     let next = tasks::write_task(&input, entry["content"].as_str(), None)?;
                     if action == "copy" {
                         let new_uid = ids[&old.uid].clone();
@@ -405,8 +639,19 @@ pub async fn handle(db: &Database, session: &str, method: &Method, path_full: &s
             }
             let mut revisions = Map::new();
             revisions.insert(collection_id.clone(), c["revision"].clone());
-            revisions.insert(target["id"].as_str().unwrap_or_default().to_owned(), target["revision"].clone());
-            Ok(r.json(r.workspace("batch", json!({ "collections": revisions, "operations": operations })).await?, StatusCode::OK, None))
+            revisions.insert(
+                target["id"].as_str().unwrap_or_default().to_owned(),
+                target["revision"].clone(),
+            );
+            Ok(r.json(
+                r.workspace(
+                    "batch",
+                    json!({ "collections": revisions, "operations": operations }),
+                )
+                .await?,
+                StatusCode::OK,
+                None,
+            ))
         }
         _ => Err(AppError::new("methodNotAllowed", 405)),
     }
@@ -422,9 +667,18 @@ impl PipeString for Vec<u16> {
 }
 
 /// Notes by search; tasks by view, sorted and paged over every list.
-async fn list(r: &Request<'_>, notes: bool, collections: &[Value], query: &HashMap<String, String>, viewer: chrono_tz::Tz, viewer_zone: &str) -> Result<Response> {
+async fn list(
+    r: &Request<'_>,
+    notes: bool,
+    collections: &[Value],
+    query: &HashMap<String, String>,
+    viewer: chrono_tz::Tz,
+    viewer_zone: &str,
+) -> Result<Response> {
     let q = |name: &str| query.get(name).cloned();
-    let cursor_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(q("cursor").unwrap_or_default().trim_end_matches('=')).unwrap_or_default();
+    let cursor_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(q("cursor").unwrap_or_default().trim_end_matches('='))
+        .unwrap_or_default();
     let cursor = String::from_utf8_lossy(&cursor_bytes).into_owned();
     let cid = q("collection");
     let view = q("view");
@@ -437,8 +691,16 @@ async fn list(r: &Request<'_>, notes: bool, collections: &[Value], query: &HashM
     let encode = |s: &str| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(s.as_bytes());
     if notes {
         let result = r.pim.call("search", json!({ "kind": "notes", "collection": cid, "q": term, "tag": tag, "favorite": view.as_deref() == Some("favorites"), "sort": sort, "cursor": cursor })).await?;
-        let next = result["nextCursor"].as_str().filter(|c| !c.is_empty()).map(encode).unwrap_or_default();
-        return Ok(r.json(json!({ "items": result["items"], "nextCursor": next }), StatusCode::OK, None));
+        let next = result["nextCursor"]
+            .as_str()
+            .filter(|c| !c.is_empty())
+            .map(encode)
+            .unwrap_or_default();
+        return Ok(r.json(
+            json!({ "items": result["items"], "nextCursor": next }),
+            StatusCode::OK,
+            None,
+        ));
     }
     let today = today(viewer);
     let mut results: Vec<(String, Value)> = Vec::new();
@@ -448,17 +710,33 @@ async fn list(r: &Request<'_>, notes: bool, collections: &[Value], query: &HashM
         }
         let mut scan = String::new();
         loop {
-            let page = r.pim.call("page", json!({ "collectionId": c["id"], "cursor": scan })).await?;
+            let page = r
+                .pim
+                .call("page", json!({ "collectionId": c["id"], "cursor": scan }))
+                .await?;
             scan = page["nextCursor"].as_str().unwrap_or_default().to_owned();
             for row in page["items"].as_array().into_iter().flatten() {
                 let data = projection(row);
                 if data["kind"] != "task" {
                     continue;
                 }
-                if !term.is_empty() && !unicode_normalization_shim::nfc_lower(row["projection"].as_str().unwrap_or_default()).contains(&term) || !tag.is_empty() && !data["categories"].as_array().is_some_and(|c| c.iter().any(|t| t == &json!(tag))) {
+                if !term.is_empty()
+                    && !unicode_normalization_shim::nfc_lower(
+                        row["projection"].as_str().unwrap_or_default(),
+                    )
+                    .contains(&term)
+                    || !tag.is_empty()
+                        && !data["categories"]
+                            .as_array()
+                            .is_some_and(|c| c.iter().any(|t| t == &json!(tag)))
+                {
                     continue;
                 }
-                let next = if data["recurring"] == true { tasks::next_task_occurrence(row, viewer_zone)? } else { None };
+                let next = if data["recurring"] == true {
+                    tasks::next_task_occurrence(row, viewer_zone)?
+                } else {
+                    None
+                };
                 let d = next.as_ref().unwrap_or(&data);
                 let (day, due_sort) = tasks::task_due(row, viewer_zone, next.as_ref())?;
                 let status = d["status"].as_str().unwrap_or_default();
@@ -467,13 +745,19 @@ async fn list(r: &Request<'_>, notes: bool, collections: &[Value], query: &HashM
                 let keep = match view.as_deref() {
                     Some("completed") => done,
                     Some("all") => true,
-                    other => !done && status != "CANCELLED" && match other {
-                        Some("today") => has_due && day <= today,
-                        Some("upcoming") => has_due && day > today,
-                        Some("important") => d["priority"].as_i64().is_some_and(|p| (1..=4).contains(&p)),
-                        Some("inbox") => d["parentUid"] == "" || d["parentUid"].is_null(),
-                        _ => true,
-                    },
+                    other => {
+                        !done
+                            && status != "CANCELLED"
+                            && match other {
+                                Some("today") => has_due && day <= today,
+                                Some("upcoming") => has_due && day > today,
+                                Some("important") => {
+                                    d["priority"].as_i64().is_some_and(|p| (1..=4).contains(&p))
+                                }
+                                Some("inbox") => d["parentUid"] == "" || d["parentUid"].is_null(),
+                                _ => true,
+                            }
+                    }
                 };
                 if !keep {
                     continue;
@@ -481,7 +765,10 @@ async fn list(r: &Request<'_>, notes: bool, collections: &[Value], query: &HashM
                 let order = match sort.as_str() {
                     "title" => data["title"].as_str().unwrap_or_default().to_lowercase(),
                     "due" => due_sort.clone(),
-                    _ => format!("{:013}", 9_999_999_999_999i64 - row["modifiedAt"].as_f64().unwrap_or(0.0) as i64),
+                    _ => format!(
+                        "{:013}",
+                        9_999_999_999_999i64 - row["modifiedAt"].as_f64().unwrap_or(0.0) as i64
+                    ),
                 };
                 let key = format!("{order}\u{0}{}", row["id"].as_str().unwrap_or_default());
                 if key <= cursor {
@@ -497,7 +784,9 @@ async fn list(r: &Request<'_>, notes: bool, collections: &[Value], query: &HashM
                 item["data"] = data.clone();
                 item["role"] = c["role"].clone();
                 item["collectionName"] = c["name"].clone();
-                item["overdue"] = json!(!day.is_empty() && day < today && state != "COMPLETED" && state != "CANCELLED");
+                item["overdue"] = json!(
+                    !day.is_empty() && day < today && state != "COMPLETED" && state != "CANCELLED"
+                );
                 if let Some(next) = &next {
                     item["nextOccurrence"] = next.clone();
                 }
@@ -511,9 +800,17 @@ async fn list(r: &Request<'_>, notes: bool, collections: &[Value], query: &HashM
             }
         }
     }
-    let next = if results.len() > 200 { encode(&results[199].0) } else { String::new() };
+    let next = if results.len() > 200 {
+        encode(&results[199].0)
+    } else {
+        String::new()
+    };
     let items: Vec<Value> = results.into_iter().take(200).map(|(_, v)| v).collect();
-    Ok(r.json(json!({ "items": items, "nextCursor": next }), StatusCode::OK, None))
+    Ok(r.json(
+        json!({ "items": items, "nextCursor": next }),
+        StatusCode::OK,
+        None,
+    ))
 }
 
 /// NFC then lower case, as `normalize("NFC").toLowerCase()` (the runtime has no Unicode

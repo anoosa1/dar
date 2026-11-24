@@ -7,17 +7,23 @@ use leptos::task::spawn_local;
 use serde::Deserialize;
 use wasm_bindgen::JsCast;
 
-use super::types::{file_type_label, FileTile};
 use super::FileEntry;
+use super::types::{FileTile, file_type_label};
 use crate::api::{self, BrowserSession, Req, RequestError};
 use crate::dates::edited;
 use crate::icons::Icon;
-use crate::markdown::{format_markdown, Markdown, MarkdownToolbar};
-use crate::ui::{listen, window, ActionMenu, MenuAction};
+use crate::markdown::{Markdown, MarkdownToolbar, format_markdown};
+use crate::ui::{ActionMenu, MenuAction, listen, window};
 
 pub fn editable_text(entry: &FileEntry) -> bool {
     let name = entry.name.to_lowercase();
-    entry.kind == "file" && entry.size <= 1024.0 * 1024.0 && (name.ends_with(".txt") || name.ends_with(".md") || name.ends_with(".markdown") || entry.media_type.starts_with("text/") || entry.media_type == "application/json")
+    entry.kind == "file"
+        && entry.size <= 1024.0 * 1024.0
+        && (name.ends_with(".txt")
+            || name.ends_with(".md")
+            || name.ends_with(".markdown")
+            || entry.media_type.starts_with("text/")
+            || entry.media_type == "application/json")
 }
 
 #[derive(Deserialize)]
@@ -37,10 +43,16 @@ pub struct TextFile<'a> {
 }
 
 /// Reserves an upload and sends the text; returns the file's id.
-pub async fn write_text_file(session: &BrowserSession, file: TextFile<'_>) -> Result<String, RequestError> {
+pub async fn write_text_file(
+    session: &BrowserSession,
+    file: TextFile<'_>,
+) -> Result<String, RequestError> {
     let bytes = file.content.as_bytes();
     if bytes.len() > 1024 * 1024 {
-        return Err(RequestError { status: 413, message: "Text editing is limited to 1 MiB.".into() });
+        return Err(RequestError {
+            status: 413,
+            message: "Text editing is limited to 1 MiB.".into(),
+        });
     }
     let mut body = serde_json::json!({ "name": file.name, "parentId": file.parent_id, "mediaType": file.media_type, "size": bytes.len() });
     if let (Some(id), Some(revision)) = (file.file_id, file.expected_revision) {
@@ -51,37 +63,86 @@ pub async fn write_text_file(session: &BrowserSession, file: TextFile<'_>) -> Re
 }
 
 /// Uploads a browser file (pasted or dropped) as a new file in `parent_id`; returns its id.
-pub async fn upload_blob(session: &BrowserSession, name: &str, parent_id: &str, media_type: &str, blob: &web_sys::Blob) -> Result<String, RequestError> {
+pub async fn upload_blob(
+    session: &BrowserSession,
+    name: &str,
+    parent_id: &str,
+    media_type: &str,
+    blob: &web_sys::Blob,
+) -> Result<String, RequestError> {
     let body = serde_json::json!({ "name": name, "parentId": parent_id, "mediaType": media_type, "size": blob.size() as u64 });
     send_upload(session, body, blob.into()).await
 }
 
 /// Reserves an upload with `body`, then sends `raw`; a failed transfer cancels the reservation.
-async fn send_upload(session: &BrowserSession, body: serde_json::Value, raw: wasm_bindgen::JsValue) -> Result<String, RequestError> {
-    let upload: Upload = api::send("/api/v1/files/uploads", "POST", Some(body), &session.csrf_token).await?;
-    let result = api::fetch(&format!("/api/v1/files/uploads/{}", upload.id), Req { method: "PUT", raw: Some(raw), csrf: Some(&session.csrf_token), ..Default::default() }).await;
+async fn send_upload(
+    session: &BrowserSession,
+    body: serde_json::Value,
+    raw: wasm_bindgen::JsValue,
+) -> Result<String, RequestError> {
+    let upload: Upload = api::send(
+        "/api/v1/files/uploads",
+        "POST",
+        Some(body),
+        &session.csrf_token,
+    )
+    .await?;
+    let result = api::fetch(
+        &format!("/api/v1/files/uploads/{}", upload.id),
+        Req {
+            method: "PUT",
+            raw: Some(raw),
+            csrf: Some(&session.csrf_token),
+            ..Default::default()
+        },
+    )
+    .await;
     let failure = match result {
         Ok(response) if response.ok() => return Ok(upload.file_id),
         Ok(response) => {
             let status = response.status();
             let message = match response.json() {
-                Ok(p) => wasm_bindgen_futures::JsFuture::from(p).await.ok().and_then(|v| js_sys::Reflect::get(&v, &"error".into()).ok()).and_then(|e| js_sys::Reflect::get(&e, &"message".into()).ok()).and_then(|m| m.as_string()),
+                Ok(p) => wasm_bindgen_futures::JsFuture::from(p)
+                    .await
+                    .ok()
+                    .and_then(|v| js_sys::Reflect::get(&v, &"error".into()).ok())
+                    .and_then(|e| js_sys::Reflect::get(&e, &"message".into()).ok())
+                    .and_then(|m| m.as_string()),
                 Err(_) => None,
             };
-            RequestError { status, message: message.unwrap_or_else(|| "Save failed.".into()) }
+            RequestError {
+                status,
+                message: message.unwrap_or_else(|| "Save failed.".into()),
+            }
         }
         Err(e) => e,
     };
-    let _ = api::request::<serde_json::Value>(&format!("/api/v1/files/uploads/{}", upload.id), Req { method: "DELETE", csrf: Some(&session.csrf_token), ..Default::default() }).await;
+    let _ = api::request::<serde_json::Value>(
+        &format!("/api/v1/files/uploads/{}", upload.id),
+        Req {
+            method: "DELETE",
+            csrf: Some(&session.csrf_token),
+            ..Default::default()
+        },
+    )
+    .await;
     Err(failure)
 }
 
 async fn read_content(id: &str) -> Result<String, String> {
-    let response = api::fetch(&format!("/api/v1/files/{id}/content"), Default::default()).await.map_err(|e| e.message)?;
+    let response = api::fetch(&format!("/api/v1/files/{id}/content"), Default::default())
+        .await
+        .map_err(|e| e.message)?;
     if !response.ok() {
         return Err("The file could not be loaded.".into());
     }
-    let text = wasm_bindgen_futures::JsFuture::from(response.text().map_err(|_| "The file could not be loaded.")?).await.map_err(|_| "The file could not be loaded.")?;
+    let text = wasm_bindgen_futures::JsFuture::from(
+        response
+            .text()
+            .map_err(|_| "The file could not be loaded.")?,
+    )
+    .await
+    .map_err(|_| "The file could not be loaded.")?;
     Ok(text.as_string().unwrap_or_default())
 }
 
@@ -90,7 +151,11 @@ fn session_storage() -> Option<web_sys::Storage> {
 }
 
 #[component]
-pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<()>) -> impl IntoView {
+pub fn TextEditor(
+    entry: FileEntry,
+    session: BrowserSession,
+    on_close: Callback<()>,
+) -> impl IntoView {
     let text = RwSignal::new(String::new());
     let saved = RwSignal::new(String::new());
     let status = RwSignal::new("Loading…");
@@ -108,7 +173,10 @@ pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<
     let future: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
     let input = NodeRef::<html::Textarea>::new();
     let key = format!("dar.file-draft.{}.{}", session.user.id, entry.id);
-    let markdown = { let n = entry.name.to_lowercase(); n.ends_with(".md") || n.ends_with(".markdown") };
+    let markdown = {
+        let n = entry.name.to_lowercase();
+        n.ends_with(".md") || n.ends_with(".markdown")
+    };
     let dirty = Memo::new(move |_| text.with(|t| saved.with(|s| t != s)));
     let entry = StoredValue::new(entry);
     let session = StoredValue::new(session);
@@ -134,7 +202,10 @@ pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<
                     read_only.set(read);
                     ready.set(true);
                     status.set(if read { "Read only" } else { "Saved" });
-                    if let Some(draft) = session_storage().and_then(|s| s.get_item(&key.get_value()).ok().flatten()).filter(|d| *d != content) {
+                    if let Some(draft) = session_storage()
+                        .and_then(|s| s.get_item(&key.get_value()).ok().flatten())
+                        .filter(|d| *d != content)
+                    {
                         recovery.set(Some(draft));
                     }
                 }
@@ -149,20 +220,30 @@ pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<
             return;
         }
         if let Some(s) = session_storage() {
-            let result = if d { s.set_item(&key.get_value(), &t) } else { s.remove_item(&key.get_value()) };
+            let result = if d {
+                s.set_item(&key.get_value(), &t)
+            } else {
+                s.remove_item(&key.get_value())
+            };
             if result.is_err() {
                 error.set("Recovery storage is unavailable. Keep this editor open until the file is saved.".into());
             }
         }
     });
-    listen(&window(), "beforeunload", false, move |event| if dirty.get_untracked() { event.prevent_default() });
+    listen(&window(), "beforeunload", false, move |event| {
+        if dirty.get_untracked() {
+            event.prevent_default()
+        }
+    });
 
     let compare = move || {
         spawn_local(async move {
             let id = entry.with_value(|e| e.id.clone());
             let result = async {
                 let response = super::file_details(&id).await?;
-                let content = read_content(&id).await.map_err(|_| "Saved version unavailable.".to_owned())?;
+                let content = read_content(&id)
+                    .await
+                    .map_err(|_| "Saved version unavailable.".to_owned())?;
                 Ok::<_, String>((content, response.entry))
             };
             match result.await {
@@ -172,7 +253,13 @@ pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<
         });
     };
     let save = move || {
-        if !ready.get_untracked() || read_only.get_untracked() || saving.get_untracked() || recovery.with_untracked(Option::is_some) || conflict.with_untracked(Option::is_some) || !dirty.get_untracked() {
+        if !ready.get_untracked()
+            || read_only.get_untracked()
+            || saving.get_untracked()
+            || recovery.with_untracked(Option::is_some)
+            || conflict.with_untracked(Option::is_some)
+            || !dirty.get_untracked()
+        {
             return;
         }
         let content = text.get_untracked();
@@ -182,7 +269,18 @@ pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<
         error.set(String::new());
         spawn_local(async move {
             let (entry, session) = (entry.get_value(), session.get_value());
-            let result = write_text_file(&session, TextFile { name: &entry.name, parent_id: &entry.parent_id, content: &content, media_type: &entry.media_type, file_id: Some(&entry.id), expected_revision: Some(expected) }).await;
+            let result = write_text_file(
+                &session,
+                TextFile {
+                    name: &entry.name,
+                    parent_id: &entry.parent_id,
+                    content: &content,
+                    media_type: &entry.media_type,
+                    file_id: Some(&entry.id),
+                    expected_revision: Some(expected),
+                },
+            )
+            .await;
             match result {
                 Ok(_) => {
                     revision.set(expected + 1);
@@ -206,7 +304,12 @@ pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<
     Effect::new(move |_| {
         text.track();
         saved.track();
-        if !dirty.get() || !error.with(String::is_empty) || !ready.get() || recovery.with(Option::is_some) || conflict.with(Option::is_some) {
+        if !dirty.get()
+            || !error.with(String::is_empty)
+            || !ready.get()
+            || recovery.with(Option::is_some)
+            || conflict.with(Option::is_some)
+        {
             return;
         }
         let id = typed.get_untracked() + 1;
@@ -219,12 +322,15 @@ pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<
         });
     });
     Effect::new(move |_| {
-        if ready.get() && !read_only.get() && !preview.get()
-            && let Some(i) = input.get() {
-                let options = web_sys::FocusOptions::new();
-                options.set_prevent_scroll(true);
-                let _ = i.focus_with_options(&options);
-            }
+        if ready.get()
+            && !read_only.get()
+            && !preview.get()
+            && let Some(i) = input.get()
+        {
+            let options = web_sys::FocusOptions::new();
+            options.set_prevent_scroll(true);
+            let _ = i.focus_with_options(&options);
+        }
     });
     let change = move |value: String| {
         history.update(|h| {
@@ -238,8 +344,13 @@ pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<
         status.set("Unsaved");
     };
     let format = Callback::new(move |(before, after): (&'static str, &'static str)| {
-        let Some(field) = input.get_untracked() else { return };
-        let (start, end) = (field.selection_start().ok().flatten().unwrap_or(0), field.selection_end().ok().flatten().unwrap_or(0));
+        let Some(field) = input.get_untracked() else {
+            return;
+        };
+        let (start, end) = (
+            field.selection_start().ok().flatten().unwrap_or(0),
+            field.selection_end().ok().flatten().unwrap_or(0),
+        );
         let (next, s, e) = format_markdown(&text.get_untracked(), start, end, before, after);
         change(next);
         let field = send_wrapper::SendWrapper::new(field);
@@ -254,7 +365,11 @@ pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<
         } else if matches!(status.get(), "Saving…" | "Loading…") {
             "saving"
         } else if dirty.get() {
-            if status.get() == "Save failed" { "error" } else { "dirty" }
+            if status.get() == "Save failed" {
+                "error"
+            } else {
+                "dirty"
+            }
         } else {
             "saved"
         }
@@ -264,18 +379,52 @@ pub fn TextEditor(entry: FileEntry, session: BrowserSession, on_close: Callback<
         if matches!(s, "Loading…" | "Saving…") || read_only.get() {
             s
         } else if dirty.get() {
-            if s == "Save failed" { "Not saved" } else { "Unsaved changes" }
+            if s == "Save failed" {
+                "Not saved"
+            } else {
+                "Unsaved changes"
+            }
         } else {
             "All changes saved"
         }
     };
-    let close = move || if dirty.get_untracked() || saving.get_untracked() { discard.set(true) } else { { on_close.try_run(()); } };
+    let close = move || {
+        if dirty.get_untracked() || saving.get_untracked() {
+            discard.set(true)
+        } else {
+            {
+                on_close.try_run(());
+            }
+        }
+    };
     let id = entry.with_value(|e| e.id.clone());
-    let menu = vec![MenuAction::new("Download", "download").href(format!("/api/v1/files/{id}/content")).download()];
+    let menu = vec![
+        MenuAction::new("Download", "download")
+            .href(format!("/api/v1/files/{id}/content"))
+            .download(),
+    ];
     let menu = StoredValue::new(menu);
-    let (kind, name, media) = entry.with_value(|e| (e.kind.clone(), e.name.clone(), e.media_type.clone()));
-    let title = if markdown { name.trim_end_matches(".markdown").trim_end_matches(".md").to_owned() } else { name.clone() };
-    let title = if markdown { let lower = name.to_lowercase(); if lower.ends_with(".markdown") { name[..name.len() - 9].to_owned() } else if lower.ends_with(".md") { name[..name.len() - 3].to_owned() } else { title } } else { title };
+    let (kind, name, media) =
+        entry.with_value(|e| (e.kind.clone(), e.name.clone(), e.media_type.clone()));
+    let title = if markdown {
+        name.trim_end_matches(".markdown")
+            .trim_end_matches(".md")
+            .to_owned()
+    } else {
+        name.clone()
+    };
+    let title = if markdown {
+        let lower = name.to_lowercase();
+        if lower.ends_with(".markdown") {
+            name[..name.len() - 9].to_owned()
+        } else if lower.ends_with(".md") {
+            name[..name.len() - 3].to_owned()
+        } else {
+            title
+        }
+    } else {
+        title
+    };
     view! {
         <section class=if markdown { "file-text-editor document-editor" } else { "file-text-editor document-editor is-plain-text" } aria-label=format!("Editor for {name}")
             on:keydown=move |e| {

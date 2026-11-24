@@ -27,7 +27,11 @@ const FORMATTING: [(&str, &str, &str, &str, bool); 9] = [
 
 /// Source-preserving formatting shared by the Notes and Files editors.
 #[component]
-pub fn MarkdownToolbar(on_format: Callback<(&'static str, &'static str)>, #[prop(into)] disabled: Signal<bool>, children: Children) -> impl IntoView {
+pub fn MarkdownToolbar(
+    on_format: Callback<(&'static str, &'static str)>,
+    #[prop(into)] disabled: Signal<bool>,
+    children: Children,
+) -> impl IntoView {
     view! {
         <div class="text-formatting" role="group" aria-label="Markdown formatting">
             {FORMATTING[..8].iter().map(|&(label, icon, before, after, group)| view! {
@@ -59,18 +63,51 @@ pub fn utf16_len(text: &str) -> u32 {
 
 /// Block commands affect complete source lines; inline commands wrap the selection.
 /// Offsets are UTF-16 units, as the textarea reports them.
-pub fn format_markdown(source: &str, start: u32, end: u32, before: &str, after: &str) -> (String, u32, u32) {
+pub fn format_markdown(
+    source: &str,
+    start: u32,
+    end: u32,
+    before: &str,
+    after: &str,
+) -> (String, u32, u32) {
     let (s, e) = (byte_index(source, start), byte_index(source, end));
     if ["# ", "- ", "- [ ] ", "> "].contains(&before) && after.is_empty() {
-        let line_start = if s == 0 { 0 } else { source[..s].rfind('\n').map(|i| i + 1).unwrap_or(0) };
-        let selected_end = if e > s && source.as_bytes()[e - 1] == b'\n' { e - 1 } else { e };
-        let line_end = source[selected_end..].find('\n').map(|i| i + selected_end).unwrap_or(source.len());
-        let replacement = source[line_start..line_end].split('\n').map(|line| format!("{before}{line}")).collect::<Vec<_>>().join("\n");
-        let text = format!("{}{}{}", &source[..line_start], replacement, &source[line_end..]);
+        let line_start = if s == 0 {
+            0
+        } else {
+            source[..s].rfind('\n').map(|i| i + 1).unwrap_or(0)
+        };
+        let selected_end = if e > s && source.as_bytes()[e - 1] == b'\n' {
+            e - 1
+        } else {
+            e
+        };
+        let line_end = source[selected_end..]
+            .find('\n')
+            .map(|i| i + selected_end)
+            .unwrap_or(source.len());
+        let replacement = source[line_start..line_end]
+            .split('\n')
+            .map(|line| format!("{before}{line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let text = format!(
+            "{}{}{}",
+            &source[..line_start],
+            replacement,
+            &source[line_end..]
+        );
         let start16 = utf16_len(&source[..line_start]);
         return (text, start16, start16 + utf16_len(&replacement));
     }
-    let text = format!("{}{}{}{}{}", &source[..s], before, &source[s..e], after, &source[e..]);
+    let text = format!(
+        "{}{}{}{}{}",
+        &source[..s],
+        before,
+        &source[s..e],
+        after,
+        &source[e..]
+    );
     let shift = utf16_len(before);
     (text, start + shift, end + shift)
 }
@@ -108,14 +145,29 @@ pub struct QueryOutput {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Embed {
-    Note { id: String },
-    File { id: String, name: String, media_type: String },
+    Note {
+        id: String,
+    },
+    File {
+        id: String,
+        name: String,
+        media_type: String,
+    },
 }
 
 fn file_embed(id: String, name: String, media_type: String, label: &str) -> AnyView {
     let src = format!("/api/v1/files/{id}/content");
-    let width = label.trim().split('x').next().filter(|w| !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit())).map(str::to_owned);
-    let alt = if width.is_some() || label.is_empty() { name.clone() } else { label.to_owned() };
+    let width = label
+        .trim()
+        .split('x')
+        .next()
+        .filter(|w| !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit()))
+        .map(str::to_owned);
+    let alt = if width.is_some() || label.is_empty() {
+        name.clone()
+    } else {
+        label.to_owned()
+    };
     if media_type.starts_with("image/") {
         view! { <img class="note-image" src=src alt=alt width=width loading="lazy"/> }.into_any()
     } else if media_type.starts_with("audio/") {
@@ -128,7 +180,13 @@ fn file_embed(id: String, name: String, media_type: String, label: &str) -> AnyV
 }
 
 /// Another note (or one of its sections) shown in place, read-only, with a link to it.
-pub(crate) fn note_embed(id: String, target: String, fragment: Option<String>, label: String, links: NoteLinks) -> AnyView {
+pub(crate) fn note_embed(
+    id: String,
+    target: String,
+    fragment: Option<String>,
+    label: String,
+    links: NoteLinks,
+) -> AnyView {
     let content: RwSignal<Option<Result<String, ()>>> = RwSignal::new(None);
     let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     {
@@ -137,11 +195,16 @@ pub(crate) fn note_embed(id: String, target: String, fragment: Option<String>, l
     }
     leptos::task::spawn_local(async move {
         let text = async {
-            let response = crate::api::fetch(&format!("/api/v1/files/{id}/content"), Default::default()).await.map_err(|_| ())?;
+            let response =
+                crate::api::fetch(&format!("/api/v1/files/{id}/content"), Default::default())
+                    .await
+                    .map_err(|_| ())?;
             if !response.ok() {
                 return Err(());
             }
-            let value = wasm_bindgen_futures::JsFuture::from(response.text().map_err(|_| ())?).await.map_err(|_| ())?;
+            let value = wasm_bindgen_futures::JsFuture::from(response.text().map_err(|_| ())?)
+                .await
+                .map_err(|_| ())?;
             Ok(value.as_string().unwrap_or_default())
         }
         .await;
@@ -149,13 +212,21 @@ pub(crate) fn note_embed(id: String, target: String, fragment: Option<String>, l
             content.try_set(Some(text));
         }
     });
-    let inner = NoteLinks { nested: true, toggle: None, ..links };
+    let inner = NoteLinks {
+        nested: true,
+        toggle: None,
+        ..links
+    };
     let (follow_target, follow_fragment) = (target.clone(), fragment.clone());
     let title = match &fragment {
         Some(f) => format!("{target} \u{203a} {}", f.trim_start_matches('^')),
         None => target.clone(),
     };
-    let shown = if label.is_empty() || label == target { title.clone() } else { label };
+    let shown = if label.is_empty() || label == target {
+        title.clone()
+    } else {
+        label
+    };
     view! {
         <div class="note-transclusion" role="group" aria-label=format!("Embedded {title}")>
             <button type="button" class="note-transclusion-title" title=format!("Open {title}")
@@ -192,7 +263,11 @@ enum Node {
 fn tree(source: &str, base: usize) -> Vec<Node> {
     let mut stack: Vec<(Tag<'static>, Range<usize>, Vec<Node>)> = Vec::new();
     let mut root: Vec<Node> = Vec::new();
-    fn push(stack: &mut [(Tag<'static>, Range<usize>, Vec<Node>)], root: &mut Vec<Node>, node: Node) {
+    fn push(
+        stack: &mut [(Tag<'static>, Range<usize>, Vec<Node>)],
+        root: &mut Vec<Node>,
+        node: Node,
+    ) {
         let list = match stack.last_mut() {
             Some(top) => &mut top.2,
             None => root,
@@ -214,14 +289,20 @@ fn tree(source: &str, base: usize) -> Vec<Node> {
             }
             Event::Text(t) => push(&mut stack, &mut root, Node::Text(t.into_string())),
             Event::Code(t) => push(&mut stack, &mut root, Node::Code(t.into_string())),
-            Event::Html(t) | Event::InlineHtml(t) => push(&mut stack, &mut root, Node::Html(t.into_string())),
+            Event::Html(t) | Event::InlineHtml(t) => {
+                push(&mut stack, &mut root, Node::Html(t.into_string()))
+            }
             Event::InlineMath(t) => push(&mut stack, &mut root, Node::Math(t.into_string(), false)),
             Event::DisplayMath(t) => push(&mut stack, &mut root, Node::Math(t.into_string(), true)),
-            Event::FootnoteReference(label) => push(&mut stack, &mut root, Node::Note(label.into_string())),
+            Event::FootnoteReference(label) => {
+                push(&mut stack, &mut root, Node::Note(label.into_string()))
+            }
             Event::SoftBreak => push(&mut stack, &mut root, Node::Soft),
             Event::HardBreak => push(&mut stack, &mut root, Node::Hard),
             Event::Rule => push(&mut stack, &mut root, Node::Rule),
-            Event::TaskListMarker(done) => push(&mut stack, &mut root, Node::Task(done, range.start)),
+            Event::TaskListMarker(done) => {
+                push(&mut stack, &mut root, Node::Task(done, range.start))
+            }
         }
     }
     root
@@ -245,7 +326,9 @@ fn highlights(text: &str) -> Vec<(&str, bool)> {
     let mut parts = Vec::new();
     let mut rest = text;
     while let Some(open) = rest.find("==") {
-        let Some(close) = rest[open + 2..].find("==") else { break };
+        let Some(close) = rest[open + 2..].find("==") else {
+            break;
+        };
         if close == 0 {
             parts.push((&rest[..open + 2], false));
             rest = &rest[open + 2..];
@@ -265,7 +348,11 @@ fn callout(text: &str) -> Option<(String, Option<bool>, String)> {
     let rest = text.strip_prefix("[!")?;
     let close = rest.find(']')?;
     let kind = rest[..close].trim().to_lowercase();
-    if kind.is_empty() || !kind.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if kind.is_empty()
+        || !kind
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
         return None;
     }
     let mut after = &rest[close + 1..];
@@ -280,7 +367,10 @@ fn callout(text: &str) -> Option<(String, Option<bool>, String)> {
     let title = after.trim();
     let title = if title.is_empty() {
         let mut chars = kind.chars();
-        chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
+        chars
+            .next()
+            .map(|c| c.to_uppercase().chain(chars).collect())
+            .unwrap_or_default()
     } else {
         title.to_owned()
     };
@@ -288,8 +378,12 @@ fn callout(text: &str) -> Option<(String, Option<bool>, String)> {
 }
 
 fn is_content_link(target: &str) -> bool {
-    let Some(rest) = target.strip_prefix("/api/v1/files/") else { return false };
-    let Some((id, tail)) = rest.split_once('/') else { return false };
+    let Some(rest) = target.strip_prefix("/api/v1/files/") else {
+        return false;
+    };
+    let Some((id, tail)) = rest.split_once('/') else {
+        return false;
+    };
     !id.is_empty() && (tail == "content" || tail.starts_with("content?"))
 }
 
@@ -314,7 +408,11 @@ impl Render {
             .into_iter()
             .map(|(part, marked)| {
                 let pieces = self.tags(part);
-                if marked { view! { <mark>{pieces}</mark> }.into_any() } else { pieces.into_any() }
+                if marked {
+                    view! { <mark>{pieces}</mark> }.into_any()
+                } else {
+                    pieces.into_any()
+                }
             })
             .collect_view()
             .into_any()
@@ -339,7 +437,9 @@ impl Render {
 
     /// A trailing `^block` id comes off the last text of a paragraph or item.
     fn block_id(children: &mut [Node]) -> Option<String> {
-        let Some(Node::Text(text)) = children.last_mut() else { return None };
+        let Some(Node::Text(text)) = children.last_mut() else {
+            return None;
+        };
         let id = dar_notes::block_id(text)?.to_owned();
         let cut = text.trim_end().len() - id.len() - 1;
         text.truncate(cut);
@@ -348,7 +448,14 @@ impl Render {
         Some(id)
     }
 
-    fn note_link(&self, target: String, wiki: bool, fragment: Option<String>, label: AnyView, embed: bool) -> AnyView {
+    fn note_link(
+        &self,
+        target: String,
+        wiki: bool,
+        fragment: Option<String>,
+        label: AnyView,
+        embed: bool,
+    ) -> AnyView {
         let class = if embed { "note-embed" } else { "note-link" };
         let (Some(resolve), Some(follow)) = (self.links.resolve, self.links.follow) else {
             return view! { <span class=class>{label}</span> }.into_any();
@@ -358,7 +465,9 @@ impl Render {
         }
         let resolved = resolve.try_run((target.clone(), wiki)).flatten();
         let unresolved = resolved.is_none();
-        let href = resolved.map(|id| format!("/notes?note={id}")).unwrap_or_else(|| "/notes".into());
+        let href = resolved
+            .map(|id| format!("/notes?note={id}"))
+            .unwrap_or_else(|| "/notes".into());
         let title = unresolved.then(|| format!("Create \u{201c}{target}\u{201d}"));
         let data_target = match &fragment {
             Some(f) => format!("{target}#{f}"),
@@ -538,7 +647,8 @@ impl Render {
 
     fn query(&self, output: QueryOutput) -> AnyView {
         if let Some(error) = output.error {
-            return view! { <div class="note-query is-error" role="note"><p>{error}</p></div> }.into_any();
+            return view! { <div class="note-query is-error" role="note"><p>{error}</p></div> }
+                .into_any();
         }
         let summary = match (output.total, output.rows.len()) {
             (0, _) => "No notes match.".to_owned(),
@@ -546,28 +656,45 @@ impl Render {
             (total, shown) if shown < total => format!("{shown} of {total} notes"),
             (total, _) => format!("{total} notes"),
         };
-        let link = |target: String, title: String| self.note_link(target, true, None, title.into_any(), false);
+        let link = |target: String, title: String| {
+            self.note_link(target, true, None, title.into_any(), false)
+        };
         let body = if output.list {
-            let items: Vec<AnyView> = output.rows.into_iter().map(|(target, title, _)| view! { <li>{link(target, title)}</li> }.into_any()).collect();
+            let items: Vec<AnyView> = output
+                .rows
+                .into_iter()
+                .map(|(target, title, _)| view! { <li>{link(target, title)}</li> }.into_any())
+                .collect();
             view! { <ul>{items}</ul> }.into_any()
         } else {
-            let heads: Vec<AnyView> = output.columns.iter().map(|c| view! { <th>{c.clone()}</th> }.into_any()).collect();
+            let heads: Vec<AnyView> = output
+                .columns
+                .iter()
+                .map(|c| view! { <th>{c.clone()}</th> }.into_any())
+                .collect();
             let rows: Vec<AnyView> = output
                 .rows
                 .into_iter()
                 .map(|(target, title, cells)| {
-                    let cells: Vec<AnyView> = cells.into_iter().map(|c| view! { <td>{self.text(&c)}</td> }.into_any()).collect();
+                    let cells: Vec<AnyView> = cells
+                        .into_iter()
+                        .map(|c| view! { <td>{self.text(&c)}</td> }.into_any())
+                        .collect();
                     view! { <tr><td>{link(target, title)}</td>{cells}</tr> }.into_any()
                 })
                 .collect();
             view! { <div class="markdown-table"><table><thead><tr><th>"Note"</th>{heads}</tr></thead><tbody>{rows}</tbody></table></div> }.into_any()
         };
-        let notice = output.notice.map(|n| view! { <p class="note-query-count" role="note">{n}</p> });
+        let notice = output
+            .notice
+            .map(|n| view! { <p class="note-query-count" role="note">{n}</p> });
         view! { <div class="note-query" role="group" aria-label="Query results">{body}<p class="note-query-count">{summary}</p>{notice}</div> }.into_any()
     }
 
     fn row(&self, row: Node, classes: &[Option<&'static str>], head: bool) -> AnyView {
-        let Node::El(_, _, cells) = row else { return ().into_any() };
+        let Node::El(_, _, cells) = row else {
+            return ().into_any();
+        };
         let cells: Vec<AnyView> = cells
             .into_iter()
             .enumerate()
@@ -577,7 +704,11 @@ impl Render {
                     Node::El(_, _, children) => self.nodes(children),
                     other => vec![self.node(other)],
                 };
-                if head { view! { <th class=class>{inner}</th> }.into_any() } else { view! { <td class=class>{inner}</td> }.into_any() }
+                if head {
+                    view! { <th class=class>{inner}</th> }.into_any()
+                } else {
+                    view! { <td class=class>{inner}</td> }.into_any()
+                }
             })
             .collect();
         view! { <tr>{cells}</tr> }.into_any()
@@ -603,17 +734,26 @@ impl Render {
             if let Some(Node::Text(text)) = inner.first_mut() {
                 text.replace_range(..cut, "");
             }
-            let rest_starts = inner.iter().position(|n| matches!(n, Node::Soft | Node::Hard));
+            let rest_starts = inner
+                .iter()
+                .position(|n| matches!(n, Node::Soft | Node::Hard));
             match rest_starts {
-                Some(index) if matches!(inner.first(), Some(Node::Text(t)) if t.trim().is_empty()) => {
+                Some(index) if matches!(inner.first(), Some(Node::Text(t)) if t.trim().is_empty()) =>
+                {
                     inner.drain(..=index);
                 }
                 Some(_) => {}
-                None if inner.iter().all(|n| matches!(n, Node::Text(t) if t.trim().is_empty())) => inner.clear(),
+                None if inner
+                    .iter()
+                    .all(|n| matches!(n, Node::Text(t) if t.trim().is_empty())) =>
+                {
+                    inner.clear()
+                }
                 None => {}
             }
         }
-        if matches!(children.first(), Some(Node::El(Tag::Paragraph, _, inner)) if inner.is_empty()) {
+        if matches!(children.first(), Some(Node::El(Tag::Paragraph, _, inner)) if inner.is_empty())
+        {
             children.remove(0);
         }
         let body = self.nodes(children);
@@ -632,12 +772,26 @@ impl Render {
 }
 
 fn plain_html(nodes: &[Node]) -> String {
-    nodes.iter().map(|n| if let Node::Html(t) = n { t.as_str() } else { "" }).collect::<String>().trim_end().to_owned()
+    nodes
+        .iter()
+        .map(|n| {
+            if let Node::Html(t) = n {
+                t.as_str()
+            } else {
+                ""
+            }
+        })
+        .collect::<String>()
+        .trim_end()
+        .to_owned()
 }
 
 pub(crate) fn split_fragment(dest: &str) -> (String, Option<String>) {
     match dest.split_once('#') {
-        Some((target, fragment)) => (target.trim().to_owned(), Some(fragment.trim().to_owned()).filter(|f| !f.is_empty())),
+        Some((target, fragment)) => (
+            target.trim().to_owned(),
+            Some(fragment.trim().to_owned()).filter(|f| !f.is_empty()),
+        ),
         None => (dest.trim().to_owned(), None),
     }
 }
@@ -648,7 +802,13 @@ fn properties(props: Vec<(String, dar_notes::Prop)>) -> impl IntoView {
         .into_iter()
         .map(|(key, value)| {
             let shown = match &value {
-                dar_notes::Prop::List(items) => items.iter().map(|i| view! { <span class="note-property-item">{i.clone()}</span> }.into_any()).collect_view().into_any(),
+                dar_notes::Prop::List(items) => items
+                    .iter()
+                    .map(|i| {
+                        view! { <span class="note-property-item">{i.clone()}</span> }.into_any()
+                    })
+                    .collect_view()
+                    .into_any(),
                 dar_notes::Prop::Text(text) => text.clone().into_any(),
             };
             view! { <div class="note-property"><dt>{key}</dt><dd>{shown}</dd></div> }.into_any()
@@ -660,10 +820,18 @@ fn properties(props: Vec<(String, dar_notes::Prop)>) -> impl IntoView {
 /// Renders Markdown with fixed elements only: source HTML stays text, `javascript:` and other
 /// unknown links stay text, and remote images are not fetched.
 #[component]
-pub fn Markdown(#[prop(into)] source: String, #[prop(optional)] links: NoteLinks, #[prop(optional)] inline: bool) -> impl IntoView {
+pub fn Markdown(
+    #[prop(into)] source: String,
+    #[prop(optional)] links: NoteLinks,
+    #[prop(optional)] inline: bool,
+) -> impl IntoView {
     let masked = dar_notes::mask_comments(&source).into_owned();
     let (props, body) = dar_notes::front_matter(&masked).unwrap_or_default();
-    let render = Render { links, has_math: Cell::new(false), has_mermaid: Cell::new(false) };
+    let render = Render {
+        links,
+        has_math: Cell::new(false),
+        has_mermaid: Cell::new(false),
+    };
     let nodes = render.nodes(tree(&masked[body..], body));
     let props = (!props.is_empty() && !inline).then(|| properties(props));
     let root = NodeRef::<html::Div>::new();
@@ -680,38 +848,81 @@ mod tests {
 
     #[test]
     fn formatting_wraps_or_prefixes() {
-        assert_eq!(format_markdown("one\ntwo", 4, 7, "# ", ""), ("one\n# two".into(), 4, 9));
-        assert_eq!(format_markdown("héllo", 1, 3, "**", "**"), ("h**él**lo".into(), 3, 5));
+        assert_eq!(
+            format_markdown("one\ntwo", 4, 7, "# ", ""),
+            ("one\n# two".into(), 4, 9)
+        );
+        assert_eq!(
+            format_markdown("héllo", 1, 3, "**", "**"),
+            ("h**él**lo".into(), 3, 5)
+        );
     }
 
     #[test]
     fn highlights_and_callouts() {
-        assert_eq!(highlights("a ==b== c ==d"), vec![("a ", false), ("b", true), (" c ==d", false)]);
-        assert_eq!(highlights("x ==== y"), vec![("x ==", false), ("== y", false)]);
-        assert_eq!(callout("[!tip] Remember"), Some(("tip".into(), None, "Remember".into())));
-        assert_eq!(callout("[!FAQ]- "), Some(("faq".into(), Some(false), "Faq".into())));
+        assert_eq!(
+            highlights("a ==b== c ==d"),
+            vec![("a ", false), ("b", true), (" c ==d", false)]
+        );
+        assert_eq!(
+            highlights("x ==== y"),
+            vec![("x ==", false), ("== y", false)]
+        );
+        assert_eq!(
+            callout("[!tip] Remember"),
+            Some(("tip".into(), None, "Remember".into()))
+        );
+        assert_eq!(
+            callout("[!FAQ]- "),
+            Some(("faq".into(), Some(false), "Faq".into()))
+        );
         assert_eq!(callout("[link] x"), None);
     }
 
     #[test]
     fn tree_keeps_offsets_and_merges_text() {
         let nodes = tree("> [!note] T\n> body\n\n- [ ] x", 10);
-        let Node::El(Tag::BlockQuote(_), _, quote) = &nodes[0] else { panic!("{nodes:?}") };
-        let Node::El(Tag::Paragraph, _, inner) = &quote[0] else { panic!() };
+        let Node::El(Tag::BlockQuote(_), _, quote) = &nodes[0] else {
+            panic!("{nodes:?}")
+        };
+        let Node::El(Tag::Paragraph, _, inner) = &quote[0] else {
+            panic!()
+        };
         assert!(matches!(&inner[0], Node::Text(t) if t == "[!note] T"));
-        let Node::El(Tag::List(None), _, items) = &nodes[1] else { panic!() };
-        let Node::El(Tag::Item, _, item) = &items[0] else { panic!() };
+        let Node::El(Tag::List(None), _, items) = &nodes[1] else {
+            panic!()
+        };
+        let Node::El(Tag::Item, _, item) = &items[0] else {
+            panic!()
+        };
         assert!(matches!(item[0], Node::Task(false, 32)));
     }
 
     #[test]
     fn tree_parses_math_and_mermaid() {
-        let nodes = tree("Inline $a+b$.\n\n$$x^2$$\n\n```mermaid\ngraph LR\nA-->B\n```\n", 0);
-        let Node::El(Tag::Paragraph, _, inline_p) = &nodes[0] else { panic!("{nodes:?}") };
-        assert!(inline_p.iter().any(|n| matches!(n, Node::Math(t, false) if t == "a+b")));
-        let Node::El(Tag::Paragraph, _, display_p) = &nodes[1] else { panic!("{nodes:?}") };
-        assert!(display_p.iter().any(|n| matches!(n, Node::Math(t, true) if t == "x^2")));
-        let Node::El(Tag::CodeBlock(CodeBlockKind::Fenced(lang)), _, body) = &nodes[2] else { panic!("{nodes:?}") };
+        let nodes = tree(
+            "Inline $a+b$.\n\n$$x^2$$\n\n```mermaid\ngraph LR\nA-->B\n```\n",
+            0,
+        );
+        let Node::El(Tag::Paragraph, _, inline_p) = &nodes[0] else {
+            panic!("{nodes:?}")
+        };
+        assert!(
+            inline_p
+                .iter()
+                .any(|n| matches!(n, Node::Math(t, false) if t == "a+b"))
+        );
+        let Node::El(Tag::Paragraph, _, display_p) = &nodes[1] else {
+            panic!("{nodes:?}")
+        };
+        assert!(
+            display_p
+                .iter()
+                .any(|n| matches!(n, Node::Math(t, true) if t == "x^2"))
+        );
+        let Node::El(Tag::CodeBlock(CodeBlockKind::Fenced(lang)), _, body) = &nodes[2] else {
+            panic!("{nodes:?}")
+        };
         assert_eq!(lang.as_ref(), "mermaid");
         assert_eq!(plain(body), "graph LR\nA-->B\n");
     }

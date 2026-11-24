@@ -23,7 +23,9 @@ struct Choice {
 pub(super) fn CanvasDialogs(board: Board) -> impl IntoView {
     move || match board.dialog.get() {
         Some(CanvasDialog::Pick) => view! { <PickFile board=board/> }.into_any(),
-        Some(CanvasDialog::Link(editing)) => view! { <LinkForm board=board editing=editing/> }.into_any(),
+        Some(CanvasDialog::Link(editing)) => {
+            view! { <LinkForm board=board editing=editing/> }.into_any()
+        }
         None => ().into_any(),
     }
 }
@@ -40,10 +42,39 @@ fn PickFile(board: Board) -> impl IntoView {
     let choices = Memo::new(move |_| {
         let q = query.get().trim().to_lowercase();
         board.index.with(|ix| {
-            let notes = ix.notes.iter().map(|n| Choice { title: if n.title.is_empty() { n.name.clone() } else { n.title.clone() }, path: n.path.clone(), media_type: "text/markdown".into(), note: true });
-            let files = ix.files.iter().filter(|f| !model::is_canvas(&f.name)).map(|f| Choice { title: f.name.clone(), path: f.path.clone(), media_type: f.media_type.clone(), note: false });
-            let mut all: Vec<Choice> = notes.chain(files).filter(|c| q.is_empty() || c.title.to_lowercase().contains(&q) || c.path.to_lowercase().contains(&q)).collect();
-            all.sort_by(|a, b| b.note.cmp(&a.note).then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase())));
+            let notes = ix.notes.iter().map(|n| Choice {
+                title: if n.title.is_empty() {
+                    n.name.clone()
+                } else {
+                    n.title.clone()
+                },
+                path: n.path.clone(),
+                media_type: "text/markdown".into(),
+                note: true,
+            });
+            let files = ix
+                .files
+                .iter()
+                .filter(|f| !model::is_canvas(&f.name))
+                .map(|f| Choice {
+                    title: f.name.clone(),
+                    path: f.path.clone(),
+                    media_type: f.media_type.clone(),
+                    note: false,
+                });
+            let mut all: Vec<Choice> = notes
+                .chain(files)
+                .filter(|c| {
+                    q.is_empty()
+                        || c.title.to_lowercase().contains(&q)
+                        || c.path.to_lowercase().contains(&q)
+                })
+                .collect();
+            all.sort_by(|a, b| {
+                b.note
+                    .cmp(&a.note)
+                    .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+            });
             all
         })
     });
@@ -87,7 +118,14 @@ fn PickFile(board: Board) -> impl IntoView {
 
 #[component]
 fn LinkForm(board: Board, editing: Option<String>) -> impl IntoView {
-    let initial = editing.as_deref().and_then(|id| board.doc.with_untracked(|c| c.node(id).map(|n| n.url.clone()))).unwrap_or_default();
+    let initial = editing
+        .as_deref()
+        .and_then(|id| {
+            board
+                .doc
+                .with_untracked(|c| c.node(id).map(|n| n.url.clone()))
+        })
+        .unwrap_or_default();
     let value = RwSignal::new(initial);
     let problem = RwSignal::new(String::new());
     let editing = StoredValue::new(editing);
@@ -122,7 +160,11 @@ fn LinkForm(board: Board, editing: Option<String>) -> impl IntoView {
             }
         }
     };
-    let title = if editing.with_value(Option::is_some) { "Edit link" } else { "Add a link" };
+    let title = if editing.with_value(Option::is_some) {
+        "Edit link"
+    } else {
+        "Add a link"
+    };
     view! {
         <Dialog title=title on_close=close>
             <form class="canvas-link-form" on:submit=move |e: web_sys::SubmitEvent| { e.prevent_default(); submit(); }>

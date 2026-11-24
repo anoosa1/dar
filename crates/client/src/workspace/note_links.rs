@@ -17,8 +17,8 @@ use super::notes::{NotesFile, NotesLibrary, fetch_detail, has_md_ext, read_file_
 use crate::api::{self, BrowserSession};
 use crate::files::editor::{TextFile, upload_blob, write_text_file};
 use crate::live::{Live, reducer, replied};
-use crate::module_bindings::create_folder;
 use crate::markdown::{Embed, Markdown, NoteLinks, note_embed, split_fragment};
+use crate::module_bindings::create_folder;
 use crate::ui::{Listener, call_method, listen, window};
 
 /// A file in the Notes folder that is not a note (an image, PDF or recording).
@@ -56,13 +56,23 @@ impl NoteIndex {
     /// What an embed in `source_id` shows: a note, another file, or nothing.
     pub fn embed(&self, source_id: &str, target: &str, wiki: bool) -> Option<Embed> {
         if wiki && dar_notes::is_note_target(target) {
-            return self.resolve(source_id, target, true).map(|n| Embed::Note { id: n.id.clone() });
+            return self
+                .resolve(source_id, target, true)
+                .map(|n| Embed::Note { id: n.id.clone() });
         }
         let source = self.path_of(source_id).unwrap_or_default();
-        let hit = if wiki { self.file_vault.resolve_name(source, target) } else { self.file_vault.resolve_path(source, target) };
+        let hit = if wiki {
+            self.file_vault.resolve_name(source, target)
+        } else {
+            self.file_vault.resolve_path(source, target)
+        };
         hit.map(|i| {
             let file = &self.files[i];
-            Embed::File { id: file.id.clone(), name: file.name.clone(), media_type: file.media_type.clone() }
+            Embed::File {
+                id: file.id.clone(),
+                name: file.name.clone(),
+                media_type: file.media_type.clone(),
+            }
         })
     }
 
@@ -78,7 +88,10 @@ impl NoteIndex {
         let mut tags: Vec<(String, usize)> = Vec::new();
         for note in &notes {
             for tag in &note.tags {
-                match tags.iter_mut().find(|(t, _)| t.to_lowercase() == tag.to_lowercase()) {
+                match tags
+                    .iter_mut()
+                    .find(|(t, _)| t.to_lowercase() == tag.to_lowercase())
+                {
                     Some(entry) => entry.1 += 1,
                     None => tags.push((tag.clone(), 1)),
                 }
@@ -86,8 +99,21 @@ impl NoteIndex {
         }
         tags.sort_by_key(|(t, _)| t.to_lowercase());
         let root_id = library.map(|l| l.root_id.clone()).unwrap_or_default();
-        let attachments = library.and_then(|l| l.folders.iter().find(|f| f.path.eq_ignore_ascii_case("attachments")).map(|f| f.id.clone()));
-        Self { vault, notes, tags, files: Vec::new(), file_vault: Vault::new(Vec::<String>::new()), root_id, attachments }
+        let attachments = library.and_then(|l| {
+            l.folders
+                .iter()
+                .find(|f| f.path.eq_ignore_ascii_case("attachments"))
+                .map(|f| f.id.clone())
+        });
+        Self {
+            vault,
+            notes,
+            tags,
+            files: Vec::new(),
+            file_vault: Vault::new(Vec::<String>::new()),
+            root_id,
+            attachments,
+        }
     }
 
     pub fn position(&self, id: &str) -> Option<usize> {
@@ -95,13 +121,20 @@ impl NoteIndex {
     }
 
     pub fn path_of(&self, id: &str) -> Option<&str> {
-        self.notes.iter().find(|n| n.id == id).map(|n| n.path.as_str())
+        self.notes
+            .iter()
+            .find(|n| n.id == id)
+            .map(|n| n.path.as_str())
     }
 
     /// The note a link in `source_id` names.
     pub fn resolve(&self, source_id: &str, target: &str, wiki: bool) -> Option<&NotesFile> {
         let source = self.path_of(source_id).unwrap_or_default();
-        let hit = if wiki { self.vault.resolve_wiki(source, target) } else { self.vault.resolve_path(source, target) };
+        let hit = if wiki {
+            self.vault.resolve_wiki(source, target)
+        } else {
+            self.vault.resolve_path(source, target)
+        };
         hit.map(|i| &self.notes[i])
     }
 }
@@ -140,7 +173,9 @@ pub fn fill_template(template: &str, title: &str, date: &str, time: &str) -> Str
     let mut out = String::new();
     let mut rest = body;
     while let Some(open) = rest.find("{{") {
-        let Some(close) = rest[open..].find("}}") else { break };
+        let Some(close) = rest[open..].find("}}") else {
+            break;
+        };
         out.push_str(&rest[..open]);
         let name = rest[open + 2..open + close].trim().to_lowercase();
         match name.split(':').next().unwrap_or_default() {
@@ -158,7 +193,15 @@ pub fn fill_template(template: &str, title: &str, date: &str, time: &str) -> Str
 /// Today's date (`YYYY-MM-DD`) and time (`HH:MM`) in the browser's timezone.
 pub fn today() -> (String, String) {
     let now = js_sys::Date::new_0();
-    (format!("{:04}-{:02}-{:02}", now.get_full_year(), now.get_month() + 1, now.get_date()), format!("{:02}:{:02}", now.get_hours(), now.get_minutes()))
+    (
+        format!(
+            "{:04}-{:02}-{:02}",
+            now.get_full_year(),
+            now.get_month() + 1,
+            now.get_date()
+        ),
+        format!("{:02}:{:02}", now.get_hours(), now.get_minutes()),
+    )
 }
 
 fn commands(date: &str, time: &str) -> Vec<(&'static str, &'static str, String)> {
@@ -170,9 +213,17 @@ fn commands(date: &str, time: &str) -> Vec<(&'static str, &'static str, String)>
         ("Bulleted list", "", format!("- {CARET}")),
         ("Numbered list", "", format!("1. {CARET}")),
         ("Quote", "", format!("> {CARET}")),
-        ("Callout", "Note, tip, warning\u{2026}", format!("> [!note] {CARET}\n> ")),
+        (
+            "Callout",
+            "Note, tip, warning\u{2026}",
+            format!("> [!note] {CARET}\n> "),
+        ),
         ("Code block", "", format!("```\n{CARET}\n```")),
-        ("Table", "Two columns", format!("| {CARET} |  |\n| --- | --- |\n|  |  |")),
+        (
+            "Table",
+            "Two columns",
+            format!("| {CARET} |  |\n| --- | --- |\n|  |  |"),
+        ),
         ("Divider", "", format!("---\n{CARET}")),
         ("Link to note", "[[", format!("[[{CARET}]]")),
         ("Date", "Today", date.to_owned()),
@@ -188,25 +239,45 @@ pub fn trigger(text: &str, caret: usize) -> Option<Trigger> {
     let line = &text[line_start..caret];
     if let Some(open) = line.rfind("[[") {
         let query = &line[open + 2..];
-        if !query.contains("]]") && !query.contains(['|', '[', '#']) && query.chars().count() <= 80 {
-            return Some(Trigger::Link { start: line_start + open, query: query.to_owned() });
+        if !query.contains("]]") && !query.contains(['|', '[', '#']) && query.chars().count() <= 80
+        {
+            return Some(Trigger::Link {
+                start: line_start + open,
+                query: query.to_owned(),
+            });
         }
     }
     if let Some(slash) = line.rfind('/') {
         let query = &line[slash + 1..];
         let before = line[..slash].chars().next_back();
-        if before.is_none_or(char::is_whitespace) && query.len() <= 24 && query.chars().all(|c| c.is_alphanumeric() || c == '-') {
-            return Some(Trigger::Slash { start: line_start + slash, query: query.to_owned() });
+        if before.is_none_or(char::is_whitespace)
+            && query.len() <= 24
+            && query.chars().all(|c| c.is_alphanumeric() || c == '-')
+        {
+            return Some(Trigger::Slash {
+                start: line_start + slash,
+                query: query.to_owned(),
+            });
         }
     }
-    let word_len: usize = line.chars().rev().take_while(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '/')).map(char::len_utf8).sum();
+    let word_len: usize = line
+        .chars()
+        .rev()
+        .take_while(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '/'))
+        .map(char::len_utf8)
+        .sum();
     let hash = caret - word_len;
     if hash > line_start && text[..hash].ends_with('#') {
         let at = hash - 1;
         let before = text[..at].chars().next_back();
         let after = text[caret..].chars().next();
-        if before.is_none_or(char::is_whitespace) && !after.is_some_and(|c| c.is_alphanumeric() || c == '_') {
-            return Some(Trigger::Tag { start: at, query: text[hash..caret].to_owned() });
+        if before.is_none_or(char::is_whitespace)
+            && !after.is_some_and(|c| c.is_alphanumeric() || c == '_')
+        {
+            return Some(Trigger::Tag {
+                start: at,
+                query: text[hash..caret].to_owned(),
+            });
         }
     }
     None
@@ -225,7 +296,10 @@ fn rank(name: &str, query: &str) -> Option<u8> {
     let name = name.to_lowercase();
     if query.is_empty() || name.starts_with(query) {
         Some(0)
-    } else if name.split(|c: char| !c.is_alphanumeric()).any(|w| w.starts_with(query)) {
+    } else if name
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|w| w.starts_with(query))
+    {
         Some(1)
     } else if name.contains(query) {
         Some(2)
@@ -246,29 +320,65 @@ pub fn suggestions(index: &NoteIndex, trigger: &Trigger, source_id: &str) -> Vec
                 }
                 let target = index.vault.wiki_target(i);
                 let stem = target.rsplit('/').next().unwrap_or(&target).to_owned();
-                let folder = note.path.rfind('/').map(|i| note.path[..i].to_owned()).unwrap_or_default();
-                let by_name = rank(&note.title, &q).into_iter().chain(rank(&stem, &q)).min();
-                let by_alias = note.aliases.iter().filter_map(|a| rank(a, &q).map(|r| (r, a))).min_by_key(|(r, _)| *r);
+                let folder = note
+                    .path
+                    .rfind('/')
+                    .map(|i| note.path[..i].to_owned())
+                    .unwrap_or_default();
+                let by_name = rank(&note.title, &q)
+                    .into_iter()
+                    .chain(rank(&stem, &q))
+                    .min();
+                let by_alias = note
+                    .aliases
+                    .iter()
+                    .filter_map(|a| rank(a, &q).map(|r| (r, a)))
+                    .min_by_key(|(r, _)| *r);
                 let (score, insert, label) = match (by_name, by_alias) {
-                    (Some(n), Some((a, alias))) if a < n => (a, format!("[[{target}|{alias}]]"), alias.clone()),
+                    (Some(n), Some((a, alias))) if a < n => {
+                        (a, format!("[[{target}|{alias}]]"), alias.clone())
+                    }
                     (Some(n), _) => (n, format!("[[{target}]]"), note.title.clone()),
                     (None, Some((a, alias))) => (a, format!("[[{target}|{alias}]]"), alias.clone()),
                     (None, None) => continue,
                 };
-                let detail = if label != note.title { format!("{} \u{b7} {}", note.title, folder) } else { folder };
-                found.push((score, note.modified_at, Suggestion { label, detail: detail.trim_end_matches([' ', '\u{b7}']).to_owned(), insert, template: None }));
+                let detail = if label != note.title {
+                    format!("{} \u{b7} {}", note.title, folder)
+                } else {
+                    folder
+                };
+                found.push((
+                    score,
+                    note.modified_at,
+                    Suggestion {
+                        label,
+                        detail: detail.trim_end_matches([' ', '\u{b7}']).to_owned(),
+                        insert,
+                        template: None,
+                    },
+                ));
             }
             found.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.total_cmp(&a.1)));
             found.into_iter().take(8).map(|(_, _, s)| s).collect()
         }
         Trigger::Tag { query, .. } => {
             let q = query.to_lowercase();
-            let mut found: Vec<(u8, usize, &str)> = index.tags.iter().filter(|(t, _)| t.to_lowercase() != q).filter_map(|(t, n)| rank(t, &q).map(|r| (r, *n, t.as_str()))).collect();
+            let mut found: Vec<(u8, usize, &str)> = index
+                .tags
+                .iter()
+                .filter(|(t, _)| t.to_lowercase() != q)
+                .filter_map(|(t, n)| rank(t, &q).map(|r| (r, *n, t.as_str())))
+                .collect();
             found.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)).then(a.2.cmp(b.2)));
             found
                 .into_iter()
                 .take(8)
-                .map(|(_, n, t)| Suggestion { label: format!("#{t}"), detail: format!("{n} {}", if n == 1 { "note" } else { "notes" }), insert: format!("#{t} "), template: None })
+                .map(|(_, n, t)| Suggestion {
+                    label: format!("#{t}"),
+                    detail: format!("{n} {}", if n == 1 { "note" } else { "notes" }),
+                    insert: format!("#{t} "),
+                    template: None,
+                })
                 .collect()
         }
         Trigger::Slash { query, .. } => {
@@ -276,13 +386,33 @@ pub fn suggestions(index: &NoteIndex, trigger: &Trigger, source_id: &str) -> Vec
             let (date, time) = today();
             let mut found: Vec<(u8, Suggestion)> = commands(&date, &time)
                 .into_iter()
-                .filter_map(|(label, detail, insert)| rank(label, &q).map(|r| (r, Suggestion { label: label.into(), detail: detail.into(), insert, template: None })))
+                .filter_map(|(label, detail, insert)| {
+                    rank(label, &q).map(|r| {
+                        (
+                            r,
+                            Suggestion {
+                                label: label.into(),
+                                detail: detail.into(),
+                                insert,
+                                template: None,
+                            },
+                        )
+                    })
+                })
                 .collect();
             for note in index.notes.iter().filter(|n| is_template(n)) {
                 let name = super::notes::strip_md_ext(&note.name);
                 let label = format!("Template: {name}");
                 if let Some(r) = rank(&name, &q).or_else(|| rank(&label, &q)) {
-                    found.push((r, Suggestion { label, detail: "Insert template".into(), insert: String::new(), template: Some(note.id.clone()) }));
+                    found.push((
+                        r,
+                        Suggestion {
+                            label,
+                            detail: "Insert template".into(),
+                            insert: String::new(),
+                            template: Some(note.id.clone()),
+                        },
+                    ));
                 }
             }
             found.sort_by_key(|(r, _)| *r);
@@ -294,7 +424,9 @@ pub fn suggestions(index: &NoteIndex, trigger: &Trigger, source_id: &str) -> Vec
 /// The text with a suggestion accepted at `caret` (bytes), and the caret after it.
 pub fn accept(text: &str, caret: usize, trigger: &Trigger, insert: &str) -> (String, usize) {
     let (start, mut end) = match trigger {
-        Trigger::Link { start, .. } | Trigger::Tag { start, .. } | Trigger::Slash { start, .. } => (*start, caret),
+        Trigger::Link { start, .. } | Trigger::Tag { start, .. } | Trigger::Slash { start, .. } => {
+            (*start, caret)
+        }
     };
     if matches!(trigger, Trigger::Link { .. }) && text[end..].starts_with("]]") {
         end += 2;
@@ -320,15 +452,24 @@ pub fn LinkSuggestions(
     let panel = NodeRef::<html::Div>::new();
     let prefix = id.clone();
     Effect::new(move |_| {
-        let (Some(element), Some((x, y))) = (panel.get(), point.get()) else { return };
+        let (Some(element), Some((x, y))) = (panel.get(), point.get()) else {
+            return;
+        };
         let element: web_sys::HtmlElement = element.unchecked_into();
         let open = !items.with(Vec::is_empty);
         let shown = element.matches(":popover-open").unwrap_or(false);
         if open {
-            let width = window().inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let width = window()
+                .inner_width()
+                .ok()
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
             let style = element.style();
             let _ = style.set_property("--float-top", &format!("{}px", y.round()));
-            let _ = style.set_property("--float-left", &format!("{}px", x.min(width - 300.0).max(8.0).round()));
+            let _ = style.set_property(
+                "--float-left",
+                &format!("{}px", x.min(width - 300.0).max(8.0).round()),
+            );
             if !shown {
                 call_method(&element, "showPopover");
             }
@@ -388,7 +529,12 @@ struct Mentions {
 
 /// IDs of the notes linking to `id` (empty when they cannot be listed).
 pub async fn backlink_ids(id: &str) -> Vec<String> {
-    match api::get::<Backlinks>(&format!("/api/v1/notes/backlinks?id={}", js_sys::encode_uri_component(id))).await {
+    match api::get::<Backlinks>(&format!(
+        "/api/v1/notes/backlinks?id={}",
+        js_sys::encode_uri_component(id)
+    ))
+    .await
+    {
         Ok(list) => list.backlinks.into_iter().map(|n| n.id).collect(),
         Err(_) => Vec::new(),
     }
@@ -401,12 +547,28 @@ fn folder_of(path: &str) -> &str {
 /// After `moved` took `new_path`, points the links in `sources` (and the moved note's own
 /// relative links) at it again, each write checked against the revision read. Returns how many
 /// notes changed.
-pub async fn retarget_links(live: Live, session: &BrowserSession, before: &NoteIndex, moves: &[(String, String)], sources: Vec<String>) -> Result<usize, String> {
-    let moved: std::collections::HashMap<usize, &str> = moves.iter().filter_map(|(id, path)| before.position(id).map(|i| (i, path.as_str()))).collect();
+pub async fn retarget_links(
+    live: Live,
+    session: &BrowserSession,
+    before: &NoteIndex,
+    moves: &[(String, String)],
+    sources: Vec<String>,
+) -> Result<usize, String> {
+    let moved: std::collections::HashMap<usize, &str> = moves
+        .iter()
+        .filter_map(|(id, path)| before.position(id).map(|i| (i, path.as_str())))
+        .collect();
     if moved.is_empty() {
         return Ok(0);
     }
-    let after = Vault::new(before.vault.paths().iter().enumerate().map(|(i, p)| moved.get(&i).map_or_else(|| p.clone(), |n| (*n).to_owned())));
+    let after = Vault::new(
+        before
+            .vault
+            .paths()
+            .iter()
+            .enumerate()
+            .map(|(i, p)| moved.get(&i).map_or_else(|| p.clone(), |n| (*n).to_owned())),
+    );
     let mut ids = sources;
     for (id, _) in moves {
         if !ids.contains(id) {
@@ -416,11 +578,18 @@ pub async fn retarget_links(live: Live, session: &BrowserSession, before: &NoteI
     let mut changed = 0;
     let mut failed = 0;
     for id in ids {
-        let Some(old_source) = before.path_of(&id).map(str::to_owned) else { continue };
+        let Some(old_source) = before.path_of(&id).map(str::to_owned) else {
+            continue;
+        };
         let source_index = before.position(&id);
-        let new_source = source_index.and_then(|i| moved.get(&i)).map_or_else(|| old_source.clone(), |p| (*p).to_owned());
+        let new_source = source_index
+            .and_then(|i| moved.get(&i))
+            .map_or_else(|| old_source.clone(), |p| (*p).to_owned());
         let source_moved = folder_of(&old_source) != folder_of(&new_source);
-        let conn = live.connection.get_untracked().ok_or("Notes are reconnecting. Try again in a moment.")?;
+        let conn = live
+            .connection
+            .get_untracked()
+            .ok_or("Notes are reconnecting. Try again in a moment.")?;
         let Ok(detail) = fetch_detail(&conn, &id).await else {
             failed += 1;
             continue;
@@ -444,14 +613,24 @@ pub async fn retarget_links(live: Live, session: &BrowserSession, before: &NoteI
         });
         let Some(next) = next else { continue };
         let entry = &detail.entry;
-        let file = TextFile { name: &entry.name, parent_id: &entry.parent_id, content: &next, media_type: &entry.media_type, file_id: Some(&entry.id), expected_revision: Some(entry.revision) };
+        let file = TextFile {
+            name: &entry.name,
+            parent_id: &entry.parent_id,
+            content: &next,
+            media_type: &entry.media_type,
+            file_id: Some(&entry.id),
+            expected_revision: Some(entry.revision),
+        };
         match write_text_file(session, file).await {
             Ok(_) => changed += 1,
             Err(_) => failed += 1,
         }
     }
     if failed > 0 {
-        return Err(format!("Links in {failed} {} could not be updated. Check them for the old name.", if failed == 1 { "note" } else { "notes" }));
+        return Err(format!(
+            "Links in {failed} {} could not be updated. Check them for the old name.",
+            if failed == 1 { "note" } else { "notes" }
+        ));
     }
     Ok(changed)
 }
@@ -491,8 +670,13 @@ pub fn NoteReferences(
         let alive = alive_load.clone();
         spawn_local(async move {
             let encoded = js_sys::encode_uri_component(&id);
-            let linked = api::get::<Backlinks>(&format!("/api/v1/notes/backlinks?id={encoded}")).await;
-            let unlinked = if want_mentions { Some(api::get::<Mentions>(&format!("/api/v1/notes/mentions?id={encoded}")).await) } else { None };
+            let linked =
+                api::get::<Backlinks>(&format!("/api/v1/notes/backlinks?id={encoded}")).await;
+            let unlinked = if want_mentions {
+                Some(api::get::<Mentions>(&format!("/api/v1/notes/mentions?id={encoded}")).await)
+            } else {
+                None
+            };
             if !alive.load(Ordering::Relaxed) || seq.try_get_untracked() != Some(ticket) {
                 return;
             }
@@ -518,16 +702,35 @@ pub fn NoteReferences(
         spawn_local(async move {
             busy.set(true);
             let result: Result<(), String> = async {
-                let conn = live.connection.get_untracked().ok_or("Notes are reconnecting. Try again in a moment.")?;
+                let conn = live
+                    .connection
+                    .get_untracked()
+                    .ok_or("Notes are reconnecting. Try again in a moment.")?;
                 let detail = fetch_detail(&conn, &note.id).await?;
                 let text = read_file_content(&note.id).await?;
-                let found = text.get(context.start..context.end).filter(|f| f.to_lowercase() == context.matched.to_lowercase()).ok_or("The note changed. Refresh and try again.")?;
+                let found = text
+                    .get(context.start..context.end)
+                    .filter(|f| f.to_lowercase() == context.matched.to_lowercase())
+                    .ok_or("The note changed. Refresh and try again.")?;
                 let stem = target.rsplit('/').next().unwrap_or(&target);
-                let link = if found == stem { format!("[[{target}]]") } else { format!("[[{target}|{found}]]") };
+                let link = if found == stem {
+                    format!("[[{target}]]")
+                } else {
+                    format!("[[{target}|{found}]]")
+                };
                 let next = format!("{}{link}{}", &text[..context.start], &text[context.end..]);
                 let entry = &detail.entry;
-                let file = TextFile { name: &entry.name, parent_id: &entry.parent_id, content: &next, media_type: &entry.media_type, file_id: Some(&entry.id), expected_revision: Some(entry.revision) };
-                write_text_file(&session.get_value(), file).await.map_err(|e| e.message)?;
+                let file = TextFile {
+                    name: &entry.name,
+                    parent_id: &entry.parent_id,
+                    content: &next,
+                    media_type: &entry.media_type,
+                    file_id: Some(&entry.id),
+                    expected_revision: Some(entry.revision),
+                };
+                write_text_file(&session.get_value(), file)
+                    .await
+                    .map_err(|e| e.message)?;
                 Ok(())
             }
             .await;
@@ -548,7 +751,11 @@ pub fn NoteReferences(
     let reference = move |note: RefNote, mention_target: Option<String>| {
         let open_id = note.id.clone();
         let folder = folder_of(&note.path).to_owned();
-        let title = if note.title.is_empty() { "Untitled".to_owned() } else { note.title.clone() };
+        let title = if note.title.is_empty() {
+            "Untitled".to_owned()
+        } else {
+            note.title.clone()
+        };
         let contexts = note.contexts.clone();
         view! {
             <article class="note-reference">
@@ -613,15 +820,33 @@ pub fn NoteReferences(
     }
 }
 
-
 fn attachment_name(file: &web_sys::File) -> String {
     let media = file.type_();
-    let name: String = file.name().chars().map(|c| if matches!(c, '[' | ']' | '|' | '#' | '^' | '/' | '\\') || (c as u32) < 0x20 { '-' } else { c }).collect();
+    let name: String = file
+        .name()
+        .chars()
+        .map(|c| {
+            if matches!(c, '[' | ']' | '|' | '#' | '^' | '/' | '\\') || (c as u32) < 0x20 {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
     let name = name.trim().to_owned();
     // Clipboard images arrive as `image.png`; name them as Obsidian does.
-    if name.is_empty() || (media.starts_with("image/") && name.eq_ignore_ascii_case(&format!("image.{}", media.trim_start_matches("image/")))) {
+    if name.is_empty()
+        || (media.starts_with("image/")
+            && name.eq_ignore_ascii_case(&format!("image.{}", media.trim_start_matches("image/"))))
+    {
         let now = js_sys::Date::new_0();
-        let ext = media.split('/').nth(1).unwrap_or("bin").split('+').next().unwrap_or("bin");
+        let ext = media
+            .split('/')
+            .nth(1)
+            .unwrap_or("bin")
+            .split('+')
+            .next()
+            .unwrap_or("bin");
         return format!(
             "Pasted image {:04}{:02}{:02}{:02}{:02}{:02}.{ext}",
             now.get_full_year(),
@@ -637,8 +862,16 @@ fn attachment_name(file: &web_sys::File) -> String {
 
 /// Uploads pasted or dropped files to the Notes folder's `attachments` folder (made on first
 /// use) and returns the embeds to insert, one per line.
-pub async fn attach(live: Live, session: &BrowserSession, index: &NoteIndex, files: Vec<web_sys::File>) -> Result<String, String> {
-    let conn = live.connection.get_untracked().ok_or("Notes are reconnecting. Try again in a moment.")?;
+pub async fn attach(
+    live: Live,
+    session: &BrowserSession,
+    index: &NoteIndex,
+    files: Vec<web_sys::File>,
+) -> Result<String, String> {
+    let conn = live
+        .connection
+        .get_untracked()
+        .ok_or("Notes are reconnecting. Try again in a moment.")?;
     if index.root_id.is_empty() {
         return Err("The Notes folder is still loading.".into());
     }
@@ -647,23 +880,45 @@ pub async fn attach(live: Live, session: &BrowserSession, index: &NoteIndex, fil
         None => {
             let id = crate::random_uuid();
             let (folder, parent) = (id.clone(), index.root_id.clone());
-            reducer(|tx| conn.reducers.create_folder_then(folder, parent, "attachments".into(), replied(tx))).await.map_err(|_| "The attachments folder could not be created. Refresh and try again.".to_owned())?;
+            reducer(|tx| {
+                conn.reducers
+                    .create_folder_then(folder, parent, "attachments".into(), replied(tx))
+            })
+            .await
+            .map_err(|_| {
+                "The attachments folder could not be created. Refresh and try again.".to_owned()
+            })?;
             id
         }
     };
-    let mut taken: std::collections::HashSet<String> = index.files.iter().filter(|f| f.parent_id == folder).map(|f| f.name.to_lowercase()).collect();
+    let mut taken: std::collections::HashSet<String> = index
+        .files
+        .iter()
+        .filter(|f| f.parent_id == folder)
+        .map(|f| f.name.to_lowercase())
+        .collect();
     let mut embeds = Vec::new();
     for file in files {
         let wanted = attachment_name(&file);
-        let (stem, ext) = wanted.rsplit_once('.').map_or((wanted.as_str(), String::new()), |(s, e)| (s, format!(".{e}")));
+        let (stem, ext) = wanted
+            .rsplit_once('.')
+            .map_or((wanted.as_str(), String::new()), |(s, e)| {
+                (s, format!(".{e}"))
+            });
         let mut name = wanted.clone();
         let mut n = 1;
         while taken.contains(&name.to_lowercase()) {
             n += 1;
             name = format!("{stem} {n}{ext}");
         }
-        let media = if file.type_().is_empty() { "application/octet-stream".to_owned() } else { file.type_() };
-        upload_blob(session, &name, &folder, &media, &file).await.map_err(|e| format!("{name} could not be uploaded: {}", e.message))?;
+        let media = if file.type_().is_empty() {
+            "application/octet-stream".to_owned()
+        } else {
+            file.type_()
+        };
+        upload_blob(session, &name, &folder, &media, &file)
+            .await
+            .map_err(|e| format!("{name} could not be uploaded: {}", e.message))?;
         taken.insert(name.to_lowercase());
         embeds.push(format!("![[{name}]]"));
     }
@@ -683,9 +938,20 @@ pub struct PreviewTarget {
 
 /// Extracts a resolved note link's preview target from a hovered or focused element inside the
 /// note preview (skipping unresolved links, references and embedded notes).
-pub fn preview_target_from_element(element: &web_sys::Element, index: &NoteIndex) -> Option<PreviewTarget> {
-    let link = element.closest("a.note-link:not(.is-unresolved)").ok().flatten()?;
-    if link.closest(".note-references, .note-transclusion").ok().flatten().is_some() {
+pub fn preview_target_from_element(
+    element: &web_sys::Element,
+    index: &NoteIndex,
+) -> Option<PreviewTarget> {
+    let link = element
+        .closest("a.note-link:not(.is-unresolved)")
+        .ok()
+        .flatten()?;
+    if link
+        .closest(".note-references, .note-transclusion")
+        .ok()
+        .flatten()
+        .is_some()
+    {
         return None;
     }
     let id = link
@@ -701,11 +967,19 @@ pub fn preview_target_from_element(element: &web_sys::Element, index: &NoteIndex
         Some(pos) => {
             let wt = index.vault.wiki_target(pos);
             let note_title = &index.notes[pos].title;
-            let title = if note_title.is_empty() { wt.clone() } else { note_title.clone() };
+            let title = if note_title.is_empty() {
+                wt.clone()
+            } else {
+                note_title.clone()
+            };
             (wt, title)
         }
         None => {
-            let fallback = if parsed_target.is_empty() { "Note".to_owned() } else { parsed_target.clone() };
+            let fallback = if parsed_target.is_empty() {
+                "Note".to_owned()
+            } else {
+                parsed_target.clone()
+            };
             (parsed_target, fallback)
         }
     };
@@ -714,12 +988,24 @@ pub fn preview_target_from_element(element: &web_sys::Element, index: &NoteIndex
         None => base_title,
     };
     let r = link.get_bounding_client_rect();
-    Some(PreviewTarget { id, target, fragment, title, rect: (r.left(), r.top(), r.right(), r.bottom()) })
+    Some(PreviewTarget {
+        id,
+        target,
+        fragment,
+        title,
+        rect: (r.left(), r.top(), r.right(), r.bottom()),
+    })
 }
 
 /// Clamps the hover preview card position to the viewport, placing it below the link when it fits
 /// or flipping above when near the bottom edge.
-pub fn clamp_preview_position(rect: (f64, f64, f64, f64), card_w: f64, card_h: f64, view_w: f64, view_h: f64) -> (f64, f64) {
+pub fn clamp_preview_position(
+    rect: (f64, f64, f64, f64),
+    card_w: f64,
+    card_h: f64,
+    view_w: f64,
+    view_h: f64,
+) -> (f64, f64) {
     let (left, top, _right, bottom) = rect;
     let margin = 8.0;
     let gap = 6.0;
@@ -780,8 +1066,16 @@ pub fn NoteLinkPreview(
             let element = element.clone();
             let rect = item.rect;
             move || {
-                let view_w = window().inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let view_h = window().inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let view_w = window()
+                    .inner_width()
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let view_h = window()
+                    .inner_height()
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 let card_w = (element.offset_width() as f64).max(200.0);
                 let card_h = (element.offset_height() as f64).max(60.0);
                 let (x, y) = clamp_preview_position(rect, card_w, card_h, view_w, view_h);
@@ -796,7 +1090,8 @@ pub fn NoteLinkPreview(
             let place = place.clone();
             Closure::<dyn FnMut()>::new(move || place())
         };
-        let observer = web_sys::ResizeObserver::new(observer_cb.as_ref().unchecked_ref()).expect("ResizeObserver");
+        let observer = web_sys::ResizeObserver::new(observer_cb.as_ref().unchecked_ref())
+            .expect("ResizeObserver");
         observer.observe(&element);
         let resize = Listener::new(&window(), "resize", false, {
             let place = place.clone();
@@ -806,7 +1101,9 @@ pub fn NoteLinkPreview(
         on_cleanup(move || {
             let (observer, _cb, _resize, element) = kept.take();
             observer.disconnect();
-            if target.try_with_untracked(Option::is_some) != Some(true) && element.matches(":popover-open").unwrap_or(false) {
+            if target.try_with_untracked(Option::is_some) != Some(true)
+                && element.matches(":popover-open").unwrap_or(false)
+            {
                 call_method(&element, "hidePopover");
             }
         });
@@ -863,15 +1160,24 @@ pub fn random_block_id() -> String {
     const ALPHABET: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
     let mut bytes = [0u8; 6];
     let _ = getrandom::fill(&mut bytes);
-    bytes.into_iter().map(|b| ALPHABET[(b as usize) % ALPHABET.len()] as char).collect()
+    bytes
+        .into_iter()
+        .map(|b| ALPHABET[(b as usize) % ALPHABET.len()] as char)
+        .collect()
 }
 
 /// Ensures the caret's current line carries a `^block` id. Returns `None` if the line is blank,
 /// or `Some((id, updated_source))` where `updated_source` is `None` if the line already had an id.
-pub fn ensure_block_id(source: &str, caret_byte: usize, new_id: impl FnOnce() -> String) -> Option<(String, Option<String>)> {
+pub fn ensure_block_id(
+    source: &str,
+    caret_byte: usize,
+    new_id: impl FnOnce() -> String,
+) -> Option<(String, Option<String>)> {
     let caret = caret_byte.min(source.len());
     let line_start = source[..caret].rfind('\n').map_or(0, |i| i + 1);
-    let line_end = source[caret..].find('\n').map_or(source.len(), |i| caret + i);
+    let line_end = source[caret..]
+        .find('\n')
+        .map_or(source.len(), |i| caret + i);
     let content_end = if line_end > line_start && source.as_bytes()[line_end - 1] == b'\r' {
         line_end - 1
     } else {
@@ -885,7 +1191,12 @@ pub fn ensure_block_id(source: &str, caret_byte: usize, new_id: impl FnOnce() ->
         return Some((existing.to_owned(), None));
     }
     let id = new_id();
-    let updated = format!("{}{} ^{id}{}", &source[..line_start], line.trim_end(), &source[content_end..]);
+    let updated = format!(
+        "{}{} ^{id}{}",
+        &source[..line_start],
+        line.trim_end(),
+        &source[content_end..]
+    );
     Some((id, Some(updated)))
 }
 
@@ -906,7 +1217,9 @@ pub async fn copy_to_clipboard(text: &str) -> Result<(), ()> {
         .map_err(|_| ())?
         .dyn_into()
         .map_err(|_| ())?;
-    wasm_bindgen_futures::JsFuture::from(promise).await.map_err(|_| ())?;
+    wasm_bindgen_futures::JsFuture::from(promise)
+        .await
+        .map_err(|_| ())?;
     Ok(())
 }
 
@@ -915,7 +1228,12 @@ mod tests {
     use super::*;
 
     fn note(id: &str, path: &str, aliases: &[&str], tags: &[&str]) -> NotesFile {
-        let title = path.rsplit('/').next().unwrap().trim_end_matches(".md").to_owned();
+        let title = path
+            .rsplit('/')
+            .next()
+            .unwrap()
+            .trim_end_matches(".md")
+            .to_owned();
         NotesFile {
             id: id.into(),
             parent_id: String::new(),
@@ -938,7 +1256,16 @@ mod tests {
             root_id: "root".into(),
             path: "docs/notes".into(),
             folders: Vec::new(),
-            notes: vec![note("a", "Project Apollo.md", &["Apollo"], &["work", "work/space"]), note("b", "Ideas.md", &[], &["work"]), note("c", "Old/Ideas.md", &[], &[])],
+            notes: vec![
+                note(
+                    "a",
+                    "Project Apollo.md",
+                    &["Apollo"],
+                    &["work", "work/space"],
+                ),
+                note("b", "Ideas.md", &[], &["work"]),
+                note("c", "Old/Ideas.md", &[], &[]),
+            ],
             truncated: false,
             legacy: 0,
         };
@@ -947,11 +1274,29 @@ mod tests {
 
     #[test]
     fn triggers() {
-        assert_eq!(trigger("See [[Proj", 10), Some(Trigger::Link { start: 4, query: "Proj".into() }));
+        assert_eq!(
+            trigger("See [[Proj", 10),
+            Some(Trigger::Link {
+                start: 4,
+                query: "Proj".into()
+            })
+        );
         assert_eq!(trigger("See [[Proj]] x", 14), None);
         assert_eq!(trigger("a [[x|y", 7), None);
-        assert_eq!(trigger("note #wo", 8), Some(Trigger::Tag { start: 5, query: "wo".into() }));
-        assert_eq!(trigger("#", 1), Some(Trigger::Tag { start: 0, query: String::new() }));
+        assert_eq!(
+            trigger("note #wo", 8),
+            Some(Trigger::Tag {
+                start: 5,
+                query: "wo".into()
+            })
+        );
+        assert_eq!(
+            trigger("#", 1),
+            Some(Trigger::Tag {
+                start: 0,
+                query: String::new()
+            })
+        );
         assert_eq!(trigger("a#wo", 4), None);
         assert_eq!(trigger("# Heading", 9), None);
     }
@@ -959,12 +1304,39 @@ mod tests {
     #[test]
     fn suggests_notes_and_tags() {
         let ix = index();
-        let found = suggestions(&ix, &Trigger::Link { start: 0, query: "apo".into() }, "b");
+        let found = suggestions(
+            &ix,
+            &Trigger::Link {
+                start: 0,
+                query: "apo".into(),
+            },
+            "b",
+        );
         assert_eq!(found[0].insert, "[[Project Apollo|Apollo]]");
-        let found = suggestions(&ix, &Trigger::Link { start: 0, query: "ideas".into() }, "a");
-        assert_eq!(found.iter().map(|s| s.insert.as_str()).collect::<Vec<_>>(), ["[[Ideas]]", "[[Old/Ideas]]"]);
-        let tags = suggestions(&ix, &Trigger::Tag { start: 0, query: "wo".into() }, "a");
-        assert_eq!(tags.iter().map(|s| s.label.as_str()).collect::<Vec<_>>(), ["#work", "#work/space"]);
+        let found = suggestions(
+            &ix,
+            &Trigger::Link {
+                start: 0,
+                query: "ideas".into(),
+            },
+            "a",
+        );
+        assert_eq!(
+            found.iter().map(|s| s.insert.as_str()).collect::<Vec<_>>(),
+            ["[[Ideas]]", "[[Old/Ideas]]"]
+        );
+        let tags = suggestions(
+            &ix,
+            &Trigger::Tag {
+                start: 0,
+                query: "wo".into(),
+            },
+            "a",
+        );
+        assert_eq!(
+            tags.iter().map(|s| s.label.as_str()).collect::<Vec<_>>(),
+            ["#work", "#work/space"]
+        );
         assert!(has_tag(&ix.notes[0], "Work"));
         assert!(!has_tag(&ix.notes[2], "work"));
     }
@@ -972,23 +1344,64 @@ mod tests {
     #[test]
     fn accepts_completions() {
         let text = "See [[Pro]] now";
-        let (next, caret) = accept(text, 9, &Trigger::Link { start: 4, query: "Pro".into() }, "[[Project Apollo]]");
+        let (next, caret) = accept(
+            text,
+            9,
+            &Trigger::Link {
+                start: 4,
+                query: "Pro".into(),
+            },
+            "[[Project Apollo]]",
+        );
         assert_eq!(next, "See [[Project Apollo]] now");
         assert_eq!(&next[..caret], "See [[Project Apollo]]");
-        let (next, caret) = accept("go #wo", 6, &Trigger::Tag { start: 3, query: "wo".into() }, "#work ");
+        let (next, caret) = accept(
+            "go #wo",
+            6,
+            &Trigger::Tag {
+                start: 3,
+                query: "wo".into(),
+            },
+            "#work ",
+        );
         assert_eq!((next.as_str(), caret), ("go #work ", 9));
-        let (next, caret) = accept("x\n/co", 5, &Trigger::Slash { start: 2, query: "co".into() }, &format!("```\n{CARET}\n```"));
+        let (next, caret) = accept(
+            "x\n/co",
+            5,
+            &Trigger::Slash {
+                start: 2,
+                query: "co".into(),
+            },
+            &format!("```\n{CARET}\n```"),
+        );
         assert_eq!(next, "x\n```\n\n```");
         assert_eq!(caret, 6);
-        assert_eq!(trigger("a /tab", 6), Some(Trigger::Slash { start: 2, query: "tab".into() }));
+        assert_eq!(
+            trigger("a /tab", 6),
+            Some(Trigger::Slash {
+                start: 2,
+                query: "tab".into()
+            })
+        );
         assert_eq!(trigger("https://x", 9), None);
-        assert_eq!(fill_template("---\ntags: [t]\n---\n# {{title}}\n{{date:YYYY}} {{time}} {{other}}", "Plan", "2026-11-22", "09:30"), "# Plan\n2026-11-22 09:30 {{other}}");
+        assert_eq!(
+            fill_template(
+                "---\ntags: [t]\n---\n# {{title}}\n{{date:YYYY}} {{time}} {{other}}",
+                "Plan",
+                "2026-11-22",
+                "09:30"
+            ),
+            "# Plan\n2026-11-22 09:30 {{other}}"
+        );
     }
 
     #[test]
     fn block_link_ids_and_clamping() {
         assert_eq!(ensure_block_id("", 0, || "abc123".into()), None);
-        assert_eq!(ensure_block_id("one\n   \ntwo", 5, || "abc123".into()), None);
+        assert_eq!(
+            ensure_block_id("one\n   \ntwo", 5, || "abc123".into()),
+            None
+        );
         assert_eq!(
             ensure_block_id("one\ntwo  \nthree", 6, || "abc123".into()),
             Some(("abc123".into(), Some("one\ntwo ^abc123\nthree".into())))
@@ -1003,10 +1416,22 @@ mod tests {
         );
         let id = random_block_id();
         assert_eq!(id.len(), 6);
-        assert!(id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
+        assert!(
+            id.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        );
 
-        assert_eq!(clamp_preview_position((400.0, 200.0, 480.0, 220.0), 380.0, 240.0, 1440.0, 950.0), (400.0, 226.0));
-        assert_eq!(clamp_preview_position((1200.0, 200.0, 1280.0, 220.0), 380.0, 240.0, 1440.0, 950.0), (1052.0, 226.0));
-        assert_eq!(clamp_preview_position((400.0, 800.0, 480.0, 820.0), 380.0, 240.0, 1440.0, 950.0), (400.0, 554.0));
+        assert_eq!(
+            clamp_preview_position((400.0, 200.0, 480.0, 220.0), 380.0, 240.0, 1440.0, 950.0),
+            (400.0, 226.0)
+        );
+        assert_eq!(
+            clamp_preview_position((1200.0, 200.0, 1280.0, 220.0), 380.0, 240.0, 1440.0, 950.0),
+            (1052.0, 226.0)
+        );
+        assert_eq!(
+            clamp_preview_position((400.0, 800.0, 480.0, 820.0), 380.0, 240.0, 1440.0, 950.0),
+            (400.0, 554.0)
+        );
     }
 }

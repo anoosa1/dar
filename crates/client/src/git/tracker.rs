@@ -4,21 +4,21 @@ use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::api::{self, BrowserSession};
 use crate::dates::{edited, local_date_time};
 use crate::history::ChangeRow;
 use crate::icons::Icon;
-use crate::ui::{unique_id, ActionMenu, Dialog, EditorPane, MenuAction};
+use crate::ui::{ActionMenu, Dialog, EditorPane, MenuAction, unique_id};
 
 use super::parts::{
-    encode_uri, focus_sheet, plural, query_string, repo_api, sheet_keydown, use_load, Failure,
-    FileChanges, GitBranches, GitCompare, GitIssue, GitIssueList, GitIssueSummary, GitLabel,
-    GitMarkdown, GitMergeResult, GitPullAgent, GitPullChanges, GitRepository, GitSegmented,
-    GitSelect, GitTimelineItem, Loading, MergeBox, Person, Sha, SheetHead, GIT_LABEL_COLORS,
-    TRACKER_LIMITS_BODY, TRACKER_LIMITS_LABELS_PER_ITEM, TRACKER_LIMITS_LABEL_DESCRIPTION,
-    TRACKER_LIMITS_LABEL_NAME, TRACKER_LIMITS_PAGE, TRACKER_LIMITS_TITLE,
+    Failure, FileChanges, GIT_LABEL_COLORS, GitBranches, GitCompare, GitIssue, GitIssueList,
+    GitIssueSummary, GitLabel, GitMarkdown, GitMergeResult, GitPullAgent, GitPullChanges,
+    GitRepository, GitSegmented, GitSelect, GitTimelineItem, Loading, MergeBox, Person, Sha,
+    SheetHead, TRACKER_LIMITS_BODY, TRACKER_LIMITS_LABEL_DESCRIPTION, TRACKER_LIMITS_LABEL_NAME,
+    TRACKER_LIMITS_LABELS_PER_ITEM, TRACKER_LIMITS_PAGE, TRACKER_LIMITS_TITLE, encode_uri,
+    focus_sheet, plural, query_string, repo_api, sheet_keydown, use_load,
 };
 
 #[derive(Clone, Debug)]
@@ -33,7 +33,11 @@ pub enum IssueEditing {
 }
 
 fn noun(kind: &str) -> &'static str {
-    if kind == "pull" { "pull request" } else { "issue" }
+    if kind == "pull" {
+        "pull request"
+    } else {
+        "issue"
+    }
 }
 
 fn writer(repo: &GitRepository) -> bool {
@@ -59,7 +63,8 @@ pub fn tracker_failure(message: &str, kind: &str) -> String {
         .to_owned();
     }
     if message.contains("forbidden") {
-        return "You can read this repository but not change this. Ask its owner for write access.".to_owned();
+        return "You can read this repository but not change this. Ask its owner for write access."
+            .to_owned();
     }
     if message.contains("notFound") {
         return if kind == "pull" {
@@ -132,10 +137,12 @@ fn Labels(ids: Vec<String>, labels: Vec<GitLabel>) -> impl IntoView {
         .iter()
         .filter_map(|id| labels.iter().find(|l| l.id == *id).cloned())
         .collect();
-    (!known.is_empty()).then(|| view! {
-        <span class="git-labels">
-            {known.into_iter().map(|label| view! { <LabelChip label=label/> }).collect_view()}
-        </span>
+    (!known.is_empty()).then(|| {
+        view! {
+            <span class="git-labels">
+                {known.into_iter().map(|label| view! { <LabelChip label=label/> }).collect_view()}
+            </span>
+        }
     })
 }
 
@@ -168,7 +175,11 @@ pub fn IssuesTab(
     let repo_id = StoredValue::new(repo.id.clone());
     let can_write = writer(&repo);
     let can_create = kind == "issue" || can_write;
-    let title = if kind == "pull" { "Pull requests" } else { "Issues" };
+    let title = if kind == "pull" {
+        "Pull requests"
+    } else {
+        "Issues"
+    };
     let item_noun = noun(kind);
 
     let url = Signal::derive(move || {
@@ -178,16 +189,26 @@ pub fn IssuesTab(
         if !lbl.is_empty() {
             pairs.push(("label", lbl.as_str()));
         }
-        Some(format!("{}/issues?{}", repo_api(&repo_id.get_value()), query_string(&pairs)))
+        Some(format!(
+            "{}/issues?{}",
+            repo_api(&repo_id.get_value()),
+            query_string(&pairs)
+        ))
     });
     let loaded = use_load::<GitIssueList>(url, version);
 
     let seg_options = Signal::derive(move || {
         let (open_str, closed_str) = loaded.value.with(|l| match l {
-            Some(list) => (format!("Open {}", list.open), format!("Closed {}", list.closed)),
+            Some(list) => (
+                format!("Open {}", list.open),
+                format!("Closed {}", list.closed),
+            ),
             None => ("Open".to_owned(), "Closed".to_owned()),
         });
-        vec![("open".to_owned(), open_str), ("closed".to_owned(), closed_str)]
+        vec![
+            ("open".to_owned(), open_str),
+            ("closed".to_owned(), closed_str),
+        ]
     });
 
     let label_options = Signal::derive(move || {
@@ -318,8 +339,15 @@ fn IssueRow(
     let time_text = if item.state == "open" {
         format!("opened {}", edited(item.created_at))
     } else {
-        let verb = if item.state == "merged" { "merged" } else { "closed" };
-        format!("{verb} {}", edited(item.closed_at.unwrap_or(item.updated_at)))
+        let verb = if item.state == "merged" {
+            "merged"
+        } else {
+            "closed"
+        };
+        format!(
+            "{verb} {}",
+            edited(item.closed_at.unwrap_or(item.updated_at))
+        )
     };
     let pair = if item.kind == "pull" {
         item.head.clone().zip(item.base.clone())
@@ -388,7 +416,12 @@ pub fn IssueSheet(
     let issue_url = Signal::derive(move || Some(url.get_value()));
     let issue_load = use_load::<GitIssue>(issue_url, issue_trigger);
 
-    let list_url = Signal::derive(move || Some(format!("{}/issues?kind=issue&state=open", repo_api(&repo_sv.with_value(|r| r.id.clone())))));
+    let list_url = Signal::derive(move || {
+        Some(format!(
+            "{}/issues?kind=issue&state=open",
+            repo_api(&repo_sv.with_value(|r| r.id.clone()))
+        ))
+    });
     let list_load = use_load::<GitIssueList>(list_url, version);
 
     let changes_url = Signal::derive(move || {
@@ -399,13 +432,19 @@ pub fn IssueSheet(
         })
     });
     let changes_trigger = Signal::derive(move || {
-        let state_tag = issue_load.value.with(|i| match i.as_ref().map(|v| v.state.as_str()) {
-            Some("open") => 1u64,
-            Some("closed") => 2,
-            Some("merged") => 3,
-            _ => 0,
-        });
-        version.get().wrapping_mul(31).wrapping_add(repo_rev).wrapping_add(state_tag)
+        let state_tag = issue_load
+            .value
+            .with(|i| match i.as_ref().map(|v| v.state.as_str()) {
+                Some("open") => 1u64,
+                Some("closed") => 2,
+                Some("merged") => 3,
+                _ => 0,
+            });
+        version
+            .get()
+            .wrapping_mul(31)
+            .wrapping_add(repo_rev)
+            .wrapping_add(state_tag)
     });
     let changes_load = use_load::<GitPullChanges>(changes_url, changes_trigger);
 
@@ -414,7 +453,18 @@ pub fn IssueSheet(
     let busy = RwSignal::new(false);
     let failure = RwSignal::new(String::new());
     // What the comment composer shows; it is rebuilt only when these change.
-    let composer_key = Memo::new(move |_| issue_load.value.with(|i| i.as_ref().map(|i| (i.number, i.kind.clone(), i.state.clone(), i.permissions.close))));
+    let composer_key = Memo::new(move |_| {
+        issue_load.value.with(|i| {
+            i.as_ref().map(|i| {
+                (
+                    i.number,
+                    i.kind.clone(),
+                    i.state.clone(),
+                    i.permissions.close,
+                )
+            })
+        })
+    });
     let failed = Memo::new(move |_| !issue_load.error.with(String::is_empty));
 
     let reload_issue = Callback::new(move |_| {
@@ -423,41 +473,57 @@ pub fn IssueSheet(
             match api::get::<GitIssue>(&u).await {
                 Ok(next) => {
                     issue_load.set(next);
-                    { on_changed.try_run(()); };
+                    {
+                        on_changed.try_run(());
+                    };
                 }
                 Err(cause) => {
-                    let k = issue_load.value.with_untracked(|i| i.as_ref().map(|v| v.kind.clone()).unwrap_or_else(|| "issue".to_owned()));
+                    let k = issue_load.value.with_untracked(|i| {
+                        i.as_ref()
+                            .map(|v| v.kind.clone())
+                            .unwrap_or_else(|| "issue".to_owned())
+                    });
                     let _ = failure.try_set(tracker_failure(&cause.message, &k));
                 }
             }
         });
     });
 
-    let change_issue = Callback::new(move |(mut update, done): (Map<String, Value>, Option<String>)| {
-        let Some(current) = issue_load.value.get_untracked() else { return };
-        busy.set(true);
-        failure.set(String::new());
-        update.insert("revision".into(), current.revision.into());
-        let u = url.get_value();
-        let token = session_sv.with_value(|s| s.csrf_token.clone());
-        let kind = current.kind.clone();
-        spawn_local(async move {
-            match api::send::<Value>(&u, "PATCH", Some(Value::Object(update)), &token).await {
-                Ok(_) => match api::get::<GitIssue>(&u).await {
-                    Ok(next) => {
-                        issue_load.set(next);
-                        if let Some(msg) = done {
-                            notify.run(msg);
+    let change_issue = Callback::new(
+        move |(mut update, done): (Map<String, Value>, Option<String>)| {
+            let Some(current) = issue_load.value.get_untracked() else {
+                return;
+            };
+            busy.set(true);
+            failure.set(String::new());
+            update.insert("revision".into(), current.revision.into());
+            let u = url.get_value();
+            let token = session_sv.with_value(|s| s.csrf_token.clone());
+            let kind = current.kind.clone();
+            spawn_local(async move {
+                match api::send::<Value>(&u, "PATCH", Some(Value::Object(update)), &token).await {
+                    Ok(_) => match api::get::<GitIssue>(&u).await {
+                        Ok(next) => {
+                            issue_load.set(next);
+                            if let Some(msg) = done {
+                                notify.run(msg);
+                            }
+                            {
+                                on_changed.try_run(());
+                            };
                         }
-                        { on_changed.try_run(()); };
+                        Err(cause) => {
+                            let _ = failure.try_set(tracker_failure(&cause.message, &kind));
+                        }
+                    },
+                    Err(cause) => {
+                        let _ = failure.try_set(tracker_failure(&cause.message, &kind));
                     }
-                    Err(cause) => { let _ = failure.try_set(tracker_failure(&cause.message, &kind)); }
-                },
-                Err(cause) => { let _ = failure.try_set(tracker_failure(&cause.message, &kind)); }
-            }
-            let _ = busy.try_set(false);
-        });
-    });
+                }
+                let _ = busy.try_set(false);
+            });
+        },
+    );
 
     let title_view = view! {
         {move || {
@@ -826,7 +892,10 @@ fn Timeline(
     on_open: Callback<u32>,
     on_changed: Callback<()>,
 ) -> impl IntoView {
-    let created_title = local_date_time(issue.created_at, &[("dateStyle", "medium"), ("timeStyle", "short")]);
+    let created_title = local_date_time(
+        issue.created_at,
+        &[("dateStyle", "medium"), ("timeStyle", "short")],
+    );
     let desc_label = format!("Description by {}", issue.author);
     view! {
         <ol class="git-timeline" aria-label="Conversation">
@@ -902,10 +971,12 @@ fn TimelineEvent(
     sha: Option<String>,
     on_open: Callback<u32>,
 ) -> impl IntoView {
-    let ref_btn = move |n: u32| view! {
-        <button type="button" class="git-link git-ref-link" on:click=move |_| { on_open.try_run(n); }>
-            {format!("#{n}")}
-        </button>
+    let ref_btn = move |n: u32| {
+        view! {
+            <button type="button" class="git-link git-ref-link" on:click=move |_| { on_open.try_run(n); }>
+                {format!("#{n}")}
+            </button>
+        }
     };
     let (icon, body): (&'static str, AnyView) = match event.as_str() {
         "closed" => (
@@ -951,7 +1022,10 @@ fn TimelineEvent(
             view! { "deleted the branch "<code>{from.unwrap_or_default()}</code>", which closed this" }.into_any(),
         ),
     };
-    let time_title = local_date_time(created_at, &[("dateStyle", "medium"), ("timeStyle", "short")]);
+    let time_title = local_date_time(
+        created_at,
+        &[("dateStyle", "medium"), ("timeStyle", "short")],
+    );
     view! {
         <div class=format!("git-event is-{event}")>
             <Icon name=icon/>
@@ -1001,9 +1075,13 @@ fn Comment(
             match api::send::<Value>(&u, "PATCH", Some(payload), &token).await {
                 Ok(_) => {
                     let _ = editing.try_set(false);
-                    { on_changed.try_run(()); };
+                    {
+                        on_changed.try_run(());
+                    };
                 }
-                Err(cause) => { let _ = error.try_set(tracker_failure(&cause.message, "issue")); }
+                Err(cause) => {
+                    let _ = error.try_set(tracker_failure(&cause.message, "issue"));
+                }
             }
             let _ = busy.try_set(false);
         });
@@ -1018,7 +1096,9 @@ fn Comment(
             match api::send::<Value>(&u, "DELETE", None, &token).await {
                 Ok(_) => {
                     let _ = confirm.try_set(false);
-                    { on_changed.try_run(()); };
+                    {
+                        on_changed.try_run(());
+                    };
                 }
                 Err(cause) => {
                     let _ = error.try_set(tracker_failure(&cause.message, "issue"));
@@ -1038,7 +1118,9 @@ fn Comment(
             }));
         }
         if can_delete {
-            let mut del = MenuAction::new("Delete", "trash").danger().run(move || confirm.set(true));
+            let mut del = MenuAction::new("Delete", "trash")
+                .danger()
+                .run(move || confirm.set(true));
             if can_edit {
                 del = del.separator();
             }
@@ -1047,8 +1129,19 @@ fn Comment(
         list
     });
 
-    let time_title = local_date_time(created_at, &[("dateStyle", "medium"), ("timeStyle", "short")]);
-    let time_label = format!("{}{}", edited(created_at), if edited_at.is_some() { " \u{00b7} edited" } else { "" });
+    let time_title = local_date_time(
+        created_at,
+        &[("dateStyle", "medium"), ("timeStyle", "short")],
+    );
+    let time_label = format!(
+        "{}{}",
+        edited(created_at),
+        if edited_at.is_some() {
+            " \u{00b7} edited"
+        } else {
+            ""
+        }
+    );
     let aria_label = format!("Comment by {author}");
     let menu_label = format!("Actions for the comment by {author}");
 
@@ -1108,7 +1201,12 @@ fn MarkdownField(
 ) -> impl IntoView {
     let mode = RwSignal::new("write".to_owned());
     let id = unique_id();
-    let options = Signal::derive(|| vec![("write".to_owned(), "Write".to_owned()), ("preview".to_owned(), "Preview".to_owned())]);
+    let options = Signal::derive(|| {
+        vec![
+            ("write".to_owned(), "Write".to_owned()),
+            ("preview".to_owned(), "Preview".to_owned()),
+        ]
+    });
     let view_label = format!("{label} view");
     let preview_label = format!("{label} preview");
     let id_body = id.clone();
@@ -1173,7 +1271,11 @@ fn Composer(
     let sending = RwSignal::new(false);
     let error = RwSignal::new(String::new());
 
-    let url = StoredValue::new(format!("{}/issues/{}/comments", repo_api(&repo.id), issue.number));
+    let url = StoredValue::new(format!(
+        "{}/issues/{}/comments",
+        repo_api(&repo.id),
+        issue.number
+    ));
     let csrf = StoredValue::new(session.csrf_token);
     let kind = StoredValue::new(issue.kind.clone());
     let can_close = issue.permissions.close;
@@ -1198,19 +1300,33 @@ fn Composer(
             match res {
                 Ok(()) => {
                     let _ = text.try_set(String::new());
-                    { on_commented.try_run(()); };
+                    {
+                        on_commented.try_run(());
+                    };
                     if close_after {
-                        { on_close.try_run("closed"); };
+                        {
+                            on_close.try_run("closed");
+                        };
                     }
                 }
-                Err(cause) => { let _ = error.try_set(tracker_failure(&cause.message, &k)); }
+                Err(cause) => {
+                    let _ = error.try_set(tracker_failure(&cause.message, &k));
+                }
             }
             let _ = sending.try_set(false);
         });
     };
 
-    let close_icon = if issue.kind == "pull" { "pullClosed" } else { "issueDone" };
-    let reopen_icon = if issue.kind == "pull" { "pull" } else { "issue" };
+    let close_icon = if issue.kind == "pull" {
+        "pullClosed"
+    } else {
+        "issueDone"
+    };
+    let reopen_icon = if issue.kind == "pull" {
+        "pull"
+    } else {
+        "issue"
+    };
     let item_noun = noun(&issue.kind);
 
     view! {
@@ -1298,10 +1414,22 @@ fn AgentMerge(
         let body = json!({ "name": head.get_value(), "revision": revision });
         spawn_local(async move {
             match api::send::<AgentMergeResp>(&u, "POST", Some(body), &token).await {
-                Ok(res) if res.merged => { on_merged.try_run(()); },
+                Ok(res) if res.merged => {
+                    on_merged.try_run(());
+                }
                 Ok(res) => {
-                    let prefix = if res.conflicts.len() == 1 { "This file changed" } else { "These files changed" };
-                    let list = res.conflicts.iter().take(6).cloned().collect::<Vec<_>>().join(", ");
+                    let prefix = if res.conflicts.len() == 1 {
+                        "This file changed"
+                    } else {
+                        "These files changed"
+                    };
+                    let list = res
+                        .conflicts
+                        .iter()
+                        .take(6)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     let _ = error.try_set(format!("{prefix} in the folder since Agent started: {list}. Ask Agent to update its changes."));
                     let _ = busy.try_set(false);
                 }
@@ -1351,8 +1479,18 @@ pub fn IssueEditor(
 ) -> impl IntoView {
     let pull = kind == "pull";
     let is_existing = existing.is_some();
-    let orig_title = StoredValue::new(existing.as_ref().map(|e| e.title.clone()).unwrap_or_default());
-    let orig_body = StoredValue::new(existing.as_ref().map(|e| e.body.clone()).unwrap_or_default());
+    let orig_title = StoredValue::new(
+        existing
+            .as_ref()
+            .map(|e| e.title.clone())
+            .unwrap_or_default(),
+    );
+    let orig_body = StoredValue::new(
+        existing
+            .as_ref()
+            .map(|e| e.body.clone())
+            .unwrap_or_default(),
+    );
     let existing_sv = StoredValue::new(existing.clone());
     let repo_sv = StoredValue::new(repo.clone());
     let kind_sv = StoredValue::new(kind.clone());
@@ -1360,18 +1498,33 @@ pub fn IssueEditor(
 
     let title = RwSignal::new(orig_title.get_value());
     let body = RwSignal::new(orig_body.get_value());
-    let chosen: RwSignal<Vec<String>> = RwSignal::new(existing.as_ref().map(|e| e.labels.clone()).unwrap_or_default());
+    let chosen: RwSignal<Vec<String>> = RwSignal::new(
+        existing
+            .as_ref()
+            .map(|e| e.labels.clone())
+            .unwrap_or_default(),
+    );
     let base = RwSignal::new(initial_base.unwrap_or_else(|| "main".to_owned()));
     let head = RwSignal::new(initial_head.unwrap_or_default());
     let busy = RwSignal::new(false);
     let error = RwSignal::new(String::new());
     let title_id = StoredValue::new(unique_id());
 
-    let labels_url = Signal::derive(move || Some(format!("{}/labels", repo_api(&repo_sv.with_value(|r| r.id.clone())))));
+    let labels_url = Signal::derive(move || {
+        Some(format!(
+            "{}/labels",
+            repo_api(&repo_sv.with_value(|r| r.id.clone()))
+        ))
+    });
     let labels_load = use_load::<Vec<GitLabel>>(labels_url, Signal::derive(|| 0u64));
 
     let branches_url = Signal::derive(move || {
-        (pull && !is_existing).then(|| format!("{}/branches", repo_api(&repo_sv.with_value(|r| r.id.clone()))))
+        (pull && !is_existing).then(|| {
+            format!(
+                "{}/branches",
+                repo_api(&repo_sv.with_value(|r| r.id.clone()))
+            )
+        })
     });
     let branches_load = use_load::<GitBranches>(branches_url, Signal::derive(|| 0u64));
 
@@ -1380,7 +1533,11 @@ pub fn IssueEditor(
             return;
         }
         if let Some(br) = branches_load.value.get() {
-            let first = br.branches.first().map(|b| b.name.clone()).or_else(|| br.agent.first().map(|a| a.name.clone()));
+            let first = br
+                .branches
+                .first()
+                .map(|b| b.name.clone())
+                .or_else(|| br.agent.first().map(|a| a.name.clone()));
             if let Some(name) = first {
                 head.set(name);
             }
@@ -1429,7 +1586,8 @@ pub fn IssueEditor(
     });
 
     let dirty = Signal::derive(move || {
-        !busy.get() && (title.get() != orig_title.get_value() || body.get() != orig_body.get_value())
+        !busy.get()
+            && (title.get() != orig_title.get_value() || body.get() != orig_body.get_value())
     });
 
     let save = move || {
@@ -1460,7 +1618,9 @@ pub fn IssueEditor(
                 }
                 let url = format!("{}/issues/{}", repo_api(&rid), ex.number);
                 match api::send::<Value>(&url, "PATCH", Some(Value::Object(map)), &token).await {
-                    Ok(_) => { on_saved.try_run(ex.number); },
+                    Ok(_) => {
+                        on_saved.try_run(ex.number);
+                    }
                     Err(cause) => {
                         let _ = error.try_set(tracker_failure(&cause.message, &k));
                         let _ = busy.try_set(false);
@@ -1479,12 +1639,17 @@ pub fn IssueEditor(
                     map.insert("labels".into(), json!(ch));
                 }
                 if pull {
-                    map.insert("base".into(), if is_agent { "main".into() } else { bs.into() });
+                    map.insert(
+                        "base".into(),
+                        if is_agent { "main".into() } else { bs.into() },
+                    );
                     map.insert("head".into(), h.into());
                 }
                 let url = format!("{}/issues", repo_api(&rid));
                 match api::send::<Created>(&url, "POST", Some(Value::Object(map)), &token).await {
-                    Ok(created) => { on_saved.try_run(created.number); },
+                    Ok(created) => {
+                        on_saved.try_run(created.number);
+                    }
                     Err(cause) => {
                         let _ = error.try_set(tracker_failure(&cause.message, &k));
                         let _ = busy.try_set(false);
@@ -1536,7 +1701,13 @@ pub fn IssueEditor(
     });
 
     let is_agent_sig = Signal::derive(move || head.with(|h| h.starts_with("agent/")));
-    let effective_base = Signal::derive(move || if is_agent_sig.get() { "main".to_owned() } else { base.get() });
+    let effective_base = Signal::derive(move || {
+        if is_agent_sig.get() {
+            "main".to_owned()
+        } else {
+            base.get()
+        }
+    });
     let role_write = repo.role != "read";
 
     view! {
@@ -1706,7 +1877,12 @@ pub fn LabelsEditor(
 ) -> impl IntoView {
     let repo_sv = StoredValue::new(repo.clone());
     let csrf = StoredValue::new(session.csrf_token);
-    let url = Signal::derive(move || Some(format!("{}/labels", repo_api(&repo_sv.with_value(|r| r.id.clone())))));
+    let url = Signal::derive(move || {
+        Some(format!(
+            "{}/labels",
+            repo_api(&repo_sv.with_value(|r| r.id.clone()))
+        ))
+    });
     let loaded = use_load::<Vec<GitLabel>>(url, Signal::derive(|| 0u64));
 
     let edit_id: RwSignal<Option<String>> = RwSignal::new(None);
@@ -1725,7 +1901,9 @@ pub fn LabelsEditor(
             if let Ok(list) = api::get::<Vec<GitLabel>>(&u).await {
                 loaded.set(list);
             }
-            { on_changed.try_run(()); };
+            {
+                on_changed.try_run(());
+            };
         });
     };
 
@@ -1758,7 +1936,9 @@ pub fn LabelsEditor(
                     let _ = description.try_set(String::new());
                     reload_labels();
                 }
-                Err(cause) => { let _ = failure.try_set(tracker_failure(&cause.message, "label")); }
+                Err(cause) => {
+                    let _ = failure.try_set(tracker_failure(&cause.message, "label"));
+                }
             }
             let _ = busy.try_set(false);
         });
@@ -1767,7 +1947,11 @@ pub fn LabelsEditor(
     let confirm_remove = move |lbl: GitLabel| {
         busy.set(true);
         failure.set(String::new());
-        let target_url = format!("{}/labels/{}", repo_api(&repo_sv.with_value(|r| r.id.clone())), lbl.id);
+        let target_url = format!(
+            "{}/labels/{}",
+            repo_api(&repo_sv.with_value(|r| r.id.clone())),
+            lbl.id
+        );
         let token = csrf.get_value();
         let lbl_id = lbl.id;
         spawn_local(async move {
@@ -1782,7 +1966,9 @@ pub fn LabelsEditor(
                     }
                     reload_labels();
                 }
-                Err(cause) => { let _ = failure.try_set(tracker_failure(&cause.message, "label")); }
+                Err(cause) => {
+                    let _ = failure.try_set(tracker_failure(&cause.message, "label"));
+                }
             }
             let _ = busy.try_set(false);
         });

@@ -48,11 +48,18 @@ pub fn graph_rows<T>(
         }
         let mut out = Vec::new();
         for (position, parent) in parents(commit).iter().enumerate() {
-            if let Some(existing) = lanes.iter().position(|v| v.as_deref() == Some(parent.as_str())) {
+            if let Some(existing) = lanes
+                .iter()
+                .position(|v| v.as_deref() == Some(parent.as_str()))
+            {
                 out.push(existing);
                 continue;
             }
-            let target = if position == 0 { lane } else { free(&mut lanes) };
+            let target = if position == 0 {
+                lane
+            } else {
+                free(&mut lanes)
+            };
             if target >= lanes.len() {
                 lanes.resize(target + 1, None);
             }
@@ -66,8 +73,18 @@ pub fn graph_rows<T>(
             .max(lanes.len())
             .max(through.iter().map(|i| i + 1).max().unwrap_or(0))
             .max(out.iter().map(|i| i + 1).max().unwrap_or(0));
-        let into = into_all.into_iter().filter(|&index| index != lane).collect();
-        rows.push(GraphRow { lane, top, through, into, out, width });
+        let into = into_all
+            .into_iter()
+            .filter(|&index| index != lane)
+            .collect();
+        rows.push(GraphRow {
+            lane,
+            top,
+            through,
+            into,
+            out,
+            width,
+        });
     }
     rows
 }
@@ -85,9 +102,49 @@ mod tests {
             ("base", vec![]),
         ];
         let rows = graph_rows(&commits, |c| c.0, |c| &c.1);
-        assert_eq!(rows[0], GraphRow { lane: 0, top: false, through: vec![], into: vec![], out: vec![0, 1], width: 2 });
-        assert_eq!(rows[1], GraphRow { lane: 1, top: true, through: vec![0], into: vec![], out: vec![1], width: 2 });
-        assert_eq!(rows[2], GraphRow { lane: 0, top: true, through: vec![1], into: vec![], out: vec![1], width: 2 });
-        assert_eq!(rows[3], GraphRow { lane: 1, top: true, through: vec![], into: vec![], out: vec![], width: 2 });
+        assert_eq!(
+            rows[0],
+            GraphRow {
+                lane: 0,
+                top: false,
+                through: vec![],
+                into: vec![],
+                out: vec![0, 1],
+                width: 2
+            }
+        );
+        assert_eq!(
+            rows[1],
+            GraphRow {
+                lane: 1,
+                top: true,
+                through: vec![0],
+                into: vec![],
+                out: vec![1],
+                width: 2
+            }
+        );
+        assert_eq!(
+            rows[2],
+            GraphRow {
+                lane: 0,
+                top: true,
+                through: vec![1],
+                into: vec![],
+                out: vec![1],
+                width: 2
+            }
+        );
+        assert_eq!(
+            rows[3],
+            GraphRow {
+                lane: 1,
+                top: true,
+                through: vec![],
+                into: vec![],
+                out: vec![],
+                width: 2
+            }
+        );
     }
 }

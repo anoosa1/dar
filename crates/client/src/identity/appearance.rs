@@ -40,7 +40,13 @@ pub fn use_appearance(session: Signal<Option<BrowserSession>>) {
             .as_deref()
             .and_then(|id| {
                 let key = format!("dar.appearance.{id}");
-                window().local_storage().ok().flatten()?.get_item(&key).ok().flatten()
+                window()
+                    .local_storage()
+                    .ok()
+                    .flatten()?
+                    .get_item(&key)
+                    .ok()
+                    .flatten()
             })
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| "system".to_owned());

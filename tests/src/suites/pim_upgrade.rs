@@ -27,7 +27,10 @@ pub async fn auth_files_upgrade_and_v1_backup_restore(t: &Ctx) -> Result<()> {
         old.join("package.json"),
         json!({"type": "module", "dependencies": {"spacetimedb": "2.14.1"}}).to_string(),
     )?;
-    symlink(s.artifacts.repo.join("node_modules"), old.join("node_modules"))?;
+    symlink(
+        s.artifacts.repo.join("node_modules"),
+        old.join("node_modules"),
+    )?;
     let tsconfig = run_git(&["show", "bf782c0:next/module/tsconfig.json"])?;
     std::fs::write(old.join("tsconfig.json"), tsconfig)?;
 
@@ -103,8 +106,11 @@ pub async fn auth_files_upgrade_and_v1_backup_restore(t: &Ctx) -> Result<()> {
         ]),
     )
     .await?;
-    db.call("service_finish_upload", json!([session_id, upload_id, empty]))
-        .await?;
+    db.call(
+        "service_finish_upload",
+        json!([session_id, upload_id, empty]),
+    )
+    .await?;
 
     let pin = uuid();
     let snapshot = db.call("service_backup", json!([pin])).await?;
@@ -144,7 +150,10 @@ pub async fn auth_files_upgrade_and_v1_backup_restore(t: &Ctx) -> Result<()> {
     })
     .to_string();
     let created = db
-        .call("service_pim", json!([session_id, "createCollection", pim_payload]))
+        .call(
+            "service_pim",
+            json!([session_id, "createCollection", pim_payload]),
+        )
         .await?;
     assert!(
         !created["value"]["id"]
@@ -177,27 +186,37 @@ pub async fn auth_files_upgrade_and_v1_backup_restore(t: &Ctx) -> Result<()> {
     let restored = Database::new(&db_url, &restored_name, &s.database.token_file)?;
     let mut bad_snapshot = snapshot.clone();
     bad_snapshot["format"] = json!("dar-backup-v999");
-    assert!(restored
-        .call("service_restore", json!([bad_snapshot.to_string()]))
-        .await
-        .is_err());
+    assert!(
+        restored
+            .call("service_restore", json!([bad_snapshot.to_string()]))
+            .await
+            .is_err()
+    );
 
     restored
         .call("service_restore", json!([snapshot.to_string()]))
         .await?;
-    let account = restored.call("service_account", json!(["upgrade-user"])).await?;
+    let account = restored
+        .call("service_account", json!(["upgrade-user"]))
+        .await?;
     assert_eq!(account["id"], user_id);
     assert_eq!(account["verifier"], verifier);
 
     // A v1 backup names content by upload ID; the blob migration switches it to the digest its upload recorded.
-    let plan = restored.call("service_blob_migration_plan", json!([])).await?;
+    let plan = restored
+        .call("service_blob_migration_plan", json!([]))
+        .await?;
     assert_eq!(
         plan,
         json!({"done": false, "blobs": [{"id": upload_id, "size": 0, "digest": empty, "required": true}]})
     );
-    restored.call("service_migrate_blobs", json!(["{}"])).await?;
+    restored
+        .call("service_migrate_blobs", json!(["{}"]))
+        .await?;
     assert_eq!(
-        restored.call("service_blob_migration_plan", json!([])).await?,
+        restored
+            .call("service_blob_migration_plan", json!([]))
+            .await?,
         json!({"done": true, "blobs": []})
     );
 
@@ -223,9 +242,7 @@ pub async fn auth_files_upgrade_and_v1_backup_restore(t: &Ctx) -> Result<()> {
         .collect();
     assert_eq!(blobs, vec![(empty, empty)]);
     assert_eq!(
-        recovered["pim"]["collections"]
-            .as_array()
-            .map(Vec::len),
+        recovered["pim"]["collections"].as_array().map(Vec::len),
         Some(0)
     );
     Ok(())

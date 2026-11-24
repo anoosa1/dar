@@ -100,10 +100,15 @@ pub(crate) fn day_label(time: f64) -> String {
         "Yesterday".into()
     } else if diff < 7 {
         local_date(time, &[("weekday", "long")])
-    } else if js_sys::Date::new(&JsValue::from_f64(time)).get_full_year() == js_sys::Date::new_0().get_full_year() {
+    } else if js_sys::Date::new(&JsValue::from_f64(time)).get_full_year()
+        == js_sys::Date::new_0().get_full_year()
+    {
         local_date(time, &[("day", "numeric"), ("month", "long")])
     } else {
-        local_date(time, &[("day", "numeric"), ("month", "long"), ("year", "numeric")])
+        local_date(
+            time,
+            &[("day", "numeric"), ("month", "long"), ("year", "numeric")],
+        )
     }
 }
 
@@ -133,11 +138,24 @@ fn relative(time: f64) -> String {
 }
 
 fn read_url() -> (View, Option<String>, HashMap<String, String>) {
-    let params = web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default()).ok();
-    let get = |k: &str| params.as_ref().and_then(|p| p.get(k)).filter(|v| !v.is_empty());
+    let params =
+        web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default())
+            .ok();
+    let get = |k: &str| {
+        params
+            .as_ref()
+            .and_then(|p| p.get(k))
+            .filter(|v| !v.is_empty())
+    };
     let view = match get("view").as_deref() {
-        Some("mailbox") => get("id").map(View::Mailbox).unwrap_or(View::Unified("inbox")),
-        Some(v) => UNIFIED.iter().find(|(id, ..)| *id == v).map(|(id, ..)| View::Unified(id)).unwrap_or(View::Unified("inbox")),
+        Some("mailbox") => get("id")
+            .map(View::Mailbox)
+            .unwrap_or(View::Unified("inbox")),
+        Some(v) => UNIFIED
+            .iter()
+            .find(|(id, ..)| *id == v)
+            .map(|(id, ..)| View::Unified(id))
+            .unwrap_or(View::Unified("inbox")),
         None => View::Unified("inbox"),
     };
     let mut extra = HashMap::new();
@@ -154,9 +172,17 @@ fn write_url(view: &View, message: Option<&str>) {
     if let Some(id) = message {
         query.push_str(&format!("&message={}", encode(id)));
     }
-    let next = if query == "view=inbox" { "/mail".to_owned() } else { format!("/mail?{query}") };
+    let next = if query == "view=inbox" {
+        "/mail".to_owned()
+    } else {
+        format!("/mail?{query}")
+    };
     let loc = window().location();
-    if format!("{}{}", loc.pathname().unwrap_or_default(), loc.search().unwrap_or_default()) != next
+    if format!(
+        "{}{}",
+        loc.pathname().unwrap_or_default(),
+        loc.search().unwrap_or_default()
+    ) != next
         && let Ok(history) = window().history()
     {
         let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&next));
@@ -169,20 +195,38 @@ impl MailState {
     }
 
     pub fn notify(self, message: impl Into<String>) {
-        let _ = self.toast.try_set(Some(Toast { message: message.into(), action: None, error: false }));
+        let _ = self.toast.try_set(Some(Toast {
+            message: message.into(),
+            action: None,
+            error: false,
+        }));
     }
 
     pub fn fail(self, message: impl Into<String>) {
-        let _ = self.toast.try_set(Some(Toast { message: message.into(), action: None, error: true }));
+        let _ = self.toast.try_set(Some(Toast {
+            message: message.into(),
+            action: None,
+            error: true,
+        }));
     }
 
     pub fn account(self, id: &str) -> Option<Account> {
-        self.overview.with_untracked(|o| o.as_ref().and_then(|o| o.accounts.iter().find(|a| a.id == id).cloned()))
+        self.overview.with_untracked(|o| {
+            o.as_ref()
+                .and_then(|o| o.accounts.iter().find(|a| a.id == id).cloned())
+        })
     }
 
     fn mailbox(self, id: &str) -> Option<(Account, Mailbox)> {
         self.overview.with_untracked(|o| {
-            o.as_ref().and_then(|o| o.accounts.iter().find_map(|a| a.mailboxes.iter().find(|m| m.id == id).map(|m| (a.clone(), m.clone()))))
+            o.as_ref().and_then(|o| {
+                o.accounts.iter().find_map(|a| {
+                    a.mailboxes
+                        .iter()
+                        .find(|m| m.id == id)
+                        .map(|m| (a.clone(), m.clone()))
+                })
+            })
         })
     }
 
@@ -190,7 +234,10 @@ impl MailState {
         match api::get::<Overview>(&format!("{BASE}/overview")).await {
             Ok(o) => {
                 if let View::Mailbox(id) = self.view.get_untracked()
-                    && !o.accounts.iter().any(|a| a.mailboxes.iter().any(|m| m.id == id))
+                    && !o
+                        .accounts
+                        .iter()
+                        .any(|a| a.mailboxes.iter().any(|m| m.id == id))
                 {
                     let _ = self.view.try_set(View::Unified("inbox"));
                 }
@@ -213,8 +260,14 @@ impl MailState {
     async fn fetch_items(self, reset: bool) {
         let generation = self.generation.get_value() + 1;
         self.generation.set_value(generation);
-        let Some(view) = self.view.try_get_untracked() else { return };
-        let cursor = if reset { None } else { self.cursor.get_untracked() };
+        let Some(view) = self.view.try_get_untracked() else {
+            return;
+        };
+        let cursor = if reset {
+            None
+        } else {
+            self.cursor.get_untracked()
+        };
         if reset && self.items.with_untracked(Vec::is_empty) {
             let _ = self.list_state.try_set("loading");
         }
@@ -266,7 +319,12 @@ impl MailState {
         write_url(&self.view.get_untracked(), Some(&id));
         let images = self.images.get_untracked() == "load";
         spawn_local(async move {
-            let result = api::get::<Detail>(&format!("{BASE}/messages/{}{}", encode(&id), if images { "?images=1" } else { "" })).await;
+            let result = api::get::<Detail>(&format!(
+                "{BASE}/messages/{}{}",
+                encode(&id),
+                if images { "?images=1" } else { "" }
+            ))
+            .await;
             if self.selected.try_get_untracked().flatten().as_deref() != Some(id.as_str()) {
                 return;
             }
@@ -298,16 +356,33 @@ impl MailState {
         if items.is_empty() {
             return;
         }
-        let index = self.selected.get_untracked().and_then(|s| items.iter().position(|i| i.id == s)).map_or(if delta > 0 { -1 } else { items.len() as i64 }, |i| i as i64);
+        let index = self
+            .selected
+            .get_untracked()
+            .and_then(|s| items.iter().position(|i| i.id == s))
+            .map_or(if delta > 0 { -1 } else { items.len() as i64 }, |i| {
+                i as i64
+            });
         let next = (index + delta).clamp(0, items.len() as i64 - 1) as usize;
         let id = items[next].id.clone();
         self.open(id.clone());
-        if let Some(el) = document().query_selector(&format!("[data-message=\"{id}\"] button")).ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok()) {
+        if let Some(el) = document()
+            .query_selector(&format!("[data-message=\"{id}\"] button"))
+            .ok()
+            .flatten()
+            .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+        {
             let _ = el.focus();
         }
     }
 
-    pub fn set_flags(self, ids: Vec<String>, seen: Option<bool>, flagged: Option<bool>, announce: bool) {
+    pub fn set_flags(
+        self,
+        ids: Vec<String>,
+        seen: Option<bool>,
+        flagged: Option<bool>,
+        announce: bool,
+    ) {
         let ids2 = ids.clone();
         let apply = move |seen: Option<bool>, flagged: Option<bool>| {
             let _ = self.items.try_update(|items| {
@@ -341,7 +416,9 @@ impl MailState {
             if let Some(v) = flagged {
                 body["flagged"] = json!(v);
             }
-            match api::send::<Value>(&format!("{BASE}/messages/flags"), "POST", Some(body), &csrf).await {
+            match api::send::<Value>(&format!("{BASE}/messages/flags"), "POST", Some(body), &csrf)
+                .await
+            {
                 Ok(_) => {
                     if announce {
                         let what = match (seen, flagged) {
@@ -363,19 +440,50 @@ impl MailState {
     }
 
     /// Archive, delete, spam or move; offers Undo by moving the messages back.
-    pub fn move_to(self, ids: Vec<String>, role: Option<&'static str>, mailbox_id: Option<String>, label: String) {
-        let origins: Vec<(String, String)> = self.items.with_untracked(|items| items.iter().filter(|i| ids.contains(&i.id)).map(|i| (i.id.clone(), i.mailbox_id.clone())).collect());
-        let detail_origin = self.detail.with_untracked(|d| d.as_ref().filter(|d| ids.contains(&d.summary.id)).map(|d| (d.summary.id.clone(), d.summary.mailbox_id.clone())));
+    pub fn move_to(
+        self,
+        ids: Vec<String>,
+        role: Option<&'static str>,
+        mailbox_id: Option<String>,
+        label: String,
+    ) {
+        let origins: Vec<(String, String)> = self.items.with_untracked(|items| {
+            items
+                .iter()
+                .filter(|i| ids.contains(&i.id))
+                .map(|i| (i.id.clone(), i.mailbox_id.clone()))
+                .collect()
+        });
+        let detail_origin = self.detail.with_untracked(|d| {
+            d.as_ref()
+                .filter(|d| ids.contains(&d.summary.id))
+                .map(|d| (d.summary.id.clone(), d.summary.mailbox_id.clone()))
+        });
         let mut origins = origins;
         if let Some(o) = detail_origin.filter(|o| !origins.contains(o)) {
             origins.push(o);
         }
-        let in_trash = role == Some("trash") && origins.iter().all(|(_, m)| self.mailbox(m).is_some_and(|(_, b)| b.role == "trash"));
+        let in_trash = role == Some("trash")
+            && origins
+                .iter()
+                .all(|(_, m)| self.mailbox(m).is_some_and(|(_, b)| b.role == "trash"));
         let csrf = self.csrf();
-        let removed: Vec<Summary> = self.items.with_untracked(|items| items.iter().filter(|i| ids.contains(&i.id)).cloned().collect());
-        let _ = self.items.try_update(|items| items.retain(|i| !ids.contains(&i.id)));
+        let removed: Vec<Summary> = self.items.with_untracked(|items| {
+            items
+                .iter()
+                .filter(|i| ids.contains(&i.id))
+                .cloned()
+                .collect()
+        });
+        let _ = self
+            .items
+            .try_update(|items| items.retain(|i| !ids.contains(&i.id)));
         self.checked.set(HashSet::new());
-        if self.selected.get_untracked().is_some_and(|s| ids.contains(&s)) {
+        if self
+            .selected
+            .get_untracked()
+            .is_some_and(|s| ids.contains(&s))
+        {
             self.close_reader();
         }
         spawn_local(async move {
@@ -386,32 +494,54 @@ impl MailState {
             if let Some(m) = &mailbox_id {
                 body["mailboxId"] = json!(m);
             }
-            match api::send::<Value>(&format!("{BASE}/messages/move"), "POST", Some(body), &csrf).await {
+            match api::send::<Value>(&format!("{BASE}/messages/move"), "POST", Some(body), &csrf)
+                .await
+            {
                 Ok(_) => {
                     let count = removed.len().max(1);
-                    let noun = if count == 1 { "Message".to_owned() } else { format!("{count} messages") };
-                    let message = if in_trash { format!("{noun} deleted for good") } else { format!("{noun} {label}") };
-                    let undo: Option<(&'static str, Arc<dyn Fn() + Send + Sync>)> = (!in_trash).then(|| {
-                        let origins = origins.clone();
-                        let undo: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                    let noun = if count == 1 {
+                        "Message".to_owned()
+                    } else {
+                        format!("{count} messages")
+                    };
+                    let message = if in_trash {
+                        format!("{noun} deleted for good")
+                    } else {
+                        format!("{noun} {label}")
+                    };
+                    let undo: Option<(&'static str, Arc<dyn Fn() + Send + Sync>)> = (!in_trash)
+                        .then(|| {
                             let origins = origins.clone();
-                            let csrf = self.csrf();
-                            spawn_local(async move {
-                                let mut groups: HashMap<String, Vec<String>> = HashMap::new();
-                                for (id, mailbox) in origins {
-                                    groups.entry(mailbox).or_default().push(id);
-                                }
-                                for (mailbox, ids) in groups {
-                                    if let Err(e) = api::send::<Value>(&format!("{BASE}/messages/move"), "POST", Some(json!({ "ids": ids, "mailboxId": mailbox })), &csrf).await {
-                                        self.fail(e.message);
+                            let undo: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                                let origins = origins.clone();
+                                let csrf = self.csrf();
+                                spawn_local(async move {
+                                    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+                                    for (id, mailbox) in origins {
+                                        groups.entry(mailbox).or_default().push(id);
                                     }
-                                }
-                                self.reload();
+                                    for (mailbox, ids) in groups {
+                                        if let Err(e) = api::send::<Value>(
+                                            &format!("{BASE}/messages/move"),
+                                            "POST",
+                                            Some(json!({ "ids": ids, "mailboxId": mailbox })),
+                                            &csrf,
+                                        )
+                                        .await
+                                        {
+                                            self.fail(e.message);
+                                        }
+                                    }
+                                    self.reload();
+                                });
                             });
+                            ("Undo", undo)
                         });
-                        ("Undo", undo)
-                    });
-                    let _ = self.toast.try_set(Some(Toast { message, action: undo, error: false }));
+                    let _ = self.toast.try_set(Some(Toast {
+                        message,
+                        action: undo,
+                        error: false,
+                    }));
                     self.fetch_overview().await;
                 }
                 Err(e) => {
@@ -430,7 +560,8 @@ impl MailState {
                 Some(id) => json!({ "id": id }),
                 None => json!({}),
             };
-            let result = api::send::<Value>(&format!("{BASE}/sync"), "POST", Some(body), &csrf).await;
+            let result =
+                api::send::<Value>(&format!("{BASE}/sync"), "POST", Some(body), &csrf).await;
             if let Err(e) = result {
                 self.fail(e.message);
             } else if account.is_none() {
@@ -453,14 +584,27 @@ impl MailState {
             self.sending.set_value(self.sending.get_value() + 1);
             self.compose.set(Some(reopen.clone()));
         });
-        let _ = self.toast.try_set(Some(Toast { message: format!("Sending \u{201c}{}\u{201d}\u{2026}", if spec.subject.is_empty() { "No subject" } else { &spec.subject }), action: Some(("Undo", cancel)), error: false }));
+        let _ = self.toast.try_set(Some(Toast {
+            message: format!(
+                "Sending \u{201c}{}\u{201d}\u{2026}",
+                if spec.subject.is_empty() {
+                    "No subject"
+                } else {
+                    &spec.subject
+                }
+            ),
+            action: Some(("Undo", cancel)),
+            error: false,
+        }));
         spawn_local(async move {
             crate::sleep(10_000).await;
             if self.sending.try_get_value() != Some(token) {
                 return;
             }
             let csrf = self.csrf();
-            match api::send::<Value>(&format!("{BASE}/send"), "POST", Some(spec.body()), &csrf).await {
+            match api::send::<Value>(&format!("{BASE}/send"), "POST", Some(spec.body()), &csrf)
+                .await
+            {
                 Ok(_) => {
                     self.notify("Message sent");
                     if let Some(id) = spec.in_reply_to.clone() {
@@ -494,7 +638,8 @@ impl MailState {
     fn reply(self, mode: &'static str) {
         if let Some(d) = self.detail.get_untracked() {
             let account = self.account(&d.summary.account_id);
-            self.compose.set(Some(ComposeSpec::reply(&d, mode, account.as_ref())));
+            self.compose
+                .set(Some(ComposeSpec::reply(&d, mode, account.as_ref())));
         }
     }
 
@@ -503,7 +648,10 @@ impl MailState {
             View::Mailbox(id) => self.mailbox(&id).map(|(a, _)| a),
             _ => None,
         }
-        .or_else(|| self.overview.with_untracked(|o| o.as_ref().and_then(|o| o.accounts.first().cloned())));
+        .or_else(|| {
+            self.overview
+                .with_untracked(|o| o.as_ref().and_then(|o| o.accounts.first().cloned()))
+        });
         match account {
             Some(a) => self.compose.set(Some(ComposeSpec::new(&a))),
             None => self.pane.set(Some(Pane::AddAccount(None))),
@@ -511,24 +659,70 @@ impl MailState {
     }
 }
 
-fn message_actions(state: MailState, ids: Vec<String>, roles: Vec<String>, account: Option<Account>, single: Option<Detail>) -> Vec<MenuAction> {
+fn message_actions(
+    state: MailState,
+    ids: Vec<String>,
+    roles: Vec<String>,
+    account: Option<Account>,
+    single: Option<Detail>,
+) -> Vec<MenuAction> {
     let mut actions = Vec::new();
-    let has = |role: &str| account.as_ref().is_some_and(|a| a.mailboxes.iter().any(|m| m.role == role));
+    let has = |role: &str| {
+        account
+            .as_ref()
+            .is_some_and(|a| a.mailboxes.iter().any(|m| m.role == role))
+    };
     if let Some(d) = &single {
         let id = d.summary.id.clone();
-        actions.push(MenuAction::new("Reply", "reply").shortcut("r").section("Reply").run(move || state.reply("reply")));
-        actions.push(MenuAction::new("Reply all", "reply").shortcut("a").run(move || state.reply("all")));
-        actions.push(MenuAction::new("Forward", "share").shortcut("f").run(move || state.reply("forward")));
+        actions.push(
+            MenuAction::new("Reply", "reply")
+                .shortcut("r")
+                .section("Reply")
+                .run(move || state.reply("reply")),
+        );
+        actions.push(
+            MenuAction::new("Reply all", "reply")
+                .shortcut("a")
+                .run(move || state.reply("all")),
+        );
+        actions.push(
+            MenuAction::new("Forward", "share")
+                .shortcut("f")
+                .run(move || state.reply("forward")),
+        );
         let seen = d.summary.seen;
         let ids2 = vec![id.clone()];
-        actions.push(MenuAction::new(if seen { "Mark as unread" } else { "Mark as read" }, "unread").shortcut("u").section("Organize").run(move || state.set_flags(ids2.clone(), Some(!seen), None, true)));
+        actions.push(
+            MenuAction::new(
+                if seen {
+                    "Mark as unread"
+                } else {
+                    "Mark as read"
+                },
+                "unread",
+            )
+            .shortcut("u")
+            .section("Organize")
+            .run(move || state.set_flags(ids2.clone(), Some(!seen), None, true)),
+        );
         let _ = &id;
     }
     if let Some(a) = account.clone() {
         let mut targets: Vec<MenuAction> = Vec::new();
-        for m in a.mailboxes.iter().filter(|m| m.role != "folder" && !roles.iter().all(|r| *r == m.id)) {
+        for m in a
+            .mailboxes
+            .iter()
+            .filter(|m| m.role != "folder" && !roles.iter().all(|r| *r == m.id))
+        {
             let (ids, target, name) = (ids.clone(), m.id.clone(), m.name.clone());
-            targets.push(MenuAction::plain(m.name.clone()).run(move || state.move_to(ids.clone(), None, Some(target.clone()), format!("moved to {name}"))));
+            targets.push(MenuAction::plain(m.name.clone()).run(move || {
+                state.move_to(
+                    ids.clone(),
+                    None,
+                    Some(target.clone()),
+                    format!("moved to {name}"),
+                )
+            }));
         }
         if !targets.is_empty() {
             actions.push(MenuAction::new("Move to", "move").items(targets));
@@ -536,21 +730,42 @@ fn message_actions(state: MailState, ids: Vec<String>, roles: Vec<String>, accou
     }
     if has("junk") {
         let ids = ids.clone();
-        actions.push(MenuAction::new("Report spam", "alert").run(move || state.move_to(ids.clone(), Some("junk"), None, "moved to Junk".into())));
+        actions.push(
+            MenuAction::new("Report spam", "alert").run(move || {
+                state.move_to(ids.clone(), Some("junk"), None, "moved to Junk".into())
+            }),
+        );
     }
     if let Some(d) = single {
         let id = d.summary.id.clone();
         let file = d.summary.file_id.clone();
-        actions.push(MenuAction::new("Show in Files", "folder").section("File").run(move || {
-            let (id, file) = (id.clone(), file.clone());
-            spawn_local(async move {
-                match api::get::<Value>(&format!("{BASE}/messages/{}/location", encode(&id))).await {
-                    Ok(v) => crate::navigation::navigate(&format!("/?folder={}&file={}", encode(v["parentId"].as_str().unwrap_or_default()), encode(v["fileId"].as_str().unwrap_or(&file)))),
-                    Err(e) => state.fail(e.message),
-                }
-            });
-        }));
-        actions.push(MenuAction::new("Download .eml", "download").href(format!("{BASE}/messages/{}/raw", encode(&d.summary.id))).download());
+        actions.push(
+            MenuAction::new("Show in Files", "folder")
+                .section("File")
+                .run(move || {
+                    let (id, file) = (id.clone(), file.clone());
+                    spawn_local(async move {
+                        match api::get::<Value>(&format!(
+                            "{BASE}/messages/{}/location",
+                            encode(&id)
+                        ))
+                        .await
+                        {
+                            Ok(v) => crate::navigation::navigate(&format!(
+                                "/?folder={}&file={}",
+                                encode(v["parentId"].as_str().unwrap_or_default()),
+                                encode(v["fileId"].as_str().unwrap_or(&file))
+                            )),
+                            Err(e) => state.fail(e.message),
+                        }
+                    });
+                }),
+        );
+        actions.push(
+            MenuAction::new("Download .eml", "download")
+                .href(format!("{BASE}/messages/{}/raw", encode(&d.summary.id)))
+                .download(),
+        );
     }
     actions
 }
@@ -559,8 +774,24 @@ fn message_actions(state: MailState, ids: Vec<String>, roles: Vec<String>, accou
 pub fn MailWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoView {
     let (start_view, start_message, start_extra) = read_url();
     let prefs = context().preferences;
-    let images = Memo::new(move |_| prefs.value.with(|p| p.as_ref().and_then(|p| p.rest.get("mailImages")).and_then(Value::as_str).unwrap_or("block").to_owned()));
-    let mark_read = Memo::new(move |_| prefs.value.with(|p| p.as_ref().and_then(|p| p.rest.get("mailMarkRead")).and_then(Value::as_str).unwrap_or("open").to_owned()));
+    let images = Memo::new(move |_| {
+        prefs.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| p.rest.get("mailImages"))
+                .and_then(Value::as_str)
+                .unwrap_or("block")
+                .to_owned()
+        })
+    });
+    let mark_read = Memo::new(move |_| {
+        prefs.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| p.rest.get("mailMarkRead"))
+                .and_then(Value::as_str)
+                .unwrap_or("open")
+                .to_owned()
+        })
+    });
     let state = MailState {
         overview: RwSignal::new(None),
         load_error: RwSignal::new(String::new()),
@@ -649,11 +880,21 @@ pub fn MailWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
     Effect::new(move |_| {
         listen(&document(), "keydown", false, move |event| {
             let event: web_sys::KeyboardEvent = event.unchecked_into();
-            if event.default_prevented() || event.ctrl_key() || event.meta_key() || event.alt_key() {
+            if event.default_prevented() || event.ctrl_key() || event.meta_key() || event.alt_key()
+            {
                 return;
             }
-            let typing = document().active_element().is_some_and(|e| matches!(e.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT") || e.closest("[contenteditable],[role=dialog],.editing-pane,.mail-compose").ok().flatten().is_some());
-            if typing || state.pane.get_untracked().is_some() || state.compose.with_untracked(Option::is_some) {
+            let typing = document().active_element().is_some_and(|e| {
+                matches!(e.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT")
+                    || e.closest("[contenteditable],[role=dialog],.editing-pane,.mail-compose")
+                        .ok()
+                        .flatten()
+                        .is_some()
+            });
+            if typing
+                || state.pane.get_untracked().is_some()
+                || state.compose.with_untracked(Option::is_some)
+            {
                 return;
             }
             let selected = state.selection();
@@ -691,7 +932,9 @@ pub fn MailWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                     true
                 }
                 "s" if !selected.is_empty() => {
-                    let flagged = state.detail.with_untracked(|d| d.as_ref().is_some_and(|d| d.summary.flagged));
+                    let flagged = state
+                        .detail
+                        .with_untracked(|d| d.as_ref().is_some_and(|d| d.summary.flagged));
                     state.set_flags(selected, None, Some(!flagged), true);
                     true
                 }
@@ -712,14 +955,34 @@ pub fn MailWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
     });
 
     let title = Memo::new(move |_| match state.view.get() {
-        View::Unified(v) => UNIFIED.iter().find(|(id, ..)| *id == v).map(|(_, l, _)| (*l).to_owned()).unwrap_or_default(),
-        View::Mailbox(id) => state.overview.with(|o| o.as_ref().and_then(|o| o.accounts.iter().find_map(|a| a.mailboxes.iter().find(|m| m.id == id).map(|m| format!("{} \u{00b7} {}", a.name, m.name))))).unwrap_or_else(|| "Mailbox".into()),
+        View::Unified(v) => UNIFIED
+            .iter()
+            .find(|(id, ..)| *id == v)
+            .map(|(_, l, _)| (*l).to_owned())
+            .unwrap_or_default(),
+        View::Mailbox(id) => state
+            .overview
+            .with(|o| {
+                o.as_ref().and_then(|o| {
+                    o.accounts.iter().find_map(|a| {
+                        a.mailboxes
+                            .iter()
+                            .find(|m| m.id == id)
+                            .map(|m| format!("{} \u{00b7} {}", a.name, m.name))
+                    })
+                })
+            })
+            .unwrap_or_else(|| "Mailbox".into()),
     });
     let has_reader = Memo::new(move |_| state.selected.get().is_some());
     let navigation_id = unique_id();
     let list_ref = NodeRef::<html::Div>::new();
 
-    let view_row = move |target: View, label: String, icon: &'static str, count: Signal<u32>, extra_class: &'static str| {
+    let view_row = move |target: View,
+                         label: String,
+                         icon: &'static str,
+                         count: Signal<u32>,
+                         extra_class: &'static str| {
         let t2 = target.clone();
         let active = Memo::new(move |_| state.view.get() == t2);
         let t3 = target.clone();
@@ -1001,17 +1264,29 @@ fn Reader(state: MailState) -> impl IntoView {
     let bodies = RwSignal::new(HashMap::<String, Body>::new());
     // A new message starts with only itself expanded.
     Effect::new(move |_| {
-        let id = state.detail.with(|d| d.as_ref().map(|d| d.summary.id.clone()));
+        let id = state
+            .detail
+            .with(|d| d.as_ref().map(|d| d.summary.id.clone()));
         expanded.set(id.into_iter().collect());
         bodies.set(HashMap::new());
     });
     let load_body = move |id: String| {
-        if bodies.with_untracked(|b| b.contains_key(&id)) || state.detail.with_untracked(|d| d.as_ref().is_some_and(|d| d.summary.id == id)) {
+        if bodies.with_untracked(|b| b.contains_key(&id))
+            || state
+                .detail
+                .with_untracked(|d| d.as_ref().is_some_and(|d| d.summary.id == id))
+        {
             return;
         }
         let images = state.images.get_untracked() == "load";
         spawn_local(async move {
-            match api::get::<Body>(&format!("{BASE}/messages/{}/body{}", encode(&id), if images { "?images=1" } else { "" })).await {
+            match api::get::<Body>(&format!(
+                "{BASE}/messages/{}/body{}",
+                encode(&id),
+                if images { "?images=1" } else { "" }
+            ))
+            .await
+            {
                 Ok(b) => {
                     let _ = bodies.try_update(|m| {
                         m.insert(id, b);
@@ -1023,9 +1298,12 @@ fn Reader(state: MailState) -> impl IntoView {
     };
     let show_images = move |id: String| {
         spawn_local(async move {
-            match api::get::<Body>(&format!("{BASE}/messages/{}/body?images=1", encode(&id))).await {
+            match api::get::<Body>(&format!("{BASE}/messages/{}/body?images=1", encode(&id))).await
+            {
                 Ok(b) => {
-                    let main = state.detail.with_untracked(|d| d.as_ref().is_some_and(|d| d.summary.id == id));
+                    let main = state
+                        .detail
+                        .with_untracked(|d| d.as_ref().is_some_and(|d| d.summary.id == id));
                     if main {
                         let _ = state.detail.try_update(|d| {
                             if let Some(d) = d {
@@ -1132,7 +1410,12 @@ fn MessageBody(id: String, body: Body, on_images: Callback<()>) -> impl IntoView
         }
         let _ = el.append_child(&render_html(&html));
     });
-    let attachments: Vec<Part> = body.attachments.iter().filter(|a| !a.inline).cloned().collect();
+    let attachments: Vec<Part> = body
+        .attachments
+        .iter()
+        .filter(|a| !a.inline)
+        .cloned()
+        .collect();
     view! {
         {(body.blocked_images > 0).then(|| view! {
             <div class="mail-images-blocked" role="note"><Icon name="image"/>

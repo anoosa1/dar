@@ -31,13 +31,21 @@ pub struct LockedFolder {
 
 impl LockedFolder {
     pub fn new(session: BrowserSession) -> Self {
-        let folder = Self { state: RwSignal::new(None), error: RwSignal::new(String::new()), session: StoredValue::new(session), timer: RwSignal::new(0) };
+        let folder = Self {
+            state: RwSignal::new(None),
+            error: RwSignal::new(String::new()),
+            session: StoredValue::new(session),
+            timer: RwSignal::new(0),
+        };
         folder.refresh();
         folder
     }
 
     pub fn unlocked(self) -> bool {
-        self.state.with(|s| s.as_ref().is_some_and(|s| s.unlocked_until > js_sys::Date::now()))
+        self.state.with(|s| {
+            s.as_ref()
+                .is_some_and(|s| s.unlocked_until > js_sys::Date::now())
+        })
     }
 
     fn accept(self, value: LockedState) {
@@ -67,14 +75,21 @@ impl LockedFolder {
 
     pub async fn unlock(self, password: String) -> Result<LockedState, RequestError> {
         let csrf = self.session.with_value(|s| s.csrf_token.clone());
-        let value: LockedState = api::send(&format!("{ENDPOINT}/unlock"), "POST", Some(serde_json::json!({ "password": password })), &csrf).await?;
+        let value: LockedState = api::send(
+            &format!("{ENDPOINT}/unlock"),
+            "POST",
+            Some(serde_json::json!({ "password": password })),
+            &csrf,
+        )
+        .await?;
         self.accept(value.clone());
         Ok(value)
     }
 
     pub async fn lock(self) -> Result<LockedState, RequestError> {
         let csrf = self.session.with_value(|s| s.csrf_token.clone());
-        let value: LockedState = api::send(&format!("{ENDPOINT}/lock"), "POST", None, &csrf).await?;
+        let value: LockedState =
+            api::send(&format!("{ENDPOINT}/lock"), "POST", None, &csrf).await?;
         self.accept(value.clone());
         Ok(value)
     }
@@ -82,7 +97,12 @@ impl LockedFolder {
 
 /// The password form shown in place of locked content.
 #[component]
-pub fn UnlockForm(folder: LockedFolder, #[prop(into)] description: String, #[prop(optional)] compact: bool, #[prop(into)] on_unlocked: Callback<LockedState>) -> impl IntoView {
+pub fn UnlockForm(
+    folder: LockedFolder,
+    #[prop(into)] description: String,
+    #[prop(optional)] compact: bool,
+    #[prop(into)] on_unlocked: Callback<LockedState>,
+) -> impl IntoView {
     let password = RwSignal::new(String::new());
     let error = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
@@ -109,7 +129,9 @@ pub fn UnlockForm(folder: LockedFolder, #[prop(into)] description: String, #[pro
             match folder.unlock(value).await {
                 Ok(state) => {
                     password.set(String::new());
-                    { on_unlocked.try_run(state); };
+                    {
+                        on_unlocked.try_run(state);
+                    };
                 }
                 Err(e) => {
                     error.set(e.message);
@@ -137,7 +159,12 @@ pub fn UnlockForm(folder: LockedFolder, #[prop(into)] description: String, #[pro
 
 /// Asks for the password before an action that needs the Locked folder, then runs it.
 #[component]
-pub fn UnlockDialog(folder: LockedFolder, #[prop(into)] action: String, on_close: Callback<()>, on_unlocked: Callback<LockedState>) -> impl IntoView {
+pub fn UnlockDialog(
+    folder: LockedFolder,
+    #[prop(into)] action: String,
+    on_close: Callback<()>,
+    on_unlocked: Callback<LockedState>,
+) -> impl IntoView {
     let description = format!("Enter your password to {action}.");
     view! {
         <Dialog title="Unlock the Locked folder" on_close=on_close>

@@ -89,11 +89,20 @@ pub fn SharePane(
         let csrf = session.with_value(|s| s.csrf_token.clone());
         spawn_local(async move {
             let body = json!({ "username": trimmed, "role": chosen_role });
-            match api::send::<Value>(&format!("{BASE}/albums/{id}/members"), "POST", Some(body), &csrf).await {
+            match api::send::<Value>(
+                &format!("{BASE}/albums/{id}/members"),
+                "POST",
+                Some(body),
+                &csrf,
+            )
+            .await
+            {
                 Ok(_) => {
                     username.try_set(String::new());
                     load();
-                    { on_changed.try_run(()); };
+                    {
+                        on_changed.try_run(());
+                    };
                 }
                 Err(cause) => {
                     error.try_set(error_message(&cause.message));
@@ -108,9 +117,18 @@ pub fn SharePane(
         let csrf = session.with_value(|s| s.csrf_token.clone());
         spawn_local(async move {
             let body = json!({ "username": member.username, "role": next });
-            match api::send::<Value>(&format!("{BASE}/albums/{id}/members"), "POST", Some(body), &csrf).await {
+            match api::send::<Value>(
+                &format!("{BASE}/albums/{id}/members"),
+                "POST",
+                Some(body),
+                &csrf,
+            )
+            .await
+            {
                 Ok(_) => load(),
-                Err(cause) => { error.try_set(error_message(&cause.message)); }
+                Err(cause) => {
+                    error.try_set(error_message(&cause.message));
+                }
             }
         });
     };
@@ -121,15 +139,23 @@ pub fn SharePane(
         spawn_local(async move {
             match api::request::<Value>(
                 &format!("{BASE}/albums/{id}/members/{}", member.user_id),
-                Req { method: "DELETE", csrf: Some(&csrf), ..Default::default() },
+                Req {
+                    method: "DELETE",
+                    csrf: Some(&csrf),
+                    ..Default::default()
+                },
             )
             .await
             {
                 Ok(_) => {
                     load();
-                    { on_changed.try_run(()); };
+                    {
+                        on_changed.try_run(());
+                    };
                 }
-                Err(cause) => { error.try_set(error_message(&cause.message)); }
+                Err(cause) => {
+                    error.try_set(error_message(&cause.message));
+                }
             }
         });
     };
@@ -150,9 +176,13 @@ pub fn SharePane(
             match api::send::<Value>(&format!("{BASE}/links"), "POST", Some(body), &csrf).await {
                 Ok(_) => {
                     load();
-                    { on_changed.try_run(()); };
+                    {
+                        on_changed.try_run(());
+                    };
                 }
-                Err(cause) => { error.try_set(error_message(&cause.message)); }
+                Err(cause) => {
+                    error.try_set(error_message(&cause.message));
+                }
             }
             busy.try_set(false);
         });
@@ -315,7 +345,9 @@ pub fn LinkEditor(
                 Err(cause) if cause.status == 409 => {
                     match api::get::<LinksResponse>(&format!("{BASE}/links")).await {
                         Ok(resp) => match resp.links.into_iter().find(|l| l.id == snapshot.id) {
-                            Some(fresh) => patch(fresh.revision, &change, &snapshot.id, &csrf).await,
+                            Some(fresh) => {
+                                patch(fresh.revision, &change, &snapshot.id, &csrf).await
+                            }
                             None => Err(cause),
                         },
                         Err(_) => Err(cause),
@@ -326,7 +358,9 @@ pub fn LinkEditor(
             match result {
                 Ok(next) => {
                     current.try_set(next.clone());
-                    { on_changed.try_run(Some(next)); };
+                    {
+                        on_changed.try_run(Some(next));
+                    };
                     if let Some(cb) = after_ok {
                         cb.run(());
                     }
@@ -344,12 +378,20 @@ pub fn LinkEditor(
         spawn_local(async move {
             match api::request::<Value>(
                 &format!("{BASE}/links/{id}"),
-                Req { method: "DELETE", csrf: Some(&csrf), ..Default::default() },
+                Req {
+                    method: "DELETE",
+                    csrf: Some(&csrf),
+                    ..Default::default()
+                },
             )
             .await
             {
-                Ok(_) => { on_changed.try_run(None); },
-                Err(cause) => { error.try_set(error_message(&cause.message)); }
+                Ok(_) => {
+                    on_changed.try_run(None);
+                }
+                Err(cause) => {
+                    error.try_set(error_message(&cause.message));
+                }
             }
         });
     };
@@ -576,10 +618,13 @@ pub fn LinkDialog(
                 "allowDownload": true,
                 "showMetadata": true,
             });
-            match api::send::<PhotoLink>(&format!("{BASE}/links"), "POST", Some(body), &csrf).await {
+            match api::send::<PhotoLink>(&format!("{BASE}/links"), "POST", Some(body), &csrf).await
+            {
                 Ok(value) => {
                     link.try_set(Some(value));
-                    { on_created.try_run(()); };
+                    {
+                        on_created.try_run(());
+                    };
                 }
                 Err(cause) => {
                     error.try_set(error_message(&cause.message));
@@ -624,8 +669,12 @@ pub fn LinksList(session: BrowserSession) -> impl IntoView {
 
     spawn_local(async move {
         match api::get::<LinksResponse>(&format!("{BASE}/links")).await {
-            Ok(value) => { links.try_set(Some(value.links)); }
-            Err(cause) => { error.try_set(error_message(&cause.message)); }
+            Ok(value) => {
+                links.try_set(Some(value.links));
+            }
+            Err(cause) => {
+                error.try_set(error_message(&cause.message));
+            }
         }
     });
 
@@ -641,7 +690,8 @@ pub fn LinksList(session: BrowserSession) -> impl IntoView {
         }
     });
 
-    move || match state_kind.get() {
+    move || {
+        match state_kind.get() {
         "error" => view! { <p role="alert" class="error">{move || error.get()}</p> }.into_any(),
         "loading" => view! { <p role="status" class="photos-hint">"Loading\u{2026}"</p> }.into_any(),
         "empty" => view! { <p class="photos-hint">"No shared links. Create one from an album\u{2019}s Share pane or from selected photos."</p> }.into_any(),
@@ -702,5 +752,6 @@ pub fn LinksList(session: BrowserSession) -> impl IntoView {
             </div>
         }
         .into_any(),
+    }
     }
 }

@@ -26,9 +26,13 @@ use wasm_bindgen::JsCast;
 use crate::api::{self, BrowserSession};
 use crate::icons::Icon;
 use crate::pim::{Collection, PimLive, send};
-use crate::settings::{AppSettingsButton, SaveProblems, SaveStatus, Saver, Segmented, SettingRow, SettingsSheet};
+use crate::settings::{
+    AppSettingsButton, SaveProblems, SaveStatus, Saver, Segmented, SettingRow, SettingsSheet,
+};
 use crate::shell::WorkspaceHeader;
-use crate::ui::{ConnectionState, ConnectionStatus, document, listen, unique_id, use_floating, window};
+use crate::ui::{
+    ConnectionState, ConnectionStatus, document, listen, unique_id, use_floating, window,
+};
 use logseq_import::LogseqImport;
 
 pub(super) const DEFAULT_NOTES_FOLDER: &str = "docs/notes";
@@ -53,12 +57,17 @@ pub(super) fn search_params(pairs: &[(&str, String)]) -> String {
 
 pub(super) fn capitalized(value: &str) -> String {
     let mut chars = value.chars();
-    chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+    chars
+        .next()
+        .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
+        .unwrap_or_default()
 }
 
 fn menu_items(panel: &web_sys::HtmlElement, selector: &str) -> Vec<web_sys::HtmlElement> {
     let list = panel.query_selector_all(selector).expect("selector");
-    (0..list.length()).filter_map(|i| list.item(i)?.dyn_into().ok()).collect()
+    (0..list.length())
+        .filter_map(|i| list.item(i)?.dyn_into().ok())
+        .collect()
 }
 
 fn focus_by_key(items: &[web_sys::HtmlElement], key: &str) -> bool {
@@ -94,7 +103,9 @@ pub(super) fn ReactiveSelect(
     #[prop(optional, into)] on_change: Option<Callback<String>>,
 ) -> impl IntoView {
     let current = value.unwrap_or_else(|| {
-        RwSignal::new(options.with_untracked(|o| o.first().map(|(v, _)| v.clone()).unwrap_or_default()))
+        RwSignal::new(
+            options.with_untracked(|o| o.first().map(|(v, _)| v.clone()).unwrap_or_default()),
+        )
     });
     let open = RwSignal::new(false);
     let side = RwSignal::new("down");
@@ -132,7 +143,9 @@ pub(super) fn ReactiveSelect(
         }
         let Some(panel) = list.get() else { return };
         listen(&document(), "pointerdown", false, move |event| {
-            let target = event.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok());
+            let target = event
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Node>().ok());
             if let Some(root) = root.get_untracked()
                 && !root.contains(target.as_ref())
             {
@@ -143,7 +156,12 @@ pub(super) fn ReactiveSelect(
             .query_selector("[aria-selected=\"true\"]")
             .ok()
             .flatten()
-            .or_else(|| panel.query_selector("[role=\"option\"]:not(:disabled)").ok().flatten());
+            .or_else(|| {
+                panel
+                    .query_selector("[role=\"option\"]:not(:disabled)")
+                    .ok()
+                    .flatten()
+            });
         if let Some(el) = selected.and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok()) {
             let _ = el.focus();
         }
@@ -229,7 +247,8 @@ pub(super) fn WorkspaceShell(
     #[prop(into)] has_details: Signal<bool>,
     #[prop(optional, into)] note_editor: Signal<bool>,
     /// The note sheet shows two panes side by side, so the list column narrows.
-    #[prop(optional, into)] split_details: Signal<bool>,
+    #[prop(optional, into)]
+    split_details: Signal<bool>,
     details: ChildrenFn,
     pim: PimLive,
     children: ChildrenFn,
@@ -242,10 +261,15 @@ pub(super) fn WorkspaceShell(
             connected.set(true);
         }
     });
-    let detail_label = if kind == "notes" { "Note details" } else { "Task details" };
+    let detail_label = if kind == "notes" {
+        "Note details"
+    } else {
+        "Task details"
+    };
     let panel = NodeRef::<html::Aside>::new();
     let main = NodeRef::<html::Main>::new();
-    let origin: StoredValue<Option<send_wrapper::SendWrapper<web_sys::HtmlElement>>> = StoredValue::new(None);
+    let origin: StoredValue<Option<send_wrapper::SendWrapper<web_sys::HtmlElement>>> =
+        StoredValue::new(None);
     let had_details = RwSignal::new(false);
 
     // Record the control that opened details so focus returns to it on close.
@@ -271,15 +295,32 @@ pub(super) fn WorkspaceShell(
         if open && !had_details.get_untracked() {
             if let Some(p) = panel_el {
                 had_details.set(true);
-                if window().match_media("(max-width:800px)").ok().flatten().is_some_and(|m| m.matches()) {
+                if window()
+                    .match_media("(max-width:800px)")
+                    .ok()
+                    .flatten()
+                    .is_some_and(|m| m.matches())
+                {
                     // The details load after the sheet opens; focus their Close button once it is there.
                     fn focus_close(p: web_sys::HtmlElement, tries: u32) {
-                        let close = p.query_selector("[aria-label^=\"Close\"]:not([data-tab-close])").ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
+                        let close = p
+                            .query_selector("[aria-label^=\"Close\"]:not([data-tab-close])")
+                            .ok()
+                            .flatten()
+                            .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
                         match close {
-                            Some(c) => { let _ = c.focus(); }
-                            None if tries > 0 && p.is_connected() => request_animation_frame(move || focus_close(p, tries - 1)),
+                            Some(c) => {
+                                let _ = c.focus();
+                            }
+                            None if tries > 0 && p.is_connected() => {
+                                request_animation_frame(move || focus_close(p, tries - 1))
+                            }
                             None => {
-                                let target = p.query_selector("button,a,input").ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
+                                let target = p
+                                    .query_selector("button,a,input")
+                                    .ok()
+                                    .flatten()
+                                    .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
                                 let _ = target.unwrap_or(p).focus();
                             }
                         }
@@ -293,19 +334,21 @@ pub(super) fn WorkspaceShell(
             had_details.set(false);
             // The list is shown again in the same pass; restore focus once it has its size.
             request_animation_frame(move || {
-            let active = document().active_element();
-            let body: Option<web_sys::Element> = document().body().map(|b| b.unchecked_into());
-            if active.is_none() || active == body {
-                let target = origin.try_with_value(|o| o.as_ref().map(|el| (**el).clone())).flatten();
-                if let Some(t) = target.filter(|t| {
-                    let rect = t.get_bounding_client_rect();
-                    t.is_connected() && rect.width() > 0.0 && rect.height() > 0.0
-                }) {
-                    let _ = t.focus();
-                } else if let Some(m) = main.try_get_untracked().flatten() {
-                    let _ = m.focus();
+                let active = document().active_element();
+                let body: Option<web_sys::Element> = document().body().map(|b| b.unchecked_into());
+                if active.is_none() || active == body {
+                    let target = origin
+                        .try_with_value(|o| o.as_ref().map(|el| (**el).clone()))
+                        .flatten();
+                    if let Some(t) = target.filter(|t| {
+                        let rect = t.get_bounding_client_rect();
+                        t.is_connected() && rect.width() > 0.0 && rect.height() > 0.0
+                    }) {
+                        let _ = t.focus();
+                    } else if let Some(m) = main.try_get_untracked().flatten() {
+                        let _ = m.focus();
+                    }
                 }
-            }
             });
         }
     });
@@ -372,7 +415,10 @@ fn folder_parts(value: &str) -> Option<Vec<String>> {
     if parts.is_empty()
         || parts.len() > 8
         || parts.iter().any(|part| {
-            part.len() > 255 || part == "." || part == ".." || part.chars().any(|c| (c as u32) < 0x20 || c == '\\')
+            part.len() > 255
+                || part == "."
+                || part == ".."
+                || part.chars().any(|c| (c as u32) < 0x20 || c == '\\')
         })
     {
         return None;
@@ -421,26 +467,48 @@ fn NotesFolderSetting(
 /// Local Notes and Tasks settings sheet (`app-settings.tsx`), since `crate::settings::AppSettings`
 /// currently handles Files, Contacts and Calendar only.
 #[component]
-fn WorkspaceSettings(app: &'static str, session: BrowserSession, pim: PimLive, on_close: Callback<()>) -> impl IntoView {
+fn WorkspaceSettings(
+    app: &'static str,
+    session: BrowserSession,
+    pim: PimLive,
+    on_close: Callback<()>,
+) -> impl IntoView {
     let saver = Saver::new(session.clone());
     let section = RwSignal::new("General");
     let is_notes = app == "notes";
-    let (name, icon) = if is_notes { ("Notes", "file") } else { ("Tasks", "check") };
+    let (name, icon) = if is_notes {
+        ("Notes", "file")
+    } else {
+        ("Tasks", "check")
+    };
     let text = move |key: &'static str, default: &'static str| {
         Signal::derive(move || saver.value(key).as_str().unwrap_or(default).to_owned())
     };
-    let set = move |key: &'static str, value: Value, message: String| saver.change(key, value, message, true);
+    let set = move |key: &'static str, value: Value, message: String| {
+        saver.change(key, value, message, true)
+    };
     let session = StoredValue::new(session);
     let tasks_view_sig = RwSignal::new("today".to_owned());
     Effect::new(move |_| {
-        let v = saver.value("tasksView").as_str().unwrap_or("today").to_owned();
+        let v = saver
+            .value("tasksView")
+            .as_str()
+            .unwrap_or("today")
+            .to_owned();
         tasks_view_sig.set(v);
     });
     let view_options = Signal::derive(|| {
-        ["all", "inbox", "today", "upcoming", "important", "completed"]
-            .into_iter()
-            .map(|v| (v.to_owned(), capitalized(v)))
-            .collect::<Vec<_>>()
+        [
+            "all",
+            "inbox",
+            "today",
+            "upcoming",
+            "important",
+            "completed",
+        ]
+        .into_iter()
+        .map(|v| (v.to_owned(), capitalized(v)))
+        .collect::<Vec<_>>()
     });
     view! {
         <SettingsSheet title=format!("{name} settings") icon=icon sections=vec!["General", "Import and export", "Keyboard shortcuts"] section=section on_close=on_close notice=saver.notice>
@@ -520,9 +588,21 @@ struct CollectionList {
 fn WorkspaceTransfers(session: BrowserSession, app: &'static str) -> impl IntoView {
     let is_notes = app == "notes";
     let (endpoint, noun, plural, format, accept) = if is_notes {
-        ("/api/v1/notes/notebooks", "Notebook", "notebooks", "Markdown or notebook JSON", ".md,.markdown,.json")
+        (
+            "/api/v1/notes/notebooks",
+            "Notebook",
+            "notebooks",
+            "Markdown or notebook JSON",
+            ".md,.markdown,.json",
+        )
     } else {
-        ("/api/v1/tasks/lists", "Task list", "task lists", "ICS", ".ics,text/calendar")
+        (
+            "/api/v1/tasks/lists",
+            "Task list",
+            "task lists",
+            "ICS",
+            ".ics,text/calendar",
+        )
     };
     let collections: RwSignal<Vec<Collection>> = RwSignal::new(Vec::new());
     let selected = RwSignal::new(String::new());
@@ -545,13 +625,27 @@ fn WorkspaceTransfers(session: BrowserSession, app: &'static str) -> impl IntoVi
         loaded.set(true);
     });
 
-    let collection = Memo::new(move |_| collections.with(|c| c.iter().find(|x| x.id == selected.get()).cloned()));
-    let read_only = Memo::new(move |_| collection.with(|c| c.as_ref().is_some_and(|c| c.role == "read")));
-    let options = Signal::derive(move || collections.get().into_iter().map(|c| (c.id, c.name)).collect::<Vec<_>>());
+    let collection = Memo::new(move |_| {
+        collections.with(|c| c.iter().find(|x| x.id == selected.get()).cloned())
+    });
+    let read_only =
+        Memo::new(move |_| collection.with(|c| c.as_ref().is_some_and(|c| c.role == "read")));
+    let options = Signal::derive(move || {
+        collections
+            .get()
+            .into_iter()
+            .map(|c| (c.id, c.name))
+            .collect::<Vec<_>>()
+    });
 
     let import = move || {
-        let Some(c) = collection.get_untracked() else { return };
-        let source = file.get_untracked().and_then(|f| f.files()).and_then(|l| l.item(0));
+        let Some(c) = collection.get_untracked() else {
+            return;
+        };
+        let source = file
+            .get_untracked()
+            .and_then(|f| f.files())
+            .and_then(|l| l.item(0));
         let pasted = content.get_untracked();
         if source.is_none() && pasted.is_empty() {
             return;
@@ -569,10 +663,18 @@ fn WorkspaceTransfers(session: BrowserSession, app: &'static str) -> impl IntoVi
                 }
                 let source_name = source.as_ref().map(|f| f.name());
                 let value = match &source {
-                    Some(f) => wasm_bindgen_futures::JsFuture::from(f.text()).await.ok().and_then(|v| v.as_string()).unwrap_or_default(),
+                    Some(f) => wasm_bindgen_futures::JsFuture::from(f.text())
+                        .await
+                        .ok()
+                        .and_then(|v| v.as_string())
+                        .unwrap_or_default(),
                     None => pasted,
                 };
-                if is_notes && !source_name.as_deref().is_some_and(|n| n.to_lowercase().ends_with(".json")) {
+                if is_notes
+                    && !source_name
+                        .as_deref()
+                        .is_some_and(|n| n.to_lowercase().ends_with(".json"))
+                {
                     let title = source_name
                         .as_deref()
                         .map(|n| notes::strip_md_ext(n))
@@ -593,9 +695,15 @@ fn WorkspaceTransfers(session: BrowserSession, app: &'static str) -> impl IntoVi
                     } else {
                         json!({ "content": value })
                     };
-                    let result: Value = send(&format!("{endpoint}/{}/import", c.id), "POST", Some(body), &csrf.get_value(), None)
-                        .await
-                        .map_err(|e| e.message)?;
+                    let result: Value = send(
+                        &format!("{endpoint}/{}/import", c.id),
+                        "POST",
+                        Some(body),
+                        &csrf.get_value(),
+                        None,
+                    )
+                    .await
+                    .map_err(|e| e.message)?;
                     Ok(result["items"].as_array().cloned().unwrap_or_default())
                 }
             }

@@ -42,10 +42,16 @@ pub fn line_diff(old: &[&str], next: &[&str]) -> Vec<DiffLine> {
     let mut middle = Vec::new();
     if a.len().saturating_mul(b.len()) > 2_000_000 {
         for &text in a {
-            middle.push(DiffLine { kind: DiffKind::Removed, text: text.to_owned() });
+            middle.push(DiffLine {
+                kind: DiffKind::Removed,
+                text: text.to_owned(),
+            });
         }
         for &text in b {
-            middle.push(DiffLine { kind: DiffKind::Added, text: text.to_owned() });
+            middle.push(DiffLine {
+                kind: DiffKind::Added,
+                text: text.to_owned(),
+            });
         }
     } else {
         let width = b.len() + 1;
@@ -62,25 +68,42 @@ pub fn line_diff(old: &[&str], next: &[&str]) -> Vec<DiffLine> {
         let (mut i, mut j) = (0usize, 0usize);
         while i < a.len() || j < b.len() {
             if i < a.len() && j < b.len() && a[i] == b[j] {
-                middle.push(DiffLine { kind: DiffKind::Context, text: a[i].to_owned() });
+                middle.push(DiffLine {
+                    kind: DiffKind::Context,
+                    text: a[i].to_owned(),
+                });
                 i += 1;
                 j += 1;
-            } else if i < a.len() && (j == b.len() || table[(i + 1) * width + j] >= table[i * width + j + 1]) {
-                middle.push(DiffLine { kind: DiffKind::Removed, text: a[i].to_owned() });
+            } else if i < a.len()
+                && (j == b.len() || table[(i + 1) * width + j] >= table[i * width + j + 1])
+            {
+                middle.push(DiffLine {
+                    kind: DiffKind::Removed,
+                    text: a[i].to_owned(),
+                });
                 i += 1;
             } else {
-                middle.push(DiffLine { kind: DiffKind::Added, text: b[j].to_owned() });
+                middle.push(DiffLine {
+                    kind: DiffKind::Added,
+                    text: b[j].to_owned(),
+                });
                 j += 1;
             }
         }
     }
     let mut out = Vec::with_capacity(start + middle.len() + (old.len() - end_old));
     for &text in &old[..start] {
-        out.push(DiffLine { kind: DiffKind::Context, text: text.to_owned() });
+        out.push(DiffLine {
+            kind: DiffKind::Context,
+            text: text.to_owned(),
+        });
     }
     out.extend(middle);
     for &text in &old[end_old..] {
-        out.push(DiffLine { kind: DiffKind::Context, text: text.to_owned() });
+        out.push(DiffLine {
+            kind: DiffKind::Context,
+            text: text.to_owned(),
+        });
     }
     out
 }
@@ -130,11 +153,27 @@ pub fn unified_hunks(old: &[&str], next: &[&str], head: &[&str]) -> String {
             cursor += 1;
         }
         let slice = &lines[from..to];
-        let old_count = slice.iter().filter(|line| line.kind != DiffKind::Added).count();
-        let new_count = slice.iter().filter(|line| line.kind != DiffKind::Removed).count();
-        let old_start = if old_count > 0 { old_line } else { old_line.saturating_sub(1) };
-        let new_start = if new_count > 0 { new_line } else { new_line.saturating_sub(1) };
-        output.push(format!("@@ -{old_start},{old_count} +{new_start},{new_count} @@"));
+        let old_count = slice
+            .iter()
+            .filter(|line| line.kind != DiffKind::Added)
+            .count();
+        let new_count = slice
+            .iter()
+            .filter(|line| line.kind != DiffKind::Removed)
+            .count();
+        let old_start = if old_count > 0 {
+            old_line
+        } else {
+            old_line.saturating_sub(1)
+        };
+        let new_start = if new_count > 0 {
+            new_line
+        } else {
+            new_line.saturating_sub(1)
+        };
+        output.push(format!(
+            "@@ -{old_start},{old_count} +{new_start},{new_count} @@"
+        ));
         for line in slice {
             output.push(format!("{}{}", line.kind.prefix(), line.text));
         }
@@ -228,10 +267,22 @@ pub fn Diff(
             let body = if kind == "hunk" || !in_hunk {
                 line
             } else {
-                line.chars().next().map(|c| &line[c.len_utf8()..]).unwrap_or("")
+                line.chars()
+                    .next()
+                    .map(|c| &line[c.len_utf8()..])
+                    .unwrap_or("")
             };
-            let display = if body.is_empty() { " ".to_owned() } else { body.to_owned() };
-            (format!("code-diff-line {kind}"), old_number, new_number, display)
+            let display = if body.is_empty() {
+                " ".to_owned()
+            } else {
+                body.to_owned()
+            };
+            (
+                format!("code-diff-line {kind}"),
+                old_number,
+                new_number,
+                display,
+            )
         })
         .collect();
 
@@ -264,13 +315,19 @@ mod tests {
         let a = text_lines("# Project\n\nFirst line\n");
         let b = text_lines("# Project\n\nSecond line\n");
         let patch = unified_hunks(&a, &b, &[]);
-        assert_eq!(patch, "@@ -1,3 +1,3 @@\n # Project\n \n-First line\n+Second line");
+        assert_eq!(
+            patch,
+            "@@ -1,3 +1,3 @@\n # Project\n \n-First line\n+Second line"
+        );
         assert_eq!(count_lines(&a, &b), (1, 1));
     }
 
     #[test]
     fn parse_hunk_headers() {
-        assert_eq!(parse_hunk_header("@@ -10,4 +12,6 @@ fn main()"), Some((10, 12)));
+        assert_eq!(
+            parse_hunk_header("@@ -10,4 +12,6 @@ fn main()"),
+            Some((10, 12))
+        );
         assert_eq!(parse_hunk_header("@@ -0,0 +1,3 @@"), Some((0, 1)));
         assert_eq!(parse_hunk_header("@@ -5 +7 @@"), Some((5, 7)));
     }

@@ -91,14 +91,20 @@ fn apply_address_space_limit() -> io::Result<()> {
         fn setrlimit(resource: std::ffi::c_int, rlim: *const Rlimit) -> std::ffi::c_int;
     }
 
-    let mut current = Rlimit { rlim_cur: u64::MAX, rlim_max: u64::MAX };
+    let mut current = Rlimit {
+        rlim_cur: u64::MAX,
+        rlim_max: u64::MAX,
+    };
     // SAFETY: `current` matches Linux's 64-bit `struct rlimit` layout.
     if unsafe { getrlimit(RLIMIT_AS, &mut current) } != 0 {
         return Err(io::Error::last_os_error());
     }
     let max = current.rlim_max.min(PDF_CHILD_ADDRESS_SPACE_BYTES);
     let cur = current.rlim_cur.min(max);
-    let limit = Rlimit { rlim_cur: cur, rlim_max: max };
+    let limit = Rlimit {
+        rlim_cur: cur,
+        rlim_max: max,
+    };
     // SAFETY: `limit` is valid for the duration of the syscall.
     if unsafe { setrlimit(RLIMIT_AS, &limit) } != 0 {
         return Err(io::Error::last_os_error());
@@ -136,7 +142,11 @@ pub(crate) fn inspect_pdf(path: &Path) -> Result<PdfInfo, (&'static str, String)
         (kind, err.to_string())
     })?;
     let meta = doc.metadata();
-    Ok(PdfInfo { pages: doc.page_count() as u64, title: meta.title, author: meta.author })
+    Ok(PdfInfo {
+        pages: doc.page_count() as u64,
+        title: meta.title,
+        author: meta.author,
+    })
 }
 
 pub(crate) fn render_cover_ppm(path: &Path, out_path: &Path, max_px: u32) -> Result<(), String> {
@@ -149,7 +159,11 @@ pub(crate) fn render_cover_ppm(path: &Path, out_path: &Path, max_px: u32) -> Res
     let Some(first) = sizes.first() else {
         return Err("PDF has no pages.".into());
     };
-    if !first.width.is_finite() || !first.height.is_finite() || first.width <= 0.0 || first.height <= 0.0 {
+    if !first.width.is_finite()
+        || !first.height.is_finite()
+        || first.width <= 0.0
+        || first.height <= 0.0
+    {
         return Err("PDF page 0 has invalid dimensions.".into());
     }
     let longer = first.width.max(first.height);
@@ -170,7 +184,10 @@ fn write_ppm_p6(path: &Path, bitmap: &Bitmap) -> io::Result<()> {
         .and_then(|pixels| pixels.checked_mul(4))
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "bitmap size overflow"))?;
     if bitmap.rgba.len() != expected {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "bitmap length mismatch"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "bitmap length mismatch",
+        ));
     }
 
     let file = OpenOptions::new()
@@ -206,11 +223,18 @@ fn cmd_pdf_info(args: &[String]) -> i32 {
     }
     match inspect_pdf(Path::new(&args[0])) {
         Ok(info) => {
-            println!("{}", serde_json::to_string(&info).expect("serialize pdf info"));
+            println!(
+                "{}",
+                serde_json::to_string(&info).expect("serialize pdf info")
+            );
             0
         }
         Err((kind, msg)) => {
-            println!("{}", serde_json::to_string(&PdfInfoError { error: kind.into() }).expect("serialize pdf error"));
+            println!(
+                "{}",
+                serde_json::to_string(&PdfInfoError { error: kind.into() })
+                    .expect("serialize pdf error")
+            );
             eprintln!("{msg}");
             1
         }
@@ -245,7 +269,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn temp_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("dar-pdf-test-{label}-{}", crate::auth::uuid()));
+        let dir =
+            std::env::temp_dir().join(format!("dar-pdf-test-{label}-{}", crate::auth::uuid()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         dir
     }
@@ -258,7 +283,10 @@ mod tests {
             body.push_str(&format!("{} 0 obj\n{object}\nendobj\n", index + 1));
         }
         let xref = body.len();
-        body.push_str(&format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1));
+        body.push_str(&format!(
+            "xref\n0 {}\n0000000000 65535 f \n",
+            objects.len() + 1
+        ));
         for offset in offsets {
             body.push_str(&format!("{offset:010} 00000 n \n"));
         }
@@ -325,7 +353,10 @@ mod tests {
 
         assert_eq!(inspect_pdf(&enc).unwrap_err().0, "encrypted");
         assert_eq!(inspect_pdf(&bad).unwrap_err().0, "damaged");
-        assert_eq!(inspect_pdf(&dir.join("missing.pdf")).unwrap_err().0, "damaged");
+        assert_eq!(
+            inspect_pdf(&dir.join("missing.pdf")).unwrap_err().0,
+            "damaged"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -347,7 +378,10 @@ mod tests {
         assert_eq!(&pixels[0..3], &[255, 255, 255]);
         // Center pixel (180, 240) is inside the filled rectangle -> blue-ish (0.2, 0.4, 0.8).
         let center = (240 * 360 + 180) * 3;
-        assert!(pixels[center + 2] > pixels[center], "expected blue rectangle at center");
+        assert!(
+            pixels[center + 2] > pixels[center],
+            "expected blue rectangle at center"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -355,10 +389,20 @@ mod tests {
     fn parse_info_output_maps_ok_encrypted_and_damaged() {
         assert_eq!(
             parse_info_output(true, r#"{"pages":3,"title":"T","author":"A"}"#),
-            PdfInfoOutcome::Ok(PdfInfo { pages: 3, title: "T".into(), author: "A".into() })
+            PdfInfoOutcome::Ok(PdfInfo {
+                pages: 3,
+                title: "T".into(),
+                author: "A".into()
+            })
         );
-        assert_eq!(parse_info_output(false, r#"{"error":"encrypted"}"#), PdfInfoOutcome::Encrypted);
-        assert_eq!(parse_info_output(false, r#"{"error":"damaged"}"#), PdfInfoOutcome::Damaged);
+        assert_eq!(
+            parse_info_output(false, r#"{"error":"encrypted"}"#),
+            PdfInfoOutcome::Encrypted
+        );
+        assert_eq!(
+            parse_info_output(false, r#"{"error":"damaged"}"#),
+            PdfInfoOutcome::Damaged
+        );
         assert_eq!(parse_info_output(false, ""), PdfInfoOutcome::Damaged);
         assert_eq!(parse_info_output(true, "not json"), PdfInfoOutcome::Damaged);
     }

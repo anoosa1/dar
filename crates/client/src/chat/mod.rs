@@ -21,10 +21,21 @@ pub const CHAT_LIMITS_NAME: usize = 64;
 pub const CHAT_LIMITS_TEXT: usize = 65536;
 pub const CHAT_LIMITS_DISCORD_TEXT: usize = 4000;
 
-pub const CHAT_QUICK_REACTIONS: [&str; 6] = ["\u{1f44d}", "\u{2764}\u{fe0f}", "\u{1f602}", "\u{1f62e}", "\u{1f622}", "\u{1f64f}"];
+pub const CHAT_QUICK_REACTIONS: [&str; 6] = [
+    "\u{1f44d}",
+    "\u{2764}\u{fe0f}",
+    "\u{1f602}",
+    "\u{1f62e}",
+    "\u{1f622}",
+    "\u{1f64f}",
+];
 
 /// Mute choices as WhatsApp offers them; -1 is always.
-pub const CHAT_MUTE_CHOICES: [(&str, i64); 3] = [("8 hours", 8 * 3_600_000), ("1 week", 7 * 86_400_000), ("Always", -1)];
+pub const CHAT_MUTE_CHOICES: [(&str, i64); 3] = [
+    ("8 hours", 8 * 3_600_000),
+    ("1 week", 7 * 86_400_000),
+    ("Always", -1),
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChatView {
@@ -384,7 +395,11 @@ pub struct ChatSetting {
 }
 
 pub fn platform_name(platform: &str) -> &'static str {
-    if platform == "discord" { "Discord" } else { "WhatsApp" }
+    if platform == "discord" {
+        "Discord"
+    } else {
+        "WhatsApp"
+    }
 }
 
 pub fn kind_label(kind: &str) -> &'static str {
@@ -414,7 +429,13 @@ pub fn chat_time_key(at: f64) -> String {
 pub fn local_name(kind: &str, mime: &str, file_name: &str, at: f64, platform: &str) -> String {
     let given: String = file_name
         .chars()
-        .map(|c| if c == '/' || c == '\\' || c == '\0' { '_' } else { c })
+        .map(|c| {
+            if c == '/' || c == '\\' || c == '\0' {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect::<String>()
         .trim()
         .to_owned();
@@ -445,8 +466,16 @@ pub fn local_name(kind: &str, mime: &str, file_name: &str, at: f64, platform: &s
         _ => "Attachment",
     };
     let d = js_sys::Date::new(&JsValue::from_f64(at));
-    let service = if platform == "discord" { "Discord" } else { "WhatsApp" };
-    let suffix = if ext.is_empty() { String::new() } else { format!(".{ext}") };
+    let service = if platform == "discord" {
+        "Discord"
+    } else {
+        "WhatsApp"
+    };
+    let suffix = if ext.is_empty() {
+        String::new()
+    } else {
+        format!(".{ext}")
+    };
     format!(
         "{service} {label} {}-{:02}-{:02} at {:02}.{:02}.{:02}{suffix}",
         d.get_full_year(),
@@ -468,10 +497,12 @@ pub fn search_params(pairs: &[(&str, &str)]) -> String {
 
 // QR code encoder (byte mode, error correction M), ported from `next/shared/qr.ts`.
 const ECC_PER_BLOCK: [usize; 41] = [
-    0, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28,
+    0, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28,
+    28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28,
 ];
 const BLOCK_COUNT: [usize; 41] = [
-    0, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49,
+    0, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23,
+    25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49,
 ];
 const FORMAT_BITS_M: u32 = 0;
 
@@ -603,7 +634,11 @@ pub fn qr_matrix(text: &str) -> Result<Vec<Vec<bool>>, String> {
     let size = version * 4 + 17;
     let mut modules = vec![vec![false; size]; size];
     let mut fixed = vec![vec![false; size]; size];
-    let set = |modules: &mut Vec<Vec<bool>>, fixed: &mut Vec<Vec<bool>>, x: usize, y: usize, dark: bool| {
+    let set = |modules: &mut Vec<Vec<bool>>,
+               fixed: &mut Vec<Vec<bool>>,
+               x: usize,
+               y: usize,
+               dark: bool| {
         modules[y][x] = dark;
         fixed[y][x] = true;
     };
@@ -611,20 +646,34 @@ pub fn qr_matrix(text: &str) -> Result<Vec<Vec<bool>>, String> {
         set(&mut modules, &mut fixed, 6, i, i % 2 == 0);
         set(&mut modules, &mut fixed, i, 6, i % 2 == 0);
     }
-    for &(cx, cy) in &[(3isize, 3isize), (size as isize - 4, 3), (3, size as isize - 4)] {
+    for &(cx, cy) in &[
+        (3isize, 3isize),
+        (size as isize - 4, 3),
+        (3, size as isize - 4),
+    ] {
         for dy in -4..=4 {
             for dx in -4..=4 {
                 let (x, y) = (cx + dx, cy + dy);
                 let dist = dx.abs().max(dy.abs());
                 if x >= 0 && x < size as isize && y >= 0 && y < size as isize {
-                    set(&mut modules, &mut fixed, x as usize, y as usize, dist != 2 && dist != 4);
+                    set(
+                        &mut modules,
+                        &mut fixed,
+                        x as usize,
+                        y as usize,
+                        dist != 2 && dist != 4,
+                    );
                 }
             }
         }
     }
     if version > 1 {
         let count = version / 7 + 2;
-        let step = if version == 32 { 26 } else { (version * 4 + 4).div_ceil(count * 2 - 2) * 2 };
+        let step = if version == 32 {
+            26
+        } else {
+            (version * 4 + 4).div_ceil(count * 2 - 2) * 2
+        };
         let mut positions = vec![6usize];
         let mut pos = size - 7;
         while positions.len() < count {
@@ -696,7 +745,11 @@ pub fn qr_matrix(text: &str) -> Result<Vec<Vec<bool>>, String> {
         for vert in 0..size {
             for j in 0..2 {
                 let x = (right - j) as usize;
-                let y = if ((right + 1) & 2) == 0 { size - 1 - vert } else { vert };
+                let y = if ((right + 1) & 2) == 0 {
+                    size - 1 - vert
+                } else {
+                    vert
+                };
                 if !fixed[y][x] && bit_idx < codewords.len() * 8 {
                     modules[y][x] = bit(codewords[bit_idx >> 3] as u32, (7 - (bit_idx & 7)) as u32);
                     bit_idx += 1;
@@ -760,7 +813,12 @@ pub fn qr_matrix(text: &str) -> Result<Vec<Vec<bool>>, String> {
                 if modules[y][x] {
                     dark += 1;
                 }
-                if x < size - 1 && y < size - 1 && modules[y][x] == modules[y][x + 1] && modules[y][x] == modules[y + 1][x] && modules[y][x] == modules[y + 1][x + 1] {
+                if x < size - 1
+                    && y < size - 1
+                    && modules[y][x] == modules[y][x + 1]
+                    && modules[y][x] == modules[y + 1][x]
+                    && modules[y][x] == modules[y + 1][x + 1]
+                {
                     score += 3;
                 }
             }

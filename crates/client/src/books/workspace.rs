@@ -6,8 +6,8 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use js_sys::{Function, Promise, Reflect};
 use leptos::html;
@@ -15,34 +15,34 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use send_wrapper::SendWrapper;
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 
-use crate::api::{self, format_bytes, BrowserSession, Req};
+use crate::api::{self, BrowserSession, Req, format_bytes};
 use crate::books::comic::{ComicHandle, ComicView};
 use crate::books::epub::{EpubHandle, EpubView, ReaderLook};
 use crate::books::highlights;
 use crate::books::pdf::{PdfHandle, PdfOutlineEntry, PdfReady, PdfView, PdfZoomChange};
 use crate::books::pdf_text::{PdfFindState, PdfHighlight, PdfSelection};
 use crate::books::{
-    book_format, book_format_label, is_comic, BookDetail, BookItem, BookLibrary, BookManifest,
-    BookMark, BookPosition, BookState, BookTocEntry, DEFAULT_BOOKS_FOLDER,
+    BookDetail, BookItem, BookLibrary, BookManifest, BookMark, BookPosition, BookState,
+    BookTocEntry, DEFAULT_BOOKS_FOLDER, book_format, book_format_label, is_comic,
 };
 use crate::dates::edited;
 use crate::icons::Icon;
-use crate::live::{reducer, replied, Live};
+use crate::live::{Live, reducer, replied};
 use crate::module_bindings::trash_entry_reducer::trash_entry as _;
 use crate::settings::{
     AppSettingsButton, Notice, SaveProblems, Saver, Segmented, SettingRow, SettingsSheet,
 };
-use crate::shared::{context, save_preferences, Preferences, PREFERENCES};
+use crate::shared::{PREFERENCES, Preferences, context, save_preferences};
 use crate::shell::WorkspaceHeader;
 use crate::ui::{
-    active_element, document, listen, unique_id, use_floating, window, ActionMenu, Dialog,
-    MenuAction, Select,
+    ActionMenu, Dialog, MenuAction, Select, active_element, document, listen, unique_id,
+    use_floating, window,
 };
 
 const API: &str = "/api/v1/books";
@@ -255,7 +255,9 @@ fn place(book: &BookItem) -> String {
 }
 
 fn locale_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b))
+    a.to_lowercase()
+        .cmp(&b.to_lowercase())
+        .then_with(|| a.cmp(b))
 }
 
 fn pref_str<'a>(p: &'a Preferences, key: &str) -> Option<&'a str> {
@@ -270,12 +272,15 @@ fn sort_books(list: &[BookItem], sort: &str) -> Vec<BookItem> {
     let mut out = list.to_vec();
     out.sort_by(|a, b| match sort {
         "title" => locale_cmp(&a.title, &b.title),
-        "author" => locale_cmp(&authors(a), &authors(b)).then_with(|| locale_cmp(&a.title, &b.title)),
+        "author" => {
+            locale_cmp(&authors(a), &authors(b)).then_with(|| locale_cmp(&a.title, &b.title))
+        }
         "added" => b.modified_at.total_cmp(&a.modified_at),
         _ => {
             let au = a.state.as_ref().map_or(0.0, |s| s.updated_at);
             let bu = b.state.as_ref().map_or(0.0, |s| s.updated_at);
-            bu.total_cmp(&au).then_with(|| b.modified_at.total_cmp(&a.modified_at))
+            bu.total_cmp(&au)
+                .then_with(|| b.modified_at.total_cmp(&a.modified_at))
         }
     });
     out
@@ -388,10 +393,15 @@ async fn upload_blob_xhr(
     };
     let _ = xhr.open("PUT", url);
     let _ = xhr.set_request_header("x-csrf-token", csrf);
-    let progress_cb = Closure::<dyn FnMut(web_sys::ProgressEvent)>::new(move |e: web_sys::ProgressEvent| {
-        let ratio = if e.total() > 0.0 { e.loaded() / e.total() } else { 0.0 };
-        on_progress(ratio);
-    });
+    let progress_cb =
+        Closure::<dyn FnMut(web_sys::ProgressEvent)>::new(move |e: web_sys::ProgressEvent| {
+            let ratio = if e.total() > 0.0 {
+                e.loaded() / e.total()
+            } else {
+                0.0
+            };
+            on_progress(ratio);
+        });
     if let Ok(upload) = xhr.upload() {
         upload.set_onprogress(Some(progress_cb.as_ref().unchecked_ref()));
     }
@@ -431,12 +441,14 @@ async fn upload_blob_xhr(
 pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoView {
     let (start_view, start_book, start_read, start_page) = read_view();
     // A page from the address opens the first reader at that page, once.
-    let deep_page: StoredValue<Option<(String, usize)>> = StoredValue::new(start_book.clone().zip(start_page));
+    let deep_page: StoredValue<Option<(String, usize)>> =
+        StoredValue::new(start_book.clone().zip(start_page));
     let library: RwSignal<Option<BookLibrary>> = RwSignal::new(None);
     let error = RwSignal::new(String::new());
     let view = RwSignal::new(start_view);
     let selected: RwSignal<Option<String>> = RwSignal::new(start_book.clone());
-    let reading: RwSignal<Option<String>> = RwSignal::new(if start_read { start_book } else { None });
+    let reading: RwSignal<Option<String>> =
+        RwSignal::new(if start_read { start_book } else { None });
     let settings = RwSignal::new(false);
     let notice: RwSignal<Option<Notice>> = RwSignal::new(None);
     let reload = RwSignal::new(0u32);
@@ -446,7 +458,8 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let navigation = RwSignal::new(false);
     let navigation_id = unique_id();
     let navigation_ref = NodeRef::<html::Aside>::new();
-    let nav_trigger: StoredValue<Option<SendWrapper<web_sys::HtmlElement>>> = StoredValue::new(None);
+    let nav_trigger: StoredValue<Option<SendWrapper<web_sys::HtmlElement>>> =
+        StoredValue::new(None);
     let nav_was_open = StoredValue::new(false);
 
     let file_input = NodeRef::<html::Input>::new();
@@ -456,16 +469,19 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let pref_queue = StoredValue::new(Arc::new(futures::lock::Mutex::new(())));
 
     let sort = Memo::new(move |_| {
-        shared
-            .preferences
-            .value
-            .with(|p| p.as_ref().and_then(|p| pref_str(p, "booksSort")).unwrap_or("recent").to_owned())
+        shared.preferences.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| pref_str(p, "booksSort"))
+                .unwrap_or("recent")
+                .to_owned()
+        })
     });
     let books_folder_pref = Memo::new(move |_| {
-        shared
-            .preferences
-            .value
-            .with(|p| p.as_ref().and_then(|p| pref_str(p, "booksFolder")).map(str::to_owned))
+        shared.preferences.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| pref_str(p, "booksFolder"))
+                .map(str::to_owned)
+        })
     });
 
     // Mobile navigation focus restoration and Escape dismissal.
@@ -488,10 +504,14 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
             });
         } else if nav_was_open.get_value() {
             let active = document().active_element();
-            let in_body = active.as_ref() == document().body().map(JsCast::unchecked_into::<web_sys::Element>).as_ref();
-            let in_nav = navigation_ref
-                .get_untracked()
-                .is_some_and(|n| n.contains(active.as_ref().map(JsCast::unchecked_ref::<web_sys::Node>)));
+            let in_body = active.as_ref()
+                == document()
+                    .body()
+                    .map(JsCast::unchecked_into::<web_sys::Element>)
+                    .as_ref();
+            let in_nav = navigation_ref.get_untracked().is_some_and(|n| {
+                n.contains(active.as_ref().map(JsCast::unchecked_ref::<web_sys::Node>))
+            });
             if (in_body || in_nav)
                 && let Some(prev) = nav_trigger.try_update_value(|slot| slot.take()).flatten()
             {
@@ -502,7 +522,8 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     });
 
     // Load library on reload or when booksFolder changes.
-    let load_abort: StoredValue<Option<SendWrapper<web_sys::AbortController>>> = StoredValue::new(None);
+    let load_abort: StoredValue<Option<SendWrapper<web_sys::AbortController>>> =
+        StoredValue::new(None);
     let abort_load = move || {
         load_abort.update_value(|slot| {
             if let Some(ctrl) = slot.take() {
@@ -524,7 +545,10 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         spawn_local(async move {
             match api::request::<BookLibrary>(
                 &format!("{API}/library"),
-                Req { signal: Some(signal.clone()), ..Default::default() },
+                Req {
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
             )
             .await
             {
@@ -620,7 +644,9 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     Effect::new(move |_| {
         let active = reading.with(Option::is_some);
         if let Some(body) = document().body() {
-            let _ = body.class_list().toggle_with_force("is-reading-book", active);
+            let _ = body
+                .class_list()
+                .toggle_with_force("is-reading-book", active);
         }
     });
     on_cleanup(|| {
@@ -653,7 +679,9 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         let queue = pref_queue.get_value();
         spawn_local(async move {
             let _turn = queue.lock().await;
-            let Some(sess) = session_sv.try_get_value() else { return };
+            let Some(sess) = session_sv.try_get_value() else {
+                return;
+            };
             let rev = shared
                 .preferences
                 .value
@@ -682,63 +710,85 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         });
     });
 
-    let set_status = Callback::new(move |(target, next_status, undoable): (BookItem, &'static str, bool)| {
-        let before = target.state.clone();
-        let csrf = session_sv.with_value(|s| s.csrf_token.clone());
-        let id = target.id.clone();
-        spawn_local(async move {
-            let rev = before.as_ref().map_or(0, |s| s.revision);
-            let mut body = Map::new();
-            body.insert("revision".into(), json!(rev));
-            body.insert("status".into(), json!(next_status));
-            if next_status == "finished" {
-                body.insert("progress".into(), json!(1));
-            }
-            match api::send::<BookState>(&format!("{API}/{id}/state"), "PUT", Some(Value::Object(body)), &csrf).await {
-                Ok(state) => {
-                    patch_book.run((id.clone(), Some(state.clone())));
-                    if undoable {
-                        let msg = if next_status.is_empty() {
-                            "Removed from your lists".to_owned()
-                        } else {
-                            format!("Marked as {}", status_label(next_status).to_lowercase())
-                        };
-                        let state_rev = state.revision;
-                        let before_status = before.as_ref().map_or_else(String::new, |s| s.status.clone());
-                        let before_progress = before.as_ref().map_or(0.0, |s| s.progress);
-                        let undo_id = id.clone();
-                        let undo_csrf = csrf.clone();
-                        let undo: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-                            let undo_id = undo_id.clone();
-                            let undo_csrf = undo_csrf.clone();
-                            let before_status = before_status.clone();
-                            spawn_local(async move {
-                                let body = json!({
-                                    "revision": state_rev,
-                                    "status": before_status,
-                                    "progress": before_progress,
-                                });
-                                match api::send::<BookState>(&format!("{API}/{undo_id}/state"), "PUT", Some(body), &undo_csrf).await {
-                                    Ok(val) => patch_book.run((undo_id, Some(val))),
-                                    Err(e) => {
-                                        let _ = error.try_set(e.message);
+    let set_status = Callback::new(
+        move |(target, next_status, undoable): (BookItem, &'static str, bool)| {
+            let before = target.state.clone();
+            let csrf = session_sv.with_value(|s| s.csrf_token.clone());
+            let id = target.id.clone();
+            spawn_local(async move {
+                let rev = before.as_ref().map_or(0, |s| s.revision);
+                let mut body = Map::new();
+                body.insert("revision".into(), json!(rev));
+                body.insert("status".into(), json!(next_status));
+                if next_status == "finished" {
+                    body.insert("progress".into(), json!(1));
+                }
+                match api::send::<BookState>(
+                    &format!("{API}/{id}/state"),
+                    "PUT",
+                    Some(Value::Object(body)),
+                    &csrf,
+                )
+                .await
+                {
+                    Ok(state) => {
+                        patch_book.run((id.clone(), Some(state.clone())));
+                        if undoable {
+                            let msg = if next_status.is_empty() {
+                                "Removed from your lists".to_owned()
+                            } else {
+                                format!("Marked as {}", status_label(next_status).to_lowercase())
+                            };
+                            let state_rev = state.revision;
+                            let before_status = before
+                                .as_ref()
+                                .map_or_else(String::new, |s| s.status.clone());
+                            let before_progress = before.as_ref().map_or(0.0, |s| s.progress);
+                            let undo_id = id.clone();
+                            let undo_csrf = csrf.clone();
+                            let undo: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                                let undo_id = undo_id.clone();
+                                let undo_csrf = undo_csrf.clone();
+                                let before_status = before_status.clone();
+                                spawn_local(async move {
+                                    let body = json!({
+                                        "revision": state_rev,
+                                        "status": before_status,
+                                        "progress": before_progress,
+                                    });
+                                    match api::send::<BookState>(
+                                        &format!("{API}/{undo_id}/state"),
+                                        "PUT",
+                                        Some(body),
+                                        &undo_csrf,
+                                    )
+                                    .await
+                                    {
+                                        Ok(val) => patch_book.run((undo_id, Some(val))),
+                                        Err(e) => {
+                                            let _ = error.try_set(e.message);
+                                        }
                                     }
-                                }
+                                });
                             });
-                        });
-                        let _ = notice.try_set(Some(Notice { message: msg, undo: Some(undo) }));
+                            let _ = notice.try_set(Some(Notice {
+                                message: msg,
+                                undo: Some(undo),
+                            }));
+                        }
+                    }
+                    Err(e) if e.status == 409 => {
+                        let _ = reload.try_update(|n| *n += 1);
+                        let _ =
+                            error.try_set("This book changed on another device. Try again.".into());
+                    }
+                    Err(e) => {
+                        let _ = error.try_set(e.message);
                     }
                 }
-                Err(e) if e.status == 409 => {
-                    let _ = reload.try_update(|n| *n += 1);
-                    let _ = error.try_set("This book changed on another device. Try again.".into());
-                }
-                Err(e) => {
-                    let _ = error.try_set(e.message);
-                }
-            }
-        });
-    });
+            });
+        },
+    );
 
     let upload_files = move |files: web_sys::FileList| {
         let len = files.length();
@@ -771,7 +821,10 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                             name: raw_name,
                             progress: 0.0,
                             status: "error",
-                            message: Some("Books opens EPUB, PDF and comic archives (CBZ, CBR, CB7, CBT).".into()),
+                            message: Some(
+                                "Books opens EPUB, PDF and comic archives (CBZ, CBR, CB7, CBT)."
+                                    .into(),
+                            ),
                         });
                     });
                     continue;
@@ -838,18 +891,34 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     };
 
     let book_actions = move |target: BookItem| -> Vec<MenuAction> {
-        let has_position = target.state.as_ref().and_then(|s| s.position.as_ref()).is_some();
-        let cur_status = target.state.as_ref().map(|s| s.status.as_str()).unwrap_or("");
+        let has_position = target
+            .state
+            .as_ref()
+            .and_then(|s| s.position.as_ref())
+            .is_some();
+        let cur_status = target
+            .state
+            .as_ref()
+            .map(|s| s.status.as_str())
+            .unwrap_or("");
         let id_read = target.id.clone();
         let id_det = target.id.clone();
         let t_want = target.clone();
         let want_next = if cur_status == "want" { "" } else { "want" };
         let t_fin = target.clone();
-        let fin_next = if cur_status == "finished" { "" } else { "finished" };
+        let fin_next = if cur_status == "finished" {
+            ""
+        } else {
+            "finished"
+        };
         let t_trash = target.clone();
         vec![
             MenuAction::new(
-                if has_position { "Continue reading" } else { "Read" },
+                if has_position {
+                    "Continue reading"
+                } else {
+                    "Read"
+                },
                 "reading",
             )
             .disabled(!target.error.is_empty())
@@ -926,7 +995,12 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         library.with(|l| {
             let Some(lib) = l else { return Vec::new() };
             match &v {
-                View::Library(id) => lib.books.iter().filter(|b| b.library == *id).cloned().collect(),
+                View::Library(id) => lib
+                    .books
+                    .iter()
+                    .filter(|b| b.library == *id)
+                    .cloned()
+                    .collect(),
                 View::Reading => lib
                     .books
                     .iter()
@@ -969,8 +1043,16 @@ pub fn BooksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let shell_class = move || {
         format!(
             "app-shell pim-shell books-shell{}{}",
-            if details_id.with(Option::is_some) { " has-pim-details" } else { "" },
-            if open_id.with(Option::is_some) { " is-reading" } else { "" },
+            if details_id.with(Option::is_some) {
+                " has-pim-details"
+            } else {
+                ""
+            },
+            if open_id.with(Option::is_some) {
+                " is-reading"
+            } else {
+                ""
+            },
         )
     };
 
@@ -1506,7 +1588,9 @@ fn ConfirmTrash(
             };
             let id = b.id.clone();
             match reducer(|tx| conn.reducers.trash_entry_then(id, b.revision, replied(tx))).await {
-                Ok(()) => { on_done.try_run((b.id, b.title)); },
+                Ok(()) => {
+                    on_done.try_run((b.id, b.title));
+                }
                 Err(msg) => {
                     let _ = err.try_set(msg);
                     let _ = busy.try_set(false);
@@ -1735,7 +1819,10 @@ fn BookDetails(
     let book_id = StoredValue::new(book_id);
     let current_book = Memo::new(move |_| {
         let id = book_id.get_value();
-        library.with(|l| l.as_ref().and_then(|l| l.books.iter().find(|b| b.id == id).cloned()))
+        library.with(|l| {
+            l.as_ref()
+                .and_then(|l| l.books.iter().find(|b| b.id == id).cloned())
+        })
     });
 
     let on_keydown = move |event: web_sys::KeyboardEvent| {
@@ -1747,7 +1834,9 @@ fn BookDetails(
                 .is_some();
             if !in_menu {
                 event.prevent_default();
-                { on_close.try_run(()); };
+                {
+                    on_close.try_run(());
+                };
             }
         }
     };
@@ -1966,7 +2055,8 @@ fn Reader(
     on_state: Callback<BookState>,
     actions: Callback<(), Vec<MenuAction>>,
     /// Open at this page (from 0) instead of the saved place (PDF and comics).
-    #[prop(default = None)] start_page: Option<usize>,
+    #[prop(default = None)]
+    start_page: Option<usize>,
 ) -> impl IntoView {
     let shared = context();
     // Find in a PDF, and its highlights (kept in the book's note in Notes).
@@ -2003,8 +2093,11 @@ fn Reader(
 
     let detail: RwSignal<Option<BookDetail>> = RwSignal::new(None);
     let failed = RwSignal::new(String::new());
-    let panel: RwSignal<Option<&'static str>> =
-        RwSignal::new(if wide && book.format == "epub" { Some("contents") } else { None });
+    let panel: RwSignal<Option<&'static str>> = RwSignal::new(if wide && book.format == "epub" {
+        Some("contents")
+    } else {
+        None
+    });
     let current_where: RwSignal<Option<Where>> = RwSignal::new(None);
     let pdf_info: RwSignal<Option<PdfReady>> = RwSignal::new(None);
     let conflict: RwSignal<Option<Conflict>> = RwSignal::new(None);
@@ -2039,7 +2132,11 @@ fn Reader(
     let aa_panel = NodeRef::<html::Div>::new();
 
     let revision = StoredValue::new(book.state.as_ref().map_or(0, |s| s.revision));
-    let status = StoredValue::new(book.state.as_ref().map_or_else(String::new, |s| s.status.clone()));
+    let status = StoredValue::new(
+        book.state
+            .as_ref()
+            .map_or_else(String::new, |s| s.status.clone()),
+    );
     let pending: StoredValue<Option<Where>> = StoredValue::new(None);
     let save_seq = StoredValue::new(0u64);
     let alive = Arc::new(AtomicBool::new(true));
@@ -2065,7 +2162,10 @@ fn Reader(
             let aborted = || signal.as_ref().is_some_and(|s| s.aborted());
             match api::request::<BookDetail>(
                 &format!("{API}/{bid}"),
-                Req { signal: signal.clone(), ..Default::default() },
+                Req {
+                    signal: signal.clone(),
+                    ..Default::default()
+                },
             )
             .await
             {
@@ -2099,40 +2199,51 @@ fn Reader(
 
     // Preference signals.
     let theme = Memo::new(move |_| {
-        shared
-            .preferences
-            .value
-            .with(|p| p.as_ref().and_then(|p| pref_str(p, "booksTheme")).unwrap_or("dar").to_owned())
+        shared.preferences.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| pref_str(p, "booksTheme"))
+                .unwrap_or("dar")
+                .to_owned()
+        })
     });
     let font = Memo::new(move |_| {
-        shared
-            .preferences
-            .value
-            .with(|p| p.as_ref().and_then(|p| pref_str(p, "booksFont")).unwrap_or("serif").to_owned())
+        shared.preferences.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| pref_str(p, "booksFont"))
+                .unwrap_or("serif")
+                .to_owned()
+        })
     });
     let font_size = Memo::new(move |_| {
-        shared
-            .preferences
-            .value
-            .with(|p| p.as_ref().and_then(|p| pref_u32(p, "booksFontSize")).unwrap_or(18))
+        shared.preferences.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| pref_u32(p, "booksFontSize"))
+                .unwrap_or(18)
+        })
     });
     let line_height_pref = Memo::new(move |_| {
-        shared
-            .preferences
-            .value
-            .with(|p| p.as_ref().and_then(|p| pref_str(p, "booksLineHeight")).unwrap_or("normal").to_owned())
+        shared.preferences.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| pref_str(p, "booksLineHeight"))
+                .unwrap_or("normal")
+                .to_owned()
+        })
     });
     let layout = Memo::new(move |_| {
-        shared
-            .preferences
-            .value
-            .with(|p| p.as_ref().and_then(|p| pref_str(p, "booksLayout")).unwrap_or("pages").to_owned())
+        shared.preferences.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| pref_str(p, "booksLayout"))
+                .unwrap_or("pages")
+                .to_owned()
+        })
     });
     let comic_direction = Memo::new(move |_| {
-        shared
-            .preferences
-            .value
-            .with(|p| p.as_ref().and_then(|p| pref_str(p, "booksComicDirection")).unwrap_or("auto").to_owned())
+        shared.preferences.value.with(|p| {
+            p.as_ref()
+                .and_then(|p| pref_str(p, "booksComicDirection"))
+                .unwrap_or("auto")
+                .to_owned()
+        })
     });
 
     // Compute ReaderLook from preferences & stage styles (Dar theme reads computed styles).
@@ -2221,7 +2332,13 @@ fn Reader(
                             "status": st_next,
                             "device": device_name(),
                         });
-                        api::send::<BookState>(&format!("{API}/{bid}/state"), "PUT", Some(body), &csrf).await
+                        api::send::<BookState>(
+                            &format!("{API}/{bid}/state"),
+                            "PUT",
+                            Some(body),
+                            &csrf,
+                        )
+                        .await
                     }
                 };
                 match put_once(rev, cur_status, next.clone()).await {
@@ -2231,7 +2348,9 @@ fn Reader(
                             let _ = status.try_set_value(st.status.clone());
                             let _ = save_error.try_set(String::new());
                         }
-                        { on_state.try_run(st); };
+                        {
+                            on_state.try_run(st);
+                        };
                     }
                     Err(e) if e.status == 409 => {
                         if !alive.load(Ordering::Relaxed) {
@@ -2242,7 +2361,8 @@ fn Reader(
                         {
                             let _ = revision.try_set_value(st.revision);
                             let _ = status.try_set_value(st.status.clone());
-                            if st.position.is_some() && (st.progress - next.progress).abs() > 0.005 {
+                            if st.position.is_some() && (st.progress - next.progress).abs() > 0.005
+                            {
                                 let _ = conflict.try_set(Some(Conflict {
                                     state: st,
                                     position: Some(next.position),
@@ -2255,7 +2375,9 @@ fn Reader(
                                     let _ = status.try_set_value(updated.status.clone());
                                     let _ = save_error.try_set(String::new());
                                 }
-                                { on_state.try_run(updated); };
+                                {
+                                    on_state.try_run(updated);
+                                };
                             }
                         }
                     }
@@ -2322,7 +2444,11 @@ fn Reader(
         if let Some(spine) = pos.spine {
             let mut label = String::new();
             detail.with(|d| {
-                if let Some(BookDetail { manifest: BookManifest::Epub { toc, .. }, .. }) = d {
+                if let Some(BookDetail {
+                    manifest: BookManifest::Epub { toc, .. },
+                    ..
+                }) = d
+                {
                     for entry in toc {
                         if entry.spine >= 0 && (entry.spine as usize) <= spine {
                             label = entry.label.clone();
@@ -2365,7 +2491,10 @@ fn Reader(
             return;
         }
         let is_comic_kind = detail.with_untracked(|d| {
-            matches!(d.as_ref().map(|d| &d.manifest), Some(BookManifest::Comic { .. }))
+            matches!(
+                d.as_ref().map(|d| &d.manifest),
+                Some(BookManifest::Comic { .. })
+            )
         });
         if is_comic_kind {
             if let Some(h) = comic_handle.get_untracked() {
@@ -2385,12 +2514,20 @@ fn Reader(
         match kind {
             "epub" => {
                 if let Some(h) = epub_handle.get_untracked() {
-                    if direction > 0 { h.next(); } else { h.previous(); }
+                    if direction > 0 {
+                        h.next();
+                    } else {
+                        h.previous();
+                    }
                 }
             }
             "comic" => {
                 if let Some(h) = comic_handle.get_untracked() {
-                    if direction > 0 { h.next(); } else { h.previous(); }
+                    if direction > 0 {
+                        h.next();
+                    } else {
+                        h.previous();
+                    }
                 }
             }
             _ => {
@@ -2404,14 +2541,18 @@ fn Reader(
     let marked = Memo::new(move |_| {
         let w = current_where.get()?;
         let is_comic_kind = detail.with(|d| {
-            matches!(d.as_ref().map(|d| &d.manifest), Some(BookManifest::Comic { .. }))
+            matches!(
+                d.as_ref().map(|d| &d.manifest),
+                Some(BookManifest::Comic { .. })
+            )
         });
         marks.with(|list| {
             list.iter()
                 .find(|m| {
                     m.position.spine == w.position.spine
                         && m.position.page == w.position.page
-                        && (is_comic_kind || (m.position.fraction - w.position.fraction).abs() < 0.02)
+                        && (is_comic_kind
+                            || (m.position.fraction - w.position.fraction).abs() < 0.02)
                 })
                 .cloned()
         })
@@ -2436,7 +2577,14 @@ fn Reader(
         };
         spawn_local(async move {
             if let Some(m) = existing {
-                match api::send::<Value>(&format!("{API}/{bid}/marks/{}", m.id), "DELETE", None, &csrf).await {
+                match api::send::<Value>(
+                    &format!("{API}/{bid}/marks/{}", m.id),
+                    "DELETE",
+                    None,
+                    &csrf,
+                )
+                .await
+                {
                     Ok(_) => {
                         let _ = marks.try_update(|list| list.retain(|x| x.id != m.id));
                     }
@@ -2450,7 +2598,14 @@ fn Reader(
                     "position": w.position,
                     "label": label,
                 });
-                match api::send::<BookMark>(&format!("{API}/{bid}/marks"), "POST", Some(body), &csrf).await {
+                match api::send::<BookMark>(
+                    &format!("{API}/{bid}/marks"),
+                    "POST",
+                    Some(body),
+                    &csrf,
+                )
+                .await
+                {
                     Ok(mark) => {
                         let _ = marks.try_update(|list| list.push(mark));
                     }
@@ -2474,8 +2629,13 @@ fn Reader(
         if event.default_prevented() {
             return;
         }
-        let pdf_open = detail.with_untracked(|d| matches!(d.as_ref().map(|d| &d.manifest), Some(BookManifest::Pdf)));
-        if pdf_open && (event.ctrl_key() || event.meta_key()) && !event.alt_key() && event.key().eq_ignore_ascii_case("f") {
+        let pdf_open = detail
+            .with_untracked(|d| matches!(d.as_ref().map(|d| &d.manifest), Some(BookManifest::Pdf)));
+        if pdf_open
+            && (event.ctrl_key() || event.meta_key())
+            && !event.alt_key()
+            && event.key().eq_ignore_ascii_case("f")
+        {
             event.prevent_default();
             open_find();
             return;
@@ -2493,9 +2653,8 @@ fn Reader(
             return;
         }
         let key = event.key();
-        let is_pdf = detail.with_untracked(|d| {
-            matches!(d.as_ref().map(|d| &d.manifest), Some(BookManifest::Pdf))
-        });
+        let is_pdf = detail
+            .with_untracked(|d| matches!(d.as_ref().map(|d| &d.manifest), Some(BookManifest::Pdf)));
         let rtl = right_to_left.get_untracked();
         if key == "Escape" {
             event.prevent_default();
@@ -2504,7 +2663,9 @@ fn Reader(
             } else if is_fullscreen() {
                 call_promise_method(&document(), "exitFullscreen");
             } else {
-                { on_close.try_run(()); };
+                {
+                    on_close.try_run(());
+                };
             }
         } else if key == (if rtl { "ArrowLeft" } else { "ArrowRight" })
             || (!is_pdf && (key == "PageDown" || (key == " " && !event.shift_key())))
@@ -2556,7 +2717,9 @@ fn Reader(
     let set_pref = move |key: &str, val: Value| {
         let mut map = Map::new();
         map.insert(key.into(), val);
-        { on_preferences.try_run(map); };
+        {
+            on_preferences.try_run(map);
+        };
     };
 
     let on_scrub = move |ev: web_sys::Event| {
@@ -2572,7 +2735,11 @@ fn Reader(
                     at += sizes[index];
                     index += 1;
                 }
-                let denom = sizes.get(index).copied().filter(|&s| s > 0.0).unwrap_or(1.0);
+                let denom = sizes
+                    .get(index)
+                    .copied()
+                    .filter(|&s| s > 0.0)
+                    .unwrap_or(1.0);
                 let frac = ((val * total - at) / denom).clamp(0.0, 1.0);
                 if let Some(h) = epub_handle.get_untracked() {
                     h.go_to(index, frac, None);

@@ -30,7 +30,10 @@ thread_local! {
     static MERMAID: RefCell<Option<JsValue>> = const { RefCell::new(None) };
 }
 
-async fn load_module(cache: &'static LocalKey<RefCell<Option<JsValue>>>, attr: &str) -> Result<JsValue, String> {
+async fn load_module(
+    cache: &'static LocalKey<RefCell<Option<JsValue>>>,
+    attr: &str,
+) -> Result<JsValue, String> {
     if let Some(module) = cache.with(|m| m.borrow().clone()) {
         return Ok(module);
     }
@@ -51,7 +54,10 @@ fn own_placeholders(root: &web_sys::Element, selector: &str) -> Vec<web_sys::Ele
     };
     let mut out = Vec::with_capacity(list.length() as usize);
     for i in 0..list.length() {
-        let Some(el) = list.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) else {
+        let Some(el) = list
+            .item(i)
+            .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        else {
             continue;
         };
         // Skip placeholders inside nested embeds (`note_embed`), which hydrate themselves.
@@ -106,7 +112,12 @@ async fn hydrate_math(root: NodeRef<html::Div>, alive: Arc<AtomicBool>) {
             continue;
         };
         let display = el.has_attribute("data-display");
-        match render.call3(&JsValue::NULL, &el, &JsValue::from_str(&tex), &JsValue::from_bool(display)) {
+        match render.call3(
+            &JsValue::NULL,
+            &el,
+            &JsValue::from_str(&tex),
+            &JsValue::from_bool(display),
+        ) {
             Ok(_) => {
                 let _ = list.remove_1("is-error");
                 let _ = list.add_1("is-rendered");
@@ -143,7 +154,10 @@ async fn hydrate_mermaid(root: NodeRef<html::Div>, alive: Arc<AtomicBool>) {
     };
 
     for el in own_placeholders(&root_el, ".mermaid[data-source]") {
-        if !alive.load(Ordering::Relaxed) || root.try_get_untracked().flatten().is_none() || !el.is_connected() {
+        if !alive.load(Ordering::Relaxed)
+            || root.try_get_untracked().flatten().is_none()
+            || !el.is_connected()
+        {
             return;
         }
         let list = el.class_list();
@@ -160,7 +174,10 @@ async fn hydrate_mermaid(root: NodeRef<html::Div>, alive: Arc<AtomicBool>) {
             Ok(p) => JsFuture::from(p).await,
             Err(err) => Err(err),
         };
-        if !alive.load(Ordering::Relaxed) || root.try_get_untracked().flatten().is_none() || !el.is_connected() {
+        if !alive.load(Ordering::Relaxed)
+            || root.try_get_untracked().flatten().is_none()
+            || !el.is_connected()
+        {
             return;
         }
         match outcome {

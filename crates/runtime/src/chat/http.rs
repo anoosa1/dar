@@ -11,15 +11,15 @@ use serde_json::{Map, Value, json};
 use crate::error::{AppError, Result};
 use crate::http::{Runtime, body_object, json_response, ok};
 
-use super::{
-    CHAT_LIMIT_ACCOUNTS, CHAT_LIMIT_NAME, CHAT_LIMIT_TEXT, ChatRuntime, is_account_id,
-};
+use super::{CHAT_LIMIT_ACCOUNTS, CHAT_LIMIT_NAME, CHAT_LIMIT_TEXT, ChatRuntime, is_account_id};
 
 const BODY_LIMIT: usize = 512 * 1024;
 
 fn friendly_message(code: &str) -> Option<String> {
     match code {
-        "quotaExceeded" => Some(format!("You can link up to {CHAT_LIMIT_ACCOUNTS} accounts.")),
+        "quotaExceeded" => Some(format!(
+            "You can link up to {CHAT_LIMIT_ACCOUNTS} accounts."
+        )),
         "conflict" => Some("This account is not linked. Link it again to send messages.".into()),
         "notFound" => Some("This chat or account no longer exists.".into()),
         _ => None,
@@ -124,10 +124,9 @@ async fn dispatch(
         if let Some(cursor) = query.get("cursor").filter(|s| !s.is_empty()) {
             params.insert("cursor".to_owned(), json!(cursor));
         }
-        return Ok(Some(ok(
-            chat.call(session_id, "threads", Value::Object(params))
-                .await?,
-        )?));
+        return Ok(Some(ok(chat
+            .call(session_id, "threads", Value::Object(params))
+            .await?)?));
     }
     if path == "/messages" && *method == Method::GET {
         let mut params = Map::new();
@@ -138,10 +137,9 @@ async fn dispatch(
         if let Some(before) = query.get("before").filter(|s| !s.is_empty()) {
             params.insert("before".to_owned(), json!(before));
         }
-        return Ok(Some(ok(
-            chat.call(session_id, "messages", Value::Object(params))
-                .await?,
-        )?));
+        return Ok(Some(ok(chat
+            .call(session_id, "messages", Value::Object(params))
+            .await?)?));
     }
     if path == "/chats" && *method == Method::POST {
         let v = input(body, headers, &["accountId", "phone", "user"]).await?;
@@ -158,10 +156,9 @@ async fn dispatch(
         let thread_id = str_req(v.get("threadId"), 300)?;
         let muted = v.get("muted") == Some(&Value::Bool(true));
         let deafened = v.get("deafened") == Some(&Value::Bool(true));
-        return Ok(Some(ok(
-            chat.voice_join(session_id, &thread_id, muted, deafened)
-                .await?,
-        )?));
+        return Ok(Some(ok(chat
+            .voice_join(session_id, &thread_id, muted, deafened)
+            .await?)?));
     }
     if path == "/voice/leave" && *method == Method::POST {
         let v = input(body, headers, &["accountId"]).await?;
@@ -179,10 +176,9 @@ async fn dispatch(
             .and_then(Value::as_bool)
             .ok_or_else(AppError::invalid)?;
         let account_id = str_req(v.get("accountId"), 64)?;
-        return Ok(Some(ok(
-            chat.voice_set(session_id, &account_id, muted, deafened)
-                .await?,
-        )?));
+        return Ok(Some(ok(chat
+            .voice_set(session_id, &account_id, muted, deafened)
+            .await?)?));
     }
     if path == "/voice/code" && *method == Method::GET {
         let account_id = str_query(query.get("accountId"), 64)?;
@@ -206,8 +202,15 @@ async fn dispatch(
         let message_id = str_query(query.get("messageId"), 128)?;
         let attachment = query.get("download").map(String::as_str) == Some("1");
         return Ok(Some(
-            chat.serve_media(method, headers, session_id, &thread_id, &message_id, attachment)
-                .await?,
+            chat.serve_media(
+                method,
+                headers,
+                session_id,
+                &thread_id,
+                &message_id,
+                attachment,
+            )
+            .await?,
         ));
     }
     if path == "/save" && *method == Method::POST {
@@ -226,8 +229,8 @@ async fn dispatch(
         let message_id = str_req(v.get("messageId"), 128)?;
         let emoji = str_default(v.get("emoji"), 120)?;
         let remove = v.get("remove") == Some(&Value::Bool(true));
-        return Ok(Some(ok(
-            chat.act(
+        return Ok(Some(ok(chat
+            .act(
                 session_id,
                 &thread_id,
                 &message_id,
@@ -236,8 +239,7 @@ async fn dispatch(
                 None,
                 remove,
             )
-            .await?,
-        )?));
+            .await?)?));
     }
     if path == "/edit" && *method == Method::POST {
         let v = input(body, headers, &["threadId", "messageId", "text"]).await?;
@@ -251,8 +253,8 @@ async fn dispatch(
         }
         let thread_id = str_req(v.get("threadId"), 300)?;
         let message_id = str_req(v.get("messageId"), 128)?;
-        return Ok(Some(ok(
-            chat.act(
+        return Ok(Some(ok(chat
+            .act(
                 session_id,
                 &thread_id,
                 &message_id,
@@ -261,33 +263,43 @@ async fn dispatch(
                 Some(text),
                 false,
             )
-            .await?,
-        )?));
+            .await?)?));
     }
     if path == "/revoke" && *method == Method::POST {
         let v = input(body, headers, &["threadId", "messageId"]).await?;
         let thread_id = str_req(v.get("threadId"), 300)?;
         let message_id = str_req(v.get("messageId"), 128)?;
-        return Ok(Some(ok(
-            chat.act(session_id, &thread_id, &message_id, "revoke", None, None, false)
-                .await?,
-        )?));
+        return Ok(Some(ok(chat
+            .act(
+                session_id,
+                &thread_id,
+                &message_id,
+                "revoke",
+                None,
+                None,
+                false,
+            )
+            .await?)?));
     }
     if path == "/deleteForMe" && *method == Method::POST {
         let v = input(body, headers, &["threadId", "messageId"]).await?;
         let thread_id = str_req(v.get("threadId"), 300)?;
         let message_id = str_req(v.get("messageId"), 128)?;
-        return Ok(Some(ok(
-            chat.call(
+        return Ok(Some(ok(chat
+            .call(
                 session_id,
                 "deleteForMe",
                 json!({ "threadId": thread_id, "messageId": message_id }),
             )
-            .await?,
-        )?));
+            .await?)?));
     }
     if path == "/chatSetting" && *method == Method::POST {
-        let v = input(body, headers, &["threadId", "pinned", "archived", "mutedUntil"]).await?;
+        let v = input(
+            body,
+            headers,
+            &["threadId", "pinned", "archived", "mutedUntil"],
+        )
+        .await?;
         let (mut pinned, mut archived, mut muted_until) = (None, None, None);
         if let Some(b) = v.get("pinned").and_then(Value::as_bool) {
             pinned = Some(b);
@@ -303,10 +315,9 @@ async fn dispatch(
             return Err(AppError::invalid());
         }
         let thread_id = str_req(v.get("threadId"), 300)?;
-        return Ok(Some(ok(
-            chat.chat_setting(session_id, &thread_id, pinned, archived, muted_until)
-                .await?,
-        )?));
+        return Ok(Some(ok(chat
+            .chat_setting(session_id, &thread_id, pinned, archived, muted_until)
+            .await?)?));
     }
     if path == "/info" && *method == Method::GET {
         let thread_id = str_query(query.get("threadId"), 300)?;
@@ -315,19 +326,20 @@ async fn dispatch(
     if path == "/history" && *method == Method::POST {
         let v = input(body, headers, &["threadId"]).await?;
         let thread_id = str_req(v.get("threadId"), 300)?;
-        return Ok(Some(ok(chat.request_history(session_id, &thread_id).await?)?));
+        return Ok(Some(ok(chat
+            .request_history(session_id, &thread_id)
+            .await?)?));
     }
     if path == "/contacts" && *method == Method::GET {
         let account_id = query.get("accountId").map(String::as_str).unwrap_or("");
         let q = query.get("q").map(String::as_str).unwrap_or("");
-        return Ok(Some(ok(
-            chat.call(
+        return Ok(Some(ok(chat
+            .call(
                 session_id,
                 "contactSearch",
                 json!({ "accountId": account_id, "q": q }),
             )
-            .await?,
-        )?));
+            .await?)?));
     }
     if path == "/read" && *method == Method::POST {
         let v = input(body, headers, &["threadId"]).await?;
@@ -338,7 +350,11 @@ async fn dispatch(
         let v = input(body, headers, &["threadId", "text", "quotedId"]).await?;
         let text = str_req(v.get("text"), CHAT_LIMIT_TEXT)?;
         if text.trim().is_empty() {
-            return Err(AppError::with("invalidInput", 400, "Write a message first."));
+            return Err(AppError::with(
+                "invalidInput",
+                400,
+                "Write a message first.",
+            ));
         }
         let thread_id = str_req(v.get("threadId"), 300)?;
         let quoted_id = str_opt(v.get("quotedId"), 128)?;
@@ -351,22 +367,21 @@ async fn dispatch(
         let v = input(body, headers, &["threadId", "messageId"]).await?;
         let thread_id = str_req(v.get("threadId"), 300)?;
         let message_id = str_req(v.get("messageId"), 128)?;
-        return Ok(Some(ok(
-            chat.retry(session_id, &thread_id, &message_id).await?,
-        )?));
+        return Ok(Some(ok(chat
+            .retry(session_id, &thread_id, &message_id)
+            .await?)?));
     }
     if path == "/discard" && *method == Method::POST {
         let v = input(body, headers, &["threadId", "messageId"]).await?;
         let thread_id = str_req(v.get("threadId"), 300)?;
         let message_id = str_req(v.get("messageId"), 128)?;
-        return Ok(Some(ok(
-            chat.call(
+        return Ok(Some(ok(chat
+            .call(
                 session_id,
                 "deleteFailed",
                 json!({ "threadId": thread_id, "messageId": message_id }),
             )
-            .await?,
-        )?));
+            .await?)?));
     }
     if path == "/accounts/link" && *method == Method::POST {
         let v = input(body, headers, &["name", "phone", "accountId", "platform"]).await?;
@@ -417,10 +432,13 @@ async fn dispatch(
             if suffix.is_empty() && *method == Method::PATCH {
                 let v = input(body, headers, &["name"]).await?;
                 let name = str_req(v.get("name"), CHAT_LIMIT_NAME)?;
-                return Ok(Some(ok(
-                    chat.call(session_id, "rename", json!({ "accountId": id, "name": name }))
-                        .await?,
-                )?));
+                return Ok(Some(ok(chat
+                    .call(
+                        session_id,
+                        "rename",
+                        json!({ "accountId": id, "name": name }),
+                    )
+                    .await?)?));
             }
             if suffix.is_empty() && *method == Method::DELETE {
                 return Ok(Some(ok(chat.remove(session_id, id).await?)?));

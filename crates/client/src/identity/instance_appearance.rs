@@ -29,8 +29,16 @@ fn encode_base64(bytes: &[u8]) -> String {
         let n = (b0 << 16) | (b1 << 8) | b2;
         out.push(TABLE[((n >> 18) & 63) as usize] as char);
         out.push(TABLE[((n >> 12) & 63) as usize] as char);
-        out.push(if chunk.len() > 1 { TABLE[((n >> 6) & 63) as usize] as char } else { '=' });
-        out.push(if chunk.len() > 2 { TABLE[(n & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            TABLE[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -54,7 +62,10 @@ pub fn InstanceAppearanceSettings(session: BrowserSession) -> impl IntoView {
         spawn_local(async move {
             match api::request::<InstanceAppearance>(
                 "/api/v1/appearance",
-                Req { signal: Some(signal), ..Default::default() },
+                Req {
+                    signal: Some(signal),
+                    ..Default::default()
+                },
             )
             .await
             {
@@ -84,7 +95,9 @@ pub fn InstanceAppearanceSettings(session: BrowserSession) -> impl IntoView {
 
     let on_submit = move |event: web_sys::SubmitEvent| {
         event.prevent_default();
-        let Some(current) = appearance.get_untracked() else { return };
+        let Some(current) = appearance.get_untracked() else {
+            return;
+        };
         busy.set(true);
         error.set(String::new());
         saved.set(false);
@@ -146,7 +159,10 @@ pub fn InstanceAppearanceSettings(session: BrowserSession) -> impl IntoView {
     };
 
     let on_file_change = move |event: web_sys::Event| {
-        let Some(input) = event.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) else {
+        let Some(input) = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
+        else {
             return;
         };
         saved.set(false);
@@ -154,7 +170,9 @@ pub fn InstanceAppearanceSettings(session: BrowserSession) -> impl IntoView {
             return;
         };
         let mime = selected.type_();
-        if !matches!(mime.as_str(), "image/png" | "image/webp") || selected.size() > (256 * 1024) as f64 {
+        if !matches!(mime.as_str(), "image/png" | "image/webp")
+            || selected.size() > (256 * 1024) as f64
+        {
             error.set("Choose a PNG or WebP image up to 256 KiB.".to_owned());
             input.set_value("");
             return;

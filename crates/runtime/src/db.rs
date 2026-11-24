@@ -25,11 +25,19 @@ const CODES: [(&str, u16); 13] = [
 fn coded(detail: &str) -> AppError {
     for (code, status) in CODES {
         if detail.contains(code) {
-            let message = if code == "lockedFolder" { "Unlock the Locked folder with your password to continue." } else { code };
+            let message = if code == "lockedFolder" {
+                "Unlock the Locked folder with your password to continue."
+            } else {
+                code
+            };
             return AppError::with(code, status, message);
         }
     }
-    AppError::with("databaseUnavailable", 503, "The database request could not be completed.")
+    AppError::with(
+        "databaseUnavailable",
+        503,
+        "The database request could not be completed.",
+    )
 }
 
 #[derive(Clone)]
@@ -42,8 +50,17 @@ pub struct Database {
 
 impl Database {
     pub fn new(url: &str, name: &str, token: &str) -> Self {
-        let client = reqwest::Client::builder().tcp_nodelay(true).timeout(std::time::Duration::from_secs(15)).build().expect("HTTP client");
-        Self { client, url: url.trim_end_matches('/').into(), name: name.into(), token: token.trim().into() }
+        let client = reqwest::Client::builder()
+            .tcp_nodelay(true)
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .expect("HTTP client");
+        Self {
+            client,
+            url: url.trim_end_matches('/').into(),
+            name: name.into(),
+            token: token.trim().into(),
+        }
     }
 
     /// Runs a procedure or reducer and answers once its changes are durable.
@@ -57,13 +74,32 @@ impl Database {
     }
 
     /// `read` for operations in `reads`, otherwise `call` (`database.ts` `operation`).
-    pub async fn operation(&self, function: &str, operation: &str, reads: &[&str], args: Value) -> Result<Value> {
-        self.invoke(function, args, !reads.contains(&operation)).await
+    pub async fn operation(
+        &self,
+        function: &str,
+        operation: &str,
+        reads: &[&str],
+        args: Value,
+    ) -> Result<Value> {
+        self.invoke(function, args, !reads.contains(&operation))
+            .await
     }
 
     async fn invoke(&self, function: &str, args: Value, confirmed: bool) -> Result<Value> {
-        let url = format!("{}/v1/database/{}/call/{function}{}", self.url, self.name, if confirmed { "" } else { "?confirmed=false" });
-        let response = self.client.post(url).bearer_auth(&self.token).json(&args).send().await.map_err(|_| coded(""))?;
+        let url = format!(
+            "{}/v1/database/{}/call/{function}{}",
+            self.url,
+            self.name,
+            if confirmed { "" } else { "?confirmed=false" }
+        );
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(&self.token)
+            .json(&args)
+            .send()
+            .await
+            .map_err(|_| coded(""))?;
         let ok = response.status().is_success();
         let text = response.text().await.map_err(|_| coded(""))?;
         if !ok {

@@ -8,7 +8,13 @@ use base64::Engine;
 use subtle::ConstantTimeEq;
 
 fn sha1(data: &[u8]) -> [u8; 20] {
-    let mut h: [u32; 5] = [0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0xC3D2_E1F0];
+    let mut h: [u32; 5] = [
+        0x6745_2301,
+        0xEFCD_AB89,
+        0x98BA_DCFE,
+        0x1032_5476,
+        0xC3D2_E1F0,
+    ];
     let mut message = data.to_vec();
     let bits = (data.len() as u64).wrapping_mul(8);
     message.push(0x80);
@@ -32,7 +38,12 @@ fn sha1(data: &[u8]) -> [u8; 20] {
                 40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1B_BCDC),
                 _ => (b ^ c ^ d, 0xCA62_C1D6),
             };
-            let next = a.rotate_left(5).wrapping_add(f).wrapping_add(e).wrapping_add(k).wrapping_add(*word);
+            let next = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(*word);
             e = d;
             d = c;
             c = b.rotate_left(30);
@@ -72,7 +83,10 @@ fn keygrip(key: &[u8], data: &str) -> String {
 
 /// Whether `signature` (the `<name>.sig` cookie) signs `<name>=<value>` under `key`.
 pub(crate) fn valid(key: &[u8], name: &str, value: &str, signature: &str) -> bool {
-    keygrip(key, &format!("{name}={value}")).as_bytes().ct_eq(signature.as_bytes()).into()
+    keygrip(key, &format!("{name}={value}"))
+        .as_bytes()
+        .ct_eq(signature.as_bytes())
+        .into()
 }
 
 #[cfg(test)]
@@ -82,9 +96,15 @@ mod tests {
     #[test]
     fn sha1_matches_the_standard_vectors() {
         let hex = |d: [u8; 20]| d.iter().map(|b| format!("{b:02x}")).collect::<String>();
-        assert_eq!(hex(sha1(b"abc")), "a9993e364706816aba3e25717850c26c9cd0d89d");
+        assert_eq!(
+            hex(sha1(b"abc")),
+            "a9993e364706816aba3e25717850c26c9cd0d89d"
+        );
         assert_eq!(hex(sha1(b"")), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
-        assert_eq!(hex(sha1(&[b'a'; 1000])), "291e9a6c66994949b57ba5e650361e98fc36b1ba");
+        assert_eq!(
+            hex(sha1(&[b'a'; 1000])),
+            "291e9a6c66994949b57ba5e650361e98fc36b1ba"
+        );
     }
 
     #[test]

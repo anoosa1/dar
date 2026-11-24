@@ -127,7 +127,9 @@ impl<'a> DestResolver<'a> {
 
     fn resolve_dest_object(&mut self, dest: Object<'a>) -> Option<usize> {
         match dest {
-            Object::Array(arr) => resolve_explicit_dest(&arr, self.page_index_by_id, self.page_count),
+            Object::Array(arr) => {
+                resolve_explicit_dest(&arr, self.page_index_by_id, self.page_count)
+            }
             Object::Dict(dict) => {
                 let arr = dict.get::<Array<'a>>(b"D")?;
                 resolve_explicit_dest(&arr, self.page_index_by_id, self.page_count)
@@ -207,7 +209,9 @@ fn resolve_explicit_dest(
 ) -> Option<usize> {
     let first = arr.raw_iter().next()?;
     match first {
-        MaybeRef::Ref(obj_ref) => page_index_by_id.get(&ObjectIdentifier::from(obj_ref)).copied(),
+        MaybeRef::Ref(obj_ref) => page_index_by_id
+            .get(&ObjectIdentifier::from(obj_ref))
+            .copied(),
         MaybeRef::NotRef(Object::Number(n)) => {
             let idx = usize::try_from(n.as_i64()).ok()?;
             (idx < page_count).then_some(idx)

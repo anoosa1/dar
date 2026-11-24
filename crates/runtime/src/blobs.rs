@@ -42,7 +42,9 @@ pub struct Blobs {
     uploads: PathBuf,
     grace_ms: u128,
     /// Storing content under a digest and removing that digest never overlap.
-    turns: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>>,
+    turns: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+    >,
 }
 
 impl Blobs {
@@ -51,7 +53,12 @@ impl Blobs {
         let uploads = root.join("uploads");
         std::fs::create_dir_all(&directory)?;
         std::fs::create_dir_all(&uploads)?;
-        Ok(Blobs { directory, uploads, grace_ms: GRACE_MS, turns: Default::default() })
+        Ok(Blobs {
+            directory,
+            uploads,
+            grace_ms: GRACE_MS,
+            turns: Default::default(),
+        })
     }
 
     async fn turn(&self, id: &str) -> tokio::sync::OwnedMutexGuard<()> {
@@ -74,7 +81,12 @@ impl Blobs {
         let mut entries = tokio::fs::read_dir(&self.uploads).await?;
         while let Some(entry) = entries.next_entry().await? {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let ok = name.strip_suffix(".tmp").is_some_and(|id| id.len() == 36 && id.bytes().all(|b| matches!(b, b'a'..=b'f' | b'0'..=b'9' | b'-')));
+            let ok = name.strip_suffix(".tmp").is_some_and(|id| {
+                id.len() == 36
+                    && id
+                        .bytes()
+                        .all(|b| matches!(b, b'a'..=b'f' | b'0'..=b'9' | b'-'))
+            });
             if !ok {
                 return Err(std::io::Error::other("Unrecognized temporary upload file."));
             }
@@ -84,7 +96,11 @@ impl Blobs {
     }
 
     fn settled_enough(&self, meta: &std::fs::Metadata) -> bool {
-        let age = meta.modified().ok().and_then(|m| m.elapsed().ok()).map_or(0, |d| d.as_millis());
+        let age = meta
+            .modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .map_or(0, |d| d.as_millis());
         age >= self.grace_ms
     }
 
@@ -103,7 +119,9 @@ impl Blobs {
         if !self.settled_enough(&meta) {
             return Ok(false);
         }
-        tokio::fs::remove_file(&target).await.map_err(|_| AppError::internal())?;
+        tokio::fs::remove_file(&target)
+            .await
+            .map_err(|_| AppError::internal())?;
         self.sync_directory().await;
         Ok(true)
     }
@@ -111,7 +129,9 @@ impl Blobs {
     /// Stored content past its grace period, by name (for the orphan sweep).
     pub async fn settled(&self) -> Vec<String> {
         let mut out = Vec::new();
-        let Ok(mut entries) = tokio::fs::read_dir(&self.directory).await else { return out };
+        let Ok(mut entries) = tokio::fs::read_dir(&self.directory).await else {
+            return out;
+        };
         while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name().to_string_lossy().into_owned();
             if !is_blob_id(&name) {
@@ -144,22 +164,40 @@ impl Blobs {
 
     /// `receive`, with the temporary file named after an upload reservation (`uploads/<id>.tmp`,
     /// as the TypeScript runtime named it), so an interrupted upload is identifiable on disk.
-    pub async fn receive_named<S, E>(&self, mut source: S, size: u64, name: Option<&str>) -> Result<String>
+    pub async fn receive_named<S, E>(
+        &self,
+        mut source: S,
+        size: u64,
+        name: Option<&str>,
+    ) -> Result<String>
     where
         S: Stream<Item = std::result::Result<axum::body::Bytes, E>> + Unpin,
     {
-        let temporary = self.uploads.join(format!("{}.tmp", name.map_or_else(crate::auth::uuid, str::to_owned)));
+        let temporary = self.uploads.join(format!(
+            "{}.tmp",
+            name.map_or_else(crate::auth::uuid, str::to_owned)
+        ));
         let result = async {
-            let mut file = tokio::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&temporary).await.map_err(|_| AppError::internal())?;
+            let mut file = tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&temporary)
+                .await
+                .map_err(|_| AppError::internal())?;
             let (mut hash, mut written) = (Sha256::new(), 0u64);
             while let Some(chunk) = source.next().await {
-                let chunk = chunk.map_err(|_| AppError::with("incompleteUpload", 400, "The upload was interrupted."))?;
+                let chunk = chunk.map_err(|_| {
+                    AppError::with("incompleteUpload", 400, "The upload was interrupted.")
+                })?;
                 written += chunk.len() as u64;
                 if written > size {
                     return Err(AppError::new("uploadTooLarge", 413));
                 }
                 hash.update(&chunk);
-                file.write_all(&chunk).await.map_err(|_| AppError::internal())?;
+                file.write_all(&chunk)
+                    .await
+                    .map_err(|_| AppError::internal())?;
             }
             if written != size {
                 return Err(AppError::new("incompleteUpload", 400));
@@ -172,13 +210,24 @@ impl Blobs {
             match tokio::fs::hard_link(&temporary, &target).await {
                 Ok(()) => self.sync_directory().await,
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    let existing = std::fs::OpenOptions::new().read(true).open(&target).map_err(|_| AppError::new("contentUnavailable", 503))?;
-                    let meta = existing.metadata().map_err(|_| AppError::new("contentUnavailable", 503))?;
+                    let existing = std::fs::OpenOptions::new()
+                        .read(true)
+                        .open(&target)
+                        .map_err(|_| AppError::new("contentUnavailable", 503))?;
+                    let meta = existing
+                        .metadata()
+                        .map_err(|_| AppError::new("contentUnavailable", 503))?;
                     if !meta.is_file() || meta.len() != size {
                         return Err(AppError::new("contentUnavailable", 503));
                     }
                     let now = std::time::SystemTime::now();
-                    existing.set_times(std::fs::FileTimes::new().set_accessed(now).set_modified(now)).map_err(|_| AppError::internal())?;
+                    existing
+                        .set_times(
+                            std::fs::FileTimes::new()
+                                .set_accessed(now)
+                                .set_modified(now),
+                        )
+                        .map_err(|_| AppError::internal())?;
                 }
                 Err(_) => return Err(AppError::internal()),
             }
@@ -193,36 +242,91 @@ impl Blobs {
     pub async fn store_bytes(&self, data: impl Into<axum::body::Bytes>) -> Result<String> {
         let bytes = data.into();
         let len = bytes.len() as u64;
-        let stream = futures_util::stream::once(async move { Ok::<axum::body::Bytes, std::io::Error>(bytes) });
+        let stream =
+            futures_util::stream::once(
+                async move { Ok::<axum::body::Bytes, std::io::Error>(bytes) },
+            );
         self.receive(Box::pin(stream), len).await
     }
 
     /// Sends a file: attachments by default, inline only for types browsers render safely.
-    pub async fn download(&self, method: &Method, headers: &HeaderMap, entry: &BlobFile, preview: bool) -> Result<Response> {
+    pub async fn download(
+        &self,
+        method: &Method,
+        headers: &HeaderMap,
+        entry: &BlobFile,
+        preview: bool,
+    ) -> Result<Response> {
         let path = self.path(&entry.blob_id)?;
-        let mut file = tokio::fs::File::open(&path).await.map_err(|_| AppError::new("contentUnavailable", 503))?;
+        let mut file = tokio::fs::File::open(&path)
+            .await
+            .map_err(|_| AppError::new("contentUnavailable", 503))?;
         let size = entry.size as u64;
-        let meta = file.metadata().await.map_err(|_| AppError::new("contentUnavailable", 503))?;
+        let meta = file
+            .metadata()
+            .await
+            .map_err(|_| AppError::new("contentUnavailable", 503))?;
         if !meta.is_file() || meta.len() != size {
             return Err(AppError::new("contentUnavailable", 503));
         }
         let etag = format!("\"{}:{}:{}\"", entry.id, entry.revision, entry.blob_id);
         let inline_types = [
-            "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "text/plain", "application/pdf", "video/mp4", "video/webm", "video/ogg",
-            "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm", "audio/flac", "audio/aac", "audio/x-wav", "audio/x-flac",
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp",
+            "image/avif",
+            "text/plain",
+            "application/pdf",
+            "video/mp4",
+            "video/webm",
+            "video/ogg",
+            "audio/mpeg",
+            "audio/mp4",
+            "audio/ogg",
+            "audio/wav",
+            "audio/webm",
+            "audio/flac",
+            "audio/aac",
+            "audio/x-wav",
+            "audio/x-flac",
         ];
         let inline = preview && inline_types.contains(&entry.media_type.as_str());
         let mut response = Response::builder()
             .header(header::ETAG, &etag)
             .header(header::CACHE_CONTROL, "private, no-store")
             .header(header::ACCEPT_RANGES, "bytes")
-            .header(header::CONTENT_TYPE, if inline { entry.media_type.as_str() } else { "application/octet-stream" })
-            .header(header::CONTENT_DISPOSITION, format!("{}; filename*=UTF-8''{}", if inline { "inline" } else { "attachment" }, encode_filename(&entry.name)));
+            .header(
+                header::CONTENT_TYPE,
+                if inline {
+                    entry.media_type.as_str()
+                } else {
+                    "application/octet-stream"
+                },
+            )
+            .header(
+                header::CONTENT_DISPOSITION,
+                format!(
+                    "{}; filename*=UTF-8''{}",
+                    if inline { "inline" } else { "attachment" },
+                    encode_filename(&entry.name)
+                ),
+            );
         if inline {
-            response = response.header(header::CONTENT_SECURITY_POLICY, "sandbox; default-src 'none'; frame-ancestors 'self'");
+            response = response.header(
+                header::CONTENT_SECURITY_POLICY,
+                "sandbox; default-src 'none'; frame-ancestors 'self'",
+            );
         }
-        if headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some(etag.as_str()) {
-            return Ok(response.status(StatusCode::NOT_MODIFIED).body(Body::empty()).expect("response"));
+        if headers
+            .get(header::IF_NONE_MATCH)
+            .and_then(|v| v.to_str().ok())
+            == Some(etag.as_str())
+        {
+            return Ok(response
+                .status(StatusCode::NOT_MODIFIED)
+                .body(Body::empty())
+                .expect("response"));
         }
         let (mut start, mut end, mut status) = (0u64, size.saturating_sub(1), StatusCode::OK);
         let range = headers.get(header::RANGE).and_then(|v| v.to_str().ok());
@@ -250,14 +354,19 @@ impl Blobs {
                 return Err(invalid());
             }
             status = StatusCode::PARTIAL_CONTENT;
-            response = response.header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{size}"));
+            response =
+                response.header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{size}"));
         }
         let length = if size == 0 { 0 } else { end - start + 1 };
-        response = response.status(status).header(header::CONTENT_LENGTH, length);
+        response = response
+            .status(status)
+            .header(header::CONTENT_LENGTH, length);
         if method == Method::HEAD || size == 0 {
             return Ok(response.body(Body::empty()).expect("response"));
         }
-        file.seek(std::io::SeekFrom::Start(start)).await.map_err(|_| AppError::internal())?;
+        file.seek(std::io::SeekFrom::Start(start))
+            .await
+            .map_err(|_| AppError::internal())?;
         let stream = tokio_util::io::ReaderStream::new(tokio::io::AsyncReadExt::take(file, length));
         Ok(response.body(Body::from_stream(stream)).expect("response"))
     }
@@ -268,7 +377,9 @@ fn encode_filename(name: &str) -> String {
     let mut out = String::new();
     for byte in name.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~' => out.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~' => {
+                out.push(byte as char)
+            }
             _ => out.push_str(&format!("%{byte:02X}")),
         }
     }
@@ -283,17 +394,38 @@ mod tests {
     async fn receives_by_digest_and_rejects_wrong_sizes() {
         let root = std::env::temp_dir().join(format!("dar-blobs-{}", crate::auth::uuid()));
         let blobs = Blobs::open(&root).unwrap();
-        let chunks = || futures_util::stream::iter(vec![Ok::<_, std::io::Error>(axum::body::Bytes::from_static(b"hel")), Ok(axum::body::Bytes::from_static(b"lo"))]);
+        let chunks = || {
+            futures_util::stream::iter(vec![
+                Ok::<_, std::io::Error>(axum::body::Bytes::from_static(b"hel")),
+                Ok(axum::body::Bytes::from_static(b"lo")),
+            ])
+        };
         let digest = blobs.receive(chunks(), 5).await.unwrap();
-        assert_eq!(digest, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
-        assert_eq!(blobs.receive(chunks(), 5).await.unwrap(), digest, "identical content is kept");
+        assert_eq!(
+            digest,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+        assert_eq!(
+            blobs.receive(chunks(), 5).await.unwrap(),
+            digest,
+            "identical content is kept"
+        );
         assert_eq!(blobs.receive(chunks(), 4).await.unwrap_err().status, 413);
         assert_eq!(blobs.receive(chunks(), 6).await.unwrap_err().status, 400);
-        assert_eq!(std::fs::read_dir(root.join("uploads")).unwrap().count(), 0, "temporary files are removed");
+        assert_eq!(
+            std::fs::read_dir(root.join("uploads")).unwrap().count(),
+            0,
+            "temporary files are removed"
+        );
         // Content used again within the grace period stays; settled content goes.
         assert!(!blobs.remove(&digest).await.unwrap());
         let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 3600);
-        std::fs::File::options().write(true).open(blobs.path(&digest).unwrap()).unwrap().set_modified(old).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(blobs.path(&digest).unwrap())
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
         assert_eq!(blobs.settled().await, vec![digest.clone()]);
         assert!(blobs.remove(&digest).await.unwrap());
         assert!(blobs.settled().await.is_empty());

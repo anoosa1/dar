@@ -6,8 +6,8 @@
 //! (Playwright's `exact: true`), [`contains`] a case-insensitive substring (Playwright's default
 //! without `exact`), and [`regex`] a JavaScript regular expression.
 
-use super::page::{ClickOptions, FilePayload, Page, Rect, transient, truthy};
 use super::DEFAULT_TIMEOUT;
+use super::page::{ClickOptions, FilePayload, Page, Rect, transient, truthy};
 use crate::{Error, Result};
 use serde_json::{Value, json};
 use std::path::Path;
@@ -32,9 +32,15 @@ pub fn regex(source: &str) -> Pattern {
         && let Some(end) = rest.rfind('/')
         && rest[end + 1..].chars().all(|c| "dgimsuvy".contains(c))
     {
-        return Pattern::Regex { source: rest[..end].to_owned(), flags: rest[end + 1..].to_owned() };
+        return Pattern::Regex {
+            source: rest[..end].to_owned(),
+            flags: rest[end + 1..].to_owned(),
+        };
     }
-    Pattern::Regex { source: source.to_owned(), flags: String::new() }
+    Pattern::Regex {
+        source: source.to_owned(),
+        flags: String::new(),
+    }
 }
 
 impl From<&str> for Pattern {
@@ -64,7 +70,9 @@ impl Pattern {
             Pattern::Any => Value::Null,
             Pattern::Exact(value) => json!({"kind": "exact", "value": value}),
             Pattern::Contains(value) => json!({"kind": "contains", "value": value}),
-            Pattern::Regex { source, flags } => json!({"kind": "regex", "source": source, "flags": flags}),
+            Pattern::Regex { source, flags } => {
+                json!({"kind": "regex", "source": source, "flags": flags})
+            }
         }
     }
 }
@@ -110,7 +118,13 @@ impl Step {
             Step::Css(selector) => json!({"kind": "css", "selector": selector}),
             Step::Role(role, name, o) => {
                 let mut step = json!({"kind": "role", "role": role, "name": name.json(), "includeHidden": o.include_hidden});
-                for (key, value) in [("checked", o.checked), ("pressed", o.pressed), ("selected", o.selected), ("expanded", o.expanded), ("disabled", o.disabled)] {
+                for (key, value) in [
+                    ("checked", o.checked),
+                    ("pressed", o.pressed),
+                    ("selected", o.selected),
+                    ("expanded", o.expanded),
+                    ("disabled", o.disabled),
+                ] {
                     if let Some(value) = value {
                         step[key] = json!(value);
                     }
@@ -193,13 +207,21 @@ enum Probe {
 
 impl Locator {
     pub(crate) fn new(page: Page, steps: Vec<Step>) -> Self {
-        Self { page, steps, timeout: DEFAULT_TIMEOUT }
+        Self {
+            page,
+            steps,
+            timeout: DEFAULT_TIMEOUT,
+        }
     }
 
     fn with(&self, step: Step) -> Self {
         let mut steps = self.steps.clone();
         steps.push(step);
-        Self { page: self.page.clone(), steps, timeout: self.timeout }
+        Self {
+            page: self.page.clone(),
+            steps,
+            timeout: self.timeout,
+        }
     }
 
     pub fn page(&self) -> &Page {
@@ -207,7 +229,11 @@ impl Locator {
     }
 
     pub fn describe(&self) -> String {
-        self.steps.iter().map(Step::describe).collect::<Vec<_>>().join(".")
+        self.steps
+            .iter()
+            .map(Step::describe)
+            .collect::<Vec<_>>()
+            .join(".")
     }
 
     /// How long actions and waits on this locator may take (default 30 s).
@@ -321,7 +347,9 @@ impl Locator {
 
     /// Runs `body` (JavaScript with `E` the engine, `els` the matches and `arg`) in the page.
     async fn run(&self, body: &str, arg: &Value) -> Result<Value> {
-        let script = format!("(async (steps, arg) => {{ const E = globalThis.__darEngine; const els = E.resolve(steps); {body} }})");
+        let script = format!(
+            "(async (steps, arg) => {{ const E = globalThis.__darEngine; const els = E.resolve(steps); {body} }})"
+        );
         let expression = format!("{script}({}, {})", self.steps_json(), arg);
         self.page.evaluate_expression(&expression).await
     }
@@ -343,7 +371,10 @@ impl Locator {
                 Err(error) => return Err(error.context(self.describe())),
             }
             if Instant::now() >= deadline {
-                return Err(Error::new(format!("{} timed out after {timeout:?}: {last}", self.describe())));
+                return Err(Error::new(format!(
+                    "{} timed out after {timeout:?}: {last}",
+                    self.describe()
+                )));
             }
             tokio::time::sleep(Duration::from_millis(delays[attempt.min(delays.len() - 1)])).await;
             attempt += 1;
@@ -354,7 +385,8 @@ impl Locator {
 
     /// Waits until one element is ready for a pointer action and returns where to click.
     async fn point(&self, options: &ClickOptions, enabled: bool) -> Result<(f64, f64)> {
-        let body = format!(r#"
+        let body = format!(
+            r#"
             if (els.length === 0) return {{retry: "no element matches"}};
             {strict}
             const el = els[0];
@@ -367,17 +399,28 @@ impl Locator {
             const box = E.box(el);
             const x = box.x + (arg.position ? arg.position[0] : box.width / 2), y = box.y + (arg.position ? arg.position[1] : box.height / 2);
             if (!arg.force) {{ const covered = E.hitTarget(el, x, y); if (covered) return {{retry: `${{covered}} would receive the click`}}; }}
-            return {{ok: [x, y]}};"#, strict = Self::STRICT);
+            return {{ok: [x, y]}};"#,
+            strict = Self::STRICT
+        );
         let value = self.poll(&body, json!({"force": options.force, "enabled": enabled, "position": options.position.map(|(x, y)| [x, y])}), options.timeout.unwrap_or(self.timeout)).await?;
-        Ok((value[0].as_f64().unwrap_or_default(), value[1].as_f64().unwrap_or_default()))
+        Ok((
+            value[0].as_f64().unwrap_or_default(),
+            value[1].as_f64().unwrap_or_default(),
+        ))
     }
 
     /// The single matching element once attached (and visible, when asked), as a remote object.
     async fn handle(&self, visible: bool) -> Result<String> {
         self.poll(&format!(r#"if (els.length === 0) return {{retry: "no element matches"}}; {} if (arg && !E.visible(els[0])) return {{retry: "the element is not visible"}}; return {{ok: true}};"#, Self::STRICT), json!(visible), self.timeout).await?;
         let expression = format!("globalThis.__darEngine.resolve({})[0]", self.steps_json());
-        let result = self.page.call("Runtime.evaluate", json!({"expression": expression})).await?;
-        result["result"]["objectId"].as_str().map(str::to_owned).ok_or_else(|| Error::new(format!("{}: the element went away", self.describe())))
+        let result = self
+            .page
+            .call("Runtime.evaluate", json!({"expression": expression}))
+            .await?;
+        result["result"]["objectId"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| Error::new(format!("{}: the element went away", self.describe())))
     }
 
     // ---- actions ------------------------------------------------------------------------
@@ -387,7 +430,11 @@ impl Locator {
     }
 
     pub async fn dblclick(&self) -> Result<()> {
-        self.click_with(ClickOptions { click_count: Some(2), ..ClickOptions::default() }).await
+        self.click_with(ClickOptions {
+            click_count: Some(2),
+            ..ClickOptions::default()
+        })
+        .await
     }
 
     pub async fn click_with(&self, options: ClickOptions) -> Result<()> {
@@ -403,11 +450,15 @@ impl Locator {
         self.page.mouse().move_to(x, y, 1).await?;
         let clicks = options.click_count.unwrap_or(1);
         for count in 1..=clicks {
-            self.page.mouse_event("mousePressed", x, y, button, count).await?;
+            self.page
+                .mouse_event("mousePressed", x, y, button, count)
+                .await?;
             if let Some(delay) = options.delay {
                 tokio::time::sleep(delay).await;
             }
-            self.page.mouse_event("mouseReleased", x, y, button, count).await?;
+            self.page
+                .mouse_event("mouseReleased", x, y, button, count)
+                .await?;
         }
         for modifier in options.modifiers.iter().rev() {
             keyboard.up(modifier).await?;
@@ -424,7 +475,11 @@ impl Locator {
     pub async fn tap(&self) -> Result<()> {
         let (x, y) = self.point(&ClickOptions::default(), true).await?;
         for kind in ["touchStart", "touchEnd"] {
-            let points = if kind == "touchStart" { json!([{"x": x, "y": y}]) } else { json!([]) };
+            let points = if kind == "touchStart" {
+                json!([{"x": x, "y": y}])
+            } else {
+                json!([])
+            };
             self.page.call("Input.dispatchTouchEvent", json!({"type": kind, "touchPoints": points, "modifiers": self.page.modifiers()})).await?;
         }
         Ok(())
@@ -432,7 +487,8 @@ impl Locator {
 
     /// Replaces the value of an input, textarea or editable element (Playwright's `fill`).
     pub async fn fill(&self, value: &str) -> Result<()> {
-        let body = format!(r#"
+        let body = format!(
+            r#"
             if (els.length === 0) return {{retry: "no element matches"}};
             {strict}
             const el = els[0];
@@ -450,7 +506,9 @@ impl Locator {
             el.focus();
             if (el.isContentEditable) {{ const range = el.ownerDocument.createRange(); range.selectNodeContents(el); const selection = el.ownerDocument.defaultView.getSelection(); selection.removeAllRanges(); selection.addRange(range); }}
             else {{ el.select(); }}
-            return {{ok: "type"}};"#, strict = Self::STRICT);
+            return {{ok: "type"}};"#,
+            strict = Self::STRICT
+        );
         let mode = self.poll(&body, json!(value), self.timeout).await?;
         if mode == "type" {
             if value.is_empty() {
@@ -505,7 +563,11 @@ impl Locator {
         let deadline = Instant::now() + Duration::from_secs(5);
         while self.is_checked().await? != checked {
             if Instant::now() > deadline {
-                return Err(Error::new(format!("{}: clicking did not make it {}", self.describe(), if checked { "checked" } else { "unchecked" })));
+                return Err(Error::new(format!(
+                    "{}: clicking did not make it {}",
+                    self.describe(),
+                    if checked { "checked" } else { "unchecked" }
+                )));
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -514,7 +576,8 @@ impl Locator {
 
     /// Chooses an option of a native `<select>` by value or label.
     pub async fn select_option(&self, value: &str) -> Result<()> {
-        let body = format!(r#"
+        let body = format!(
+            r#"
             if (els.length === 0) return {{retry: "no element matches"}};
             {strict}
             const el = els[0];
@@ -524,7 +587,9 @@ impl Locator {
             if (!option) return {{retry: `no option ${{arg}}`}};
             el.value = option.value;
             el.dispatchEvent(new Event("input", {{bubbles: true, composed: true}})); el.dispatchEvent(new Event("change", {{bubbles: true}}));
-            return {{ok: option.value}};"#, strict = Self::STRICT);
+            return {{ok: option.value}};"#,
+            strict = Self::STRICT
+        );
         self.poll(&body, json!(value), self.timeout).await?;
         Ok(())
     }
@@ -541,7 +606,8 @@ impl Locator {
 
     /// Dispatches a DOM event of `kind` (`click`, `dragstart`…) with `init` properties.
     pub async fn dispatch_event(&self, kind: &str, init: Value) -> Result<()> {
-        let body = format!(r#"
+        let body = format!(
+            r#"
             if (els.length === 0) return {{retry: "no element matches"}};
             {strict}
             const [type, init] = arg, props = {{bubbles: true, cancelable: true, composed: true, ...init}};
@@ -549,7 +615,9 @@ impl Locator {
               : /^(drag|drop)/.test(type) ? DragEvent : /^focus|^blur/.test(type) ? FocusEvent : /^(input|beforeinput)$/.test(type) ? InputEvent : Event;
             if (Kind === DragEvent && !props.dataTransfer) props.dataTransfer = new DataTransfer();
             els[0].dispatchEvent(new Kind(type, props));
-            return {{ok: true}};"#, strict = Self::STRICT);
+            return {{ok: true}};"#,
+            strict = Self::STRICT
+        );
         self.poll(&body, json!([kind, init]), self.timeout).await?;
         Ok(())
     }
@@ -562,22 +630,33 @@ impl Locator {
     }
 
     pub async fn wait_for_state(&self, state: State) -> Result<()> {
-        let body = format!(r#"
+        let body = format!(
+            r#"
             const strict = () => {strict_fn};
             switch (arg) {{
               case "attached": if (els.length === 0) return {{retry: "no element matches"}}; return strict() ?? {{ok: true}};
               case "detached": return els.length === 0 ? {{ok: true}} : {{retry: `${{els.length}} element(s) still attached`}};
               case "visible": if (els.length === 0) return {{retry: "no element matches"}}; return strict() ?? (E.visible(els[0]) ? {{ok: true}} : {{retry: "the element is not visible"}});
               case "hidden": if (els.length === 0) return {{ok: true}}; return strict() ?? (E.visible(els[0]) ? {{retry: "the element is still visible"}} : {{ok: true}});
-            }}"#, strict_fn = "(els.length > 1 ? {error: `strict mode: ${els.length} elements match, ` + els.slice(0, 3).map(E.describe).join(\" ; \")} : null)");
-        let name = match state { State::Attached => "attached", State::Detached => "detached", State::Visible => "visible", State::Hidden => "hidden" };
+            }}"#,
+            strict_fn = "(els.length > 1 ? {error: `strict mode: ${els.length} elements match, ` + els.slice(0, 3).map(E.describe).join(\" ; \")} : null)"
+        );
+        let name = match state {
+            State::Attached => "attached",
+            State::Detached => "detached",
+            State::Visible => "visible",
+            State::Hidden => "hidden",
+        };
         self.poll(&body, json!(name), self.timeout).await?;
         Ok(())
     }
 
     /// Polls a JavaScript function of the element until it returns a truthy value.
     pub async fn wait_until(&self, function: &str) -> Result<Value> {
-        let body = format!(r#"if (els.length === 0) return {{retry: "no element matches"}}; {} const value = await ({function})(els[0], arg); return value ? {{ok: value}} : {{retry: "the condition is false"}};"#, Self::STRICT);
+        let body = format!(
+            r#"if (els.length === 0) return {{retry: "no element matches"}}; {} const value = await ({function})(els[0], arg); return value ? {{ok: value}} : {{retry: "the condition is false"}};"#,
+            Self::STRICT
+        );
         self.poll(&body, Value::Null, self.timeout).await
     }
 
@@ -595,7 +674,13 @@ impl Locator {
     }
 
     pub async fn is_visible(&self) -> Result<bool> {
-        Ok(self.read(&format!("if (els.length === 0) return {{ok: false}}; {} return {{ok: E.visible(els[0])}};", Self::STRICT)).await? == json!(true))
+        Ok(self
+            .read(&format!(
+                "if (els.length === 0) return {{ok: false}}; {} return {{ok: E.visible(els[0])}};",
+                Self::STRICT
+            ))
+            .await?
+            == json!(true))
     }
 
     pub async fn is_hidden(&self) -> Result<bool> {
@@ -607,7 +692,10 @@ impl Locator {
     }
 
     pub async fn is_checked(&self) -> Result<bool> {
-        Ok(self.attached("return {ok: E.checkedState(el) === true};").await? == json!(true))
+        Ok(self
+            .attached("return {ok: E.checkedState(el) === true};")
+            .await?
+            == json!(true))
     }
 
     pub async fn is_enabled(&self) -> Result<bool> {
@@ -633,35 +721,58 @@ impl Locator {
     }
 
     pub async fn text_content(&self) -> Result<String> {
-        Ok(self.attached("return {ok: el.textContent ?? \"\"};").await?.as_str().unwrap_or_default().to_owned())
+        Ok(self
+            .attached("return {ok: el.textContent ?? \"\"};")
+            .await?
+            .as_str()
+            .unwrap_or_default()
+            .to_owned())
     }
 
     pub async fn inner_text(&self) -> Result<String> {
-        Ok(self.attached("return {ok: el.innerText ?? el.textContent ?? \"\"};").await?.as_str().unwrap_or_default().to_owned())
+        Ok(self
+            .attached("return {ok: el.innerText ?? el.textContent ?? \"\"};")
+            .await?
+            .as_str()
+            .unwrap_or_default()
+            .to_owned())
     }
 
     pub async fn inner_html(&self) -> Result<String> {
-        Ok(self.attached("return {ok: el.innerHTML};").await?.as_str().unwrap_or_default().to_owned())
+        Ok(self
+            .attached("return {ok: el.innerHTML};")
+            .await?
+            .as_str()
+            .unwrap_or_default()
+            .to_owned())
     }
 
     pub async fn all_text_contents(&self) -> Result<Vec<String>> {
-        let value = self.read("return {ok: els.map(el => el.textContent ?? \"\")};").await?;
+        let value = self
+            .read("return {ok: els.map(el => el.textContent ?? \"\")};")
+            .await?;
         Ok(serde_json::from_value(value).unwrap_or_default())
     }
 
     pub async fn all_inner_texts(&self) -> Result<Vec<String>> {
-        let value = self.read("return {ok: els.map(el => el.innerText ?? \"\")};").await?;
+        let value = self
+            .read("return {ok: els.map(el => el.innerText ?? \"\")};")
+            .await?;
         Ok(serde_json::from_value(value).unwrap_or_default())
     }
 
     /// A locator for each element that matches now.
     pub async fn all(&self) -> Result<Vec<Locator>> {
-        Ok((0..self.count().await?).map(|index| self.nth(index as i64)).collect())
+        Ok((0..self.count().await?)
+            .map(|index| self.nth(index as i64))
+            .collect())
     }
 
     /// The element's box in viewport coordinates, or `None` when it is not visible.
     pub async fn bounding_box(&self) -> Result<Option<Rect>> {
-        let value = self.attached("return {ok: E.visible(el) ? [E.box(el)] : [null]};").await?;
+        let value = self
+            .attached("return {ok: E.visible(el) ? [E.box(el)] : [null]};")
+            .await?;
         Ok(serde_json::from_value(value[0].clone()).ok())
     }
 
@@ -673,14 +784,22 @@ impl Locator {
 
     /// Runs `function(elements, arg)` over every match, without waiting.
     pub async fn evaluate_all(&self, function: &str, arg: Value) -> Result<Value> {
-        let value = self.poll(&format!("return {{ok: [await ({function})(els, arg)]}};"), arg, self.timeout).await?;
+        let value = self
+            .poll(
+                &format!("return {{ok: [await ({function})(els, arg)]}};"),
+                arg,
+                self.timeout,
+            )
+            .await?;
         Ok(value[0].clone())
     }
 
     /// A PNG of the element.
     pub async fn screenshot(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
         self.scroll_into_view_if_needed().await?;
-        let rect = self.bounding_box().await?.ok_or_else(|| Error::new(format!("{}: not visible for a screenshot", self.describe())))?;
+        let rect = self.bounding_box().await?.ok_or_else(|| {
+            Error::new(format!("{}: not visible for a screenshot", self.describe()))
+        })?;
         self.page.capture(path.as_ref(), json!({"format": "png", "clip": {"x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height, "scale": 1}})).await
     }
 
@@ -692,11 +811,18 @@ impl Locator {
 
 fn probe(answer: Value) -> Result<Probe> {
     if let Some(error) = answer.get("error") {
-        return Err(Error::new(error.as_str().unwrap_or("locator error").to_owned()));
+        return Err(Error::new(
+            error.as_str().unwrap_or("locator error").to_owned(),
+        ));
     }
     if let Some(value) = answer.get("ok") {
         return Ok(Probe::Ready(value.clone()));
     }
-    Ok(Probe::Retry(answer.get("retry").and_then(Value::as_str).unwrap_or("not ready").to_owned()))
+    Ok(Probe::Retry(
+        answer
+            .get("retry")
+            .and_then(Value::as_str)
+            .unwrap_or("not ready")
+            .to_owned(),
+    ))
 }
-

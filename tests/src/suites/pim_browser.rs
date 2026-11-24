@@ -234,7 +234,9 @@ pub async fn contacts_and_calendar_journey(t: &Ctx) -> Result<()> {
 
     // Switch to Calendar
     ui::switch_app(&page, "calendar").await?;
-    page.get_by_role("heading", regex("2026")).wait_for().await?;
+    page.get_by_role("heading", regex("2026"))
+        .wait_for()
+        .await?;
     page.get_by_role("button", "Add calendar").click().await?;
     page.get_by_role("menuitem", "New calendar").click().await?;
     let calendar = format!("Browser time {}", &uuid()[..6]);
@@ -420,10 +422,7 @@ pub async fn contacts_and_calendar_journey(t: &Ctx) -> Result<()> {
             imported_ics,
         )])
         .await?;
-    settings
-        .get_by_role("button", "Import ICS")
-        .click()
-        .await?;
+    settings.get_by_role("button", "Import ICS").click().await?;
     settings
         .get_by_text("1 imported; 0 failed.")
         .wait_for()
@@ -677,10 +676,7 @@ pub async fn contacts_and_calendar_journey(t: &Ctx) -> Result<()> {
         .get(&format!("{origin}/api/v1/pim/preferences"))
         .await?
         .json()?;
-    let tz = preferences["timezone"]
-        .as_str()
-        .unwrap_or("UTC")
-        .to_owned();
+    let tz = preferences["timezone"].as_str().unwrap_or("UTC").to_owned();
 
     let good = api
         .post(

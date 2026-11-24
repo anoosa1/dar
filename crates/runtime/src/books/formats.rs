@@ -66,12 +66,17 @@ pub fn unsupported_book(name: &str) -> bool {
 /// Validated stored reading position; anything else reads as `None` (`bookPosition`).
 pub fn book_position(value: &Value) -> Option<Value> {
     let obj = value.as_object()?;
-    if obj.keys().any(|k| !matches!(k.as_str(), "spine" | "page" | "fraction")) {
+    if obj
+        .keys()
+        .any(|k| !matches!(k.as_str(), "spine" | "page" | "fraction"))
+    {
         return None;
     }
     let valid_index = |v: Option<&Value>| match v {
         None => true,
-        Some(n) => n.as_f64().is_some_and(|f| f.is_finite() && f.fract() == 0.0 && (0.0..1_000_000.0).contains(&f)),
+        Some(n) => n
+            .as_f64()
+            .is_some_and(|f| f.is_finite() && f.fract() == 0.0 && (0.0..1_000_000.0).contains(&f)),
     };
     if !valid_index(obj.get("spine"))
         || !valid_index(obj.get("page"))
@@ -79,17 +84,28 @@ pub fn book_position(value: &Value) -> Option<Value> {
     {
         return None;
     }
-    let fraction = obj.get("fraction")?.as_f64().filter(|f| f.is_finite() && (0.0..=1.0).contains(f))?;
+    let fraction = obj
+        .get("fraction")?
+        .as_f64()
+        .filter(|f| f.is_finite() && (0.0..=1.0).contains(f))?;
     Some(match obj.get("spine") {
         Some(spine) => json!({ "spine": spine, "fraction": fraction }),
         None => json!({ "page": obj["page"], "fraction": fraction }),
     })
 }
 
-fn serialize_series_index<S: serde::Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
+fn serialize_series_index<S: serde::Serializer>(
+    value: &Option<f64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
     match value {
         None => serializer.serialize_none(),
-        Some(v) if v.is_finite() && v.fract() == 0.0 && *v >= i64::MIN as f64 && *v <= i64::MAX as f64 => {
+        Some(v)
+            if v.is_finite()
+                && v.fract() == 0.0
+                && *v >= i64::MIN as f64
+                && *v <= i64::MAX as f64 =>
+        {
             serializer.serialize_i64(*v as i64)
         }
         Some(v) if v.is_finite() => serializer.serialize_f64(*v),
@@ -218,13 +234,19 @@ fn make_node(e: &quick_xml::events::BytesStart<'_>) -> Node {
     for attr in e.html_attributes().with_checks(false) {
         let Ok(attr) = attr else { continue };
         let key = attr.key.as_ref().to_ascii_lowercase();
-        let value = match attr.normalized_value_with(quick_xml::XmlVersion::Implicit1_0, 1, resolve_entity) {
-            Ok(v) => v.into_owned(),
-            Err(_) => attr.value.into_owned(),
-        };
+        let value =
+            match attr.normalized_value_with(quick_xml::XmlVersion::Implicit1_0, 1, resolve_entity)
+            {
+                Ok(v) => v.into_owned(),
+                Err(_) => attr.value.into_owned(),
+            };
         attrs.insert(key, value);
     }
-    Node { name: local.to_ascii_lowercase(), attrs, content: Vec::new() }
+    Node {
+        name: local.to_ascii_lowercase(),
+        attrs,
+        content: Vec::new(),
+    }
 }
 
 fn attach(stack: &mut [Node], root: &mut Option<Node>, node: Node) {
@@ -273,19 +295,23 @@ pub fn parse_xml(text: &str, max_nodes: usize) -> Option<Node> {
             }
             Ok(Event::Text(t)) => {
                 if let Some(top) = stack.last_mut() {
-                    top.content.push(Content::Text(t.xml10_content().into_owned()));
+                    top.content
+                        .push(Content::Text(t.xml10_content().into_owned()));
                 }
             }
             Ok(Event::CData(t)) => {
                 if let Some(top) = stack.last_mut() {
-                    top.content.push(Content::Text(t.xml10_content().into_owned()));
+                    top.content
+                        .push(Content::Text(t.xml10_content().into_owned()));
                 }
             }
             Ok(Event::GeneralRef(r)) => {
                 if let Some(top) = stack.last_mut() {
                     let piece = match r.resolve_char_ref() {
                         Ok(Some(c)) => c.to_string(),
-                        Ok(None) => resolve_entity(&r).map(str::to_owned).unwrap_or_else(|| format!("&{};", &*r)),
+                        Ok(None) => resolve_entity(&r)
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| format!("&{};", &*r)),
                         Err(_) => format!("&{};", &*r),
                     };
                     top.content.push(Content::Text(piece));
@@ -333,7 +359,9 @@ fn walk<'a>(node: Option<&'a Node>, out: &mut Vec<&'a Node>) {
 }
 
 pub fn text_of(node: Option<&Node>) -> String {
-    let Some(node) = node else { return String::new() };
+    let Some(node) = node else {
+        return String::new();
+    };
     let mut out = String::new();
     fn collect(node: &Node, out: &mut String) {
         for item in &node.content {
@@ -366,7 +394,8 @@ pub fn plain_description(value: &str) -> String {
     static LINE_WS: OnceLock<Regex> = OnceLock::new();
 
     let escaped_tag = ESCAPED_TAG.get_or_init(|| Regex::new(r"(?i)&lt;/?[a-z]").expect("regex"));
-    let block_tag = BLOCK_TAG.get_or_init(|| Regex::new(r"(?i)<\s*(br|/p|/div|/li)\b[^>]*>").expect("regex"));
+    let block_tag =
+        BLOCK_TAG.get_or_init(|| Regex::new(r"(?i)<\s*(br|/p|/div|/li)\b[^>]*>").expect("regex"));
     let any_tag = ANY_TAG.get_or_init(|| Regex::new(r"<[^>]*>").expect("regex"));
     let dec_entity = DEC_ENTITY.get_or_init(|| Regex::new(r"&#(\d+);").expect("regex"));
     let line_ws = LINE_WS.get_or_init(|| Regex::new(r"[ \t]+").expect("regex"));
@@ -527,7 +556,11 @@ struct ManifestItem {
 }
 
 /// `container.xml` -> package document: metadata, reading order, cover and table of contents.
-pub async fn read_epub<G, R, Fut>(get: G, read: R, fallback_title: &str) -> Result<EpubPackage, String>
+pub async fn read_epub<G, R, Fut>(
+    get: G,
+    read: R,
+    fallback_title: &str,
+) -> Result<EpubPackage, String>
 where
     G: Fn(&str) -> Option<u64>,
     R: Fn(&str, usize) -> Fut,
@@ -543,10 +576,12 @@ where
     static TOC_TYPE: OnceLock<Regex> = OnceLock::new();
 
     let oebps_pkg = OEBPS_PKG.get_or_init(|| Regex::new(r"oebps-package|^$").expect("regex"));
-    let font_obf = FONT_OBFUSCATION
-        .get_or_init(|| Regex::new(r"idpf\.org/2008/embedding|ns\.adobe\.com/pdf/enc#RC").expect("regex"));
+    let font_obf = FONT_OBFUSCATION.get_or_init(|| {
+        Regex::new(r"idpf\.org/2008/embedding|ns\.adobe\.com/pdf/enc#RC").expect("regex")
+    });
     let spine_mime = SPINE_MIME.get_or_init(|| Regex::new(r"x?html|xml").expect("regex"));
-    let image_mime = IMAGE_MIME.get_or_init(|| Regex::new(r"^image/(jpeg|png|gif|webp|svg\+xml)$").expect("regex"));
+    let image_mime = IMAGE_MIME
+        .get_or_init(|| Regex::new(r"^image/(jpeg|png|gif|webp|svg\+xml)$").expect("regex"));
     let cover_prop = COVER_PROP.get_or_init(|| Regex::new(r"\bcover-image\b").expect("regex"));
     let cover_name = COVER_NAME.get_or_init(|| Regex::new(r"(?i)cover").expect("regex"));
     let nav_prop = NAV_PROP.get_or_init(|| Regex::new(r"\bnav\b").expect("regex"));
@@ -576,9 +611,9 @@ where
         let doc = parse_xml(&String::from_utf8_lossy(&enc_bytes), 200_000);
         let mut enc_nodes = Vec::new();
         walk(doc.as_ref(), &mut enc_nodes);
-        encrypted = enc_nodes
-            .into_iter()
-            .any(|n| n.name == "encryptionmethod" && !font_obf.is_match(n.attr("algorithm").unwrap_or("")));
+        encrypted = enc_nodes.into_iter().any(|n| {
+            n.name == "encryptionmethod" && !font_obf.is_match(n.attr("algorithm").unwrap_or(""))
+        });
     }
 
     let pkg_bytes = read(&opf, 4 * 1024 * 1024).await?;
@@ -623,10 +658,11 @@ where
     let refines = |id: Option<&str>, property: &str| -> Option<&Node> {
         let id = id.filter(|s| !s.is_empty())?;
         let target = format!("#{id}");
-        meta_nodes
-            .iter()
-            .copied()
-            .find(|n| n.name == "meta" && n.attr("refines") == Some(target.as_str()) && n.attr("property") == Some(property))
+        meta_nodes.iter().copied().find(|n| {
+            n.name == "meta"
+                && n.attr("refines") == Some(target.as_str())
+                && n.attr("property") == Some(property)
+        })
     };
     let named = |name: &str| -> Option<&str> {
         meta_nodes
@@ -644,12 +680,19 @@ where
                 .attr("opf:role")
                 .or_else(|| n.attr("role"))
                 .map(str::to_owned)
-                .unwrap_or_else(|| refines(n.attr("id"), "role").map(|r| text_of(Some(r)).trim().to_owned()).unwrap_or_default());
+                .unwrap_or_else(|| {
+                    refines(n.attr("id"), "role")
+                        .map(|r| text_of(Some(r)).trim().to_owned())
+                        .unwrap_or_default()
+                });
             role.is_empty() || role == "aut"
         })
         .collect();
 
-    let title = values("title").into_iter().next().unwrap_or_else(|| fallback_title.to_owned());
+    let title = values("title")
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| fallback_title.to_owned());
     let mut meta = empty_meta(title);
 
     let mut seen_authors = HashSet::new();
@@ -662,10 +705,23 @@ where
             }
         }
     }
-    meta.language = values("language").first().map(|s| truncate_chars(s, 35)).unwrap_or_default();
-    meta.publisher = values("publisher").first().map(|s| truncate_chars(s, 200)).unwrap_or_default();
-    meta.published = values("date").first().map(|s| truncate_chars(s, 10)).unwrap_or_default();
-    meta.subjects = values("subject").into_iter().take(12).map(|s| truncate_chars(&s, 60)).collect();
+    meta.language = values("language")
+        .first()
+        .map(|s| truncate_chars(s, 35))
+        .unwrap_or_default();
+    meta.publisher = values("publisher")
+        .first()
+        .map(|s| truncate_chars(s, 200))
+        .unwrap_or_default();
+    meta.published = values("date")
+        .first()
+        .map(|s| truncate_chars(s, 10))
+        .unwrap_or_default();
+    meta.subjects = values("subject")
+        .into_iter()
+        .take(12)
+        .map(|s| truncate_chars(&s, 60))
+        .collect();
     let desc_raw = meta_nodes
         .iter()
         .filter(|n| n.name == "description")
@@ -690,7 +746,12 @@ where
 
     let index_raw = named("calibre:series_index")
         .map(str::to_owned)
-        .unwrap_or_else(|| collection.and_then(|c| refines(c.attr("id"), "group-position")).map(|r| text_of(Some(r))).unwrap_or_default());
+        .unwrap_or_else(|| {
+            collection
+                .and_then(|c| refines(c.attr("id"), "group-position"))
+                .map(|r| text_of(Some(r)))
+                .unwrap_or_default()
+        });
     let parsed_index = if index_raw.trim().is_empty() {
         Some(0.0)
     } else {
@@ -703,7 +764,8 @@ where
     };
 
     let ppd = spine_node.and_then(|s| s.attr("page-progression-direction"));
-    meta.right_to_left = ppd == Some("rtl") || (ppd.is_none_or(str::is_empty) && is_rtl(&meta.language));
+    meta.right_to_left =
+        ppd == Some("rtl") || (ppd.is_none_or(str::is_empty) && is_rtl(&meta.language));
 
     let mut spine: Vec<SpineItem> = Vec::new();
     for itemref in kids(spine_node, Some("itemref")) {
@@ -716,7 +778,10 @@ where
         if spine_mime.is_match(&item.media_type)
             && let Some(size) = get(&item.href)
         {
-            spine.push(SpineItem { href: item.href.clone(), size });
+            spine.push(SpineItem {
+                href: item.href.clone(),
+                size,
+            });
         }
     }
     if spine.is_empty() {
@@ -740,7 +805,11 @@ where
 
     let position = |href: Option<&str>| -> isize {
         match href {
-            Some(h) => spine.iter().position(|s| s.href == h).map(|i| i as isize).unwrap_or(-1),
+            Some(h) => spine
+                .iter()
+                .position(|s| s.href == h)
+                .map(|i| i as isize)
+                .unwrap_or(-1),
             None => -1,
         }
     };
@@ -757,7 +826,9 @@ where
         let toc_nav = navs
             .iter()
             .copied()
-            .find(|n| toc_type.is_match(n.attr("epub:type").or_else(|| n.attr("type")).unwrap_or("")))
+            .find(|n| {
+                toc_type.is_match(n.attr("epub:type").or_else(|| n.attr("type")).unwrap_or(""))
+            })
             .or_else(|| navs.first().copied());
 
         fn walk_nav_list(
@@ -798,7 +869,9 @@ where
 
     let ncx = match spine_node.and_then(|s| s.attr("toc")) {
         Some(id) => get_item(id),
-        None => item_list.iter().find(|i| i.media_type == "application/x-dtbncx+xml"),
+        None => item_list
+            .iter()
+            .find(|i| i.media_type == "application/x-dtbncx+xml"),
     };
     if toc.is_empty()
         && let Some(ncx) = ncx
@@ -818,7 +891,9 @@ where
                 if toc.len() >= 2000 {
                     return;
                 }
-                let src = kid(Some(point), "content").and_then(|c| c.attr("src")).unwrap_or("");
+                let src = kid(Some(point), "content")
+                    .and_then(|c| c.attr("src"))
+                    .unwrap_or("");
                 let resolved = resolve_href(ncx_href, src);
                 let label = clean(&text_of(kid(kid(Some(point), "navlabel"), "text")), 200);
                 if !label.is_empty() {
@@ -839,7 +914,13 @@ where
                 walk_ncx(Some(point), depth + 1, ncx_href, toc, position);
             }
         }
-        walk_ncx(kid(doc.as_ref(), "navmap"), 0, &ncx.href, &mut toc, &position);
+        walk_ncx(
+            kid(doc.as_ref(), "navmap"),
+            0,
+            &ncx.href,
+            &mut toc,
+            &position,
+        );
     }
 
     if toc.is_empty() {
@@ -859,7 +940,14 @@ where
     meta.pages = ((total_size as f64 / 2200.0).round() as u64).max(1);
 
     let has_cover = meta.cover;
-    Ok(EpubPackage { meta, opf, spine, toc, cover: if has_cover { cover } else { None }, encrypted })
+    Ok(EpubPackage {
+        meta,
+        opf,
+        spine,
+        toc,
+        cover: if has_cover { cover } else { None },
+        encrypted,
+    })
 }
 
 fn natural_cmp(a: &str, b: &str) -> Ordering {
@@ -912,10 +1000,14 @@ fn natural_cmp(a: &str, b: &str) -> Ordering {
 pub fn comic_pages(names: Vec<String>) -> Vec<String> {
     static IMG: OnceLock<Regex> = OnceLock::new();
     static SKIP: OnceLock<Regex> = OnceLock::new();
-    let img = IMG.get_or_init(|| Regex::new(r"(?i)\.(jpe?g|png|gif|webp|avif|bmp)$").expect("regex"));
+    let img =
+        IMG.get_or_init(|| Regex::new(r"(?i)\.(jpe?g|png|gif|webp|avif|bmp)$").expect("regex"));
     let skip = SKIP.get_or_init(|| Regex::new(r"(^|/)(__MACOSX|\.)").expect("regex"));
 
-    let mut pages: Vec<String> = names.into_iter().filter(|name| img.is_match(name) && !skip.is_match(name)).collect();
+    let mut pages: Vec<String> = names
+        .into_iter()
+        .filter(|name| img.is_match(name) && !skip.is_match(name))
+        .collect();
     pages.sort_by(|a, b| natural_cmp(a, b));
     pages.truncate(5000);
     pages
@@ -924,7 +1016,9 @@ pub fn comic_pages(names: Vec<String>) -> Vec<String> {
 /// ComicInfo.xml (ComicRack) fields that matter for a library.
 pub fn read_comic_info(xml: &str, meta: &mut BookMeta) {
     let doc = parse_xml(xml, 20_000);
-    let field = |name: &str| -> String { clean(&text_of(kid(doc.as_ref(), &name.to_ascii_lowercase())), 500) };
+    let field = |name: &str| -> String {
+        clean(&text_of(kid(doc.as_ref(), &name.to_ascii_lowercase())), 500)
+    };
 
     let title = field("Title");
     if !title.is_empty() {
@@ -934,7 +1028,11 @@ pub fn read_comic_info(xml: &str, meta: &mut BookMeta) {
     if !series.is_empty() {
         meta.series = truncate_chars(&series, 200);
         let num = field("Number");
-        meta.series_index = if !num.is_empty() { num.parse::<f64>().ok().filter(|n| n.is_finite()) } else { None };
+        meta.series_index = if !num.is_empty() {
+            num.parse::<f64>().ok().filter(|n| n.is_finite())
+        } else {
+            None
+        };
         if title.is_empty() {
             meta.title = if !num.is_empty() {
                 format!("{} #{num}", meta.series)

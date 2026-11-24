@@ -222,7 +222,11 @@ pub async fn dav_discovery_round_trip_and_scoping(t: &Ctx) -> Result<()> {
     for kind in ["contacts", "calendar"] {
         let base = format!(
             "/api/v1/{kind}/{}",
-            if kind == "contacts" { "books" } else { "calendars" }
+            if kind == "contacts" {
+                "books"
+            } else {
+                "calendars"
+            }
         );
         let collection = json_request(
             &session,
@@ -251,7 +255,11 @@ pub async fn dav_discovery_round_trip_and_scoping(t: &Ctx) -> Result<()> {
             password["davUrl"].as_str().context("davUrl")?,
             collection_id
         );
-        let href = if kind == "contacts" { "test.vcf" } else { "test.ics" };
+        let href = if kind == "contacts" {
+            "test.vcf"
+        } else {
+            "test.ics"
+        };
         let content = if kind == "contacts" {
             "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:dav-contact\r\nFN:DAV Contact\r\nEND:VCARD\r\n"
         } else {
@@ -322,7 +330,9 @@ pub async fn dav_discovery_round_trip_and_scoping(t: &Ctx) -> Result<()> {
         assert_eq!(result.status, 207);
         let result_text = result.text();
         assert!(
-            Regex::new(r"DAV (Contact|Event)").unwrap().is_match(&result_text),
+            Regex::new(r"DAV (Contact|Event)")
+                .unwrap()
+                .is_match(&result_text),
             "unexpected multiget body: {result_text}"
         );
 
@@ -448,11 +458,13 @@ pub async fn calendar_recurrence_and_reminders(t: &Ctx) -> Result<()> {
 
     let pin = uuid();
     let snapshot = db.call("service_backup", json!([pin])).await?;
-    assert!(snapshot["pim"]["resources"]
-        .as_array()
-        .context("backup resources")?
-        .iter()
-        .any(|row| row["id"] == event_id));
+    assert!(
+        snapshot["pim"]["resources"]
+            .as_array()
+            .context("backup resources")?
+            .iter()
+            .any(|row| row["id"] == event_id)
+    );
     db.call("service_release_backup", json!([pin])).await?;
 
     // Wait for the actual due boundary, rather than an arbitrary polling sleep.
@@ -493,7 +505,10 @@ pub async fn calendar_recurrence_and_reminders(t: &Ctx) -> Result<()> {
 
     json_request(
         &session,
-        &format!("/api/v1/pim/reminders/{}", encode_uri_component(&reminder_id)),
+        &format!(
+            "/api/v1/pim/reminders/{}",
+            encode_uri_component(&reminder_id)
+        ),
         "DELETE",
         None,
         None,
@@ -503,11 +518,13 @@ pub async fn calendar_recurrence_and_reminders(t: &Ctx) -> Result<()> {
     due = json_request(&session, "/api/v1/pim/reminders", "GET", None, None, 200)
         .await?
         .json()?;
-    assert!(!due["items"]
-        .as_array()
-        .context("reminders array")?
-        .iter()
-        .any(|row| row["resourceId"] == event_id));
+    assert!(
+        !due["items"]
+            .as_array()
+            .context("reminders array")?
+            .iter()
+            .any(|row| row["resourceId"] == event_id)
+    );
 
     json_request(
         &session,
@@ -522,11 +539,13 @@ pub async fn calendar_recurrence_and_reminders(t: &Ctx) -> Result<()> {
     let inbox = json_request(&session, "/api/v1/pim/reminders", "GET", None, None, 200)
         .await?
         .json()?;
-    assert!(!inbox["items"]
-        .as_array()
-        .context("inbox array")?
-        .iter()
-        .any(|row| row["resourceId"] == event_id));
+    assert!(
+        !inbox["items"]
+            .as_array()
+            .context("inbox array")?
+            .iter()
+            .any(|row| row["resourceId"] == event_id)
+    );
     Ok(())
 }
 
@@ -673,9 +692,11 @@ pub async fn reminder_batches_advance_fairly(t: &Ctx) -> Result<()> {
 
     let next = db.call("service_pim_reminder_work", json!([])).await?;
     let next_jobs = next.as_array().context("next reminder work")?;
-    assert!(next_jobs
-        .iter()
-        .any(|job| job["resource"]["collectionId"] == calendar_id));
+    assert!(
+        next_jobs
+            .iter()
+            .any(|job| job["resource"]["collectionId"] == calendar_id)
+    );
 
     let first_ids: HashSet<&str> = first_jobs
         .iter()

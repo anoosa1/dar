@@ -59,7 +59,10 @@ pub struct NewsRuntime {
 }
 
 fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_millis() as i64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_millis() as i64
 }
 
 /// Splits entries so each database call stays well under the request limits.
@@ -92,7 +95,11 @@ async fn wait_closed(rx: &mut watch::Receiver<bool>) {
 fn summary(parsed: &ParsedFeed, feed_url: &str) -> Value {
     let mut sorted = parsed.entries.clone();
     sorted.sort_by(|a, b| b.pub_date.cmp(&a.pub_date));
-    let items: Vec<Value> = sorted.into_iter().take(3).map(|e| json!({ "title": e.title, "pubDate": e.pub_date })).collect();
+    let items: Vec<Value> = sorted
+        .into_iter()
+        .take(3)
+        .map(|e| json!({ "title": e.title, "pubDate": e.pub_date }))
+        .collect();
     json!({ "url": feed_url, "title": parsed.title, "kind": parsed.kind, "items": items })
 }
 
@@ -106,7 +113,10 @@ impl NewsRuntime {
                 allow_private,
                 closed,
                 done,
-                state: Mutex::new(TickState { active: false, generation: 0 }),
+                state: Mutex::new(TickState {
+                    active: false,
+                    generation: 0,
+                }),
                 bg_task: Mutex::new(None),
             }),
         };
@@ -139,11 +149,20 @@ impl NewsRuntime {
     }
 
     async fn call(&self, session_id: &str, operation: &str, value: Value) -> Result<Value> {
-        self.inner.db.call("service_news", json!([session_id, operation, value.to_string()])).await
+        self.inner
+            .db
+            .call(
+                "service_news",
+                json!([session_id, operation, value.to_string()]),
+            )
+            .await
     }
 
     async fn worker(&self, operation: &str, value: Value) -> Result<Value> {
-        self.inner.db.call("service_news_worker", json!([operation, value.to_string()])).await
+        self.inner
+            .db
+            .call("service_news_worker", json!([operation, value.to_string()]))
+            .await
     }
 
     async fn fetch(&self, url: &str, options: &FetchOptions<'_>) -> Result<FetchResult> {
@@ -155,7 +174,12 @@ impl NewsRuntime {
         }
     }
 
-    async fn load(&self, url: &str, etag: Option<&str>, last_modified: Option<&str>) -> Result<(FetchResult, Option<ParsedFeed>)> {
+    async fn load(
+        &self,
+        url: &str,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+    ) -> Result<(FetchResult, Option<ParsedFeed>)> {
         let response = self
             .fetch(
                 url,
@@ -172,12 +196,25 @@ impl NewsRuntime {
             return Ok((response, None));
         }
         if response.status == 410 {
-            return Err(AppError::with("feedGone", 502, "The feed was removed by its site (410 Gone)."));
+            return Err(AppError::with(
+                "feedGone",
+                502,
+                "The feed was removed by its site (410 Gone).",
+            ));
         }
         if !(200..300).contains(&response.status) {
-            return Err(AppError::with("feedUnavailable", 502, &format!("The site answered {}.", response.status)));
+            return Err(AppError::with(
+                "feedUnavailable",
+                502,
+                &format!("The site answered {}.", response.status),
+            ));
         }
-        let feed = parse_feed(&response.body, &response.content_type, &response.url, now_ms())?;
+        let feed = parse_feed(
+            &response.body,
+            &response.content_type,
+            &response.url,
+            now_ms(),
+        )?;
         Ok((response, Some(feed)))
     }
 
@@ -258,8 +295,17 @@ impl NewsRuntime {
             if self.is_closing() {
                 return;
             }
-            let message = if error.message.trim().is_empty() { "The feed could not be updated." } else { error.message.as_str() };
-            let _ = self.worker("fail", json!({ "feedId": feed.id, "error": trunc_utf16(message, 500) })).await;
+            let message = if error.message.trim().is_empty() {
+                "The feed could not be updated."
+            } else {
+                error.message.as_str()
+            };
+            let _ = self
+                .worker(
+                    "fail",
+                    json!({ "feedId": feed.id, "error": trunc_utf16(message, 500) }),
+                )
+                .await;
         }
     }
 
@@ -287,12 +333,25 @@ impl NewsRuntime {
             if self.is_closing() {
                 break;
             }
-            let Ok(value) = self.worker("due", json!({ "limit": 20 })).await else { break };
-            let feeds: Vec<Due> = value["feeds"].as_array().map(|arr| arr.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()).unwrap_or_default();
+            let Ok(value) = self.worker("due", json!({ "limit": 20 })).await else {
+                break;
+            };
+            let feeds: Vec<Due> = value["feeds"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                        .collect()
+                })
+                .unwrap_or_default();
             if feeds.is_empty() {
                 break;
             }
-            stream::iter(feeds).map(|feed| self.refresh(feed)).buffer_unordered(4).collect::<Vec<()>>().await;
+            stream::iter(feeds)
+                .map(|feed| self.refresh(feed))
+                .buffer_unordered(4)
+                .collect::<Vec<()>>()
+                .await;
         }
         {
             let mut state = self.inner.state.lock().expect("tick state");
@@ -308,7 +367,9 @@ impl NewsRuntime {
 
     /// Runs a refresh pass (or joins the active one) and waits for it to finish.
     pub async fn tick(&self) {
-        let Some(target) = self.start_or_join_tick() else { return };
+        let Some(target) = self.start_or_join_tick() else {
+            return;
+        };
         let mut done_rx = self.inner.done.subscribe();
         let mut closed_rx = self.inner.closed.subscribe();
         loop {
@@ -331,7 +392,11 @@ impl NewsRuntime {
     pub async fn discover(&self, input: &str) -> Result<Vec<Value>> {
         let trimmed = input.trim();
         let lower = trimmed.to_ascii_lowercase();
-        let url = if lower.starts_with("http://") || lower.starts_with("https://") { trimmed.to_owned() } else { format!("https://{trimmed}") };
+        let url = if lower.starts_with("http://") || lower.starts_with("https://") {
+            trimmed.to_owned()
+        } else {
+            format!("https://{trimmed}")
+        };
         let page = self
             .fetch(
                 &url,
@@ -343,51 +408,86 @@ impl NewsRuntime {
             )
             .await?;
         if !(200..300).contains(&page.status) {
-            return Err(AppError::with("feedUnavailable", 502, &format!("The site answered {}.", page.status)));
+            return Err(AppError::with(
+                "feedUnavailable",
+                502,
+                &format!("The site answered {}.", page.status),
+            ));
         }
         match parse_feed(&page.body, &page.content_type, &page.url, now_ms()) {
             Ok(parsed) => return Ok(vec![summary(&parsed, &page.url)]),
             Err(error) if error.code != "notAFeed" => return Err(error),
             Err(_) => {}
         }
-        let mut candidates: Vec<String> = discover_feeds(&decode_body(&page.body, &page.content_type), &page.url).into_iter().map(|c| c.url).collect();
+        let mut candidates: Vec<String> =
+            discover_feeds(&decode_body(&page.body, &page.content_type), &page.url)
+                .into_iter()
+                .map(|c| c.url)
+                .collect();
         if candidates.is_empty()
             && let Ok(base) = url::Url::parse(&page.url)
         {
-            candidates = ["/feed", "/rss", "/feed.xml", "/atom.xml", "/rss.xml", "/index.xml"]
-                .into_iter()
-                .filter_map(|p| base.join(p).ok().map(|u| u.to_string()))
-                .collect();
+            candidates = [
+                "/feed",
+                "/rss",
+                "/feed.xml",
+                "/atom.xml",
+                "/rss.xml",
+                "/index.xml",
+            ]
+            .into_iter()
+            .filter_map(|p| base.join(p).ok().map(|u| u.to_string()))
+            .collect();
         }
-        let probed: Vec<Option<(usize, String, Value)>> = stream::iter(candidates.into_iter().take(8).enumerate())
-            .map(|(idx, candidate)| async move {
-                let (_, feed) = self.load(&candidate, None, None).await.ok()?;
-                let feed = feed?;
-                let item = summary(&feed, &candidate);
-                Some((idx, candidate, item))
-            })
-            .buffer_unordered(3)
-            .collect()
-            .await;
+        let probed: Vec<Option<(usize, String, Value)>> =
+            stream::iter(candidates.into_iter().take(8).enumerate())
+                .map(|(idx, candidate)| async move {
+                    let (_, feed) = self.load(&candidate, None, None).await.ok()?;
+                    let feed = feed?;
+                    let item = summary(&feed, &candidate);
+                    Some((idx, candidate, item))
+                })
+                .buffer_unordered(3)
+                .collect()
+                .await;
         let mut found: Vec<(usize, String, Value)> = probed.into_iter().flatten().collect();
         found.sort_by_key(|(idx, _, _)| *idx);
         let mut seen = HashSet::new();
-        let unique: Vec<Value> = found.into_iter().filter(|(_, u, _)| seen.insert(u.clone())).map(|(_, _, v)| v).collect();
+        let unique: Vec<Value> = found
+            .into_iter()
+            .filter(|(_, u, _)| seen.insert(u.clone()))
+            .map(|(_, _, v)| v)
+            .collect();
         if unique.is_empty() {
-            return Err(AppError::with("notAFeed", 422, "No RSS, Atom or JSON feed was found at that address."));
+            return Err(AppError::with(
+                "notAFeed",
+                422,
+                "No RSS, Atom or JSON feed was found at that address.",
+            ));
         }
         Ok(unique)
     }
 
-    pub async fn subscribe(&self, session_id: &str, url: &str, folder_id: i64, title: Option<&str>, full_text: bool) -> Result<Value> {
+    pub async fn subscribe(
+        &self,
+        session_id: &str,
+        url: &str,
+        folder_id: i64,
+        title: Option<&str>,
+        full_text: bool,
+    ) -> Result<Value> {
         let (response, feed) = self.load(url, None, None).await?;
-        let mut feed = feed.ok_or_else(|| AppError::with("feedUnavailable", 502, "The feed could not be read."))?;
+        let mut feed = feed
+            .ok_or_else(|| AppError::with("feedUnavailable", 502, "The feed could not be read."))?;
         if full_text {
             self.full_text(&mut feed.entries, &HashSet::new()).await;
         }
         let parts = chunks(&feed.entries, 900 * 1024);
         let present: Vec<String> = feed.entries.iter().map(|e| e.guid_hash.clone()).collect();
-        let chosen_title = title.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&feed.title);
+        let chosen_title = title
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&feed.title);
         let etag = trunc_utf16(&response.etag, 500);
         let last_mod = trunc_utf16(&response.last_modified, 200);
         let created = self
@@ -421,7 +521,10 @@ impl NewsRuntime {
         }
         if parts.len() > 1 {
             let feeds = self.call(session_id, "feeds", json!({})).await?;
-            if let Some(found) = feeds["feeds"].as_array().and_then(|list| list.iter().find(|f| f["id"] == created["id"])) {
+            if let Some(found) = feeds["feeds"]
+                .as_array()
+                .and_then(|list| list.iter().find(|f| f["id"] == created["id"]))
+            {
                 return Ok(found.clone());
             }
         }
@@ -430,7 +533,9 @@ impl NewsRuntime {
 
     pub async fn import_opml(&self, session_id: &str, text: &str) -> Result<Value> {
         let feeds = parse_opml(text)?;
-        let result = self.call(session_id, "importOpml", json!({ "feeds": feeds })).await?;
+        let result = self
+            .call(session_id, "importOpml", json!({ "feeds": feeds }))
+            .await?;
         self.poke();
         Ok(result)
     }
@@ -456,18 +561,41 @@ impl NewsRuntime {
             )
             .await?;
         let media_type = response.content_type.split(';').next().unwrap_or("").trim();
-        if response.status != 200 || !matches!(media_type, "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/avif") {
+        if response.status != 200
+            || !matches!(
+                media_type,
+                "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/avif"
+            )
+        {
             return Err(AppError::not_found());
         }
         let len = response.body.len().to_string();
         let mut res = (StatusCode::OK, response.body).into_response();
         let headers = res.headers_mut();
-        headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(media_type).map_err(|_| AppError::internal())?);
-        headers.insert(header::CONTENT_LENGTH, HeaderValue::from_str(&len).map_err(|_| AppError::internal())?);
-        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=86400"));
-        headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
-        headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; sandbox"));
-        headers.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("inline"));
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_str(media_type).map_err(|_| AppError::internal())?,
+        );
+        headers.insert(
+            header::CONTENT_LENGTH,
+            HeaderValue::from_str(&len).map_err(|_| AppError::internal())?,
+        );
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("private, max-age=86400"),
+        );
+        headers.insert(
+            "x-content-type-options",
+            HeaderValue::from_static("nosniff"),
+        );
+        headers.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("default-src 'none'; sandbox"),
+        );
+        headers.insert(
+            header::CONTENT_DISPOSITION,
+            HeaderValue::from_static("inline"),
+        );
         Ok(res)
     }
 

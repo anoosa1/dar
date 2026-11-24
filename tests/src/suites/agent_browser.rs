@@ -22,8 +22,12 @@ async fn agent_browser_flow(ctx: &Ctx) -> Result<()> {
     let admin = login(&base).await?;
     let conn = admin.connect().await?;
     let folder_res = live::reducer(|done| {
-        conn.reducers
-            .create_folder_then(uuid(), String::new(), format!("Agent files {}", &uuid()[..6]), done)
+        conn.reducers.create_folder_then(
+            uuid(),
+            String::new(),
+            format!("Agent files {}", &uuid()[..6]),
+            done,
+        )
     })
     .await;
     conn.disconnect();

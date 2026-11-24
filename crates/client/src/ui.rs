@@ -69,30 +69,54 @@ pub struct Listener {
 }
 
 impl Listener {
-    pub fn new(target: &web_sys::EventTarget, name: &'static str, capture: bool, f: impl FnMut(web_sys::Event) + 'static) -> Self {
+    pub fn new(
+        target: &web_sys::EventTarget,
+        name: &'static str,
+        capture: bool,
+        f: impl FnMut(web_sys::Event) + 'static,
+    ) -> Self {
         let callback = Closure::<dyn FnMut(web_sys::Event)>::new(f);
-        let _ = target.add_event_listener_with_callback_and_bool(name, callback.as_ref().unchecked_ref(), capture);
-        Self { target: target.clone(), name, capture, callback }
+        let _ = target.add_event_listener_with_callback_and_bool(
+            name,
+            callback.as_ref().unchecked_ref(),
+            capture,
+        );
+        Self {
+            target: target.clone(),
+            name,
+            capture,
+            callback,
+        }
     }
 }
 
 impl Drop for Listener {
     fn drop(&mut self) {
-        let _ = self.target.remove_event_listener_with_callback_and_bool(self.name, self.callback.as_ref().unchecked_ref(), self.capture);
+        let _ = self.target.remove_event_listener_with_callback_and_bool(
+            self.name,
+            self.callback.as_ref().unchecked_ref(),
+            self.capture,
+        );
     }
 }
 
 /// Keeps a listener for as long as the current reactive owner lives.
-pub fn listen(target: &web_sys::EventTarget, name: &'static str, capture: bool, f: impl FnMut(web_sys::Event) + 'static) {
+pub fn listen(
+    target: &web_sys::EventTarget,
+    name: &'static str,
+    capture: bool,
+    f: impl FnMut(web_sys::Event) + 'static,
+) {
     let listener = send_wrapper::SendWrapper::new(Listener::new(target, name, capture, f));
     on_cleanup(move || drop(listener));
 }
 
 pub fn call_method(target: &JsValue, name: &str) {
     if let Ok(function) = js_sys::Reflect::get(target, &JsValue::from_str(name))
-        && let Some(function) = function.dyn_ref::<js_sys::Function>() {
-            let _ = function.call0(target);
-        }
+        && let Some(function) = function.dyn_ref::<js_sys::Function>()
+    {
+        let _ = function.call0(target);
+    }
 }
 
 pub fn active_element() -> Option<web_sys::HtmlElement> {
@@ -101,9 +125,17 @@ pub fn active_element() -> Option<web_sys::HtmlElement> {
 
 /// Menus, listboxes and pickers open in the top layer (Popover API) at a viewport-clamped
 /// position next to their anchor (`useFloating`).
-pub fn use_floating(open: Signal<bool>, anchor: NodeRef<html::Button>, panel: NodeRef<html::Div>, align_end: bool, gap: f64) {
+pub fn use_floating(
+    open: Signal<bool>,
+    anchor: NodeRef<html::Button>,
+    panel: NodeRef<html::Div>,
+    align_end: bool,
+    gap: f64,
+) {
     Effect::new(move |_| {
-        let (true, Some(element)) = (open.get(), panel.get()) else { return };
+        let (true, Some(element)) = (open.get(), panel.get()) else {
+            return;
+        };
         let element: web_sys::HtmlElement = element.unchecked_into();
         if !element.has_attribute("popover") {
             let _ = element.set_attribute("popover", "manual");
@@ -111,22 +143,52 @@ pub fn use_floating(open: Signal<bool>, anchor: NodeRef<html::Button>, panel: No
         let place = std::rc::Rc::new({
             let element = element.clone();
             move || {
-                let Some(anchor) = anchor.get_untracked() else { return };
+                let Some(anchor) = anchor.get_untracked() else {
+                    return;
+                };
                 let rect = anchor.get_bounding_client_rect();
                 let (inner_w, inner_h) = (
-                    window().inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(0.0),
-                    window().inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    window()
+                        .inner_width()
+                        .ok()
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                    window()
+                        .inner_height()
+                        .ok()
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
                 );
                 let margin = 8.0;
                 let below = inner_h - rect.bottom() - gap - margin;
                 let above = rect.top() - gap - margin;
                 let style = element.style();
-                let _ = style.set_property("--float-anchor-width", &format!("{}px", rect.width().round()));
-                let (height, width) = (element.offset_height() as f64, element.offset_width() as f64);
+                let _ = style.set_property(
+                    "--float-anchor-width",
+                    &format!("{}px", rect.width().round()),
+                );
+                let (height, width) = (
+                    element.offset_height() as f64,
+                    element.offset_width() as f64,
+                );
                 let up = height > below && above > below;
-                let _ = style.set_property("--float-max-height", &format!("{}px", 120f64.max((if up { above } else { below }).floor())));
-                let top = margin.max((if up { rect.top() - gap - height.min(above) } else { rect.bottom() + gap }).min(inner_h - margin - height.min(inner_h - 2.0 * margin)));
-                let mut left = if align_end { rect.right() - width } else { rect.left() };
+                let _ = style.set_property(
+                    "--float-max-height",
+                    &format!("{}px", 120f64.max((if up { above } else { below }).floor())),
+                );
+                let top = margin.max(
+                    (if up {
+                        rect.top() - gap - height.min(above)
+                    } else {
+                        rect.bottom() + gap
+                    })
+                    .min(inner_h - margin - height.min(inner_h - 2.0 * margin)),
+                );
+                let mut left = if align_end {
+                    rect.right() - width
+                } else {
+                    rect.left()
+                };
                 if left < margin {
                     left = rect.left();
                 } else if left + width > inner_w - margin {
@@ -164,7 +226,9 @@ pub fn use_floating(open: Signal<bool>, anchor: NodeRef<html::Button>, panel: No
                 // Moving an ancestor (such as a Leptos `<For>` row reorder) closes an open
                 // popover silently (`fireEvents = false`), collapsing it to 0x0 and triggering
                 // ResizeObserver. Reopen and re-anchor on the next frame if still open.
-                if open.try_get_untracked() == Some(true) && !element.matches(":popover-open").unwrap_or(true) {
+                if open.try_get_untracked() == Some(true)
+                    && !element.matches(":popover-open").unwrap_or(true)
+                {
                     let ensure = ensure.clone();
                     request_animation_frame(move || ensure());
                 } else {
@@ -172,21 +236,37 @@ pub fn use_floating(open: Signal<bool>, anchor: NodeRef<html::Button>, panel: No
                 }
             })
         };
-        let observer = web_sys::ResizeObserver::new(observer_callback.as_ref().unchecked_ref()).expect("ResizeObserver");
+        let observer = web_sys::ResizeObserver::new(observer_callback.as_ref().unchecked_ref())
+            .expect("ResizeObserver");
         observer.observe(&element);
-        let resize = Listener::new(&window(), "resize", false, { let place = place.clone(); move |_| place() });
-        let scroll = Listener::new(&window(), "scroll", true, { let place = place.clone(); move |_| place() });
+        let resize = Listener::new(&window(), "resize", false, {
+            let place = place.clone();
+            move |_| place()
+        });
+        let scroll = Listener::new(&window(), "scroll", true, {
+            let place = place.clone();
+            move |_| place()
+        });
         let toggle = Listener::new(&element, "toggle", false, {
             let element = element.clone();
             let ensure = ensure_open.clone();
             move |_| {
-                if open.try_get_untracked() == Some(true) && !element.matches(":popover-open").unwrap_or(true) {
+                if open.try_get_untracked() == Some(true)
+                    && !element.matches(":popover-open").unwrap_or(true)
+                {
                     let ensure = ensure.clone();
                     request_animation_frame(move || ensure());
                 }
             }
         });
-        let kept = send_wrapper::SendWrapper::new((observer, observer_callback, resize, scroll, toggle, element));
+        let kept = send_wrapper::SendWrapper::new((
+            observer,
+            observer_callback,
+            resize,
+            scroll,
+            toggle,
+            element,
+        ));
         on_cleanup(move || {
             let (observer, _callback, _resize, _scroll, _toggle, element) = kept.take();
             observer.disconnect();
@@ -216,10 +296,17 @@ pub struct MenuAction {
 
 impl MenuAction {
     pub fn new(label: impl Into<String>, icon: &'static str) -> Self {
-        Self { label: label.into(), icon: Some(icon), ..Default::default() }
+        Self {
+            label: label.into(),
+            icon: Some(icon),
+            ..Default::default()
+        }
     }
     pub fn plain(label: impl Into<String>) -> Self {
-        Self { label: label.into(), ..Default::default() }
+        Self {
+            label: label.into(),
+            ..Default::default()
+        }
     }
     pub fn run(mut self, f: impl Fn() + Send + Sync + 'static) -> Self {
         self.run = Some(std::sync::Arc::new(f));
@@ -265,7 +352,9 @@ impl MenuAction {
 
 fn menu_items(panel: &web_sys::HtmlElement, selector: &str) -> Vec<web_sys::HtmlElement> {
     let list = panel.query_selector_all(selector).expect("selector");
-    (0..list.length()).filter_map(|i| list.item(i)?.dyn_into().ok()).collect()
+    (0..list.length())
+        .filter_map(|i| list.item(i)?.dyn_into().ok())
+        .collect()
 }
 
 fn focus_by_key(items: &[web_sys::HtmlElement], key: &str) -> bool {
@@ -273,7 +362,11 @@ fn focus_by_key(items: &[web_sys::HtmlElement], key: &str) -> bool {
         return false;
     }
     let active = document().active_element();
-    let index = items.iter().position(|item| Some(item.unchecked_ref::<web_sys::Element>()) == active.as_ref()).map(|i| i as i64).unwrap_or(-1);
+    let index = items
+        .iter()
+        .position(|item| Some(item.unchecked_ref::<web_sys::Element>()) == active.as_ref())
+        .map(|i| i as i64)
+        .unwrap_or(-1);
     let len = items.len() as i64;
     let next = match key {
         "Home" => 0,
@@ -310,10 +403,20 @@ pub fn ActionMenu(
         if !open.get_untracked() {
             page.set(None);
             if let Some(on_open) = on_open {
-                { on_open.try_run(()); };
+                {
+                    on_open.try_run(());
+                };
             }
-            let bottom = trigger.get_untracked().map(|t| t.get_bounding_client_rect().bottom()).unwrap_or(0.0);
-            let half = window().inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(0.0) / 2.0;
+            let bottom = trigger
+                .get_untracked()
+                .map(|t| t.get_bounding_client_rect().bottom())
+                .unwrap_or(0.0);
+            let half = window()
+                .inner_height()
+                .ok()
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0)
+                / 2.0;
             side.set(if bottom > half { "up" } else { "down" });
         }
         open.update(|o| *o = !*o);
@@ -331,11 +434,14 @@ pub fn ActionMenu(
         }
         let Some(panel) = menu.get() else { return };
         listen(&document(), "pointerdown", false, move |event| {
-            let target = event.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok());
+            let target = event
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Node>().ok());
             if let Some(root) = root.get_untracked()
-                && !root.contains(target.as_ref()) {
-                    open.set(false);
-                }
+                && !root.contains(target.as_ref())
+            {
+                open.set(false);
+            }
         });
         if let Some(first) = menu_items(&panel, "[role^=menuitem]:not(:disabled)").first() {
             let _ = first.focus();
@@ -375,8 +481,25 @@ pub fn ActionMenu(
     }
 }
 
-fn menu_row(action: MenuAction, page: RwSignal<Option<Vec<MenuAction>>>, close: impl Fn() + Copy + Send + Sync + 'static) -> impl IntoView {
-    let MenuAction { label, icon, disabled, danger, href, run, separator, current, items, shortcut, section, download } = action;
+fn menu_row(
+    action: MenuAction,
+    page: RwSignal<Option<Vec<MenuAction>>>,
+    close: impl Fn() + Copy + Send + Sync + 'static,
+) -> impl IntoView {
+    let MenuAction {
+        label,
+        icon,
+        disabled,
+        danger,
+        href,
+        run,
+        separator,
+        current,
+        items,
+        shortcut,
+        section,
+        download,
+    } = action;
     let class = format!("ui-menu-item {}", if danger { "danger" } else { "" });
     let item = if let Some(href) = href {
         view! {
@@ -424,7 +547,8 @@ pub fn Select(
     #[prop(optional, into)] aria_label: Option<String>,
     #[prop(optional, into)] on_change: Option<Callback<String>>,
 ) -> impl IntoView {
-    let current = value.unwrap_or_else(|| RwSignal::new(options.first().map(|o| o.0.clone()).unwrap_or_default()));
+    let current = value
+        .unwrap_or_else(|| RwSignal::new(options.first().map(|o| o.0.clone()).unwrap_or_default()));
     let open = RwSignal::new(false);
     let side = RwSignal::new("down");
     let root = NodeRef::<html::Div>::new();
@@ -438,7 +562,11 @@ pub fn Select(
         let Some(b) = button.get() else { return };
         if let Some(label) = b.closest("label").ok().flatten() {
             let nodes = label.child_nodes();
-            let text: Vec<String> = (0..nodes.length()).filter_map(|i| nodes.item(i)).filter(|n| n.node_type() == web_sys::Node::TEXT_NODE).filter_map(|n| n.text_content()).collect();
+            let text: Vec<String> = (0..nodes.length())
+                .filter_map(|i| nodes.item(i))
+                .filter(|n| n.node_type() == web_sys::Node::TEXT_NODE)
+                .filter_map(|n| n.text_content())
+                .collect();
             implicit.set(text.join(" ").trim().to_owned());
         }
     });
@@ -458,13 +586,25 @@ pub fn Select(
         }
         let Some(panel) = list.get() else { return };
         listen(&document(), "pointerdown", false, move |event| {
-            let target = event.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok());
+            let target = event
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Node>().ok());
             if let Some(root) = root.get_untracked()
-                && !root.contains(target.as_ref()) {
-                    open.set(false);
-                }
+                && !root.contains(target.as_ref())
+            {
+                open.set(false);
+            }
         });
-        let selected = panel.query_selector("[aria-selected=\"true\"]").ok().flatten().or_else(|| panel.query_selector("[role=\"option\"]:not(:disabled)").ok().flatten());
+        let selected = panel
+            .query_selector("[aria-selected=\"true\"]")
+            .ok()
+            .flatten()
+            .or_else(|| {
+                panel
+                    .query_selector("[role=\"option\"]:not(:disabled)")
+                    .ok()
+                    .flatten()
+            });
         if let Some(el) = selected.and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok()) {
             let _ = el.focus();
         }
@@ -521,16 +661,27 @@ pub fn Select(
 
 /// Restores focus to `previous` if it is still visible, else to the page's main region.
 fn restore_focus(previous: Option<web_sys::HtmlElement>) {
-    if let Some(previous) = previous.filter(|p| p.is_connected() && p.get_bounding_client_rect().width() > 0.0) {
+    if let Some(previous) =
+        previous.filter(|p| p.is_connected() && p.get_bounding_client_rect().width() > 0.0)
+    {
         let _ = previous.focus();
-    } else if let Some(main) = document().query_selector("main").ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok()) {
+    } else if let Some(main) = document()
+        .query_selector("main")
+        .ok()
+        .flatten()
+        .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+    {
         let _ = main.focus();
     }
 }
 
 /// A modal `<dialog>` in `document.body` (`Dialog`).
 #[component]
-pub fn Dialog(#[prop(into)] title: Signal<String>, #[prop(into)] on_close: Callback<()>, children: ChildrenFn) -> impl IntoView {
+pub fn Dialog(
+    #[prop(into)] title: Signal<String>,
+    #[prop(into)] on_close: Callback<()>,
+    children: ChildrenFn,
+) -> impl IntoView {
     let dialog = NodeRef::<html::Dialog>::new();
     let title_id = unique_id();
     // As in React, the focus to restore is read just before the dialog opens, after any
@@ -539,10 +690,11 @@ pub fn Dialog(#[prop(into)] title: Signal<String>, #[prop(into)] on_close: Callb
     on_cleanup(move || restore_focus(previous.try_get_value().flatten()));
     Effect::new(move |_| {
         if let Some(dialog) = dialog.get()
-            && !dialog.open() {
-                previous.set_value(active_element());
-                let _ = dialog.show_modal();
-            }
+            && !dialog.open()
+        {
+            previous.set_value(active_element());
+            let _ = dialog.show_modal();
+        }
     });
     let children = StoredValue::new(children);
     view! {
@@ -558,21 +710,46 @@ pub fn Dialog(#[prop(into)] title: Signal<String>, #[prop(into)] on_close: Callb
 /// The non-modal right-hand editing pane (`EditorPane`). A button labelled Cancel closes it,
 /// asking first when `dirty` reports unsaved changes.
 #[component]
-pub fn EditorPane(#[prop(into)] title: Signal<String>, #[prop(into)] on_close: Callback<()>, #[prop(optional, into)] dirty: Option<Signal<bool>>, children: ChildrenFn) -> impl IntoView {
+pub fn EditorPane(
+    #[prop(into)] title: Signal<String>,
+    #[prop(into)] on_close: Callback<()>,
+    #[prop(optional, into)] dirty: Option<Signal<bool>>,
+    children: ChildrenFn,
+) -> impl IntoView {
     use_body_class(&["has-editing-pane"]);
     let pane = NodeRef::<html::Aside>::new();
     let id = unique_id();
     let changed = RwSignal::new(false);
     let discard = RwSignal::new(false);
-    let is_dirty = move || dirty.map(|d| d.get_untracked()).unwrap_or_else(|| changed.get_untracked());
-    let close = move || if is_dirty() { discard.set(true) } else { on_close.try_run(()); };
+    let is_dirty = move || {
+        dirty
+            .map(|d| d.get_untracked())
+            .unwrap_or_else(|| changed.get_untracked())
+    };
+    let close = move || {
+        if is_dirty() {
+            discard.set(true)
+        } else {
+            on_close.try_run(());
+        }
+    };
     let previous = send_wrapper::SendWrapper::new(active_element());
     on_cleanup(move || restore_focus(previous.take()));
     Effect::new(move |_| {
         let Some(pane) = pane.get() else { return };
-        let target = pane.query_selector("[autofocus],input:not([type=hidden]),textarea").ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
-        let _ = target.unwrap_or_else(|| pane.clone().unchecked_into()).focus();
-        listen(&window(), "beforeunload", false, move |event| if is_dirty() { event.prevent_default() });
+        let target = pane
+            .query_selector("[autofocus],input:not([type=hidden]),textarea")
+            .ok()
+            .flatten()
+            .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
+        let _ = target
+            .unwrap_or_else(|| pane.clone().unchecked_into())
+            .focus();
+        listen(&window(), "beforeunload", false, move |event| {
+            if is_dirty() {
+                event.prevent_default()
+            }
+        });
     });
     let children = StoredValue::new(children);
     view! {

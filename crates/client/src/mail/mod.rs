@@ -93,7 +93,11 @@ pub(crate) struct Addr {
 
 impl Addr {
     pub fn label(&self) -> String {
-        if self.name.is_empty() { self.address.clone() } else { self.name.clone() }
+        if self.name.is_empty() {
+            self.address.clone()
+        } else {
+            self.name.clone()
+        }
     }
 }
 
@@ -139,7 +143,11 @@ impl Summary {
         }
     }
     pub fn subject_or(&self) -> String {
-        if self.subject.trim().is_empty() { "No subject".into() } else { self.subject.clone() }
+        if self.subject.trim().is_empty() {
+            "No subject".into()
+        } else {
+            self.subject.clone()
+        }
     }
 }
 
@@ -195,9 +203,21 @@ pub(crate) fn tone(color: u32) -> String {
 }
 
 pub(crate) fn initials(name: &str) -> String {
-    let words: Vec<&str> = name.split(|c: char| c.is_whitespace() || c == '@' || c == '.').filter(|w| !w.is_empty()).collect();
-    let letters: String = words.iter().take(2).filter_map(|w| w.chars().next()).flat_map(char::to_uppercase).collect();
-    if letters.is_empty() { "?".into() } else { letters }
+    let words: Vec<&str> = name
+        .split(|c: char| c.is_whitespace() || c == '@' || c == '.')
+        .filter(|w| !w.is_empty())
+        .collect();
+    let letters: String = words
+        .iter()
+        .take(2)
+        .filter_map(|w| w.chars().next())
+        .flat_map(char::to_uppercase)
+        .collect();
+    if letters.is_empty() {
+        "?".into()
+    } else {
+        letters
+    }
 }
 
 /// A stable avatar tone from a sender's address.
@@ -207,7 +227,9 @@ pub(crate) fn avatar_tone(seed: &str) -> String {
 }
 
 pub(crate) fn encode(value: &str) -> String {
-    js_sys::encode_uri_component(value).as_string().unwrap_or_default()
+    js_sys::encode_uri_component(value)
+        .as_string()
+        .unwrap_or_default()
 }
 
 /// Base64 for attachment uploads.
@@ -215,30 +237,100 @@ pub(crate) fn base64(data: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
         out.push(T[(n >> 18) as usize & 63] as char);
         out.push(T[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { T[n as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            T[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            T[n as usize & 63] as char
+        } else {
+            '='
+        });
     }
     out
 }
 
 const ALLOWED: &[&str] = &[
-    "a", "abbr", "b", "blockquote", "br", "caption", "cite", "code", "dd", "del", "div", "dl", "dt", "em", "figcaption", "figure", "h1", "h2", "h3", "h4",
-    "h5", "h6", "hr", "i", "img", "ins", "kbd", "li", "mark", "ol", "p", "pre", "q", "s", "small", "span", "strong", "sub", "sup", "table", "tbody", "td",
-    "tfoot", "th", "thead", "time", "tr", "u", "ul",
+    "a",
+    "abbr",
+    "b",
+    "blockquote",
+    "br",
+    "caption",
+    "cite",
+    "code",
+    "dd",
+    "del",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "figcaption",
+    "figure",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "hr",
+    "i",
+    "img",
+    "ins",
+    "kbd",
+    "li",
+    "mark",
+    "ol",
+    "p",
+    "pre",
+    "q",
+    "s",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "time",
+    "tr",
+    "u",
+    "ul",
 ];
-const DROPPED: &[&str] = &["script", "style", "iframe", "object", "embed", "svg", "math", "form", "template", "noscript", "link", "meta", "base", "video", "audio", "canvas"];
+const DROPPED: &[&str] = &[
+    "script", "style", "iframe", "object", "embed", "svg", "math", "form", "template", "noscript",
+    "link", "meta", "base", "video", "audio", "canvas",
+];
 
-fn walk(doc: &web_sys::Document, from: &web_sys::Node, to: &web_sys::Node, depth: usize, origin: &str) {
+fn walk(
+    doc: &web_sys::Document,
+    from: &web_sys::Node,
+    to: &web_sys::Node,
+    depth: usize,
+    origin: &str,
+) {
     let children = from.child_nodes();
     for i in 0..children.length() {
-        let Some(child) = children.item(i) else { continue };
+        let Some(child) = children.item(i) else {
+            continue;
+        };
         match child.node_type() {
             web_sys::Node::TEXT_NODE => {
-                let _ = to.append_child(&doc.create_text_node(&child.text_content().unwrap_or_default()));
+                let _ = to
+                    .append_child(&doc.create_text_node(&child.text_content().unwrap_or_default()));
                 continue;
             }
             web_sys::Node::ELEMENT_NODE => {}
@@ -255,8 +347,15 @@ fn walk(doc: &web_sys::Document, from: &web_sys::Node, to: &web_sys::Node, depth
         }
         if tag == "img" {
             // The server rewrote every image it allows to Mail's own API; anything else is blocked.
-            let Some(src) = element.get_attribute("src").filter(|s| s.starts_with(&format!("{origin}/api/v1/mail/"))) else { continue };
-            let Ok(el) = doc.create_element("img") else { continue };
+            let Some(src) = element
+                .get_attribute("src")
+                .filter(|s| s.starts_with(&format!("{origin}/api/v1/mail/")))
+            else {
+                continue;
+            };
+            let Ok(el) = doc.create_element("img") else {
+                continue;
+            };
             let _ = el.set_attribute("src", &src);
             let _ = el.set_attribute("alt", &element.get_attribute("alt").unwrap_or_default());
             let _ = el.set_attribute("loading", "lazy");
@@ -264,16 +363,23 @@ fn walk(doc: &web_sys::Document, from: &web_sys::Node, to: &web_sys::Node, depth
             let _ = to.append_child(&el);
             continue;
         }
-        let Ok(copy) = doc.create_element(&tag) else { continue };
+        let Ok(copy) = doc.create_element(&tag) else {
+            continue;
+        };
         if tag == "a"
-            && let Some(href) = element.get_attribute("href").and_then(|h| web_sys::Url::new(&h).ok()).filter(|u| matches!(u.protocol().as_str(), "http:" | "https:" | "mailto:"))
+            && let Some(href) = element
+                .get_attribute("href")
+                .and_then(|h| web_sys::Url::new(&h).ok())
+                .filter(|u| matches!(u.protocol().as_str(), "http:" | "https:" | "mailto:"))
         {
             let _ = copy.set_attribute("href", &href.href());
             let _ = copy.set_attribute("target", "_blank");
             let _ = copy.set_attribute("rel", "noopener noreferrer");
         }
         for name in ["colspan", "rowspan", "start", "title", "dir"] {
-            if let Some(value) = element.get_attribute(name).filter(|v| !v.is_empty() && v.len() < 300 && (name != "dir" || v == "rtl" || v == "ltr")) {
+            if let Some(value) = element.get_attribute(name).filter(|v| {
+                !v.is_empty() && v.len() < 300 && (name != "dir" || v == "rtl" || v == "ltr")
+            }) {
                 let _ = copy.set_attribute(name, &value);
             }
         }
@@ -287,8 +393,15 @@ pub(crate) fn render_html(html: &str) -> web_sys::DocumentFragment {
     let doc = document();
     let out = doc.create_document_fragment();
     let origin = crate::ui::window().location().origin().unwrap_or_default();
-    let Ok(parser) = web_sys::DomParser::new() else { return out };
-    let Ok(source) = parser.parse_from_string(&format!("<!doctype html><body>{html}</body>"), web_sys::SupportedType::TextHtml) else { return out };
+    let Ok(parser) = web_sys::DomParser::new() else {
+        return out;
+    };
+    let Ok(source) = parser.parse_from_string(
+        &format!("<!doctype html><body>{html}</body>"),
+        web_sys::SupportedType::TextHtml,
+    ) else {
+        return out;
+    };
     if let Some(body) = source.body() {
         walk(&doc, &body, &out, 0, &origin);
     }

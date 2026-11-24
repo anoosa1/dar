@@ -191,7 +191,13 @@ impl ImmichConnector {
         if let Some(value) = self.inner.progress.lock().expect("progress").get(user_id) {
             return Some(value.clone());
         }
-        if self.inner.backlog.lock().expect("backlog").contains(user_id) {
+        if self
+            .inner
+            .backlog
+            .lock()
+            .expect("backlog")
+            .contains(user_id)
+        {
             return Some(PhotoImmichProgress {
                 phase: "waiting".into(),
                 done: 0,
@@ -214,8 +220,14 @@ impl ImmichConnector {
             Duration::from_secs(15),
             cancel_rx,
         );
-        client.json("/server/ping", "GET", None).await.map_err(err_text)?;
-        client.json("/users/me", "GET", None).await.map_err(err_text)
+        client
+            .json("/server/ping", "GET", None)
+            .await
+            .map_err(err_text)?;
+        client
+            .json("/users/me", "GET", None)
+            .await
+            .map_err(err_text)
     }
 
     pub async fn close(&self) {
@@ -246,7 +258,13 @@ async fn connector_loop(inner: Arc<Inner>, cancel_rx: watch::Receiver<bool>) {
         if inner.closing.load(Ordering::Relaxed) {
             break;
         }
-        let next_backlog = inner.backlog.lock().expect("backlog").iter().next().cloned();
+        let next_backlog = inner
+            .backlog
+            .lock()
+            .expect("backlog")
+            .iter()
+            .next()
+            .cloned();
         let delay = if next_backlog.is_some() {
             Duration::from_millis(BACKLOG_DELAY_MS)
         } else {
@@ -590,15 +608,26 @@ async fn run_one(inner: &Arc<Inner>, c: &Connection, cancel_rx: watch::Receiver<
     };
     inner.progress.lock().expect("progress").remove(&c.user_id);
     if error.is_empty() && summary.skipped > 0 {
-        inner.backlog.lock().expect("backlog").insert(c.user_id.clone());
+        inner
+            .backlog
+            .lock()
+            .expect("backlog")
+            .insert(c.user_id.clone());
     } else {
         inner.backlog.lock().expect("backlog").remove(&c.user_id);
     }
     let failed_msg = if summary.failed > 0 {
         let noun = if summary.failed == 1 { "file" } else { "files" };
         let short_first: String = first_failure.chars().take(200).collect();
-        let more = if summary.failed > 1 { " and others" } else { "" };
-        format!("{} {noun} could not be imported ({short_first}{more}).", summary.failed)
+        let more = if summary.failed > 1 {
+            " and others"
+        } else {
+            ""
+        };
+        format!(
+            "{} {noun} could not be imported ({short_first}{more}).",
+            summary.failed
+        )
     } else {
         String::new()
     };
@@ -641,7 +670,11 @@ async fn import_asset(
         .chars()
         .take(255)
         .collect();
-    let name = if cleaned.is_empty() { "immich".to_owned() } else { cleaned };
+    let name = if cleaned.is_empty() {
+        "immich".to_owned()
+    } else {
+        cleaned
+    };
     let media_type = asset
         .original_mime_type
         .as_deref()
@@ -677,7 +710,11 @@ async fn import_asset(
     let result = async {
         let file_path = dir.join("original");
         client
-            .download_to(&format!("/assets/{}/original", asset.id), &file_path, MAX_FILE_BYTES)
+            .download_to(
+                &format!("/assets/{}/original", asset.id),
+                &file_path,
+                MAX_FILE_BYTES,
+            )
             .await?;
         let mut f = tokio::fs::File::open(&file_path)
             .await
@@ -730,7 +767,10 @@ async fn import_asset(
         )
         .await
         .map_err(ImportErr::App)?;
-        if let Some(dup) = begun.get("duplicate").and_then(Value::as_str).filter(|s| !s.is_empty())
+        if let Some(dup) = begun
+            .get("duplicate")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
         {
             return Ok((dup.to_owned(), 0));
         }
@@ -952,9 +992,9 @@ impl ImmichClient {
                     .stderr(Stdio::piped())
                     .kill_on_drop(true);
 
-                let mut child = cmd
-                    .spawn()
-                    .map_err(|_| ImportErr::Other("Immich could not be reached (curl is missing).".into()))?;
+                let mut child = cmd.spawn().map_err(|_| {
+                    ImportErr::Other("Immich could not be reached (curl is missing).".into())
+                })?;
                 let mut stderr_pipe = child.stderr.take();
                 let mut cancel = self.cancel_rx.clone();
                 let status = tokio::select! {
@@ -1018,9 +1058,11 @@ impl ImmichClient {
             let (http_status, location) = hop_result?;
             if [301, 302, 303, 307, 308].contains(&http_status) {
                 let target_url = url::Url::parse(&target).ok();
-                let next = target_url
-                    .as_ref()
-                    .and_then(|u| (!location.is_empty()).then(|| u.join(&location).ok()).flatten());
+                let next = target_url.as_ref().and_then(|u| {
+                    (!location.is_empty())
+                        .then(|| u.join(&location).ok())
+                        .flatten()
+                });
                 let Some(next) = next else {
                     return Err(ImportErr::Other(
                         "The server redirects to nowhere. Enter that address instead.".into(),
@@ -1050,7 +1092,9 @@ impl ImmichClient {
             }
             return Ok(());
         }
-        Err(ImportErr::Other("The server redirected too many times.".into()))
+        Err(ImportErr::Other(
+            "The server redirected too many times.".into(),
+        ))
     }
 }
 
@@ -1107,13 +1151,21 @@ async fn make_temp_dir() -> Result<PathBuf, ImportErr> {
 
 fn in_v4(a: [u8; 4], net: [u8; 4], bits: u32) -> bool {
     let (a, net) = (u32::from_be_bytes(a), u32::from_be_bytes(net));
-    let mask = if bits == 0 { 0 } else { u32::MAX << (32 - bits) };
+    let mask = if bits == 0 {
+        0
+    } else {
+        u32::MAX << (32 - bits)
+    };
     a & mask == net & mask
 }
 
 fn in_v6(a: [u16; 8], net: [u16; 8], bits: u32) -> bool {
     let to = |s: [u16; 8]| s.iter().fold(0u128, |acc, p| (acc << 16) | *p as u128);
-    let mask = if bits == 0 { 0 } else { u128::MAX << (128 - bits) };
+    let mask = if bits == 0 {
+        0
+    } else {
+        u128::MAX << (128 - bits)
+    };
     to(a) & mask == to(net) & mask
 }
 
@@ -1139,7 +1191,9 @@ fn is_blocked_address(addr: IpAddr, allow_loopback: bool) -> bool {
             if allow_loopback && v4.is_loopback() {
                 return false;
             }
-            BLOCKED_V4.iter().any(|(net, bits)| in_v4(v4.octets(), *net, *bits))
+            BLOCKED_V4
+                .iter()
+                .any(|(net, bits)| in_v4(v4.octets(), *net, *bits))
         }
         IpAddr::V6(v6) => {
             if let Some(v4) = v6.to_ipv4_mapped() {
@@ -1148,7 +1202,9 @@ fn is_blocked_address(addr: IpAddr, allow_loopback: bool) -> bool {
             if allow_loopback && v6.is_loopback() {
                 return false;
             }
-            BLOCKED_V6.iter().any(|(net, bits)| in_v6(v6.segments(), *net, *bits))
+            BLOCKED_V6
+                .iter()
+                .any(|(net, bits)| in_v6(v6.segments(), *net, *bits))
         }
     }
 }

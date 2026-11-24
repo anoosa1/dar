@@ -24,7 +24,11 @@ impl Xml {
     pub fn is(&self, uri: &str, name: &str) -> bool {
         self.uri == uri && self.name == name
     }
-    pub fn children<'a>(&'a self, uri: &'a str, name: &'a str) -> impl Iterator<Item = &'a Xml> + 'a {
+    pub fn children<'a>(
+        &'a self,
+        uri: &'a str,
+        name: &'a str,
+    ) -> impl Iterator<Item = &'a Xml> + 'a {
         self.children.iter().filter(move |n| n.is(uri, name))
     }
     pub fn child(&self, uri: &str, name: &str) -> Option<&Xml> {
@@ -59,7 +63,11 @@ pub fn parse(text: &str) -> Result<Xml, DavError> {
                 if nodes > 10_000 || stack.len() > 32 {
                     return Err(DavError::new(413, "requestTooLarge"));
                 }
-                let mut node = Xml { uri, name: e.local_name().as_ref().to_owned(), ..Default::default() };
+                let mut node = Xml {
+                    uri,
+                    name: e.local_name().as_ref().to_owned(),
+                    ..Default::default()
+                };
                 for attr in e.attributes() {
                     let attr = attr.map_err(|_| invalid())?;
                     let key = attr.key.as_ref();
@@ -68,8 +76,11 @@ pub fn parse(text: &str) -> Result<Xml, DavError> {
                     }
                     let (ns, local) = reader.resolver().resolve_attribute(attr.key);
                     if matches!(ns, ResolveResult::Unbound) {
-                        let value = attr.normalized_value(quick_xml::XmlVersion::Implicit1_0).map_err(|_| invalid())?;
-                        node.attrs.insert(local.as_ref().to_owned(), value.into_owned());
+                        let value = attr
+                            .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                            .map_err(|_| invalid())?;
+                        node.attrs
+                            .insert(local.as_ref().to_owned(), value.into_owned());
                     }
                 }
                 if matches!(event, Event::Empty(_)) {
@@ -97,7 +108,9 @@ pub fn parse(text: &str) -> Result<Xml, DavError> {
             Event::GeneralRef(r) => {
                 let resolved = match r.resolve_char_ref().map_err(|_| invalid())? {
                     Some(c) => c.to_string(),
-                    None => quick_xml::escape::resolve_predefined_entity(&r).ok_or_else(invalid)?.to_owned(),
+                    None => quick_xml::escape::resolve_predefined_entity(&r)
+                        .ok_or_else(invalid)?
+                        .to_owned(),
                 };
                 if let Some(top) = stack.last_mut() {
                     top.text.push_str(&resolved);

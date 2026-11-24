@@ -18,7 +18,10 @@ use crate::date_popover::add_days;
 use crate::icons::Icon;
 use crate::pim::presentation::{recurrence_label, task_date};
 use crate::pim::schedule::{ReminderField, RepeatField};
-use crate::pim::{Collection, CollectionDot, CollectionEditor, CollectionNavigation, Done, Sharing, etag, send, use_pim};
+use crate::pim::{
+    Collection, CollectionDot, CollectionEditor, CollectionNavigation, Done, Sharing, etag, send,
+    use_pim,
+};
 use crate::shared::{PREFERENCES, Preferences, context, save_preferences};
 use crate::ui::{ActionMenu, Dialog, EditorPane, MenuAction, Select, window};
 
@@ -34,7 +37,14 @@ const VIEWS: [(&str, &str); 6] = [
     ("completed", "Completed"),
 ];
 
-const SECTION_ORDER: [&str; 6] = ["Overdue", "Today", "Tomorrow", "Upcoming", "No date", "Completed"];
+const SECTION_ORDER: [&str; 6] = [
+    "Overdue",
+    "Today",
+    "Tomorrow",
+    "Upcoming",
+    "No date",
+    "Completed",
+];
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,15 +106,28 @@ struct TaskList {
 
 #[derive(Clone, Debug, PartialEq)]
 enum TaskEditorMode {
-    New { collection_id: Option<String>, data: Option<TaskData> },
+    New {
+        collection_id: Option<String>,
+        data: Option<TaskData>,
+    },
     Edit(TaskItem),
 }
 
 #[derive(Clone)]
 enum ConfirmAction {
-    DeleteTask { id: String, revision: u64, children: Option<&'static str> },
-    CompleteWithSubtasks { id: String, revision: u64 },
-    DeleteList { id: String, revision: u64 },
+    DeleteTask {
+        id: String,
+        revision: u64,
+        children: Option<&'static str>,
+    },
+    CompleteWithSubtasks {
+        id: String,
+        revision: u64,
+    },
+    DeleteList {
+        id: String,
+        revision: u64,
+    },
 }
 
 #[derive(Clone)]
@@ -172,13 +195,20 @@ fn date_slice(value: &str, all_day: bool) -> String {
 }
 
 fn encode_uri(value: &str) -> String {
-    js_sys::encode_uri_component(value).as_string().unwrap_or_else(|| value.to_owned())
+    js_sys::encode_uri_component(value)
+        .as_string()
+        .unwrap_or_else(|| value.to_owned())
 }
 
 fn today_in_zone(zone: &str) -> String {
     let locales = js_sys::Array::of1(&JsValue::from_str("en-CA"));
     let opts = js_sys::Object::new();
-    for (k, v) in [("timeZone", zone), ("year", "numeric"), ("month", "2-digit"), ("day", "2-digit")] {
+    for (k, v) in [
+        ("timeZone", zone),
+        ("year", "numeric"),
+        ("month", "2-digit"),
+        ("day", "2-digit"),
+    ] {
         let _ = js_sys::Reflect::set(&opts, &JsValue::from_str(k), &JsValue::from_str(v));
     }
     let fmt = js_sys::Intl::DateTimeFormat::new(&locales, &opts);
@@ -189,17 +219,29 @@ fn today_in_zone(zone: &str) -> String {
         .and_then(|v| v.as_string())
         .filter(|s| s.len() >= 10)
         .unwrap_or_else(|| {
-            now.to_iso_string().as_string().unwrap_or_else(|| "2026-01-01".into()).chars().take(10).collect()
+            now.to_iso_string()
+                .as_string()
+                .unwrap_or_else(|| "2026-01-01".into())
+                .chars()
+                .take(10)
+                .collect()
         })
 }
 
 fn section_rank(section: &str) -> usize {
-    SECTION_ORDER.iter().position(|s| *s == section).unwrap_or(SECTION_ORDER.len())
+    SECTION_ORDER
+        .iter()
+        .position(|s| *s == section)
+        .unwrap_or(SECTION_ORDER.len())
 }
 
 /// Due-date sections for task lists sorted by due date (`taskSection`).
 fn task_section(row: &TaskItem, today: &str) -> &'static str {
-    let data = row.next_occurrence.as_ref().map(|o| &o.data).unwrap_or(&row.data);
+    let data = row
+        .next_occurrence
+        .as_ref()
+        .map(|o| &o.data)
+        .unwrap_or(&row.data);
     if matches!(row.data.status.as_str(), "COMPLETED" | "CANCELLED") {
         return "Completed";
     }
@@ -217,7 +259,11 @@ fn task_section(row: &TaskItem, today: &str) -> &'static str {
         return "Today";
     }
     let tomorrow = add_days(today, 1);
-    if due == tomorrow { "Tomorrow" } else { "Upcoming" }
+    if due == tomorrow {
+        "Tomorrow"
+    } else {
+        "Upcoming"
+    }
 }
 
 /// Compact due date label for list rows (`dueLabel`).
@@ -242,28 +288,51 @@ fn due_label(value: &str, all_day: bool, today: &str) -> String {
     } else {
         let date_ms = js_sys::Date::parse(&date);
         let today_ms = js_sys::Date::parse(today);
-        let near = !date_ms.is_nan() && !today_ms.is_nan() && (date_ms - today_ms).abs() < 6.0 * 86_400_000.0;
+        let near = !date_ms.is_nan()
+            && !today_ms.is_nan()
+            && (date_ms - today_ms).abs() < 6.0 * 86_400_000.0;
         let noon_ms = js_sys::Date::parse(&format!("{date}T12:00:00Z"));
         if noon_ms.is_nan() {
             date
         } else if near {
-            crate::dates::local_date(noon_ms, &[("weekday", "short"), ("month", "short"), ("day", "numeric"), ("timeZone", "UTC")])
+            crate::dates::local_date(
+                noon_ms,
+                &[
+                    ("weekday", "short"),
+                    ("month", "short"),
+                    ("day", "numeric"),
+                    ("timeZone", "UTC"),
+                ],
+            )
         } else {
-            crate::dates::local_date(noon_ms, &[("month", "short"), ("day", "numeric"), ("timeZone", "UTC")])
+            crate::dates::local_date(
+                noon_ms,
+                &[("month", "short"), ("day", "numeric"), ("timeZone", "UTC")],
+            )
         }
     };
-    if time.is_empty() { day } else { format!("{day}, {time}") }
+    if time.is_empty() {
+        day
+    } else {
+        format!("{day}, {time}")
+    }
 }
 
 fn set_url_item(id: Option<&str>) {
-    let Ok(url) = web_sys::Url::new(&window().location().href().unwrap_or_default()) else { return };
+    let Ok(url) = web_sys::Url::new(&window().location().href().unwrap_or_default()) else {
+        return;
+    };
     let sp = url.search_params();
     match id {
         Some(id) => sp.set("item", id),
         None => sp.delete("item"),
     }
     let search = sp.to_string().as_string().unwrap_or_default();
-    let next = if search.is_empty() { url.pathname() } else { format!("{}?{search}", url.pathname()) };
+    let next = if search.is_empty() {
+        url.pathname()
+    } else {
+        format!("{}?{search}", url.pathname())
+    };
     if let Ok(history) = window().history() {
         let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&next));
     }
@@ -286,10 +355,11 @@ fn PriorityField(value: RwSignal<String>) -> impl IntoView {
     });
     let selected = RwSignal::new(group.get_untracked());
     Effect::new(move |_| selected.set(group.get()));
-    let options: Vec<(String, String)> = [("0", "None"), ("1", "High"), ("5", "Normal"), ("9", "Low")]
-        .into_iter()
-        .map(|(v, l)| (v.to_owned(), l.to_owned()))
-        .collect();
+    let options: Vec<(String, String)> =
+        [("0", "None"), ("1", "High"), ("5", "Normal"), ("9", "Low")]
+            .into_iter()
+            .map(|(v, l)| (v.to_owned(), l.to_owned()))
+            .collect();
     view! {
         <div>
             <input type="hidden" name="priority" prop:value=move || value.get()/>
@@ -318,26 +388,41 @@ fn TaskEditor(
     on_close: Callback<()>,
     on_save: Callback<TaskItem>,
 ) -> impl IntoView {
-    let (is_new, edit_id, edit_revision, initial_collection, initial_data, initial_scope) = match mode {
-        TaskEditorMode::New { collection_id, data } => {
-            (true, None, 0u64, collection_id, data.unwrap_or_default(), String::new())
-        }
-        TaskEditorMode::Edit(item) => (
-            false,
-            Some(item.id),
-            item.revision,
-            Some(item.collection_id),
-            item.data,
-            item.editing_occurrence_id.unwrap_or_default(),
-        ),
-    };
+    let (is_new, edit_id, edit_revision, initial_collection, initial_data, initial_scope) =
+        match mode {
+            TaskEditorMode::New {
+                collection_id,
+                data,
+            } => (
+                true,
+                None,
+                0u64,
+                collection_id,
+                data.unwrap_or_default(),
+                String::new(),
+            ),
+            TaskEditorMode::Edit(item) => (
+                false,
+                Some(item.id),
+                item.revision,
+                Some(item.collection_id),
+                item.data,
+                item.editing_occurrence_id.unwrap_or_default(),
+            ),
+        };
 
     let initial_list_id = initial_collection.unwrap_or_else(|| {
         collections.with_untracked(|cols| {
-            if cols.iter().any(|c| c.id == default_collection && c.role != "read") {
+            if cols
+                .iter()
+                .any(|c| c.id == default_collection && c.role != "read")
+            {
                 default_collection.clone()
             } else {
-                cols.iter().find(|c| c.role != "read").map(|c| c.id.clone()).unwrap_or_default()
+                cols.iter()
+                    .find(|c| c.role != "read")
+                    .map(|c| c.id.clone())
+                    .unwrap_or_default()
             }
         })
     });
@@ -349,13 +434,20 @@ fn TaskEditor(
     let start = RwSignal::new(date_slice(&initial_data.start, initial_data.all_day));
     let due = RwSignal::new(date_slice(&initial_data.due, initial_data.all_day));
     let default_zone = StoredValue::new(zone.clone());
-    let timezone = RwSignal::new(if !initial_data.timezone.is_empty() && initial_data.timezone != "floating" {
-        initial_data.timezone.clone()
-    } else {
-        zone
-    });
+    let timezone = RwSignal::new(
+        if !initial_data.timezone.is_empty() && initial_data.timezone != "floating" {
+            initial_data.timezone.clone()
+        } else {
+            zone
+        },
+    );
     let recurrence = RwSignal::new(initial_data.recurrence.clone());
-    let reminder_minutes = RwSignal::new(initial_data.reminder_minutes.map(|m| m.to_string()).unwrap_or_default());
+    let reminder_minutes = RwSignal::new(
+        initial_data
+            .reminder_minutes
+            .map(|m| m.to_string())
+            .unwrap_or_default(),
+    );
     let status = RwSignal::new(if initial_data.status.is_empty() {
         "NEEDS-ACTION".to_owned()
     } else {
@@ -367,7 +459,10 @@ fn TaskEditor(
     let parent_uid = RwSignal::new(initial_data.parent_uid.clone());
     let occurrence_scope = RwSignal::new(initial_scope.clone());
 
-    let show_occurrences = !is_new && (!initial_data.recurrence.is_empty() || initial_data.recurring || !initial_scope.is_empty());
+    let show_occurrences = !is_new
+        && (!initial_data.recurrence.is_empty()
+            || initial_data.recurring
+            || !initial_scope.is_empty());
     let occ_start = initial_data.start.clone();
 
     let error = RwSignal::new(String::new());
@@ -383,7 +478,8 @@ fn TaskEditor(
             .map(|c| (c.id, c.name))
             .collect::<Vec<_>>()
     });
-    let has_writable = Signal::derive(move || collections.with(|cols| cols.iter().any(|c| c.role != "read")));
+    let has_writable =
+        Signal::derive(move || collections.with(|cols| cols.iter().any(|c| c.role != "read")));
 
     let status_options: Vec<(String, String)> = [
         ("NEEDS-ACTION", "To do"),
@@ -395,28 +491,36 @@ fn TaskEditor(
     .map(|(v, l)| (v.to_owned(), l.to_owned()))
     .collect();
 
-    let on_pick_occurrence = Callback::new(move |(item, master, is_occurrence): (TaskData, Option<TaskData>, bool)| {
-        all_day.set(item.all_day);
-        title.set(item.title);
-        description.set(item.description);
-        start.set(date_slice(&item.start, item.all_day));
-        due.set(date_slice(&item.due, item.all_day));
-        status.set(if item.status.is_empty() { "NEEDS-ACTION".into() } else { item.status });
-        progress.set(item.progress.to_string());
-        priority.set(item.priority.to_string());
-        categories.set(item.categories.join(", "));
-        parent_uid.set(item.parent_uid);
-        timezone.set(if !item.timezone.is_empty() && item.timezone != "floating" {
-            item.timezone
-        } else {
-            default_zone.get_value()
-        });
-        recurrence.set(if is_occurrence {
-            item.recurrence
-        } else {
-            master.map(|m| m.recurrence).unwrap_or_default()
-        });
-    });
+    let on_pick_occurrence = Callback::new(
+        move |(item, master, is_occurrence): (TaskData, Option<TaskData>, bool)| {
+            all_day.set(item.all_day);
+            title.set(item.title);
+            description.set(item.description);
+            start.set(date_slice(&item.start, item.all_day));
+            due.set(date_slice(&item.due, item.all_day));
+            status.set(if item.status.is_empty() {
+                "NEEDS-ACTION".into()
+            } else {
+                item.status
+            });
+            progress.set(item.progress.to_string());
+            priority.set(item.priority.to_string());
+            categories.set(item.categories.join(", "));
+            parent_uid.set(item.parent_uid);
+            timezone.set(
+                if !item.timezone.is_empty() && item.timezone != "floating" {
+                    item.timezone
+                } else {
+                    default_zone.get_value()
+                },
+            );
+            recurrence.set(if is_occurrence {
+                item.recurrence
+            } else {
+                master.map(|m| m.recurrence).unwrap_or_default()
+            });
+        },
+    );
 
     let submit = move |e: web_sys::SubmitEvent| {
         e.prevent_default();
@@ -431,7 +535,11 @@ fn TaskEditor(
         let rem_val = if rem_raw.trim().is_empty() {
             Value::Null
         } else {
-            rem_raw.trim().parse::<i64>().map(Value::from).unwrap_or(Value::Null)
+            rem_raw
+                .trim()
+                .parse::<i64>()
+                .map(Value::from)
+                .unwrap_or(Value::Null)
         };
         let data = json!({
             "title": title.get_untracked(),
@@ -452,7 +560,10 @@ fn TaskEditor(
         let mut body = json!({ "data": data });
         if let Some(obj) = body.as_object_mut() {
             if is_new {
-                obj.insert("collectionId".into(), Value::String(collection_id.get_untracked()));
+                obj.insert(
+                    "collectionId".into(),
+                    Value::String(collection_id.get_untracked()),
+                );
             }
             if !occ.is_empty() {
                 obj.insert("occurrenceId".into(), Value::String(occ));
@@ -464,13 +575,19 @@ fn TaskEditor(
         let id = edit_id_sv.get_value();
         spawn_local(async move {
             let (url, method, if_match) = match id {
-                Some(ref id) if !is_new => (format!("{ITEMS_BASE}/{id}"), "PUT", Some(etag(id, edit_revision))),
+                Some(ref id) if !is_new => (
+                    format!("{ITEMS_BASE}/{id}"),
+                    "PUT",
+                    Some(etag(id, edit_revision)),
+                ),
                 _ => (ITEMS_BASE.to_owned(), "POST", None),
             };
             match send::<TaskItem>(&url, method, Some(body), &token, if_match).await {
                 Ok(row) => {
                     busy.set(false);
-                    { on_save.try_run(row); };
+                    {
+                        on_save.try_run(row);
+                    };
                 }
                 Err(cause) => {
                     error.set(cause.message);
@@ -623,7 +740,10 @@ fn TaskCard(
     let children: Vec<TaskChild> = row.children_slice().to_vec();
     let finished = children.iter().filter(|c| c.status == "COMPLETED").count();
     let row_id = row.id.clone();
-    let collection_color = collection.as_ref().map(|c| c.color.clone()).unwrap_or_default();
+    let collection_color = collection
+        .as_ref()
+        .map(|c| c.color.clone())
+        .unwrap_or_default();
     let collection_name = collection
         .as_ref()
         .map(|c| c.name.clone())
@@ -823,17 +943,23 @@ pub fn TasksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     // Synchronize sort, timezone and default view from account preferences.
     let pref_sort = Memo::new(move |_| {
         shared_prefs.value.with(|p| {
-            p.as_ref().and_then(|p| p.rest.get("tasksSort").and_then(Value::as_str)).map(str::to_owned)
+            p.as_ref()
+                .and_then(|p| p.rest.get("tasksSort").and_then(Value::as_str))
+                .map(str::to_owned)
         })
     });
     let pref_zone = Memo::new(move |_| {
         shared_prefs.value.with(|p| {
-            p.as_ref().and_then(|p| p.rest.get("timezone").and_then(Value::as_str)).map(str::to_owned)
+            p.as_ref()
+                .and_then(|p| p.rest.get("timezone").and_then(Value::as_str))
+                .map(str::to_owned)
         })
     });
     let pref_view = Memo::new(move |_| {
         shared_prefs.value.with(|p| {
-            p.as_ref().and_then(|p| p.rest.get("tasksView").and_then(Value::as_str)).map(str::to_owned)
+            p.as_ref()
+                .and_then(|p| p.rest.get("tasksView").and_then(Value::as_str))
+                .map(str::to_owned)
         })
     });
 
@@ -891,7 +1017,9 @@ pub fn TasksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let refresh_list = move |append: bool| async move {
         let generation = latest_load.get_untracked() + 1;
         latest_load.set(generation);
-        let books = api::get::<CollectionList>(LISTS_BASE).await.map_err(|e| e.message)?;
+        let books = api::get::<CollectionList>(LISTS_BASE)
+            .await
+            .map_err(|e| e.message)?;
         if latest_load.try_get_untracked() != Some(generation) {
             return Ok(());
         }
@@ -910,7 +1038,9 @@ pub fn TasksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
             }
         }
         let qs = search_params(&pairs);
-        let result = api::get::<TaskList>(&format!("{ITEMS_BASE}?{qs}")).await.map_err(|e| e.message)?;
+        let result = api::get::<TaskList>(&format!("{ITEMS_BASE}?{qs}"))
+            .await
+            .map_err(|e| e.message)?;
         if latest_load.try_get_untracked() == Some(generation) {
             if append {
                 items.update(|old| old.extend(result.items));
@@ -942,9 +1072,11 @@ pub fn TasksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
 
     // Deep-link ?item=<id> on initial mount.
     {
-        let initial_item = web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default())
-            .ok()
-            .and_then(|p| p.get("item"));
+        let initial_item = web_sys::UrlSearchParams::new_with_str(
+            &window().location().search().unwrap_or_default(),
+        )
+        .ok()
+        .and_then(|p| p.get("item"));
         if let Some(id) = initial_item
             && !id.is_empty()
         {
@@ -974,7 +1106,9 @@ pub fn TasksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                         close_task();
                         error.set("The selected item is no longer accessible.".into());
                     } else {
-                        selection_error.set("This task could not be refreshed. Your editor is still open.".into());
+                        selection_error.set(
+                            "This task could not be refreshed. Your editor is still open.".into(),
+                        );
                     }
                 }
                 _ => {}
@@ -1004,7 +1138,9 @@ pub fn TasksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
 
     let quick_add = move || {
         let title = quick.get_untracked().trim().to_owned();
-        let Some(target) = quick_target.get_untracked() else { return };
+        let Some(target) = quick_target.get_untracked() else {
+            return;
+        };
         if title.is_empty() {
             return;
         }
@@ -1031,7 +1167,10 @@ pub fn TasksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
             match send::<TaskItem>(ITEMS_BASE, "POST", Some(body), &csrf, None).await {
                 Ok(row) => {
                     quick.set(String::new());
-                    notice.set(format!("Added \u{201c}{}\u{201d} to {}.", row.data.title, target.name));
+                    notice.set(format!(
+                        "Added \u{201c}{}\u{201d} to {}.",
+                        row.data.title, target.name
+                    ));
                     if let Err(msg) = refresh_list(false).await {
                         error.set(msg);
                     }
@@ -1162,13 +1301,23 @@ pub fn TasksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
             error.set(String::new());
             notice.set(String::new());
             let result: Result<(), String> = match action {
-                ConfirmAction::DeleteTask { id, revision, children } => {
+                ConfirmAction::DeleteTask {
+                    id,
+                    revision,
+                    children,
+                } => {
                     let body = children.map(|c| json!({ "children": c }));
-                    send::<Value>(&format!("{ITEMS_BASE}/{}", encode_uri(&id)), "DELETE", body, &csrf, Some(etag(&id, revision)))
-                        .await
-                        .map(|_| ())
-                        .map_err(|e| e.message)
-                        .map(|()| close_task())
+                    send::<Value>(
+                        &format!("{ITEMS_BASE}/{}", encode_uri(&id)),
+                        "DELETE",
+                        body,
+                        &csrf,
+                        Some(etag(&id, revision)),
+                    )
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.message)
+                    .map(|()| close_task())
                 }
                 ConfirmAction::CompleteWithSubtasks { id, revision } => {
                     match send::<Value>(
@@ -1187,19 +1336,25 @@ pub fn TasksWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                         Err(e) => Err(e.message),
                     }
                 }
-                ConfirmAction::DeleteList { id, revision } => {
-                    send::<Value>(&format!("{LISTS_BASE}/{}", encode_uri(&id)), "DELETE", None, &csrf, Some(etag(&id, revision)))
-                        .await
-                        .map(|_| {
-                            if collection.get_untracked() == id {
-                                collection.set(String::new());
-                            }
-                            if selected.with_untracked(|s| s.as_ref().is_some_and(|x| x.collection_id == id)) {
-                                close_task();
-                            }
-                        })
-                        .map_err(|e| e.message)
-                }
+                ConfirmAction::DeleteList { id, revision } => send::<Value>(
+                    &format!("{LISTS_BASE}/{}", encode_uri(&id)),
+                    "DELETE",
+                    None,
+                    &csrf,
+                    Some(etag(&id, revision)),
+                )
+                .await
+                .map(|_| {
+                    if collection.get_untracked() == id {
+                        collection.set(String::new());
+                    }
+                    if selected
+                        .with_untracked(|s| s.as_ref().is_some_and(|x| x.collection_id == id))
+                    {
+                        close_task();
+                    }
+                })
+                .map_err(|e| e.message),
             };
             match result {
                 Ok(()) => {

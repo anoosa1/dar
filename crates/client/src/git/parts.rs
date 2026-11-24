@@ -5,8 +5,8 @@ use std::collections::HashSet;
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use wasm_bindgen::JsCast;
 
 use crate::api::{self, BrowserSession, Req};
@@ -50,7 +50,13 @@ pub fn encode_uri(value: &str) -> String {
 pub fn query_string(pairs: &[(&str, &str)]) -> String {
     pairs
         .iter()
-        .map(|(k, v)| format!("{}={}", js_sys::encode_uri_component(k), js_sys::encode_uri_component(v)))
+        .map(|(k, v)| {
+            format!(
+                "{}={}",
+                js_sys::encode_uri_component(k),
+                js_sys::encode_uri_component(v)
+            )
+        })
         .collect::<Vec<_>>()
         .join("&")
 }
@@ -723,8 +729,17 @@ where
         }
         spawn_local(async move {
             let check = signal.clone();
-            let result = api::request::<T>(&target, Req { signal, ..Default::default() }).await;
-            if sequence.try_get_untracked() != Some(id) || check.as_ref().is_some_and(|s| s.aborted()) {
+            let result = api::request::<T>(
+                &target,
+                Req {
+                    signal,
+                    ..Default::default()
+                },
+            )
+            .await;
+            if sequence.try_get_untracked() != Some(id)
+                || check.as_ref().is_some_and(|s| s.aborted())
+            {
                 return;
             }
             match result {
@@ -738,7 +753,12 @@ where
         });
     });
     let retry = Callback::new(move |_| attempt.update(|n| *n += 1));
-    LoadState { value, error, retry, sequence }
+    LoadState {
+        value,
+        error,
+        retry,
+        sequence,
+    }
 }
 
 pub fn focus_sheet(root: NodeRef<html::Div>) {
@@ -756,11 +776,17 @@ pub fn sheet_keydown(event: web_sys::KeyboardEvent, on_close: Callback<()>) {
         let inside_popup = event
             .target()
             .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-            .and_then(|el| el.closest("[role=menu],[role=listbox],[role=dialog]").ok().flatten())
+            .and_then(|el| {
+                el.closest("[role=menu],[role=listbox],[role=dialog]")
+                    .ok()
+                    .flatten()
+            })
             .is_some();
         if !inside_popup {
             event.prevent_default();
-            { on_close.try_run(()); };
+            {
+                on_close.try_run(());
+            };
         }
     }
 }
@@ -912,7 +938,11 @@ pub fn MergeBox(
     on_merged: Callback<GitMergeResult>,
     #[prop(optional, into)] default_message: Option<String>,
 ) -> impl IntoView {
-    let mode = RwSignal::new(if compare.fast_forward { "fast-forward".to_owned() } else { "merge".to_owned() });
+    let mode = RwSignal::new(if compare.fast_forward {
+        "fast-forward".to_owned()
+    } else {
+        "merge".to_owned()
+    });
     let text = RwSignal::new(String::new());
     let remove = RwSignal::new(compare.head != "main");
     let busy = RwSignal::new(false);
@@ -960,7 +990,9 @@ pub fn MergeBox(
         let token = csrf.get_value();
         spawn_local(async move {
             match api::send::<GitMergeResult>(&url, "POST", Some(body), &token).await {
-                Ok(result) => { on_merged.try_run(result); },
+                Ok(result) => {
+                    on_merged.try_run(result);
+                }
                 Err(cause) => {
                     error.try_set(cause.message);
                     busy.try_set(false);
@@ -1112,8 +1144,12 @@ pub fn GitSegmented(
 }
 
 fn listbox_items(panel: &web_sys::HtmlElement) -> Vec<web_sys::HtmlElement> {
-    let list = panel.query_selector_all("[role=\"option\"]:not(:disabled)").expect("selector");
-    (0..list.length()).filter_map(|i| list.item(i)?.dyn_into().ok()).collect()
+    let list = panel
+        .query_selector_all("[role=\"option\"]:not(:disabled)")
+        .expect("selector");
+    (0..list.length())
+        .filter_map(|i| list.item(i)?.dyn_into().ok())
+        .collect()
 }
 
 fn focus_option_by_key(items: &[web_sys::HtmlElement], key: &str) -> bool {
@@ -1161,7 +1197,9 @@ pub fn GitSelect(
         if let Some(b) = button.get_untracked() {
             let _ = b.focus();
         }
-        { on_change.try_run(next); };
+        {
+            on_change.try_run(next);
+        };
     };
 
     Effect::new(move |_| {
@@ -1170,7 +1208,9 @@ pub fn GitSelect(
         }
         let Some(panel) = list.get() else { return };
         listen(&document(), "pointerdown", false, move |event| {
-            let target = event.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok());
+            let target = event
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Node>().ok());
             if let Some(root) = root.get_untracked()
                 && !root.contains(target.as_ref())
             {
@@ -1181,7 +1221,12 @@ pub fn GitSelect(
             .query_selector("[aria-selected=\"true\"]")
             .ok()
             .flatten()
-            .or_else(|| panel.query_selector("[role=\"option\"]:not(:disabled)").ok().flatten());
+            .or_else(|| {
+                panel
+                    .query_selector("[role=\"option\"]:not(:disabled)")
+                    .ok()
+                    .flatten()
+            });
         if let Some(el) = selected.and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok()) {
             let _ = el.focus();
         }
@@ -1291,8 +1336,12 @@ enum Inline {
 }
 
 fn is_content_link(target: &str) -> bool {
-    let Some(rest) = target.strip_prefix("/api/v1/files/") else { return false };
-    let Some((id, tail)) = rest.split_once('/') else { return false };
+    let Some(rest) = target.strip_prefix("/api/v1/files/") else {
+        return false;
+    };
+    let Some((id, tail)) = rest.split_once('/') else {
+        return false;
+    };
     !id.is_empty() && (tail == "content" || tail.starts_with("content?"))
 }
 
@@ -1311,7 +1360,8 @@ fn md_token(source: &str, at: usize, allow_ref: bool) -> Option<(usize, Inline)>
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
-            if (1..=6).contains(&digits) && !next_word
+            if (1..=6).contains(&digits)
+                && !next_word
                 && let Ok(number) = rest[1..1 + digits].parse::<u32>()
             {
                 return Some((1 + digits, Inline::Ref(number)));
@@ -1350,7 +1400,8 @@ fn md_token(source: &str, at: usize, allow_ref: bool) -> Option<(usize, Inline)>
     }
     let target = &target_part[..end];
     let length = usize::from(image) + 1 + close + 2 + end + 1;
-    let allowed = target.starts_with("http://") || target.starts_with("https://") || is_content_link(target);
+    let allowed =
+        target.starts_with("http://") || target.starts_with("https://") || is_content_link(target);
     let raw = rest[..length].to_owned();
     Some((
         length,
@@ -1423,7 +1474,13 @@ fn md_list_item(line: &str) -> Option<(bool, &str)> {
         }
     }
     let digits = trimmed.bytes().take_while(u8::is_ascii_digit).count();
-    (digits > 0).then(|| trimmed[digits..].strip_prefix(". ").map(|rest| (true, rest))).flatten()
+    (digits > 0)
+        .then(|| {
+            trimmed[digits..]
+                .strip_prefix(". ")
+                .map(|rest| (true, rest))
+        })
+        .flatten()
 }
 
 #[component]
@@ -1433,7 +1490,10 @@ pub fn GitMarkdown(
 ) -> impl IntoView {
     move || {
         let src = source.get();
-        let lines: Vec<&str> = src.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).collect();
+        let lines: Vec<&str> = src
+            .split('\n')
+            .map(|l| l.strip_suffix('\r').unwrap_or(l))
+            .collect();
         let mut nodes: Vec<AnyView> = Vec::new();
         let mut i = 0;
         while i < lines.len() {
@@ -1447,8 +1507,14 @@ pub fn GitMarkdown(
                     i += 1;
                 }
                 i += 1;
-                let label = if language.is_empty() { "Code".to_owned() } else { format!("{language} code") };
-                nodes.push(view! { <pre><code aria-label=label>{code.join("\n")}</code></pre> }.into_any());
+                let label = if language.is_empty() {
+                    "Code".to_owned()
+                } else {
+                    format!("{language} code")
+                };
+                nodes.push(
+                    view! { <pre><code aria-label=label>{code.join("\n")}</code></pre> }.into_any(),
+                );
                 continue;
             }
             if line.trim().is_empty() {
@@ -1456,7 +1522,10 @@ pub fn GitMarkdown(
                 continue;
             }
             let hashes = line.bytes().take_while(|b| *b == b'#').count();
-            if (1..=6).contains(&hashes) && line[hashes..].starts_with(|c: char| c.is_whitespace()) && !line[hashes..].trim().is_empty() {
+            if (1..=6).contains(&hashes)
+                && line[hashes..].starts_with(|c: char| c.is_whitespace())
+                && !line[hashes..].trim().is_empty()
+            {
                 let text = render_md_inline(line[hashes..].trim_start(), on_reference);
                 nodes.push(match hashes {
                     1 => view! { <h1>{text}</h1> }.into_any(),
@@ -1481,7 +1550,8 @@ pub fn GitMarkdown(
                     i += 1;
                     let check = text.strip_prefix('[').and_then(|t| {
                         let mark = t.chars().next()?;
-                        (matches!(mark, ' ' | 'x' | 'X') && t[1..].starts_with(']')).then(|| (mark == ' ', t[2..].trim_start()))
+                        (matches!(mark, ' ' | 'x' | 'X') && t[1..].starts_with(']'))
+                            .then(|| (mark == ' ', t[2..].trim_start()))
                     });
                     items.push(match check {
                         Some((unchecked, rest)) => view! {
@@ -1517,7 +1587,10 @@ mod tests {
         assert_eq!(format_int(0), "0");
         assert_eq!(format_int(1234), "1,234");
         assert_eq!(plural(1, "commit", None), "1 commit");
-        assert_eq!(plural(2, "repository", Some("repositories")), "2 repositories");
+        assert_eq!(
+            plural(2, "repository", Some("repositories")),
+            "2 repositories"
+        );
         assert_eq!(
             md_inline("Closes #1 and foo#2 and **255**.", true),
             vec![

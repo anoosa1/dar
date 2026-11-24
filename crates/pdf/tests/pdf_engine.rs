@@ -112,10 +112,22 @@ fn page_count_and_sizes_including_rotate_and_crop_box() {
     assert_eq!(
         doc.page_sizes(),
         vec![
-            PageSize { width: 612.0, height: 792.0 },
-            PageSize { width: 400.0, height: 200.0 },
-            PageSize { width: 300.0, height: 400.0 },
-            PageSize { width: 500.0, height: 300.0 },
+            PageSize {
+                width: 612.0,
+                height: 792.0
+            },
+            PageSize {
+                width: 400.0,
+                height: 200.0
+            },
+            PageSize {
+                width: 300.0,
+                height: 400.0
+            },
+            PageSize {
+                width: 500.0,
+                height: 300.0
+            },
         ]
     );
 }
@@ -217,11 +229,17 @@ fn outline_cycle_and_excessive_depth_are_guarded() {
     let mut b = PdfBuilder::new(1);
     b.obj(1, b"<< /Type /Catalog /Pages 2 0 R /Outlines 10 0 R >>")
         .obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-        .obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>")
+        .obj(
+            3,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+        )
         .obj(10, b"<< /Type /Outlines /First 11 0 R >>")
         // 11 -> Next 12 -> Next 11 (sibling cycle), and 12 -> First 11 (ancestor cycle)
         .obj(11, b"<< /Title (A) /Next 12 0 R /Dest [3 0 R /Fit] >>")
-        .obj(12, b"<< /Title (B) /Next 11 0 R /First 11 0 R /Dest [3 0 R /Fit] >>");
+        .obj(
+            12,
+            b"<< /Title (B) /Next 11 0 R /First 11 0 R /Dest [3 0 R /Fit] >>",
+        );
 
     let doc = Document::open(b.build()).expect("valid pdf");
     assert_eq!(
@@ -244,7 +262,10 @@ fn outline_cycle_and_excessive_depth_are_guarded() {
     let mut big = PdfBuilder::new(1);
     big.obj(1, b"<< /Type /Catalog /Pages 2 0 R /Outlines 10 0 R >>")
         .obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-        .obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>")
+        .obj(
+            3,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+        )
         .obj(10, b"<< /Type /Outlines /First 100 0 R >>");
     for i in 0..5_500u32 {
         let obj_id = 100 + i;
@@ -265,7 +286,10 @@ fn metadata_pdf_doc_encoding_and_utf16be() {
     let mut b1 = PdfBuilder::new(1);
     b1.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
         .obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-        .obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>")
+        .obj(
+            3,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+        )
         .obj(
             4,
             b"<< /Title (Notes \\204 \\24010) /Author (Ren\\351 Descartes) >>",
@@ -285,7 +309,10 @@ fn metadata_pdf_doc_encoding_and_utf16be() {
     let mut b2 = PdfBuilder::new(1);
     b2.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
         .obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-        .obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>")
+        .obj(
+            3,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+        )
         .obj(
             4,
             b"<< /Title <FEFF03A303CD03BD03BF03C803B7> /Author <FEFF5C717530> >>",
@@ -305,7 +332,10 @@ fn metadata_pdf_doc_encoding_and_utf16be() {
     let mut b3 = PdfBuilder::new(1);
     b3.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
         .obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-        .obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>");
+        .obj(
+            3,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+        );
     let doc3 = Document::open(b3.build()).expect("valid pdf");
     assert_eq!(doc3.metadata(), Metadata::default());
 }
@@ -332,7 +362,12 @@ fn render_filled_rectangle_on_white_background() {
 
     let pixel = |x: u32, y: u32| -> [u8; 4] {
         let i = ((y * bmp.width + x) * 4) as usize;
-        [bmp.rgba[i], bmp.rgba[i + 1], bmp.rgba[i + 2], bmp.rgba[i + 3]]
+        [
+            bmp.rgba[i],
+            bmp.rgba[i + 1],
+            bmp.rgba[i + 2],
+            bmp.rgba[i + 3],
+        ]
     };
 
     // Corners must be opaque white background
@@ -356,7 +391,10 @@ fn render_rejects_too_large_and_invalid_inputs() {
     let mut b = PdfBuilder::new(1);
     b.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
         .obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-        .obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1000 1000] >>");
+        .obj(
+            3,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1000 1000] >>",
+        );
 
     let doc = Document::open(b.build()).expect("valid pdf");
 
@@ -368,7 +406,10 @@ fn render_rejects_too_large_and_invalid_inputs() {
     // Invalid scale / out-of-range page never panic
     assert!(matches!(doc.render(0, 0.0), Err(Error::Unsupported(_))));
     assert!(matches!(doc.render(0, -1.0), Err(Error::Unsupported(_))));
-    assert!(matches!(doc.render(0, f32::NAN), Err(Error::Unsupported(_))));
+    assert!(matches!(
+        doc.render(0, f32::NAN),
+        Err(Error::Unsupported(_))
+    ));
     assert!(matches!(doc.render(5, 1.0), Err(Error::Unsupported(_))));
 }
 
@@ -392,7 +433,12 @@ fn render_rotated_page_swaps_bitmap_dimensions() {
 
     let pixel = |x: u32, y: u32| -> [u8; 4] {
         let i = ((y * bmp.width + x) * 4) as usize;
-        [bmp.rgba[i], bmp.rgba[i + 1], bmp.rgba[i + 2], bmp.rgba[i + 3]]
+        [
+            bmp.rgba[i],
+            bmp.rgba[i + 1],
+            bmp.rgba[i + 2],
+            bmp.rgba[i + 3],
+        ]
     };
 
     assert_eq!(pixel(20, 20), [0, 0, 255, 255]);
@@ -433,7 +479,12 @@ fn encrypted_trailer_returns_error_encrypted() {
 
 /// A one-page PDF whose page dictionary has `page_extra` and whose resources hold the standard
 /// fonts `/F1` (Helvetica) and `/F2` (Times-Bold) plus `fonts_extra`, showing `content`.
-fn text_pdf(page_extra: &str, content: &str, fonts_extra: &str, more: &[(u32, Vec<u8>)]) -> Vec<u8> {
+fn text_pdf(
+    page_extra: &str,
+    content: &str,
+    fonts_extra: &str,
+    more: &[(u32, Vec<u8>)],
+) -> Vec<u8> {
     let mut b = PdfBuilder::new(1);
     b.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
         .obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
@@ -458,24 +509,48 @@ fn close(a: f32, b: f32, tolerance: f32) -> bool {
 
 #[test]
 fn text_runs_have_unicode_and_page_geometry() {
-    let pdf = text_pdf("/MediaBox [0 0 612 792]", "BT /F1 12 Tf 72 720 Td (Hello world) Tj ET", "", &[]);
+    let pdf = text_pdf(
+        "/MediaBox [0 0 612 792]",
+        "BT /F1 12 Tf 72 720 Td (Hello world) Tj ET",
+        "",
+        &[],
+    );
     let doc = Document::open(pdf).expect("valid pdf");
     let runs = doc.text(0).expect("text");
     assert_eq!(runs.len(), 1, "{runs:?}");
     let run = &runs[0];
     assert_eq!(run.text, "Hello world");
     assert!(close(run.font_size, 12.0, 0.01), "{run:?}");
-    assert!(close(run.baseline_x, 72.0, 0.01) && close(run.baseline_y, 72.0, 0.01), "{run:?}");
+    assert!(
+        close(run.baseline_x, 72.0, 0.01) && close(run.baseline_y, 72.0, 0.01),
+        "{run:?}"
+    );
     assert!(close(run.angle, 0.0, 1e-4));
     // Helvetica's widths for "Hello world" add up to 4945/1000 em.
     assert!(close(run.length, 59.34, 0.05), "{run:?}");
-    assert!(close(run.x, 72.0, 0.01) && close(run.y, 72.0 - 9.6, 0.01), "{run:?}");
-    assert!(close(run.width, run.length, 0.01) && close(run.height, 12.0, 0.01), "{run:?}");
+    assert!(
+        close(run.x, 72.0, 0.01) && close(run.y, 72.0 - 9.6, 0.01),
+        "{run:?}"
+    );
+    assert!(
+        close(run.width, run.length, 0.01) && close(run.height, 12.0, 0.01),
+        "{run:?}"
+    );
     assert!(run.ends_line);
     assert_eq!(run.chars.len(), 11);
-    assert_eq!(run.chars.iter().map(|c| c.text.as_str()).collect::<String>(), run.text);
+    assert_eq!(
+        run.chars
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<String>(),
+        run.text
+    );
     // "H" is 722 units wide, so "e" starts 8.664 points along the baseline.
-    assert!(close(run.chars[1].offset, 8.664, 0.01), "{:?}", run.chars[1]);
+    assert!(
+        close(run.chars[1].offset, 8.664, 0.01),
+        "{:?}",
+        run.chars[1]
+    );
     assert!(run.chars.windows(2).all(|w| w[0].offset < w[1].offset));
     let last = run.chars.last().unwrap();
     assert!(close(last.offset + last.advance, run.length, 0.01));
@@ -489,12 +564,21 @@ fn text_joins_fonts_on_a_line_and_separates_words_and_lines() {
                    BT /F1 12 Tf 72 700 Td [(Word) -600 (Gap)] TJ ET \
                    BT /F2 10 Tf 400 700 Td (Column) Tj ET \
                    BT /F1 12 Tf 72 680 Td [(Ke) 40 (rned)] TJ ET";
-    let doc = Document::open(text_pdf("/MediaBox [0 0 612 792]", content, "", &[])).expect("valid pdf");
+    let doc =
+        Document::open(text_pdf("/MediaBox [0 0 612 792]", content, "", &[])).expect("valid pdf");
     let runs = doc.text(0).expect("text");
-    let texts: Vec<(&str, bool)> = runs.iter().map(|r| (r.text.as_str(), r.ends_line)).collect();
+    let texts: Vec<(&str, bool)> = runs
+        .iter()
+        .map(|r| (r.text.as_str(), r.ends_line))
+        .collect();
     assert_eq!(
         texts,
-        vec![("Plain Bold", true), ("Word Gap", false), ("Column", true), ("Kerned", true)],
+        vec![
+            ("Plain Bold", true),
+            ("Word Gap", false),
+            ("Column", true),
+            ("Kerned", true)
+        ],
         "{runs:?}"
     );
     // The word gap is a space character covering the TJ adjustment.
@@ -508,40 +592,89 @@ fn text_joins_fonts_on_a_line_and_separates_words_and_lines() {
 /// Whether the bitmap has a dark pixel inside the box (in points at scale 1).
 fn has_ink(bmp: &dar_pdf::Bitmap, x0: f32, y0: f32, x1: f32, y1: f32) -> bool {
     let (x0, y0) = (x0.max(0.0) as u32, y0.max(0.0) as u32);
-    let (x1, y1) = ((x1.ceil() as u32).min(bmp.width), (y1.ceil() as u32).min(bmp.height));
+    let (x1, y1) = (
+        (x1.ceil() as u32).min(bmp.width),
+        (y1.ceil() as u32).min(bmp.height),
+    );
     (y0..y1).any(|y| (x0..x1).any(|x| bmp.rgba[((y * bmp.width + x) * 4) as usize] < 128))
 }
 
 #[test]
 fn text_follows_rotate_and_crop_box_like_render() {
     // Rotated a quarter turn clockwise: text running right in user space runs down the page.
-    let rotated = text_pdf("/MediaBox [0 0 200 400] /Rotate 90", "BT /F1 20 Tf 20 380 Td (MMMM) Tj ET", "", &[]);
+    let rotated = text_pdf(
+        "/MediaBox [0 0 200 400] /Rotate 90",
+        "BT /F1 20 Tf 20 380 Td (MMMM) Tj ET",
+        "",
+        &[],
+    );
     let doc = Document::open(rotated).expect("valid pdf");
     let run = doc.text(0).expect("text").remove(0);
     assert_eq!(run.text, "MMMM");
-    assert!(close(run.angle, std::f32::consts::FRAC_PI_2, 1e-3), "{run:?}");
-    assert!(close(run.baseline_x, 380.0, 0.01) && close(run.baseline_y, 20.0, 0.01), "{run:?}");
-    assert!(close(run.height, run.length, 0.01) && close(run.width, 20.0, 0.01), "{run:?}");
+    assert!(
+        close(run.angle, std::f32::consts::FRAC_PI_2, 1e-3),
+        "{run:?}"
+    );
+    assert!(
+        close(run.baseline_x, 380.0, 0.01) && close(run.baseline_y, 20.0, 0.01),
+        "{run:?}"
+    );
+    assert!(
+        close(run.height, run.length, 0.01) && close(run.width, 20.0, 0.01),
+        "{run:?}"
+    );
     let bmp = doc.render(0, 1.0).expect("render");
-    assert!(has_ink(&bmp, run.x, run.y, run.x + run.width, run.y + run.height));
+    assert!(has_ink(
+        &bmp,
+        run.x,
+        run.y,
+        run.x + run.width,
+        run.y + run.height
+    ));
     assert!(!has_ink(&bmp, 0.0, 0.0, run.x - 2.0, 200.0));
     assert!(!has_ink(&bmp, run.x + run.width + 2.0, 0.0, 400.0, 200.0));
 
     // A crop box moves the origin to its own top-left corner.
-    let cropped = text_pdf("/MediaBox [0 0 600 800] /CropBox [100 100 400 500]", "BT /F2 24 Tf 150 450 Td (WW) Tj ET", "", &[]);
+    let cropped = text_pdf(
+        "/MediaBox [0 0 600 800] /CropBox [100 100 400 500]",
+        "BT /F2 24 Tf 150 450 Td (WW) Tj ET",
+        "",
+        &[],
+    );
     let doc = Document::open(cropped).expect("valid pdf");
     let run = doc.text(0).expect("text").remove(0);
-    assert!(close(run.baseline_x, 50.0, 0.01) && close(run.baseline_y, 50.0, 0.01), "{run:?}");
+    assert!(
+        close(run.baseline_x, 50.0, 0.01) && close(run.baseline_y, 50.0, 0.01),
+        "{run:?}"
+    );
     let bmp = doc.render(0, 1.0).expect("render");
-    assert!(has_ink(&bmp, run.x, run.y, run.x + run.width, run.y + run.height));
+    assert!(has_ink(
+        &bmp,
+        run.x,
+        run.y,
+        run.x + run.width,
+        run.y + run.height
+    ));
     assert!(!has_ink(&bmp, run.x + run.width + 2.0, 0.0, 300.0, 400.0));
     assert!(!has_ink(&bmp, 0.0, run.y + run.height + 2.0, 300.0, 400.0));
 
     // A scaled and rotated text matrix (45 degrees, 2x) keeps size and angle.
-    let turned = text_pdf("/MediaBox [0 0 300 300]", "BT /F1 10 Tf 1.41421 1.41421 -1.41421 1.41421 100 100 Tm (Up) Tj ET", "", &[]);
-    let run = Document::open(turned).expect("valid pdf").text(0).expect("text").remove(0);
+    let turned = text_pdf(
+        "/MediaBox [0 0 300 300]",
+        "BT /F1 10 Tf 1.41421 1.41421 -1.41421 1.41421 100 100 Tm (Up) Tj ET",
+        "",
+        &[],
+    );
+    let run = Document::open(turned)
+        .expect("valid pdf")
+        .text(0)
+        .expect("text")
+        .remove(0);
     assert!(close(run.font_size, 20.0, 0.01), "{run:?}");
-    assert!(close(run.angle, -std::f32::consts::FRAC_PI_4, 1e-3), "{run:?}");
+    assert!(
+        close(run.angle, -std::f32::consts::FRAC_PI_4, 1e-3),
+        "{run:?}"
+    );
 }
 
 #[test]
@@ -559,11 +692,17 @@ endcmap CMapName currentdict /CMap defineresource pop end end";
         content,
         "/F3 7 0 R",
         &[
-            (7, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 8 0 R >>".to_vec()),
+            (
+                7,
+                b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 8 0 R >>".to_vec(),
+            ),
             (8, stream_obj(cmap)),
         ],
     );
-    let runs = Document::open(pdf).expect("valid pdf").text(0).expect("text");
+    let runs = Document::open(pdf)
+        .expect("valid pdf")
+        .text(0)
+        .expect("text");
     let texts: Vec<&str> = runs.iter().map(|r| r.text.as_str()).collect();
     assert_eq!(texts, vec!["\u{e9}fi", "Twice", "Hidden OCR"], "{runs:?}");
     assert_eq!(runs[0].chars.len(), 2);

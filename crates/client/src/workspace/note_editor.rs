@@ -69,7 +69,11 @@ impl CodeEditor {
     /// The viewport point just below a position (for the suggestion list).
     pub fn point_below(&self, pos: u32) -> Option<(f64, f64)> {
         let rect = self.coords_js(pos);
-        let read = |key: &str| js_sys::Reflect::get(&rect, &JsValue::from_str(key)).ok().and_then(|v| v.as_f64());
+        let read = |key: &str| {
+            js_sys::Reflect::get(&rect, &JsValue::from_str(key))
+                .ok()
+                .and_then(|v| v.as_f64())
+        };
         Some((read("left")?, read("bottom")? + 4.0))
     }
 }
@@ -134,7 +138,10 @@ pub async fn module() -> Result<JsValue, String> {
         .ok_or_else(|| "The editor is not part of this build.".to_owned())?;
     let module = JsFuture::from(import_notes_editor(&url))
         .await
-        .map_err(|_| "The editor could not be loaded. Check the connection and open the note again.".to_owned())?;
+        .map_err(|_| {
+            "The editor could not be loaded. Check the connection and open the note again."
+                .to_owned()
+        })?;
     MODULE.with(|m| *m.borrow_mut() = Some(module.clone()));
     Ok(module)
 }
@@ -144,7 +151,12 @@ fn set(target: &js_sys::Object, key: &str, value: &JsValue) {
 }
 
 /// Builds an editor in `parent`.
-pub fn create(module: &JsValue, parent: &web_sys::HtmlElement, options: Options<'_>, callbacks: Callbacks) -> Result<Editor, String> {
+pub fn create(
+    module: &JsValue,
+    parent: &web_sys::HtmlElement,
+    options: Options<'_>,
+    callbacks: Callbacks,
+) -> Result<Editor, String> {
     let create = js_sys::Reflect::get(module, &JsValue::from_str("create"))
         .ok()
         .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
@@ -154,17 +166,35 @@ pub fn create(module: &JsValue, parent: &web_sys::HtmlElement, options: Options<
     set(&object, "markdown", &JsValue::from_bool(options.markdown));
     set(&object, "readOnly", &JsValue::from_bool(options.read_only));
     set(&object, "spellcheck", &JsValue::from_bool(options.markdown));
-    set(&object, "placeholder", &JsValue::from_str(options.placeholder));
+    set(
+        &object,
+        "placeholder",
+        &JsValue::from_str(options.placeholder),
+    );
     let attributes = js_sys::Object::new();
     for (name, value) in options.attributes {
         set(&attributes, name, &JsValue::from_str(value));
     }
     set(&object, "attributes", &attributes);
 
-    let Callbacks { update, keydown, files, link, tag, blur, resolve } = callbacks;
-    let update = Closure::<dyn Fn(JsValue, bool, bool, bool)>::new(move |text: JsValue, undo: bool, redo: bool, focused: bool| update(text.as_string(), undo, redo, focused));
+    let Callbacks {
+        update,
+        keydown,
+        files,
+        link,
+        tag,
+        blur,
+        resolve,
+    } = callbacks;
+    let update = Closure::<dyn Fn(JsValue, bool, bool, bool)>::new(
+        move |text: JsValue, undo: bool, redo: bool, focused: bool| {
+            update(text.as_string(), undo, redo, focused)
+        },
+    );
     let keydown = Closure::<dyn Fn(web_sys::KeyboardEvent) -> bool>::new(keydown);
-    let files = Closure::<dyn Fn(js_sys::Array) -> bool>::new(move |list: js_sys::Array| files(list.iter().filter_map(|f| f.dyn_into().ok()).collect()));
+    let files = Closure::<dyn Fn(js_sys::Array) -> bool>::new(move |list: js_sys::Array| {
+        files(list.iter().filter_map(|f| f.dyn_into().ok()).collect())
+    });
     let link = Closure::<dyn Fn(String, bool)>::new(link);
     let tag = Closure::<dyn Fn(String)>::new(tag);
     let blur = Closure::<dyn Fn()>::new(blur);
@@ -177,10 +207,20 @@ pub fn create(module: &JsValue, parent: &web_sys::HtmlElement, options: Options<
     set(&object, "onBlur", blur.as_ref());
     set(&object, "resolve", resolve.as_ref());
 
-    let handle = create.call2(&JsValue::NULL, parent, &object).map_err(|_| "The editor could not start.".to_owned())?;
+    let handle = create
+        .call2(&JsValue::NULL, parent, &object)
+        .map_err(|_| "The editor could not start.".to_owned())?;
     Ok(Editor {
         handle: handle.unchecked_into(),
-        _closures: vec![Box::new(update), Box::new(keydown), Box::new(files), Box::new(link), Box::new(tag), Box::new(blur), Box::new(resolve)],
+        _closures: vec![
+            Box::new(update),
+            Box::new(keydown),
+            Box::new(files),
+            Box::new(link),
+            Box::new(tag),
+            Box::new(blur),
+            Box::new(resolve),
+        ],
     })
 }
 
@@ -209,16 +249,27 @@ pub fn link_action(dest: &str, wiki: bool) -> LinkAction {
         if target.is_empty() && fragment.is_none() {
             return LinkAction::None;
         }
-        return if dar_notes::is_note_target(&target) { LinkAction::Note(target, true, fragment) } else { LinkAction::None };
+        return if dar_notes::is_note_target(&target) {
+            LinkAction::Note(target, true, fragment)
+        } else {
+            LinkAction::None
+        };
     }
     let dest = dest.trim_start_matches('<').trim_end_matches('>');
     if web_link(dest) || dest.starts_with("/api/v1/files/") {
         return LinkAction::Open(dest.to_owned());
     }
     let path = dest.split('#').next().unwrap_or_default().to_lowercase();
-    if !dest.contains(':') && !dest.starts_with('#') && (path.ends_with(".md") || path.ends_with(".markdown")) {
+    if !dest.contains(':')
+        && !dest.starts_with('#')
+        && (path.ends_with(".md") || path.ends_with(".markdown"))
+    {
         let (path, fragment) = split_fragment(dest);
-        return LinkAction::Note(dar_notes::percent_decode(&path), false, fragment.map(|f| dar_notes::percent_decode(&f)));
+        return LinkAction::Note(
+            dar_notes::percent_decode(&path),
+            false,
+            fragment.map(|f| dar_notes::percent_decode(&f)),
+        );
     }
     LinkAction::None
 }
@@ -229,13 +280,28 @@ mod tests {
 
     #[test]
     fn links_follow_as_in_the_preview() {
-        assert_eq!(link_action("Apollo#Launch", true), LinkAction::Note("Apollo".into(), true, Some("Launch".into())));
-        assert_eq!(link_action("Proj/Plan", true), LinkAction::Note("Proj/Plan".into(), true, None));
+        assert_eq!(
+            link_action("Apollo#Launch", true),
+            LinkAction::Note("Apollo".into(), true, Some("Launch".into()))
+        );
+        assert_eq!(
+            link_action("Proj/Plan", true),
+            LinkAction::Note("Proj/Plan".into(), true, None)
+        );
         assert_eq!(link_action("photo.png", true), LinkAction::None);
         assert_eq!(link_action("", true), LinkAction::None);
-        assert_eq!(link_action("Work%20x/Plan.md#Sub%20part", false), LinkAction::Note("Work x/Plan.md".into(), false, Some("Sub part".into())));
-        assert_eq!(link_action("https://example.com/a", false), LinkAction::Open("https://example.com/a".into()));
-        assert_eq!(link_action("<https://example.com>", false), LinkAction::Open("https://example.com".into()));
+        assert_eq!(
+            link_action("Work%20x/Plan.md#Sub%20part", false),
+            LinkAction::Note("Work x/Plan.md".into(), false, Some("Sub part".into()))
+        );
+        assert_eq!(
+            link_action("https://example.com/a", false),
+            LinkAction::Open("https://example.com/a".into())
+        );
+        assert_eq!(
+            link_action("<https://example.com>", false),
+            LinkAction::Open("https://example.com".into())
+        );
         assert_eq!(link_action("javascript:alert(1)", false), LinkAction::None);
         assert_eq!(link_action("other.txt", false), LinkAction::None);
     }

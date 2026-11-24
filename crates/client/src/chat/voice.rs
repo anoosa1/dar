@@ -15,7 +15,10 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 
-use super::{BASE, ChatAccount, ChatLiveMessage, ChatVoiceCall, ChatVoiceMember, ChatVoiceServers, search_params};
+use super::{
+    BASE, ChatAccount, ChatLiveMessage, ChatVoiceCall, ChatVoiceMember, ChatVoiceServers,
+    search_params,
+};
 use crate::api::{self, BrowserSession};
 use crate::icons::Icon;
 use crate::pim::avatar_hue;
@@ -65,7 +68,10 @@ fn has_global(name: &str) -> bool {
 }
 
 fn perf_now() -> f64 {
-    window().performance().map(|p| p.now()).unwrap_or_else(js_sys::Date::now)
+    window()
+        .performance()
+        .map(|p| p.now())
+        .unwrap_or_else(js_sys::Date::now)
 }
 
 pub fn voice_supported() -> bool {
@@ -116,7 +122,11 @@ impl Default for VoiceSnapshot {
         Self {
             accounts: BTreeMap::new(),
             speaking: BTreeSet::new(),
-            mic: if voice_supported() { MicState::Idle } else { MicState::Unsupported },
+            mic: if voice_supported() {
+                MicState::Idle
+            } else {
+                MicState::Unsupported
+            },
             ended: None,
         }
     }
@@ -201,10 +211,17 @@ impl VoiceAudioInner {
             {
                 let _ = JsFuture::from(promise).await;
             }
-            return if audio.borrow().encoder.is_some() { MicState::On } else { MicState::Blocked };
+            return if audio.borrow().encoder.is_some() {
+                MicState::On
+            } else {
+                MicState::Blocked
+            };
         }
 
-        let opts = js_obj(&[("sampleRate", 48000.0.into()), ("latencyHint", "interactive".into())]);
+        let opts = js_obj(&[
+            ("sampleRate", 48000.0.into()),
+            ("latencyHint", "interactive".into()),
+        ]);
         let Ok(ctx) = js_construct("AudioContext", &[opts]) else {
             return MicState::Blocked;
         };
@@ -225,7 +242,10 @@ impl VoiceAudioInner {
                     Self::tick(&a);
                 }
             });
-            if let Ok(id) = window().set_interval_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), 100) {
+            if let Ok(id) = window().set_interval_with_callback_and_timeout_and_arguments_0(
+                cb.as_ref().unchecked_ref(),
+                100,
+            ) {
                 inner.timer = Some(id);
                 inner._timer_cb = Some(cb);
             }
@@ -238,7 +258,8 @@ impl VoiceAudioInner {
 
         let setup = async {
             let worklet = js_get(&ctx, "audioWorklet");
-            let add_p = js_call(&worklet, "addModule", &[MIC_WORKLET_URL.into()])?.dyn_into::<js_sys::Promise>()?;
+            let add_p = js_call(&worklet, "addModule", &[MIC_WORKLET_URL.into()])?
+                .dyn_into::<js_sys::Promise>()?;
             JsFuture::from(add_p).await?;
             if audio.borrow().ctx.is_none() {
                 return Err(JsValue::from_str("closed"));
@@ -252,7 +273,8 @@ impl VoiceAudioInner {
                 ("channelCount", 1.into()),
             ]);
             let constraints = js_obj(&[("audio", audio_opts)]);
-            let gum_p = js_call(&devices, "getUserMedia", &[constraints])?.dyn_into::<js_sys::Promise>()?;
+            let gum_p =
+                js_call(&devices, "getUserMedia", &[constraints])?.dyn_into::<js_sys::Promise>()?;
             let stream = JsFuture::from(gum_p).await?;
             if audio.borrow().ctx.is_none() {
                 stop_stream_tracks(&stream);
@@ -262,7 +284,10 @@ impl VoiceAudioInner {
 
             let source = js_call(&ctx, "createMediaStreamSource", &[stream])?;
             let node_opts = js_obj(&[("numberOfInputs", 1.into()), ("numberOfOutputs", 1.into())]);
-            let node = js_construct("AudioWorkletNode", &[ctx.clone(), "dar-mic".into(), node_opts])?;
+            let node = js_construct(
+                "AudioWorkletNode",
+                &[ctx.clone(), "dar-mic".into(), node_opts],
+            )?;
             let silent = js_call(&ctx, "createGain", &[])?;
             js_set(&js_get(&silent, "gain"), "value", &0.0.into());
             js_call(&source, "connect", &[node.clone()])?;
@@ -271,13 +296,15 @@ impl VoiceAudioInner {
             js_call(&silent, "connect", &[dest])?;
 
             let weak_msg = Rc::downgrade(&audio);
-            let onmsg = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-                if let Some(a) = weak_msg.upgrade()
-                    && let Ok(samples) = event.data().dyn_into::<js_sys::Float32Array>()
-                {
-                    Self::frame(&a, samples);
-                }
-            });
+            let onmsg = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(
+                move |event: web_sys::MessageEvent| {
+                    if let Some(a) = weak_msg.upgrade()
+                        && let Ok(samples) = event.data().dyn_into::<js_sys::Float32Array>()
+                    {
+                        Self::frame(&a, samples);
+                    }
+                },
+            );
             let port = js_get(&node, "port");
             js_set(&port, "onmessage", onmsg.as_ref().unchecked_ref());
 
@@ -336,7 +363,11 @@ impl VoiceAudioInner {
         inner.muted = muted || deaf;
         inner.deaf = deaf;
         if let Some(master) = &inner.master {
-            js_set(&js_get(master, "gain"), "value", &(if deaf { 0.0 } else { 1.0 }).into());
+            js_set(
+                &js_get(master, "gain"),
+                "value",
+                &(if deaf { 0.0 } else { 1.0 }).into(),
+            );
         }
         if inner.muted {
             inner.talking = false;
@@ -354,7 +385,9 @@ impl VoiceAudioInner {
 
         let (encoder, to_encode): (JsValue, Vec<(f64, js_sys::Float32Array)>) = {
             let mut inner = audio.borrow_mut();
-            let Some(encoder) = inner.encoder.clone() else { return };
+            let Some(encoder) = inner.encoder.clone() else {
+                return;
+            };
             if js_get(&encoder, "state").as_string().as_deref() != Some("configured") {
                 return;
             }
@@ -363,10 +396,15 @@ impl VoiceAudioInner {
                 inner.previous = Some(samples);
                 return;
             }
-            inner.hang = if loud { 15 } else { inner.hang.saturating_sub(1) };
+            inner.hang = if loud {
+                15
+            } else {
+                inner.hang.saturating_sub(1)
+            };
             let sending = inner.hang > 0;
             let mut queue = Vec::new();
-            if sending && !inner.talking
+            if sending
+                && !inner.talking
                 && let Some(prev) = inner.previous.clone()
             {
                 let ts = inner.time;
@@ -444,7 +482,15 @@ impl VoiceAudioInner {
                     return;
                 }
                 let dec_clone = decoder.clone();
-                inner.decoders.insert(user, DecoderEntry { decoder, _next: next, _output: output, _error: error });
+                inner.decoders.insert(
+                    user,
+                    DecoderEntry {
+                        decoder,
+                        _next: next,
+                        _output: output,
+                        _error: error,
+                    },
+                );
                 dec_clone
             }
         };
@@ -476,7 +522,11 @@ impl VoiceAudioInner {
         let channels = js_get(&data, "numberOfChannels").as_f64().unwrap_or(2.0) as u32;
         let frames = js_get(&data, "numberOfFrames").as_f64().unwrap_or(0.0) as u32;
         let rate = js_get(&data, "sampleRate").as_f64().unwrap_or(48000.0);
-        if let Ok(buffer) = js_call(&ctx, "createBuffer", &[channels.into(), frames.into(), rate.into()]) {
+        if let Ok(buffer) = js_call(
+            &ctx,
+            "createBuffer",
+            &[channels.into(), frames.into(), rate.into()],
+        ) {
             for c in 0..channels {
                 if let Ok(ch_data) = js_call(&buffer, "getChannelData", &[c.into()]) {
                     let opts = js_obj(&[("planeIndex", c.into()), ("format", "f32-planar".into())]);
@@ -594,7 +644,12 @@ impl VoiceHubInner {
         let to_open: Vec<String> = {
             let mut inner = hub.borrow_mut();
             let wanted: BTreeSet<&str> = accounts.iter().map(|(id, _)| id.as_str()).collect();
-            let removed: Vec<String> = inner.links.keys().filter(|id| !wanted.contains(id.as_str())).cloned().collect();
+            let removed: Vec<String> = inner
+                .links
+                .keys()
+                .filter(|id| !wanted.contains(id.as_str()))
+                .cloned()
+                .collect();
             for id in removed {
                 if let Some(mut link) = inner.links.remove(&id) {
                     link.closed = true;
@@ -646,9 +701,16 @@ impl VoiceHubInner {
             return;
         }
         let loc = window().location();
-        let proto = if loc.protocol().unwrap_or_default() == "https:" { "wss" } else { "ws" };
+        let proto = if loc.protocol().unwrap_or_default() == "https:" {
+            "wss"
+        } else {
+            "ws"
+        };
         let host = loc.host().unwrap_or_default();
-        let url = format!("{proto}://{host}{BASE}/live?{}", search_params(&[("accountId", id)]));
+        let url = format!(
+            "{proto}://{host}{BASE}/live?{}",
+            search_params(&[("accountId", id)])
+        );
         let Ok(socket) = web_sys::WebSocket::new(&url) else {
             return;
         };
@@ -667,39 +729,50 @@ impl VoiceHubInner {
 
         let weak_msg = Rc::downgrade(hub);
         let id_msg = id.to_owned();
-        let onmessage = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-            let Some(h) = weak_msg.upgrade() else { return };
-            let data = event.data();
-            if data.dyn_ref::<js_sys::ArrayBuffer>().is_some() {
-                let bytes = js_sys::Uint8Array::new(&data).to_vec();
-                if bytes.len() > 9 && bytes[0] == 1 {
-                    let audio = {
-                        let inner = h.borrow();
-                        if inner.audio_account == id_msg { inner.audio.clone() } else { None }
-                    };
-                    if let Some(audio) = audio {
-                        let user = u64::from_be_bytes(bytes[1..9].try_into().unwrap()).to_string();
-                        VoiceAudioInner::play(&audio, user, &bytes[9..]);
+        let onmessage = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(
+            move |event: web_sys::MessageEvent| {
+                let Some(h) = weak_msg.upgrade() else { return };
+                let data = event.data();
+                if data.dyn_ref::<js_sys::ArrayBuffer>().is_some() {
+                    let bytes = js_sys::Uint8Array::new(&data).to_vec();
+                    if bytes.len() > 9 && bytes[0] == 1 {
+                        let audio = {
+                            let inner = h.borrow();
+                            if inner.audio_account == id_msg {
+                                inner.audio.clone()
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(audio) = audio {
+                            let user =
+                                u64::from_be_bytes(bytes[1..9].try_into().unwrap()).to_string();
+                            VoiceAudioInner::play(&audio, user, &bytes[9..]);
+                        }
                     }
+                    return;
                 }
-                return;
-            }
-            if let Some(text) = data.as_string()
-                && let Ok(message) = serde_json::from_str::<ChatLiveMessage>(&text)
-            {
-                Self::receive(&h, &id_msg, message);
-            }
-        });
+                if let Some(text) = data.as_string()
+                    && let Ok(message) = serde_json::from_str::<ChatLiveMessage>(&text)
+                {
+                    Self::receive(&h, &id_msg, message);
+                }
+            },
+        );
         socket.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
 
         let weak_close = Rc::downgrade(hub);
         let id_close = id.to_owned();
         let sock_close = socket.clone();
         let onclose = Closure::<dyn FnMut(web_sys::CloseEvent)>::new(move |_| {
-            let Some(h) = weak_close.upgrade() else { return };
+            let Some(h) = weak_close.upgrade() else {
+                return;
+            };
             let retry_delay = {
                 let mut inner = h.borrow_mut();
-                let Some(link) = inner.links.get_mut(&id_close) else { return };
+                let Some(link) = inner.links.get_mut(&id_close) else {
+                    return;
+                };
                 let same = link.socket.as_ref().is_some_and(|s| *s == sock_close);
                 if !same {
                     return;
@@ -729,8 +802,10 @@ impl VoiceHubInner {
                         Self::open_socket(&h, &id_retry);
                     }
                 });
-                if let Ok(timer) = window().set_timeout_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), delay as i32)
-                    && let Some(link) = h.borrow_mut().links.get_mut(&id_close)
+                if let Ok(timer) = window().set_timeout_with_callback_and_timeout_and_arguments_0(
+                    cb.as_ref().unchecked_ref(),
+                    delay as i32,
+                ) && let Some(link) = h.borrow_mut().links.get_mut(&id_close)
                 {
                     link.timer = Some(timer);
                     link._timer_cb = Some(cb);
@@ -761,7 +836,10 @@ impl VoiceHubInner {
                     Self::claim(hub, id);
                 }
             }
-            ChatLiveMessage::Voice { servers: incoming, complete } => {
+            ChatLiveMessage::Voice {
+                servers: incoming,
+                complete,
+            } => {
                 Self::update_account(hub, id, |v| {
                     if complete {
                         v.servers.clear();
@@ -798,7 +876,8 @@ impl VoiceHubInner {
                 });
             }
             ChatLiveMessage::Owner { here, elsewhere } => {
-                if !here && elsewhere
+                if !here
+                    && elsewhere
                     && let Some(link) = hub.borrow_mut().links.get_mut(id)
                 {
                     link.want_here = false;
@@ -823,9 +902,13 @@ impl VoiceHubInner {
     fn follow(hub: &Rc<RefCell<Self>>) {
         let snap = hub.borrow().snapshot;
         let active = snap.try_get_untracked().and_then(|s| {
-            s.accounts
-                .into_iter()
-                .find_map(|(id, v)| if v.here { v.call.map(|c| (id, c)) } else { None })
+            s.accounts.into_iter().find_map(|(id, v)| {
+                if v.here {
+                    v.call.map(|c| (id, c))
+                } else {
+                    None
+                }
+            })
         });
         let Some((id, call)) = active else {
             let old = {
@@ -846,7 +929,11 @@ impl VoiceHubInner {
                 (inner.audio.clone().unwrap(), false, None)
             } else {
                 let old = inner.audio.take();
-                let me = inner.links.get(&id).map(|l| l.me.clone()).unwrap_or_default();
+                let me = inner
+                    .links
+                    .get(&id)
+                    .map(|l| l.me.clone())
+                    .unwrap_or_default();
                 let on_speaking: Rc<dyn Fn(BTreeSet<String>)> = Rc::new(move |ids| {
                     let _ = snap.try_update(|s| s.speaking = ids);
                 });
@@ -870,7 +957,11 @@ impl VoiceHubInner {
         let id_send = id.clone();
         audio.borrow_mut().send = Some(Rc::new(move |frame: Vec<u8>| {
             if let Some(h) = weak_hub.upgrade() {
-                let socket = h.borrow().links.get(&id_send).and_then(|l| l.socket.clone());
+                let socket = h
+                    .borrow()
+                    .links
+                    .get(&id_send)
+                    .and_then(|l| l.socket.clone());
                 if let Some(s) = socket
                     && s.ready_state() == web_sys::WebSocket::OPEN
                     && s.buffered_amount() < 64_000
@@ -891,7 +982,11 @@ impl VoiceHubInner {
                 (inner.audio.clone().unwrap(), None)
             } else {
                 let old = inner.audio.take();
-                let me = inner.links.get(&id).map(|l| l.me.clone()).unwrap_or_default();
+                let me = inner
+                    .links
+                    .get(&id)
+                    .map(|l| l.me.clone())
+                    .unwrap_or_default();
                 let on_speaking: Rc<dyn Fn(BTreeSet<String>)> = Rc::new(move |ids| {
                     let _ = snap.try_update(|s| s.speaking = ids);
                 });
@@ -952,7 +1047,12 @@ impl VoiceHub {
         }
     }
 
-    pub async fn join(self, account_id: String, thread_id: String, muted: bool) -> Result<(), String> {
+    pub async fn join(
+        self,
+        account_id: String,
+        thread_id: String,
+        muted: bool,
+    ) -> Result<(), String> {
         if !voice_supported() {
             return Err("This browser cannot take part in voice calls.".into());
         }
@@ -963,7 +1063,13 @@ impl VoiceHub {
             .map(|s| {
                 s.accounts
                     .into_iter()
-                    .filter_map(|(id, v)| if id != account_id && v.here && v.call.is_some() { Some(id) } else { None })
+                    .filter_map(|(id, v)| {
+                        if id != account_id && v.here && v.call.is_some() {
+                            Some(id)
+                        } else {
+                            None
+                        }
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -976,7 +1082,10 @@ impl VoiceHub {
         }
         let csrf = hub.borrow().session.csrf_token.clone();
         let body = json!({ "threadId": thread_id, "muted": muted || mic != MicState::On });
-        if let Err(e) = api::send::<serde_json::Value>(&format!("{BASE}/voice/join"), "POST", Some(body), &csrf).await {
+        if let Err(e) =
+            api::send::<serde_json::Value>(&format!("{BASE}/voice/join"), "POST", Some(body), &csrf)
+                .await
+        {
             if let Some(link) = hub.borrow_mut().links.get_mut(&account_id) {
                 link.want_here = false;
             }
@@ -993,19 +1102,34 @@ impl VoiceHub {
             link.want_here = false;
         }
         let csrf = hub.borrow().session.csrf_token.clone();
-        api::send::<serde_json::Value>(&format!("{BASE}/voice/leave"), "POST", Some(json!({ "accountId": account_id })), &csrf)
-            .await
-            .map(|_| ())
-            .map_err(|e| e.message)
+        api::send::<serde_json::Value>(
+            &format!("{BASE}/voice/leave"),
+            "POST",
+            Some(json!({ "accountId": account_id })),
+            &csrf,
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| e.message)
     }
 
-    pub async fn set_self(self, account_id: String, muted: bool, deafened: bool) -> Result<(), String> {
+    pub async fn set_self(
+        self,
+        account_id: String,
+        muted: bool,
+        deafened: bool,
+    ) -> Result<(), String> {
         let Some(hub) = self.rc() else { return Ok(()) };
-        let blocked = self.snapshot.try_get_untracked().is_some_and(|s| s.mic == MicState::Blocked);
+        let blocked = self
+            .snapshot
+            .try_get_untracked()
+            .is_some_and(|s| s.mic == MicState::Blocked);
         if !muted && blocked {
             let mic = VoiceHubInner::prepare(hub.clone(), account_id.clone()).await;
             if mic != MicState::On {
-                return Err("Allow the microphone for this site in the browser, then try again.".into());
+                return Err(
+                    "Allow the microphone for this site in the browser, then try again.".into(),
+                );
             }
         }
         let csrf = hub.borrow().session.csrf_token.clone();
@@ -1034,8 +1158,14 @@ impl VoiceHub {
     }
 
     pub async fn code(self, account_id: String) -> Result<String, String> {
-        let url = format!("{BASE}/voice/code?{}", search_params(&[("accountId", &account_id)]));
-        api::get::<CodeResponse>(&url).await.map(|r| r.code).map_err(|e| e.message)
+        let url = format!(
+            "{BASE}/voice/code?{}",
+            search_params(&[("accountId", &account_id)])
+        );
+        api::get::<CodeResponse>(&url)
+            .await
+            .map(|r| r.code)
+            .map_err(|e| e.message)
     }
 
     pub fn dispose(self) {
@@ -1063,7 +1193,12 @@ pub fn use_voice(session: BrowserSession, accounts: Signal<Vec<ChatAccount>>) ->
         let list: Vec<(String, String)> = accounts
             .get()
             .into_iter()
-            .filter(|a| a.platform == "discord" && a.state != "loggedOut" && a.state != "linking" && a.state != "failed")
+            .filter(|a| {
+                a.platform == "discord"
+                    && a.state != "loggedOut"
+                    && a.state != "linking"
+                    && a.state != "failed"
+            })
             .map(|a| (a.id, a.jid))
             .collect();
         hub.sync(&list);
@@ -1113,7 +1248,11 @@ fn Marks(member: ChatVoiceMember) -> impl IntoView {
 
 /// People in a voice channel, under it in the server tree (`VoiceMembers`).
 #[component]
-pub fn VoiceMembers(members: Vec<ChatVoiceMember>, speaking: BTreeSet<String>, me: String) -> impl IntoView {
+pub fn VoiceMembers(
+    members: Vec<ChatVoiceMember>,
+    speaking: BTreeSet<String>,
+    me: String,
+) -> impl IntoView {
     view! {
         <ul class="chat-voice-members" aria-label="In voice">
             {members.into_iter().map(|m| {
@@ -1265,15 +1404,17 @@ pub fn VoiceStage(
     let do_join = move |_| {
         busy.set(true);
         error.set(String::new());
-        { on_join.try_run((
-            join_muted.get_untracked(),
-            Callback::new(move |res: Result<(), String>| {
-                let _ = busy.try_set(false);
-                if let Err(msg) = res {
-                    let _ = error.try_set(msg);
-                }
-            }),
-        )); };
+        {
+            on_join.try_run((
+                join_muted.get_untracked(),
+                Callback::new(move |res: Result<(), String>| {
+                    let _ = busy.try_set(false);
+                    if let Err(msg) = res {
+                        let _ = error.try_set(msg);
+                    }
+                }),
+            ));
+        };
     };
 
     view! {

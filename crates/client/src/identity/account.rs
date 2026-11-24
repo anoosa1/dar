@@ -167,7 +167,9 @@ pub fn AccountSecurity(session: BrowserSession, on_signed_out: Callback<()>) -> 
         else {
             return;
         };
-        let Ok(data) = web_sys::FormData::new_with_form(&form) else { return };
+        let Ok(data) = web_sys::FormData::new_with_form(&form) else {
+            return;
+        };
         let current_password = data.get("currentPassword").as_string().unwrap_or_default();
         let password = data.get("password").as_string().unwrap_or_default();
         error.set(String::new());
@@ -181,7 +183,9 @@ pub fn AccountSecurity(session: BrowserSession, on_signed_out: Callback<()>) -> 
             )
             .await
             {
-                Ok(_) => { on_signed_out.try_run(()); },
+                Ok(_) => {
+                    on_signed_out.try_run(());
+                }
                 Err(e) => {
                     let _ = error.try_set(e.message);
                 }
@@ -198,7 +202,9 @@ pub fn AccountSecurity(session: BrowserSession, on_signed_out: Callback<()>) -> 
         else {
             return;
         };
-        let Ok(data) = web_sys::FormData::new_with_form(&form) else { return };
+        let Ok(data) = web_sys::FormData::new_with_form(&form) else {
+            return;
+        };
         let grants: Vec<String> = data
             .get_all("grant")
             .iter()

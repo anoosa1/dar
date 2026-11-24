@@ -9,7 +9,10 @@ use crate::now;
 use crate::tables::*;
 
 fn put(ctx: &ReducerContext, name: &str, value: String) {
-    let next = PhotoState { name: name.into(), value };
+    let next = PhotoState {
+        name: name.into(),
+        value,
+    };
     if ctx.db.photo_state().name().find(name.to_owned()).is_some() {
         ctx.db.photo_state().name().update(next);
     } else {
@@ -18,7 +21,12 @@ fn put(ctx: &ReducerContext, name: &str, value: String) {
 }
 
 pub fn current_seq(ctx: &ReducerContext) -> f64 {
-    ctx.db.photo_state().name().find("seq".to_owned()).and_then(|r| r.value.parse().ok()).unwrap_or(0.0)
+    ctx.db
+        .photo_state()
+        .name()
+        .find("seq".to_owned())
+        .and_then(|r| r.value.parse().ok())
+        .unwrap_or(0.0)
 }
 
 pub fn next_seq(ctx: &ReducerContext) -> f64 {
@@ -32,7 +40,12 @@ pub fn sync_key(owner_id: &str, seq: f64) -> String {
 }
 
 pub fn epoch_of(ctx: &ReducerContext, user_id: &str) -> f64 {
-    ctx.db.photo_state().name().find(format!("epoch:{user_id}")).and_then(|r| r.value.parse().ok()).unwrap_or(0.0)
+    ctx.db
+        .photo_state()
+        .name()
+        .find(format!("epoch:{user_id}"))
+        .and_then(|r| r.value.parse().ok())
+        .unwrap_or(0.0)
 }
 
 pub fn raise_epoch(ctx: &ReducerContext, user_ids: &[String]) {
@@ -49,12 +62,26 @@ pub fn raise_epoch(ctx: &ReducerContext, user_ids: &[String]) {
 /// The owner and members of an album.
 pub fn album_audience(ctx: &ReducerContext, album_id: &str) -> Vec<String> {
     match ctx.db.photo_albums().id().find(album_id.to_owned()) {
-        Some(album) => std::iter::once(album.owner_id).chain(ctx.db.photo_album_members().album_id().filter(album_id).map(|m| m.user_id)).collect(),
+        Some(album) => std::iter::once(album.owner_id)
+            .chain(
+                ctx.db
+                    .photo_album_members()
+                    .album_id()
+                    .filter(album_id)
+                    .map(|m| m.user_id),
+            )
+            .collect(),
         None => Vec::new(),
     }
 }
 
-fn tombstone(ctx: &ReducerContext, kind: &str, entity_id: &str, extra_id: &str, audience: &[String]) {
+fn tombstone(
+    ctx: &ReducerContext,
+    kind: &str,
+    entity_id: &str,
+    extra_id: &str,
+    audience: &[String],
+) {
     let seq = next_seq(ctx);
     let key = format!("{:016}", seq as i64);
     let mut unique: Vec<&str> = Vec::new();
@@ -63,7 +90,16 @@ fn tombstone(ctx: &ReducerContext, kind: &str, entity_id: &str, extra_id: &str, 
             unique.push(a);
         }
     }
-    ctx.db.photo_sync_deletes().insert(PhotoSyncDelete { id: key.clone(), key, kind: kind.into(), entity_id: entity_id.into(), extra_id: extra_id.into(), audience: unique.join(","), seq, at: now(ctx) });
+    ctx.db.photo_sync_deletes().insert(PhotoSyncDelete {
+        id: key.clone(),
+        key,
+        kind: kind.into(),
+        entity_id: entity_id.into(),
+        extra_id: extra_id.into(),
+        audience: unique.join(","),
+        seq,
+        at: now(ctx),
+    });
 }
 
 /// The Immich app keeps one asset per owner and checksum; when a copy appears, leaves or
@@ -72,10 +108,20 @@ fn touch_copies(ctx: &ReducerContext, owner_id: &str, sha1: &str, file_id: &str)
     if sha1.is_empty() {
         return;
     }
-    for copy in ctx.db.photo_assets().sha1().filter(sha1).collect::<Vec<_>>() {
+    for copy in ctx
+        .db
+        .photo_assets()
+        .sha1()
+        .filter(sha1)
+        .collect::<Vec<_>>()
+    {
         if copy.owner_id == owner_id && copy.file_id != file_id {
             let seq = next_seq(ctx);
-            ctx.db.photo_assets().file_id().update(PhotoAsset { sync_seq: seq, sync_key: sync_key(owner_id, seq), ..copy });
+            ctx.db.photo_assets().file_id().update(PhotoAsset {
+                sync_seq: seq,
+                sync_key: sync_key(owner_id, seq),
+                ..copy
+            });
         }
     }
 }
@@ -83,7 +129,11 @@ fn touch_copies(ctx: &ReducerContext, owner_id: &str, sha1: &str, file_id: &str)
 pub fn insert_asset(ctx: &ReducerContext, asset: PhotoAsset) -> PhotoAsset {
     let seq = next_seq(ctx);
     let key = sync_key(&asset.owner_id, seq);
-    let result = ctx.db.photo_assets().insert(PhotoAsset { sync_seq: seq, sync_key: key, ..asset });
+    let result = ctx.db.photo_assets().insert(PhotoAsset {
+        sync_seq: seq,
+        sync_key: key,
+        ..asset
+    });
     touch_copies(ctx, &result.owner_id, &result.sha1, &result.file_id);
     result
 }
@@ -92,9 +142,18 @@ pub fn insert_asset(ctx: &ReducerContext, asset: PhotoAsset) -> PhotoAsset {
 pub fn update_asset(ctx: &ReducerContext, asset: PhotoAsset, keep_sha1: bool) -> PhotoAsset {
     let old = ctx.db.photo_assets().file_id().find(asset.file_id.clone());
     let seq = next_seq(ctx);
-    let sha1 = if keep_sha1 { old.as_ref().map(|o| o.sha1.clone()).unwrap_or_default() } else { asset.sha1.clone() };
+    let sha1 = if keep_sha1 {
+        old.as_ref().map(|o| o.sha1.clone()).unwrap_or_default()
+    } else {
+        asset.sha1.clone()
+    };
     let key = sync_key(&asset.owner_id, seq);
-    let result = ctx.db.photo_assets().file_id().update(PhotoAsset { sha1, sync_seq: seq, sync_key: key, ..asset });
+    let result = ctx.db.photo_assets().file_id().update(PhotoAsset {
+        sha1,
+        sync_seq: seq,
+        sync_key: key,
+        ..asset
+    });
     if let Some(old) = old
         && old.sha1 != result.sha1
     {
@@ -127,12 +186,18 @@ pub fn touch_asset(ctx: &ReducerContext, file_id: &str) {
 
 pub fn insert_album(ctx: &ReducerContext, album: PhotoAlbum) -> PhotoAlbum {
     let seq = next_seq(ctx);
-    ctx.db.photo_albums().insert(PhotoAlbum { sync_seq: seq, ..album })
+    ctx.db.photo_albums().insert(PhotoAlbum {
+        sync_seq: seq,
+        ..album
+    })
 }
 
 pub fn update_album(ctx: &ReducerContext, album: PhotoAlbum) -> PhotoAlbum {
     let seq = next_seq(ctx);
-    ctx.db.photo_albums().id().update(PhotoAlbum { sync_seq: seq, ..album })
+    ctx.db.photo_albums().id().update(PhotoAlbum {
+        sync_seq: seq,
+        ..album
+    })
 }
 
 pub fn delete_album(ctx: &ReducerContext, id: &str) -> bool {
@@ -143,7 +208,10 @@ pub fn delete_album(ctx: &ReducerContext, id: &str) -> bool {
 
 pub fn insert_album_item(ctx: &ReducerContext, item: PhotoAlbumItem) -> PhotoAlbumItem {
     let seq = next_seq(ctx);
-    ctx.db.photo_album_items().insert(PhotoAlbumItem { sync_seq: seq, ..item })
+    ctx.db.photo_album_items().insert(PhotoAlbumItem {
+        sync_seq: seq,
+        ..item
+    })
 }
 
 pub fn delete_album_item(ctx: &ReducerContext, id: &str) -> bool {
@@ -158,14 +226,20 @@ pub fn delete_album_item(ctx: &ReducerContext, id: &str) -> bool {
 pub fn insert_album_member(ctx: &ReducerContext, member: PhotoAlbumMember) -> PhotoAlbumMember {
     let seq = next_seq(ctx);
     let user = member.user_id.clone();
-    let result = ctx.db.photo_album_members().insert(PhotoAlbumMember { sync_seq: seq, ..member });
+    let result = ctx.db.photo_album_members().insert(PhotoAlbumMember {
+        sync_seq: seq,
+        ..member
+    });
     raise_epoch(ctx, &[user]);
     result
 }
 
 pub fn update_album_member(ctx: &ReducerContext, member: PhotoAlbumMember) -> PhotoAlbumMember {
     let seq = next_seq(ctx);
-    ctx.db.photo_album_members().id().update(PhotoAlbumMember { sync_seq: seq, ..member })
+    ctx.db.photo_album_members().id().update(PhotoAlbumMember {
+        sync_seq: seq,
+        ..member
+    })
 }
 
 pub fn delete_album_member(ctx: &ReducerContext, id: &str) -> bool {
@@ -179,12 +253,18 @@ pub fn delete_album_member(ctx: &ReducerContext, id: &str) -> bool {
 
 pub fn insert_stack(ctx: &ReducerContext, stack: PhotoStack) -> PhotoStack {
     let seq = next_seq(ctx);
-    ctx.db.photo_stacks().insert(PhotoStack { sync_seq: seq, ..stack })
+    ctx.db.photo_stacks().insert(PhotoStack {
+        sync_seq: seq,
+        ..stack
+    })
 }
 
 pub fn update_stack(ctx: &ReducerContext, stack: PhotoStack) -> PhotoStack {
     let seq = next_seq(ctx);
-    ctx.db.photo_stacks().id().update(PhotoStack { sync_seq: seq, ..stack })
+    ctx.db.photo_stacks().id().update(PhotoStack {
+        sync_seq: seq,
+        ..stack
+    })
 }
 
 pub fn delete_stack(ctx: &ReducerContext, id: &str) -> bool {

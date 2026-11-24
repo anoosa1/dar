@@ -18,14 +18,24 @@ const RAW_EXTENSIONS: [&str; 8] = ["dng", "cr2", "cr3", "nef", "arw", "orf", "rw
 /// `photoKind`: the kind of media Photos indexes, by media type then extension.
 pub fn photo_kind(media_type: &str, name: &str) -> Option<&'static str> {
     let kind = media_type.to_lowercase();
-    let ext = name.to_lowercase().rsplit('.').next().unwrap_or_default().to_owned();
+    let ext = name
+        .to_lowercase()
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_owned();
     if kind.starts_with("image/") && kind != "image/svg+xml" {
         return Some("image");
     }
     if kind.starts_with("video/") {
         return Some("video");
     }
-    if ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "avif", "tif", "tiff"].contains(&ext.as_str()) || RAW_EXTENSIONS.contains(&ext.as_str()) {
+    if [
+        "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "avif", "tif", "tiff",
+    ]
+    .contains(&ext.as_str())
+        || RAW_EXTENSIONS.contains(&ext.as_str())
+    {
         return Some("image");
     }
     if ["mp4", "mov", "m4v", "webm", "mkv", "3gp", "avi"].contains(&ext.as_str()) {
@@ -44,8 +54,21 @@ pub fn name_parts(name: &str) -> (String, String) {
 
 /// `photoFolderParts`: 1–8 folder names, no dot-only names or control characters.
 pub fn photo_folder_parts(value: &str) -> Option<Vec<String>> {
-    let parts: Vec<String> = value.split('/').map(|p| p.nfc().collect::<String>().trim().to_owned()).filter(|p| !p.is_empty()).collect();
-    if parts.is_empty() || parts.len() > 8 || value.encode_utf16().count() > 500 || parts.iter().any(|p| p.encode_utf16().count() > 255 || p == "." || p == ".." || p.chars().any(|c| (c as u32) < 0x20 || c == '\\')) {
+    let parts: Vec<String> = value
+        .split('/')
+        .map(|p| p.nfc().collect::<String>().trim().to_owned())
+        .filter(|p| !p.is_empty())
+        .collect();
+    if parts.is_empty()
+        || parts.len() > 8
+        || value.encode_utf16().count() > 500
+        || parts.iter().any(|p| {
+            p.encode_utf16().count() > 255
+                || p == "."
+                || p == ".."
+                || p.chars().any(|c| (c as u32) < 0x20 || c == '\\')
+        })
+    {
         return None;
     }
     Some(parts)
@@ -65,16 +88,32 @@ pub fn book_format(name: &str) -> Option<&'static str> {
     if ext.is_empty() || ext.len() > 8 || !ext.chars().all(|c| c.is_ascii_alphanumeric()) {
         return None;
     }
-    ["epub", "pdf", "cbz", "cbr", "cb7", "cbt"].into_iter().find(|f| *f == ext.to_lowercase())
+    ["epub", "pdf", "cbz", "cbr", "cb7", "cbt"]
+        .into_iter()
+        .find(|f| *f == ext.to_lowercase())
 }
 
 fn preference(ctx: &ReducerContext, user_id: &str, name: &str) -> Option<String> {
-    let value: Value = serde_json::from_str(&ctx.db.pim_preferences().user_id().find(user_id.to_owned())?.value).ok()?;
+    let value: Value = serde_json::from_str(
+        &ctx.db
+            .pim_preferences()
+            .user_id()
+            .find(user_id.to_owned())?
+            .value,
+    )
+    .ok()?;
     value.get(name)?.as_str().map(str::to_owned)
 }
 
-fn preference_folder_parts(ctx: &ReducerContext, user_id: &str, name: &str, fallback: &str) -> Vec<String> {
-    preference(ctx, user_id, name).and_then(|v| photo_folder_parts(&v)).unwrap_or_else(|| fallback.split('/').map(str::to_owned).collect())
+fn preference_folder_parts(
+    ctx: &ReducerContext,
+    user_id: &str,
+    name: &str,
+    fallback: &str,
+) -> Vec<String> {
+    preference(ctx, user_id, name)
+        .and_then(|v| photo_folder_parts(&v))
+        .unwrap_or_else(|| fallback.split('/').map(str::to_owned).collect())
 }
 
 pub fn notes_folder_parts(ctx: &ReducerContext, user_id: &str) -> Vec<String> {
@@ -87,7 +126,9 @@ pub fn books_folder_parts(ctx: &ReducerContext, user_id: &str) -> Vec<String> {
 
 /// The Photos folder from the account's preferences (default "pics").
 pub fn photo_folder(ctx: &ReducerContext, user_id: &str) -> Vec<String> {
-    preference(ctx, user_id, "photosUploadFolder").and_then(|v| photo_folder_parts(&v)).unwrap_or_else(|| vec![DEFAULT_PHOTO_FOLDER.to_owned()])
+    preference(ctx, user_id, "photosUploadFolder")
+        .and_then(|v| photo_folder_parts(&v))
+        .unwrap_or_else(|| vec![DEFAULT_PHOTO_FOLDER.to_owned()])
 }
 
 fn new_folder(ctx: &ReducerContext, user_id: &str, parent_id: &str, name: &str) -> String {
@@ -112,7 +153,12 @@ fn new_folder(ctx: &ReducerContext, user_id: &str, parent_id: &str, name: &str) 
 }
 
 /// Finds (or, when asked, creates as the owner) an app's folder; never the Locked folder or a trashed one.
-pub fn own_folder(ctx: &ReducerContext, user_id: &str, parts: &[String], create: bool) -> Res<Option<String>> {
+pub fn own_folder(
+    ctx: &ReducerContext,
+    user_id: &str,
+    parts: &[String],
+    create: bool,
+) -> Res<Option<String>> {
     let mut parent_id = String::new();
     for name in parts {
         if let Some(existing) = find_key(ctx, &key(user_id, &parent_id, name)) {
@@ -135,9 +181,19 @@ pub fn notes_root(ctx: &ReducerContext, user_id: &str, create: bool) -> Res<Opti
 }
 
 /// Photos uploads go to `<Photos folder>/YYYY/MM`, creating missing folders as the owner.
-pub fn photos_folder(ctx: &ReducerContext, user_id: &str, year: Option<&Value>, month: Option<&Value>) -> Res<String> {
+pub fn photos_folder(
+    ctx: &ReducerContext,
+    user_id: &str,
+    year: Option<&Value>,
+    month: Option<&Value>,
+) -> Res<String> {
     let int = |v: Option<&Value>| v.and_then(Value::as_f64).filter(|f| f.fract() == 0.0);
-    let (Some(year), Some(month)) = (int(year).filter(|y| (1900.0..=2999.0).contains(y)), int(month).filter(|m| (1.0..=12.0).contains(m))) else { return fail("invalidInput") };
+    let (Some(year), Some(month)) = (
+        int(year).filter(|y| (1900.0..=2999.0).contains(y)),
+        int(month).filter(|m| (1.0..=12.0).contains(m)),
+    ) else {
+        return fail("invalidInput");
+    };
     let mut parent_id = String::new();
     let mut names = photo_folder(ctx, user_id);
     names.push(format!("{}", year as i64));
@@ -155,7 +211,11 @@ pub fn photos_folder(ctx: &ReducerContext, user_id: &str, year: Option<&Value>, 
     Ok(parent_id)
 }
 
-pub fn photos_upload_target(ctx: &ReducerContext, user_id: &str, p: &serde_json::Map<String, Value>) -> Res<Value> {
+pub fn photos_upload_target(
+    ctx: &ReducerContext,
+    user_id: &str,
+    p: &serde_json::Map<String, Value>,
+) -> Res<Value> {
     if app_settings(ctx).1.iter().any(|d| d == "photos") {
         return fail("notFound");
     }
@@ -170,7 +230,11 @@ pub fn free_name(ctx: &ReducerContext, owner_id: &str, parent_id: &str, name: &s
     let (stem, _) = name_parts(name);
     let suffix = &name[stem.len()..];
     for n in 1..1000 {
-        let next = if n == 1 { name.to_owned() } else { format!("{stem} ({n}){suffix}") };
+        let next = if n == 1 {
+            name.to_owned()
+        } else {
+            format!("{stem} ({n}){suffix}")
+        };
         if find_key(ctx, &key(owner_id, parent_id, &next)).is_none() {
             return Ok(next);
         }
@@ -210,16 +274,35 @@ struct Walk {
     libraries: Vec<Value>,
 }
 
-fn walk(ctx: &ReducerContext, user_id: &str, root: &str, limit: usize, file_limit: usize, wanted: &dyn Fn(&str) -> bool, track_libraries: bool) -> Walk {
-    let mut queue: Vec<(String, String, u32, String)> = vec![(root.to_owned(), String::new(), 0, String::new())];
-    let mut out = Walk { folders: Vec::new(), files: Vec::new(), truncated: false, libraries: Vec::new() };
+fn walk(
+    ctx: &ReducerContext,
+    user_id: &str,
+    root: &str,
+    limit: usize,
+    file_limit: usize,
+    wanted: &dyn Fn(&str) -> bool,
+    track_libraries: bool,
+) -> Walk {
+    let mut queue: Vec<(String, String, u32, String)> =
+        vec![(root.to_owned(), String::new(), 0, String::new())];
+    let mut out = Walk {
+        folders: Vec::new(),
+        files: Vec::new(),
+        truncated: false,
+        libraries: Vec::new(),
+    };
     let mut scanned = 0;
     let mut i = 0;
     while i < queue.len() && !out.truncated {
         let (id, path, depth, library) = queue[i].clone();
         i += 1;
         let window = crate::folder_window(&format!("{user_id}/{id}/"));
-        for entry in ctx.db.file_entries().list_key().filter(crate::bounds(&window)) {
+        for entry in ctx
+            .db
+            .file_entries()
+            .list_key()
+            .filter(crate::bounds(&window))
+        {
             scanned += 1;
             if scanned > limit {
                 out.truncated = true;
@@ -228,23 +311,43 @@ fn walk(ctx: &ReducerContext, user_id: &str, root: &str, limit: usize, file_limi
             if entry.trashed || entry.name.starts_with('.') {
                 continue;
             }
-            let child_path = if path.is_empty() { entry.name.clone() } else { format!("{path}/{}", entry.name) };
+            let child_path = if path.is_empty() {
+                entry.name.clone()
+            } else {
+                format!("{path}/{}", entry.name)
+            };
             if entry.kind == "folder" {
                 if depth >= 16 {
                     out.truncated = true;
                     continue;
                 }
                 if track_libraries && depth == 0 {
-                    out.libraries.push(json!({ "id": entry.id, "name": entry.name }));
+                    out.libraries
+                        .push(json!({ "id": entry.id, "name": entry.name }));
                 }
-                out.folders.push((entry.id.clone(), id.clone(), entry.name.clone(), entry.modified_at));
-                let next_library = if library.is_empty() { entry.id.clone() } else { library.clone() };
-                queue.push((entry.id.clone(), child_path.clone(), depth + 1, next_library));
+                out.folders.push((
+                    entry.id.clone(),
+                    id.clone(),
+                    entry.name.clone(),
+                    entry.modified_at,
+                ));
+                let next_library = if library.is_empty() {
+                    entry.id.clone()
+                } else {
+                    library.clone()
+                };
+                queue.push((
+                    entry.id.clone(),
+                    child_path.clone(),
+                    depth + 1,
+                    next_library,
+                ));
                 if let Some(last) = out.folders.last_mut() {
                     last.2 = format!("{}\u{0}{child_path}", entry.name);
                 }
             } else if wanted(&entry.name) && out.files.len() < file_limit {
-                out.files.push((entry, id.clone(), child_path, library.clone()));
+                out.files
+                    .push((entry, id.clone(), child_path, library.clone()));
             }
         }
     }
@@ -253,11 +356,21 @@ fn walk(ctx: &ReducerContext, user_id: &str, root: &str, limit: usize, file_limi
 
 #[allow(non_snake_case)]
 #[spacetimedb::procedure]
-pub fn service_notes(ctx: &mut spacetimedb::ProcedureContext, sessionId: String, operation: String) -> String {
+pub fn service_notes(
+    ctx: &mut spacetimedb::ProcedureContext,
+    sessionId: String,
+    operation: String,
+) -> String {
     crate::run_json(ctx, |tx| {
         crate::service(tx)?;
         let user = crate::from_session(tx, &sessionId)?;
-        if tx.db.app_passwords().session_id().find(sessionId.clone()).is_some() {
+        if tx
+            .db
+            .app_passwords()
+            .session_id()
+            .find(sessionId.clone())
+            .is_some()
+        {
             return fail("forbidden");
         }
         if !app_enabled(tx, "notes") {
@@ -266,7 +379,15 @@ pub fn service_notes(ctx: &mut spacetimedb::ProcedureContext, sessionId: String,
         if operation == "attachments" {
             // Other files in the Notes folder (images, PDFs, audio), for `![[embeds]]`.
             let root_id = notes_root(tx, &user.id, true)?.unwrap_or_default();
-            let found = walk(tx, &user.id, &root_id, 5000, 3000, &|n: &str| !is_note_file(n) && !n.starts_with('.'), false);
+            let found = walk(
+                tx,
+                &user.id,
+                &root_id,
+                5000,
+                3000,
+                &|n: &str| !is_note_file(n) && !n.starts_with('.'),
+                false,
+            );
             let files: Vec<Value> = found
                 .files
                 .iter()
@@ -299,17 +420,30 @@ pub fn service_notes(ctx: &mut spacetimedb::ProcedureContext, sessionId: String,
                 legacy += tx.db.pim_resources().collection_id().filter(&c.id).count();
             }
         }
-        Ok(json!({ "rootId": root_id, "path": parts.join("/"), "folders": folders, "files": files, "truncated": found.truncated, "legacy": legacy }))
+        Ok(
+            json!({ "rootId": root_id, "path": parts.join("/"), "folders": folders, "files": files, "truncated": found.truncated, "legacy": legacy }),
+        )
     })
 }
 
 #[allow(non_snake_case)]
 #[spacetimedb::procedure]
-pub fn service_books(ctx: &mut spacetimedb::ProcedureContext, sessionId: String, operation: String, document: String) -> String {
+pub fn service_books(
+    ctx: &mut spacetimedb::ProcedureContext,
+    sessionId: String,
+    operation: String,
+    document: String,
+) -> String {
     crate::run_json(ctx, |tx| {
         crate::service(tx)?;
         let user = crate::from_session(tx, &sessionId)?;
-        if tx.db.app_passwords().session_id().find(sessionId.clone()).is_some() {
+        if tx
+            .db
+            .app_passwords()
+            .session_id()
+            .find(sessionId.clone())
+            .is_some()
+        {
             return fail("forbidden");
         }
         if !app_enabled(tx, "books") {
@@ -320,19 +454,43 @@ pub fn service_books(ctx: &mut spacetimedb::ProcedureContext, sessionId: String,
         }
         let value = crate::document(if document.is_empty() { "{}" } else { &document })?;
         if operation == "library" {
-            let root_id = own_folder(tx, &user.id, &books_folder_parts(tx, &user.id), true)?.unwrap_or_default();
+            let root_id = own_folder(tx, &user.id, &books_folder_parts(tx, &user.id), true)?
+                .unwrap_or_default();
             let parts = books_folder_parts(tx, &user.id);
-            let found = walk(tx, &user.id, &root_id, 20000, 10000, &|n: &str| book_format(n).is_some(), true);
+            let found = walk(
+                tx,
+                &user.id,
+                &root_id,
+                20000,
+                10000,
+                &|n: &str| book_format(n).is_some(),
+                true,
+            );
             let files: Vec<Value> = found
                 .files
                 .iter()
                 .map(|(e, parent, path, library)| json!({ "id": e.id, "parentId": parent, "name": e.name, "blobId": e.blob_id, "size": e.size, "revision": e.revision, "modifiedAt": e.modified_at, "path": path, "library": library }))
                 .collect();
-            return Ok(json!({ "rootId": root_id, "path": parts.join("/"), "libraries": found.libraries, "files": files, "states": crate::books::book_states(tx, &user.id), "truncated": found.truncated }));
+            return Ok(
+                json!({ "rootId": root_id, "path": parts.join("/"), "libraries": found.libraries, "files": files, "states": crate::books::book_states(tx, &user.id), "truncated": found.truncated }),
+            );
         }
         let session = sessionId.clone();
         let readable = |file_id: &str| -> bool {
-            tx.db.file_entries().id().find(file_id.to_owned()).is_some_and(|e| e.kind == "file" && crate::files::access(tx, &e, &user.id, crate::files::Unlock::Session(&session)).is_some())
+            tx.db
+                .file_entries()
+                .id()
+                .find(file_id.to_owned())
+                .is_some_and(|e| {
+                    e.kind == "file"
+                        && crate::files::access(
+                            tx,
+                            &e,
+                            &user.id,
+                            crate::files::Unlock::Session(&session),
+                        )
+                        .is_some()
+                })
         };
         crate::books::books_operation(tx, &user.id, &operation, &value, &readable)
     })

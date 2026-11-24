@@ -27,9 +27,16 @@ const PATCHES: &[Patch] = &[
         sha256: "12687a386f7994d79a66b5e483335ffa3a4d4b4793ad29dbd640e09113c6b188",
         revision: 2,
         edits: &[
-            ("src/sats.rs", "name: field.ident.as_ref().map(syn::Ident::to_string),", "name: field.ident.as_ref().map(|i| syn::ext::IdentExt::unraw(i).to_string()),"),
-            ("src/table.rs", "let accessor_name = self.accessor_name.to_string();",
-                "let accessor_name = { let mut out = String::new(); let mut upper = false; for c in syn::ext::IdentExt::unraw(self.accessor_name).to_string().chars() { if c == '_' { upper = true; } else if upper { out.extend(c.to_uppercase()); upper = false; } else { out.push(c); } } out };"),
+            (
+                "src/sats.rs",
+                "name: field.ident.as_ref().map(syn::Ident::to_string),",
+                "name: field.ident.as_ref().map(|i| syn::ext::IdentExt::unraw(i).to_string()),",
+            ),
+            (
+                "src/table.rs",
+                "let accessor_name = self.accessor_name.to_string();",
+                "let accessor_name = { let mut out = String::new(); let mut upper = false; for c in syn::ext::IdentExt::unraw(self.accessor_name).to_string().chars() { if c == '_' { upper = true; } else if upper { out.extend(c.to_uppercase()); upper = false; } else { out.push(c); } } out };",
+            ),
         ],
         append: None,
     },
@@ -41,9 +48,16 @@ const PATCHES: &[Patch] = &[
         version: "3.5.0",
         sha256: "d640d25bc63c50fb1f0b545ffd80207d2e10a4c965530809b40ba3386825c391",
         revision: 1,
-        edits: &[("Cargo.toml", "default = [\n    \"std\",\n    \"ffi-api\",\n]", "default = [\"std\"]")],
+        edits: &[(
+            "Cargo.toml",
+            "default = [\n    \"std\",\n    \"ffi-api\",\n]",
+            "default = [\"std\"]",
+        )],
         // Its own lints are not ours to fix.
-        append: Some(("Cargo.toml", "\n[lints.rust]\nunexpected_cfgs = \"allow\"\ndead_code = \"allow\"\nmismatched_lifetime_syntaxes = \"allow\"\n")),
+        append: Some((
+            "Cargo.toml",
+            "\n[lints.rust]\nunexpected_cfgs = \"allow\"\ndead_code = \"allow\"\nmismatched_lifetime_syntaxes = \"allow\"\n",
+        )),
     },
 ];
 
@@ -58,12 +72,20 @@ pub fn prepare() -> Result {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let archive = fetch(patch)?;
         let _ = std::fs::remove_dir_all(&out);
-        run(Command::new("tar").arg("-xzf").arg(&archive).arg("-C").arg(&dir))?;
+        run(Command::new("tar")
+            .arg("-xzf")
+            .arg(&archive)
+            .arg("-C")
+            .arg(&dir))?;
         for (file, from, to) in patch.edits {
             let path = out.join(file);
-            let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let text =
+                std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             if !text.contains(from) {
-                return Err(format!("{} {}: the patched text is missing from {file}", patch.name, patch.version));
+                return Err(format!(
+                    "{} {}: the patched text is missing from {file}",
+                    patch.name, patch.version
+                ));
             }
             std::fs::write(&path, text.replacen(from, to, 1)).map_err(|e| e.to_string())?;
         }
@@ -74,7 +96,12 @@ pub fn prepare() -> Result {
             std::fs::write(&path, contents).map_err(|e| e.to_string())?;
         }
         std::fs::write(&marker, "").map_err(|e| e.to_string())?;
-        eprintln!("xtask: prepared {} {} in {}", patch.name, patch.version, out.strip_prefix(repo()).unwrap_or(&out).display());
+        eprintln!(
+            "xtask: prepared {} {} in {}",
+            patch.name,
+            patch.version,
+            out.strip_prefix(repo()).unwrap_or(&out).display()
+        );
     }
     Ok(())
 }
@@ -96,7 +123,10 @@ fn fetch(patch: &Patch) -> Result<PathBuf> {
     let digest = hash::file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     if digest != patch.sha256 {
         let _ = std::fs::remove_file(&path);
-        return Err(format!("{file}: checksum {digest} does not match crates.io's {}", patch.sha256));
+        return Err(format!(
+            "{file}: checksum {digest} does not match crates.io's {}",
+            patch.sha256
+        ));
     }
     Ok(path)
 }

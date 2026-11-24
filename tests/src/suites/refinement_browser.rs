@@ -19,7 +19,10 @@ pub async fn refinement_journey(t: &Ctx) -> Result<()> {
     let admin = login(&base).await?;
     let marker = format!("Refinement {}", &uuid()[..6]);
 
-    let notes_root = admin.get_json("/api/v1/notes/library").await?["rootId"].as_str().context("notes rootId")?.to_owned();
+    let notes_root = admin.get_json("/api/v1/notes/library").await?["rootId"]
+        .as_str()
+        .context("notes rootId")?
+        .to_owned();
     upload_with(
         &admin,
         &format!("{marker} note.md"),
@@ -30,7 +33,10 @@ pub async fn refinement_journey(t: &Ctx) -> Result<()> {
     upload(&admin, &format!("{marker} file.txt"), "Global file result").await?;
 
     let calendar = admin
-        .post("/api/v1/calendar/calendars", &json!({ "name": format!("{marker} calendar"), "color": "#1e66f5" }))
+        .post(
+            "/api/v1/calendar/calendars",
+            &json!({ "name": format!("{marker} calendar"), "color": "#1e66f5" }),
+        )
         .await?
         .expect(201)?
         .json()?;
@@ -81,14 +87,45 @@ pub async fn refinement_journey(t: &Ctx) -> Result<()> {
     let owner = other.connect().await?;
     let folder = uuid();
     let grant = uuid();
-    reducer(|cb| owner.reducers.create_folder_then(folder.clone(), String::new(), "Shared search folder".into(), cb)).await?;
-    upload_with(&other, &format!("{marker} shared descendant.txt"), "Shared result", Upload { parent_id: &folder, ..Upload::default() }).await?;
+    reducer(|cb| {
+        owner.reducers.create_folder_then(
+            folder.clone(),
+            String::new(),
+            "Shared search folder".into(),
+            cb,
+        )
+    })
+    .await?;
+    upload_with(
+        &other,
+        &format!("{marker} shared descendant.txt"),
+        "Shared result",
+        Upload {
+            parent_id: &folder,
+            ..Upload::default()
+        },
+    )
+    .await?;
     let details = procedure(|cb| owner.procedures.file_details_then(folder.clone(), cb)).await?;
-    let revision = details["entry"]["revision"].as_u64().context("folder revision")? as u32;
-    reducer(|cb| owner.reducers.grant_access_then(grant.clone(), folder.clone(), "admin".into(), "read".into(), revision, cb)).await?;
+    let revision = details["entry"]["revision"]
+        .as_u64()
+        .context("folder revision")? as u32;
+    reducer(|cb| {
+        owner.reducers.grant_access_then(
+            grant.clone(),
+            folder.clone(),
+            "admin".into(),
+            "read".into(),
+            revision,
+            cb,
+        )
+    })
+    .await?;
 
     let browser = Browser::shared().await?;
-    let context = browser.new_context(ContextOptions::sized(1440, 950)).await?;
+    let context = browser
+        .new_context(ContextOptions::sized(1440, 950))
+        .await?;
     let page = context.new_page().await?;
     let errors = page.collect_errors(|text| text.contains("401") && text.contains("Unauthorized"));
 
@@ -242,7 +279,9 @@ pub async fn refinement_journey(t: &Ctx) -> Result<()> {
     .await;
 
     if result.is_err() {
-        let _ = page.screenshot(t.screenshot("refinement-failure.png"), true).await;
+        let _ = page
+            .screenshot(t.screenshot("refinement-failure.png"), true)
+            .await;
     }
     owner.disconnect();
     context.close().await.ok();

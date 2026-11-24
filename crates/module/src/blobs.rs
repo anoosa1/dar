@@ -10,7 +10,10 @@ use crate::{Res, fail, now};
 pub const BLOB_GRACE_MS: f64 = 2.0 * 3_600_000.0;
 
 pub fn is_blob_id(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// `checkKey`: when maintenance should next look at the blob ("" for never).
@@ -26,11 +29,20 @@ pub fn store_blob(ctx: &ReducerContext, id: &str, size: f64) -> Res<()> {
     let later = check_key_at(now(ctx) + BLOB_GRACE_MS);
     match ctx.db.file_blobs().id().find(id.to_owned()) {
         None => {
-            ctx.db.file_blobs().insert(FileBlob { id: id.into(), size, state: "stored".into(), check_key: later });
+            ctx.db.file_blobs().insert(FileBlob {
+                id: id.into(),
+                size,
+                state: "stored".into(),
+                check_key: later,
+            });
         }
         Some(row) if row.size != size => return fail("conflict"),
         Some(row) if row.state != "stored" => {
-            ctx.db.file_blobs().id().update(FileBlob { state: "stored".into(), check_key: later, ..row });
+            ctx.db.file_blobs().id().update(FileBlob {
+                state: "stored".into(),
+                check_key: later,
+                ..row
+            });
         }
         Some(_) => {}
     }
@@ -44,6 +56,9 @@ pub fn release_blob(ctx: &ReducerContext, id: &str) {
         && row.state == "stored"
         && (row.check_key.is_empty() || row.check_key > due)
     {
-        ctx.db.file_blobs().id().update(FileBlob { check_key: due, ..row });
+        ctx.db.file_blobs().id().update(FileBlob {
+            check_key: due,
+            ..row
+        });
     }
 }

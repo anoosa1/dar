@@ -98,7 +98,9 @@ fn floats(item: &JsValue, key: &str) -> Vec<f64> {
 
 /// The runs of a `{type: "text"}` message; malformed entries are skipped.
 pub(super) fn parse_runs(data: &JsValue) -> Vec<PdfTextRun> {
-    let Ok(raw) = Reflect::get(data, &JsValue::from_str("runs")) else { return Vec::new() };
+    let Ok(raw) = Reflect::get(data, &JsValue::from_str("runs")) else {
+        return Vec::new();
+    };
     if !Array::is_array(&raw) {
         return Vec::new();
     }
@@ -108,11 +110,19 @@ pub(super) fn parse_runs(data: &JsValue) -> Vec<PdfTextRun> {
         if geometry.len() < 9 || geometry.iter().any(|v| !v.is_finite()) || geometry[4] <= 0.0 {
             continue;
         }
-        let text = Reflect::get(&item, &JsValue::from_str("text")).ok().and_then(|v| v.as_string()).unwrap_or_default();
+        let text = Reflect::get(&item, &JsValue::from_str("text"))
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
         let names: Vec<String> = Reflect::get(&item, &JsValue::from_str("chars"))
             .ok()
             .filter(Array::is_array)
-            .map(|v| Array::from(&v).iter().map(|c| c.as_string().unwrap_or_default()).collect())
+            .map(|v| {
+                Array::from(&v)
+                    .iter()
+                    .map(|c| c.as_string().unwrap_or_default())
+                    .collect()
+            })
             .unwrap_or_default();
         let offsets = floats(&item, "offsets");
         let advances = floats(&item, "advances");
@@ -120,9 +130,16 @@ pub(super) fn parse_runs(data: &JsValue) -> Vec<PdfTextRun> {
             .into_iter()
             .zip(offsets)
             .zip(advances)
-            .map(|((text, offset), advance)| PdfTextChar { text, offset, advance })
+            .map(|((text, offset), advance)| PdfTextChar {
+                text,
+                offset,
+                advance,
+            })
             .collect();
-        let ends_line = Reflect::get(&item, &JsValue::from_str("endsLine")).ok().and_then(|v| v.as_bool()).unwrap_or(true);
+        let ends_line = Reflect::get(&item, &JsValue::from_str("endsLine"))
+            .ok()
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
         runs.push(PdfTextRun {
             text,
             x: geometry[0],
@@ -198,7 +215,11 @@ fn page_index(runs: &[PdfTextRun]) -> (Vec<char>, Vec<Option<(usize, usize)>>) {
 /// The box of characters `first..=last` of `run`, in points (axis-aligned).
 fn run_span_box(run: &PdfTextRun, first: usize, last: usize) -> (f64, f64, f64, f64) {
     let start = run.chars.get(first).map_or(0.0, |c| c.offset);
-    let end = run.chars.get(last).map_or(run.length, |c| c.offset + c.advance).max(start);
+    let end = run
+        .chars
+        .get(last)
+        .map_or(run.length, |c| c.offset + c.advance)
+        .max(start);
     let (sin, cos) = run.angle.sin_cos();
     let (dx, dy) = (cos, sin);
     let (nx, ny) = (-sin, cos);
@@ -206,7 +227,10 @@ fn run_span_box(run: &PdfTextRun, first: usize, last: usize) -> (f64, f64, f64, 
     let mut corners = Vec::with_capacity(4);
     for along in [start, end] {
         for across in [-ASCENT * size, DESCENT * size] {
-            corners.push((run.baseline_x + dx * along + nx * across, run.baseline_y + dy * along + ny * across));
+            corners.push((
+                run.baseline_x + dx * along + nx * across,
+                run.baseline_y + dy * along + ny * across,
+            ));
         }
     }
     let x0 = corners.iter().map(|c| c.0).fold(f64::MAX, f64::min);
@@ -217,7 +241,12 @@ fn run_span_box(run: &PdfTextRun, first: usize, last: usize) -> (f64, f64, f64, 
 }
 
 /// Every match of `query` (from [`fold_query`]) on one page of `width × height` points.
-pub fn find_on_page(page: usize, runs: &[PdfTextRun], query: &[char], size: (f64, f64)) -> Vec<PdfMatch> {
+pub fn find_on_page(
+    page: usize,
+    runs: &[PdfTextRun],
+    query: &[char],
+    size: (f64, f64),
+) -> Vec<PdfMatch> {
     if query.is_empty() || runs.is_empty() {
         return Vec::new();
     }
@@ -242,11 +271,21 @@ pub fn find_on_page(page: usize, runs: &[PdfTextRun], query: &[char], size: (f64
             .into_iter()
             .map(|(r, first, last)| {
                 let (x, y, w, h) = run_span_box(&runs[r], first, last);
-                PdfRect { page, x: x / pw, y: y / ph, width: w / pw, height: h / ph }
+                PdfRect {
+                    page,
+                    x: x / pw,
+                    y: y / ph,
+                    width: w / pw,
+                    height: h / ph,
+                }
             })
             .collect::<Vec<_>>();
         if !rects.is_empty() {
-            found.push(PdfMatch { page, ordinal: found.len(), rects });
+            found.push(PdfMatch {
+                page,
+                ordinal: found.len(),
+                rects,
+            });
         }
         at += query.len();
     }
@@ -303,21 +342,33 @@ pub(super) fn build_text_layer(layer: &web_sys::Element, runs: &[PdfTextRun]) {
         if run.text.trim().is_empty() && run.ends_line {
             continue;
         }
-        let Ok(span) = doc.create_element("span") else { continue };
-        let natural = measure(&run.text) * run.font_size / 100.0;
-        let stretch = if natural > 0.01 { (run.length / natural).clamp(0.05, 20.0) } else { 1.0 };
-        let next_starts_blank = runs.get(i + 1).is_some_and(|n| n.text.starts_with(char::is_whitespace));
-        let text = if !run.ends_line && !run.text.ends_with(char::is_whitespace) && !next_starts_blank {
-            format!("{} ", run.text)
-        } else {
-            run.text.clone()
+        let Ok(span) = doc.create_element("span") else {
+            continue;
         };
+        let natural = measure(&run.text) * run.font_size / 100.0;
+        let stretch = if natural > 0.01 {
+            (run.length / natural).clamp(0.05, 20.0)
+        } else {
+            1.0
+        };
+        let next_starts_blank = runs
+            .get(i + 1)
+            .is_some_and(|n| n.text.starts_with(char::is_whitespace));
+        let text =
+            if !run.ends_line && !run.text.ends_with(char::is_whitespace) && !next_starts_blank {
+                format!("{} ", run.text)
+            } else {
+                run.text.clone()
+            };
         span.set_text_content(Some(&text));
         set_vars(
             &span,
             &[
                 ("--x", format!("{:.3}", run.baseline_x)),
-                ("--y", format!("{:.3}", run.baseline_y - ASCENT * run.font_size)),
+                (
+                    "--y",
+                    format!("{:.3}", run.baseline_y - ASCENT * run.font_size),
+                ),
                 ("--size", format!("{:.3}", run.font_size)),
                 ("--angle", format!("{:.5}rad", run.angle)),
                 ("--sx", format!("{stretch:.5}")),
@@ -338,7 +389,9 @@ pub(super) fn paint_marks(layer: &web_sys::Element, marks: &[(PdfRect, &'static 
     layer.set_text_content(None);
     let doc = document();
     for (rect, class) in marks {
-        let Ok(mark) = doc.create_element("i") else { continue };
+        let Ok(mark) = doc.create_element("i") else {
+            continue;
+        };
         mark.set_class_name(class);
         set_vars(
             &mark,
@@ -368,13 +421,22 @@ fn client_rects(range: &web_sys::Range) -> Vec<web_sys::DomRect> {
         .ok()
         .and_then(|f| f.dyn_into::<Function>().ok())
         .and_then(|f| f.call0(range).ok())
-        .map(|list| Array::from(&list).iter().map(|r| r.unchecked_into::<web_sys::DomRect>()).collect())
+        .map(|list| {
+            Array::from(&list)
+                .iter()
+                .map(|r| r.unchecked_into::<web_sys::DomRect>())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 /// Merges boxes on one line that touch, so overlapping marks do not darken.
 pub fn merge_rects(mut rects: Vec<PdfRect>) -> Vec<PdfRect> {
-    rects.sort_by(|a, b| (a.page, a.y, a.x).partial_cmp(&(b.page, b.y, b.x)).unwrap_or(std::cmp::Ordering::Equal));
+    rects.sort_by(|a, b| {
+        (a.page, a.y, a.x)
+            .partial_cmp(&(b.page, b.y, b.x))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut merged: Vec<PdfRect> = Vec::new();
     for r in rects {
         if let Some(last) = merged.last_mut() {
@@ -434,7 +496,9 @@ pub(super) fn current_selection(scroller: &web_sys::Element) -> Option<PdfSelect
         if !range.intersects_node(&span).unwrap_or(false) {
             continue;
         }
-        let Ok(part) = document().create_range() else { continue };
+        let Ok(part) = document().create_range() else {
+            continue;
+        };
         if part.select_node_contents(&span).is_err() {
             continue;
         }
@@ -450,7 +514,12 @@ pub(super) fn current_selection(scroller: &web_sys::Element) -> Option<PdfSelect
         else {
             continue;
         };
-        let Some(page) = page_box.get_attribute("data-page").and_then(|p| p.parse::<usize>().ok()) else { continue };
+        let Some(page) = page_box
+            .get_attribute("data-page")
+            .and_then(|p| p.parse::<usize>().ok())
+        else {
+            continue;
+        };
         let frame = page_box.get_bounding_client_rect();
         if frame.width() <= 0.0 || frame.height() <= 0.0 {
             continue;
@@ -464,7 +533,13 @@ pub(super) fn current_selection(scroller: &web_sys::Element) -> Option<PdfSelect
             let x1 = ((r.right() - frame.left()) / frame.width()).clamp(0.0, 1.0);
             let y1 = ((r.bottom() - frame.top()) / frame.height()).clamp(0.0, 1.0);
             if x1 > x0 && y1 > y0 {
-                rects.push(PdfRect { page, x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
+                rects.push(PdfRect {
+                    page,
+                    x: x0,
+                    y: y0,
+                    width: x1 - x0,
+                    height: y1 - y0,
+                });
             }
         }
     }
@@ -481,7 +556,11 @@ mod tests {
         let chars = text
             .chars()
             .enumerate()
-            .map(|(i, c)| PdfTextChar { text: c.to_string(), offset: i as f64 * 6.0, advance: 6.0 })
+            .map(|(i, c)| PdfTextChar {
+                text: c.to_string(),
+                offset: i as f64 * 6.0,
+                advance: 6.0,
+            })
             .collect::<Vec<_>>();
         PdfTextRun {
             text: text.into(),
@@ -501,22 +580,35 @@ mod tests {
 
     #[test]
     fn find_matches_across_runs_and_case() {
-        let runs = vec![run("The quick", 10.0, 20.0, false), run("Brown fox", 100.0, 20.0, true), run("brown  bear", 10.0, 40.0, true)];
+        let runs = vec![
+            run("The quick", 10.0, 20.0, false),
+            run("Brown fox", 100.0, 20.0, true),
+            run("brown  bear", 10.0, 40.0, true),
+        ];
         let query = fold_query("  BROWN ");
         let found = find_on_page(2, &runs, &query, (200.0, 100.0));
         assert_eq!(found.len(), 2);
         assert_eq!(found[1].ordinal, 1);
         let r = found[0].rects[0];
         assert_eq!(r.page, 2);
-        assert!((r.x - 0.5).abs() < 1e-9 && (r.width - 0.15).abs() < 1e-9, "{r:?}");
-        assert!((r.y - 0.12).abs() < 1e-9 && (r.height - 0.1).abs() < 1e-9, "{r:?}");
+        assert!(
+            (r.x - 0.5).abs() < 1e-9 && (r.width - 0.15).abs() < 1e-9,
+            "{r:?}"
+        );
+        assert!(
+            (r.y - 0.12).abs() < 1e-9 && (r.height - 0.1).abs() < 1e-9,
+            "{r:?}"
+        );
 
         // A phrase over two runs on one line gets a box in each.
         let across = find_on_page(0, &runs, &fold_query("quick brown"), (200.0, 100.0));
         assert_eq!(across.len(), 1);
         assert_eq!(across[0].rects.len(), 2);
         // Spaces collapse in the text and in the query.
-        assert_eq!(find_on_page(0, &runs, &fold_query("brown bear"), (200.0, 100.0)).len(), 1);
+        assert_eq!(
+            find_on_page(0, &runs, &fold_query("brown bear"), (200.0, 100.0)).len(),
+            1
+        );
         assert!(find_on_page(0, &runs, &fold_query(""), (200.0, 100.0)).is_empty());
     }
 
@@ -525,18 +617,45 @@ mod tests {
         let mut down = run("ab", 50.0, 10.0, true);
         down.angle = std::f64::consts::FRAC_PI_2;
         let (x, y, w, h) = run_span_box(&down, 0, 1);
-        assert!((x - 48.0).abs() < 1e-9 && (w - 10.0).abs() < 1e-9, "{x} {w}");
-        assert!((y - 10.0).abs() < 1e-9 && (h - 12.0).abs() < 1e-9, "{y} {h}");
+        assert!(
+            (x - 48.0).abs() < 1e-9 && (w - 10.0).abs() < 1e-9,
+            "{x} {w}"
+        );
+        assert!(
+            (y - 10.0).abs() < 1e-9 && (h - 12.0).abs() < 1e-9,
+            "{y} {h}"
+        );
     }
 
     #[test]
     fn selections_merge_and_tidy() {
-        let a = PdfRect { page: 0, x: 0.1, y: 0.1, width: 0.2, height: 0.02 };
-        let b = PdfRect { page: 0, x: 0.3, y: 0.101, width: 0.1, height: 0.02 };
-        let c = PdfRect { page: 0, x: 0.1, y: 0.2, width: 0.2, height: 0.02 };
+        let a = PdfRect {
+            page: 0,
+            x: 0.1,
+            y: 0.1,
+            width: 0.2,
+            height: 0.02,
+        };
+        let b = PdfRect {
+            page: 0,
+            x: 0.3,
+            y: 0.101,
+            width: 0.1,
+            height: 0.02,
+        };
+        let c = PdfRect {
+            page: 0,
+            x: 0.1,
+            y: 0.2,
+            width: 0.2,
+            height: 0.02,
+        };
         let merged = merge_rects(vec![c, b, a]);
         assert_eq!(merged.len(), 2);
         assert!((merged[0].width - 0.3).abs() < 1e-9);
-        assert_eq!(tidy_text("  One   line \n\n two\tlines "), "One line\ntwo lines");
+        assert_eq!(
+            tidy_text("  One   line \n\n two\tlines "),
+            "One line\ntwo lines"
+        );
     }
 }

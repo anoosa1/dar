@@ -2,12 +2,16 @@
 //! search, trash and isolation.
 
 use super::photos_books_apps_support::{
-    create_user, parse_iso_ms, photos_call, photos_media_fixtures, photos_raw, setup_admin_as, upload_raw, url_encode,
+    create_user, parse_iso_ms, photos_call, photos_media_fixtures, photos_raw, setup_admin_as,
+    upload_raw, url_encode,
 };
 use dar_acceptance::prelude::*;
 use std::time::Duration;
 
-pub const SUITE: Suite = Suite { name: "photos", cases: &[case!(photos_api_and_isolation, 240)] };
+pub const SUITE: Suite = Suite {
+    name: "photos",
+    cases: &[case!(photos_api_and_isolation, 240)],
+};
 
 pub async fn photos_api_and_isolation(t: &Ctx) -> Result<()> {
     let root = t.temp("dar-photos-acceptance")?;

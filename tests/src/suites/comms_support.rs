@@ -3,11 +3,11 @@
 
 #![allow(dead_code)]
 
+use axum::Router;
 use axum::extract::State as AxumState;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use base64::Engine as _;
 use dar_acceptance::prelude::*;
 use p256::ecdsa::signature::Signer as _;
@@ -26,7 +26,10 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
 }
 
 fn utc_ms(year: i32, month: u32, day: u32, hour: u32, min: u32, sec: u32) -> i64 {
@@ -93,7 +96,10 @@ struct BridgeError {
 
 impl BridgeError {
     fn new(message: impl Into<String>, code: impl Into<String>) -> Self {
-        Self { code: code.into(), message: message.into() }
+        Self {
+            code: code.into(),
+            message: message.into(),
+        }
     }
 }
 
@@ -132,7 +138,11 @@ impl BridgeState {
     }
 
     fn log(&self, entry: Value) {
-        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(self.control.join("log.jsonl")) {
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.control.join("log.jsonl"))
+        {
             let _ = writeln!(file, "{entry}");
         }
     }
@@ -173,7 +183,11 @@ impl BridgeState {
             }
             people.push(Value::Object(me_obj));
         }
-        self.emit(account, "voiceStates", json!({ "servers": { "900": { "921": people } }, "complete": true }));
+        self.emit(
+            account,
+            "voiceStates",
+            json!({ "servers": { "900": { "921": people } }, "complete": true }),
+        );
     }
 
     fn call_state(&self, account: &str) {
@@ -283,7 +297,11 @@ impl BridgeState {
             }),
         )
         .await?;
-        self.emit(account, "paired", json!({ "jid": DISCORD_ME, "name": "Anas" }));
+        self.emit(
+            account,
+            "paired",
+            json!({ "jid": DISCORD_ME, "name": "Anas" }),
+        );
         self.connected.lock().unwrap().insert(account.to_owned());
         self.discord_ready(account).await?;
         self.emit(account, "connected", json!({ "name": "Anas" }));
@@ -305,7 +323,11 @@ impl BridgeState {
             }),
         )
         .await?;
-        self.emit(account, "paired", json!({ "jid": WHATSAPP_JID, "platform": "android" }));
+        self.emit(
+            account,
+            "paired",
+            json!({ "jid": WHATSAPP_JID, "platform": "android" }),
+        );
         self.connected.lock().unwrap().insert(account.to_owned());
         self.emit(account, "connected", json!({ "pushName": "Me" }));
         let at = utc_ms(2026, 11, 16, 9, 0, 0);
@@ -350,7 +372,12 @@ impl BridgeState {
             }),
         )
         .await?;
-        let lazy = self.call("kv.get", json!({ "account": account, "keys": ["evbuf/aa", "evbuf/missing"] })).await?;
+        let lazy = self
+            .call(
+                "kv.get",
+                json!({ "account": account, "keys": ["evbuf/aa", "evbuf/missing"] }),
+            )
+            .await?;
         let values = lazy.get("values").and_then(Value::as_object);
         let ok = values.is_some_and(|v| {
             v.get("evbuf/aa").and_then(Value::as_str) == Some(b64_encode(b"buffered").as_str())
@@ -360,13 +387,28 @@ impl BridgeState {
         Ok(())
     }
 
-    async fn handle(self: &Arc<Self>, method: &str, params: Value) -> std::result::Result<Value, BridgeError> {
-        let account = params.get("account").and_then(Value::as_str).unwrap_or_default().to_owned();
+    async fn handle(
+        self: &Arc<Self>,
+        method: &str,
+        params: Value,
+    ) -> std::result::Result<Value, BridgeError> {
+        let account = params
+            .get("account")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
         match method {
             "hello" => Ok(json!({ "protocol": 1, "platforms": ["whatsapp", "discord"] })),
             "link" => {
-                let platform = params.get("platform").and_then(Value::as_str).unwrap_or("whatsapp");
-                let phone = params.get("phone").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned);
+                let platform = params
+                    .get("platform")
+                    .and_then(Value::as_str)
+                    .unwrap_or("whatsapp");
+                let phone = params
+                    .get("phone")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned);
                 self.linking.lock().unwrap().insert(account.clone());
                 if platform == "discord" {
                     self.discord.lock().unwrap().insert(account.clone());
@@ -385,7 +427,11 @@ impl BridgeState {
                 tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     let prefix: String = acc.chars().take(8).collect();
-                    state.emit(&acc, "linkCode", json!({ "code": format!("2@fakeQrCode,{prefix},abc="), "expiresIn": 20 }));
+                    state.emit(
+                        &acc,
+                        "linkCode",
+                        json!({ "code": format!("2@fakeQrCode,{prefix},abc="), "expiresIn": 20 }),
+                    );
                     if phone.is_some() {
                         state.emit(&acc, "pairingCode", json!({ "code": "K7QM2X9D" }));
                     }
@@ -393,16 +439,32 @@ impl BridgeState {
                 Ok(json!({}))
             }
             "connect" => {
-                let platform = params.get("platform").and_then(Value::as_str).unwrap_or("whatsapp").to_owned();
-                let page = self.call("kv.load", json!({ "account": account, "cursor": "" })).await?;
-                let entries = page.get("entries").and_then(Value::as_array).cloned().unwrap_or_default();
+                let platform = params
+                    .get("platform")
+                    .and_then(Value::as_str)
+                    .unwrap_or("whatsapp")
+                    .to_owned();
+                let page = self
+                    .call("kv.load", json!({ "account": account, "cursor": "" }))
+                    .await?;
+                let entries = page
+                    .get("entries")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
                 if platform == "discord" {
                     self.discord.lock().unwrap().insert(account.clone());
-                    let token = entries.iter().find(|e| e.get("key").and_then(Value::as_str) == Some("discord/token"));
+                    let token = entries
+                        .iter()
+                        .find(|e| e.get("key").and_then(Value::as_str) == Some("discord/token"));
                     let Some(token) = token else {
                         return Err(BridgeError::new("This account is not linked.", "notLinked"));
                     };
-                    let decoded = String::from_utf8_lossy(&b64_decode(token["value"].as_str().unwrap_or_default()).unwrap_or_default()).into_owned();
+                    let decoded = String::from_utf8_lossy(
+                        &b64_decode(token["value"].as_str().unwrap_or_default())
+                            .unwrap_or_default(),
+                    )
+                    .into_owned();
                     self.log(json!({ "method": "connect", "account": account, "platform": platform, "token": decoded }));
                     self.connected.lock().unwrap().insert(account.clone());
                     let state = self.clone();
@@ -415,16 +477,33 @@ impl BridgeState {
                     });
                     return Ok(json!({ "jid": DISCORD_ME }));
                 }
-                let device = entries.iter().find(|e| e.get("key").and_then(Value::as_str) == Some("device"));
+                let device = entries
+                    .iter()
+                    .find(|e| e.get("key").and_then(Value::as_str) == Some("device"));
                 let Some(device) = device else {
                     return Err(BridgeError::new("This account is not linked.", "notLinked"));
                 };
-                let decoded = String::from_utf8_lossy(&b64_decode(device["value"].as_str().unwrap_or_default()).unwrap_or_default()).into_owned();
-                let mut keys: Vec<String> = entries.iter().filter_map(|e| e.get("key").and_then(Value::as_str).map(str::to_owned)).collect();
+                let decoded = String::from_utf8_lossy(
+                    &b64_decode(device["value"].as_str().unwrap_or_default()).unwrap_or_default(),
+                )
+                .into_owned();
+                let mut keys: Vec<String> = entries
+                    .iter()
+                    .filter_map(|e| e.get("key").and_then(Value::as_str).map(str::to_owned))
+                    .collect();
                 keys.sort();
                 self.log(json!({ "method": "connect", "account": account, "device": decoded, "keys": keys }));
-                let lazy = self.call("kv.get", json!({ "account": account, "keys": ["evbuf/aa"] })).await?;
-                let ok = lazy.get("values").and_then(|v| v.get("evbuf/aa")).and_then(Value::as_str) == Some(b64_encode(b"buffered").as_str());
+                let lazy = self
+                    .call(
+                        "kv.get",
+                        json!({ "account": account, "keys": ["evbuf/aa"] }),
+                    )
+                    .await?;
+                let ok = lazy
+                    .get("values")
+                    .and_then(|v| v.get("evbuf/aa"))
+                    .and_then(Value::as_str)
+                    == Some(b64_encode(b"buffered").as_str());
                 self.log(json!({ "method": "lazyAfterRestart", "account": account, "ok": ok }));
                 self.connected.lock().unwrap().insert(account.clone());
                 let state = self.clone();
@@ -442,7 +521,10 @@ impl BridgeState {
             }
             "logout" => {
                 if !self.connected.lock().unwrap().contains(&account) {
-                    return Err(BridgeError::new("WhatsApp is not connected.", "notConnected"));
+                    return Err(BridgeError::new(
+                        "WhatsApp is not connected.",
+                        "notConnected",
+                    ));
                 }
                 self.connected.lock().unwrap().remove(&account);
                 self.log(json!({ "method": "logout", "account": account }));
@@ -450,17 +532,29 @@ impl BridgeState {
             }
             "send" => {
                 self.log_with_params("send", &params);
-                let text = params.get("text").and_then(Value::as_str).unwrap_or_default();
+                let text = params
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 let id_str = params.get("id").and_then(Value::as_str).unwrap_or_default();
-                let chat = params.get("chat").and_then(Value::as_str).unwrap_or_default();
+                let chat = params
+                    .get("chat")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 let is_discord = self.discord.lock().unwrap().contains(&account);
                 let is_connected = self.connected.lock().unwrap().contains(&account);
                 if is_discord {
                     if !is_connected {
-                        return Err(BridgeError::new("Discord is not connected.", "notConnected"));
+                        return Err(BridgeError::new(
+                            "Discord is not connected.",
+                            "notConnected",
+                        ));
                     }
                     if text.contains("fail") {
-                        return Err(BridgeError::new("Discord did not accept this.", "invalidInput"));
+                        return Err(BridgeError::new(
+                            "Discord did not accept this.",
+                            "invalidInput",
+                        ));
                     }
                     let id_num: u128 = id_str.parse().unwrap_or(0) + 7;
                     let id = id_num.to_string();
@@ -476,18 +570,32 @@ impl BridgeState {
                             "text": text,
                             "nonce": id_str,
                         });
-                        if let Some(quoted_id) = params.get("quotedId").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+                        if let Some(quoted_id) = params
+                            .get("quotedId")
+                            .and_then(Value::as_str)
+                            .filter(|s| !s.is_empty())
+                        {
                             msg["quotedId"] = json!(quoted_id);
                         }
-                        self.call("ingest", json!({ "account": account, "kind": "messages", "messages": [msg] })).await?;
+                        self.call(
+                            "ingest",
+                            json!({ "account": account, "kind": "messages", "messages": [msg] }),
+                        )
+                        .await?;
                     }
                     return Ok(json!({ "id": id, "at": now_ms() }));
                 }
                 if !is_connected {
-                    return Err(BridgeError::new("WhatsApp is not connected.", "notConnected"));
+                    return Err(BridgeError::new(
+                        "WhatsApp is not connected.",
+                        "notConnected",
+                    ));
                 }
                 if text.contains("fail") {
-                    return Err(BridgeError::new("WhatsApp did not accept the message.", "sendFailed"));
+                    return Err(BridgeError::new(
+                        "WhatsApp did not accept the message.",
+                        "sendFailed",
+                    ));
                 }
                 Ok(json!({ "id": id_str, "at": now_ms() }))
             }
@@ -526,9 +634,17 @@ impl BridgeState {
             })),
             "requestHistory" => {
                 self.log_with_params("requestHistory", &params);
-                let chat = params.get("chat").and_then(Value::as_str).unwrap_or_default().to_owned();
+                let chat = params
+                    .get("chat")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
                 if self.discord.lock().unwrap().contains(&account) {
-                    if params.get("before").and_then(Value::as_str).is_some_and(|s| !s.is_empty()) {
+                    if params
+                        .get("before")
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| !s.is_empty())
+                    {
                         let dc_at = utc_ms(2026, 11, 17, 9, 0, 0);
                         self.call(
                             "ingest",
@@ -543,7 +659,11 @@ impl BridgeState {
                         .await?;
                         return Ok(json!({ "count": 1, "more": false }));
                     }
-                    if params.get("after").and_then(Value::as_str).is_some_and(|s| !s.is_empty()) {
+                    if params
+                        .get("after")
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| !s.is_empty())
+                    {
                         return Ok(json!({ "count": 0 }));
                     }
                     return Ok(json!({ "count": 0 }));
@@ -573,17 +693,42 @@ impl BridgeState {
                 Ok(json!({}))
             }
             "voiceJoin" => {
-                let chat = params.get("chat").and_then(Value::as_str).unwrap_or_default().to_owned();
-                let muted = params.get("muted").and_then(Value::as_bool).unwrap_or(false);
-                let deafened = params.get("deafened").and_then(Value::as_bool).unwrap_or(false);
+                let chat = params
+                    .get("chat")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                let muted = params
+                    .get("muted")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let deafened = params
+                    .get("deafened")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 self.log(json!({ "method": "voiceJoin", "account": account, "chat": chat, "muted": muted, "deafened": deafened }));
                 if !self.connected.lock().unwrap().contains(&account) {
-                    return Err(BridgeError::new("Discord is not connected.", "notConnected"));
+                    return Err(BridgeError::new(
+                        "Discord is not connected.",
+                        "notConnected",
+                    ));
                 }
                 if chat != "921" {
-                    return Err(BridgeError::new("This voice channel no longer exists.", "notFound"));
+                    return Err(BridgeError::new(
+                        "This voice channel no longer exists.",
+                        "notFound",
+                    ));
                 }
-                self.calls.lock().unwrap().insert(account.clone(), VoiceCall { chat, muted, deafened, state: "connecting".into(), frames: 0 });
+                self.calls.lock().unwrap().insert(
+                    account.clone(),
+                    VoiceCall {
+                        chat,
+                        muted,
+                        deafened,
+                        state: "connecting".into(),
+                        frames: 0,
+                    },
+                );
                 self.call_state(&account);
                 let state = self.clone();
                 let acc = account.clone();
@@ -606,8 +751,14 @@ impl BridgeState {
                 Ok(json!({}))
             }
             "voiceSet" => {
-                let muted = params.get("muted").and_then(Value::as_bool).unwrap_or(false);
-                let deafened = params.get("deafened").and_then(Value::as_bool).unwrap_or(false);
+                let muted = params
+                    .get("muted")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let deafened = params
+                    .get("deafened")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 self.log(json!({ "method": "voiceSet", "account": account, "muted": muted, "deafened": deafened }));
                 {
                     let mut calls = self.calls.lock().unwrap();
@@ -631,7 +782,11 @@ impl BridgeState {
                 Ok(json!({}))
             }
             "voiceAudio" => {
-                let frames = params.get("frames").and_then(Value::as_array).cloned().unwrap_or_default();
+                let frames = params
+                    .get("frames")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
                 let mut to_log = Vec::new();
                 let mut to_emit = Vec::new();
                 {
@@ -640,7 +795,9 @@ impl BridgeState {
                         && !c.muted
                     {
                         for frame in frames {
-                            let Some(frame_str) = frame.as_str() else { continue };
+                            let Some(frame_str) = frame.as_str() else {
+                                continue;
+                            };
                             c.frames += 1;
                             if c.frames == 1 || c.frames.is_multiple_of(25) {
                                 let bytes = b64_decode(frame_str).map(|b| b.len()).unwrap_or(0);
@@ -656,7 +813,11 @@ impl BridgeState {
                     self.log(json!({ "method": "voiceAudio", "account": account, "frames": count, "bytes": bytes }));
                 }
                 for (seq, data) in to_emit {
-                    self.emit(&account, "voiceAudio", json!({ "user": "200", "seq": seq, "data": data }));
+                    self.emit(
+                        &account,
+                        "voiceAudio",
+                        json!({ "user": "200", "seq": seq, "data": data }),
+                    );
                 }
                 Ok(json!({}))
             }
@@ -668,7 +829,10 @@ impl BridgeState {
             }
             "friends" => {
                 if !self.discord.lock().unwrap().contains(&account) {
-                    return Err(BridgeError::new("This is not available for this account.", "unsupported"));
+                    return Err(BridgeError::new(
+                        "This is not available for this account.",
+                        "unsupported",
+                    ));
                 }
                 Ok(json!({
                     "friends": [
@@ -678,16 +842,27 @@ impl BridgeState {
                 }))
             }
             "openDirect" => {
-                let user = params.get("user").and_then(Value::as_str).unwrap_or_default();
+                let user = params
+                    .get("user")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 self.log(json!({ "method": "openDirect", "account": account, "user": user }));
                 self.call("ingest", json!({ "account": account, "kind": "chats", "chats": [{ "id": "7300", "kind": "direct", "name": "tarek" }] })).await?;
                 Ok(json!({ "chat": "7300" }))
             }
             "download" => {
-                let chat = params.get("chat").and_then(Value::as_str).unwrap_or_default();
+                let chat = params
+                    .get("chat")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 let id = params.get("id").and_then(Value::as_str).unwrap_or_default();
-                let file = params.get("path").and_then(Value::as_str).unwrap_or_default();
-                self.log(json!({ "method": "download", "account": account, "chat": chat, "id": id }));
+                let file = params
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                self.log(
+                    json!({ "method": "download", "account": account, "chat": chat, "id": id }),
+                );
                 let write_wx = |path: &str, bytes: &[u8]| -> std::result::Result<(), BridgeError> {
                     use std::os::unix::fs::OpenOptionsExt;
                     let mut f = std::fs::OpenOptions::new()
@@ -696,40 +871,62 @@ impl BridgeState {
                         .mode(0o600)
                         .open(path)
                         .map_err(|e| BridgeError::new(e.to_string(), "bridgeError"))?;
-                    f.write_all(bytes).map_err(|e| BridgeError::new(e.to_string(), "bridgeError"))
+                    f.write_all(bytes)
+                        .map_err(|e| BridgeError::new(e.to_string(), "bridgeError"))
                 };
                 if self.discord.lock().unwrap().contains(&account) {
                     if id != "1300000000000000013" {
-                        return Err(BridgeError::new("This attachment cannot be downloaded.", "noMedia"));
+                        return Err(BridgeError::new(
+                            "This attachment cannot be downloaded.",
+                            "noMedia",
+                        ));
                     }
                     write_wx(file, &self.png)?;
                     return Ok(json!({ "size": self.png.len() }));
                 }
                 if !self.connected.lock().unwrap().contains(&account) {
-                    return Err(BridgeError::new("WhatsApp is not connected.", "notConnected"));
+                    return Err(BridgeError::new(
+                        "WhatsApp is not connected.",
+                        "notConnected",
+                    ));
                 }
                 let file_path = Path::new(file);
                 let downloads_dir = std::env::var("DAR_CHAT_DOWNLOADS").unwrap_or_default();
                 let base_re = regex::Regex::new(r"^[0-9a-f-]{36}\.part$").unwrap();
-                let dir_ok = file_path.parent().and_then(Path::to_str) == Some(downloads_dir.as_str());
-                let name_ok = file_path.file_name().and_then(|n| n.to_str()).is_some_and(|n| base_re.is_match(n));
+                let dir_ok =
+                    file_path.parent().and_then(Path::to_str) == Some(downloads_dir.as_str());
+                let name_ok = file_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| base_re.is_match(n));
                 if !dir_ok || !name_ok {
                     return Err(BridgeError::new("bad path", "invalidInput"));
                 }
                 if id == "EXP1" && !self.resent.lock().unwrap().contains(id) {
-                    return Err(BridgeError::new("WhatsApp no longer has this file; your phone was asked to send it again.", "retrying"));
+                    return Err(BridgeError::new(
+                        "WhatsApp no longer has this file; your phone was asked to send it again.",
+                        "retrying",
+                    ));
                 }
                 let bytes: &[u8] = match id {
                     "H3" | "EXP1" => &self.png,
                     "V1" => b"OggS fake voice note",
                     "D1" => b"%PDF-1.4 fake menu",
                     "X1" => b"<script>alert(1)</script>",
-                    _ => return Err(BridgeError::new("This attachment cannot be downloaded.", "noMedia")),
+                    _ => {
+                        return Err(BridgeError::new(
+                            "This attachment cannot be downloaded.",
+                            "noMedia",
+                        ));
+                    }
                 };
                 write_wx(file, bytes)?;
                 Ok(json!({ "size": bytes.len() }))
             }
-            _ => Err(BridgeError::new(format!("unknown method {method}"), "bridgeError")),
+            _ => Err(BridgeError::new(
+                format!("unknown method {method}"),
+                "bridgeError",
+            )),
         }
     }
 
@@ -807,7 +1004,11 @@ pub fn chat_bridge_fixture(_args: &[String]) -> ExitCode {
     if !control.exists() {
         return ExitCode::FAILURE;
     }
-    let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("bridge runtime");
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("bridge runtime");
     runtime.block_on(async move {
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
         let writer_task = tokio::task::spawn_blocking(move || {
@@ -919,10 +1120,18 @@ pub fn read_bridge_log(control: &Path) -> Vec<Value> {
     let Ok(text) = std::fs::read_to_string(control.join("log.jsonl")) else {
         return Vec::new();
     };
-    text.lines().filter(|l| !l.trim().is_empty()).filter_map(|l| serde_json::from_str(l).ok()).collect()
+    text.lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect()
 }
 
-pub fn write_control(control: &Path, account_id: &str, action: &str, data: Option<&Value>) -> Result<()> {
+pub fn write_control(
+    control: &Path,
+    account_id: &str,
+    action: &str,
+    data: Option<&Value>,
+) -> Result<()> {
     let name = match data {
         Some(_) => format!("{account_id}.{action}.json"),
         None => format!("{account_id}.{action}"),
@@ -935,7 +1144,12 @@ pub fn write_control(control: &Path, account_id: &str, action: &str, data: Optio
     Ok(())
 }
 
-pub async fn until<T, F, Fut>(timeout: Duration, what: &str, mut read: F, mut ok: impl FnMut(&T) -> bool) -> Result<T>
+pub async fn until<T, F, Fut>(
+    timeout: Duration,
+    what: &str,
+    mut read: F,
+    mut ok: impl FnMut(&T) -> bool,
+) -> Result<T>
 where
     T: std::fmt::Debug,
     F: FnMut() -> Fut,
@@ -1078,7 +1292,12 @@ impl WsClient {
                 }
             }
         });
-        Ok(Self { writer: tokio::sync::Mutex::new(write_half), texts, audio, reader_task })
+        Ok(Self {
+            writer: tokio::sync::Mutex::new(write_half),
+            texts,
+            audio,
+            reader_task,
+        })
     }
 
     async fn send_frame(&self, opcode: u8, payload: &[u8]) -> Result<()> {
@@ -1114,7 +1333,13 @@ impl WsClient {
     }
 
     pub fn last(&self, msg_type: &str) -> Option<Value> {
-        self.texts.lock().unwrap().iter().rev().find(|v| v.get("type").and_then(Value::as_str) == Some(msg_type)).cloned()
+        self.texts
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|v| v.get("type").and_then(Value::as_str) == Some(msg_type))
+            .cloned()
     }
 
     pub async fn close(self) {
@@ -1164,7 +1389,11 @@ impl FeedServer {
                 })
                 .await;
         });
-        Ok(Self { site, state, shutdown: Some(tx) })
+        Ok(Self {
+            site,
+            state,
+            shutdown: Some(tx),
+        })
     }
 
     pub fn close(mut self) {
@@ -1183,7 +1412,10 @@ impl Drop for FeedServer {
 }
 
 fn req_base(headers: &HeaderMap) -> String {
-    let host = headers.get("host").and_then(|v| v.to_str().ok()).unwrap_or("127.0.0.1");
+    let host = headers
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("127.0.0.1");
     format!("http://{host}")
 }
 
@@ -1197,7 +1429,10 @@ async fn feed_index(AxumState(state): AxumState<Arc<Mutex<FeedState>>>) -> Respo
         .into_response()
 }
 
-async fn feed_rss(AxumState(state): AxumState<Arc<Mutex<FeedState>>>, headers: HeaderMap) -> Response {
+async fn feed_rss(
+    AxumState(state): AxumState<Arc<Mutex<FeedState>>>,
+    headers: HeaderMap,
+) -> Response {
     let base = req_base(&headers);
     let (failing, extra) = {
         let mut s = state.lock().unwrap();
@@ -1211,7 +1446,8 @@ async fn feed_rss(AxumState(state): AxumState<Arc<Mutex<FeedState>>>, headers: H
     if headers.get("if-none-match").and_then(|v| v.to_str().ok()) == Some(etag) {
         state.lock().unwrap().conditional += 1;
         let mut resp = StatusCode::NOT_MODIFIED.into_response();
-        resp.headers_mut().insert("etag", HeaderValue::from_str(etag).unwrap());
+        resp.headers_mut()
+            .insert("etag", HeaderValue::from_str(etag).unwrap());
         return resp;
     }
     let extra_item = if extra {
@@ -1227,16 +1463,29 @@ async fn feed_rss(AxumState(state): AxumState<Arc<Mutex<FeedState>>>, headers: H
     <item><title>Episode one</title><link>{base}/posts/2</link><guid>post-2</guid><pubDate>Tue, 10 Nov 2026 08:00:00 GMT</pubDate><description>Listen</description><enclosure url="https://media.example/ep1.mp3" type="audio/mpeg" length="1"/></item>
     {extra_item}</channel></rss>"#
     );
-    (StatusCode::OK, [("content-type", "application/rss+xml"), ("etag", etag)], body).into_response()
+    (
+        StatusCode::OK,
+        [("content-type", "application/rss+xml"), ("etag", etag)],
+        body,
+    )
+        .into_response()
 }
 
-async fn feed_atom(AxumState(state): AxumState<Arc<Mutex<FeedState>>>, headers: HeaderMap) -> Response {
+async fn feed_atom(
+    AxumState(state): AxumState<Arc<Mutex<FeedState>>>,
+    headers: HeaderMap,
+) -> Response {
     state.lock().unwrap().requests += 1;
     let base = req_base(&headers);
     let body = format!(
         r#"<feed xmlns="http://www.w3.org/2005/Atom"><title>Atom Blog</title><link href="{base}/blog"/><entry><id>tag:blog,1</id><title>Long read</title><link href="{base}/article"/><updated>2026-11-08T09:00:00Z</updated><summary>Only a teaser</summary></entry></feed>"#
     );
-    (StatusCode::OK, [("content-type", "application/atom+xml")], body).into_response()
+    (
+        StatusCode::OK,
+        [("content-type", "application/atom+xml")],
+        body,
+    )
+        .into_response()
 }
 
 async fn feed_article(AxumState(state): AxumState<Arc<Mutex<FeedState>>>) -> Response {
@@ -1245,19 +1494,34 @@ async fn feed_article(AxumState(state): AxumState<Arc<Mutex<FeedState>>>) -> Res
     let paras: String = (0..6)
         .map(|i| format!("<p>Full article paragraph {i} with enough words to be counted as real content by the extractor.</p>"))
         .collect();
-    let body = format!("<html><body><nav>{nav}</nav><article><h1>Long read</h1>{paras}</article></body></html>");
-    (StatusCode::OK, [("content-type", "text/html; charset=utf-8")], body).into_response()
+    let body = format!(
+        "<html><body><nav>{nav}</nav><article><h1>Long read</h1>{paras}</article></body></html>"
+    );
+    (
+        StatusCode::OK,
+        [("content-type", "text/html; charset=utf-8")],
+        body,
+    )
+        .into_response()
 }
 
 async fn feed_pixel(AxumState(state): AxumState<Arc<Mutex<FeedState>>>) -> Response {
     state.lock().unwrap().requests += 1;
-    let bytes: &[u8] = &[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52];
+    let bytes: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52,
+    ];
     (StatusCode::OK, [("content-type", "image/png")], bytes).into_response()
 }
 
 async fn feed_svg(AxumState(state): AxumState<Arc<Mutex<FeedState>>>) -> Response {
     state.lock().unwrap().requests += 1;
-    (StatusCode::OK, [("content-type", "image/svg+xml")], "<svg onload='x()'/>").into_response()
+    (
+        StatusCode::OK,
+        [("content-type", "image/svg+xml")],
+        "<svg onload='x()'/>",
+    )
+        .into_response()
 }
 
 async fn feed_not_found(AxumState(state): AxumState<Arc<Mutex<FeedState>>>) -> Response {
@@ -1384,7 +1648,13 @@ fn p256_pkcs8_der(key: &p256::ecdsa::SigningKey) -> Vec<u8> {
     der_seq(&[&version, &alg, &ec_priv_oct])
 }
 
-fn make_cert_der(subject: &str, issuer: &str, pub_spki: &[u8], signer: &p256::ecdsa::SigningKey, is_ca: bool) -> Vec<u8> {
+fn make_cert_der(
+    subject: &str,
+    issuer: &str,
+    pub_spki: &[u8],
+    signer: &p256::ecdsa::SigningKey,
+    is_ca: bool,
+) -> Vec<u8> {
     let ecdsa_sha256_oid = der_oid("1.2.840.10045.4.3.2");
     let ecdsa_alg = der_seq(&[&ecdsa_sha256_oid]);
     let now = chrono::Utc::now();
@@ -1395,7 +1665,10 @@ fn make_cert_der(subject: &str, issuer: &str, pub_spki: &[u8], signer: &p256::ec
         let bc_true = der_tlv(0x01, &[&[0xff]]);
         let bc = der_seq(&[&bc_true]);
         let ku = der_tlv(0x03, &[&[1, 0x06]]);
-        vec![der_ext("2.5.29.19", true, &bc), der_ext("2.5.29.15", true, &ku)]
+        vec![
+            der_ext("2.5.29.19", true, &bc),
+            der_ext("2.5.29.15", true, &ku),
+        ]
     } else {
         let san_dns = der_tlv(0x82, &[b"localhost"]);
         let san_ip = der_tlv(0x87, &[&[127, 0, 0, 1]]);
@@ -1403,7 +1676,11 @@ fn make_cert_der(subject: &str, issuer: &str, pub_spki: &[u8], signer: &p256::ec
         let ku = der_tlv(0x03, &[&[7, 0x80]]);
         let server_auth = der_oid("1.3.6.1.5.5.7.3.1");
         let eku = der_seq(&[&server_auth]);
-        vec![der_ext("2.5.29.17", false, &san), der_ext("2.5.29.15", true, &ku), der_ext("2.5.29.37", false, &eku)]
+        vec![
+            der_ext("2.5.29.17", false, &san),
+            der_ext("2.5.29.15", true, &ku),
+            der_ext("2.5.29.37", false, &eku),
+        ]
     };
     let ext_refs: Vec<&[u8]> = extensions.iter().map(Vec::as_slice).collect();
     let exts_seq = der_seq(&ext_refs);
@@ -1418,7 +1695,16 @@ fn make_cert_der(subject: &str, issuer: &str, pub_spki: &[u8], signer: &p256::ec
     let serial_der = der_int(&serial);
     let issuer_der = der_name(issuer);
     let subject_der = der_name(subject);
-    let tbs = der_seq(&[&v3, &serial_der, &ecdsa_alg, &issuer_der, &validity, &subject_der, pub_spki, &exts_ctx]);
+    let tbs = der_seq(&[
+        &v3,
+        &serial_der,
+        &ecdsa_alg,
+        &issuer_der,
+        &validity,
+        &subject_der,
+        pub_spki,
+        &exts_ctx,
+    ]);
     let sig: p256::ecdsa::DerSignature = signer.sign(&tbs);
     let sig_bits = der_bit_string(sig.as_bytes());
     der_seq(&[&tbs, &ecdsa_alg, &sig_bits])
@@ -1445,17 +1731,37 @@ pub struct MailCerts {
 pub fn make_certificates(dir: &Path) -> Result<MailCerts> {
     let ca_key = gen_p256_key();
     let leaf_key = gen_p256_key();
-    let ca_der = make_cert_der("Dar test mail CA", "Dar test mail CA", &p256_spki_der(&ca_key), &ca_key, true);
-    let leaf_der = make_cert_der("localhost", "Dar test mail CA", &p256_spki_der(&leaf_key), &ca_key, false);
+    let ca_der = make_cert_der(
+        "Dar test mail CA",
+        "Dar test mail CA",
+        &p256_spki_der(&ca_key),
+        &ca_key,
+        true,
+    );
+    let leaf_der = make_cert_der(
+        "localhost",
+        "Dar test mail CA",
+        &p256_spki_der(&leaf_key),
+        &ca_key,
+        false,
+    );
     let leaf_key_der = p256_pkcs8_der(&leaf_key);
     let ca_file = dir.join("mail-ca.pem");
     std::fs::write(&ca_file, to_pem("CERTIFICATE", &ca_der))?;
-    Ok(MailCerts { ca_file, ca_der, leaf_der, leaf_key_der })
+    Ok(MailCerts {
+        ca_file,
+        ca_der,
+        leaf_der,
+        leaf_key_der,
+    })
 }
 
 fn tls_server_config(certs: &MailCerts) -> Arc<rustls::ServerConfig> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let chain = vec![CertificateDer::from(certs.leaf_der.clone()), CertificateDer::from(certs.ca_der.clone())];
+    let chain = vec![
+        CertificateDer::from(certs.leaf_der.clone()),
+        CertificateDer::from(certs.ca_der.clone()),
+    ];
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(certs.leaf_key_der.clone()));
     Arc::new(
         rustls::ServerConfig::builder_with_provider(provider)
@@ -1478,7 +1784,9 @@ pub async fn https_get_location(url: &str, ca_der: &[u8]) -> Result<String> {
         path.push_str(q);
     }
     let mut roots = rustls::RootCertStore::empty();
-    roots.add(CertificateDer::from(ca_der.to_vec())).map_err(|e| Error::new(format!("CA cert: {e}")))?;
+    roots
+        .add(CertificateDer::from(ca_der.to_vec()))
+        .map_err(|e| Error::new(format!("CA cert: {e}")))?;
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let config = Arc::new(
         rustls::ClientConfig::builder_with_provider(provider)
@@ -1489,7 +1797,8 @@ pub async fn https_get_location(url: &str, ca_der: &[u8]) -> Result<String> {
     );
     let connector = TlsConnector::from(config);
     let tcp = TcpStream::connect((host, port)).await?;
-    let server_name = ServerName::try_from(host.to_owned()).map_err(|e| Error::new(format!("server name: {e}")))?;
+    let server_name = ServerName::try_from(host.to_owned())
+        .map_err(|e| Error::new(format!("server name: {e}")))?;
     let mut tls = connector.connect(server_name, tcp).await?;
     let req = format!("GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n");
     tls.write_all(req.as_bytes()).await?;
@@ -1536,7 +1845,9 @@ impl Default for MailMessageSpec<'_> {
             cc: None,
             subject: "",
             body: "Hello",
-            date: chrono::DateTime::parse_from_rfc3339("2026-11-20T10:24:00Z").unwrap().with_timezone(&chrono::Utc),
+            date: chrono::DateTime::parse_from_rfc3339("2026-11-20T10:24:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
             id: None,
             html: None,
             attachment: None,
@@ -1549,10 +1860,7 @@ pub fn build_mail_message(spec: MailMessageSpec<'_>) -> Vec<u8> {
     let generated_mid = format!("{}@example.test", dar_acceptance::random_hex(6));
     let mid = spec.id.unwrap_or(&generated_mid);
     let date_rfc2822 = spec.date.format("%a, %d %b %Y %H:%M:%S +0000").to_string();
-    let mut head = vec![
-        format!("From: {}", spec.from),
-        format!("To: {}", spec.to),
-    ];
+    let mut head = vec![format!("From: {}", spec.from), format!("To: {}", spec.to)];
     if let Some(cc) = spec.cc {
         head.push(format!("Cc: {cc}"));
     }
@@ -1562,7 +1870,10 @@ pub fn build_mail_message(spec: MailMessageSpec<'_>) -> Vec<u8> {
     if !spec.references.is_empty() {
         let refs: Vec<String> = spec.references.iter().map(|r| format!("<{r}>")).collect();
         head.push(format!("References: {}", refs.join(" ")));
-        head.push(format!("In-Reply-To: <{}>", spec.references.last().unwrap()));
+        head.push(format!(
+            "In-Reply-To: <{}>",
+            spec.references.last().unwrap()
+        ));
     }
     head.push("MIME-Version: 1.0".into());
     if spec.html.is_none() && spec.attachment.is_none() {
@@ -1573,9 +1884,15 @@ pub fn build_mail_message(spec: MailMessageSpec<'_>) -> Vec<u8> {
         return head.join("\r\n").into_bytes();
     }
     let mut parts = Vec::new();
-    let first_ct = if spec.html.is_some() { "text/html" } else { "text/plain" };
+    let first_ct = if spec.html.is_some() {
+        "text/html"
+    } else {
+        "text/plain"
+    };
     let first_body = spec.html.unwrap_or(spec.body);
-    parts.push(format!("--b1\r\nContent-Type: {first_ct}; charset=utf-8\r\n\r\n{first_body}\r\n"));
+    parts.push(format!(
+        "--b1\r\nContent-Type: {first_ct}; charset=utf-8\r\n\r\n{first_body}\r\n"
+    ));
     if let Some(att) = spec.attachment {
         parts.push(format!(
             "--b1\r\nContent-Type: {}; name=\"{}\"\r\nContent-Disposition: attachment; filename=\"{}\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{}\r\n",
@@ -1618,7 +1935,12 @@ pub struct MailStore {
 
 impl MailStore {
     fn new() -> Self {
-        let mut s = Self { boxes: BTreeMap::new(), box_order: Vec::new(), validity: 1000, jmap_ids: 0 };
+        let mut s = Self {
+            boxes: BTreeMap::new(),
+            box_order: Vec::new(),
+            validity: 1000,
+            jmap_ids: 0,
+        };
         s.add("INBOX", "");
         s.add("Sent", "\\Sent");
         s.add("Drafts", "\\Drafts");
@@ -1652,7 +1974,12 @@ impl MailStore {
         let b = self.boxes.get_mut(box_name).expect("mailbox exists");
         let uid = b.next;
         b.next += 1;
-        let msg = ImapMessage { uid, flags: flags.iter().map(|s| (*s).to_owned()).collect(), data, id };
+        let msg = ImapMessage {
+            uid,
+            flags: flags.iter().map(|s| (*s).to_owned()).collect(),
+            data,
+            id,
+        };
         b.messages.push(msg.clone());
         msg
     }
@@ -1684,7 +2011,11 @@ impl MailStore {
 
     pub fn remove_by_text(&mut self, needle: &str) -> bool {
         for b in self.boxes.values_mut() {
-            if let Some(pos) = b.messages.iter().position(|m| String::from_utf8_lossy(&m.data).contains(needle)) {
+            if let Some(pos) = b
+                .messages
+                .iter()
+                .position(|m| String::from_utf8_lossy(&m.data).contains(needle))
+            {
                 b.messages.remove(pos);
                 return true;
             }
@@ -1809,8 +2140,21 @@ impl MailState {
         users.insert("anas@example.test".into(), "imap secret password".into());
         users.insert("oauth@example.test".into(), "unused".into());
         let mut mailboxes = BTreeMap::new();
-        for (id, name, role) in [("mi", "Inbox", "inbox"), ("ms", "Sent", "sent"), ("mt", "Trash", "trash"), ("ma", "Archive", "archive")] {
-            mailboxes.insert(id.into(), JmapMailbox { id: id.into(), name: name.into(), role: Some(role.into()), parent_id: None });
+        for (id, name, role) in [
+            ("mi", "Inbox", "inbox"),
+            ("ms", "Sent", "sent"),
+            ("mt", "Trash", "trash"),
+            ("ma", "Archive", "archive"),
+        ] {
+            mailboxes.insert(
+                id.into(),
+                JmapMailbox {
+                    id: id.into(),
+                    name: name.into(),
+                    role: Some(role.into()),
+                    parent_id: None,
+                },
+            );
         }
         Self {
             users,
@@ -1957,7 +2301,11 @@ fn imap_uid_set(text: &str, all: &[u32]) -> Vec<u32> {
         let mut sp = part.splitn(2, ':');
         let a = sp.next().unwrap_or_default();
         let b = sp.next();
-        let lo = if a == "*" { max } else { a.parse().unwrap_or(0) };
+        let lo = if a == "*" {
+            max
+        } else {
+            a.parse().unwrap_or(0)
+        };
         let hi = match b {
             None => lo,
             Some("*") => max,
@@ -2044,11 +2392,15 @@ fn imap_authenticate(state: &MailState, mechanism: &str, data: &str) -> Option<S
     }
 }
 
-async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Arc<Mutex<MailState>>) -> Result<()> {
+async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(
+    mut stream: S,
+    state: Arc<Mutex<MailState>>,
+) -> Result<()> {
     state.lock().unwrap().imap_connections += 1;
     stream.write_all(b"* OK Dar fake IMAP ready\r\n").await?;
     stream.flush().await?;
-    let caps = "CAPABILITY IMAP4rev1 AUTH=PLAIN AUTH=XOAUTH2 SASL-IR MOVE UIDPLUS LITERAL+ SPECIAL-USE";
+    let caps =
+        "CAPABILITY IMAP4rev1 AUTH=PLAIN AUTH=XOAUTH2 SASL-IR MOVE UIDPLUS LITERAL+ SPECIAL-USE";
     let literal_re = regex::Regex::new(r"\{(\d+)(\+?)\}$").unwrap();
     let mut buf: Vec<u8> = Vec::new();
     let mut user: Option<String> = None;
@@ -2140,7 +2492,10 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                     }
                 }
                 "AUTHENTICATE" => {
-                    let mech = args.first().map(|s| s.to_ascii_uppercase()).unwrap_or_default();
+                    let mech = args
+                        .first()
+                        .map(|s| s.to_ascii_uppercase())
+                        .unwrap_or_default();
                     let data = args.get(1).map(String::as_str).unwrap_or_default();
                     if let Some(u) = imap_authenticate(&st, &mech, data) {
                         user = Some(u);
@@ -2156,15 +2511,29 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                     } else {
                         let all_names: Vec<String> = st.mail.box_order.clone();
                         for name in &all_names {
-                            let Some(b) = st.mail.boxes.get(name) else { continue };
+                            let Some(b) = st.mail.boxes.get(name) else {
+                                continue;
+                            };
                             let prefix = format!("{}/", b.name);
-                            let has_children = b.name.contains('/') || all_names.iter().any(|k| k.starts_with(&prefix));
+                            let has_children = b.name.contains('/')
+                                || all_names.iter().any(|k| k.starts_with(&prefix));
                             let mut attrs = Vec::new();
                             if !b.special.is_empty() {
                                 attrs.push(b.special.as_str());
                             }
-                            attrs.push(if has_children { "\\HasChildren" } else { "\\HasNoChildren" });
-                            out.extend_from_slice(format!("* LIST ({}) \"/\" {}\r\n", attrs.join(" "), imap_string(&b.name)).as_bytes());
+                            attrs.push(if has_children {
+                                "\\HasChildren"
+                            } else {
+                                "\\HasNoChildren"
+                            });
+                            out.extend_from_slice(
+                                format!(
+                                    "* LIST ({}) \"/\" {}\r\n",
+                                    attrs.join(" "),
+                                    imap_string(&b.name)
+                                )
+                                .as_bytes(),
+                            );
                         }
                     }
                     ok(&mut out, "done", "");
@@ -2216,7 +2585,12 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                         let flags: Vec<String> = args
                             .get(1)
                             .filter(|s| s.starts_with('(') && s.ends_with(')'))
-                            .map(|s| s[1..s.len() - 1].split_whitespace().map(str::to_owned).collect())
+                            .map(|s| {
+                                s[1..s.len() - 1]
+                                    .split_whitespace()
+                                    .map(str::to_owned)
+                                    .collect()
+                            })
                             .unwrap_or_default();
                         let lit = literal.unwrap_or_default();
                         let flag_refs: Vec<&str> = flags.iter().map(String::as_str).collect();
@@ -2227,7 +2601,11 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                             flags,
                             data: String::from_utf8_lossy(&lit).into_owned(),
                         });
-                        ok(&mut out, "appended", &format!("APPENDUID {validity} {}", m.uid));
+                        ok(
+                            &mut out,
+                            "appended",
+                            &format!("APPENDUID {validity} {}", m.uid),
+                        );
                     }
                 }
                 _ if selected.is_none() => no(&mut out, "Select a mailbox first"),
@@ -2235,20 +2613,42 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                     let sel = selected.as_ref().unwrap();
                     if let Some(b) = st.mail.boxes.get(sel) {
                         let all: Vec<u32> = b.messages.iter().map(|m| m.uid).collect();
-                        let uids = imap_uid_set(args.first().map(String::as_str).unwrap_or_default(), &all);
-                        let what = args.get(1..).unwrap_or_default().join(" ").to_ascii_uppercase();
+                        let uids = imap_uid_set(
+                            args.first().map(String::as_str).unwrap_or_default(),
+                            &all,
+                        );
+                        let what = args
+                            .get(1..)
+                            .unwrap_or_default()
+                            .join(" ")
+                            .to_ascii_uppercase();
                         for (n, m) in b.messages.iter().enumerate() {
                             if !uids.contains(&m.uid) {
                                 continue;
                             }
                             if what.contains("BODY.PEEK[]") {
-                                out.extend_from_slice(format!("* {} FETCH (UID {} BODY[] {{{}}}\r\n", n + 1, m.uid, m.data.len()).as_bytes());
+                                out.extend_from_slice(
+                                    format!(
+                                        "* {} FETCH (UID {} BODY[] {{{}}}\r\n",
+                                        n + 1,
+                                        m.uid,
+                                        m.data.len()
+                                    )
+                                    .as_bytes(),
+                                );
                                 out.extend_from_slice(&m.data);
                                 out.extend_from_slice(b")\r\n");
                             } else {
                                 let flags: Vec<&str> = m.flags.iter().map(String::as_str).collect();
                                 out.extend_from_slice(
-                                    format!("* {} FETCH (UID {} FLAGS ({}) RFC822.SIZE {})\r\n", n + 1, m.uid, flags.join(" "), m.data.len()).as_bytes(),
+                                    format!(
+                                        "* {} FETCH (UID {} FLAGS ({}) RFC822.SIZE {})\r\n",
+                                        n + 1,
+                                        m.uid,
+                                        flags.join(" "),
+                                        m.data.len()
+                                    )
+                                    .as_bytes(),
                                 );
                             }
                         }
@@ -2259,10 +2659,20 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                     let sel = selected.as_ref().unwrap();
                     if let Some(b) = st.mail.boxes.get_mut(sel) {
                         let all: Vec<u32> = b.messages.iter().map(|m| m.uid).collect();
-                        let uids = imap_uid_set(args.first().map(String::as_str).unwrap_or_default(), &all);
-                        let op = args.get(1).map(|s| s.to_ascii_uppercase()).unwrap_or_default();
+                        let uids = imap_uid_set(
+                            args.first().map(String::as_str).unwrap_or_default(),
+                            &all,
+                        );
+                        let op = args
+                            .get(1)
+                            .map(|s| s.to_ascii_uppercase())
+                            .unwrap_or_default();
                         let flags_arg = args.get(2).map(String::as_str).unwrap_or("()");
-                        let flags: Vec<String> = flags_arg.trim_matches(['(', ')']).split_whitespace().map(str::to_owned).collect();
+                        let flags: Vec<String> = flags_arg
+                            .trim_matches(['(', ')'])
+                            .split_whitespace()
+                            .map(str::to_owned)
+                            .collect();
                         for m in &mut b.messages {
                             if uids.contains(&m.uid) {
                                 for f in &flags {
@@ -2283,9 +2693,18 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                     if !st.mail.boxes.contains_key(&target) {
                         no(&mut out, "[TRYCREATE] No such mailbox");
                     } else {
-                        let all: Vec<u32> = st.mail.boxes[&sel].messages.iter().map(|m| m.uid).collect();
-                        let uids = imap_uid_set(args.first().map(String::as_str).unwrap_or_default(), &all);
-                        let to_copy: Vec<ImapMessage> = st.mail.boxes[&sel].messages.iter().filter(|m| uids.contains(&m.uid)).cloned().collect();
+                        let all: Vec<u32> =
+                            st.mail.boxes[&sel].messages.iter().map(|m| m.uid).collect();
+                        let uids = imap_uid_set(
+                            args.first().map(String::as_str).unwrap_or_default(),
+                            &all,
+                        );
+                        let to_copy: Vec<ImapMessage> = st.mail.boxes[&sel]
+                            .messages
+                            .iter()
+                            .filter(|m| uids.contains(&m.uid))
+                            .cloned()
+                            .collect();
                         let mut from_uids = Vec::new();
                         let mut to_uids = Vec::new();
                         for m in to_copy {
@@ -2302,7 +2721,11 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                         }
                         let validity = st.mail.boxes[&target].validity;
                         st.moves.push((sel, target, from_uids.len()));
-                        let copyuid = format!("COPYUID {validity} {} {}", from_uids.join(","), to_uids.join(","));
+                        let copyuid = format!(
+                            "COPYUID {validity} {} {}",
+                            from_uids.join(","),
+                            to_uids.join(",")
+                        );
                         if command == "UID MOVE" {
                             out.extend_from_slice(format!("* OK [{copyuid}] moved\r\n").as_bytes());
                             ok(&mut out, "done", "");
@@ -2321,7 +2744,8 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                             all
                         };
                         let before = b.messages.len();
-                        b.messages.retain(|m| !(uids.contains(&m.uid) && m.flags.contains("\\Deleted")));
+                        b.messages
+                            .retain(|m| !(uids.contains(&m.uid) && m.flags.contains("\\Deleted")));
                         before - b.messages.len()
                     } else {
                         0
@@ -2330,7 +2754,9 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                     ok(&mut out, "done", "");
                 }
                 _ => {
-                    out.extend_from_slice(format!("{tag} BAD Unknown command {command}\r\n").as_bytes());
+                    out.extend_from_slice(
+                        format!("{tag} BAD Unknown command {command}\r\n").as_bytes(),
+                    );
                 }
             }
             (out, close)
@@ -2345,7 +2771,10 @@ async fn handle_imap<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
 
 // ---------- SMTP protocol handler ----------
 
-async fn handle_smtp<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Arc<Mutex<MailState>>) -> Result<()> {
+async fn handle_smtp<S: AsyncRead + AsyncWrite + Unpin>(
+    mut stream: S,
+    state: Arc<Mutex<MailState>>,
+) -> Result<()> {
     stream.write_all(b"220 Dar fake SMTP\r\n").await?;
     stream.flush().await?;
     let mut buf: Vec<u8> = Vec::new();
@@ -2379,11 +2808,22 @@ async fn handle_smtp<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
             buf.drain(..crlf + 2);
             let upper = line.to_ascii_uppercase();
             if upper.starts_with("EHLO") {
-                stream.write_all(b"250-fake\r\n250-AUTH PLAIN LOGIN XOAUTH2\r\n250 8BITMIME\r\n").await?;
+                stream
+                    .write_all(b"250-fake\r\n250-AUTH PLAIN LOGIN XOAUTH2\r\n250 8BITMIME\r\n")
+                    .await?;
             } else if upper.starts_with("AUTH PLAIN ") {
-                let decoded = b64_decode(&line[11..]).ok().and_then(|b| String::from_utf8(b).ok()).unwrap_or_default();
+                let decoded = b64_decode(&line[11..])
+                    .ok()
+                    .and_then(|b| String::from_utf8(b).ok())
+                    .unwrap_or_default();
                 let parts: Vec<&str> = decoded.split('\0').collect();
-                let ok = parts.len() >= 3 && state.lock().unwrap().users.get(parts[1]).is_some_and(|p| p == parts[2]);
+                let ok = parts.len() >= 3
+                    && state
+                        .lock()
+                        .unwrap()
+                        .users
+                        .get(parts[1])
+                        .is_some_and(|p| p == parts[2]);
                 if ok {
                     user = Some(parts[1].to_owned());
                     stream.write_all(b"235 ok\r\n").await?;
@@ -2391,10 +2831,20 @@ async fn handle_smtp<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
                     stream.write_all(b"535 bad credentials\r\n").await?;
                 }
             } else if upper.starts_with("AUTH XOAUTH2 ") {
-                let decoded = b64_decode(&line[13..]).ok().and_then(|b| String::from_utf8(b).ok()).unwrap_or_default();
+                let decoded = b64_decode(&line[13..])
+                    .ok()
+                    .and_then(|b| String::from_utf8(b).ok())
+                    .unwrap_or_default();
                 let authed = xoauth_re.captures(&decoded).and_then(|c| {
                     let (u, tok) = (c[1].to_owned(), c[2].to_owned());
-                    if state.lock().unwrap().oauth.access.get(&tok).is_some_and(|owner| owner == &u) {
+                    if state
+                        .lock()
+                        .unwrap()
+                        .oauth
+                        .access
+                        .get(&tok)
+                        .is_some_and(|owner| owner == &u)
+                    {
                         Some(u)
                     } else {
                         None
@@ -2441,7 +2891,10 @@ async fn handle_smtp<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Ar
 
 // ---------- HTTPS OAuth2 + JMAP protocol handler ----------
 
-async fn read_http_request<S: AsyncRead + Unpin>(stream: &mut S, buf: &mut Vec<u8>) -> Result<Option<(String, String, HashMap<String, String>, Vec<u8>)>> {
+async fn read_http_request<S: AsyncRead + Unpin>(
+    stream: &mut S,
+    buf: &mut Vec<u8>,
+) -> Result<Option<(String, String, HashMap<String, String>, Vec<u8>)>> {
     let mut tmp = [0u8; 4096];
     let header_end = loop {
         if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
@@ -2466,7 +2919,10 @@ async fn read_http_request<S: AsyncRead + Unpin>(stream: &mut S, buf: &mut Vec<u
             headers.insert(k.trim().to_ascii_lowercase(), v.trim().to_owned());
         }
     }
-    let body = if headers.get("transfer-encoding").is_some_and(|v| v.to_ascii_lowercase().contains("chunked")) {
+    let body = if headers
+        .get("transfer-encoding")
+        .is_some_and(|v| v.to_ascii_lowercase().contains("chunked"))
+    {
         let mut out = Vec::new();
         loop {
             let line_end = loop {
@@ -2480,7 +2936,8 @@ async fn read_http_request<S: AsyncRead + Unpin>(stream: &mut S, buf: &mut Vec<u
                 buf.extend_from_slice(&tmp[..n]);
             };
             let size_str = String::from_utf8_lossy(&buf[..line_end]);
-            let size = usize::from_str_radix(size_str.split(';').next().unwrap_or("0").trim(), 16).unwrap_or(0);
+            let size = usize::from_str_radix(size_str.split(';').next().unwrap_or("0").trim(), 16)
+                .unwrap_or(0);
             buf.drain(..line_end + 2);
             if size == 0 {
                 while buf.len() < 2 {
@@ -2507,7 +2964,10 @@ async fn read_http_request<S: AsyncRead + Unpin>(stream: &mut S, buf: &mut Vec<u
         }
         out
     } else {
-        let len: usize = headers.get("content-length").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let len: usize = headers
+            .get("content-length")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         while buf.len() < len {
             let n = stream.read(&mut tmp).await?;
             if n == 0 {
@@ -2520,7 +2980,12 @@ async fn read_http_request<S: AsyncRead + Unpin>(stream: &mut S, buf: &mut Vec<u
     Ok(Some((method, target, headers, body)))
 }
 
-async fn write_http_response<S: AsyncWrite + Unpin>(stream: &mut S, status: u16, extra_headers: &[(&str, &str)], body: &[u8]) -> Result<()> {
+async fn write_http_response<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    status: u16,
+    extra_headers: &[(&str, &str)],
+    body: &[u8],
+) -> Result<()> {
     let reason = match status {
         200 => "OK",
         201 => "Created",
@@ -2530,7 +2995,10 @@ async fn write_http_response<S: AsyncWrite + Unpin>(stream: &mut S, status: u16,
         404 => "Not Found",
         _ => "Error",
     };
-    let mut head = format!("HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\n", body.len());
+    let mut head = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\n",
+        body.len()
+    );
     for (k, v) in extra_headers {
         head.push_str(&format!("{k}: {v}\r\n"));
     }
@@ -2541,16 +3009,27 @@ async fn write_http_response<S: AsyncWrite + Unpin>(stream: &mut S, status: u16,
     Ok(())
 }
 
-async fn handle_https<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: Arc<Mutex<MailState>>, base: &str) -> Result<()> {
+async fn handle_https<S: AsyncRead + AsyncWrite + Unpin>(
+    mut stream: S,
+    state: Arc<Mutex<MailState>>,
+    base: &str,
+) -> Result<()> {
     let mut buf = Vec::new();
-    while let Some((_method, target, headers, body)) = read_http_request(&mut stream, &mut buf).await? {
+    while let Some((_method, target, headers, body)) =
+        read_http_request(&mut stream, &mut buf).await?
+    {
         let full_url = format!("{base}{target}");
         let parsed = url::Url::parse(&full_url).unwrap_or_else(|_| url::Url::parse(base).unwrap());
         let pathname = parsed.path().to_owned();
-        let close = headers.get("connection").is_some_and(|v| v.eq_ignore_ascii_case("close"));
+        let close = headers
+            .get("connection")
+            .is_some_and(|v| v.eq_ignore_ascii_case("close"));
 
         if pathname == "/oauth/authorize" {
-            let params: HashMap<String, String> = parsed.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+            let params: HashMap<String, String> = parsed
+                .query_pairs()
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
             let redirect = params.get("redirect_uri").cloned().unwrap_or_default();
             let state_param = params.get("state").cloned().unwrap_or_default();
             let code = dar_acceptance::random_hex(8);
@@ -2566,38 +3045,58 @@ async fn handle_https<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: A
                     },
                 );
             }
-            let encoded_state: String = url::form_urlencoded::byte_serialize(state_param.as_bytes()).collect();
+            let encoded_state: String =
+                url::form_urlencoded::byte_serialize(state_param.as_bytes()).collect();
             let location = format!("{redirect}?code={code}&state={encoded_state}");
             write_http_response(&mut stream, 302, &[("Location", &location)], &[]).await?;
         } else if pathname == "/oauth/token" {
-            let form: HashMap<String, String> = url::form_urlencoded::parse(&body).map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+            let form: HashMap<String, String> = url::form_urlencoded::parse(&body)
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
             let (status, payload) = {
                 let mut st = state.lock().unwrap();
                 st.oauth.token_requests.push(form.clone());
                 if form.get("client_id").map(String::as_str) != Some("dar-test-client")
-                    || form.get("client_secret").map(String::as_str) != Some(st.oauth.secret.as_str())
+                    || form.get("client_secret").map(String::as_str)
+                        != Some(st.oauth.secret.as_str())
                 {
                     (401, json!({ "error": "invalid_client" }))
                 } else {
-                    let grant = form.get("grant_type").map(String::as_str).unwrap_or_default();
-                    let user_res: std::result::Result<String, (u16, Value)> = if grant == "authorization_code" {
-                        let code = form.get("code").cloned().unwrap_or_default();
-                        let pending = st.oauth.codes.remove(&code);
-                        let verifier = form.get("code_verifier").map(String::as_str).unwrap_or_default();
-                        use sha2::Digest as _;
-                        let digest = sha2::Sha256::digest(verifier.as_bytes());
-                        let challenge = dar_acceptance::base64url(&digest);
-                        let redirect = form.get("redirect_uri").map(String::as_str).unwrap_or_default();
-                        match pending {
-                            Some(p) if p.challenge == challenge && p.redirect == redirect => Ok(p.user),
-                            _ => Err((400, json!({ "error": "invalid_grant" }))),
-                        }
-                    } else if grant == "refresh_token" {
-                        let rt = form.get("refresh_token").cloned().unwrap_or_default();
-                        st.oauth.refresh.get(&rt).cloned().ok_or((400, json!({ "error": "invalid_grant" })))
-                    } else {
-                        Err((400, json!({ "error": "unsupported_grant_type" })))
-                    };
+                    let grant = form
+                        .get("grant_type")
+                        .map(String::as_str)
+                        .unwrap_or_default();
+                    let user_res: std::result::Result<String, (u16, Value)> =
+                        if grant == "authorization_code" {
+                            let code = form.get("code").cloned().unwrap_or_default();
+                            let pending = st.oauth.codes.remove(&code);
+                            let verifier = form
+                                .get("code_verifier")
+                                .map(String::as_str)
+                                .unwrap_or_default();
+                            use sha2::Digest as _;
+                            let digest = sha2::Sha256::digest(verifier.as_bytes());
+                            let challenge = dar_acceptance::base64url(&digest);
+                            let redirect = form
+                                .get("redirect_uri")
+                                .map(String::as_str)
+                                .unwrap_or_default();
+                            match pending {
+                                Some(p) if p.challenge == challenge && p.redirect == redirect => {
+                                    Ok(p.user)
+                                }
+                                _ => Err((400, json!({ "error": "invalid_grant" }))),
+                            }
+                        } else if grant == "refresh_token" {
+                            let rt = form.get("refresh_token").cloned().unwrap_or_default();
+                            st.oauth
+                                .refresh
+                                .get(&rt)
+                                .cloned()
+                                .ok_or((400, json!({ "error": "invalid_grant" })))
+                        } else {
+                            Err((400, json!({ "error": "unsupported_grant_type" })))
+                        };
                     match user_res {
                         Ok(u) => {
                             let access = format!("at-{}", dar_acceptance::random_hex(8));
@@ -2614,14 +3113,26 @@ async fn handle_https<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: A
                 }
             };
             let bytes = payload.to_string().into_bytes();
-            write_http_response(&mut stream, status, &[("Content-Type", "application/json")], &bytes).await?;
+            write_http_response(
+                &mut stream,
+                status,
+                &[("Content-Type", "application/json")],
+                &bytes,
+            )
+            .await?;
         } else if !pathname.starts_with("/jmap/") {
             write_http_response(&mut stream, 404, &[], &[]).await?;
         } else {
             let expected_auth = format!("Bearer {}", state.lock().unwrap().jmap.token);
             if headers.get("authorization").map(String::as_str) != Some(expected_auth.as_str()) {
                 let bytes = json!({ "type": "unauthorized" }).to_string().into_bytes();
-                write_http_response(&mut stream, 401, &[("Content-Type", "application/json")], &bytes).await?;
+                write_http_response(
+                    &mut stream,
+                    401,
+                    &[("Content-Type", "application/json")],
+                    &bytes,
+                )
+                .await?;
             } else if pathname == "/jmap/session" {
                 let bytes = json!({
                     "apiUrl": "/jmap/api",
@@ -2633,20 +3144,40 @@ async fn handle_https<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: A
                 })
                 .to_string()
                 .into_bytes();
-                write_http_response(&mut stream, 200, &[("Content-Type", "application/json")], &bytes).await?;
+                write_http_response(
+                    &mut stream,
+                    200,
+                    &[("Content-Type", "application/json")],
+                    &bytes,
+                )
+                .await?;
             } else if pathname.starts_with("/jmap/download/") {
                 let blob_id = pathname.split('/').nth(4).unwrap_or_default();
                 let blob = state.lock().unwrap().jmap.blobs.get(blob_id).cloned();
                 if let Some(bytes) = blob {
-                    write_http_response(&mut stream, 200, &[("Content-Type", "message/rfc822")], &bytes).await?;
+                    write_http_response(
+                        &mut stream,
+                        200,
+                        &[("Content-Type", "message/rfc822")],
+                        &bytes,
+                    )
+                    .await?;
                 } else {
                     write_http_response(&mut stream, 404, &[], &[]).await?;
                 }
             } else if pathname.starts_with("/jmap/upload/") {
                 let id = format!("B{}", dar_acceptance::random_hex(6));
                 state.lock().unwrap().jmap.blobs.insert(id.clone(), body);
-                let bytes = json!({ "blobId": id, "accountId": "A1" }).to_string().into_bytes();
-                write_http_response(&mut stream, 201, &[("Content-Type", "application/json")], &bytes).await?;
+                let bytes = json!({ "blobId": id, "accountId": "A1" })
+                    .to_string()
+                    .into_bytes();
+                write_http_response(
+                    &mut stream,
+                    201,
+                    &[("Content-Type", "application/json")],
+                    &bytes,
+                )
+                .await?;
             } else if pathname != "/jmap/api" {
                 write_http_response(&mut stream, 404, &[], &[]).await?;
             } else {
@@ -2654,7 +3185,11 @@ async fn handle_https<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: A
                 let responses: Vec<Value> = {
                     let mut st = state.lock().unwrap();
                     let jmap = &mut st.jmap;
-                    let calls = req.get("methodCalls").and_then(Value::as_array).cloned().unwrap_or_default();
+                    let calls = req
+                        .get("methodCalls")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
                     calls
                         .into_iter()
                         .map(|call| {
@@ -2812,8 +3347,16 @@ async fn handle_https<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, state: A
                         })
                         .collect()
                 };
-                let bytes = json!({ "methodResponses": responses }).to_string().into_bytes();
-                write_http_response(&mut stream, 200, &[("Content-Type", "application/json")], &bytes).await?;
+                let bytes = json!({ "methodResponses": responses })
+                    .to_string()
+                    .into_bytes();
+                write_http_response(
+                    &mut stream,
+                    200,
+                    &[("Content-Type", "application/json")],
+                    &bytes,
+                )
+                .await?;
             }
         }
         if close {

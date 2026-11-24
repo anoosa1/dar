@@ -6,17 +6,21 @@
 //! me, and Immich import progress in settings & sidebar.
 
 use super::photos_books_apps_support::{
-    create_user, ffmpeg, photos_call, photos_media_fixtures, setup_admin_as, sha1_base64, upload_raw,
+    create_user, ffmpeg, photos_call, photos_media_fixtures, setup_admin_as, sha1_base64,
+    upload_raw,
 };
+use axum::Router;
 use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
-use axum::Router;
 use dar_acceptance::prelude::*;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
 
-pub const SUITE: Suite = Suite { name: "photos-browser", cases: &[case!(photos_journey, 240)] };
+pub const SUITE: Suite = Suite {
+    name: "photos-browser",
+    cases: &[case!(photos_journey, 240)],
+};
 
 #[derive(Clone)]
 struct SlowShot {
@@ -25,7 +29,9 @@ struct SlowShot {
     bytes: Vec<u8>,
 }
 
-async fn start_slow_immich(shots: Vec<SlowShot>) -> Result<(u16, tokio::sync::oneshot::Sender<()>)> {
+async fn start_slow_immich(
+    shots: Vec<SlowShot>,
+) -> Result<(u16, tokio::sync::oneshot::Sender<()>)> {
     let shots = Arc::new(shots);
     let app = Router::new().fallback(move |uri: Uri, headers: HeaderMap| {
         let shots = shots.clone();
@@ -47,7 +53,12 @@ async fn start_slow_immich(shots: Vec<SlowShot>) -> Result<(u16, tokio::sync::on
 async fn handle_slow_immich(uri: Uri, headers: HeaderMap, shots: Arc<Vec<SlowShot>>) -> Response {
     let path = uri.path();
     let json_resp = |status: StatusCode, value: Value| {
-        (status, [(header::CONTENT_TYPE, "application/json")], value.to_string()).into_response()
+        (
+            status,
+            [(header::CONTENT_TYPE, "application/json")],
+            value.to_string(),
+        )
+            .into_response()
     };
     if path == "/api/server/ping" {
         return json_resp(StatusCode::OK, json!({"res": "pong"}));
@@ -56,7 +67,10 @@ async fn handle_slow_immich(uri: Uri, headers: HeaderMap, shots: Arc<Vec<SlowSho
         return json_resp(StatusCode::UNAUTHORIZED, json!({}));
     }
     if path == "/api/users/me" {
-        return json_resp(StatusCode::OK, json!({"id": uuid(), "name": "Remote", "email": "remote@example.com"}));
+        return json_resp(
+            StatusCode::OK,
+            json!({"id": uuid(), "name": "Remote", "email": "remote@example.com"}),
+        );
     }
     if path == "/api/search/metadata" {
         let items: Vec<Value> = shots
@@ -76,7 +90,10 @@ async fn handle_slow_immich(uri: Uri, headers: HeaderMap, shots: Arc<Vec<SlowSho
                 })
             })
             .collect();
-        return json_resp(StatusCode::OK, json!({"assets": {"items": items, "nextPage": null, "total": shots.len()}}));
+        return json_resp(
+            StatusCode::OK,
+            json!({"assets": {"items": items, "nextPage": null, "total": shots.len()}}),
+        );
     }
     if let Some(rest) = path.strip_prefix("/api/assets/")
         && let Some(id) = rest.strip_suffix("/original")
@@ -84,7 +101,12 @@ async fn handle_slow_immich(uri: Uri, headers: HeaderMap, shots: Arc<Vec<SlowSho
         && let Some(shot) = shots.iter().find(|s| s.id == id)
     {
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        return (StatusCode::OK, [(header::CONTENT_TYPE, "image/jpeg")], shot.bytes.clone()).into_response();
+        return (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "image/jpeg")],
+            shot.bytes.clone(),
+        )
+            .into_response();
     }
     if path == "/api/albums" {
         return json_resp(StatusCode::OK, json!([]));
@@ -96,7 +118,8 @@ pub async fn photos_journey(t: &Ctx) -> Result<()> {
     // Prepare the exact isolated Photos fixture state that `photos-browser.mjs` expects.
     let root = t.temp("dar-photos-browser")?;
     let media = photos_media_fixtures(&root).await?;
-    let instance = Instance::isolated(&root, "dar-photos-ui", InstanceConfig::default(), true).await?;
+    let instance =
+        Instance::isolated(&root, "dar-photos-ui", InstanceConfig::default(), true).await?;
     let base = instance.base.clone();
 
     let result: Result<()> = async {

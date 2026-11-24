@@ -43,13 +43,23 @@ fn invalid(detail: &str) -> AppError {
 }
 
 fn object(value: &Value) -> Result<Doc> {
-    value.as_object().cloned().ok_or_else(|| invalid("Expected an object."))
+    value
+        .as_object()
+        .cloned()
+        .ok_or_else(|| invalid("Expected an object."))
 }
 
 /// A text attribute: at most `max` UTF-8 bytes, no control characters but tab and newlines.
 fn text(value: &Value, max: usize) -> Result<String> {
     match value.as_str() {
-        Some(s) if s.len() <= max && !s.chars().any(|c| matches!(c as u32, 0..=8 | 0x0b | 0x0c | 0x0e..=0x1f)) => Ok(s.to_owned()),
+        Some(s)
+            if s.len() <= max
+                && !s
+                    .chars()
+                    .any(|c| matches!(c as u32, 0..=8 | 0x0b | 0x0c | 0x0e..=0x1f)) =>
+        {
+            Ok(s.to_owned())
+        }
         _ => Err(invalid("Invalid text attribute.")),
     }
 }
@@ -79,13 +89,30 @@ fn strings(source: &Value, names: &[&str]) -> Result<Value> {
     Ok(Value::Object(out))
 }
 
-const USER_ATTRIBUTES: [&str; 13] = ["userName", "externalId", "displayName", "name", "active", "emails", "password", "title", "userType", "locale", "timezone", "preferredLanguage", ENTERPRISE];
+const USER_ATTRIBUTES: [&str; 13] = [
+    "userName",
+    "externalId",
+    "displayName",
+    "name",
+    "active",
+    "emails",
+    "password",
+    "title",
+    "userType",
+    "locale",
+    "timezone",
+    "preferredLanguage",
+    ENTERPRISE,
+];
 const GROUP_ATTRIBUTES: [&str; 3] = ["displayName", "externalId", "members"];
 const READ_ONLY: [&str; 4] = ["id", "meta", "groups", "schemas"];
 
 fn valid_user_name(name: &str) -> bool {
     let b = name.as_bytes();
-    (3..=64).contains(&b.len()) && b[0].is_ascii_alphanumeric() && b.iter().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'.' | b'-'))
+    (3..=64).contains(&b.len())
+        && b[0].is_ascii_alphanumeric()
+        && b.iter()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'.' | b'-'))
 }
 
 /// `encodeURIComponent`.
@@ -96,13 +123,25 @@ pub fn encode(value: &str) -> String {
 /// One validator for SCIM and native administration (`normalize`).
 pub fn normalize(kind: Kind, input: &Value) -> Result<(Doc, Option<String>)> {
     let names: Vec<&str> = match kind {
-        Kind::Users => USER_ATTRIBUTES.iter().chain(READ_ONLY.iter()).copied().collect(),
-        Kind::Groups => GROUP_ATTRIBUTES.iter().chain(READ_ONLY.iter()).copied().collect(),
+        Kind::Users => USER_ATTRIBUTES
+            .iter()
+            .chain(READ_ONLY.iter())
+            .copied()
+            .collect(),
+        Kind::Groups => GROUP_ATTRIBUTES
+            .iter()
+            .chain(READ_ONLY.iter())
+            .copied()
+            .collect(),
     };
     let mut p = canonical(&object(input)?, &names)?;
     let own = if kind == Kind::Users { USER } else { GROUP };
     if let Some(schemas) = p.get("schemas") {
-        let ok = schemas.as_array().is_some_and(|s| s.iter().any(|v| v == own) && s.iter().all(|v| v == own || kind == Kind::Users && v == ENTERPRISE));
+        let ok = schemas.as_array().is_some_and(|s| {
+            s.iter().any(|v| v == own)
+                && s.iter()
+                    .all(|v| v == own || kind == Kind::Users && v == ENTERPRISE)
+        });
         if !ok {
             return Err(invalid("Unsupported schemas."));
         }
@@ -114,18 +153,41 @@ pub fn normalize(kind: Kind, input: &Value) -> Result<(Doc, Option<String>)> {
         None => None,
         Some(v) => Some(text(&v, 1024)?),
     };
-    for key in ["externalId", "displayName", "title", "userType", "locale", "timezone", "preferredLanguage"] {
+    for key in [
+        "externalId",
+        "displayName",
+        "title",
+        "userType",
+        "locale",
+        "timezone",
+        "preferredLanguage",
+    ] {
         if let Some(v) = p.get(key).cloned() {
-            p.insert(key.into(), json!(text(&v, if key == "displayName" { 100 } else { 1024 })?));
+            p.insert(
+                key.into(),
+                json!(text(&v, if key == "displayName" { 100 } else { 1024 })?),
+            );
         }
     }
     if kind == Kind::Users {
-        let user = p.get("userName").and_then(Value::as_str).filter(|n| valid_user_name(n)).ok_or_else(|| invalid("userName must contain 3–64 letters, digits, dots, underscores or hyphens."))?.to_lowercase();
+        let user = p
+            .get("userName")
+            .and_then(Value::as_str)
+            .filter(|n| valid_user_name(n))
+            .ok_or_else(|| {
+                invalid("userName must contain 3–64 letters, digits, dots, underscores or hyphens.")
+            })?
+            .to_lowercase();
         p.insert("userName".into(), json!(user));
         if !p.contains_key("displayName") {
             p.insert("displayName".into(), json!(user));
         }
-        if p["displayName"].as_str().unwrap_or_default().trim().is_empty() {
+        if p["displayName"]
+            .as_str()
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+        {
             return Err(invalid("displayName cannot be empty."));
         }
         match p.get("active") {
@@ -136,16 +198,37 @@ pub fn normalize(kind: Kind, input: &Value) -> Result<(Doc, Option<String>)> {
             Some(_) => return Err(invalid("active must be a boolean.")),
         }
         if let Some(name) = p.get("name").cloned() {
-            p.insert("name".into(), strings(&name, &["formatted", "familyName", "givenName", "middleName", "honorificPrefix", "honorificSuffix"])?);
+            p.insert(
+                "name".into(),
+                strings(
+                    &name,
+                    &[
+                        "formatted",
+                        "familyName",
+                        "givenName",
+                        "middleName",
+                        "honorificPrefix",
+                        "honorificSuffix",
+                    ],
+                )?,
+            );
         }
         if let Some(emails) = p.get("emails").cloned() {
-            let list = emails.as_array().filter(|l| l.len() <= 30).ok_or_else(|| invalid("At most 30 emails are supported."))?;
+            let list = emails
+                .as_array()
+                .filter(|l| l.len() <= 30)
+                .ok_or_else(|| invalid("At most 30 emails are supported."))?;
             let mut primary = 0;
             let mut out = Vec::new();
             for v in list {
                 let mut e = canonical(&object(v)?, &["value", "type", "primary", "display"])?;
                 let value = text(e.get("value").unwrap_or(&Value::Null), 320)?;
-                let ok = value.split_once('@').is_some_and(|(a, b)| !a.is_empty() && !b.is_empty() && !b.contains('@') && !value.chars().any(char::is_whitespace));
+                let ok = value.split_once('@').is_some_and(|(a, b)| {
+                    !a.is_empty()
+                        && !b.is_empty()
+                        && !b.contains('@')
+                        && !value.chars().any(char::is_whitespace)
+                });
                 if !ok {
                     return Err(invalid("Invalid email address."));
                 }
@@ -179,7 +262,17 @@ pub fn normalize(kind: Kind, input: &Value) -> Result<(Doc, Option<String>)> {
             return Err(invalid("Invalid IANA timezone."));
         }
         if let Some(enterprise) = p.get(ENTERPRISE).cloned() {
-            let mut e = canonical(&object(&enterprise)?, &["employeeNumber", "costCenter", "organization", "division", "department", "manager"])?;
+            let mut e = canonical(
+                &object(&enterprise)?,
+                &[
+                    "employeeNumber",
+                    "costCenter",
+                    "organization",
+                    "division",
+                    "department",
+                    "manager",
+                ],
+            )?;
             for (k, v) in e.clone() {
                 if k != "manager" {
                     e.insert(k, json!(text(&v, 1024)?));
@@ -199,20 +292,32 @@ pub fn normalize(kind: Kind, input: &Value) -> Result<(Doc, Option<String>)> {
             p.insert(ENTERPRISE.into(), Value::Object(e));
         }
     } else {
-        if !p.get("displayName").and_then(Value::as_str).is_some_and(|d| !d.trim().is_empty()) {
+        if !p
+            .get("displayName")
+            .and_then(Value::as_str)
+            .is_some_and(|d| !d.trim().is_empty())
+        {
             return Err(invalid("displayName is required."));
         }
         let members = p.get("members").cloned().unwrap_or(json!([]));
-        let list = members.as_array().filter(|l| l.len() <= 2000).ok_or_else(|| invalid("At most 2000 members are supported."))?;
+        let list = members
+            .as_array()
+            .filter(|l| l.len() <= 2000)
+            .ok_or_else(|| invalid("At most 2000 members are supported."))?;
         let mut out: Vec<String> = Vec::new();
         for v in list {
             let m = canonical(&object(v)?, &["value", "$ref", "display", "type"])?;
             let id = text(m.get("value").unwrap_or(&Value::Null), 100)?;
-            if m.get("type").is_some_and(|t| t.as_str().map(str::to_lowercase).as_deref() != Some("user")) {
+            if m.get("type")
+                .is_some_and(|t| t.as_str().map(str::to_lowercase).as_deref() != Some("user"))
+            {
                 return Err(invalid("Nested groups are unsupported."));
             }
             if let Some(r) = m.get("$ref")
-                && !r.as_str().unwrap_or_default().ends_with(&format!("/Users/{}", encode(&id)))
+                && !r
+                    .as_str()
+                    .unwrap_or_default()
+                    .ends_with(&format!("/Users/{}", encode(&id)))
             {
                 return Err(invalid("Membership must reference a User."));
             }
@@ -220,10 +325,19 @@ pub fn normalize(kind: Kind, input: &Value) -> Result<(Doc, Option<String>)> {
                 out.push(id);
             }
         }
-        p.insert("members".into(), Value::Array(out.into_iter().map(|id| json!({ "value": id })).collect()));
+        p.insert(
+            "members".into(),
+            Value::Array(out.into_iter().map(|id| json!({ "value": id })).collect()),
+        );
     }
     let size = Value::Object(p.clone()).to_string().len();
-    if size > if kind == Kind::Users { 16_384 } else { 256 * 1024 } {
+    if size
+        > if kind == Kind::Users {
+            16_384
+        } else {
+            256 * 1024
+        }
+    {
         return Err(invalid("The directory resource is too large."));
     }
     Ok((p, password))
@@ -234,7 +348,10 @@ pub fn version(row: &Value) -> String {
 }
 
 fn iso(ms: &Value) -> String {
-    chrono::DateTime::from_timestamp_millis(ms.as_f64().unwrap_or(0.0) as i64).unwrap_or_default().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+    chrono::DateTime::from_timestamp_millis(ms.as_f64().unwrap_or(0.0) as i64)
+        .unwrap_or_default()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
 }
 
 /// A directory record as SCIM shows it (`resource`).
@@ -262,7 +379,8 @@ pub fn resource(kind: Kind, row: &Value, base: &str) -> Value {
                 g.iter()
                     .map(|g| {
                         let mut g = g.clone();
-                        g["$ref"] = json!(format!("{base}/Groups/{}", encode(&text_of(&g["value"]))));
+                        g["$ref"] =
+                            json!(format!("{base}/Groups/{}", encode(&text_of(&g["value"]))));
                         g["type"] = json!("direct");
                         g
                     })
@@ -278,7 +396,8 @@ pub fn resource(kind: Kind, row: &Value, base: &str) -> Value {
                 m.iter()
                     .map(|m| {
                         let mut m = m.clone();
-                        m["$ref"] = json!(format!("{base}/Users/{}", encode(&text_of(&m["value"]))));
+                        m["$ref"] =
+                            json!(format!("{base}/Users/{}", encode(&text_of(&m["value"]))));
                         m["type"] = json!("User");
                         m
                     })
@@ -291,7 +410,11 @@ pub fn resource(kind: Kind, row: &Value, base: &str) -> Value {
 }
 
 fn property(value: &Value, key: &str) -> Option<Value> {
-    value.as_object()?.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v.clone())
+    value
+        .as_object()?
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .map(|(_, v)| v.clone())
 }
 
 fn path_parts(path: &str) -> Vec<String> {
@@ -319,7 +442,10 @@ pub fn values(value: &Value, path: &str) -> Vec<Value> {
     };
     let mut list = vec![Some(value.clone())];
     for part in path_parts(path) {
-        list = flat(list).into_iter().map(|v| v.and_then(|v| property(&v, &part))).collect();
+        list = flat(list)
+            .into_iter()
+            .map(|v| v.and_then(|v| property(&v, &part)))
+            .collect();
     }
     flat(list).into_iter().flatten().collect()
 }
@@ -382,7 +508,11 @@ struct Parser {
 }
 
 fn bad_filter() -> AppError {
-    scim_error(400, "Unsupported or malformed filter.", Some("invalidFilter"))
+    scim_error(
+        400,
+        "Unsupported or malformed filter.",
+        Some("invalidFilter"),
+    )
 }
 
 impl Parser {
@@ -441,7 +571,14 @@ impl Parser {
         }
         let attr = self.next().ok_or_else(bad_filter)?;
         let lower = attr.to_lowercase();
-        if attr.is_empty() || !attr.chars().all(|c| c.is_ascii_alphanumeric() || "_$:.-".contains(c)) || ["__proto__", "constructor", "prototype"].iter().any(|s| attr.contains(s)) {
+        if attr.is_empty()
+            || !attr
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_$:.-".contains(c))
+            || ["__proto__", "constructor", "prototype"]
+                .iter()
+                .any(|s| attr.contains(s))
+        {
             return Err(bad_filter());
         }
         if self.peek() == Some("[") {
@@ -454,12 +591,15 @@ impl Parser {
         }
         let op = self.next().map(|o| o.to_lowercase()).unwrap_or_default();
         if op == "pr" {
-            return Ok(Box::new(move |v| values(v, &attr).iter().any(|x| !x.is_null() && x != "")));
+            return Ok(Box::new(move |v| {
+                values(v, &attr).iter().any(|x| !x.is_null() && x != "")
+            }));
         }
         if !["eq", "ne", "co", "sw", "ew", "gt", "ge", "lt", "le"].contains(&op.as_str()) {
             return Err(bad_filter());
         }
-        let target: Value = serde_json::from_str(&self.next().unwrap_or_default()).map_err(|_| bad_filter())?;
+        let target: Value =
+            serde_json::from_str(&self.next().unwrap_or_default()).map_err(|_| bad_filter())?;
         if !(target.is_null() || target.is_string() || target.is_boolean() || target.is_number()) {
             return Err(bad_filter());
         }
@@ -498,7 +638,11 @@ impl Parser {
                     },
                 }
             };
-            if op == "ne" { !list.iter().any(matches) } else { list.iter().any(matches) }
+            if op == "ne" {
+                !list.iter().any(matches)
+            } else {
+                list.iter().any(matches)
+            }
         }))
     }
 }
@@ -506,13 +650,21 @@ impl Parser {
 /// Bounded recursive descent SCIM filters, including value paths (`filterPredicate`).
 pub fn filter_predicate(source: &str) -> Result<Predicate> {
     if source.len() > 2048 {
-        return Err(scim_error(400, "Filter is too long.", Some("invalidFilter")));
+        return Err(scim_error(
+            400,
+            "Filter is too long.",
+            Some("invalidFilter"),
+        ));
     }
     let tokens = tokens(source);
     if tokens.is_empty() {
         return Err(bad_filter());
     }
-    let mut parser = Parser { tokens, i: 0, depth: 0 };
+    let mut parser = Parser {
+        tokens,
+        i: 0,
+        depth: 0,
+    };
     let result = parser.expression()?;
     if parser.i != parser.tokens.len() {
         return Err(bad_filter());
@@ -521,7 +673,11 @@ pub fn filter_predicate(source: &str) -> Result<Predicate> {
 }
 
 fn actual_key(value: &Doc, key: &str) -> String {
-    value.keys().find(|k| k.eq_ignore_ascii_case(key)).cloned().unwrap_or_else(|| key.to_owned())
+    value
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case(key))
+        .cloned()
+        .unwrap_or_else(|| key.to_owned())
 }
 
 fn unsafe_name(name: &str) -> bool {
@@ -544,7 +700,10 @@ fn parent_of<'a>(root: &'a mut Doc, parts: &[String], create: bool) -> Result<&'
         if !current.contains_key(&key) && create {
             current.insert(key.clone(), json!({}));
         }
-        current = current.get_mut(&key).and_then(Value::as_object_mut).ok_or_else(|| invalid("Expected an object."))?;
+        current = current
+            .get_mut(&key)
+            .and_then(Value::as_object_mut)
+            .ok_or_else(|| invalid("Expected an object."))?;
     }
     Ok(current)
 }
@@ -552,9 +711,17 @@ fn parent_of<'a>(root: &'a mut Doc, parts: &[String], create: bool) -> Result<&'
 /// Applies a PatchOp document to a resource (`applyPatch`).
 pub fn apply_patch(kind: Kind, current: &Value, input: &Value) -> Result<Value> {
     let p = canonical(&object(input)?, &["schemas", "Operations"])?;
-    let schemas_ok = p.get("schemas").and_then(Value::as_array).is_some_and(|s| s.len() == 1 && s[0] == PATCH);
-    let operations = p.get("Operations").and_then(Value::as_array).filter(|o| !o.is_empty() && o.len() <= 100);
-    let (true, Some(operations)) = (schemas_ok, operations) else { return Err(invalid("Invalid PatchOp document.")) };
+    let schemas_ok = p
+        .get("schemas")
+        .and_then(Value::as_array)
+        .is_some_and(|s| s.len() == 1 && s[0] == PATCH);
+    let operations = p
+        .get("Operations")
+        .and_then(Value::as_array)
+        .filter(|o| !o.is_empty() && o.len() <= 100);
+    let (true, Some(operations)) = (schemas_ok, operations) else {
+        return Err(invalid("Invalid PatchOp document."));
+    };
     let mut result = current.as_object().cloned().unwrap_or_default();
     for key in ["schemas", "meta", "id", "groups"] {
         result.remove(key);
@@ -572,7 +739,11 @@ pub fn apply_patch(kind: Kind, current: &Value, input: &Value) -> Result<Value> 
             }
             for (k, v) in object(&value)? {
                 if READ_ONLY.iter().any(|r| r.eq_ignore_ascii_case(&k)) {
-                    return Err(scim_error(400, "Attribute is read-only.", Some("mutability")));
+                    return Err(scim_error(
+                        400,
+                        "Attribute is read-only.",
+                        Some("mutability"),
+                    ));
                 }
                 if unsafe_name(&k) {
                     return Err(invalid("Invalid PATCH attribute."));
@@ -580,7 +751,11 @@ pub fn apply_patch(kind: Kind, current: &Value, input: &Value) -> Result<Value> 
                 let key = actual_key(&result, &k);
                 match (op.as_str(), result.get_mut(&key), &v) {
                     ("add", Some(Value::Array(existing)), Value::Array(more)) => {
-                        if key.eq_ignore_ascii_case("emails") && more.iter().any(|e| property(e, "primary") == Some(json!(true))) {
+                        if key.eq_ignore_ascii_case("emails")
+                            && more
+                                .iter()
+                                .any(|e| property(e, "primary") == Some(json!(true)))
+                        {
                             clear_primary(existing);
                         }
                         existing.extend(more.iter().cloned());
@@ -601,14 +776,27 @@ pub fn apply_patch(kind: Kind, current: &Value, input: &Value) -> Result<Value> 
         let invalid_path = || scim_error(400, "Unsupported PATCH path.", Some("invalidPath"));
         let (attribute, filter, sub) = match path.find('[') {
             Some(open) => {
-                let close = path.rfind(']').filter(|c| *c > open).ok_or_else(invalid_path)?;
+                let close = path
+                    .rfind(']')
+                    .filter(|c| *c > open)
+                    .ok_or_else(invalid_path)?;
                 let after = &path[close + 1..];
                 let sub = match after.strip_prefix('.') {
-                    Some(s) if !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$') => Some(s.to_owned()),
+                    Some(s)
+                        if !s.is_empty()
+                            && s.chars()
+                                .all(|c| c.is_alphanumeric() || c == '_' || c == '$') =>
+                    {
+                        Some(s.to_owned())
+                    }
                     None if after.is_empty() => None,
                     _ => return Err(invalid_path()),
                 };
-                (path[..open].to_owned(), Some(path[open + 1..close].to_owned()), sub)
+                (
+                    path[..open].to_owned(),
+                    Some(path[open + 1..close].to_owned()),
+                    sub,
+                )
             }
             None => (path.clone(), None, None),
         };
@@ -616,15 +804,26 @@ pub fn apply_patch(kind: Kind, current: &Value, input: &Value) -> Result<Value> 
             return Err(invalid_path());
         }
         let lowered = path.to_lowercase();
-        if ["constructor", "prototype", "__proto__"].iter().any(|w| lowered.split(['.', ':', '[']).any(|segment| segment == *w)) {
+        if ["constructor", "prototype", "__proto__"]
+            .iter()
+            .any(|w| lowered.split(['.', ':', '[']).any(|segment| segment == *w))
+        {
             return Err(invalid_path());
         }
         let parts = path_parts(&attribute);
         let root = parts[0].to_lowercase();
         if ["id", "meta", "groups", "schemas"].contains(&root.as_str()) {
-            return Err(scim_error(400, "Attribute is read-only.", Some("mutability")));
+            return Err(scim_error(
+                400,
+                "Attribute is read-only.",
+                Some("mutability"),
+            ));
         }
-        let allowed: &[&str] = if kind == Kind::Users { &USER_ATTRIBUTES } else { &GROUP_ATTRIBUTES };
+        let allowed: &[&str] = if kind == Kind::Users {
+            &USER_ATTRIBUTES
+        } else {
+            &GROUP_ATTRIBUTES
+        };
         if !allowed.iter().any(|a| a.to_lowercase() == root) {
             return Err(invalid_path());
         }
@@ -632,12 +831,22 @@ pub fn apply_patch(kind: Kind, current: &Value, input: &Value) -> Result<Value> 
         let key = actual_key(parent, &parts[parts.len() - 1]);
         if let Some(filter) = filter {
             let f = filter_predicate(&filter)?;
-            let Some(array) = parent.get(&key).and_then(Value::as_array).cloned() else { return Err(scim_error(400, "The target is not multivalued.", Some("invalidPath"))) };
+            let Some(array) = parent.get(&key).and_then(Value::as_array).cloned() else {
+                return Err(scim_error(
+                    400,
+                    "The target is not multivalued.",
+                    Some("invalidPath"),
+                ));
+            };
             if !array.iter().any(|x| f(x)) {
                 return Err(scim_error(400, "No matching attribute.", Some("noTarget")));
             }
             let mut array = array;
-            let primary_value = sub.as_deref().is_some_and(|s| s.eq_ignore_ascii_case("primary")) && value == json!(true) || property(&value, "primary") == Some(json!(true));
+            let primary_value = sub
+                .as_deref()
+                .is_some_and(|s| s.eq_ignore_ascii_case("primary"))
+                && value == json!(true)
+                || property(&value, "primary") == Some(json!(true));
             if key.eq_ignore_ascii_case("emails") && op != "remove" && primary_value {
                 for email in array.iter_mut() {
                     if !f(email)
@@ -686,11 +895,17 @@ pub fn apply_patch(kind: Kind, current: &Value, input: &Value) -> Result<Value> 
                 Value::Array(a) => a.clone(),
                 other => vec![other.clone()],
             };
-            if key.eq_ignore_ascii_case("emails") && entries.iter().any(|e| property(e, "primary") == Some(json!(true))) {
+            if key.eq_ignore_ascii_case("emails")
+                && entries
+                    .iter()
+                    .any(|e| property(e, "primary") == Some(json!(true)))
+            {
                 clear_primary(existing);
             }
             existing.extend(entries);
-        } else if let (true, Some(Value::Object(existing)), Value::Object(more)) = (op == "add", parent.get_mut(&key), &value) {
+        } else if let (true, Some(Value::Object(existing)), Value::Object(more)) =
+            (op == "add", parent.get_mut(&key), &value)
+        {
             for (mk, mv) in more {
                 existing.insert(mk.clone(), mv.clone());
             }
@@ -704,9 +919,16 @@ pub fn apply_patch(kind: Kind, current: &Value, input: &Value) -> Result<Value> 
 /// `attributes` / `excludedAttributes` (`project`).
 pub fn project(document: &Value, include: Option<&str>, exclude: Option<&str>) -> Result<Value> {
     if include.is_some() && exclude.is_some() {
-        return Err(invalid("attributes and excludedAttributes cannot be combined."));
+        return Err(invalid(
+            "attributes and excludedAttributes cannot be combined.",
+        ));
     }
-    let paths: Vec<&str> = include.or(exclude).unwrap_or_default().split(',').filter(|p| !p.is_empty()).collect();
+    let paths: Vec<&str> = include
+        .or(exclude)
+        .unwrap_or_default()
+        .split(',')
+        .filter(|p| !p.is_empty())
+        .collect();
     if paths.len() > 100 {
         return Err(invalid("Too many attribute paths."));
     }
@@ -730,9 +952,13 @@ pub fn project(document: &Value, include: Option<&str>, exclude: Option<&str>) -
             }
             return Some(Value::Array(result));
         }
-        let Some(source) = from.as_object() else { return to };
+        let Some(source) = from.as_object() else {
+            return to;
+        };
         let key = actual_key(source, &parts[0]);
-        let Some(inner) = source.get(&key) else { return to };
+        let Some(inner) = source.get(&key) else {
+            return to;
+        };
         let mut result = match to {
             Some(Value::Object(o)) => o,
             _ => Map::new(),
@@ -761,7 +987,11 @@ pub fn project(document: &Value, include: Option<&str>, exclude: Option<&str>) -
             _ => {}
         }
     }
-    let mut output = if include.is_some() { json!({ "schemas": document["schemas"], "id": document["id"] }) } else { document.clone() };
+    let mut output = if include.is_some() {
+        json!({ "schemas": document["schemas"], "id": document["id"] })
+    } else {
+        document.clone()
+    };
     for path in paths {
         let parts = path_parts(path);
         if parts.iter().any(|p| unsafe_name(p)) {
@@ -786,7 +1016,10 @@ mod tests {
     fn filters_patch_and_projection() {
         let user = json!({ "id": "U1", "userName": "amina", "active": true, "emails": [{ "value": "a@x.example", "type": "work", "primary": true }, { "value": "b@y.example", "type": "home" }] });
         assert!(filter_predicate("userName eq \"AMINA\"").unwrap()(&user));
-        assert!(filter_predicate("emails[type eq \"home\" and value co \"y.example\"]").unwrap()(&user));
+        assert!(filter_predicate(
+            "emails[type eq \"home\" and value co \"y.example\"]"
+        )
+        .unwrap()(&user));
         assert!(!filter_predicate("not (active eq true)").unwrap()(&user));
         assert!(filter_predicate("id eq \"u1\"").unwrap()(&user) == false);
         assert!(filter_predicate("userName eq").is_err());
@@ -794,9 +1027,23 @@ mod tests {
         assert_eq!(patched["emails"][1]["primary"], true);
         assert!(patched["emails"][0].get("primary").is_none());
         assert!(patched.get("active").is_none());
-        let (doc, password) = normalize(Kind::Users, &json!({ "schemas": [USER], "userName": "Amina", "password": "x".repeat(20) })).unwrap();
-        assert_eq!((doc["userName"].as_str(), doc["displayName"].as_str(), password.map(|p| p.len())), (Some("amina"), Some("amina"), Some(20)));
+        let (doc, password) = normalize(
+            Kind::Users,
+            &json!({ "schemas": [USER], "userName": "Amina", "password": "x".repeat(20) }),
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                doc["userName"].as_str(),
+                doc["displayName"].as_str(),
+                password.map(|p| p.len())
+            ),
+            (Some("amina"), Some("amina"), Some(20))
+        );
         let projected = project(&json!({ "schemas": [USER], "id": "U1", "name": { "givenName": "A", "familyName": "B" }, "userName": "a" }), Some("name.givenName"), None).unwrap();
-        assert_eq!(projected, json!({ "schemas": [USER], "id": "U1", "name": { "givenName": "A" } }));
+        assert_eq!(
+            projected,
+            json!({ "schemas": [USER], "id": "U1", "name": { "givenName": "A" } })
+        );
     }
 }

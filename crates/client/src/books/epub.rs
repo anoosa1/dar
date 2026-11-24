@@ -19,7 +19,9 @@ use wasm_bindgen_futures::JsFuture;
 use super::SpineItem;
 use crate::ui::window;
 
-#[wasm_bindgen(inline_js = "export function dispatch_key(t, k) { t.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })); }")]
+#[wasm_bindgen(
+    inline_js = "export function dispatch_key(t, k) { t.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })); }"
+)]
 extern "C" {
     fn dispatch_key(t: &web_sys::EventTarget, k: &str);
 }
@@ -94,19 +96,29 @@ impl DocListener {
             callback.as_ref().unchecked_ref(),
             &opts,
         );
-        Self { target: target.clone(), name, callback }
+        Self {
+            target: target.clone(),
+            name,
+            callback,
+        }
     }
 }
 
 impl Drop for DocListener {
     fn drop(&mut self) {
-        let _ = self.target.remove_event_listener_with_callback(self.name, self.callback.as_ref().unchecked_ref());
+        let _ = self
+            .target
+            .remove_event_listener_with_callback(self.name, self.callback.as_ref().unchecked_ref());
     }
 }
 
 fn encode_path(href: &str) -> String {
     href.split('/')
-        .map(|seg| js_sys::encode_uri_component(seg).as_string().unwrap_or_default())
+        .map(|seg| {
+            js_sys::encode_uri_component(seg)
+                .as_string()
+                .unwrap_or_default()
+        })
         .collect::<Vec<_>>()
         .join("/")
 }
@@ -175,23 +187,38 @@ impl EpubState {
     }
 
     fn report(&self) {
-        { self.on_position.try_run((self.current_spine.get(), self.current_fraction.get())); };
+        {
+            self.on_position
+                .try_run((self.current_spine.get(), self.current_fraction.get()));
+        };
     }
 
     /// Puts the reader's stylesheet into the chapter, replacing an earlier one.
     fn style(&self, doc: &web_sys::Document) {
-        let Some(frame_node) = self.frame.get_untracked() else { return };
+        let Some(frame_node) = self.frame.get_untracked() else {
+            return;
+        };
         let l = self.look.get_untracked();
         let paged = l.layout == "pages";
         let width = frame_node.client_width() as f64;
         let height = frame_node.client_height() as f64;
         let columns: f64 = if paged && width >= 1100.0 { 2.0 } else { 1.0 };
         let widest = ((l.size as f64) * if columns == 2.0 { 30.0 } else { 36.0 }).round();
-        let min_pad: f64 = if width < 600.0 { 20.0 } else if width < 1000.0 { 40.0 } else { 56.0 };
+        let min_pad: f64 = if width < 600.0 {
+            20.0
+        } else if width < 1000.0 {
+            40.0
+        } else {
+            56.0
+        };
         let pad_x = min_pad.max(((width / columns - widest) / 2.0).floor()) as i64;
         let pad_y: i64 = if width < 600.0 { 24 } else { 40 };
         let gap = pad_x * 2;
-        let column = if paged { (width / columns - gap as f64).floor().max(1.0) as i64 } else { 0 };
+        let column = if paged {
+            (width / columns - gap as f64).floor().max(1.0) as i64
+        } else {
+            0
+        };
         let font_decl = match l.font.as_str() {
             "book" => String::new(),
             "sans" => format!("font-family:{SANS}!important;"),
@@ -234,7 +261,9 @@ impl EpubState {
         let node = match doc.get_element_by_id("dar-reader-style") {
             Some(existing) => existing,
             None => {
-                let Ok(created) = doc.create_element_ns(Some("http://www.w3.org/1999/xhtml"), "style") else {
+                let Ok(created) =
+                    doc.create_element_ns(Some("http://www.w3.org/1999/xhtml"), "style")
+                else {
                     return;
                 };
                 created.set_id("dar-reader-style");
@@ -253,7 +282,9 @@ impl EpubState {
     }
 
     fn measure(&self, doc: &web_sys::Document) {
-        let Some(frame_node) = self.frame.get_untracked() else { return };
+        let Some(frame_node) = self.frame.get_untracked() else {
+            return;
+        };
         let Some(el) = scroller(doc) else { return };
         let width = (frame_node.client_width() as f64).max(1.0);
         self.page_width.set(width);
@@ -268,7 +299,11 @@ impl EpubState {
         self.page_index.set(clamped);
         let sign = if rtl_flow(doc) { -1.0 } else { 1.0 };
         el.set_scroll_left((sign * (clamped as f64) * self.page_width.get()) as i32);
-        let frac = if count > 1 { clamped as f64 / (count - 1) as f64 } else { 0.0 };
+        let frac = if count > 1 {
+            clamped as f64 / (count - 1) as f64
+        } else {
+            0.0
+        };
         self.current_fraction.set(frac);
     }
 
@@ -298,7 +333,8 @@ impl EpubState {
                 el.set_scroll_top((fraction * max_scroll) as i32);
             }
             let max_scroll = (el.scroll_height() - el.client_height()).max(1) as f64;
-            self.current_fraction.set(((el.scroll_top() as f64) / max_scroll).clamp(0.0, 1.0));
+            self.current_fraction
+                .set(((el.scroll_top() as f64) / max_scroll).clamp(0.0, 1.0));
         }
     }
 
@@ -318,7 +354,13 @@ impl EpubState {
         self.current_spine.set(spine_index);
         self.current_fraction.set(fraction);
         let load = self.next_load();
-        self.target.set(Target { spine: spine_index, fraction, anchor, html: false, load });
+        self.target.set(Target {
+            spine: spine_index,
+            fraction,
+            anchor,
+            html: false,
+            load,
+        });
     }
 
     fn step(&self, direction: i32) {
@@ -337,7 +379,8 @@ impl EpubState {
             el.set_scroll_top((before + delta) as i32);
             if ((el.scroll_top() as f64) - before).abs() > 2.0 {
                 let max_scroll = (el.scroll_height() - el.client_height()).max(1) as f64;
-                self.current_fraction.set(((el.scroll_top() as f64) / max_scroll).clamp(0.0, 1.0));
+                self.current_fraction
+                    .set(((el.scroll_top() as f64) / max_scroll).clamp(0.0, 1.0));
                 self.report();
                 return;
             }
@@ -376,8 +419,12 @@ impl EpubState {
 
     fn loaded(self: &Rc<Self>) {
         self.doc_listeners.borrow_mut().clear();
-        let Some(frame_node) = self.frame.get_untracked() else { return };
-        let Some(doc) = frame_node.content_document() else { return };
+        let Some(frame_node) = self.frame.get_untracked() else {
+            return;
+        };
+        let Some(doc) = frame_node.content_document() else {
+            return;
+        };
         if doc.url().ok().as_deref() == Some("about:blank") {
             return;
         }
@@ -390,11 +437,18 @@ impl EpubState {
             || doc.query_selector("parsererror").ok().flatten().is_some();
         if broken && !t.html {
             let load = self.next_load();
-            self.target.set(Target { html: true, load, ..t });
+            self.target.set(Target {
+                html: true,
+                load,
+                ..t
+            });
             return;
         }
         if doc.body().is_none() {
-            { self.on_error.try_run("This chapter could not be read.".into()); };
+            {
+                self.on_error
+                    .try_run("This chapter could not be read.".into());
+            };
             return;
         }
 
@@ -413,11 +467,17 @@ impl EpubState {
                 {
                     let state = self.clone();
                     let doc_c = doc.clone();
-                    listeners.push(DocListener::new(img.as_ref(), "load", None, true, move |_| {
-                        if state.is_ready(&doc_c) {
-                            state.place(&doc_c, state.current_fraction.get(), None);
-                        }
-                    }));
+                    listeners.push(DocListener::new(
+                        img.as_ref(),
+                        "load",
+                        None,
+                        true,
+                        move |_| {
+                            if state.is_ready(&doc_c) {
+                                state.place(&doc_c, state.current_fraction.get(), None);
+                            }
+                        },
+                    ));
                 }
             }
         }
@@ -440,128 +500,182 @@ impl EpubState {
         // Keyboard inside chapter document.
         {
             let state = self.clone();
-            listeners.push(DocListener::new(doc.as_ref(), "keydown", None, false, move |event| {
-                if let Ok(ke) = event.dyn_into::<web_sys::KeyboardEvent>() {
-                    state.keys(&ke);
-                }
-            }));
+            listeners.push(DocListener::new(
+                doc.as_ref(),
+                "keydown",
+                None,
+                false,
+                move |event| {
+                    if let Ok(ke) = event.dyn_into::<web_sys::KeyboardEvent>() {
+                        state.keys(&ke);
+                    }
+                },
+            ));
         }
 
         // Clicks: links call on_link; outer 30% turns pages in paged mode.
         {
             let state = self.clone();
             let doc_c = doc.clone();
-            listeners.push(DocListener::new(doc.as_ref(), "click", None, false, move |event| {
-                let Ok(me) = event.dyn_into::<web_sys::MouseEvent>() else { return };
-                if let Some(link) = me
-                    .target()
-                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-                    .and_then(|el| el.closest("a[href]").ok().flatten())
-                {
-                    me.prevent_default();
-                    let href = link
-                        .dyn_ref::<web_sys::HtmlAnchorElement>()
-                        .map(|a| a.href())
-                        .or_else(|| Reflect::get(&link, &JsValue::from_str("href")).ok().and_then(|v| v.as_string()))
-                        .unwrap_or_default();
-                    { state.on_link.try_run(href); };
-                    return;
-                }
-                if !state.paged() {
-                    return;
-                }
-                let has_selection = doc_c
-                    .get_selection()
-                    .ok()
-                    .flatten()
-                    .and_then(|s| s.to_string().as_string())
-                    .is_some_and(|s| !s.is_empty());
-                if has_selection {
-                    return;
-                }
-                let Some(f) = state.frame.get_untracked() else { return };
-                let width = (f.client_width() as f64).max(1.0);
-                let x = (me.client_x() as f64) / width;
-                let rtl = state.right_to_left.get_untracked();
-                let forward = if rtl { x < 0.3 } else { x > 0.7 };
-                let back = if rtl { x > 0.7 } else { x < 0.3 };
-                if forward {
-                    state.step(1);
-                } else if back {
-                    state.step(-1);
-                }
-            }));
+            listeners.push(DocListener::new(
+                doc.as_ref(),
+                "click",
+                None,
+                false,
+                move |event| {
+                    let Ok(me) = event.dyn_into::<web_sys::MouseEvent>() else {
+                        return;
+                    };
+                    if let Some(link) = me
+                        .target()
+                        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                        .and_then(|el| el.closest("a[href]").ok().flatten())
+                    {
+                        me.prevent_default();
+                        let href = link
+                            .dyn_ref::<web_sys::HtmlAnchorElement>()
+                            .map(|a| a.href())
+                            .or_else(|| {
+                                Reflect::get(&link, &JsValue::from_str("href"))
+                                    .ok()
+                                    .and_then(|v| v.as_string())
+                            })
+                            .unwrap_or_default();
+                        {
+                            state.on_link.try_run(href);
+                        };
+                        return;
+                    }
+                    if !state.paged() {
+                        return;
+                    }
+                    let has_selection = doc_c
+                        .get_selection()
+                        .ok()
+                        .flatten()
+                        .and_then(|s| s.to_string().as_string())
+                        .is_some_and(|s| !s.is_empty());
+                    if has_selection {
+                        return;
+                    }
+                    let Some(f) = state.frame.get_untracked() else {
+                        return;
+                    };
+                    let width = (f.client_width() as f64).max(1.0);
+                    let x = (me.client_x() as f64) / width;
+                    let rtl = state.right_to_left.get_untracked();
+                    let forward = if rtl { x < 0.3 } else { x > 0.7 };
+                    let back = if rtl { x > 0.7 } else { x < 0.3 };
+                    if forward {
+                        state.step(1);
+                    } else if back {
+                        state.step(-1);
+                    }
+                },
+            ));
         }
 
         // Touch swipe in paged mode.
         let swipe: Rc<Cell<Option<(f64, f64)>>> = Rc::new(Cell::new(None));
         {
             let swipe = swipe.clone();
-            listeners.push(DocListener::new(doc.as_ref(), "touchstart", Some(true), false, move |event| {
-                if let Ok(te) = event.dyn_into::<web_sys::TouchEvent>()
-                    && let Some(t) = te.touches().item(0)
-                {
-                    swipe.set(Some((t.client_x() as f64, t.client_y() as f64)));
-                }
-            }));
+            listeners.push(DocListener::new(
+                doc.as_ref(),
+                "touchstart",
+                Some(true),
+                false,
+                move |event| {
+                    if let Ok(te) = event.dyn_into::<web_sys::TouchEvent>()
+                        && let Some(t) = te.touches().item(0)
+                    {
+                        swipe.set(Some((t.client_x() as f64, t.client_y() as f64)));
+                    }
+                },
+            ));
         }
         {
             let state = self.clone();
             let swipe = swipe.clone();
-            listeners.push(DocListener::new(doc.as_ref(), "touchend", Some(true), false, move |event| {
-                let Ok(te) = event.dyn_into::<web_sys::TouchEvent>() else { return };
-                let Some(t) = te.changed_touches().item(0) else { return };
-                let Some((sx, sy)) = swipe.take() else { return };
-                if !state.paged() {
-                    return;
-                }
-                let dx = (t.client_x() as f64) - sx;
-                let dy = (t.client_y() as f64) - sy;
-                if dx.abs() > 50.0 && dx.abs() > dy.abs() * 1.5 {
-                    let rtl = state.right_to_left.get_untracked();
-                    state.step(if (dx < 0.0) != rtl { 1 } else { -1 });
-                }
-            }));
+            listeners.push(DocListener::new(
+                doc.as_ref(),
+                "touchend",
+                Some(true),
+                false,
+                move |event| {
+                    let Ok(te) = event.dyn_into::<web_sys::TouchEvent>() else {
+                        return;
+                    };
+                    let Some(t) = te.changed_touches().item(0) else {
+                        return;
+                    };
+                    let Some((sx, sy)) = swipe.take() else { return };
+                    if !state.paged() {
+                        return;
+                    }
+                    let dx = (t.client_x() as f64) - sx;
+                    let dy = (t.client_y() as f64) - sy;
+                    if dx.abs() > 50.0 && dx.abs() > dy.abs() * 1.5 {
+                        let rtl = state.right_to_left.get_untracked();
+                        state.step(if (dx < 0.0) != rtl { 1 } else { -1 });
+                    }
+                },
+            ));
         }
 
         // Wheel turns pages in paged mode (with 350ms cooldown).
         {
             let state = self.clone();
-            listeners.push(DocListener::new(doc.as_ref(), "wheel", Some(false), false, move |event| {
-                if !state.paged() {
-                    return;
-                }
-                let Ok(we) = event.dyn_into::<web_sys::WheelEvent>() else { return };
-                let now = js_sys::Date::now();
-                if now - state.turning.get() < 350.0 {
-                    return;
-                }
-                let dx = we.delta_x();
-                let dy = we.delta_y();
-                let delta = if dx.abs() > dy.abs() { dx } else { dy };
-                if delta.abs() < 20.0 {
-                    return;
-                }
-                state.turning.set(now);
-                we.prevent_default();
-                state.step(if delta > 0.0 { 1 } else { -1 });
-            }));
+            listeners.push(DocListener::new(
+                doc.as_ref(),
+                "wheel",
+                Some(false),
+                false,
+                move |event| {
+                    if !state.paged() {
+                        return;
+                    }
+                    let Ok(we) = event.dyn_into::<web_sys::WheelEvent>() else {
+                        return;
+                    };
+                    let now = js_sys::Date::now();
+                    if now - state.turning.get() < 350.0 {
+                        return;
+                    }
+                    let dx = we.delta_x();
+                    let dy = we.delta_y();
+                    let delta = if dx.abs() > dy.abs() { dx } else { dy };
+                    if delta.abs() < 20.0 {
+                        return;
+                    }
+                    state.turning.set(now);
+                    we.prevent_default();
+                    state.step(if delta > 0.0 { 1 } else { -1 });
+                },
+            ));
         }
 
         // Scroll updates fraction in scroll layout.
         {
             let state = self.clone();
             let doc_c = doc.clone();
-            listeners.push(DocListener::new(doc.as_ref(), "scroll", Some(true), false, move |_| {
-                if state.paged() {
-                    return;
-                }
-                if let Some(el) = scroller(&doc_c) {
-                    let max_scroll = (el.scroll_height() - el.client_height()).max(1) as f64;
-                    state.current_fraction.set(((el.scroll_top() as f64) / max_scroll).clamp(0.0, 1.0));
-                    state.report();
-                }
-            }));
+            listeners.push(DocListener::new(
+                doc.as_ref(),
+                "scroll",
+                Some(true),
+                false,
+                move |_| {
+                    if state.paged() {
+                        return;
+                    }
+                    if let Some(el) = scroller(&doc_c) {
+                        let max_scroll = (el.scroll_height() - el.client_height()).max(1) as f64;
+                        state
+                            .current_fraction
+                            .set(((el.scroll_top() as f64) / max_scroll).clamp(0.0, 1.0));
+                        state.report();
+                    }
+                },
+            ));
         }
 
         *self.doc_listeners.borrow_mut() = listeners;
@@ -650,7 +764,11 @@ pub fn EpubView(
         let state = wrapped.clone();
         Effect::new(move |_| {
             let Some(node) = frame.get() else { return };
-            let last = Rc::new(RefCell::new(format!("{}x{}", node.client_width(), node.client_height())));
+            let last = Rc::new(RefCell::new(format!(
+                "{}x{}",
+                node.client_width(),
+                node.client_height()
+            )));
             let node_cb = node.clone();
             let state_cb = state.clone();
             let cb = Closure::<dyn FnMut()>::new(move || {
@@ -667,7 +785,8 @@ pub fn EpubView(
                     state_cb.place(&doc, frac, None);
                 }
             });
-            let observer = web_sys::ResizeObserver::new(cb.as_ref().unchecked_ref()).expect("ResizeObserver");
+            let observer =
+                web_sys::ResizeObserver::new(cb.as_ref().unchecked_ref()).expect("ResizeObserver");
             observer.observe(&node);
             let kept = SendWrapper::new((observer, cb));
             on_cleanup(move || {

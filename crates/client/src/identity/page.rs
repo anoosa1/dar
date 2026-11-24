@@ -9,15 +9,15 @@ use js_sys::Date;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use wasm_bindgen::{JsCast, JsValue};
 
-use crate::api::{self, format_bytes, BrowserSession, Req};
+use crate::api::{self, BrowserSession, Req, format_bytes};
 use crate::app::Brand;
 use crate::dates::{local_date, local_date_time};
 use crate::icons::Icon;
 use crate::shell::WorkspaceHeader;
-use crate::ui::{listen, unique_id, window, Dialog, Select};
+use crate::ui::{Dialog, Select, listen, unique_id, window};
 
 use super::account::AccountSecurity;
 use super::appearance::AppearanceSettings;
@@ -46,20 +46,75 @@ const OVERVIEW_SECTION: Section = Section {
 };
 
 const PERSONAL_SECTIONS: [Section; 5] = [
-    Section { id: "Appearance", label: "Appearance", route: "appearance", icon: "palette" },
-    Section { id: "Profile", label: "Profile", route: "profile", icon: "user" },
-    Section { id: "Account", label: "Security", route: "security", icon: "lock" },
-    Section { id: "Regional settings", label: "Regional settings", route: "regional", icon: "globe" },
-    Section { id: "Connected applications", label: "Connected applications", route: "connected", icon: "plug" },
+    Section {
+        id: "Appearance",
+        label: "Appearance",
+        route: "appearance",
+        icon: "palette",
+    },
+    Section {
+        id: "Profile",
+        label: "Profile",
+        route: "profile",
+        icon: "user",
+    },
+    Section {
+        id: "Account",
+        label: "Security",
+        route: "security",
+        icon: "lock",
+    },
+    Section {
+        id: "Regional settings",
+        label: "Regional settings",
+        route: "regional",
+        icon: "globe",
+    },
+    Section {
+        id: "Connected applications",
+        label: "Connected applications",
+        route: "connected",
+        icon: "plug",
+    },
 ];
 
 const ADMIN_SECTIONS: [Section; 6] = [
-    Section { id: "Instance appearance", label: "Appearance", route: "instanceAppearance", icon: "palette" },
-    Section { id: "Installed apps", label: "Apps", route: "installedApps", icon: "grid" },
-    Section { id: "Applications", label: "Applications", route: "applications", icon: "plug" },
-    Section { id: "Directory", label: "Directory", route: "directory", icon: "contacts" },
-    Section { id: "SCIM", label: "SCIM", route: "scim", icon: "refresh" },
-    Section { id: "Signing keys", label: "Signing keys", route: "keys", icon: "key" },
+    Section {
+        id: "Instance appearance",
+        label: "Appearance",
+        route: "instanceAppearance",
+        icon: "palette",
+    },
+    Section {
+        id: "Installed apps",
+        label: "Apps",
+        route: "installedApps",
+        icon: "grid",
+    },
+    Section {
+        id: "Applications",
+        label: "Applications",
+        route: "applications",
+        icon: "plug",
+    },
+    Section {
+        id: "Directory",
+        label: "Directory",
+        route: "directory",
+        icon: "contacts",
+    },
+    Section {
+        id: "SCIM",
+        label: "SCIM",
+        route: "scim",
+        icon: "refresh",
+    },
+    Section {
+        id: "Signing keys",
+        label: "Signing keys",
+        route: "keys",
+        icon: "key",
+    },
 ];
 
 fn all_sections(admin: bool) -> Vec<Section> {
@@ -76,7 +131,9 @@ fn initial_section(admin: bool) -> &'static str {
     let route = web_sys::UrlSearchParams::new_with_str(&search)
         .ok()
         .and_then(|p| p.get("section"));
-    let Some(route) = route else { return "Overview" };
+    let Some(route) = route else {
+        return "Overview";
+    };
     all_sections(admin)
         .into_iter()
         .find(|s| s.route == route)
@@ -138,7 +195,9 @@ struct SecretState {
     id: Option<String>,
 }
 
-type ProofWork = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<(), api::RequestError>>>> + Send + Sync>;
+type ProofWork = Arc<
+    dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<(), api::RequestError>>>> + Send + Sync,
+>;
 
 #[derive(Clone)]
 struct PendingState {
@@ -157,24 +216,36 @@ fn storage_summary(s: Option<&Storage>) -> String {
 fn format_gb(quota: f64) -> String {
     let gb = quota / GIB;
     let formatted = format!("{gb:.2}");
-    formatted.trim_end_matches('0').trim_end_matches('.').to_owned()
+    formatted
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_owned()
 }
 
 fn select_input(event: web_sys::FocusEvent) {
-    if let Some(input) = event.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) {
+    if let Some(input) = event
+        .target()
+        .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
+    {
         input.select();
     }
 }
 
 fn parse_ts(v: &Value) -> Option<f64> {
-    v.as_str().map(Date::parse).or_else(|| v.as_f64()).filter(|t| !t.is_nan())
+    v.as_str()
+        .map(Date::parse)
+        .or_else(|| v.as_f64())
+        .filter(|t| !t.is_nan())
 }
 
 fn json_matches(value: &Value, query: &str) -> bool {
     if query.is_empty() {
         return true;
     }
-    value.to_string().to_lowercase().contains(&query.to_lowercase())
+    value
+        .to_string()
+        .to_lowercase()
+        .contains(&query.to_lowercase())
 }
 
 fn encode_uri(value: &str) -> String {
@@ -227,7 +298,11 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
                 api::get::<Value>("/api/v1/identity/status"),
                 api::get::<Items<Storage>>("/api/v1/identity/storage"),
             )?;
-            let map: HashMap<String, Storage> = f.items.into_iter().map(|s| (s.user_id.clone(), s)).collect();
+            let map: HashMap<String, Storage> = f
+                .items
+                .into_iter()
+                .map(|s| (s.user_id.clone(), s))
+                .collect();
             let _ = storage.try_set(map);
             let _ = clients.try_set(a.items);
             let _ = users.try_set(b.items);
@@ -301,7 +376,12 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
                     }
                     api::request::<Value>(
                         &path,
-                        Req { method: "DELETE", csrf: Some(&token), headers: &hdrs, ..Default::default() },
+                        Req {
+                            method: "DELETE",
+                            csrf: Some(&token),
+                            headers: &hdrs,
+                            ..Default::default()
+                        },
                     )
                     .await
                     .map(|_| ())
@@ -309,7 +389,11 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
             });
             mutate(pf);
         });
-        confirmation.set(Some(ConfirmationState { title, description, work }));
+        confirmation.set(Some(ConfirmationState {
+            title,
+            description,
+            work,
+        }));
     };
 
     let choose_section = Callback::new(move |id: &'static str| {
@@ -319,15 +403,28 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
         if let Some(sec) = all_sections(true).into_iter().find(|s| s.id == id)
             && let Ok(history) = window().history()
         {
-            let _ = history.push_state_with_url(&JsValue::NULL, "", Some(&format!("/settings?section={}", sec.route)));
+            let _ = history.push_state_with_url(
+                &JsValue::NULL,
+                "",
+                Some(&format!("/settings?section={}", sec.route)),
+            );
         }
     });
 
     let save_editor = move |event: web_sys::SubmitEvent| {
         event.prevent_default();
-        let Some(ed) = editor.get_untracked() else { return };
-        let Some(form_el) = event.target().and_then(|t| t.dyn_into::<web_sys::HtmlFormElement>().ok()) else { return };
-        let Ok(form) = web_sys::FormData::new_with_form(&form_el) else { return };
+        let Some(ed) = editor.get_untracked() else {
+            return;
+        };
+        let Some(form_el) = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::HtmlFormElement>().ok())
+        else {
+            return;
+        };
+        let Ok(form) = web_sys::FormData::new_with_form(&form_el) else {
+            return;
+        };
         let field = |name: &str| form.get(name).as_string().unwrap_or_default();
         let kind = ed.kind;
         let item = ed.item.clone();
@@ -344,10 +441,26 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
             .collect();
         let mut form_fields: HashMap<&'static str, String> = HashMap::new();
         for k in [
-            "name", "type", "redirectUris", "postLogoutRedirectUris", "scopes", "enabled",
-            "label", "scope", "days", "userName", "displayName", "givenName", "familyName",
-            "emails", "organization", "department", "employeeNumber", "password",
-            "storageLimit", "active",
+            "name",
+            "type",
+            "redirectUris",
+            "postLogoutRedirectUris",
+            "scopes",
+            "enabled",
+            "label",
+            "scope",
+            "days",
+            "userName",
+            "displayName",
+            "givenName",
+            "familyName",
+            "emails",
+            "organization",
+            "department",
+            "employeeNumber",
+            "password",
+            "storageLimit",
+            "active",
         ] {
             form_fields.insert(k, field(k));
         }
@@ -366,9 +479,15 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
                     let require_pkce = ctype == "public"
                         || item.as_ref().and_then(|i| i["requirePkce"].as_bool()) != Some(false);
                     let split_lines = |s: String| -> Vec<String> {
-                        s.lines().map(|l| l.trim().to_owned()).filter(|l| !l.is_empty()).collect()
+                        s.lines()
+                            .map(|l| l.trim().to_owned())
+                            .filter(|l| !l.is_empty())
+                            .collect()
                     };
-                    let scopes: Vec<String> = get("scopes").split_whitespace().map(str::to_owned).collect();
+                    let scopes: Vec<String> = get("scopes")
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect();
                     let payload = json!({
                         "name": get("name"),
                         "type": ctype,
@@ -382,7 +501,11 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
                         Some(it) => {
                             let id = it["id"].as_str().unwrap_or("");
                             let rev = it["revision"].as_u64().unwrap_or(0);
-                            (format!("/api/v1/identity/clients/{id}"), "PUT", Some(format!("W/\"{rev}\"")))
+                            (
+                                format!("/api/v1/identity/clients/{id}"),
+                                "PUT",
+                                Some(format!("W/\"{rev}\"")),
+                            )
                         }
                         None => ("/api/v1/identity/clients".to_owned(), "POST", None),
                     };
@@ -392,7 +515,13 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
                     }
                     let value = api::request::<Value>(
                         &url,
-                        Req { method, body: Some(payload.to_string()), csrf: Some(&token), headers: &hdrs, ..Default::default() },
+                        Req {
+                            method,
+                            body: Some(payload.to_string()),
+                            csrf: Some(&token),
+                            headers: &hdrs,
+                            ..Default::default()
+                        },
                     )
                     .await?;
                     if let Some(sec) = value["secret"].as_str() {
@@ -411,7 +540,13 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
                     let hdrs = [("x-identity-proof", p.as_str())];
                     let res = api::request::<SecretState>(
                         "/api/v1/identity/credentials",
-                        Req { method: "POST", body: Some(payload.to_string()), csrf: Some(&token), headers: &hdrs, ..Default::default() },
+                        Req {
+                            method: "POST",
+                            body: Some(payload.to_string()),
+                            csrf: Some(&token),
+                            headers: &hdrs,
+                            ..Default::default()
+                        },
                     )
                     .await?;
                     let _ = secret.try_set(Some(res));
@@ -424,13 +559,19 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
                         previous.remove(drop_key);
                     }
                     if kind == "user" {
-                        let is_self = item.as_ref().and_then(|i| i["id"].as_str()) == Some(me_id.as_str());
+                        let is_self =
+                            item.as_ref().and_then(|i| i["id"].as_str()) == Some(me_id.as_str());
                         let active = if is_self {
-                            item.as_ref().and_then(|i| i["active"].as_bool()).unwrap_or(true)
+                            item.as_ref()
+                                .and_then(|i| i["active"].as_bool())
+                                .unwrap_or(true)
                         } else {
                             get("active") == "on"
                         };
-                        let mut name_obj = previous.get("name").and_then(|v| v.as_object().cloned()).unwrap_or_default();
+                        let mut name_obj = previous
+                            .get("name")
+                            .and_then(|v| v.as_object().cloned())
+                            .unwrap_or_default();
                         name_obj.insert("givenName".into(), get("givenName").into());
                         name_obj.insert("familyName".into(), get("familyName").into());
                         let emails: Vec<Value> = get("emails")
@@ -440,7 +581,10 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
                             .enumerate()
                             .map(|(i, value)| json!({ "value": value, "primary": i == 0 }))
                             .collect();
-                        let mut ent_obj = previous.get(ENTERPRISE).and_then(|v| v.as_object().cloned()).unwrap_or_default();
+                        let mut ent_obj = previous
+                            .get(ENTERPRISE)
+                            .and_then(|v| v.as_object().cloned())
+                            .unwrap_or_default();
                         ent_obj.insert("department".into(), get("department").into());
                         ent_obj.insert("organization".into(), get("organization").into());
                         ent_obj.insert("employeeNumber".into(), get("employeeNumber").into());
@@ -475,7 +619,13 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
                     }
                     let saved = api::request::<Value>(
                         &url,
-                        Req { method, body: Some(Value::Object(previous).to_string()), csrf: Some(&token), headers: &hdrs, ..Default::default() },
+                        Req {
+                            method,
+                            body: Some(Value::Object(previous).to_string()),
+                            csrf: Some(&token),
+                            headers: &hdrs,
+                            ..Default::default()
+                        },
                     )
                     .await?;
 
@@ -496,11 +646,21 @@ pub fn IdentitySettings(session: BrowserSession, on_signed_out: Callback<()>) ->
                         if (quota - prev_quota).abs() > 0.5
                             && let Some(saved_id) = saved["id"].as_str()
                         {
-                            let body = if quota > 0.0 { json!({ "quota": quota }) } else { json!({ "quota": Value::Null }) };
+                            let body = if quota > 0.0 {
+                                json!({ "quota": quota })
+                            } else {
+                                json!({ "quota": Value::Null })
+                            };
                             let shdrs = [("x-identity-proof", p.as_str())];
                             api::request::<Value>(
                                 &format!("/api/v1/identity/users/{}/storage", encode_uri(saved_id)),
-                                Req { method: "PUT", body: Some(body.to_string()), csrf: Some(&token), headers: &shdrs, ..Default::default() },
+                                Req {
+                                    method: "PUT",
+                                    body: Some(body.to_string()),
+                                    csrf: Some(&token),
+                                    headers: &shdrs,
+                                    ..Default::default()
+                                },
                             )
                             .await?;
                         }
@@ -1474,8 +1634,15 @@ fn SignInScreen(on_login: Callback<BrowserSession>) -> impl IntoView {
     });
     let submit = move |event: web_sys::SubmitEvent| {
         event.prevent_default();
-        let Some(form) = event.target().and_then(|t| t.dyn_into::<web_sys::HtmlFormElement>().ok()) else { return };
-        let Ok(data) = web_sys::FormData::new_with_form(&form) else { return };
+        let Some(form) = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::HtmlFormElement>().ok())
+        else {
+            return;
+        };
+        let Ok(data) = web_sys::FormData::new_with_form(&form) else {
+            return;
+        };
         let mut body = Map::new();
         for name in ["username", "password"] {
             if let Some(value) = data.get(name).as_string() {
@@ -1487,12 +1654,20 @@ fn SignInScreen(on_login: Callback<BrowserSession>) -> impl IntoView {
         spawn_local(async move {
             match api::request::<BrowserSession>(
                 "/api/v1/auth/login",
-                Req { method: "POST", body: Some(Value::Object(body).to_string()), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(Value::Object(body).to_string()),
+                    ..Default::default()
+                },
             )
             .await
             {
-                Ok(session) => { on_login.try_run(session); },
-                Err(e) => { let _ = error.try_set(e.message); }
+                Ok(session) => {
+                    on_login.try_run(session);
+                }
+                Err(e) => {
+                    let _ = error.try_set(e.message);
+                }
             }
             let _ = busy.try_set(false);
         });
@@ -1527,7 +1702,9 @@ fn SignInScreen(on_login: Callback<BrowserSession>) -> impl IntoView {
 }
 
 fn redirect_host(uri: &str) -> String {
-    let Ok(url) = web_sys::Url::new(uri) else { return String::new() };
+    let Ok(url) = web_sys::Url::new(uri) else {
+        return String::new();
+    };
     let host = url.host();
     if !host.is_empty() {
         host
@@ -1544,7 +1721,10 @@ pub fn IdentityInteraction(
 ) -> impl IntoView {
     let pathname = window().location().pathname().unwrap_or_default();
     let uid = pathname.rsplit('/').next().unwrap_or("").to_owned();
-    let endpoint = StoredValue::new(format!("/api/v1/identity/interactions/{}", encode_uri(&uid)));
+    let endpoint = StoredValue::new(format!(
+        "/api/v1/identity/interactions/{}",
+        encode_uri(&uid)
+    ));
 
     let detail: RwSignal<Option<Interaction>> = RwSignal::new(None);
     let error = RwSignal::new(String::new());
@@ -1573,7 +1753,9 @@ pub fn IdentityInteraction(
     });
 
     let decide = move |action: &'static str, password: Option<String>| {
-        let Some(sess) = session.get_untracked() else { return };
+        let Some(sess) = session.get_untracked() else {
+            return;
+        };
         busy.set(true);
         error.set(String::new());
         let url = endpoint.get_value();
@@ -1585,7 +1767,12 @@ pub fn IdentityInteraction(
         spawn_local(async move {
             match api::request::<RedirectResp>(
                 &url,
-                Req { method: "POST", body: Some(Value::Object(body).to_string()), csrf: Some(&sess.csrf_token), ..Default::default() },
+                Req {
+                    method: "POST",
+                    body: Some(Value::Object(body).to_string()),
+                    csrf: Some(&sess.csrf_token),
+                    ..Default::default()
+                },
             )
             .await
             {
@@ -1636,7 +1823,11 @@ pub fn IdentityInteraction(
         });
         let display_name = sess.user.display_name.clone();
         let username = sess.user.username.clone();
-        let initials: String = display_name.chars().take(2).collect::<String>().to_uppercase();
+        let initials: String = display_name
+            .chars()
+            .take(2)
+            .collect::<String>()
+            .to_uppercase();
         let user_id = sess.user.id.clone();
 
         view! {

@@ -193,7 +193,9 @@ pub async fn git(workspace: &Path, args: &[&str], cancel: CancelToken) -> Result
         cmd.env("PATH", path_env);
     }
 
-    let mut child = cmd.spawn().map_err(|_| AppError::new("gitUnavailable", 503))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|_| AppError::new("gitUnavailable", 503))?;
     let pid = child.id().unwrap_or(0);
     let mut stdout = child.stdout.take().expect("git stdout");
     let mut stderr = child.stderr.take().expect("git stderr");
@@ -766,7 +768,11 @@ pub struct BranchChange {
 }
 
 /// Everything a Files thread changed against its baseline, with full contents, for its history branch.
-pub async fn branch_changes(root: &Path, user_id: &str, thread_id: &str) -> Result<Vec<BranchChange>> {
+pub async fn branch_changes(
+    root: &Path,
+    user_id: &str,
+    thread_id: &str,
+) -> Result<Vec<BranchChange>> {
     let thread = root.join("agent-workspaces").join(user_id).join(thread_id);
     let baseline = match read_baseline_nofollow(&thread.join("baseline.json")).await {
         Ok(b) => b,

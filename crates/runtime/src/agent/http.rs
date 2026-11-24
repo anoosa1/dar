@@ -112,9 +112,13 @@ pub async fn handle_http(
         _ => None,
     } {
         if *method == Method::GET && share_id.is_none() {
-            let value =
-                call_agent(runtime, session_id, "threadShares", json!({ "threadId": thread_id }))
-                    .await?;
+            let value = call_agent(
+                runtime,
+                session_id,
+                "threadShares",
+                json!({ "threadId": thread_id }),
+            )
+            .await?;
             return Ok(json_response(&value, StatusCode::OK));
         }
         if *method == Method::POST && share_id.is_none() {
@@ -123,7 +127,8 @@ pub async fn handle_http(
                 return Err(AppError::invalid());
             }
             input.insert("threadId".into(), json!(thread_id));
-            let value = call_agent(runtime, session_id, "shareThread", Value::Object(input)).await?;
+            let value =
+                call_agent(runtime, session_id, "shareThread", Value::Object(input)).await?;
             return Ok(json_response(&value, StatusCode::CREATED));
         }
         if *method == Method::DELETE
@@ -254,9 +259,15 @@ pub async fn handle_http(
         }
         let input = body_object(body, MAX_JSON_BODY, headers).await?;
         let (value, status) = if *action == "steer" {
-            (agent.steer(session_id, run_id, input).await?, StatusCode::CREATED)
+            (
+                agent.steer(session_id, run_id, input).await?,
+                StatusCode::CREATED,
+            )
         } else {
-            (agent.answer(session_id, run_id, input).await?, StatusCode::OK)
+            (
+                agent.answer(session_id, run_id, input).await?,
+                StatusCode::OK,
+            )
         };
         return Ok(json_response(&value, status));
     }
@@ -289,7 +300,15 @@ pub async fn handle_http(
                 ));
             }
             let value = agent
-                .upload(session_id, user_id, thread_id, att_id, name, &media_type, body)
+                .upload(
+                    session_id,
+                    user_id,
+                    thread_id,
+                    att_id,
+                    name,
+                    &media_type,
+                    body,
+                )
                 .await?;
             return Ok(json_response(&value, StatusCode::CREATED));
         }
@@ -337,7 +356,10 @@ pub async fn handle_http(
         if !is_cancel && *method == Method::GET {
             let value = call_agent(runtime, session_id, "run", json!({ "id": run_id })).await?;
             let text = value.to_string();
-            let tag = format!("\"{}\"", URL_SAFE_NO_PAD.encode(Sha256::digest(text.as_bytes())));
+            let tag = format!(
+                "\"{}\"",
+                URL_SAFE_NO_PAD.encode(Sha256::digest(text.as_bytes()))
+            );
             if headers
                 .get(header::IF_NONE_MATCH)
                 .and_then(|v| v.to_str().ok())

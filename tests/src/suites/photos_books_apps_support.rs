@@ -36,7 +36,11 @@ pub fn zip(entries: &[(&str, &[u8], bool)]) -> Vec<u8> {
     let mut central = Vec::new();
     let mut offset: u32 = 0;
     for &(name, data, store) in entries {
-        let packed = if store { data.to_vec() } else { deflate_raw(data) };
+        let packed = if store {
+            data.to_vec()
+        } else {
+            deflate_raw(data)
+        };
         let name_bytes = name.as_bytes();
         let crc = crc32(data);
         let method: u16 = if store { 0 } else { 8 };
@@ -205,11 +209,17 @@ pub fn pdf() -> Vec<u8> {
         body.push_str(&format!("{} 0 obj\n{object}\nendobj\n", index + 1));
     }
     let xref = body.len();
-    body.push_str(&format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1));
+    body.push_str(&format!(
+        "xref\n0 {}\n0000000000 65535 f \n",
+        objects.len() + 1
+    ));
     for offset in offsets {
         body.push_str(&format!("{offset:010} 00000 n \n"));
     }
-    body.push_str(&format!("trailer\n<< /Size {} /Root 1 0 R /Info 8 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1));
+    body.push_str(&format!(
+        "trailer\n<< /Size {} /Root 1 0 R /Info 8 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+        objects.len() + 1
+    ));
     body.into_bytes()
 }
 
@@ -217,9 +227,18 @@ pub fn pdf() -> Vec<u8> {
 
 /// Runs a command and returns trimmed stdout, failing with stderr if it exits non-zero.
 pub async fn run_cmd(program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program).args(args).output().await.context(program)?;
+    let output = Command::new(program)
+        .args(args)
+        .output()
+        .await
+        .context(program)?;
     if !output.status.success() {
-        bail!("{program} {:?} failed ({}): {}", args, output.status, String::from_utf8_lossy(&output.stderr));
+        bail!(
+            "{program} {:?} failed ({}): {}",
+            args,
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
@@ -253,7 +272,12 @@ pub fn sha1_base64(input: &[u8]) -> String {
     for chunk in msg.chunks_exact(64) {
         let mut w = [0u32; 80];
         for i in 0..16 {
-            w[i] = u32::from_be_bytes([chunk[i * 4], chunk[i * 4 + 1], chunk[i * 4 + 2], chunk[i * 4 + 3]]);
+            w[i] = u32::from_be_bytes([
+                chunk[i * 4],
+                chunk[i * 4 + 1],
+                chunk[i * 4 + 2],
+                chunk[i * 4 + 3],
+            ]);
         }
         for i in 16..80 {
             w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
@@ -266,7 +290,12 @@ pub fn sha1_base64(input: &[u8]) -> String {
                 40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1BBCDCu32),
                 _ => (b ^ c ^ d, 0xCA62C1D6u32),
             };
-            let temp = a.rotate_left(5).wrapping_add(f).wrapping_add(e).wrapping_add(k).wrapping_add(wi);
+            let temp = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(wi);
             e = d;
             d = c;
             c = b.rotate_left(30);
@@ -291,7 +320,8 @@ pub fn sha1_base64(input: &[u8]) -> String {
 
 /// Sets up the first account (`admin`) on a fresh isolated instance with a specific display name.
 pub async fn setup_admin_as(base: &str, display_name: &str) -> Result<()> {
-    let token = dar_acceptance::read_to_string(&dar_acceptance::stack::stack().bootstrap_token_file)?;
+    let token =
+        dar_acceptance::read_to_string(&dar_acceptance::stack::stack().bootstrap_token_file)?;
     let response = session::client()
         .post(format!("{base}/api/v1/auth/setup"))
         .header("origin", base)
@@ -309,16 +339,30 @@ pub async fn setup_admin_as(base: &str, display_name: &str) -> Result<()> {
 }
 
 /// Creates a non-admin account through `/api/v1/auth/users`.
-pub async fn create_user(admin: &Session, username: &str, display_name: &str, password: &str) -> Result<()> {
+pub async fn create_user(
+    admin: &Session,
+    username: &str,
+    display_name: &str,
+    password: &str,
+) -> Result<()> {
     admin
-        .post("/api/v1/auth/users", &json!({"username": username, "displayName": display_name, "password": password}))
+        .post(
+            "/api/v1/auth/users",
+            &json!({"username": username, "displayName": display_name, "password": password}),
+        )
         .await?
         .expect(201)?;
     Ok(())
 }
 
 /// Reserves and uploads bytes through `/api/v1/files/uploads`, returning the uploaded file's id.
-pub async fn upload_raw(session: &Session, parent_id: &str, file_name: &str, media_type: &str, contents: &[u8]) -> Result<String> {
+pub async fn upload_raw(
+    session: &Session,
+    parent_id: &str,
+    file_name: &str,
+    media_type: &str,
+    contents: &[u8],
+) -> Result<String> {
     let reservation = session
         .post(
             "/api/v1/files/uploads",
@@ -326,7 +370,10 @@ pub async fn upload_raw(session: &Session, parent_id: &str, file_name: &str, med
         )
         .await?
         .expect(201)?;
-    let reservation_id = reservation.json()?["id"].as_str().context("reservation id")?.to_owned();
+    let reservation_id = reservation.json()?["id"]
+        .as_str()
+        .context("reservation id")?
+        .to_owned();
     let transfer = Reply::from(
         session
             .request("PUT", &format!("/api/v1/files/uploads/{reservation_id}"))
@@ -336,12 +383,23 @@ pub async fn upload_raw(session: &Session, parent_id: &str, file_name: &str, med
     )
     .await?
     .expect(200)?;
-    Ok(transfer.json()?["id"].as_str().context("uploaded file id")?.to_owned())
+    Ok(transfer.json()?["id"]
+        .as_str()
+        .context("uploaded file id")?
+        .to_owned())
 }
 
 /// Sends a request to `/api/v1/photos{route}` with optional JSON body and extra headers.
-pub async fn photos_raw(session: &Session, route: &str, method: &str, body: Option<&Value>, extra: &[(&str, &str)]) -> Result<Reply> {
-    let mut req = session.request(method, &format!("/api/v1/photos{route}")).header("content-type", "application/json");
+pub async fn photos_raw(
+    session: &Session,
+    route: &str,
+    method: &str,
+    body: Option<&Value>,
+    extra: &[(&str, &str)],
+) -> Result<Reply> {
+    let mut req = session
+        .request(method, &format!("/api/v1/photos{route}"))
+        .header("content-type", "application/json");
     for &(name, value) in extra {
         req = req.header(name, value);
     }
@@ -352,9 +410,19 @@ pub async fn photos_raw(session: &Session, route: &str, method: &str, body: Opti
 }
 
 /// Calls `/api/v1/photos{route}` and asserts a 2xx response, returning the parsed JSON.
-pub async fn photos_call(session: &Session, route: &str, method: &str, body: Option<&Value>) -> Result<Value> {
+pub async fn photos_call(
+    session: &Session,
+    route: &str,
+    method: &str,
+    body: Option<&Value>,
+) -> Result<Value> {
     let reply = photos_raw(session, route, method, body, &[]).await?;
-    ensure!((200..300).contains(&reply.status), "{method} {route}: {} {}", reply.status, reply.text());
+    ensure!(
+        (200..300).contains(&reply.status),
+        "{method} {route}: {} {}",
+        reply.status,
+        reply.text()
+    );
     reply.json()
 }
 
@@ -363,7 +431,9 @@ pub fn url_encode(value: &str) -> String {
 }
 
 pub fn parse_iso_ms(value: &str) -> i64 {
-    chrono::DateTime::parse_from_rfc3339(value).expect("valid RFC 3339 timestamp").timestamp_millis()
+    chrono::DateTime::parse_from_rfc3339(value)
+        .expect("valid RFC 3339 timestamp")
+        .timestamp_millis()
 }
 
 pub fn now_ms() -> i64 {
@@ -371,11 +441,21 @@ pub fn now_ms() -> i64 {
 }
 
 /// Builds a `multipart/form-data` payload for Immich's `POST /api/assets`.
-pub fn multipart_immich(fields: &[(&str, &str)], file_name: &str, file_type: &str, bytes: &[u8]) -> (String, Vec<u8>) {
+pub fn multipart_immich(
+    fields: &[(&str, &str)],
+    file_name: &str,
+    file_type: &str,
+    bytes: &[u8],
+) -> (String, Vec<u8>) {
     let boundary = format!("----dar{}", uuid());
     let mut body = Vec::new();
     for &(name, value) in fields {
-        body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n").as_bytes());
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .as_bytes(),
+        );
     }
     body.extend_from_slice(
         format!("--{boundary}\r\nContent-Disposition: form-data; name=\"assetData\"; filename=\"{file_name}\"\r\nContent-Type: {file_type}\r\n\r\n").as_bytes(),
@@ -402,7 +482,16 @@ pub async fn photos_media_fixtures(dir: &Path) -> Result<PhotosMedia> {
     let plain_str = plain_path.to_string_lossy().into_owned();
     let clip_str = clip_path.to_string_lossy().into_owned();
 
-    ffmpeg(&["-f", "lavfi", "-i", "testsrc=size=640x480", "-frames:v", "1", &trip_str]).await?;
+    ffmpeg(&[
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=640x480",
+        "-frames:v",
+        "1",
+        &trip_str,
+    ])
+    .await?;
     exiftool(&[
         "-q",
         "-overwrite_original",
@@ -420,9 +509,35 @@ pub async fn photos_media_fixtures(dir: &Path) -> Result<PhotosMedia> {
         &trip_str,
     ])
     .await?;
-    ffmpeg(&["-f", "lavfi", "-i", "testsrc2=size=320x200", "-frames:v", "1", &plain_str]).await?;
-    ffmpeg(&["-f", "lavfi", "-i", "testsrc=size=320x240:rate=10", "-t", "3", "-pix_fmt", "yuv420p", &clip_str]).await?;
-    exiftool(&["-q", "-overwrite_original", "-CreateDate=2025:01:02 03:04:05", &clip_str]).await?;
+    ffmpeg(&[
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x200",
+        "-frames:v",
+        "1",
+        &plain_str,
+    ])
+    .await?;
+    ffmpeg(&[
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=320x240:rate=10",
+        "-t",
+        "3",
+        "-pix_fmt",
+        "yuv420p",
+        &clip_str,
+    ])
+    .await?;
+    exiftool(&[
+        "-q",
+        "-overwrite_original",
+        "-CreateDate=2025:01:02 03:04:05",
+        &clip_str,
+    ])
+    .await?;
 
     Ok(PhotosMedia {
         trip: std::fs::read(&trip_path)?,

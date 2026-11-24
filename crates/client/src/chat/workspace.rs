@@ -16,9 +16,14 @@ use spacetimedb_sdk::{DbContext, SubscriptionHandle as _, Table};
 use wasm_bindgen::JsCast;
 
 use super::conversation::{ChatInfoSheet, Conversation};
-use super::panes::{AddContactPane, ChatSettings, LinkPane, NewChatPane, NewMessagePane, RenamePane, SaveMediaPane};
+use super::panes::{
+    AddContactPane, ChatSettings, LinkPane, NewChatPane, NewMessagePane, RenamePane, SaveMediaPane,
+};
 use super::voice::{CallCodeDialog, VoiceDock, VoiceMembers, VoiceStage, use_voice};
-use super::{BASE, ChatAccount, ChatMessage, ChatServer, ChatSetting, ChatThread, ChatThreadPage, ChatOverview, ChatView, platform_name, search_params, kind_label};
+use super::{
+    BASE, ChatAccount, ChatMessage, ChatOverview, ChatServer, ChatSetting, ChatThread,
+    ChatThreadPage, ChatView, kind_label, platform_name, search_params,
+};
 use crate::api::{self, BrowserSession};
 use crate::dates::{local_date, local_time};
 use crate::icons::Icon;
@@ -26,7 +31,9 @@ use crate::live::Live;
 use crate::module_bindings::*;
 use crate::pim::avatar_hue;
 use crate::shell::WorkspaceHeader;
-use crate::ui::{ActionMenu, Dialog, MenuAction, active_element, document, listen, unique_id, window};
+use crate::ui::{
+    ActionMenu, Dialog, MenuAction, active_element, document, listen, unique_id, window,
+};
 
 pub type RunFuture = Pin<Box<dyn Future<Output = Result<(), String>>>>;
 
@@ -41,11 +48,17 @@ pub struct Confirm {
 
 #[derive(Clone)]
 enum Pane {
-    Link { account_id: Option<String>, platform: Option<String> },
+    Link {
+        account_id: Option<String>,
+        platform: Option<String>,
+    },
     NewChat,
     Settings,
     Rename(ChatAccount),
-    Save { thread_id: String, message: ChatMessage },
+    Save {
+        thread_id: String,
+        message: ChatMessage,
+    },
     AddContact(ChatThread),
 }
 
@@ -69,11 +82,15 @@ fn state_text(detail: &str) -> &'static str {
         "banned" => "WhatsApp has temporarily blocked this number.",
         "outdated" => "WhatsApp no longer accepts this version of the bridge. Update Dar.",
         "unlinked" => "You unlinked this account. Its chats stay here, read-only.",
-        "unlinkedHere" => "Dar stopped using this link. Remove Dar under Linked devices on your phone too.",
+        "unlinkedHere" => {
+            "Dar stopped using this link. Remove Dar under Linked devices on your phone too."
+        }
         "notLinked" => "This account is no longer linked.",
         "timeout" => "The code expired before it was used.",
         "passkey" => "This WhatsApp account asks for a passkey, which Dar does not support yet.",
-        "authenticationFailed" => "Discord no longer accepts this sign-in, after a new password or a sign-out elsewhere.",
+        "authenticationFailed" => {
+            "Discord no longer accepts this sign-in, after a new password or a sign-out elsewhere."
+        }
         "gateway" => "Discord refused the connection.",
         _ => "",
     }
@@ -87,7 +104,9 @@ pub(super) fn now() -> f64 {
 pub(super) fn emoji_label(emoji: &str) -> String {
     if let Some((name, id)) = emoji.split_once(':')
         && !name.is_empty()
-        && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '~' || c == '-')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '~' || c == '-')
         && !id.is_empty()
         && id.chars().all(|c| c.is_ascii_digit())
     {
@@ -103,7 +122,9 @@ pub(super) fn quiet_until(until: f64) -> bool {
 pub(super) fn initials(name: &str) -> String {
     let trimmed = name.strip_prefix('+').unwrap_or(name);
     let words: Vec<&str> = trimmed.split_whitespace().collect();
-    let Some(first) = words.first() else { return "?".into() };
+    let Some(first) = words.first() else {
+        return "?".into();
+    };
     if first.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         let chars: Vec<char> = first.chars().collect();
         return chars[chars.len().saturating_sub(2)..].iter().collect();
@@ -147,7 +168,10 @@ pub(super) fn day_label(time: f64) -> String {
         let year = js_sys::Date::new(&time.into()).get_full_year();
         let this_year = js_sys::Date::new(&now().into()).get_full_year();
         if year != this_year {
-            local_date(time, &[("day", "numeric"), ("month", "long"), ("year", "numeric")])
+            local_date(
+                time,
+                &[("day", "numeric"), ("month", "long"), ("year", "numeric")],
+            )
         } else {
             local_date(time, &[("day", "numeric"), ("month", "long")])
         }
@@ -171,7 +195,10 @@ fn list_time(time: f64) -> String {
 }
 
 pub(super) fn iso(time: f64) -> String {
-    js_sys::Date::new(&time.into()).to_iso_string().as_string().unwrap_or_default()
+    js_sys::Date::new(&time.into())
+        .to_iso_string()
+        .as_string()
+        .unwrap_or_default()
 }
 
 pub(super) fn muted(thread: &ChatThread) -> bool {
@@ -179,17 +206,28 @@ pub(super) fn muted(thread: &ChatThread) -> bool {
 }
 
 pub(super) fn narrow() -> bool {
-    window().match_media("(max-width:800px)").ok().flatten().is_some_and(|m| m.matches())
+    window()
+        .match_media("(max-width:800px)")
+        .ok()
+        .flatten()
+        .is_some_and(|m| m.matches())
 }
 
 fn preview(thread: &ChatThread) -> String {
     if thread.preview_kind == "deleted" {
         return "This message was deleted".into();
     }
-    let label = if thread.preview_kind.is_empty() { "" } else { kind_label(&thread.preview_kind) };
+    let label = if thread.preview_kind.is_empty() {
+        ""
+    } else {
+        kind_label(&thread.preview_kind)
+    };
     if thread.preview.is_empty() {
         label.into()
-    } else if !label.is_empty() && thread.preview_kind != "text" && thread.preview_kind != "document" {
+    } else if !label.is_empty()
+        && thread.preview_kind != "text"
+        && thread.preview_kind != "document"
+    {
         format!("{label} \u{b7} {}", thread.preview)
     } else {
         thread.preview.clone()
@@ -226,20 +264,40 @@ fn write_view(account: &str, view: ChatView, chat: &str) {
         pairs.push(("chat", chat));
     }
     let query = search_params(&pairs);
-    let next = if query.is_empty() { "/chat".to_owned() } else { format!("/chat?{query}") };
+    let next = if query.is_empty() {
+        "/chat".to_owned()
+    } else {
+        format!("/chat?{query}")
+    };
     let location = window().location();
-    let current = format!("{}{}", location.pathname().unwrap_or_default(), location.search().unwrap_or_default());
+    let current = format!(
+        "{}{}",
+        location.pathname().unwrap_or_default(),
+        location.search().unwrap_or_default()
+    );
     if next != current {
-        let _ = window().history().expect("history").replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&next));
+        let _ = window().history().expect("history").replace_state_with_url(
+            &wasm_bindgen::JsValue::NULL,
+            "",
+            Some(&next),
+        );
     }
 }
 
 pub(super) fn message_of(cause: &api::RequestError) -> String {
-    if cause.message.is_empty() { "The request could not be completed.".into() } else { cause.message.clone() }
+    if cause.message.is_empty() {
+        "The request could not be completed.".into()
+    } else {
+        cause.message.clone()
+    }
 }
 
 #[component]
-pub(super) fn ChatAvatar(#[prop(into)] name: String, group: bool, #[prop(optional, into)] size: String) -> impl IntoView {
+pub(super) fn ChatAvatar(
+    #[prop(into)] name: String,
+    group: bool,
+    #[prop(optional, into)] size: String,
+) -> impl IntoView {
     let class = format!("chat-avatar contact-initials {} {size}", avatar_hue(&name));
     view! {
         <span class=class aria-hidden="true">{if group { view! { <Icon name="contacts"/> }.into_any() } else { initials(&name).into_any() }}</span>
@@ -305,7 +363,11 @@ fn mobile_navigation(open: RwSignal<bool>, panel: NodeRef<html::Aside>) {
         let is_open = open.get();
         if is_open {
             trigger.set_value(active_element());
-            if let Some(el) = panel.get().and_then(|r| r.query_selector("button,a").ok().flatten()).and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok()) {
+            if let Some(el) = panel
+                .get()
+                .and_then(|r| r.query_selector("button,a").ok().flatten())
+                .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+            {
                 let _ = el.focus();
             }
             listen(&document(), "keydown", false, move |event| {
@@ -317,8 +379,14 @@ fn mobile_navigation(open: RwSignal<bool>, panel: NodeRef<html::Aside>) {
             });
         } else if was_open.get_value() {
             let active = document().active_element();
-            let on_body = document().body().is_some_and(|b| active.as_ref().is_some_and(|a| a.unchecked_ref::<web_sys::Node>() == b.as_ref()));
-            let inside = panel.get_untracked().is_some_and(|r| r.contains(active.as_ref().map(|a| a.unchecked_ref::<web_sys::Node>())));
+            let on_body = document().body().is_some_and(|b| {
+                active
+                    .as_ref()
+                    .is_some_and(|a| a.unchecked_ref::<web_sys::Node>() == b.as_ref())
+            });
+            let inside = panel.get_untracked().is_some_and(|r| {
+                r.contains(active.as_ref().map(|a| a.unchecked_ref::<web_sys::Node>()))
+            });
             if on_body || inside {
                 trigger.with_value(|t| {
                     if let Some(el) = t {
@@ -389,7 +457,10 @@ impl Chat {
             self.list_state.set("loading");
         }
         spawn_local(async move {
-            let url = format!("{BASE}/threads?{}", search_params(&[("accountId", &account.id), ("view", view.as_str())]));
+            let url = format!(
+                "{BASE}/threads?{}",
+                search_params(&[("accountId", &account.id), ("view", view.as_str())])
+            );
             let result = api::get::<ChatThreadPage>(&url).await;
             if self.generation.try_get_value() != Some(ticket) {
                 return;
@@ -408,8 +479,15 @@ impl Chat {
     }
 
     fn load_more(self) {
-        let Some(account) = self.account.get_untracked() else { return };
-        let Some(cursor) = self.page.with_untracked(|p| p.as_ref().and_then(|p| p.cursor.clone())) else { return };
+        let Some(account) = self.account.get_untracked() else {
+            return;
+        };
+        let Some(cursor) = self
+            .page
+            .with_untracked(|p| p.as_ref().and_then(|p| p.cursor.clone()))
+        else {
+            return;
+        };
         if self.more.get_untracked() {
             return;
         }
@@ -417,13 +495,24 @@ impl Chat {
         let ticket = self.generation.get_value();
         let view = self.view.get_untracked();
         spawn_local(async move {
-            let url = format!("{BASE}/threads?{}", search_params(&[("accountId", &account.id), ("view", view.as_str()), ("cursor", &cursor)]));
+            let url = format!(
+                "{BASE}/threads?{}",
+                search_params(&[
+                    ("accountId", &account.id),
+                    ("view", view.as_str()),
+                    ("cursor", &cursor)
+                ])
+            );
             match api::get::<ChatThreadPage>(&url).await {
                 Ok(next) => {
                     if self.generation.try_get_value() == Some(ticket) {
                         self.page.try_update(|p| {
                             if let Some(p) = p {
-                                let fresh: Vec<ChatThread> = next.threads.into_iter().filter(|t| !p.threads.iter().any(|o| o.id == t.id)).collect();
+                                let fresh: Vec<ChatThread> = next
+                                    .threads
+                                    .into_iter()
+                                    .filter(|t| !p.threads.iter().any(|o| o.id == t.id))
+                                    .collect();
                                 p.threads.extend(fresh);
                                 p.cursor = next.cursor;
                             }
@@ -443,7 +532,8 @@ impl Chat {
     }
 
     fn open_thread(self, thread_id: String, from: Option<web_sys::HtmlElement>) {
-        self.origin.set_value(from.map(send_wrapper::SendWrapper::new));
+        self.origin
+            .set_value(from.map(send_wrapper::SendWrapper::new));
         self.selected.set(thread_id);
         self.navigation.set(false);
     }
@@ -465,7 +555,9 @@ impl Chat {
         spawn_local(async move {
             let mut body = serde_json::to_value(&change).unwrap_or_else(|_| json!({}));
             body["threadId"] = Value::String(thread_id);
-            match api::send::<Value>(&format!("{BASE}/chatSetting"), "POST", Some(body), &csrf).await {
+            match api::send::<Value>(&format!("{BASE}/chatSetting"), "POST", Some(body), &csrf)
+                .await
+            {
                 Ok(_) => {
                     let text = match (change.archived, change.pinned, change.muted_until) {
                         (Some(true), _, _) => "Chat archived",
@@ -486,11 +578,17 @@ impl Chat {
         let discord = a.platform == "discord";
         let mut actions = vec![{
             let a = a.clone();
-            MenuAction::new("Rename", "pencil").run(move || self.pane.set(Some(Pane::Rename(a.clone()))))
+            MenuAction::new("Rename", "pencil")
+                .run(move || self.pane.set(Some(Pane::Rename(a.clone()))))
         }];
         if a.state == "loggedOut" || a.state == "failed" {
             let (id, platform) = (a.id.clone(), a.platform.clone());
-            actions.push(MenuAction::new("Link again", "link").run(move || self.pane.set(Some(Pane::Link { account_id: Some(id.clone()), platform: Some(platform.clone()) }))));
+            actions.push(MenuAction::new("Link again", "link").run(move || {
+                self.pane.set(Some(Pane::Link {
+                    account_id: Some(id.clone()),
+                    platform: Some(platform.clone()),
+                }))
+            }));
         }
         if a.state != "loggedOut" {
             let a = a.clone();
@@ -571,10 +669,17 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
     let start_message = StoredValue::new(start.message.clone());
     let overview: RwSignal<Option<ChatOverview>> = RwSignal::new(None);
     let account_id = RwSignal::new(start.account.clone());
-    let accounts = Memo::new(move |_| overview.with(|o| o.as_ref().map(|o| o.accounts.clone()).unwrap_or_default()));
+    let accounts = Memo::new(move |_| {
+        overview.with(|o| o.as_ref().map(|o| o.accounts.clone()).unwrap_or_default())
+    });
     let account = Memo::new(move |_| {
         let id = account_id.get();
-        accounts.with(|list| list.iter().find(|a| a.id == id).or_else(|| list.first()).cloned())
+        accounts.with(|list| {
+            list.iter()
+                .find(|a| a.id == id)
+                .or_else(|| list.first())
+                .cloned()
+        })
     });
     let chat = Chat {
         session: StoredValue::new(session.clone()),
@@ -600,8 +705,10 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
     let servers: RwSignal<Option<Vec<ChatServer>>> = RwSignal::new(None);
     let collapsed: RwSignal<BTreeSet<String>> = RwSignal::new(BTreeSet::new());
     let code_for = RwSignal::new(String::new());
-    let discord = Memo::new(move |_| account.with(|a| a.as_ref().is_some_and(|a| a.platform == "discord")));
-    let account_key = Memo::new(move |_| account.with(|a| a.as_ref().map(|a| a.id.clone()).unwrap_or_default()));
+    let discord =
+        Memo::new(move |_| account.with(|a| a.as_ref().is_some_and(|a| a.platform == "discord")));
+    let account_key =
+        Memo::new(move |_| account.with(|a| a.as_ref().map(|a| a.id.clone()).unwrap_or_default()));
     let has_account = Memo::new(move |_| account.with(Option::is_some));
     let navigation_id = unique_id();
     let navigation_ref = NodeRef::<html::Aside>::new();
@@ -619,7 +726,12 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
         if chat.notice.with(String::is_empty) {
             return;
         }
-        if let Ok(handle) = set_timeout_with_handle(move || { chat.notice.try_set(String::new()); }, Duration::from_millis(5000)) {
+        if let Ok(handle) = set_timeout_with_handle(
+            move || {
+                chat.notice.try_set(String::new());
+            },
+            Duration::from_millis(5000),
+        ) {
             on_cleanup(move || handle.clear());
         }
     });
@@ -655,7 +767,11 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
             struct Servers {
                 servers: Vec<ChatServer>,
             }
-            let result = api::get::<Servers>(&format!("{BASE}/servers?{}", search_params(&[("accountId", &id)]))).await;
+            let result = api::get::<Servers>(&format!(
+                "{BASE}/servers?{}",
+                search_params(&[("accountId", &id)])
+            ))
+            .await;
             if !gone.load(Ordering::Relaxed) {
                 servers.try_set(Some(result.map(|r| r.servers).unwrap_or_default()));
             }
@@ -663,19 +779,25 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
     });
     Effect::new(move |_| write_view(&account_key.get(), chat.view.get(), &chat.selected.get()));
     // While linking or importing, nothing in the database changes for the browser to hear about the bridge; poll gently.
-    let busy = Memo::new(move |_| accounts.with(|list| list.iter().any(|a| a.importing || a.state == "connecting")));
+    let busy = Memo::new(move |_| {
+        accounts.with(|list| list.iter().any(|a| a.importing || a.state == "connecting"))
+    });
     Effect::new(move |_| {
         if !busy.get() {
             return;
         }
-        if let Ok(handle) = set_interval_with_handle(move || chat.load_overview(), Duration::from_millis(5000)) {
+        if let Ok(handle) =
+            set_interval_with_handle(move || chat.load_overview(), Duration::from_millis(5000))
+        {
             on_cleanup(move || handle.clear());
         }
     });
     // Changes to the account's chats (and to Dar contacts, which name chats) reload the list.
     let live = expect_context::<Live>();
     Effect::new(move |_| {
-        let Some(c) = live.connection.get() else { return };
+        let Some(c) = live.connection.get() else {
+            return;
+        };
         let disposed = Arc::new(AtomicBool::new(false));
         let revision = Arc::new(std::sync::atomic::AtomicI64::new(-1));
         let timer: StoredValue<Option<TimeoutHandle>> = StoredValue::new(None);
@@ -687,11 +809,15 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                     handle.clear();
                 }
                 let disposed = disposed.clone();
-                let handle = set_timeout_with_handle(move || {
-                    if !disposed.load(Ordering::Relaxed) {
-                        chat.epoch.try_update(|n| *n += 1);
-                    }
-                }, Duration::from_millis(250)).ok();
+                let handle = set_timeout_with_handle(
+                    move || {
+                        if !disposed.load(Ordering::Relaxed) {
+                            chat.epoch.try_update(|n| *n += 1);
+                        }
+                    },
+                    Duration::from_millis(250),
+                )
+                .ok();
                 timer.try_set_value(handle);
             }
         };
@@ -701,20 +827,32 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                 if disposed.load(Ordering::Relaxed) {
                     return;
                 }
-                let next = ctx.db.my_chat_changes().iter().last().map_or(0, |r| r.revision as i64);
+                let next = ctx
+                    .db
+                    .my_chat_changes()
+                    .iter()
+                    .last()
+                    .map_or(0, |r| r.revision as i64);
                 let before = revision.swap(next, Ordering::Relaxed);
                 if before >= 0 && next != before {
                     bump();
                 }
             }
         };
-        let inserted = c.db.my_chat_changes().on_insert({ let changed = changed.clone(); move |ctx, _| changed(ctx) });
+        let inserted = c.db.my_chat_changes().on_insert({
+            let changed = changed.clone();
+            move |ctx, _| changed(ctx)
+        });
         let deleted = c.db.me().on_delete({
             let disposed = disposed.clone();
             // Another app's unsubscribing also removes the row from the cache; only a real deletion signs out.
-                move |ctx: &EventContext, _| {
-                if !disposed.load(Ordering::Relaxed) && !matches!(ctx.event, spacetimedb_sdk::Event::UnsubscribeApplied) {
-                    { on_signed_out.try_run(()); };
+            move |ctx: &EventContext, _| {
+                if !disposed.load(Ordering::Relaxed)
+                    && !matches!(ctx.event, spacetimedb_sdk::Event::UnsubscribeApplied)
+                {
+                    {
+                        on_signed_out.try_run(());
+                    };
                 }
             }
         });
@@ -737,12 +875,21 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                     if revision.load(Ordering::Relaxed) >= 0 {
                         chat.epoch.try_update(|n| *n += 1);
                     }
-                    let next = ctx.db.my_chat_changes().iter().last().map_or(0, |r| r.revision as i64);
+                    let next = ctx
+                        .db
+                        .my_chat_changes()
+                        .iter()
+                        .last()
+                        .map_or(0, |r| r.revision as i64);
                     revision.store(next, Ordering::Relaxed);
                 }
             })
             .on_error(|_, _| {})
-            .subscribe(["SELECT * FROM me", "SELECT * FROM my_chat_changes", "SELECT * FROM my_pim_changes"]);
+            .subscribe([
+                "SELECT * FROM me",
+                "SELECT * FROM my_chat_changes",
+                "SELECT * FROM my_pim_changes",
+            ]);
         let kept = send_wrapper::SendWrapper::new((c.clone(), handle, inserted, deleted, contacts));
         on_cleanup(move || {
             disposed.store(true, Ordering::Relaxed);
@@ -757,14 +904,35 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
         });
     });
 
-    let all = Memo::new(move |_| chat.page.with(|p| p.as_ref().map(|p| p.pinned.iter().chain(p.threads.iter()).cloned().collect::<Vec<_>>()).unwrap_or_default()));
+    let all = Memo::new(move |_| {
+        chat.page.with(|p| {
+            p.as_ref()
+                .map(|p| {
+                    p.pinned
+                        .iter()
+                        .chain(p.threads.iter())
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        })
+    });
     let channel = Memo::new(move |_| {
         let id = chat.selected.get();
-        servers.with(|s| s.as_ref().and_then(|s| s.iter().flat_map(|s| s.channels.iter()).find(|t| t.id == id).cloned()))
+        servers.with(|s| {
+            s.as_ref().and_then(|s| {
+                s.iter()
+                    .flat_map(|s| s.channels.iter())
+                    .find(|t| t.id == id)
+                    .cloned()
+            })
+        })
     });
     let current = Memo::new(move |_| {
         let id = chat.selected.get();
-        channel.get().or_else(|| all.with(|all| all.iter().find(|t| t.id == id).cloned()))
+        channel
+            .get()
+            .or_else(|| all.with(|all| all.iter().find(|t| t.id == id).cloned()))
     });
     let my_voice = Memo::new(move |_| {
         let id = account_key.get();
@@ -778,28 +946,50 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                 .iter()
                 .find(|(_, a)| a.here && a.call.is_some())
                 .map(|(k, a)| (k.clone(), a.clone()))
-                .or_else(|| v.accounts.get(&id).filter(|a| !id.is_empty() && a.call.is_some()).map(|a| (id.clone(), a.clone())))
+                .or_else(|| {
+                    v.accounts
+                        .get(&id)
+                        .filter(|a| !id.is_empty() && a.call.is_some())
+                        .map(|a| (id.clone(), a.clone()))
+                })
         })
     });
-    let call_account = Memo::new(move |_| call_entry.with(|e| e.as_ref().map(|e| e.0.clone()).unwrap_or_default()));
-    let the_call = Memo::new(move |_| call_entry.with(|e| e.as_ref().and_then(|e| e.1.call.clone())));
+    let call_account = Memo::new(move |_| {
+        call_entry.with(|e| e.as_ref().map(|e| e.0.clone()).unwrap_or_default())
+    });
+    let the_call =
+        Memo::new(move |_| call_entry.with(|e| e.as_ref().and_then(|e| e.1.call.clone())));
     let call_server = Memo::new(move |_| {
         if call_account.get() != account_key.get() {
             return None;
         }
         let server_id = the_call.with(|c| c.as_ref().map(|c| c.server_id.clone()))?;
-        servers.with(|s| s.as_ref().and_then(|s| s.iter().find(|s| s.server_id == server_id).cloned()))
+        servers.with(|s| {
+            s.as_ref()
+                .and_then(|s| s.iter().find(|s| s.server_id == server_id).cloned())
+        })
     });
     let call_thread = Memo::new(move |_| {
         let channel_id = the_call.with(|c| c.as_ref().map(|c| c.channel_id.clone()))?;
-        call_server.with(|s| s.as_ref().and_then(|s| s.channels.iter().find(|c| c.jid == channel_id).cloned()))
-    });
-    let call_channel = Memo::new(move |_| call_thread.with(|t| t.as_ref().map(|t| t.name.clone())).unwrap_or_else(|| "Voice".into()));
-    let call_server_name = Memo::new(move |_| {
-        call_server.with(|s| s.as_ref().map(|s| s.name.clone())).unwrap_or_else(|| {
-            let id = call_account.get();
-            accounts.with(|list| list.iter().find(|a| a.id == id).map(|a| a.name.clone())).unwrap_or_else(|| "Discord".into())
+        call_server.with(|s| {
+            s.as_ref()
+                .and_then(|s| s.channels.iter().find(|c| c.jid == channel_id).cloned())
         })
+    });
+    let call_channel = Memo::new(move |_| {
+        call_thread
+            .with(|t| t.as_ref().map(|t| t.name.clone()))
+            .unwrap_or_else(|| "Voice".into())
+    });
+    let call_server_name = Memo::new(move |_| {
+        call_server
+            .with(|s| s.as_ref().map(|s| s.name.clone()))
+            .unwrap_or_else(|| {
+                let id = call_account.get();
+                accounts
+                    .with(|list| list.iter().find(|a| a.id == id).map(|a| a.name.clone()))
+                    .unwrap_or_else(|| "Discord".into())
+            })
     });
     let voice_run = move |work: Pin<Box<dyn Future<Output = Result<(), String>>>>| {
         spawn_local(async move {
@@ -808,7 +998,11 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
             }
         });
     };
-    let set_self = move |id: String| Callback::new(move |(muted, deafened): (bool, bool)| voice_run(Box::pin(voice.set_self(id.clone(), muted, deafened))));
+    let set_self = move |id: String| {
+        Callback::new(move |(muted, deafened): (bool, bool)| {
+            voice_run(Box::pin(voice.set_self(id.clone(), muted, deafened)))
+        })
+    };
     let open_call = move || {
         let target = call_account.get_untracked();
         if target != account_key.get_untracked() {
@@ -834,14 +1028,27 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
         }
     };
 
-    let toggle_server = move |id: String| collapsed.update(|set| {
-        if !set.remove(&id) {
-            set.insert(id);
+    let toggle_server = move |id: String| {
+        collapsed.update(|set| {
+            if !set.remove(&id) {
+                set.insert(id);
+            }
+        })
+    };
+    let title = Memo::new(move |_| {
+        if discord.get() {
+            "Direct messages".to_owned()
+        } else {
+            chat.view.get().label().to_owned()
         }
     });
-    let title = Memo::new(move |_| if discord.get() { "Direct messages".to_owned() } else { chat.view.get().label().to_owned() });
 
-    let link_pane = move |account_id: Option<String>, platform: Option<String>| chat.pane.set(Some(Pane::Link { account_id, platform }));
+    let link_pane = move |account_id: Option<String>, platform: Option<String>| {
+        chat.pane.set(Some(Pane::Link {
+            account_id,
+            platform,
+        }))
+    };
     let status = move || {
         account.get().map(|a| {
             let (id, platform) = (a.id.clone(), a.platform.clone());
@@ -963,7 +1170,9 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
         }
         class
     };
-    let is_voice = Memo::new(move |_| discord.get() && current.with(|c| c.as_ref().is_some_and(|c| c.kind == "voice")));
+    let is_voice = Memo::new(move |_| {
+        discord.get() && current.with(|c| c.as_ref().is_some_and(|c| c.kind == "voice"))
+    });
     let session_sv = StoredValue::new(session.clone());
 
     view! {
@@ -1159,11 +1368,17 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
 }
 
 #[component]
-fn AccountStatus(account: ChatAccount, on_link: Callback<()>, actions: Callback<(), Vec<MenuAction>>) -> impl IntoView {
+fn AccountStatus(
+    account: ChatAccount,
+    on_link: Callback<()>,
+    actions: Callback<(), Vec<MenuAction>>,
+) -> impl IntoView {
     let phone = phone_of(&account.jid);
     let detail = state_text(&account.detail);
     let link = move |label: &'static str| view! { <button type="button" class="text-button" on:click=move |_| { on_link.try_run(()); }>{label}</button> };
-    let (tone, icon, heading, text): (&str, &str, String, AnyView) = if account.platform == "discord" {
+    let (tone, icon, heading, text): (&str, &str, String, AnyView) = if account.platform
+        == "discord"
+    {
         match account.state.as_str() {
             "connected" => ("", "hash", "Signed in to Discord".into(), "Your own account. Dar sees what you can see.".into_any()),
             "connecting" => ("", "refresh", "Connecting\u{2026}".into(), "Loading your servers and messages.".into_any()),
@@ -1198,14 +1413,34 @@ fn AccountStatus(account: ChatAccount, on_link: Callback<()>, actions: Callback<
 }
 
 #[component]
-fn ThreadRow(thread: ChatThread, #[prop(into)] selected: Signal<bool>, on_open: Callback<web_sys::HtmlElement>) -> impl IntoView {
-    let name = if !thread.name.is_empty() { thread.name.clone() } else { Some(phone_of(&thread.jid)).filter(|p| !p.is_empty()).unwrap_or_else(|| "Unknown".into()) };
+fn ThreadRow(
+    thread: ChatThread,
+    #[prop(into)] selected: Signal<bool>,
+    on_open: Callback<web_sys::HtmlElement>,
+) -> impl IntoView {
+    let name = if !thread.name.is_empty() {
+        thread.name.clone()
+    } else {
+        Some(phone_of(&thread.jid))
+            .filter(|p| !p.is_empty())
+            .unwrap_or_else(|| "Unknown".into())
+    };
     let text = preview(&thread);
     let quiet = muted(&thread);
     let unread = thread.unread;
-    let class = move || format!("chat-row{}{}", if selected.get() { " is-selected" } else { "" }, if unread > 0 { " is-unread" } else { "" });
+    let class = move || {
+        format!(
+            "chat-row{}{}",
+            if selected.get() { " is-selected" } else { "" },
+            if unread > 0 { " is-unread" } else { "" }
+        )
+    };
     let at = thread.at;
-    let icon = if thread.preview_kind.is_empty() { None } else { kind_icon(&thread.preview_kind) };
+    let icon = if thread.preview_kind.is_empty() {
+        None
+    } else {
+        kind_icon(&thread.preview_kind)
+    };
     view! {
         <div role="listitem" class=class>
             <button type="button" aria-current=move || selected.get().then_some("true") on:click=move |event| {

@@ -103,10 +103,18 @@ fn send_json(value: &Value, status: StatusCode, cookies: &[String]) -> Response 
 }
 
 fn immich_error(failure: AppError) -> Response {
-    let status = if failure.status == 423 { 404 } else { failure.status };
+    let status = if failure.status == 423 {
+        404
+    } else {
+        failure.status
+    };
     let text = status_text(status);
     let message = if failure.message == failure.code {
-        if text != "Error" { text } else { failure.code.as_str() }
+        if text != "Error" {
+            text
+        } else {
+            failure.code.as_str()
+        }
     } else {
         failure.message.as_str()
     };
@@ -138,10 +146,14 @@ fn auth_cookies(token: &str, auth_type: &str, secure: bool) -> Vec<String> {
 }
 
 fn cleared_cookies() -> Vec<String> {
-    ["immich_access_token", "immich_auth_type", "immich_is_authenticated"]
-        .into_iter()
-        .map(|name| format!("{name}=; Path=/; Max-Age=0; SameSite=Lax"))
-        .collect()
+    [
+        "immich_access_token",
+        "immich_auth_type",
+        "immich_is_authenticated",
+    ]
+    .into_iter()
+    .map(|name| format!("{name}=; Path=/; Max-Age=0; SameSite=Lax"))
+    .collect()
 }
 
 fn device_header(headers: &HeaderMap, name: &str, alternative: &str, fallback: &str) -> String {
@@ -191,7 +203,12 @@ fn parse_disposition_param(header: &str, key: &str) -> Option<String> {
 
 /// A streaming `multipart/form-data` reader: small fields in memory (64 KiB in all),
 /// one file written to a private temporary directory while its SHA-1 is computed.
-async fn read_multipart(body: Body, boundary: &str, dir: &Path, max_file: u64) -> Result<Vec<Part>> {
+async fn read_multipart(
+    body: Body,
+    boundary: &str,
+    dir: &Path,
+    max_file: u64,
+) -> Result<Vec<Part>> {
     let delimiter = format!("\r\n--{boundary}").into_bytes();
     let mut parts: Vec<Part> = Vec::new();
     let mut buffer: Vec<u8> = b"\r\n".to_vec();
@@ -210,7 +227,8 @@ async fn read_multipart(body: Body, boundary: &str, dir: &Path, max_file: u64) -
         .await
         .map_err(|_| AppError::with("invalidInput", 400, "Upload stalled."))?
     {
-        let chunk = next.map_err(|_| AppError::with("invalidInput", 400, "The upload ended early."))?;
+        let chunk =
+            next.map_err(|_| AppError::with("invalidInput", 400, "The upload ended early."))?;
         if done {
             continue;
         }
@@ -266,7 +284,11 @@ async fn read_multipart(body: Body, boundary: &str, dir: &Path, max_file: u64) -
                     file = Some(f);
                     hash = Some(Sha1::default());
                     file_size = 0;
-                    part.file = Some(PartFile { path: target, size: 0, sha1: String::new() });
+                    part.file = Some(PartFile {
+                        path: target,
+                        size: 0,
+                        sha1: String::new(),
+                    });
                 }
                 current = Some(part);
                 chunks.clear();
@@ -339,7 +361,11 @@ async fn read_multipart(body: Body, boundary: &str, dir: &Path, max_file: u64) -
         }
     }
     if !done {
-        return Err(AppError::with("invalidInput", 400, "The upload ended early."));
+        return Err(AppError::with(
+            "invalidInput",
+            400,
+            "The upload ended early.",
+        ));
     }
     Ok(parts)
 }
@@ -364,7 +390,9 @@ async fn free_disk_bytes(root: &Path) -> u64 {
 fn seq_of(ack: Option<&str>) -> f64 {
     let id = ack.and_then(|a| a.split('|').nth(1)).unwrap_or("");
     if is_uuid(id) {
-        i64::from_str_radix(&id[24..], 16).map(|n| n as f64).unwrap_or(-1.0)
+        i64::from_str_radix(&id[24..], 16)
+            .map(|n| n as f64)
+            .unwrap_or(-1.0)
     } else {
         -1.0
     }
@@ -373,22 +401,39 @@ fn seq_of(ack: Option<&str>) -> f64 {
 fn asset_response(d: &Value, viewer: &str) -> Value {
     let e = d.get("exif").and_then(Value::as_object);
     let exif_field = |k: &str| e.and_then(|m| m.get(k)).cloned().unwrap_or(Value::Null);
-    let exposure = e.and_then(|m| m.get("exposure")).and_then(Value::as_f64).map(|x| {
-        if x < 1.0 && x > 0.0 {
-            format!("1/{}", (1.0 / x).round() as i64)
-        } else {
-            format!("{x}")
-        }
-    });
+    let exposure = e
+        .and_then(|m| m.get("exposure"))
+        .and_then(Value::as_f64)
+        .map(|x| {
+            if x < 1.0 && x > 0.0 {
+                format!("1/{}", (1.0 / x).round() as i64)
+            } else {
+                format!("{x}")
+            }
+        });
     let taken_at = d.get("takenAt").and_then(Value::as_f64).unwrap_or(0.0);
     let modified_at = d.get("modifiedAt").and_then(Value::as_f64).unwrap_or(0.0);
     let kind = d.get("kind").and_then(Value::as_str).unwrap_or("image");
     let archived = d.get("archived") == Some(&json!(true));
-    let trashed = d.get("trashedAt").and_then(Value::as_f64).is_some_and(|t| t != 0.0);
+    let trashed = d
+        .get("trashedAt")
+        .and_then(Value::as_f64)
+        .is_some_and(|t| t != 0.0);
     let duration = d.get("duration").and_then(Value::as_f64).unwrap_or(0.0);
-    let width = d.get("width").and_then(Value::as_f64).map(|n| n as u64).unwrap_or(0);
-    let height = d.get("height").and_then(Value::as_f64).map(|n| n as u64).unwrap_or(0);
-    let has_owner = d.get("owner").and_then(Value::as_str).is_some_and(|s| !s.is_empty());
+    let width = d
+        .get("width")
+        .and_then(Value::as_f64)
+        .map(|n| n as u64)
+        .unwrap_or(0);
+    let height = d
+        .get("height")
+        .and_then(Value::as_f64)
+        .map(|n| n as u64)
+        .unwrap_or(0);
+    let has_owner = d
+        .get("owner")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.is_empty());
 
     json!({
         "id": d["id"],
@@ -503,8 +548,7 @@ async fn update_assets(
         && ids.len() == 1
     {
         let id = &ids[0];
-        let detail =
-            call_photos_op(db, protocol_session_id, "detail", json!({ "id": id })).await?;
+        let detail = call_photos_op(db, protocol_session_id, "detail", json!({ "id": id })).await?;
         call_photos_op(
             db,
             protocol_session_id,
@@ -540,9 +584,13 @@ async fn album_response(
     let mut people = vec![json!({ "user": owner_user, "role": "owner" })];
     let shared = a.get("shared") == Some(&json!(true));
     if a.get("role").and_then(Value::as_str) == Some("owner") && shared {
-        let sharing =
-            call_photos_op(db, protocol_session_id, "albumSharing", json!({ "id": album_id }))
-                .await?;
+        let sharing = call_photos_op(
+            db,
+            protocol_session_id,
+            "albumSharing",
+            json!({ "id": album_id }),
+        )
+        .await?;
         if let Some(members) = sharing.get("members").and_then(Value::as_array) {
             for m in members {
                 let username = m.get("username").and_then(Value::as_str).unwrap_or("");
@@ -611,7 +659,9 @@ async fn album_response(
                 })
             })
             .collect();
-        out.as_object_mut().expect("obj").insert("assets".into(), Value::Array(items));
+        out.as_object_mut()
+            .expect("obj")
+            .insert("assets".into(), Value::Array(items));
     }
     Ok(out)
 }
@@ -738,14 +788,22 @@ async fn dispatch(
     if *method == Method::POST && route == "/auth/login" {
         runtime.attempt_up_to(&login_rate_key(headers), 10)?;
         let p = body_object(body, 2 * 1024 * 1024, headers).await?;
-        let email = p.get("email").and_then(Value::as_str).map(str::trim).unwrap_or("");
+        let email = p
+            .get("email")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or("");
         let password = p.get("password").and_then(Value::as_str).unwrap_or("");
         if email.split('@').next().unwrap_or("").is_empty()
             || email.len() > 320
             || password.is_empty()
             || password.len() > 1024
         {
-            return Err(AppError::with("unauthenticated", 401, "Incorrect email or password"));
+            return Err(AppError::with(
+                "unauthenticated",
+                401,
+                "Incorrect email or password",
+            ));
         }
         let (secret, token_digest) = auth::opaque_token();
         let user = runtime
@@ -804,8 +862,8 @@ async fn dispatch(
                 &format!("Use the redirect URI {IMMICH_OAUTH_REDIRECT_URI}."),
             ));
         }
-        let valid_state = (8..=512).contains(&state.len())
-            && state.bytes().all(|b| (0x21..=0x7e).contains(&b));
+        let valid_state =
+            (8..=512).contains(&state.len()) && state.bytes().all(|b| (0x21..=0x7e).contains(&b));
         if !is_token(challenge) || !valid_state {
             return Err(AppError::with(
                 "invalidInput",
@@ -815,7 +873,8 @@ async fn dispatch(
         }
         let mut target =
             url::Url::parse(&format!("{origin}/oidc/auth")).map_err(|_| AppError::internal())?;
-        target.query_pairs_mut()
+        target
+            .query_pairs_mut()
             .append_pair("client_id", IMMICH_OAUTH_CLIENT_ID)
             .append_pair("response_type", "code")
             .append_pair("scope", "openid")
@@ -823,7 +882,11 @@ async fn dispatch(
             .append_pair("state", state)
             .append_pair("code_challenge", challenge)
             .append_pair("code_challenge_method", "S256");
-        return Ok(send_json(&json!({ "url": target.as_str() }), StatusCode::CREATED, &[]));
+        return Ok(send_json(
+            &json!({ "url": target.as_str() }),
+            StatusCode::CREATED,
+            &[],
+        ));
     }
 
     if *method == Method::POST && route == "/oauth/callback" {
@@ -832,7 +895,11 @@ async fn dispatch(
         let raw = p.get("url").and_then(Value::as_str).unwrap_or("");
         let cb_re = Regex::new(r"^app\.immich:/(?://)?oauth-callback(?:\?|$)").expect("regex");
         if raw.len() > 4096 || !cb_re.is_match(raw) {
-            return Err(AppError::with("invalidInput", 400, "Unexpected OAuth callback URL."));
+            return Err(AppError::with(
+                "invalidInput",
+                400,
+                "Unexpected OAuth callback URL.",
+            ));
         }
         let qs = raw.split_once('?').map(|(_, q)| q).unwrap_or("");
         let params: HashMap<String, String> = url::form_urlencoded::parse(qs.as_bytes())
@@ -858,9 +925,18 @@ async fn dispatch(
         let verifier = p.get("codeVerifier").and_then(Value::as_str).unwrap_or("");
         let user_id = runtime
             .oidc
-            .redeem_built_in_code(IMMICH_OAUTH_CLIENT_ID, code, IMMICH_OAUTH_REDIRECT_URI, verifier)
+            .redeem_built_in_code(
+                IMMICH_OAUTH_CLIENT_ID,
+                code,
+                IMMICH_OAUTH_REDIRECT_URI,
+                verifier,
+            )
             .map_err(|_| {
-                AppError::with("unauthenticated", 401, "Sign-in could not be completed. Try again.")
+                AppError::with(
+                    "unauthenticated",
+                    401,
+                    "Sign-in could not be completed. Try again.",
+                )
             })?;
         let (_, dummy_password_digest) = auth::opaque_token();
         let (secret, token_digest) = auth::opaque_token();
@@ -924,7 +1000,11 @@ async fn dispatch(
         .and_then(|v| v.to_str().ok())
         .and_then(|s| {
             let prefix = s.get(..7)?;
-            if prefix.eq_ignore_ascii_case("bearer ") { Some(s[7..].to_owned()) } else { None }
+            if prefix.eq_ignore_ascii_case("bearer ") {
+                Some(s[7..].to_owned())
+            } else {
+                None
+            }
         });
     let token = headers
         .get("x-immich-user-token")
@@ -934,12 +1014,20 @@ async fn dispatch(
         .or_else(|| cookie_value(headers, "immich_access_token"))
         .unwrap_or_default();
     if !is_token(&token) {
-        return Err(AppError::with("unauthenticated", 401, "Authentication required"));
+        return Err(AppError::with(
+            "unauthenticated",
+            401,
+            "Authentication required",
+        ));
     }
     let token_digest = auth::digest_token(&token);
     let session = call_immich(&runtime.db, &token_digest, "session", json!({})).await?;
     let user = session["user"].clone();
-    let user_id = user.get("id").and_then(Value::as_str).unwrap_or("").to_owned();
+    let user_id = user
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
     let protocol_session_id = session
         .get("protocolSessionId")
         .and_then(Value::as_str)
@@ -947,7 +1035,11 @@ async fn dispatch(
         .to_owned();
 
     if *method == Method::POST && route == "/auth/validateToken" {
-        return Ok(send_json(&json!({ "authStatus": true }), StatusCode::OK, &[]));
+        return Ok(send_json(
+            &json!({ "authStatus": true }),
+            StatusCode::OK,
+            &[],
+        ));
     }
     if *method == Method::GET && route == "/auth/status" {
         return Ok(send_json(
@@ -974,8 +1066,14 @@ async fn dispatch(
         return Ok(send_json(&preferences(), StatusCode::OK, &[]));
     }
     if *method == Method::GET && route == "/server/storage" {
-        let used = user.get("quotaUsageInBytes").and_then(Value::as_f64).unwrap_or(0.0);
-        let quota = user.get("quotaSizeInBytes").and_then(Value::as_f64).filter(|q| *q > 0.0);
+        let used = user
+            .get("quotaUsageInBytes")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0);
+        let quota = user
+            .get("quotaSizeInBytes")
+            .and_then(Value::as_f64)
+            .filter(|q| *q > 0.0);
         let size = match quota {
             Some(q) => q.max(1.0),
             None => (used + free_disk_bytes(root).await as f64).max(1.0),
@@ -1055,14 +1153,19 @@ async fn dispatch(
         let db = runtime.db.clone();
         let (tx, rx) = mpsc::channel::<std::result::Result<Bytes, std::io::Error>>(32);
         tokio::spawn(async move {
-            let emit = |tx: &mpsc::Sender<std::result::Result<Bytes, std::io::Error>>, val: Value| {
+            let emit = |tx: &mpsc::Sender<std::result::Result<Bytes, std::io::Error>>,
+                        val: Value| {
                 let mut s = val.to_string();
                 s.push('\n');
                 let tx = tx.clone();
                 async move { tx.send(Ok(Bytes::from(s))).await.is_ok() }
             };
             if start.get("reset") == Some(&json!(true)) {
-                let _ = emit(&tx, json!({ "type": "SyncResetV1", "data": {}, "ack": "SyncResetV1|reset" })).await;
+                let _ = emit(
+                    &tx,
+                    json!({ "type": "SyncResetV1", "data": {}, "ack": "SyncResetV1|reset" }),
+                )
+                .await;
                 return;
             }
             let checkpoints = start.get("checkpoints").and_then(Value::as_object);
@@ -1073,15 +1176,27 @@ async fn dispatch(
                 ("AuthUsersV2", &[("authUser", "AuthUserV2")]),
                 ("UsersV1", &[("users", "UserV1")]),
                 ("PartnersV1", &[]),
-                ("AssetsV2", &[("assetDeletes", "AssetDeleteV1"), ("assets", "AssetV2")]),
-                ("StacksV1", &[("stackDeletes", "StackDeleteV1"), ("stacks", "StackV1")]),
+                (
+                    "AssetsV2",
+                    &[("assetDeletes", "AssetDeleteV1"), ("assets", "AssetV2")],
+                ),
+                (
+                    "StacksV1",
+                    &[("stackDeletes", "StackDeleteV1"), ("stacks", "StackV1")],
+                ),
                 ("PartnerAssetsV2", &[]),
                 ("PartnerStacksV1", &[]),
                 ("AlbumAssetsV2", &[("albumAssets", "AlbumAssetCreateV2")]),
-                ("AlbumsV2", &[("albumDeletes", "AlbumDeleteV1"), ("albums", "AlbumV2")]),
+                (
+                    "AlbumsV2",
+                    &[("albumDeletes", "AlbumDeleteV1"), ("albums", "AlbumV2")],
+                ),
                 (
                     "AlbumUsersV1",
-                    &[("albumUserDeletes", "AlbumUserDeleteV1"), ("albumUsers", "AlbumUserV1")],
+                    &[
+                        ("albumUserDeletes", "AlbumUserDeleteV1"),
+                        ("albumUsers", "AlbumUserV1"),
+                    ],
                 ),
                 (
                     "AlbumToAssetsV1",
@@ -1091,10 +1206,17 @@ async fn dispatch(
                     ],
                 ),
                 ("AssetExifsV1", &[("exifs", "AssetExifV1")]),
-                ("AlbumAssetExifsV1", &[("albumAssetExifs", "AlbumAssetExifCreateV1")]),
+                (
+                    "AlbumAssetExifsV1",
+                    &[("albumAssetExifs", "AlbumAssetExifCreateV1")],
+                ),
             ];
             let cp = |ack_name: &str| -> f64 {
-                seq_of(checkpoints.and_then(|m| m.get(ack_name)).and_then(Value::as_str))
+                seq_of(
+                    checkpoints
+                        .and_then(|m| m.get(ack_name))
+                        .and_then(Value::as_str),
+                )
             };
             for (ty, channels) in order {
                 if !types.iter().any(|t| t == ty) || channels.is_empty() {
@@ -1146,7 +1268,10 @@ async fn dispatch(
         let stream = async_stream_from_mpsc(rx);
         return Ok(Response::builder()
             .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "application/jsonlines+json; charset=utf-8")
+            .header(
+                header::CONTENT_TYPE,
+                "application/jsonlines+json; charset=utf-8",
+            )
             .header(header::CACHE_CONTROL, "no-store")
             .body(Body::from_stream(stream))
             .expect("response"));
@@ -1214,7 +1339,9 @@ async fn dispatch(
             .and_then(|c| c.get(1).or_else(|| c.get(2)))
             .map(|m| m.as_str().to_owned())
             .ok_or_else(|| AppError::with("invalidInput", 400, "Expected multipart form data."))?;
-        let dir = root.join("uploads").join(format!("immich-{}", auth::uuid()));
+        let dir = root
+            .join("uploads")
+            .join(format!("immich-{}", auth::uuid()));
         tokio::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -1281,7 +1408,10 @@ async fn dispatch(
                 }),
             )
             .await?;
-            if let Some(dup) = begun.get("duplicate").and_then(Value::as_str).filter(|s| !s.is_empty())
+            if let Some(dup) = begun
+                .get("duplicate")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
             {
                 return Ok(send_json(
                     &json!({ "id": dup, "status": "duplicate" }),
@@ -1327,7 +1457,13 @@ async fn dispatch(
                 if archived {
                     upd.insert("archived".into(), json!(true));
                 }
-                let _ = call_photos_op(&runtime.db, &protocol_session_id, "update", Value::Object(upd)).await;
+                let _ = call_photos_op(
+                    &runtime.db,
+                    &protocol_session_id,
+                    "update",
+                    Value::Object(upd),
+                )
+                .await;
             }
             Ok(send_json(
                 &json!({ "id": file_id, "status": "created" }),
@@ -1352,15 +1488,26 @@ async fn dispatch(
             return Ok(StatusCode::NO_CONTENT.into_response());
         }
         // Immich moves to the trash; force deletes for good.
-        match call_photos_op(&runtime.db, &protocol_session_id, "trash", json!({ "ids": ids })).await
+        match call_photos_op(
+            &runtime.db,
+            &protocol_session_id,
+            "trash",
+            json!({ "ids": ids }),
+        )
+        .await
         {
             Ok(_) => {}
             Err(e) if e.code == "notFound" => {}
             Err(e) => return Err(e),
         }
         if p.get("force") == Some(&json!(true)) {
-            call_photos_op(&runtime.db, &protocol_session_id, "delete", json!({ "ids": ids }))
-                .await?;
+            call_photos_op(
+                &runtime.db,
+                &protocol_session_id,
+                "delete",
+                json!({ "ids": ids }),
+            )
+            .await?;
         }
         return Ok(StatusCode::NO_CONTENT.into_response());
     }
@@ -1392,10 +1539,18 @@ async fn dispatch(
             .map(|items| items.iter().filter_map(|i| i.get("id").cloned()).collect())
             .unwrap_or_default();
         if !ids.is_empty() {
-            let op = if route == "/trash/restore" { "restore" } else { "delete" };
+            let op = if route == "/trash/restore" {
+                "restore"
+            } else {
+                "delete"
+            };
             call_photos_op(&runtime.db, &protocol_session_id, op, json!({ "ids": ids })).await?;
         }
-        return Ok(send_json(&json!({ "count": ids.len() }), StatusCode::OK, &[]));
+        return Ok(send_json(
+            &json!({ "count": ids.len() }),
+            StatusCode::OK,
+            &[],
+        ));
     }
 
     // Assets: /assets/:id(/[a-z]+(/[a-z]+)?)?
@@ -1413,22 +1568,43 @@ async fn dispatch(
         });
         if is_uuid(id) && valid_action {
             if action.is_none() && *method == Method::GET {
-                let detail =
-                    call_photos_op(&runtime.db, &protocol_session_id, "detail", json!({ "id": id }))
-                        .await?;
-                return Ok(send_json(&asset_response(&detail, &user_id), StatusCode::OK, &[]));
+                let detail = call_photos_op(
+                    &runtime.db,
+                    &protocol_session_id,
+                    "detail",
+                    json!({ "id": id }),
+                )
+                .await?;
+                return Ok(send_json(
+                    &asset_response(&detail, &user_id),
+                    StatusCode::OK,
+                    &[],
+                ));
             }
             if action.is_none() && *method == Method::PUT {
                 let p = body_object(body, 2 * 1024 * 1024, headers).await?;
                 update_assets(&runtime.db, &protocol_session_id, &[json!(id)], &p).await?;
-                let detail =
-                    call_photos_op(&runtime.db, &protocol_session_id, "detail", json!({ "id": id }))
-                        .await?;
-                return Ok(send_json(&asset_response(&detail, &user_id), StatusCode::OK, &[]));
+                let detail = call_photos_op(
+                    &runtime.db,
+                    &protocol_session_id,
+                    "detail",
+                    json!({ "id": id }),
+                )
+                .await?;
+                return Ok(send_json(
+                    &asset_response(&detail, &user_id),
+                    StatusCode::OK,
+                    &[],
+                ));
             }
             let info: AssetInfo = serde_json::from_value(
-                call_photos_op(&runtime.db, &protocol_session_id, "asset", json!({ "id": id }))
-                    .await?,
+                call_photos_op(
+                    &runtime.db,
+                    &protocol_session_id,
+                    "asset",
+                    json!({ "id": id }),
+                )
+                .await?,
             )
             .map_err(|_| AppError::internal())?;
             if action == Some("thumbnail") && (*method == Method::GET || *method == Method::HEAD) {
@@ -1619,8 +1795,8 @@ async fn dispatch(
         };
         if is_uuid(id) {
             let find_album = || async {
-                let o =
-                    call_photos_op(&runtime.db, &protocol_session_id, "overview", json!({})).await?;
+                let o = call_photos_op(&runtime.db, &protocol_session_id, "overview", json!({}))
+                    .await?;
                 let own = o.get("albums").and_then(Value::as_array);
                 let shared = o.get("sharedAlbums").and_then(Value::as_array);
                 own.into_iter()
@@ -1633,9 +1809,14 @@ async fn dispatch(
             if !assets && *method == Method::GET {
                 let found = find_album().await?;
                 let with_assets = query.get("withoutAssets").map(String::as_str) != Some("true");
-                let resp =
-                    album_response(&runtime.db, &protocol_session_id, &user, &found, with_assets)
-                        .await?;
+                let resp = album_response(
+                    &runtime.db,
+                    &protocol_session_id,
+                    &user,
+                    &found,
+                    with_assets,
+                )
+                .await?;
                 return Ok(send_json(&resp, StatusCode::OK, &[]));
             }
             if !assets && *method == Method::PATCH {
@@ -1653,8 +1834,13 @@ async fn dispatch(
                 if let Some(Value::String(cover)) = p.get("albumThumbnailAssetId") {
                     edit.insert("coverId".into(), json!(cover));
                 }
-                call_photos_op(&runtime.db, &protocol_session_id, "editAlbum", Value::Object(edit))
-                    .await?;
+                call_photos_op(
+                    &runtime.db,
+                    &protocol_session_id,
+                    "editAlbum",
+                    Value::Object(edit),
+                )
+                .await?;
                 let updated = find_album().await?;
                 let resp =
                     album_response(&runtime.db, &protocol_session_id, &user, &updated, false)
@@ -1699,7 +1885,11 @@ async fn dispatch(
                             .collect()
                     })
                     .unwrap_or_default();
-                let op = if *method == Method::PUT { "addToAlbum" } else { "removeFromAlbum" };
+                let op = if *method == Method::PUT {
+                    "addToAlbum"
+                } else {
+                    "removeFromAlbum"
+                };
                 call_photos_op(
                     &runtime.db,
                     &protocol_session_id,

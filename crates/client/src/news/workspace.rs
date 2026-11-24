@@ -2,14 +2,14 @@
 //! the sanitized article reader, subscribe/feed/folder panes and News settings.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
@@ -18,11 +18,14 @@ use super::render::render_article;
 use crate::api::{self, BrowserSession};
 use crate::dates::{days_ago, local_date, local_date_time, local_time};
 use crate::icons::Icon;
-use crate::settings::{Notice, SaveProblems, Saver, Segmented, SettingRow, SettingSwitch, SettingsSheet};
+use crate::settings::{
+    Notice, SaveProblems, Saver, Segmented, SettingRow, SettingSwitch, SettingsSheet,
+};
 use crate::shared::context;
 use crate::shell::WorkspaceHeader;
 use crate::ui::{
-    active_element, document, listen, unique_id, window, ActionMenu, Dialog, EditorPane, MenuAction, Select,
+    ActionMenu, Dialog, EditorPane, MenuAction, Select, active_element, document, listen,
+    unique_id, window,
 };
 
 const BASE: &str = "/api/v1/news";
@@ -293,7 +296,10 @@ fn day_label(time: f64) -> String {
         if same_year {
             local_date(time, &[("day", "numeric"), ("month", "long")])
         } else {
-            local_date(time, &[("day", "numeric"), ("month", "long"), ("year", "numeric")])
+            local_date(
+                time,
+                &[("day", "numeric"), ("month", "long"), ("year", "numeric")],
+            )
         }
     }
 }
@@ -370,7 +376,11 @@ fn web_share(title: &str, url: &str) {
         && let Some(func) = share.dyn_ref::<js_sys::Function>()
     {
         let data = js_sys::Object::new();
-        let _ = js_sys::Reflect::set(&data, &JsValue::from_str("title"), &JsValue::from_str(title));
+        let _ = js_sys::Reflect::set(
+            &data,
+            &JsValue::from_str("title"),
+            &JsValue::from_str(title),
+        );
         let _ = js_sys::Reflect::set(&data, &JsValue::from_str("url"), &JsValue::from_str(url));
         if let Ok(promise) = func.call1(&nav, &data)
             && let Ok(promise) = promise.dyn_into::<js_sys::Promise>()
@@ -411,7 +421,9 @@ fn read_view() -> (View, Option<i64>) {
 }
 
 fn write_view(view: View, item: Option<i64>) {
-    let Ok(params) = web_sys::UrlSearchParams::new() else { return };
+    let Ok(params) = web_sys::UrlSearchParams::new() else {
+        return;
+    };
     match view {
         View::Feed(id) => params.set("feed", &id.to_string()),
         View::Folder(id) => params.set("folder", &id.to_string()),
@@ -423,9 +435,17 @@ fn write_view(view: View, item: Option<i64>) {
         params.set("item", &id.to_string());
     }
     let query = params.to_string().as_string().unwrap_or_default();
-    let next = if query.is_empty() { "/news".to_owned() } else { format!("/news?{query}") };
+    let next = if query.is_empty() {
+        "/news".to_owned()
+    } else {
+        format!("/news?{query}")
+    };
     let loc = window().location();
-    let current = format!("{}{}", loc.pathname().unwrap_or_default(), loc.search().unwrap_or_default());
+    let current = format!(
+        "{}{}",
+        loc.pathname().unwrap_or_default(),
+        loc.search().unwrap_or_default()
+    );
     if next != current
         && let Ok(history) = window().history()
     {
@@ -448,7 +468,10 @@ fn items_query(view: View, order: &str, show_read: bool, offset: i64) -> String 
     if let Some(id) = view.id() {
         params.set("id", &id.to_string());
     }
-    format!("{BASE}/items?{}", params.to_string().as_string().unwrap_or_default())
+    format!(
+        "{BASE}/items?{}",
+        params.to_string().as_string().unwrap_or_default()
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -490,7 +513,10 @@ impl NewsState {
         } else {
             message
         };
-        let _ = self.notice.try_set(Some(Notice { message: msg, undo: None }));
+        let _ = self.notice.try_set(Some(Notice {
+            message: msg,
+            undo: None,
+        }));
     }
 
     async fn fetch_overview(self) {
@@ -512,7 +538,9 @@ impl NewsState {
     }
 
     async fn fetch_items(self) {
-        let Some(prev) = self.generation.try_get_untracked() else { return };
+        let Some(prev) = self.generation.try_get_untracked() else {
+            return;
+        };
         let ticket = prev + 1;
         let _ = self.generation.try_set(ticket);
         let _ = self.list_state.try_set("loading");
@@ -550,7 +578,9 @@ impl NewsState {
     }
 
     fn load_more(self) {
-        let Some(offset) = self.next_offset.get_untracked() else { return };
+        let Some(offset) = self.next_offset.get_untracked() else {
+            return;
+        };
         if self.list_state.get_untracked() != "ready" {
             return;
         }
@@ -562,7 +592,9 @@ impl NewsState {
             offset,
         );
         spawn_local(async move {
-            let Ok(page) = api::get::<NewsPage>(&url).await else { return };
+            let Ok(page) = api::get::<NewsPage>(&url).await else {
+                return;
+            };
             if self.generation.try_get_untracked() != Some(ticket) {
                 return;
             }
@@ -653,11 +685,19 @@ impl NewsState {
         }
         let forward: Vec<StateChange> = targets
             .iter()
-            .map(|&(id, feed_id)| StateChange { id, feed_id, unread, starred })
+            .map(|&(id, feed_id)| StateChange {
+                id,
+                feed_id,
+                unread,
+                starred,
+            })
             .collect();
         self.adjust(&forward);
         let mut body = serde_json::Map::new();
-        body.insert("ids".into(), json!(targets.iter().map(|(id, _)| *id).collect::<Vec<_>>()));
+        body.insert(
+            "ids".into(),
+            json!(targets.iter().map(|(id, _)| *id).collect::<Vec<_>>()),
+        );
         if let Some(u) = unread {
             body.insert("unread".into(), json!(u));
         }
@@ -666,7 +706,14 @@ impl NewsState {
         }
         let csrf = self.csrf();
         spawn_local(async move {
-            if let Err(e) = api::send::<Value>(&format!("{BASE}/items/state"), "POST", Some(Value::Object(body)), &csrf).await {
+            if let Err(e) = api::send::<Value>(
+                &format!("{BASE}/items/state"),
+                "POST",
+                Some(Value::Object(body)),
+                &csrf,
+            )
+            .await
+            {
                 let rollback: Vec<StateChange> = targets
                     .iter()
                     .map(|&(id, feed_id)| StateChange {
@@ -695,11 +742,17 @@ impl NewsState {
                     if self.selected.try_get_untracked() != Some(Some(id)) {
                         return;
                     }
-                    let should_mark = detail.unread && self.news_mark_read.get_untracked() == "open";
+                    let should_mark =
+                        detail.unread && self.news_mark_read.get_untracked() == "open";
                     let feed_id = detail.feed_id;
                     let _ = self.article.try_set(Some(detail));
                     if should_mark {
-                        self.adjust(&[StateChange { id, feed_id, unread: Some(false), starred: None }]);
+                        self.adjust(&[StateChange {
+                            id,
+                            feed_id,
+                            unread: Some(false),
+                            starred: None,
+                        }]);
                         if let Err(e) = api::send::<Value>(
                             &format!("{BASE}/items/state"),
                             "POST",
@@ -734,20 +787,30 @@ impl NewsState {
         let index = sel.and_then(|s| list.iter().position(|i| i.id == s));
         let next = if delta > 0 {
             let start = index.map(|i| i + 1).unwrap_or(0);
-            list.get(start..).unwrap_or(&[]).iter().find(|i| !unread_only || i.unread).cloned()
+            list.get(start..)
+                .unwrap_or(&[])
+                .iter()
+                .find(|i| !unread_only || i.unread)
+                .cloned()
         } else {
             let end = index.unwrap_or(0);
-            list.get(..end).unwrap_or(&[]).iter().rev().find(|i| !unread_only || i.unread).cloned()
+            list.get(..end)
+                .unwrap_or(&[])
+                .iter()
+                .rev()
+                .find(|i| !unread_only || i.unread)
+                .cloned()
         };
         if let Some(next) = next {
             let next_id = next.id;
             self.open(next_id);
             let list_ref = self.list_ref;
             let cb = Closure::once_into_js(move || {
-                if let Some(el) = list_ref
-                    .get_untracked()
-                    .and_then(|l| l.query_selector(&format!("[data-item=\"{next_id}\"]")).ok().flatten())
-                {
+                if let Some(el) = list_ref.get_untracked().and_then(|l| {
+                    l.query_selector(&format!("[data-item=\"{next_id}\"]"))
+                        .ok()
+                        .flatten()
+                }) {
                     let opts = web_sys::ScrollIntoViewOptions::new();
                     opts.set_block(web_sys::ScrollLogicalPosition::Nearest);
                     el.scroll_into_view_with_scroll_into_view_options(&opts);
@@ -760,8 +823,12 @@ impl NewsState {
     }
 
     fn mark_all(self) {
-        let items_max = self.items.with_untracked(|list| list.iter().map(|i| i.id).max().unwrap_or(0));
-        let overview_max = self.overview.with_untracked(|o| o.as_ref().map(|o| o.newest_item_id).unwrap_or(0));
+        let items_max = self
+            .items
+            .with_untracked(|list| list.iter().map(|i| i.id).max().unwrap_or(0));
+        let overview_max = self
+            .overview
+            .with_untracked(|o| o.as_ref().map(|o| o.newest_item_id).unwrap_or(0));
         let newest = 0i64.max(items_max).max(overview_max);
         let view = self.view_sig.get_untracked();
         let mut body = serde_json::Map::new();
@@ -773,7 +840,14 @@ impl NewsState {
         self.busy.set(true);
         let csrf = self.csrf();
         spawn_local(async move {
-            match api::send::<MarkReadResult>(&format!("{BASE}/read"), "POST", Some(Value::Object(body)), &csrf).await {
+            match api::send::<MarkReadResult>(
+                &format!("{BASE}/read"),
+                "POST",
+                Some(Value::Object(body)),
+                &csrf,
+            )
+            .await
+            {
                 Ok(result) => {
                     let _ = self.items.try_update(|list| {
                         for item in list.iter_mut() {
@@ -840,14 +914,24 @@ impl NewsState {
             || change.get("paused").and_then(Value::as_bool) == Some(false);
         let csrf = self.csrf();
         spawn_local(async move {
-            match api::send::<Value>(&format!("{BASE}/feeds/{feed_id}"), "PATCH", Some(change), &csrf).await {
+            match api::send::<Value>(
+                &format!("{BASE}/feeds/{feed_id}"),
+                "PATCH",
+                Some(change),
+                &csrf,
+            )
+            .await
+            {
                 Ok(_) => {
                     self.fetch_overview().await;
                     if reload_items {
                         self.fetch_items().await;
                     }
                     if let Some(msg) = message {
-                        let _ = self.notice.try_set(Some(Notice { message: msg.into(), undo: None }));
+                        let _ = self.notice.try_set(Some(Notice {
+                            message: msg.into(),
+                            undo: None,
+                        }));
                     }
                 }
                 Err(e) => self.fail(e.message),
@@ -1112,12 +1196,14 @@ pub fn NewsWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
             });
         } else if nav_was_open.get_untracked() {
             let active = document().active_element();
-            let body_active = document()
-                .body()
-                .is_some_and(|b| active.as_ref().is_some_and(|a| a.unchecked_ref::<web_sys::Node>() == b.as_ref()));
-            let inside_nav = navigation_ref
-                .get_untracked()
-                .is_some_and(|r| r.contains(active.as_ref().map(|a| a.unchecked_ref::<web_sys::Node>())));
+            let body_active = document().body().is_some_and(|b| {
+                active
+                    .as_ref()
+                    .is_some_and(|a| a.unchecked_ref::<web_sys::Node>() == b.as_ref())
+            });
+            let inside_nav = navigation_ref.get_untracked().is_some_and(|r| {
+                r.contains(active.as_ref().map(|a| a.unchecked_ref::<web_sys::Node>()))
+            });
             if body_active || inside_nav {
                 nav_trigger.with_value(|t| {
                     if let Some(el) = t {
@@ -1187,7 +1273,9 @@ pub fn NewsWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
         if state.news_mark_read.get() != "scroll" {
             return;
         }
-        let Some(root) = state.list_ref.get() else { return };
+        let Some(root) = state.list_ref.get() else {
+            return;
+        };
         let init = web_sys::IntersectionObserverInit::new();
         let root_el: &web_sys::Element = &root;
         init.set_root(Some(root_el));
@@ -1195,17 +1283,23 @@ pub fn NewsWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
         let callback = Closure::<dyn FnMut(js_sys::Array)>::new(move |entries: js_sys::Array| {
             let mut added = false;
             for idx in 0..entries.length() {
-                let Ok(entry) = entries.get(idx).dyn_into::<web_sys::IntersectionObserverEntry>() else {
+                let Ok(entry) = entries
+                    .get(idx)
+                    .dyn_into::<web_sys::IntersectionObserverEntry>()
+                else {
                     continue;
                 };
                 if !entry.is_intersecting()
                     && let Some(bounds) = entry.root_bounds()
                     && entry.bounding_client_rect().bottom() <= bounds.top() + 1.0
-                    && let Some(id) = entry.target().get_attribute("data-item").and_then(|v| v.parse::<i64>().ok())
+                    && let Some(id) = entry
+                        .target()
+                        .get_attribute("data-item")
+                        .and_then(|v| v.parse::<i64>().ok())
                 {
-                    let is_unread = state
-                        .items
-                        .with_untracked(|list| list.iter().find(|i| i.id == id).is_some_and(|i| i.unread));
+                    let is_unread = state.items.with_untracked(|list| {
+                        list.iter().find(|i| i.id == id).is_some_and(|i| i.unread)
+                    });
                     if is_unread {
                         state.pending_read.update_value(|set| {
                             set.insert(id);
@@ -1222,23 +1316,35 @@ pub fn NewsWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                     if scroll_seq.try_get_untracked() != Some(seq) {
                         return;
                     }
-                    let ids: Vec<i64> = state.pending_read.try_update_value(|set| set.drain().collect()).unwrap_or_default();
+                    let ids: Vec<i64> = state
+                        .pending_read
+                        .try_update_value(|set| set.drain().collect())
+                        .unwrap_or_default();
                     let targets: Vec<(i64, i64)> = state.items.with_untracked(|list| {
                         ids.into_iter()
-                            .filter_map(|id| list.iter().find(|i| i.id == id && i.unread).map(|i| (i.id, i.feed_id)))
+                            .filter_map(|id| {
+                                list.iter()
+                                    .find(|i| i.id == id && i.unread)
+                                    .map(|i| (i.id, i.feed_id))
+                            })
                             .collect()
                     });
                     state.set_state(targets, Some(false), None);
                 });
             }
         });
-        let Ok(observer) = web_sys::IntersectionObserver::new_with_options(callback.as_ref().unchecked_ref(), &init)
-        else {
+        let Ok(observer) = web_sys::IntersectionObserver::new_with_options(
+            callback.as_ref().unchecked_ref(),
+            &init,
+        ) else {
             return;
         };
         if let Ok(rows) = root.query_selector_all("[data-item]") {
             for i in 0..rows.length() {
-                if let Some(el) = rows.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) {
+                if let Some(el) = rows
+                    .item(i)
+                    .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+                {
                     observer.observe(&el);
                 }
             }
@@ -1256,8 +1362,12 @@ pub fn NewsWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
         state.items.track();
         state.next_offset.track();
         state.list_state.track();
-        let Some(root) = state.list_ref.get() else { return };
-        let Some(sentinel) = root.query_selector(".news-more").ok().flatten() else { return };
+        let Some(root) = state.list_ref.get() else {
+            return;
+        };
+        let Some(sentinel) = root.query_selector(".news-more").ok().flatten() else {
+            return;
+        };
         let init = web_sys::IntersectionObserverInit::new();
         let root_el: &web_sys::Element = &root;
         init.set_root(Some(root_el));
@@ -1272,8 +1382,10 @@ pub fn NewsWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                 state.load_more();
             }
         });
-        let Ok(observer) = web_sys::IntersectionObserver::new_with_options(callback.as_ref().unchecked_ref(), &init)
-        else {
+        let Ok(observer) = web_sys::IntersectionObserver::new_with_options(
+            callback.as_ref().unchecked_ref(),
+            &init,
+        ) else {
             return;
         };
         observer.observe(&sentinel);
@@ -1345,7 +1457,11 @@ pub fn NewsWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                     && !url.is_empty()
                 {
                     event.prevent_default();
-                    let _ = window().open_with_url_and_target_and_features(&url, "_blank", "noopener,noreferrer");
+                    let _ = window().open_with_url_and_target_and_features(
+                        &url,
+                        "_blank",
+                        "noopener,noreferrer",
+                    );
                 }
             }
             "r" => {
@@ -1393,7 +1509,13 @@ pub fn NewsWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
         }),
         View::Folder(id) => Some(state.overview.with(|o| {
             o.as_ref()
-                .map(|o| o.feeds.iter().filter(|f| f.folder_id == id).map(|f| f.unread_count).sum())
+                .map(|o| {
+                    o.feeds
+                        .iter()
+                        .filter(|f| f.folder_id == id)
+                        .map(|f| f.unread_count)
+                        .sum()
+                })
                 .unwrap_or(0)
         })),
         View::All => None,
@@ -1443,7 +1565,11 @@ pub fn NewsWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
         let last_err = feed.last_update_error.clone();
         let unread_count = feed.unread_count;
         let active = move || state.view_sig.get() == View::Feed(feed_id);
-        let row_class = if nested { "news-row news-feed-row is-nested" } else { "news-row news-feed-row" };
+        let row_class = if nested {
+            "news-row news-feed-row is-nested"
+        } else {
+            "news-row news-feed-row"
+        };
         let menu_label = format!("Actions for {feed_title}");
         view! {
             <div class=row_class>
@@ -1961,12 +2087,20 @@ fn Reader(
     let has_error = Memo::new(move |_| !error.with(String::is_empty));
     let item_id = Memo::new(move |_| item.with(|i| i.as_ref().map(|i| i.id)));
     let render_spec = Memo::new(move |_| {
-        item.with(|i| i.as_ref().map(|i| (i.id, i.body.clone(), i.excerpt.clone(), images.get())))
+        item.with(|i| {
+            i.as_ref()
+                .map(|i| (i.id, i.body.clone(), i.excerpt.clone(), images.get()))
+        })
     });
     let enclosure = Memo::new(move |_| {
         item.with(|i| {
-            i.as_ref()
-                .map(|i| (i.enclosure_link.clone(), i.enclosure_mime.clone(), i.media_description.clone()))
+            i.as_ref().map(|i| {
+                (
+                    i.enclosure_link.clone(),
+                    i.enclosure_mime.clone(),
+                    i.media_description.clone(),
+                )
+            })
         })
     });
 
@@ -1992,7 +2126,9 @@ fn Reader(
         if item_id.get().is_none() {
             return;
         }
-        let Some(body_el) = body_ref.get() else { return };
+        let Some(body_el) = body_ref.get() else {
+            return;
+        };
         if window()
             .match_media("(max-width:800px)")
             .ok()
@@ -2028,7 +2164,9 @@ fn Reader(
             .map(|v| v.current_time())
             .or_else(|| audio_ref.get_untracked().map(|a| a.current_time()));
         let Some(ct) = current_time else { return };
-        let Some(id) = item_id.get_untracked() else { return };
+        let Some(id) = item_id.get_untracked() else {
+            return;
+        };
         if (ct - saved.get_untracked()).abs() < 15.0 {
             return;
         }
@@ -2046,13 +2184,20 @@ fn Reader(
     };
 
     let share_actions = move |_| {
-        let Some((title, url)) = item.with_untracked(|i| i.as_ref().filter(|i| !i.url.is_empty()).map(|i| (i.title.clone(), i.url.clone()))) else {
+        let Some((title, url)) = item.with_untracked(|i| {
+            i.as_ref()
+                .filter(|i| !i.url.is_empty())
+                .map(|i| (i.title.clone(), i.url.clone()))
+        }) else {
             return Vec::new();
         };
         let copy_url = url.clone();
-        let mut actions = vec![MenuAction::new("Copy link", "copy").run(move || copy_text(&copy_url))];
+        let mut actions =
+            vec![MenuAction::new("Copy link", "copy").run(move || copy_text(&copy_url))];
         if has_web_share() {
-            actions.push(MenuAction::new("Share\u{2026}", "share").run(move || web_share(&title, &url)));
+            actions.push(
+                MenuAction::new("Share\u{2026}", "share").run(move || web_share(&title, &url)),
+            );
         }
         actions
     };
@@ -2233,7 +2378,14 @@ fn SubscribePane(
         found.set(None);
         let csrf = csrf.get_value();
         spawn_local(async move {
-            match api::send::<DiscoverResult>(&format!("{BASE}/discover"), "POST", Some(json!({ "url": trimmed })), &csrf).await {
+            match api::send::<DiscoverResult>(
+                &format!("{BASE}/discover"),
+                "POST",
+                Some(json!({ "url": trimmed })),
+                &csrf,
+            )
+            .await
+            {
                 Ok(result) => {
                     if let Some(first) = result.items.first() {
                         choice.set(first.url.clone());
@@ -2269,8 +2421,17 @@ fn SubscribePane(
         body.insert("fullText".into(), json!(ft));
         let csrf = csrf.get_value();
         spawn_local(async move {
-            match api::send::<NewsFeed>(&format!("{BASE}/feeds"), "POST", Some(Value::Object(body)), &csrf).await {
-                Ok(feed) => { on_done.try_run(feed); },
+            match api::send::<NewsFeed>(
+                &format!("{BASE}/feeds"),
+                "POST",
+                Some(Value::Object(body)),
+                &csrf,
+            )
+            .await
+            {
+                Ok(feed) => {
+                    on_done.try_run(feed);
+                }
                 Err(e) => {
                     error.set(e.message);
                     busy.set(String::new());
@@ -2447,8 +2608,17 @@ fn FeedPane(
         });
         let csrf = csrf.get_value();
         spawn_local(async move {
-            match api::send::<Value>(&format!("{BASE}/feeds/{feed_id}"), "PATCH", Some(body), &csrf).await {
-                Ok(_) => { on_saved.try_run(()); },
+            match api::send::<Value>(
+                &format!("{BASE}/feeds/{feed_id}"),
+                "PATCH",
+                Some(body),
+                &csrf,
+            )
+            .await
+            {
+                Ok(_) => {
+                    on_saved.try_run(());
+                }
                 Err(e) => {
                     error.set(e.message);
                     busy.set(false);
@@ -2519,8 +2689,12 @@ fn FolderPane(
                 Some(id) => (format!("{BASE}/folders/{id}"), "PATCH"),
                 None => (format!("{BASE}/folders"), "POST"),
             };
-            match api::send::<NewsFolder>(&url, method, Some(json!({ "name": trimmed })), &csrf).await {
-                Ok(saved) => { on_saved.try_run(saved); },
+            match api::send::<NewsFolder>(&url, method, Some(json!({ "name": trimmed })), &csrf)
+                .await
+            {
+                Ok(saved) => {
+                    on_saved.try_run(saved);
+                }
                 Err(e) => {
                     error.set(e.message);
                     busy.set(false);
@@ -2575,11 +2749,19 @@ fn NewsSettings(
     let refresh_val = RwSignal::new("30".to_owned());
     let keep_val = RwSignal::new("30".to_owned());
     Effect::new(move |_| {
-        let r = saver.value("newsRefresh").as_i64().unwrap_or(30).to_string();
+        let r = saver
+            .value("newsRefresh")
+            .as_i64()
+            .unwrap_or(30)
+            .to_string();
         if refresh_val.get_untracked() != r {
             refresh_val.set(r);
         }
-        let k = saver.value("newsKeepDays").as_i64().unwrap_or(30).to_string();
+        let k = saver
+            .value("newsKeepDays")
+            .as_i64()
+            .unwrap_or(30)
+            .to_string();
         if keep_val.get_untracked() != k {
             keep_val.set(k);
         }
@@ -2622,10 +2804,21 @@ fn NewsSettings(
                 .ok()
                 .and_then(|v| v.as_string())
                 .unwrap_or_default();
-            match api::send::<ImportResult>(&format!("{BASE}/opml"), "POST", Some(json!({ "text": text })), &csrf).await {
+            match api::send::<ImportResult>(
+                &format!("{BASE}/opml"),
+                "POST",
+                Some(json!({ "text": text })),
+                &csrf,
+            )
+            .await
+            {
                 Ok(result) => {
                     let folders_part = if result.folders > 0 {
-                        format!(" into {} new folder{}", result.folders, if result.folders == 1 { "" } else { "s" })
+                        format!(
+                            " into {} new folder{}",
+                            result.folders,
+                            if result.folders == 1 { "" } else { "s" }
+                        )
                     } else {
                         String::new()
                     };
@@ -2641,7 +2834,9 @@ fn NewsSettings(
                         folders_part,
                         skipped_part
                     ));
-                    { on_imported.try_run(()); };
+                    {
+                        on_imported.try_run(());
+                    };
                 }
                 Err(e) => import_error.set(e.message),
             }

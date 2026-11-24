@@ -41,7 +41,9 @@ impl std::fmt::Display for Error {
         match self {
             Error::Damaged => f.write_str("This PDF is damaged or not a PDF."),
             Error::Encrypted => f.write_str("This PDF is password-protected."),
-            Error::Unsupported(what) => write!(f, "This PDF uses something Dar cannot show yet ({what})."),
+            Error::Unsupported(what) => {
+                write!(f, "This PDF uses something Dar cannot show yet ({what}).")
+            }
             Error::TooLarge => f.write_str("This page is too large to draw at this zoom."),
         }
     }
@@ -140,8 +142,8 @@ pub struct Document {
 impl Document {
     /// Parses a PDF from its bytes.
     pub fn open(bytes: Vec<u8>) -> Result<Self, Error> {
-        let parsed = catch_unwind(AssertUnwindSafe(|| Pdf::new(bytes)))
-            .map_err(|_| Error::Damaged)?;
+        let parsed =
+            catch_unwind(AssertUnwindSafe(|| Pdf::new(bytes))).map_err(|_| Error::Damaged)?;
 
         let pdf = match parsed {
             Ok(pdf) => pdf,
@@ -204,8 +206,10 @@ impl Document {
             .pages()
             .get(page)
             .ok_or_else(|| Error::Unsupported(format!("page {page} out of range")))?;
-        catch_unwind(AssertUnwindSafe(|| extract::page_text(pdf_page, &self.interpreter_settings)))
-            .map_err(|_| Error::Unsupported("text extraction failed on this page".into()))
+        catch_unwind(AssertUnwindSafe(|| {
+            extract::page_text(pdf_page, &self.interpreter_settings)
+        }))
+        .map_err(|_| Error::Unsupported("text extraction failed on this page".into()))
     }
 
     /// Draws page `page` (zero-based) at `scale` device pixels per PDF point.

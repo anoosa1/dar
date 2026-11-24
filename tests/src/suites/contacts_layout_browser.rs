@@ -163,7 +163,9 @@ pub async fn contacts_layout_and_menus(t: &Ctx) -> Result<()> {
         .await?;
     let deletion = page.get_by_role("dialog", "Delete address book?");
     deletion
-        .get_by_text("Remove Menu target book and all its 0 contacts? Export it first if you need a copy.")
+        .get_by_text(
+            "Remove Menu target book and all its 0 contacts? Export it first if you need a copy.",
+        )
         .wait_for()
         .await?;
     deletion.get_by_role("button", "Cancel").click().await?;
@@ -199,7 +201,10 @@ pub async fn contacts_layout_and_menus(t: &Ctx) -> Result<()> {
         .wait_for_download(settings.get_by_role("link", "Export vCard").click())
         .await?;
     let exported = String::from_utf8_lossy(&download.read()?).into_owned();
-    assert!(exported.contains("Scroll person 00"), "exported: {exported}");
+    assert!(
+        exported.contains("Scroll person 00"),
+        "exported: {exported}"
+    );
 
     settings
         .get_by_label("Or paste content")

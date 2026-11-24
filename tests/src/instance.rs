@@ -37,9 +37,22 @@ pub struct InstanceConfig {
 impl Default for InstanceConfig {
     fn default() -> Self {
         Self {
-            origin: None, root: PathBuf::new(), database_name: String::new(), port: 0, development: true, chat_bridge: None,
-            news_allow_private_networks: false, immich_allow_local_host: false, codex_file: None, claude_file: None, apps_file: None,
-            oidc_file: None, env: Vec::new(), database_url: None, service_token_file: None, bootstrap_token_file: None,
+            origin: None,
+            root: PathBuf::new(),
+            database_name: String::new(),
+            port: 0,
+            development: true,
+            chat_bridge: None,
+            news_allow_private_networks: false,
+            immich_allow_local_host: false,
+            codex_file: None,
+            claude_file: None,
+            apps_file: None,
+            oidc_file: None,
+            env: Vec::new(),
+            database_url: None,
+            service_token_file: None,
+            bootstrap_token_file: None,
         }
     }
 }
@@ -62,24 +75,50 @@ impl Instance {
         if config.port == 0 {
             config.port = free_port()?;
         }
-        let base = config.origin.clone().unwrap_or_else(|| format!("http://127.0.0.1:{}", config.port));
+        let base = config
+            .origin
+            .clone()
+            .unwrap_or_else(|| format!("http://127.0.0.1:{}", config.port));
         std::fs::create_dir_all(&config.root)?;
-        let log = config.root.parent().unwrap_or(&config.root).join(format!("runtime-{}.log", config.database_name));
-        let instance = Instance { base, port: config.port, config, log, chat_control: None, child: Mutex::new(None) };
+        let log = config
+            .root
+            .parent()
+            .unwrap_or(&config.root)
+            .join(format!("runtime-{}.log", config.database_name));
+        let instance = Instance {
+            base,
+            port: config.port,
+            config,
+            log,
+            chat_control: None,
+            child: Mutex::new(None),
+        };
         instance.launch().await?;
         Ok(instance)
     }
 
     /// A fresh database and root: publishes the module, then starts the runtime
     /// (`isolatedInstance`). The root is `<root>/state` unless `state_directory` is false.
-    pub async fn isolated(root: &Path, prefix: &str, mut config: InstanceConfig, state_directory: bool) -> Result<Instance> {
+    pub async fn isolated(
+        root: &Path,
+        prefix: &str,
+        mut config: InstanceConfig,
+        state_directory: bool,
+    ) -> Result<Instance> {
         let stack = stack();
         config.database_name = format!("{prefix}-{}", &crate::uuid()[..8]);
         if config.port == 0 {
             config.port = free_port()?;
         }
-        let base = config.origin.clone().unwrap_or_else(|| format!("http://127.0.0.1:{}", config.port));
-        config.root = if state_directory { root.join("state") } else { root.to_path_buf() };
+        let base = config
+            .origin
+            .clone()
+            .unwrap_or_else(|| format!("http://127.0.0.1:{}", config.port));
+        config.root = if state_directory {
+            root.join("state")
+        } else {
+            root.to_path_buf()
+        };
         publish(stack, &config, &config.database_name, &base)?;
         Instance::start(config).await
     }
@@ -90,18 +129,36 @@ impl Instance {
         let stack = stack();
         let root = dir.join(format!("{prefix}-root"));
         std::fs::create_dir_all(&root)?;
-        let installed = Command::new(&stack.artifacts.runtime).arg("apps-install").arg(&root).arg(&stack.artifacts.prayer_times)
-            .stdin(Stdio::null()).output().context("installing the example app")?;
+        let installed = Command::new(&stack.artifacts.runtime)
+            .arg("apps-install")
+            .arg(&root)
+            .arg(&stack.artifacts.prayer_times)
+            .stdin(Stdio::null())
+            .output()
+            .context("installing the example app")?;
         if !installed.status.success() {
-            bail!("the example app was not installed:\n{}", String::from_utf8_lossy(&installed.stderr));
+            bail!(
+                "the example app was not installed:\n{}",
+                String::from_utf8_lossy(&installed.stderr)
+            );
         }
-        write_private(&root.join("oidc-secret"), b"isolated-configured-secret-1234567890\n")?;
+        write_private(
+            &root.join("oidc-secret"),
+            b"isolated-configured-secret-1234567890\n",
+        )?;
         std::fs::write(root.join("oidc.json"), json!({"clients": [{"id": "configured-rp", "name": "Configured RP", "type": "confidential",
             "redirectUris": ["http://127.0.0.1:49999/callback"], "scopes": ["openid", "profile"], "secretFile": "oidc-secret"}]}).to_string())?;
         let control = root.join("chat-control");
-        let bridge = fixture_command(&root, "chat-bridge", &[("DAR_FAKE_CHAT_CONTROL", control.to_string_lossy().as_ref())])?;
+        let bridge = fixture_command(
+            &root,
+            "chat-bridge",
+            &[("DAR_FAKE_CHAT_CONTROL", control.to_string_lossy().as_ref())],
+        )?;
         std::fs::create_dir_all(&control)?;
-        let config = InstanceConfig { chat_bridge: Some(bridge), ..InstanceConfig::default() };
+        let config = InstanceConfig {
+            chat_bridge: Some(bridge),
+            ..InstanceConfig::default()
+        };
         let mut instance = Instance::isolated(&root, prefix, config, false).await?;
         instance.chat_control = Some(control);
         crate::session::setup_admin(&instance.base).await?;
@@ -118,18 +175,49 @@ impl Instance {
             ("DAR_PORT".into(), c.port.to_string()),
             ("DAR_ORIGIN".into(), self.base.clone()),
             ("DAR_ROOT".into(), path(&c.root)),
-            ("DAR_DATABASE_URL".into(), c.database_url.clone().unwrap_or_else(|| stack.database.url.clone())),
+            (
+                "DAR_DATABASE_URL".into(),
+                c.database_url
+                    .clone()
+                    .unwrap_or_else(|| stack.database.url.clone()),
+            ),
             ("DAR_DATABASE_NAME".into(), c.database_name.clone()),
-            ("DAR_DATABASE_TOKEN_FILE".into(), path(c.service_token_file.as_deref().unwrap_or(&stack.database.token_file))),
-            ("DAR_BOOTSTRAP_TOKEN_FILE".into(), path(c.bootstrap_token_file.as_deref().unwrap_or(&stack.bootstrap_token_file))),
+            (
+                "DAR_DATABASE_TOKEN_FILE".into(),
+                path(
+                    c.service_token_file
+                        .as_deref()
+                        .unwrap_or(&stack.database.token_file),
+                ),
+            ),
+            (
+                "DAR_BOOTSTRAP_TOKEN_FILE".into(),
+                path(
+                    c.bootstrap_token_file
+                        .as_deref()
+                        .unwrap_or(&stack.bootstrap_token_file),
+                ),
+            ),
             ("DAR_DEVELOPMENT".into(), flag(c.development)),
-            ("DAR_NEWS_ALLOW_PRIVATE_NETWORKS".into(), flag(c.news_allow_private_networks)),
-            ("DAR_IMMICH_ALLOW_LOCAL_HOST".into(), flag(c.immich_allow_local_host)),
+            (
+                "DAR_NEWS_ALLOW_PRIVATE_NETWORKS".into(),
+                flag(c.news_allow_private_networks),
+            ),
+            (
+                "DAR_IMMICH_ALLOW_LOCAL_HOST".into(),
+                flag(c.immich_allow_local_host),
+            ),
             ("DAR_ISSUER".into(), format!("{}/auth/issuer", self.base)),
             ("DAR_CLIENT_DIST".into(), path(&stack.artifacts.client)),
             ("DAR_SPACETIME_BIN".into(), path(&stack.artifacts.spacetime)),
         ];
-        for (name, value) in [("DAR_CHAT_BRIDGE", &c.chat_bridge), ("DAR_CODEX_FILE", &c.codex_file), ("DAR_CLAUDE_FILE", &c.claude_file), ("DAR_APPS_FILE", &c.apps_file), ("DAR_OIDC_FILE", &c.oidc_file)] {
+        for (name, value) in [
+            ("DAR_CHAT_BRIDGE", &c.chat_bridge),
+            ("DAR_CODEX_FILE", &c.codex_file),
+            ("DAR_CLAUDE_FILE", &c.claude_file),
+            ("DAR_APPS_FILE", &c.apps_file),
+            ("DAR_OIDC_FILE", &c.oidc_file),
+        ] {
             if let Some(value) = value {
                 env.push((name.into(), path(value)));
             }
@@ -139,11 +227,17 @@ impl Instance {
     }
 
     async fn launch(&self) -> Result<()> {
-        let log = std::fs::OpenOptions::new().create(true).append(true).open(&self.log)?;
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.log)?;
         let child = Command::new(&stack().artifacts.runtime)
             .envs(self.environment())
-            .stdin(Stdio::null()).stdout(log.try_clone()?).stderr(log)
-            .spawn().context("starting the runtime")?;
+            .stdin(Stdio::null())
+            .stdout(log.try_clone()?)
+            .stderr(log)
+            .spawn()
+            .context("starting the runtime")?;
         *self.child.lock().unwrap() = Some(child);
         let deadline = Instant::now() + Duration::from_secs(30);
         let client = crate::session::client();
@@ -152,9 +246,16 @@ impl Instance {
             if let Some(child) = self.child.lock().unwrap().as_mut()
                 && let Some(code) = child.try_wait()?
             {
-                bail!("the runtime stopped during startup ({code}):\n{}", tail(&self.log));
+                bail!(
+                    "the runtime stopped during startup ({code}):\n{}",
+                    tail(&self.log)
+                );
             }
-            if let Ok(response) = client.get(&status).timeout(Duration::from_millis(500)).send().await
+            if let Ok(response) = client
+                .get(&status)
+                .timeout(Duration::from_millis(500))
+                .send()
+                .await
                 && response.status().is_success()
             {
                 return Ok(());
@@ -170,7 +271,9 @@ impl Instance {
     pub async fn close(&self) {
         let child = self.child.lock().unwrap().take();
         if let Some(child) = child {
-            tokio::task::spawn_blocking(move || terminate(child, Duration::from_secs(15))).await.ok();
+            tokio::task::spawn_blocking(move || terminate(child, Duration::from_secs(15)))
+                .await
+                .ok();
         }
     }
 
@@ -213,9 +316,15 @@ impl Instance {
     pub fn database(&self) -> Result<crate::support::Database> {
         let stack = stack();
         crate::support::Database::new(
-            self.config.database_url.as_deref().unwrap_or(&stack.database.url),
+            self.config
+                .database_url
+                .as_deref()
+                .unwrap_or(&stack.database.url),
             &self.config.database_name,
-            self.config.service_token_file.as_deref().unwrap_or(&stack.database.token_file),
+            self.config
+                .service_token_file
+                .as_deref()
+                .unwrap_or(&stack.database.token_file),
         )
     }
 
@@ -252,10 +361,20 @@ pub fn publish_module(name: &str, origin: &str) -> Result<()> {
 pub fn fixture_command(dir: &Path, fixture: &str, env: &[(&str, &str)]) -> Result<PathBuf> {
     let exe = std::env::current_exe()?;
     let quote = |value: &str| format!("'{}'", value.replace('\'', r"'\''"));
-    let exports: String = env.iter().map(|(name, value)| format!("export {name}={}\n", quote(value))).collect();
+    let exports: String = env
+        .iter()
+        .map(|(name, value)| format!("export {name}={}\n", quote(value)))
+        .collect();
     let script = dir.join(format!("{fixture}.sh"));
     std::fs::create_dir_all(dir)?;
-    std::fs::write(&script, format!("#!/bin/sh\n{exports}exec {} fixture {} \"$@\"\n", quote(&exe.to_string_lossy()), quote(fixture)))?;
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\n{exports}exec {} fixture {} \"$@\"\n",
+            quote(&exe.to_string_lossy()),
+            quote(fixture)
+        ),
+    )?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

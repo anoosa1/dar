@@ -505,7 +505,11 @@ pub fn open_claude<H: ClaudeHandlers>(
                     }
                 }
             } else if kind == "control_request" {
-                let Some(id) = message.get("request_id").and_then(Value::as_str).map(str::to_owned) else {
+                let Some(id) = message
+                    .get("request_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                else {
                     return true;
                 };
                 let request = message

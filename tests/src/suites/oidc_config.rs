@@ -8,7 +8,10 @@ use dar_acceptance::stack::write_private;
 
 pub const SUITE: Suite = Suite {
     name: "oidc-config",
-    cases: &[case!(pkce_opt_out_confidential_clients, 60), case!(text_configured_clients, 60)],
+    cases: &[
+        case!(pkce_opt_out_confidential_clients, 60),
+        case!(text_configured_clients, 60),
+    ],
 };
 
 pub async fn pkce_opt_out_confidential_clients(t: &Ctx) -> Result<()> {
@@ -42,12 +45,20 @@ pub async fn pkce_opt_out_confidential_clients(t: &Ctx) -> Result<()> {
             &base,
             &admin.session,
             &client,
-            Authorize { no_pkce: true, scope: Some("openid profile".into()), ..Authorize::default() },
+            Authorize {
+                no_pkce: true,
+                scope: Some("openid profile".into()),
+                ..Authorize::default()
+            },
         )
     };
 
     apply(entry.clone())?;
-    assert_eq!(query_param(&flow().await?.url, "error").as_deref(), Some("invalid_request"), "default requires PKCE");
+    assert_eq!(
+        query_param(&flow().await?.url, "error").as_deref(),
+        Some("invalid_request"),
+        "default requires PKCE"
+    );
 
     let mut bad_type = entry.clone();
     bad_type["requirePkce"] = json!("false");
@@ -76,27 +87,57 @@ pub async fn pkce_opt_out_confidential_clients(t: &Ctx) -> Result<()> {
         .post(format!("{base}/oidc/token"))
         .basic_auth(id, Some("wrong-secret"))
         .header("content-type", "application/x-www-form-urlencoded")
-        .body(form(&[("grant_type", "authorization_code"), ("redirect_uri", redirect), ("code", &code)]))
+        .body(form(&[
+            ("grant_type", "authorization_code"),
+            ("redirect_uri", redirect),
+            ("code", &code),
+        ]))
         .send()
         .await?;
     assert_eq!(rejected.status().as_u16(), 401);
 
-    let protected_flow = authorize(&base, &admin.session, &client, Authorize { scope: Some("openid profile".into()), ..Authorize::default() }).await?;
-    let wrong_verifier = Flow { verifier: dar_acceptance::base64url(&dar_acceptance::random_bytes(32)), ..protected_flow };
-    assert!(client.exchange(&wrong_verifier).await.is_err(), "supplied PKCE remains enforced");
+    let protected_flow = authorize(
+        &base,
+        &admin.session,
+        &client,
+        Authorize {
+            scope: Some("openid profile".into()),
+            ..Authorize::default()
+        },
+    )
+    .await?;
+    let wrong_verifier = Flow {
+        verifier: dar_acceptance::base64url(&dar_acceptance::random_bytes(32)),
+        ..protected_flow
+    };
+    assert!(
+        client.exchange(&wrong_verifier).await.is_err(),
+        "supplied PKCE remains enforced"
+    );
 
     apply(entry)?;
-    assert_eq!(query_param(&flow().await?.url, "error").as_deref(), Some("invalid_request"), "re-enabling PKCE applies to the next request");
+    assert_eq!(
+        query_param(&flow().await?.url, "error").as_deref(),
+        Some("invalid_request"),
+        "re-enabling PKCE applies to the next request"
+    );
 
     let public_client = admin.client("public", "openid", redirect).await?;
     let public_no_pkce = authorize(
         &base,
         &admin.session,
         &public_client,
-        Authorize { no_pkce: true, scope: Some("openid".into()), ..Authorize::default() },
+        Authorize {
+            no_pkce: true,
+            scope: Some("openid".into()),
+            ..Authorize::default()
+        },
     )
     .await?;
-    assert_eq!(query_param(&public_no_pkce.url, "error").as_deref(), Some("invalid_request"));
+    assert_eq!(
+        query_param(&public_no_pkce.url, "error").as_deref(),
+        Some("invalid_request")
+    );
 
     apply(opt_out)?;
     Ok(())
@@ -114,13 +155,34 @@ pub async fn text_configured_clients(t: &Ctx) -> Result<()> {
     let read = || async { db.provider("client", json!({ "id": id })).await };
     let original = read().await?;
     assert_eq!(original["revision"], json!(1));
-    assert!(!original["metadata"].as_str().unwrap_or_default().contains(secret));
-    assert!(!original["encrypted"].as_str().unwrap_or_default().contains(secret));
+    assert!(
+        !original["metadata"]
+            .as_str()
+            .unwrap_or_default()
+            .contains(secret)
+    );
+    assert!(
+        !original["encrypted"]
+            .as_str()
+            .unwrap_or_default()
+            .contains(secret)
+    );
 
     let client = Client::discover(&base, id, Some(secret), redirect).await?;
     let admin = IdentityAdmin::new(&base).await?;
     let tokens = client
-        .exchange(&authorize(&base, &admin.session, &client, Authorize { scope: Some("openid profile".into()), ..Authorize::default() }).await?)
+        .exchange(
+            &authorize(
+                &base,
+                &admin.session,
+                &client,
+                Authorize {
+                    scope: Some("openid profile".into()),
+                    ..Authorize::default()
+                },
+            )
+            .await?,
+        )
         .await?;
     assert!(!tokens.access_token().is_empty());
 
@@ -141,10 +203,18 @@ pub async fn text_configured_clients(t: &Ctx) -> Result<()> {
     };
 
     apply(json!([entry]))?;
-    assert_eq!(read().await?["revision"], json!(1), "unchanged settings retain grants and revision");
+    assert_eq!(
+        read().await?["revision"],
+        json!(1),
+        "unchanged settings retain grants and revision"
+    );
 
     apply(json!([]))?;
-    assert_eq!(read().await?["revision"], json!(1), "omitted clients are retained");
+    assert_eq!(
+        read().await?["revision"],
+        json!(1),
+        "omitted clients are retained"
+    );
 
     let public_id = "configured-public-rp";
     apply(json!([{
@@ -154,7 +224,11 @@ pub async fn text_configured_clients(t: &Ctx) -> Result<()> {
         "redirectUris": ["https://public.example.test/callback"],
         "scopes": ["openid"],
     }]))?;
-    assert_eq!(admin.get(&format!("/clients/{public_id}")).await?["type"], json!("public"), "a public client authenticates with no secret");
+    assert_eq!(
+        admin.get(&format!("/clients/{public_id}")).await?["type"],
+        json!("public"),
+        "a public client authenticates with no secret"
+    );
 
     let mut wildcard_redirect = entry.clone();
     wildcard_redirect["redirectUris"] = json!(["https://photos.example.test/*"]);
@@ -163,9 +237,16 @@ pub async fn text_configured_clients(t: &Ctx) -> Result<()> {
     let mut duplicate = entry.clone();
     duplicate["name"] = json!("Should not apply");
     assert!(apply(json!([duplicate, entry])).is_err());
-    assert_eq!(read().await?["revision"], json!(1), "validate the entire file before writing");
+    assert_eq!(
+        read().await?["revision"],
+        json!(1),
+        "validate the entire file before writing"
+    );
 
-    write_private(&directory.join("secret"), b"rotated-isolated-secret-1234567890")?;
+    write_private(
+        &directory.join("secret"),
+        b"rotated-isolated-secret-1234567890",
+    )?;
     apply(json!([entry]))?;
     assert_eq!(read().await?["revision"], json!(2));
 
@@ -185,10 +266,18 @@ pub async fn text_configured_clients(t: &Ctx) -> Result<()> {
         .post(format!("{base}/oidc/token"))
         .basic_auth(id, Some("rotated-isolated-secret-1234567890"))
         .header("content-type", "application/x-www-form-urlencoded")
-        .body(form(&[("grant_type", "authorization_code"), ("redirect_uri", redirect), ("code", "never-issued")]))
+        .body(form(&[
+            ("grant_type", "authorization_code"),
+            ("redirect_uri", redirect),
+            ("code", "never-issued"),
+        ]))
         .send()
         .await?;
-    assert_eq!(rejected.status().as_u16(), 401, "a disabled client no longer authenticates (an enabled one would get invalid_grant)");
+    assert_eq!(
+        rejected.status().as_u16(),
+        401,
+        "a disabled client no longer authenticates (an enabled one would get invalid_grant)"
+    );
 
     let missing = directory.join("missing");
     assert!(support::configure_oidc(&db, root, &base, &missing, false).is_err());

@@ -15,7 +15,16 @@ fn parse(data: &[u8]) -> Option<mail_parser::Message<'_>> {
 }
 
 fn addresses(a: Option<&Address<'_>>) -> Vec<Value> {
-    a.map(|a| a.iter().filter_map(|x| x.address().map(|addr| json!({ "name": x.name().unwrap_or_default(), "address": addr }))).take(100).collect()).unwrap_or_default()
+    a.map(|a| {
+        a.iter()
+            .filter_map(|x| {
+                x.address()
+                    .map(|addr| json!({ "name": x.name().unwrap_or_default(), "address": addr }))
+            })
+            .take(100)
+            .collect()
+    })
+    .unwrap_or_default()
 }
 
 fn ids(value: &mail_parser::HeaderValue<'_>) -> Vec<String> {
@@ -27,14 +36,27 @@ fn ids(value: &mail_parser::HeaderValue<'_>) -> Vec<String> {
 }
 
 fn collapse(text: &str, max: usize) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(max).collect()
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(max)
+        .collect()
 }
 
 fn plain_text(m: &mail_parser::Message<'_>) -> String {
-    if let Some(t) = m.text_bodies().find(|p| p.is_text() && !p.is_text_html()).and_then(|p| p.text_contents()) {
+    if let Some(t) = m
+        .text_bodies()
+        .find(|p| p.is_text() && !p.is_text_html())
+        .and_then(|p| p.text_contents())
+    {
         return t.to_owned();
     }
-    m.html_bodies().find(|p| p.is_text_html()).and_then(|p| p.text_contents()).map(|h| text_of(h, 20_000)).unwrap_or_default()
+    m.html_bodies()
+        .find(|p| p.is_text_html())
+        .and_then(|p| p.text_contents())
+        .map(|h| text_of(h, 20_000))
+        .unwrap_or_default()
 }
 
 /// What the index keeps: identities for threads, sender, recipients, date, a snippet.
@@ -45,9 +67,17 @@ pub fn meta(data: &[u8], fallback_date: f64) -> Value {
     let message_id = m.message_id().unwrap_or_default().to_owned();
     let references = ids(m.references());
     let reply_to = ids(m.in_reply_to());
-    let thread = references.first().or(reply_to.first()).cloned().unwrap_or_else(|| message_id.clone());
+    let thread = references
+        .first()
+        .or(reply_to.first())
+        .cloned()
+        .unwrap_or_else(|| message_id.clone());
     let from = m.from().and_then(|a| a.first());
-    let date = m.date().map(|d| d.to_timestamp() as f64 * 1000.0).filter(|d| *d > 0.0).unwrap_or(fallback_date);
+    let date = m
+        .date()
+        .map(|d| d.to_timestamp() as f64 * 1000.0)
+        .filter(|d| *d > 0.0)
+        .unwrap_or(fallback_date);
     json!({
         "messageId": message_id,
         "threadId": thread,
@@ -72,7 +102,16 @@ fn img_re() -> &'static Regex {
 }
 
 fn encode(value: &str) -> String {
-    value.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
+    value
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect()
 }
 
 /// The message for reading. `base` is the API prefix for this message's parts
@@ -81,23 +120,35 @@ pub fn render(data: &[u8], base: &str, proxy: &str, images: bool) -> Value {
     let Some(m) = parse(data) else {
         return json!({ "html": "", "text": String::from_utf8_lossy(data), "attachments": [], "blockedImages": 0 });
     };
-    let html_source = m.html_bodies().find(|p| p.is_text_html()).and_then(|p| p.text_contents()).map(str::to_owned);
+    let html_source = m
+        .html_bodies()
+        .find(|p| p.is_text_html())
+        .and_then(|p| p.text_contents())
+        .map(str::to_owned);
     let mut blocked = 0;
-    let html = html_source.map(|source| {
-        let with_cid = cid_re().replace_all(&source, |c: &regex::Captures| format!("src=\"{base}/cid/{}\"", encode(&c[1]))).into_owned();
-        let clean = sanitize(&with_cid, base, 2 * 1024 * 1024);
-        img_re().replace_all(&clean, |c: &regex::Captures| {
-            let src = &c[1];
-            if src.starts_with(base) {
-                c[0].to_owned()
-            } else if images {
-                format!("<img src=\"{proxy}{}\"", encode(&src.replace("&amp;", "&")))
-            } else {
-                blocked += 1;
-                "<img data-blocked=\"1\"".to_owned()
-            }
-        }).into_owned()
-    }).unwrap_or_default();
+    let html = html_source
+        .map(|source| {
+            let with_cid = cid_re()
+                .replace_all(&source, |c: &regex::Captures| {
+                    format!("src=\"{base}/cid/{}\"", encode(&c[1]))
+                })
+                .into_owned();
+            let clean = sanitize(&with_cid, base, 2 * 1024 * 1024);
+            img_re()
+                .replace_all(&clean, |c: &regex::Captures| {
+                    let src = &c[1];
+                    if src.starts_with(base) {
+                        c[0].to_owned()
+                    } else if images {
+                        format!("<img src=\"{proxy}{}\"", encode(&src.replace("&amp;", "&")))
+                    } else {
+                        blocked += 1;
+                        "<img data-blocked=\"1\"".to_owned()
+                    }
+                })
+                .into_owned()
+        })
+        .unwrap_or_default();
     let attachments: Vec<Value> = m.attachments().enumerate().map(|(i, a)| {
         let kind = a.content_type().map(|t| format!("{}/{}", t.ctype(), t.subtype().unwrap_or("octet-stream"))).unwrap_or_else(|| "application/octet-stream".into());
         json!({
@@ -105,7 +156,12 @@ pub fn render(data: &[u8], base: &str, proxy: &str, images: bool) -> Value {
             "inline": a.content_id().is_some() && a.attachment_name().is_none(),
         })
     }).collect();
-    let header = |name: &str| m.header(name).and_then(|h| h.as_text()).unwrap_or_default().to_owned();
+    let header = |name: &str| {
+        m.header(name)
+            .and_then(|h| h.as_text())
+            .unwrap_or_default()
+            .to_owned()
+    };
     json!({
         "html": html,
         "text": if html.is_empty() { plain_text(&m) } else { String::new() },
@@ -123,15 +179,29 @@ pub fn render(data: &[u8], base: &str, proxy: &str, images: bool) -> Value {
 }
 
 /// An attachment's name, type and bytes, by its index or its Content-ID.
-pub fn part(data: &[u8], index: Option<usize>, cid: Option<&str>) -> Option<(String, String, Vec<u8>)> {
+pub fn part(
+    data: &[u8],
+    index: Option<usize>,
+    cid: Option<&str>,
+) -> Option<(String, String, Vec<u8>)> {
     let m = parse(data)?;
     let a = match (index, cid) {
         (Some(i), _) => m.attachments().nth(i)?,
-        (None, Some(cid)) => m.attachments().find(|a| a.content_id().is_some_and(|c| c.trim_matches(['<', '>']) == cid))?,
+        (None, Some(cid)) => m.attachments().find(|a| {
+            a.content_id()
+                .is_some_and(|c| c.trim_matches(['<', '>']) == cid)
+        })?,
         _ => return None,
     };
-    let kind = a.content_type().map(|t| format!("{}/{}", t.ctype(), t.subtype().unwrap_or("octet-stream"))).unwrap_or_else(|| "application/octet-stream".into());
-    Some((a.attachment_name().unwrap_or("attachment").to_owned(), kind.to_lowercase(), a.contents().to_vec()))
+    let kind = a
+        .content_type()
+        .map(|t| format!("{}/{}", t.ctype(), t.subtype().unwrap_or("octet-stream")))
+        .unwrap_or_else(|| "application/octet-stream".into());
+    Some((
+        a.attachment_name().unwrap_or("attachment").to_owned(),
+        kind.to_lowercase(),
+        a.contents().to_vec(),
+    ))
 }
 
 pub struct Outgoing {
@@ -168,9 +238,19 @@ pub struct Draft<'a> {
 pub fn build(d: Draft<'_>) -> std::io::Result<Outgoing> {
     use mail_builder::MessageBuilder;
     use mail_builder::headers::address::Address as To;
-    let domain = d.from.rsplit_once('@').map(|(_, h)| h).unwrap_or("dar.localhost");
+    let domain = d
+        .from
+        .rsplit_once('@')
+        .map(|(_, h)| h)
+        .unwrap_or("dar.localhost");
     let message_id = format!("{}@{domain}", d.id_seed);
-    let list = |v: &[String]| -> To<'static> { To::new_list(v.iter().map(|a| To::new_address(None::<String>, a.clone())).collect()) };
+    let list = |v: &[String]| -> To<'static> {
+        To::new_list(
+            v.iter()
+                .map(|a| To::new_address(None::<String>, a.clone()))
+                .collect(),
+        )
+    };
     let mut b = MessageBuilder::new()
         .from((d.from_name.to_owned(), d.from.to_owned()))
         .subject(d.subject.to_owned())
@@ -178,7 +258,10 @@ pub fn build(d: Draft<'_>) -> std::io::Result<Outgoing> {
         .message_id(message_id.clone())
         .text_body(d.text.to_owned());
     if d.markdown {
-        b = b.html_body(super::markdown::document(d.text)).header("X-Dar-Format", mail_builder::headers::text::Text::new("markdown"));
+        b = b.html_body(super::markdown::document(d.text)).header(
+            "X-Dar-Format",
+            mail_builder::headers::text::Text::new("markdown"),
+        );
     }
     if !d.to.is_empty() {
         b = b.to(list(&d.to));
@@ -197,7 +280,11 @@ pub fn build(d: Draft<'_>) -> std::io::Result<Outgoing> {
     }
     let data = b.write_to_vec()?;
     let recipients = d.to.iter().chain(&d.cc).chain(&d.bcc).cloned().collect();
-    Ok(Outgoing { data, message_id, recipients })
+    Ok(Outgoing {
+        data,
+        message_id,
+        recipients,
+    })
 }
 
 #[cfg(test)]
@@ -213,10 +300,23 @@ mod tests {
         assert_eq!(m["messageId"], "c@example.com");
         assert_eq!(m["fromName"], "Lina Karam");
         assert_eq!(m["date"], 1795343040000.0);
-        let r = render(SAMPLE, "https://dar.example/api/v1/mail/messages/1", "https://dar.example/api/v1/mail/image?url=", false);
+        let r = render(
+            SAMPLE,
+            "https://dar.example/api/v1/mail/messages/1",
+            "https://dar.example/api/v1/mail/image?url=",
+            false,
+        );
         let html = r["html"].as_str().unwrap();
-        assert!(html.contains("src=\"https://dar.example/api/v1/mail/messages/1/cid/logo\""), "{html}");
-        assert!(!html.contains("tracker.example") && !html.contains("script") && !html.contains("onclick"), "{html}");
+        assert!(
+            html.contains("src=\"https://dar.example/api/v1/mail/messages/1/cid/logo\""),
+            "{html}"
+        );
+        assert!(
+            !html.contains("tracker.example")
+                && !html.contains("script")
+                && !html.contains("onclick"),
+            "{html}"
+        );
         assert_eq!(r["blockedImages"], 1);
         let (_, kind, bytes) = part(SAMPLE, None, Some("logo")).unwrap();
         assert_eq!(kind, "image/png");
@@ -226,22 +326,56 @@ mod tests {
     #[test]
     fn builds_plain_messages() {
         let out = build(Draft {
-            from_name: "Anas", from: "anas@example.com", to: vec!["a@example.com".into()], cc: vec![], bcc: vec!["hidden@example.com".into()],
-            subject: "Hello", text: "Line one\nLine two", in_reply_to: Some("c@example.com"), references: vec!["a@example.com".into()],
-            attachments: vec![], date_ms: 1_795_343_040_000, id_seed: "seed", markdown: false,
-        }).unwrap();
+            from_name: "Anas",
+            from: "anas@example.com",
+            to: vec!["a@example.com".into()],
+            cc: vec![],
+            bcc: vec!["hidden@example.com".into()],
+            subject: "Hello",
+            text: "Line one\nLine two",
+            in_reply_to: Some("c@example.com"),
+            references: vec!["a@example.com".into()],
+            attachments: vec![],
+            date_ms: 1_795_343_040_000,
+            id_seed: "seed",
+            markdown: false,
+        })
+        .unwrap();
         let text = String::from_utf8_lossy(&out.data);
-        assert!(text.contains("Subject: Hello") && text.contains("In-Reply-To: <c@example.com>") && !text.contains("hidden@"), "{text}");
+        assert!(
+            text.contains("Subject: Hello")
+                && text.contains("In-Reply-To: <c@example.com>")
+                && !text.contains("hidden@"),
+            "{text}"
+        );
         assert_eq!(out.recipients, vec!["a@example.com", "hidden@example.com"]);
         assert_eq!(out.message_id, "seed@example.com");
         let md = build(Draft {
-            from_name: "Anas", from: "anas@example.com", to: vec!["a@example.com".into()], cc: vec![], bcc: vec![], subject: "Plan", text: "Hello **team**\n\n- one",
-            in_reply_to: None, references: vec![], attachments: vec![], date_ms: 1_795_343_040_000, id_seed: "md", markdown: true,
-        }).unwrap();
+            from_name: "Anas",
+            from: "anas@example.com",
+            to: vec!["a@example.com".into()],
+            cc: vec![],
+            bcc: vec![],
+            subject: "Plan",
+            text: "Hello **team**\n\n- one",
+            in_reply_to: None,
+            references: vec![],
+            attachments: vec![],
+            date_ms: 1_795_343_040_000,
+            id_seed: "md",
+            markdown: true,
+        })
+        .unwrap();
         let r = render(&md.data, "https://dar.example/m", "", false);
         assert_eq!(r["format"], "markdown");
         assert_eq!(r["textPart"], "Hello **team**\n\n- one");
-        assert!(r["html"].as_str().unwrap().contains("<strong>team</strong>"), "{r}");
+        assert!(
+            r["html"]
+                .as_str()
+                .unwrap()
+                .contains("<strong>team</strong>"),
+            "{r}"
+        );
         assert!(String::from_utf8_lossy(&md.data).contains("multipart/alternative"));
     }
 }

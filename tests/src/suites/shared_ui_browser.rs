@@ -30,7 +30,9 @@ pub async fn shared_ui_journey(t: &Ctx) -> Result<()> {
     let _hidden = upload(&native, ".hidden-ui.txt", "Hidden view proof.").await?;
 
     let browser = Browser::shared().await?;
-    let context = browser.new_context(ContextOptions::sized(1440, 1000)).await?;
+    let context = browser
+        .new_context(ContextOptions::sized(1440, 1000))
+        .await?;
     let page = context.new_page().await?;
     let expected_save_failure = Arc::new(AtomicBool::new(false));
     let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -48,7 +50,9 @@ pub async fn shared_ui_journey(t: &Ctx) -> Result<()> {
             if msg.text.contains("401") && msg.text.contains("Unauthorized") {
                 return;
             }
-            if expected.load(Ordering::Relaxed) && (msg.text.contains("409") || msg.text.contains("503")) {
+            if expected.load(Ordering::Relaxed)
+                && (msg.text.contains("409") || msg.text.contains("503"))
+            {
                 return;
             }
             sink.lock().unwrap().push(msg.text.clone());
@@ -464,7 +468,9 @@ pub async fn shared_ui_journey(t: &Ctx) -> Result<()> {
     .await;
 
     if result.is_err() && !page.is_closed() {
-        let _ = page.screenshot(t.screenshot("shared-ui-failure.png"), true).await;
+        let _ = page
+            .screenshot(t.screenshot("shared-ui-failure.png"), true)
+            .await;
     }
     context.close().await.ok();
     result

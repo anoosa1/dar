@@ -8,8 +8,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use send_wrapper::SendWrapper;
 use serde::Deserialize;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 
 use crate::api::{self, BrowserSession, Req};
 use crate::icons::Icon;
@@ -42,7 +42,14 @@ impl Default for Screen {
 
 impl Screen {
     pub fn new() -> Self {
-        Self { lines: vec![Vec::new()], row: 0, col: 0, style: String::new(), rows: 24, pending: String::new() }
+        Self {
+            lines: vec![Vec::new()],
+            row: 0,
+            col: 0,
+            style: String::new(),
+            rows: 24,
+            pending: String::new(),
+        }
     }
 
     fn ensure_line(&mut self) -> &mut Vec<Cell> {
@@ -104,7 +111,10 @@ impl Screen {
                     let col = self.col;
                     let line = self.ensure_line();
                     while line.len() < col {
-                        line.push(Cell { ch: ' ', style: String::new() });
+                        line.push(Cell {
+                            ch: ' ',
+                            style: String::new(),
+                        });
                     }
                     if col < line.len() {
                         line[col] = Cell { ch: c, style };
@@ -124,7 +134,10 @@ impl Screen {
 
     fn control(&mut self, raw: &str, final_ch: char) {
         let cleaned = raw.replace('?', "");
-        let values: Vec<usize> = cleaned.split(';').map(|v| v.parse::<usize>().unwrap_or(0)).collect();
+        let values: Vec<usize> = cleaned
+            .split(';')
+            .map(|v| v.parse::<usize>().unwrap_or(0))
+            .collect();
         let n = values.first().copied().unwrap_or(0).max(1);
         match final_ch {
             'm' => {
@@ -150,7 +163,10 @@ impl Screen {
                     1 => {
                         let count = (col + 1).min(line.len());
                         for cell in line.iter_mut().take(count) {
-                            *cell = Cell { ch: ' ', style: String::new() };
+                            *cell = Cell {
+                                ch: ' ',
+                                style: String::new(),
+                            };
                         }
                     }
                     _ => {
@@ -195,7 +211,9 @@ impl Screen {
 }
 
 fn is_color_token(token: &str) -> bool {
-    token.strip_prefix('c').is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+    token
+        .strip_prefix('c')
+        .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn with_token(style: &str, remove: impl Fn(&str) -> bool, add: Option<&str>) -> String {
@@ -240,7 +258,11 @@ fn match_osc(rest: &str) -> Option<usize> {
             return Some(i + 1);
         }
         if bytes[i] == 0x1b {
-            return if i + 1 < bytes.len() && bytes[i + 1] == b'\\' { Some(i + 2) } else { None };
+            return if i + 1 < bytes.len() && bytes[i + 1] == b'\\' {
+                Some(i + 2)
+            } else {
+                None
+            };
         }
         i += 1;
     }
@@ -258,7 +280,8 @@ fn is_incomplete_escape(rest: &str) -> bool {
     }
     if bytes[1] == b'[' {
         let mut i = 2;
-        while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b';' || bytes[i] == b'?') {
+        while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b';' || bytes[i] == b'?')
+        {
             i += 1;
         }
         while i < bytes.len() && (0x20..=0x2f).contains(&bytes[i]) {
@@ -293,7 +316,9 @@ impl Utf8Stream {
                 Err(err) => {
                     let valid_len = err.valid_up_to();
                     if valid_len > 0 {
-                        out.push_str(std::str::from_utf8(&input[start..start + valid_len]).unwrap());
+                        out.push_str(
+                            std::str::from_utf8(&input[start..start + valid_len]).unwrap(),
+                        );
                     }
                     start += valid_len;
                     if let Some(error_len) = err.error_len() {
@@ -403,21 +428,39 @@ pub fn ThreadTerminal(
     let view_ref = NodeRef::<html::Div>::new();
     let measure_ref = NodeRef::<html::Span>::new();
     let offset = StoredValue::new_local(RefCell::new(0u64));
-    let loop_abort: StoredValue<RefCell<Option<web_sys::AbortController>>, LocalStorage> = StoredValue::new_local(RefCell::new(None));
+    let loop_abort: StoredValue<RefCell<Option<web_sys::AbortController>>, LocalStorage> =
+        StoredValue::new_local(RefCell::new(None));
     let queue = StoredValue::new_local(RefCell::new(String::new()));
     let flushing = StoredValue::new_local(RefCell::new(false));
     let decoder = StoredValue::new_local(RefCell::new(Utf8Stream::default()));
     let csrf = StoredValue::new(session.csrf_token);
 
-    let url = move || format!("/api/v1/agent/threads/{}/terminal", thread_id.get_untracked());
+    let url = move || {
+        format!(
+            "/api/v1/agent/threads/{}/terminal",
+            thread_id.get_untracked()
+        )
+    };
 
     let size = move || -> (u32, u32) {
-        let box_rect = view_ref.get_untracked().map(|el| el.get_bounding_client_rect());
-        let cell_rect = measure_ref.get_untracked().map(|el| el.get_bounding_client_rect());
+        let box_rect = view_ref
+            .get_untracked()
+            .map(|el| el.get_bounding_client_rect());
+        let cell_rect = measure_ref
+            .get_untracked()
+            .map(|el| el.get_bounding_client_rect());
         let box_h = box_rect.as_ref().map(|r| r.height()).unwrap_or(300.0);
         let box_w = box_rect.as_ref().map(|r| r.width()).unwrap_or(600.0);
-        let cell_h = cell_rect.as_ref().map(|r| r.height()).filter(|&h| h > 0.0).unwrap_or(17.0);
-        let cell_w = cell_rect.as_ref().map(|r| r.width()).filter(|&w| w > 0.0).unwrap_or(7.2);
+        let cell_h = cell_rect
+            .as_ref()
+            .map(|r| r.height())
+            .filter(|&h| h > 0.0)
+            .unwrap_or(17.0);
+        let cell_w = cell_rect
+            .as_ref()
+            .map(|r| r.width())
+            .filter(|&w| w > 0.0)
+            .unwrap_or(7.2);
         let rows = ((box_h / cell_h).floor() as i64 - 1).max(4) as u32;
         let cols = (((box_w - 16.0) / cell_w).floor() as i64).max(20) as u32;
         (rows, cols)
@@ -483,11 +526,21 @@ pub fn ThreadTerminal(
                     let target = format!("{}/resize", url());
                     let body = serde_json::json!({ "rows": rows, "cols": cols }).to_string();
                     let token = csrf.get_value();
-                    let _ = api::request::<serde_json::Value>(&target, Req { method: "POST", body: Some(body), csrf: Some(&token), ..Default::default() }).await;
+                    let _ = api::request::<serde_json::Value>(
+                        &target,
+                        Req {
+                            method: "POST",
+                            body: Some(body),
+                            csrf: Some(&token),
+                            ..Default::default()
+                        },
+                    )
+                    .await;
                 });
             })
         };
-        let observer = web_sys::ResizeObserver::new(cb.as_ref().unchecked_ref()).expect("ResizeObserver");
+        let observer =
+            web_sys::ResizeObserver::new(cb.as_ref().unchecked_ref()).expect("ResizeObserver");
         observer.observe(&el);
         let kept = SendWrapper::new((observer, cb, timer_gen));
         on_cleanup(move || {
@@ -503,7 +556,15 @@ pub fn ThreadTerminal(
             while !signal.aborted() {
                 let after = offset.with_value(|o| *o.borrow());
                 let poll_url = format!("{endpoint}?after={after}");
-                match api::request::<TerminalPoll>(&poll_url, Req { signal: Some(signal.clone()), ..Default::default() }).await {
+                match api::request::<TerminalPoll>(
+                    &poll_url,
+                    Req {
+                        signal: Some(signal.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                {
                     Ok(value) => {
                         if signal.aborted() {
                             return;
@@ -524,7 +585,11 @@ pub fn ThreadTerminal(
                         if signal.aborted() {
                             return;
                         }
-                        error.try_set(if e.message.is_empty() { "The terminal connection failed.".into() } else { e.message });
+                        error.try_set(if e.message.is_empty() {
+                            "The terminal connection failed.".into()
+                        } else {
+                            e.message
+                        });
                         state.try_set(TerminalState::Closed);
                         return;
                     }
@@ -549,7 +614,17 @@ pub fn ThreadTerminal(
         let token = csrf.get_value();
         spawn_local(async move {
             let body = serde_json::json!({ "rows": rows, "cols": cols }).to_string();
-            match api::request::<TerminalStart>(&endpoint, Req { method: "POST", body: Some(body), csrf: Some(&token), ..Default::default() }).await {
+            match api::request::<TerminalStart>(
+                &endpoint,
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
                 Ok(value) => {
                     offset.with_value(|o| *o.borrow_mut() = value.start);
                     state.try_set(TerminalState::Open);
@@ -567,7 +642,11 @@ pub fn ThreadTerminal(
                     }
                 }
                 Err(e) => {
-                    error.try_set(if e.message.is_empty() { "The terminal could not be opened.".into() } else { e.message });
+                    error.try_set(if e.message.is_empty() {
+                        "The terminal could not be opened.".into()
+                    } else {
+                        e.message
+                    });
                     state.try_set(TerminalState::Idle);
                 }
             }
@@ -596,8 +675,22 @@ pub fn ThreadTerminal(
                     break;
                 }
                 let body = serde_json::json!({ "data": data }).to_string();
-                if let Err(e) = api::request::<serde_json::Value>(&endpoint, Req { method: "POST", body: Some(body), csrf: Some(&token), ..Default::default() }).await {
-                    error.try_set(if e.message.is_empty() { "Input could not be sent.".into() } else { e.message });
+                if let Err(e) = api::request::<serde_json::Value>(
+                    &endpoint,
+                    Req {
+                        method: "POST",
+                        body: Some(body),
+                        csrf: Some(&token),
+                        ..Default::default()
+                    },
+                )
+                .await
+                {
+                    error.try_set(if e.message.is_empty() {
+                        "Input could not be sent.".into()
+                    } else {
+                        e.message
+                    });
                     break;
                 }
             }
@@ -622,7 +715,12 @@ pub fn ThreadTerminal(
             let b = key.as_bytes()[0];
             if b.is_ascii_alphabetic() || matches!(b, b'@' | b'[' | b'\\' | b']' | b'^' | b'_') {
                 if key.eq_ignore_ascii_case("c") {
-                    let has_sel = window().get_selection().ok().flatten().and_then(|s| s.to_string().as_string()).is_some_and(|s| !s.is_empty());
+                    let has_sel = window()
+                        .get_selection()
+                        .ok()
+                        .flatten()
+                        .and_then(|s| s.to_string().as_string())
+                        .is_some_and(|s| !s.is_empty());
                     if has_sel {
                         return;
                     }
@@ -632,12 +730,16 @@ pub fn ThreadTerminal(
             } else if event.shift_key() {
                 return;
             } else {
-                map_key(&key).map(str::to_owned).or_else(|| (key.chars().count() == 1).then_some(key))
+                map_key(&key)
+                    .map(str::to_owned)
+                    .or_else(|| (key.chars().count() == 1).then_some(key))
             }
         } else if event.ctrl_key() && event.shift_key() {
             return;
         } else {
-            map_key(&key).map(str::to_owned).or_else(|| (key.chars().count() == 1).then_some(key))
+            map_key(&key)
+                .map(str::to_owned)
+                .or_else(|| (key.chars().count() == 1).then_some(key))
         };
         if let Some(data) = data {
             event.prevent_default();
@@ -663,7 +765,15 @@ pub fn ThreadTerminal(
         let endpoint = url();
         let token = csrf.get_value();
         spawn_local(async move {
-            let _ = api::request::<serde_json::Value>(&endpoint, Req { method: "DELETE", csrf: Some(&token), ..Default::default() }).await;
+            let _ = api::request::<serde_json::Value>(
+                &endpoint,
+                Req {
+                    method: "DELETE",
+                    csrf: Some(&token),
+                    ..Default::default()
+                },
+            )
+            .await;
             state.try_set(TerminalState::Closed);
         });
     };

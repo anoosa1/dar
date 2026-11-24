@@ -14,13 +14,22 @@ fn str_of(p: &Doc, key: &str) -> String {
 }
 
 /// Ends the provider's grants and tokens for an account, a browser session, a client, or all.
-pub fn revoke_provider(ctx: &ReducerContext, user_id: Option<&str>, session_id: Option<&str>, client_id: Option<&str>) {
+pub fn revoke_provider(
+    ctx: &ReducerContext,
+    user_id: Option<&str>,
+    session_id: Option<&str>,
+    client_id: Option<&str>,
+) {
     let rows: Vec<ProviderModel> = if let Some(u) = user_id {
         ctx.db.provider_models().account_id().filter(u).collect()
     } else if let Some(c) = client_id {
         ctx.db.provider_models().client_id().filter(c).collect()
     } else if let Some(s) = session_id {
-        ctx.db.provider_models().native_session_id().filter(s).collect()
+        ctx.db
+            .provider_models()
+            .native_session_id()
+            .filter(s)
+            .collect()
     } else {
         ctx.db.provider_models().iter().collect()
     };
@@ -33,19 +42,46 @@ pub fn revoke_provider(ctx: &ReducerContext, user_id: Option<&str>, session_id: 
 
 /// Signs an account out everywhere: sessions, app passwords, provisioning tokens and grants.
 pub fn revoke_user(ctx: &ReducerContext, user_id: &str) {
-    for session in ctx.db.sessions().user_id().filter(user_id).collect::<Vec<_>>() {
+    for session in ctx
+        .db
+        .sessions()
+        .user_id()
+        .filter(user_id)
+        .collect::<Vec<_>>()
+    {
         if session.active {
-            ctx.db.sessions().id().update(Session { active: false, ..session });
+            ctx.db.sessions().id().update(Session {
+                active: false,
+                ..session
+            });
         }
     }
-    for password in ctx.db.app_passwords().user_id().filter(user_id).collect::<Vec<_>>() {
+    for password in ctx
+        .db
+        .app_passwords()
+        .user_id()
+        .filter(user_id)
+        .collect::<Vec<_>>()
+    {
         if !password.revoked {
-            ctx.db.app_passwords().id().update(AppPassword { revoked: true, ..password });
+            ctx.db.app_passwords().id().update(AppPassword {
+                revoked: true,
+                ..password
+            });
         }
     }
-    for token in ctx.db.provisioning_tokens().owner_id().filter(user_id).collect::<Vec<_>>() {
+    for token in ctx
+        .db
+        .provisioning_tokens()
+        .owner_id()
+        .filter(user_id)
+        .collect::<Vec<_>>()
+    {
         if !token.revoked {
-            ctx.db.provisioning_tokens().id().update(ProvisioningToken { revoked: true, ..token });
+            ctx.db.provisioning_tokens().id().update(ProvisioningToken {
+                revoked: true,
+                ..token
+            });
         }
     }
     revoke_provider(ctx, Some(user_id), None, None);
@@ -59,20 +95,43 @@ pub struct Actor {
 
 /// A SCIM bearer (provisioning token) or an administrator's browser session; writes from a
 /// session need a fresh password proof.
-pub fn identity_actor(ctx: &ReducerContext, session_id: &str, bearer: &str, proof: &str, write: bool) -> Res<Actor> {
+pub fn identity_actor(
+    ctx: &ReducerContext,
+    session_id: &str,
+    bearer: &str,
+    proof: &str,
+    write: bool,
+) -> Res<Actor> {
     if !bearer.is_empty() {
-        let token = ctx.db.provisioning_tokens().digest().find(bearer.to_owned());
-        let owner = token.as_ref().and_then(|t| ctx.db.accounts().id().find(t.owner_id.clone()));
-        let Some(token) = token.filter(|t| !t.revoked && t.expires_at > now(ctx)) else { return fail("unauthenticated") };
-        let Some(owner) = owner.filter(|o| o.enabled && o.administrator) else { return fail("unauthenticated") };
+        let token = ctx
+            .db
+            .provisioning_tokens()
+            .digest()
+            .find(bearer.to_owned());
+        let owner = token
+            .as_ref()
+            .and_then(|t| ctx.db.accounts().id().find(t.owner_id.clone()));
+        let Some(token) = token.filter(|t| !t.revoked && t.expires_at > now(ctx)) else {
+            return fail("unauthenticated");
+        };
+        let Some(owner) = owner.filter(|o| o.enabled && o.administrator) else {
+            return fail("unauthenticated");
+        };
         if write && token.scope != "write" {
             return fail("forbidden");
         }
-        return Ok(Actor { id: owner.id, scim: true });
+        return Ok(Actor {
+            id: owner.id,
+            scim: true,
+        });
     }
     let session = ctx.db.sessions().id().find(session_id.to_owned());
-    let account = session.as_ref().and_then(|s| ctx.db.accounts().id().find(s.user_id.clone()));
-    let (Some(session), Some(account)) = (session, account) else { return fail("unauthenticated") };
+    let account = session
+        .as_ref()
+        .and_then(|s| ctx.db.accounts().id().find(s.user_id.clone()));
+    let (Some(session), Some(account)) = (session, account) else {
+        return fail("unauthenticated");
+    };
     if !session.active || session.expires_at <= now(ctx) || !account.enabled {
         return fail("unauthenticated");
     }
@@ -80,12 +139,24 @@ pub fn identity_actor(ctx: &ReducerContext, session_id: &str, bearer: &str, proo
         return fail("forbidden");
     }
     if write {
-        let ok = ctx.db.identity_proofs().digest().find(proof.to_owned()).is_some_and(|p| p.session_id == session_id && p.expires_at > now(ctx) && p.verifier == account.verifier);
+        let ok = ctx
+            .db
+            .identity_proofs()
+            .digest()
+            .find(proof.to_owned())
+            .is_some_and(|p| {
+                p.session_id == session_id
+                    && p.expires_at > now(ctx)
+                    && p.verifier == account.verifier
+            });
         if !ok {
             return fail("forbidden");
         }
     }
-    Ok(Actor { id: account.id, scim: false })
+    Ok(Actor {
+        id: account.id,
+        scim: false,
+    })
 }
 
 fn parse_doc(text: &str) -> Doc {
@@ -98,7 +169,11 @@ fn parse_doc(text: &str) -> Doc {
 /// An account as SCIM sees it, or `None` once deleted.
 pub fn profile(ctx: &ReducerContext, user_id: &str) -> Option<Value> {
     let a = ctx.db.accounts().id().find(user_id.to_owned())?;
-    let p = ctx.db.directory_profiles().user_id().find(user_id.to_owned());
+    let p = ctx
+        .db
+        .directory_profiles()
+        .user_id()
+        .find(user_id.to_owned());
     if p.as_ref().is_some_and(|p| p.deleted) {
         return None;
     }
@@ -109,7 +184,17 @@ pub fn profile(ctx: &ReducerContext, user_id: &str) -> Option<Value> {
         .user_id()
         .filter(&a.id)
         .map(|m| {
-            let display = ctx.db.directory_groups().id().find(m.group_id.clone()).map(|g| parse_doc(&g.document).get("displayName").cloned().unwrap_or(Value::Null));
+            let display = ctx
+                .db
+                .directory_groups()
+                .id()
+                .find(m.group_id.clone())
+                .map(|g| {
+                    parse_doc(&g.document)
+                        .get("displayName")
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                });
             let mut item = json!({ "value": m.group_id });
             if let Some(d) = display.filter(|d| !d.is_null()) {
                 item["display"] = d;
@@ -125,7 +210,10 @@ pub fn profile(ctx: &ReducerContext, user_id: &str) -> Option<Value> {
         ("administrator", json!(a.administrator)),
         ("revision", json!(p.as_ref().map_or(1, |p| p.revision))),
         ("createdAt", json!(a.created_at)),
-        ("modifiedAt", json!(p.as_ref().map_or(a.created_at, |p| p.modified_at))),
+        (
+            "modifiedAt",
+            json!(p.as_ref().map_or(a.created_at, |p| p.modified_at)),
+        ),
         ("groups", Value::Array(groups)),
     ] {
         data.insert(k.into(), v);
@@ -134,7 +222,11 @@ pub fn profile(ctx: &ReducerContext, user_id: &str) -> Option<Value> {
 }
 
 fn expected(actual: u32, value: Option<&Value>) -> Res<()> {
-    if value.and_then(Value::as_f64) == Some(actual as f64) { Ok(()) } else { fail("conflict") }
+    if value.and_then(Value::as_f64) == Some(actual as f64) {
+        Ok(())
+    } else {
+        fail("conflict")
+    }
 }
 
 /// A profile changed (SCIM clients see a new revision).
@@ -158,11 +250,15 @@ fn valid_username(name: &str) -> bool {
     let b = name.as_bytes();
     (3..=64).contains(&b.len())
         && (b[0].is_ascii_lowercase() || b[0].is_ascii_digit())
-        && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'_' | b'.' | b'-'))
+        && b.iter().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'_' | b'.' | b'-')
+        })
 }
 
 fn group(ctx: &ReducerContext, id: &str) -> Res<Value> {
-    let Some(g) = ctx.db.directory_groups().id().find(id.to_owned()) else { return fail("notFound") };
+    let Some(g) = ctx.db.directory_groups().id().find(id.to_owned()) else {
+        return fail("notFound");
+    };
     let mut data = parse_doc(&g.document);
     let members: Vec<Value> = ctx
         .db
@@ -177,18 +273,45 @@ fn group(ctx: &ReducerContext, id: &str) -> Res<Value> {
             item
         })
         .collect();
-    for (k, v) in [("id", json!(id)), ("revision", json!(g.revision)), ("createdAt", json!(g.created_at)), ("modifiedAt", json!(g.modified_at)), ("members", Value::Array(members))] {
+    for (k, v) in [
+        ("id", json!(id)),
+        ("revision", json!(g.revision)),
+        ("createdAt", json!(g.created_at)),
+        ("modifiedAt", json!(g.modified_at)),
+        ("members", Value::Array(members)),
+    ] {
         data.insert(k.into(), v);
     }
     Ok(Value::Object(data))
 }
 
-pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor: &Actor) -> Res<Value> {
+pub fn directory_operation(
+    ctx: &ReducerContext,
+    operation: &str,
+    p: &Doc,
+    actor: &Actor,
+) -> Res<Value> {
     match operation {
         "authorize" | "authorizeWrite" => return Ok(json!({ "ok": true })),
-        "users" => return Ok(Value::Array(ctx.db.accounts().iter().filter_map(|a| profile(ctx, &a.id)).collect())),
+        "users" => {
+            return Ok(Value::Array(
+                ctx.db
+                    .accounts()
+                    .iter()
+                    .filter_map(|a| profile(ctx, &a.id))
+                    .collect(),
+            ));
+        }
         "user" => return profile(ctx, &str_of(p, "id")).ok_or_else(|| "notFound".to_owned()),
-        "groups" => return ctx.db.directory_groups().iter().map(|g| group(ctx, &g.id)).collect::<Res<Vec<_>>>().map(Value::Array),
+        "groups" => {
+            return ctx
+                .db
+                .directory_groups()
+                .iter()
+                .map(|g| group(ctx, &g.id))
+                .collect::<Res<Vec<_>>>()
+                .map(Value::Array);
+        }
         "group" => return group(ctx, &str_of(p, "id")),
         "saveUser" => {
             let id = str_of(p, "id");
@@ -197,21 +320,39 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
             if previous.as_ref().is_some_and(|p| p.deleted) {
                 return fail("notFound");
             }
-            expected(if old.is_some() { previous.as_ref().map_or(1, |p| p.revision) } else { 0 }, p.get("revision"))?;
+            expected(
+                if old.is_some() {
+                    previous.as_ref().map_or(1, |p| p.revision)
+                } else {
+                    0
+                },
+                p.get("revision"),
+            )?;
             let document = parse_doc(&str_of(p, "document"));
             let username = crate::text_of(document.get("userName")).to_lowercase();
             let active = document.get("active") != Some(&Value::Bool(false));
             if let Some(old) = &old
                 && old.administrator
-                && (username != old.username || document.get("active") != Some(&Value::Bool(old.enabled)) || p.contains_key("verifier"))
+                && (username != old.username
+                    || document.get("active") != Some(&Value::Bool(old.enabled))
+                    || p.contains_key("verifier"))
             {
                 return fail("forbidden");
             }
             let display = crate::text_of(document.get("displayName"));
-            if !valid_username(&username) || display.trim().is_empty() || display.encode_utf16().count() > 100 {
+            if !valid_username(&username)
+                || display.trim().is_empty()
+                || display.encode_utf16().count() > 100
+            {
                 return fail("invalidInput");
             }
-            if ctx.db.accounts().username().find(username.clone()).is_some_and(|d| d.id != id) {
+            if ctx
+                .db
+                .accounts()
+                .username()
+                .find(username.clone())
+                .is_some_and(|d| d.id != id)
+            {
                 return fail("conflict");
             }
             if old.is_none() && ctx.db.accounts().count() >= 10000 {
@@ -237,7 +378,10 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
             let next = DirectoryProfile {
                 user_id: id.clone(),
                 document: Value::Object(attributes).to_string(),
-                revision: previous.as_ref().map_or(if old.is_some() { 1 } else { 0 }, |p| p.revision) + 1,
+                revision: previous
+                    .as_ref()
+                    .map_or(if old.is_some() { 1 } else { 0 }, |p| p.revision)
+                    + 1,
                 modified_at: now(ctx),
                 deleted: false,
             };
@@ -245,7 +389,12 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
                 ctx.db.accounts().id().update(account.clone());
             } else {
                 ctx.db.accounts().insert(account.clone());
-                ctx.db.usage().insert(Usage { user_id: id.clone(), used: 0.0, reserved: 0.0, quota: 0.0 });
+                ctx.db.usage().insert(Usage {
+                    user_id: id.clone(),
+                    used: 0.0,
+                    reserved: 0.0,
+                    quota: 0.0,
+                });
             }
             if previous.is_some() {
                 ctx.db.directory_profiles().user_id().update(next);
@@ -255,9 +404,19 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
             if let Some(old) = &old
                 && old.display_name != account.display_name
             {
-                for m in ctx.db.directory_members().user_id().filter(&id).collect::<Vec<_>>() {
+                for m in ctx
+                    .db
+                    .directory_members()
+                    .user_id()
+                    .filter(&id)
+                    .collect::<Vec<_>>()
+                {
                     if let Some(g) = ctx.db.directory_groups().id().find(m.group_id) {
-                        ctx.db.directory_groups().id().update(DirectoryGroup { revision: g.revision + 1, modified_at: now(ctx), ..g });
+                        ctx.db.directory_groups().id().update(DirectoryGroup {
+                            revision: g.revision + 1,
+                            modified_at: now(ctx),
+                            ..g
+                        });
                     }
                 }
             }
@@ -268,27 +427,64 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
         }
         "deleteUser" => {
             let a = ctx.db.accounts().id().find(str_of(p, "id"));
-            let old = a.as_ref().and_then(|a| ctx.db.directory_profiles().user_id().find(a.id.clone()));
-            let Some(a) = a.filter(|_| !old.as_ref().is_some_and(|o| o.deleted)) else { return fail("notFound") };
+            let old = a
+                .as_ref()
+                .and_then(|a| ctx.db.directory_profiles().user_id().find(a.id.clone()));
+            let Some(a) = a.filter(|_| !old.as_ref().is_some_and(|o| o.deleted)) else {
+                return fail("notFound");
+            };
             if a.administrator {
                 return fail("forbidden");
             }
             expected(old.as_ref().map_or(1, |o| o.revision), p.get("revision"))?;
             revoke_user(ctx, &a.id);
-            ctx.db.accounts().id().update(Account { enabled: false, ..a.clone() });
-            for r in ctx.db.app_data().owner_id().filter(&a.id).collect::<Vec<_>>() {
+            ctx.db.accounts().id().update(Account {
+                enabled: false,
+                ..a.clone()
+            });
+            for r in ctx
+                .db
+                .app_data()
+                .owner_id()
+                .filter(&a.id)
+                .collect::<Vec<_>>()
+            {
                 ctx.db.app_data().id().delete(r.id);
             }
-            for r in ctx.db.agent_messages().owner_id().filter(&a.id).collect::<Vec<_>>() {
+            for r in ctx
+                .db
+                .agent_messages()
+                .owner_id()
+                .filter(&a.id)
+                .collect::<Vec<_>>()
+            {
                 ctx.db.agent_messages().id().delete(r.id);
             }
-            for r in ctx.db.agent_runs().owner_id().filter(&a.id).collect::<Vec<_>>() {
+            for r in ctx
+                .db
+                .agent_runs()
+                .owner_id()
+                .filter(&a.id)
+                .collect::<Vec<_>>()
+            {
                 ctx.db.agent_runs().id().delete(r.id);
             }
-            for r in ctx.db.agent_threads().owner_id().filter(&a.id).collect::<Vec<_>>() {
+            for r in ctx
+                .db
+                .agent_threads()
+                .owner_id()
+                .filter(&a.id)
+                .collect::<Vec<_>>()
+            {
                 ctx.db.agent_threads().id().delete(r.id);
             }
-            for r in ctx.db.agent_projects().owner_id().filter(&a.id).collect::<Vec<_>>() {
+            for r in ctx
+                .db
+                .agent_projects()
+                .owner_id()
+                .filter(&a.id)
+                .collect::<Vec<_>>()
+            {
                 ctx.db.agent_projects().id().delete(r.id);
             }
             crate::news::delete_news_account(ctx, &a.id);
@@ -307,10 +503,20 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
             } else {
                 ctx.db.directory_profiles().insert(next);
             }
-            for member in ctx.db.directory_members().user_id().filter(&a.id).collect::<Vec<_>>() {
+            for member in ctx
+                .db
+                .directory_members()
+                .user_id()
+                .filter(&a.id)
+                .collect::<Vec<_>>()
+            {
                 ctx.db.directory_members().id().delete(member.id);
                 if let Some(g) = ctx.db.directory_groups().id().find(member.group_id) {
-                    ctx.db.directory_groups().id().update(DirectoryGroup { revision: g.revision + 1, modified_at: now(ctx), ..g });
+                    ctx.db.directory_groups().id().update(DirectoryGroup {
+                        revision: g.revision + 1,
+                        modified_at: now(ctx),
+                        ..g
+                    });
                 }
             }
             return Ok(json!({ "ok": true }));
@@ -320,14 +526,28 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
             let old = ctx.db.directory_groups().id().find(id.clone());
             expected(old.as_ref().map_or(0, |o| o.revision), p.get("revision"))?;
             let data = parse_doc(&str_of(p, "document"));
-            let members: Vec<Value> = data.get("members").and_then(Value::as_array).cloned().unwrap_or_default();
+            let members: Vec<Value> = data
+                .get("members")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
             if old.is_none() && ctx.db.directory_groups().count() >= 2000 {
                 return fail("operationTooLarge");
             }
-            if data.get("displayName").map(|v| crate::text_of(Some(v))).unwrap_or_default().trim().is_empty() || members.len() > 2000 {
+            if data
+                .get("displayName")
+                .map(|v| crate::text_of(Some(v)))
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+                || members.len() > 2000
+            {
                 return fail("invalidInput");
             }
-            let member_ids: Vec<String> = members.iter().map(|m| crate::text_of(m.get("value"))).collect();
+            let member_ids: Vec<String> = members
+                .iter()
+                .map(|m| crate::text_of(m.get("value")))
+                .collect();
             for member in &member_ids {
                 if profile(ctx, member).is_none() {
                     return fail("invalidInput");
@@ -353,7 +573,13 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
                     affected.push(m.clone());
                 }
             }
-            for m in ctx.db.directory_members().group_id().filter(&id).collect::<Vec<_>>() {
+            for m in ctx
+                .db
+                .directory_members()
+                .group_id()
+                .filter(&id)
+                .collect::<Vec<_>>()
+            {
                 if !affected.contains(&m.user_id) {
                     affected.push(m.user_id.clone());
                 }
@@ -363,7 +589,11 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
             for user_id in &member_ids {
                 if !inserted.contains(&user_id) {
                     inserted.push(user_id);
-                    ctx.db.directory_members().insert(DirectoryMember { id: format!("{id}/{user_id}"), group_id: id.clone(), user_id: user_id.clone() });
+                    ctx.db.directory_members().insert(DirectoryMember {
+                        id: format!("{id}/{user_id}"),
+                        group_id: id.clone(),
+                        user_id: user_id.clone(),
+                    });
                 }
             }
             for user_id in affected {
@@ -372,9 +602,17 @@ pub fn directory_operation(ctx: &ReducerContext, operation: &str, p: &Doc, actor
             return group(ctx, &id);
         }
         "deleteGroup" => {
-            let Some(g) = ctx.db.directory_groups().id().find(str_of(p, "id")) else { return fail("notFound") };
+            let Some(g) = ctx.db.directory_groups().id().find(str_of(p, "id")) else {
+                return fail("notFound");
+            };
             expected(g.revision, p.get("revision"))?;
-            for member in ctx.db.directory_members().group_id().filter(&g.id).collect::<Vec<_>>() {
+            for member in ctx
+                .db
+                .directory_members()
+                .group_id()
+                .filter(&g.id)
+                .collect::<Vec<_>>()
+            {
                 touch_profile(ctx, &member.user_id);
                 ctx.db.directory_members().id().delete(member.id);
             }
@@ -510,7 +748,11 @@ fn client_enabled(ctx: &ReducerContext, id: &str) -> bool {
     if id == crate::photos::IMMICH_CLIENT_ID {
         crate::app_settings::app_enabled(ctx, "photos")
     } else {
-        ctx.db.identity_clients().id().find(id.to_owned()).is_some_and(|c| c.enabled)
+        ctx.db
+            .identity_clients()
+            .id()
+            .find(id.to_owned())
+            .is_some_and(|c| c.enabled)
     }
 }
 
@@ -518,16 +760,33 @@ fn model_alive(ctx: &ReducerContext, r: &ProviderModel) -> bool {
     if r.expires_at <= now(ctx) {
         return false;
     }
-    if !r.account_id.is_empty() && profile(ctx, &r.account_id).is_none_or(|p| p["active"] != json!(true)) {
+    if !r.account_id.is_empty()
+        && profile(ctx, &r.account_id).is_none_or(|p| p["active"] != json!(true))
+    {
         return false;
     }
     if !r.client_id.is_empty() && !client_enabled(ctx, &r.client_id) {
         return false;
     }
-    if !r.grant_key.is_empty() && ctx.db.provider_models().id().find(r.grant_key.clone()).map_or(0.0, |g| g.expires_at) <= now(ctx) {
+    if !r.grant_key.is_empty()
+        && ctx
+            .db
+            .provider_models()
+            .id()
+            .find(r.grant_key.clone())
+            .map_or(0.0, |g| g.expires_at)
+            <= now(ctx)
+    {
         return false;
     }
-    if !r.native_session_id.is_empty() && ctx.db.sessions().id().find(r.native_session_id.clone()).is_none_or(|s| !s.active || s.expires_at <= now(ctx)) {
+    if !r.native_session_id.is_empty()
+        && ctx
+            .db
+            .sessions()
+            .id()
+            .find(r.native_session_id.clone())
+            .is_none_or(|s| !s.active || s.expires_at <= now(ctx))
+    {
         return false;
     }
     true
@@ -535,18 +794,43 @@ fn model_alive(ctx: &ReducerContext, r: &ProviderModel) -> bool {
 
 pub fn provider_operation(ctx: &ReducerContext, operation: &str, p: &Doc) -> Res<Value> {
     if operation == "saveClient" {
-        return directory_operation(ctx, operation, p, &Actor { id: String::new(), scim: false });
+        return directory_operation(
+            ctx,
+            operation,
+            p,
+            &Actor {
+                id: String::new(),
+                scim: false,
+            },
+        );
     }
-    let id = p.get("id").map(|v| crate::text_of(Some(v))).unwrap_or_default();
+    let id = p
+        .get("id")
+        .map(|v| crate::text_of(Some(v)))
+        .unwrap_or_default();
     match operation {
-        "client" => Ok(ctx.db.identity_clients().id().find(id).map_or(Value::Null, |c| row(&c))),
+        "client" => Ok(ctx
+            .db
+            .identity_clients()
+            .id()
+            .find(id)
+            .map_or(Value::Null, |c| row(&c))),
         "account" => Ok(profile(ctx, &id).unwrap_or(Value::Null)),
         "session" => Ok(ctx
             .db
             .sessions()
             .id()
             .find(id)
-            .filter(|s| s.active && s.expires_at > now(ctx) && ctx.db.accounts().id().find(s.user_id.clone()).is_some_and(|a| a.enabled))
+            .filter(|s| {
+                s.active
+                    && s.expires_at > now(ctx)
+                    && ctx
+                        .db
+                        .accounts()
+                        .id()
+                        .find(s.user_id.clone())
+                        .is_some_and(|a| a.enabled)
+            })
             .map_or(Value::Null, |s| row(&s))),
         "find" | "findUid" | "findUserCode" => {
             let found = match operation {
@@ -554,19 +838,36 @@ pub fn provider_operation(ctx: &ReducerContext, operation: &str, p: &Doc) -> Res
                 "findUid" => ctx.db.provider_models().uid_key().filter(&id).next(),
                 _ => ctx.db.provider_models().user_code_key().filter(&id).next(),
             };
-            Ok(found.filter(|r| model_alive(ctx, r)).map_or(Value::Null, |r| row(&r)))
+            Ok(found
+                .filter(|r| model_alive(ctx, r))
+                .map_or(Value::Null, |r| row(&r)))
         }
         "upsert" => {
-            let r: ProviderModel = serde_json::from_value(Value::Object(p.clone())).map_err(|_| "invalidInput".to_owned())?;
-            if !r.grant_key.is_empty() && ctx.db.provider_models().id().find(r.grant_key.clone()).map_or(0.0, |g| g.expires_at) <= now(ctx) {
+            let r: ProviderModel = serde_json::from_value(Value::Object(p.clone()))
+                .map_err(|_| "invalidInput".to_owned())?;
+            if !r.grant_key.is_empty()
+                && ctx
+                    .db
+                    .provider_models()
+                    .id()
+                    .find(r.grant_key.clone())
+                    .map_or(0.0, |g| g.expires_at)
+                    <= now(ctx)
+            {
                 return fail("conflict");
             }
-            if !r.account_id.is_empty() && profile(ctx, &r.account_id).is_none_or(|p| p["active"] != json!(true)) {
+            if !r.account_id.is_empty()
+                && profile(ctx, &r.account_id).is_none_or(|p| p["active"] != json!(true))
+            {
                 return fail("unauthenticated");
             }
             if !r.native_session_id.is_empty() {
                 let s = ctx.db.sessions().id().find(r.native_session_id.clone());
-                if s.is_none_or(|s| !s.active || s.expires_at <= now(ctx) || !r.account_id.is_empty() && r.account_id != s.user_id) {
+                if s.is_none_or(|s| {
+                    !s.active
+                        || s.expires_at <= now(ctx)
+                        || !r.account_id.is_empty() && r.account_id != s.user_id
+                }) {
                     return fail("unauthenticated");
                 }
             }
@@ -580,7 +881,10 @@ pub fn provider_operation(ctx: &ReducerContext, operation: &str, p: &Doc) -> Res
             match old {
                 Some(old) => {
                     let consumed = r.consumed.max(old.consumed);
-                    ctx.db.provider_models().id().update(ProviderModel { consumed, ..r });
+                    ctx.db
+                        .provider_models()
+                        .id()
+                        .update(ProviderModel { consumed, ..r });
                 }
                 None => {
                     ctx.db.provider_models().insert(r);
@@ -589,8 +893,19 @@ pub fn provider_operation(ctx: &ReducerContext, operation: &str, p: &Doc) -> Res
             Ok(json!({ "ok": true }))
         }
         "consume" => {
-            let Some(r) = ctx.db.provider_models().id().find(id).filter(|r| r.consumed == 0.0 && r.expires_at > now(ctx)) else { return fail("conflict") };
-            ctx.db.provider_models().id().update(ProviderModel { consumed: (now(ctx) / 1000.0).floor(), ..r });
+            let Some(r) = ctx
+                .db
+                .provider_models()
+                .id()
+                .find(id)
+                .filter(|r| r.consumed == 0.0 && r.expires_at > now(ctx))
+            else {
+                return fail("conflict");
+            };
+            ctx.db.provider_models().id().update(ProviderModel {
+                consumed: (now(ctx) / 1000.0).floor(),
+                ..r
+            });
             Ok(json!({ "ok": true }))
         }
         "destroy" => {
@@ -598,7 +913,13 @@ pub fn provider_operation(ctx: &ReducerContext, operation: &str, p: &Doc) -> Res
             Ok(json!({ "ok": true }))
         }
         "revokeGrant" => {
-            for r in ctx.db.provider_models().grant_key().filter(&id).collect::<Vec<_>>() {
+            for r in ctx
+                .db
+                .provider_models()
+                .grant_key()
+                .filter(&id)
+                .collect::<Vec<_>>()
+            {
                 ctx.db.provider_models().id().delete(r.id);
             }
             ctx.db.provider_models().id().delete(id);
@@ -607,7 +928,16 @@ pub fn provider_operation(ctx: &ReducerContext, operation: &str, p: &Doc) -> Res
         "cleanup" => {
             let upper = format!("{:0>16}", crate::text_of(Some(&json!(now(ctx)))));
             let mut count = 0;
-            for r in ctx.db.provider_models().expiry_key().filter((std::ops::Bound::Unbounded, std::ops::Bound::Included(upper.as_str()))).collect::<Vec<_>>() {
+            for r in ctx
+                .db
+                .provider_models()
+                .expiry_key()
+                .filter((
+                    std::ops::Bound::Unbounded,
+                    std::ops::Bound::Included(upper.as_str()),
+                ))
+                .collect::<Vec<_>>()
+            {
                 count += 1;
                 if count > 1000 {
                     break;
@@ -653,7 +983,14 @@ pub fn restore_identity(ctx: &ReducerContext, data: Option<&Value>) -> Res<()> {
         ctx.db.directory_groups().insert(r);
     }
     for r in rows::<DirectoryMember>(data, "members")? {
-        if ctx.db.accounts().id().find(r.user_id.clone()).is_none() || ctx.db.directory_groups().id().find(r.group_id.clone()).is_none() {
+        if ctx.db.accounts().id().find(r.user_id.clone()).is_none()
+            || ctx
+                .db
+                .directory_groups()
+                .id()
+                .find(r.group_id.clone())
+                .is_none()
+        {
             return fail("invalidInput");
         }
         ctx.db.directory_members().insert(r);

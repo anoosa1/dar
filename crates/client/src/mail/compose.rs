@@ -42,7 +42,11 @@ pub(crate) struct ComposeSpec {
 }
 
 fn signature_block(account: Option<&Account>) -> String {
-    account.map(|a| a.signature.trim()).filter(|s| !s.is_empty()).map(|s| format!("\n\n-- \n{s}")).unwrap_or_default()
+    account
+        .map(|a| a.signature.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("\n\n-- \n{s}"))
+        .unwrap_or_default()
 }
 
 fn plain(body: &Body) -> String {
@@ -55,15 +59,27 @@ fn plain(body: &Body) -> String {
 
 impl ComposeSpec {
     pub fn new(account: &Account) -> Self {
-        ComposeSpec { account_id: account.id.clone(), text: signature_block(Some(account)), ..Default::default() }
+        ComposeSpec {
+            account_id: account.id.clone(),
+            text: signature_block(Some(account)),
+            ..Default::default()
+        }
     }
 
     pub fn reply(d: &Detail, mode: &str, account: Option<&Account>) -> Self {
-        let own = account.map(|a| a.address.to_lowercase()).unwrap_or_default();
+        let own = account
+            .map(|a| a.address.to_lowercase())
+            .unwrap_or_default();
         let s = &d.summary;
         let prefix = if mode == "forward" { "Fwd: " } else { "Re: " };
         let lower = s.subject.to_lowercase();
-        let subject = if lower.starts_with(prefix.to_lowercase().as_str()) || (mode != "forward" && lower.starts_with("re:")) { s.subject.clone() } else { format!("{prefix}{}", s.subject) };
+        let subject = if lower.starts_with(prefix.to_lowercase().as_str())
+            || (mode != "forward" && lower.starts_with("re:"))
+        {
+            s.subject.clone()
+        } else {
+            format!("{prefix}{}", s.subject)
+        };
         let mut to: Vec<String> = Vec::new();
         let mut cc: Vec<String> = Vec::new();
         if mode != "forward" {
@@ -78,23 +94,57 @@ impl ComposeSpec {
             if mode == "all" {
                 for a in s.recipients.to.iter().chain(&s.recipients.cc) {
                     let lower = a.address.to_lowercase();
-                    if lower != own && !to.iter().any(|t| t.to_lowercase() == lower) && !cc.iter().any(|t| t.to_lowercase() == lower) {
+                    if lower != own
+                        && !to.iter().any(|t| t.to_lowercase() == lower)
+                        && !cc.iter().any(|t| t.to_lowercase() == lower)
+                    {
                         cc.push(a.address.clone());
                     }
                 }
             }
         }
-        let when = format!("{}, {}", day_label(s.date), local_time(s.date, &[("hour", "numeric"), ("minute", "2-digit")]));
+        let when = format!(
+            "{}, {}",
+            day_label(s.date),
+            local_time(s.date, &[("hour", "numeric"), ("minute", "2-digit")])
+        );
         let original = plain(&d.body);
         let text = if mode == "forward" {
             let to_line: Vec<String> = s.recipients.to.iter().map(Addr::label).collect();
-            format!("{}\n\n---------- Forwarded message ----------\nFrom: {} <{}>\nDate: {when}\nSubject: {}\nTo: {}\n\n{}", signature_block(account), s.sender(), s.from_address, s.subject, to_line.join(", "), original.trim())
+            format!(
+                "{}\n\n---------- Forwarded message ----------\nFrom: {} <{}>\nDate: {when}\nSubject: {}\nTo: {}\n\n{}",
+                signature_block(account),
+                s.sender(),
+                s.from_address,
+                s.subject,
+                to_line.join(", "),
+                original.trim()
+            )
         } else {
-            let quoted: Vec<String> = original.trim().lines().map(|l| if l.is_empty() { ">".into() } else { format!("> {l}") }).collect();
-            format!("{}\n\nOn {when}, {} wrote:\n{}", signature_block(account), s.sender(), quoted.join("\n"))
+            let quoted: Vec<String> = original
+                .trim()
+                .lines()
+                .map(|l| {
+                    if l.is_empty() {
+                        ">".into()
+                    } else {
+                        format!("> {l}")
+                    }
+                })
+                .collect();
+            format!(
+                "{}\n\nOn {when}, {} wrote:\n{}",
+                signature_block(account),
+                s.sender(),
+                quoted.join("\n")
+            )
         };
         ComposeSpec {
-            account_id: s.account_id.clone(), to, cc, subject, text,
+            account_id: s.account_id.clone(),
+            to,
+            cc,
+            subject,
+            text,
             in_reply_to: (mode != "forward").then(|| s.id.clone()),
             ..Default::default()
         }
@@ -109,7 +159,11 @@ impl ComposeSpec {
             cc: d.body.cc.iter().map(|a| a.address.clone()).collect(),
             subject: s.subject.clone(),
             // A Markdown draft reopens as its source, not its rendered text.
-            text: if d.body.format == "markdown" { d.body.text_part.clone() } else { plain(&d.body) },
+            text: if d.body.format == "markdown" {
+                d.body.text_part.clone()
+            } else {
+                plain(&d.body)
+            },
             markdown: d.body.format == "markdown",
             replaces: Some(s.id.clone()),
             ..Default::default()
@@ -125,32 +179,49 @@ impl ComposeSpec {
     }
 
     fn has_content(&self) -> bool {
-        !self.to.is_empty() || !self.cc.is_empty() || !self.subject.trim().is_empty() || !self.attachments.is_empty() || !self.text.trim().is_empty() && self.text.trim() != "--"
+        !self.to.is_empty()
+            || !self.cc.is_empty()
+            || !self.subject.trim().is_empty()
+            || !self.attachments.is_empty()
+            || !self.text.trim().is_empty() && self.text.trim() != "--"
     }
 }
 
 fn valid_address(a: &str) -> bool {
     let a = a.trim();
-    a.len() >= 3 && a.contains('@') && !a.starts_with('@') && !a.ends_with('@') && !a.contains(char::is_whitespace) && !a.contains(['<', '>', ',', ';'])
+    a.len() >= 3
+        && a.contains('@')
+        && !a.starts_with('@')
+        && !a.ends_with('@')
+        && !a.contains(char::is_whitespace)
+        && !a.contains(['<', '>', ',', ';'])
 }
 
 /// Addresses as chips: Enter, comma or leaving the field makes a chip; Backspace on an empty
 /// field removes the last one.
 #[component]
-fn ChipInput(#[prop(into)] label: String, value: RwSignal<Vec<String>>, #[prop(optional)] autofocus: bool) -> impl IntoView {
+fn ChipInput(
+    #[prop(into)] label: String,
+    value: RwSignal<Vec<String>>,
+    #[prop(optional)] autofocus: bool,
+) -> impl IntoView {
     let text = RwSignal::new(String::new());
     let id = unique_id();
     let input = NodeRef::<html::Input>::new();
     let commit = move || {
         let raw = text.get_untracked();
-        let parts: Vec<String> = raw.split([',', ';']).map(|p| {
-            let p = p.trim();
-            // "Name <address>" keeps the address.
-            match (p.rfind('<'), p.rfind('>')) {
-                (Some(a), Some(b)) if a < b => p[a + 1..b].trim().to_owned(),
-                _ => p.to_owned(),
-            }
-        }).filter(|p| !p.is_empty()).collect();
+        let parts: Vec<String> = raw
+            .split([',', ';'])
+            .map(|p| {
+                let p = p.trim();
+                // "Name <address>" keeps the address.
+                match (p.rfind('<'), p.rfind('>')) {
+                    (Some(a), Some(b)) if a < b => p[a + 1..b].trim().to_owned(),
+                    _ => p.to_owned(),
+                }
+            })
+            .filter(|p| !p.is_empty())
+            .collect();
         if !parts.is_empty() {
             value.update(|v| {
                 for p in parts {
@@ -163,9 +234,7 @@ fn ChipInput(#[prop(into)] label: String, value: RwSignal<Vec<String>>, #[prop(o
         text.set(String::new());
     };
     Effect::new(move |_| {
-        if autofocus
-            && let Some(i) = input.get()
-        {
+        if autofocus && let Some(i) = input.get() {
             let _ = i.focus();
         }
     });
@@ -201,12 +270,23 @@ fn ChipInput(#[prop(into)] label: String, value: RwSignal<Vec<String>>, #[prop(o
 async fn read_file(file: web_sys::File) -> Option<Upload> {
     let buffer = JsFuture::from(file.array_buffer()).await.ok()?;
     let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
-    Some(Upload { name: file.name(), kind: if file.type_().is_empty() { "application/octet-stream".into() } else { file.type_() }, size: bytes.len() as f64, data: base64(&bytes) })
+    Some(Upload {
+        name: file.name(),
+        kind: if file.type_().is_empty() {
+            "application/octet-stream".into()
+        } else {
+            file.type_()
+        },
+        size: bytes.len() as f64,
+        data: base64(&bytes),
+    })
 }
 
 #[component]
 pub(crate) fn ComposeSheet(state: MailState, spec: ComposeSpec) -> impl IntoView {
-    let accounts = state.overview.with_untracked(|o| o.as_ref().map(|o| o.accounts.clone()).unwrap_or_default());
+    let accounts = state
+        .overview
+        .with_untracked(|o| o.as_ref().map(|o| o.accounts.clone()).unwrap_or_default());
     let account = RwSignal::new(spec.account_id.clone());
     let to = RwSignal::new(spec.to.clone());
     let cc = RwSignal::new(spec.cc.clone());
@@ -225,10 +305,24 @@ pub(crate) fn ComposeSheet(state: MailState, spec: ComposeSpec) -> impl IntoView
     let replaces = StoredValue::new(spec.replaces.clone());
     let in_reply_to = spec.in_reply_to.clone();
     let start = StoredValue::new(spec.clone());
-    let heading = if spec.replaces.is_some() { "Draft".to_owned() } else if spec.subject.is_empty() { "New message".to_owned() } else { spec.subject.clone() };
+    let heading = if spec.replaces.is_some() {
+        "Draft".to_owned()
+    } else if spec.subject.is_empty() {
+        "New message".to_owned()
+    } else {
+        spec.subject.clone()
+    };
     let current = move || ComposeSpec {
-        account_id: account.get_untracked(), to: to.get_untracked(), cc: cc.get_untracked(), bcc: bcc.get_untracked(), subject: subject.get_untracked(),
-        text: text.get_untracked(), in_reply_to: in_reply_to.clone(), replaces: replaces.get_value(), attachments: attachments.get_untracked(), error: String::new(),
+        account_id: account.get_untracked(),
+        to: to.get_untracked(),
+        cc: cc.get_untracked(),
+        bcc: bcc.get_untracked(),
+        subject: subject.get_untracked(),
+        text: text.get_untracked(),
+        in_reply_to: in_reply_to.clone(),
+        replaces: replaces.get_value(),
+        attachments: attachments.get_untracked(),
+        error: String::new(),
         markdown: markdown.get_untracked(),
     };
     let current = StoredValue::new_local(current);
@@ -257,7 +351,9 @@ pub(crate) fn ComposeSheet(state: MailState, spec: ComposeSpec) -> impl IntoView
         status.set("Saving draft\u{2026}".into());
         let csrf = state.csrf();
         spawn_local(async move {
-            match api::send::<Value>(&format!("{BASE}/drafts"), "POST", Some(spec.body()), &csrf).await {
+            match api::send::<Value>(&format!("{BASE}/drafts"), "POST", Some(spec.body()), &csrf)
+                .await
+            {
                 Ok(v) => {
                     replaces.set_value(v["id"].as_str().map(str::to_owned));
                     start.set_value(current.with_value(|c| c()));
@@ -279,8 +375,13 @@ pub(crate) fn ComposeSheet(state: MailState, spec: ComposeSpec) -> impl IntoView
     };
     // The Notes formatting toolbar, applied to the selection.
     let format = Callback::new(move |(before, after): (&'static str, &'static str)| {
-        let Some(field) = body_field.get_untracked() else { return };
-        let (start, end) = (field.selection_start().ok().flatten().unwrap_or(0), field.selection_end().ok().flatten().unwrap_or(0));
+        let Some(field) = body_field.get_untracked() else {
+            return;
+        };
+        let (start, end) = (
+            field.selection_start().ok().flatten().unwrap_or(0),
+            field.selection_end().ok().flatten().unwrap_or(0),
+        );
         let (next, s, e) = format_markdown(&text.get_untracked(), start, end, before, after);
         text.set(next);
         markdown.set(true);
@@ -292,7 +393,12 @@ pub(crate) fn ComposeSheet(state: MailState, spec: ComposeSpec) -> impl IntoView
     });
     let file_input = NodeRef::<html::Input>::new();
     let on_files = move |e: leptos::ev::Event| {
-        let Some(input) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) else { return };
+        let Some(input) = e
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
+        else {
+            return;
+        };
         let Some(files) = input.files() else { return };
         let list: Vec<web_sys::File> = (0..files.length()).filter_map(|i| files.get(i)).collect();
         input.set_value("");
@@ -300,7 +406,10 @@ pub(crate) fn ComposeSheet(state: MailState, spec: ComposeSpec) -> impl IntoView
             for f in list {
                 let total: f64 = attachments.get_untracked().iter().map(|a| a.size).sum();
                 if total + f.size() > 25.0 * 1024.0 * 1024.0 {
-                    let _ = error.try_set(format!("{} would take the attachments over 25 MB.", f.name()));
+                    let _ = error.try_set(format!(
+                        "{} would take the attachments over 25 MB.",
+                        f.name()
+                    ));
                     continue;
                 }
                 if let Some(u) = read_file(f).await {
@@ -313,7 +422,15 @@ pub(crate) fn ComposeSheet(state: MailState, spec: ComposeSpec) -> impl IntoView
     let to_first = spec.to.is_empty();
     Effect::new(move |_| {
         if let Some(s) = sheet.get()
-            && let Some(el) = s.query_selector(if to_first { ".mail-chips input" } else { "textarea" }).ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+            && let Some(el) = s
+                .query_selector(if to_first {
+                    ".mail-chips input"
+                } else {
+                    "textarea"
+                })
+                .ok()
+                .flatten()
+                .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
         {
             let _ = el.focus();
             if let Ok(t) = el.clone().dyn_into::<web_sys::HtmlTextAreaElement>() {
@@ -412,7 +529,9 @@ pub(crate) fn InlineReply(state: MailState, detail: Detail) -> impl IntoView {
     let detail = StoredValue::new(detail);
     let account = StoredValue::new(account);
     let spec = move || {
-        let mut s = detail.with_value(|d| account.with_value(|a| ComposeSpec::reply(d, mode.get_untracked(), a.as_ref())));
+        let mut s = detail.with_value(|d| {
+            account.with_value(|a| ComposeSpec::reply(d, mode.get_untracked(), a.as_ref()))
+        });
         let written = text.get_untracked();
         if !written.trim().is_empty() {
             s.text = format!("{}{}", written.trim_end(), s.text);
@@ -421,10 +540,16 @@ pub(crate) fn InlineReply(state: MailState, detail: Detail) -> impl IntoView {
     };
     let recipients = Memo::new(move |_| {
         let m = mode.get();
-        detail.with_value(|d| account.with_value(|a| {
-            let s = ComposeSpec::reply(d, m, a.as_ref());
-            s.to.iter().chain(&s.cc).cloned().collect::<Vec<_>>().join(", ")
-        }))
+        detail.with_value(|d| {
+            account.with_value(|a| {
+                let s = ComposeSpec::reply(d, m, a.as_ref());
+                s.to.iter()
+                    .chain(&s.cc)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+        })
     });
     let area = NodeRef::<html::Textarea>::new();
     view! {

@@ -24,20 +24,46 @@ impl Artifacts {
     /// From `DAR_RUST_MODULE`, `DAR_RUST_RUNTIME`, `DAR_CLIENT_DIST` and `DAR_SPACETIME_BIN`
     /// (set by `cargo xtask verify`), or the repository's usual build outputs.
     pub fn from_env() -> Result<Self> {
-        let repo = std::env::var_os("DAR_REPO").map(PathBuf::from).unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf());
-        let target = std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(|| repo.join("target"));
-        let pick = |variable: &str, default: PathBuf| std::env::var_os(variable).map(PathBuf::from).unwrap_or(default);
+        let repo = std::env::var_os("DAR_REPO")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .parent()
+                    .unwrap()
+                    .to_path_buf()
+            });
+        let target = std::env::var_os("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| repo.join("target"));
+        let pick = |variable: &str, default: PathBuf| {
+            std::env::var_os(variable)
+                .map(PathBuf::from)
+                .unwrap_or(default)
+        };
         let artifacts = Artifacts {
-            module: pick("DAR_RUST_MODULE", target.join("wasm32-unknown-unknown/module/dar_module.wasm")),
+            module: pick(
+                "DAR_RUST_MODULE",
+                target.join("wasm32-unknown-unknown/module/dar_module.wasm"),
+            ),
             runtime: pick("DAR_RUST_RUNTIME", target.join("fast/dar-runtime")),
             client: pick("DAR_CLIENT_DIST", target.join("client-dist")),
-            spacetime: pick("DAR_SPACETIME_BIN", crate::which("spacetime").unwrap_or_else(|| "spacetime".into())),
+            spacetime: pick(
+                "DAR_SPACETIME_BIN",
+                crate::which("spacetime").unwrap_or_else(|| "spacetime".into()),
+            ),
             prayer_times: pick("DAR_PRAYER_TIMES_DIST", repo.join("apps/prayer-times/dist")),
             repo,
         };
-        for (what, path) in [("module", &artifacts.module), ("runtime", &artifacts.runtime), ("client", &artifacts.client)] {
+        for (what, path) in [
+            ("module", &artifacts.module),
+            ("runtime", &artifacts.runtime),
+            ("client", &artifacts.client),
+        ] {
             if !path.exists() {
-                bail!("the {what} is not built ({}): run `cargo xtask build` first", path.display());
+                bail!(
+                    "the {what} is not built ({}): run `cargo xtask build` first",
+                    path.display()
+                );
             }
         }
         Ok(artifacts)
@@ -76,20 +102,42 @@ impl SpacetimeServer {
         server.ready().await?;
         server.publish(artifacts, "dar-identity", &server.url.clone())?;
         let config = crate::read_to_string(server.cli_root.join("config/cli.toml"))?;
-        let token = config.lines().find_map(|line| line.trim().strip_prefix("spacetimedb_token").map(|rest| rest.trim_start_matches([' ', '=']).trim().trim_matches('"').to_owned()))
-            .filter(|token| !token.is_empty()).context("the database's CLI identity was not initialized")?;
+        let token = config
+            .lines()
+            .find_map(|line| {
+                line.trim().strip_prefix("spacetimedb_token").map(|rest| {
+                    rest.trim_start_matches([' ', '='])
+                        .trim()
+                        .trim_matches('"')
+                        .to_owned()
+                })
+            })
+            .filter(|token| !token.is_empty())
+            .context("the database's CLI identity was not initialized")?;
         write_private(&server.token_file, token.as_bytes())?;
         Ok(server)
     }
 
     fn launch(&self, artifacts: &Artifacts) -> Result<()> {
-        let log = std::fs::OpenOptions::new().create(true).append(true).open(&self.log)?;
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.log)?;
         let child = Command::new(&artifacts.spacetime)
-            .args(["--root-dir"]).arg(&self.cli_root)
-            .args(["start", "--data-dir"]).arg(&self.data_dir)
-            .args(["--listen-addr", &format!("127.0.0.1:{}", self.port), "--non-interactive"])
-            .stdin(Stdio::null()).stdout(log.try_clone()?).stderr(log)
-            .spawn().context("starting SpacetimeDB")?;
+            .args(["--root-dir"])
+            .arg(&self.cli_root)
+            .args(["start", "--data-dir"])
+            .arg(&self.data_dir)
+            .args([
+                "--listen-addr",
+                &format!("127.0.0.1:{}", self.port),
+                "--non-interactive",
+            ])
+            .stdin(Stdio::null())
+            .stdout(log.try_clone()?)
+            .stderr(log)
+            .spawn()
+            .context("starting SpacetimeDB")?;
         *self.child.lock().unwrap() = Some(child);
         Ok(())
     }
@@ -101,15 +149,26 @@ impl SpacetimeServer {
             if let Some(child) = self.child.lock().unwrap().as_mut()
                 && let Some(status) = child.try_wait()?
             {
-                bail!("SpacetimeDB stopped during startup ({status}):\n{}", tail(&self.log));
+                bail!(
+                    "SpacetimeDB stopped during startup ({status}):\n{}",
+                    tail(&self.log)
+                );
             }
-            if let Ok(response) = client.get(format!("{}/v1/ping", self.url)).timeout(Duration::from_millis(500)).send().await
+            if let Ok(response) = client
+                .get(format!("{}/v1/ping", self.url))
+                .timeout(Duration::from_millis(500))
+                .send()
+                .await
                 && response.status().is_success()
             {
                 return Ok(());
             }
             if Instant::now() > deadline {
-                bail!("SpacetimeDB did not answer at {}:\n{}", self.url, tail(&self.log));
+                bail!(
+                    "SpacetimeDB did not answer at {}:\n{}",
+                    self.url,
+                    tail(&self.log)
+                );
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
@@ -118,13 +177,21 @@ impl SpacetimeServer {
     /// Publishes the module as database `name`, trusting `origin`'s issuer.
     pub fn publish(&self, artifacts: &Artifacts, name: &str, origin: &str) -> Result<()> {
         let output = Command::new(&artifacts.spacetime)
-            .arg("--root-dir").arg(&self.cli_root)
-            .args(["publish", name, "--bin-path"]).arg(&artifacts.module)
+            .arg("--root-dir")
+            .arg(&self.cli_root)
+            .args(["publish", name, "--bin-path"])
+            .arg(&artifacts.module)
             .args(["--server", &self.url, "--yes", "--no-config"])
             .env("DAR_ISSUER", format!("{origin}/auth/issuer"))
-            .stdin(Stdio::null()).output().context("running spacetime publish")?;
+            .stdin(Stdio::null())
+            .output()
+            .context("running spacetime publish")?;
         if !output.status.success() {
-            bail!("publishing {name} failed:\n{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            bail!(
+                "publishing {name} failed:\n{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
         Ok(())
     }
@@ -166,15 +233,27 @@ static STACK: OnceLock<Stack> = OnceLock::new();
 
 /// The run's stack. The runner starts it before any suite.
 pub fn stack() -> &'static Stack {
-    STACK.get().expect("the stack is started by the runner before suites run")
+    STACK
+        .get()
+        .expect("the stack is started by the runner before suites run")
 }
 
 pub async fn start(root: PathBuf) -> Result<&'static Stack> {
     let artifacts = Artifacts::from_env()?;
     let database = SpacetimeServer::start(&root.join("spacetime"), &artifacts).await?;
     let bootstrap_token_file = root.join("spacetime/secrets/bootstrap-token");
-    write_private(&bootstrap_token_file, crate::base64url(&crate::random_bytes(32)).as_bytes())?;
-    STACK.set(Stack { artifacts, root, database, bootstrap_token_file }).map_err(|_| Error::new("the stack started twice"))?;
+    write_private(
+        &bootstrap_token_file,
+        crate::base64url(&crate::random_bytes(32)).as_bytes(),
+    )?;
+    STACK
+        .set(Stack {
+            artifacts,
+            root,
+            database,
+            bootstrap_token_file,
+        })
+        .map_err(|_| Error::new("the stack started twice"))?;
     Ok(stack())
 }
 
@@ -189,8 +268,15 @@ pub fn shutdown() {
 pub fn free_port() -> Result<u16> {
     static GIVEN: Mutex<Option<HashSet<u16>>> = Mutex::new(None);
     for _ in 0..64 {
-        let port = std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
-        if GIVEN.lock().unwrap().get_or_insert_with(HashSet::new).insert(port) {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")?
+            .local_addr()?
+            .port();
+        if GIVEN
+            .lock()
+            .unwrap()
+            .get_or_insert_with(HashSet::new)
+            .insert(port)
+        {
             return Ok(port);
         }
     }
@@ -212,9 +298,13 @@ pub fn write_private(path: &Path, contents: &[u8]) -> Result<()> {
 
 /// The last 16 KB of a log, for failure messages.
 pub fn tail(path: &Path) -> String {
-    let text = std::fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned()).unwrap_or_default();
+    let text = std::fs::read(path)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default();
     let start = text.len().saturating_sub(16_000);
-    let start = (start..text.len()).find(|i| text.is_char_boundary(*i)).unwrap_or(text.len());
+    let start = (start..text.len())
+        .find(|i| text.is_char_boundary(*i))
+        .unwrap_or(text.len());
     text[start..].to_owned()
 }
 
@@ -223,7 +313,9 @@ pub fn terminate(mut child: Child, grace: Duration) {
     if matches!(child.try_wait(), Ok(Some(_))) {
         return;
     }
-    let _ = Command::new("kill").args(["-TERM", &child.id().to_string()]).status();
+    let _ = Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status();
     let deadline = Instant::now() + grace;
     while Instant::now() < deadline {
         if matches!(child.try_wait(), Ok(Some(_))) {

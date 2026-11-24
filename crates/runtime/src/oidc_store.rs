@@ -7,7 +7,10 @@
 //! The provider's `Store` is synchronous; calls block the current worker briefly, as directory
 //! lookups do.
 
-use dar_oidc::store::{CodeRecord, CodeUse, GrantRecord, Interaction, InteractionResult, ProviderSession, TokenKind, TokenRecord};
+use dar_oidc::store::{
+    CodeRecord, CodeUse, GrantRecord, Interaction, InteractionResult, ProviderSession, TokenKind,
+    TokenRecord,
+};
 use dar_oidc::{Revoke, Store};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -21,7 +24,10 @@ pub struct DbStore {
 }
 
 fn hex(value: &str) -> String {
-    Sha256::digest(value.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(value.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// `modelKey(model, id)`: the row ID for a record known by its plain ID.
@@ -56,11 +62,19 @@ impl DbStore {
         let db = self.db.clone();
         let operation = operation.to_owned();
         let shown = operation.clone();
-        let result = tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(async move { db.call("service_provider", json!([operation, payload.to_string()])).await }));
+        let result = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                db.call("service_provider", json!([operation, payload.to_string()]))
+                    .await
+            })
+        });
         // A refused write (an expired grant, a signed-out session, a disabled client) is expected;
         // anything else is worth a line in the log.
         if let Err(e) = &result
-            && !matches!(e.code.as_str(), "conflict" | "unauthenticated" | "forbidden")
+            && !matches!(
+                e.code.as_str(),
+                "conflict" | "unauthenticated" | "forbidden"
+            )
         {
             eprintln!("Provider storage {shown} failed: {e}");
         }
@@ -68,14 +82,19 @@ impl DbStore {
     }
 
     fn find<T: serde::de::DeserializeOwned>(&self, id: &str) -> Option<(T, Value)> {
-        let row = self.call("find", json!({ "id": id })).filter(|r| !r.is_null())?;
+        let row = self
+            .call("find", json!({ "id": id }))
+            .filter(|r| !r.is_null())?;
         let value = self.seal.decrypt(row["encrypted"].as_str()?)?;
         match serde_json::from_value::<T>(value.clone()) {
             Ok(record) => Some((record, row)),
             // A record the TypeScript stack's oidc-provider wrote before this instance moved over.
             Err(_) => {
                 let model = id.split('/').next().unwrap_or_default();
-                Some((serde_json::from_value(from_oidc_provider(model, &value, &row)?).ok()?, row))
+                Some((
+                    serde_json::from_value(from_oidc_provider(model, &value, &row)?).ok()?,
+                    row,
+                ))
             }
         }
     }
@@ -105,7 +124,12 @@ impl Store for DbStore {
     }
 
     fn save_session(&mut self, key: &str, session: ProviderSession) {
-        let row = Row { account_id: &session.account_id, native_session_id: &session.native_session_id, expires_at: session.expires_at, ..Default::default() };
+        let row = Row {
+            account_id: &session.account_id,
+            native_session_id: &session.native_session_id,
+            expires_at: session.expires_at,
+            ..Default::default()
+        };
         self.upsert(&hashed_key("Session", key), "Session", &session, row);
     }
 
@@ -119,12 +143,26 @@ impl Store for DbStore {
             _ => interaction.account_id.clone().unwrap_or_default(),
         };
         let native = match &interaction.result {
-            Some(InteractionResult::Login { native_session_id, .. }) => native_session_id.clone(),
+            Some(InteractionResult::Login {
+                native_session_id, ..
+            }) => native_session_id.clone(),
             _ => String::new(),
         };
         // Permission authority stays with grant and token records, not the pending interaction.
-        let row = Row { account_id: if native.is_empty() { "" } else { &account }, client_id: &interaction.client_id, native_session_id: &native, uid_key: hashed_key("uid", key), expires_at: interaction.expires_at, ..Default::default() };
-        self.upsert(&hashed_key("Interaction", key), "Interaction", &interaction, row);
+        let row = Row {
+            account_id: if native.is_empty() { "" } else { &account },
+            client_id: &interaction.client_id,
+            native_session_id: &native,
+            uid_key: hashed_key("uid", key),
+            expires_at: interaction.expires_at,
+            ..Default::default()
+        };
+        self.upsert(
+            &hashed_key("Interaction", key),
+            "Interaction",
+            &interaction,
+            row,
+        );
     }
 
     fn delete_interaction(&mut self, key: &str) {
@@ -136,22 +174,43 @@ impl Store for DbStore {
     }
 
     fn save_grant(&mut self, grant: GrantRecord) {
-        let row = Row { account_id: &grant.account_id, client_id: &grant.client_id, native_session_id: &grant.native_session_id, session_key: grant.session_key.clone(), expires_at: grant.expires_at, ..Default::default() };
+        let row = Row {
+            account_id: &grant.account_id,
+            client_id: &grant.client_id,
+            native_session_id: &grant.native_session_id,
+            session_key: grant.session_key.clone(),
+            expires_at: grant.expires_at,
+            ..Default::default()
+        };
         self.upsert(&model_key("Grant", &grant.id), "Grant", &grant, row);
     }
 
     fn code(&self, key: &str) -> Option<CodeRecord> {
-        self.find::<CodeRecord>(&hashed_key("AuthorizationCode", key)).map(|(mut code, row)| {
-            if row["consumed"].as_f64().unwrap_or(0.0) > 0.0 {
-                code.consumed = true;
-            }
-            code
-        })
+        self.find::<CodeRecord>(&hashed_key("AuthorizationCode", key))
+            .map(|(mut code, row)| {
+                if row["consumed"].as_f64().unwrap_or(0.0) > 0.0 {
+                    code.consumed = true;
+                }
+                code
+            })
     }
 
     fn save_code(&mut self, key: &str, code: CodeRecord) {
-        let row = Row { account_id: &code.account_id, client_id: &code.client_id, native_session_id: &code.native_session_id, grant_key: model_key("Grant", &code.grant_id), session_key: code.session_key.clone(), expires_at: code.expires_at, ..Default::default() };
-        self.upsert(&hashed_key("AuthorizationCode", key), "AuthorizationCode", &code, row);
+        let row = Row {
+            account_id: &code.account_id,
+            client_id: &code.client_id,
+            native_session_id: &code.native_session_id,
+            grant_key: model_key("Grant", &code.grant_id),
+            session_key: code.session_key.clone(),
+            expires_at: code.expires_at,
+            ..Default::default()
+        };
+        self.upsert(
+            &hashed_key("AuthorizationCode", key),
+            "AuthorizationCode",
+            &code,
+            row,
+        );
     }
 
     fn consume_code(&mut self, key: &str) -> CodeUse {
@@ -191,10 +250,19 @@ impl Store for DbStore {
             grant_key: model_key("Grant", &token.grant_id),
             session_key: token.session_key.clone(),
             expires_at: token.expires_at,
-            consumed: if token.consumed { chrono::Utc::now().timestamp() } else { 0 },
+            consumed: if token.consumed {
+                chrono::Utc::now().timestamp()
+            } else {
+                0
+            },
             ..Default::default()
         };
-        self.upsert(&hashed_key(token_model(token.kind), key), token_model(token.kind), &token, row);
+        self.upsert(
+            &hashed_key(token_model(token.kind), key),
+            token_model(token.kind),
+            &token,
+            row,
+        );
     }
 
     fn delete_token(&mut self, key: &str) {
@@ -236,13 +304,21 @@ fn from_oidc_provider(model: &str, payload: &Value, row: &Value) -> Option<Value
     let seconds = |key: &str| payload[key].as_i64().unwrap_or(0);
     let native = row["nativeSessionId"].as_str().unwrap_or_default();
     let session_key = row["sessionKey"].as_str().unwrap_or_default();
-    let expires_at = row["expiresAt"].as_i64().filter(|e| *e > 0).unwrap_or_else(|| seconds("exp") * 1000);
-    let consumed = row["consumed"].as_f64().unwrap_or(0.0) > 0.0 || payload["consumed"].as_i64().unwrap_or(0) > 0;
+    let expires_at = row["expiresAt"]
+        .as_i64()
+        .filter(|e| *e > 0)
+        .unwrap_or_else(|| seconds("exp") * 1000);
+    let consumed = row["consumed"].as_f64().unwrap_or(0.0) > 0.0
+        || payload["consumed"].as_i64().unwrap_or(0) > 0;
     match model {
         "AuthorizationCode" => {
             // oxide-auth keeps a PKCE challenge with its method's letter appended.
             let pkce = payload["codeChallenge"].as_str().map(|challenge| {
-                let method = if payload["codeChallengeMethod"].as_str() == Some("plain") { "p" } else { "S" };
+                let method = if payload["codeChallengeMethod"].as_str() == Some("plain") {
+                    "p"
+                } else {
+                    "S"
+                };
                 format!("{challenge}{method}")
             });
             Some(json!({
@@ -260,7 +336,12 @@ fn from_oidc_provider(model: &str, payload: &Value, row: &Value) -> Option<Value
         })),
         "Grant" => {
             // oidc-provider grants list OpenID scopes, and each resource's scopes, separately.
-            let mut scopes: Vec<String> = payload["openid"]["scope"].as_str().unwrap_or_default().split_whitespace().map(str::to_owned).collect();
+            let mut scopes: Vec<String> = payload["openid"]["scope"]
+                .as_str()
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect();
             if let Some(resources) = payload["resources"].as_object() {
                 for scope in resources.values().filter_map(Value::as_str) {
                     scopes.extend(scope.split_whitespace().map(str::to_owned));
@@ -274,7 +355,13 @@ fn from_oidc_provider(model: &str, payload: &Value, row: &Value) -> Option<Value
         "Session" => {
             let grants: serde_json::Map<String, Value> = payload["authorizations"]
                 .as_object()
-                .map(|all| all.iter().filter_map(|(client, a)| Some((client.clone(), json!(a["grantId"].as_str()?)))).collect())
+                .map(|all| {
+                    all.iter()
+                        .filter_map(|(client, a)| {
+                            Some((client.clone(), json!(a["grantId"].as_str()?)))
+                        })
+                        .collect()
+                })
                 .unwrap_or_default();
             Some(json!({
                 "account_id": text("accountId"), "native_session_id": native, "auth_time": seconds("loginTs"),

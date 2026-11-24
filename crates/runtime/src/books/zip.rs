@@ -72,7 +72,11 @@ impl Zip {
         for (index, entry) in entries.iter().enumerate() {
             by_name.insert(entry.name.clone(), index);
         }
-        Ok(Arc::new(Self { file: Arc::new(file), entries, by_name }))
+        Ok(Arc::new(Self {
+            file: Arc::new(file),
+            entries,
+            by_name,
+        }))
     }
 
     pub fn entries(&self) -> &[ZipEntry] {
@@ -94,7 +98,8 @@ impl Zip {
 }
 
 fn read_at(file: &File, buffer: &mut [u8], position: u64) -> Result<(), ZipError> {
-    file.read_exact_at(buffer, position).map_err(|_| ZipError::new("Damaged archive."))
+    file.read_exact_at(buffer, position)
+        .map_err(|_| ZipError::new("Damaged archive."))
 }
 
 fn u16_le(bytes: &[u8], offset: usize) -> u16 {
@@ -102,7 +107,12 @@ fn u16_le(bytes: &[u8], offset: usize) -> u16 {
 }
 
 fn u32_le(bytes: &[u8], offset: usize) -> u32 {
-    u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]])
+    u32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ])
 }
 
 fn u64_le(bytes: &[u8], offset: usize) -> u64 {
@@ -139,7 +149,8 @@ fn read_entry_sync(file: &File, entry: &ZipEntry, max: usize) -> Result<Vec<u8>,
         .and_then(|v| v.checked_add(name_len))
         .and_then(|v| v.checked_add(extra_len))
         .ok_or_else(|| ZipError::new("Damaged archive."))?;
-    let compressed_len = usize::try_from(entry.compressed).map_err(|_| ZipError::new("Entry too large."))?;
+    let compressed_len =
+        usize::try_from(entry.compressed).map_err(|_| ZipError::new("Entry too large."))?;
     let mut data = vec![0u8; compressed_len];
     read_at(file, &mut data, start)?;
     if entry.method == 0 {
@@ -154,7 +165,10 @@ fn read_entry_sync(file: &File, entry: &ZipEntry, max: usize) -> Result<Vec<u8>,
     let decoder = DeflateDecoder::new(&data[..]);
     let mut out = Vec::with_capacity((entry.size as usize).min(64 * 1024));
     let limit = entry.size.saturating_add(1);
-    decoder.take(limit).read_to_end(&mut out).map_err(|_| ZipError::new("Damaged entry."))?;
+    decoder
+        .take(limit)
+        .read_to_end(&mut out)
+        .map_err(|_| ZipError::new("Damaged entry."))?;
     if out.len() as u64 != entry.size {
         return Err(ZipError::new("Damaged entry."));
     }
@@ -162,7 +176,9 @@ fn read_entry_sync(file: &File, entry: &ZipEntry, max: usize) -> Result<Vec<u8>,
 }
 
 fn central_directory(file: &File, max_entries: usize) -> Result<Vec<ZipEntry>, ZipError> {
-    let meta = file.metadata().map_err(|_| ZipError::new("Damaged archive."))?;
+    let meta = file
+        .metadata()
+        .map_err(|_| ZipError::new("Damaged archive."))?;
     if !meta.is_file() {
         return Err(ZipError::new("Not a ZIP archive."));
     }
@@ -206,7 +222,11 @@ fn central_directory(file: &File, max_entries: usize) -> Result<Vec<ZipEntry>, Z
     if count > max_entries as u64 {
         return Err(ZipError::new("Too many entries."));
     }
-    if offset.checked_add(length).is_none_or(|dir_end| dir_end > size) || length > 64 * 1024 * 1024 {
+    if offset
+        .checked_add(length)
+        .is_none_or(|dir_end| dir_end > size)
+        || length > 64 * 1024 * 1024
+    {
         return Err(ZipError::new("Damaged archive."));
     }
 

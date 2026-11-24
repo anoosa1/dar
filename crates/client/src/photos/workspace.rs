@@ -205,9 +205,15 @@ struct DeleteAssetsResponse {
 fn read_view() -> (View, Option<String>) {
     let search = window().location().search().unwrap_or_default();
     let params = web_sys::UrlSearchParams::new_with_str(&search).ok();
-    let album = params.as_ref().and_then(|p| p.get("album")).filter(|s| !s.is_empty());
+    let album = params
+        .as_ref()
+        .and_then(|p| p.get("album"))
+        .filter(|s| !s.is_empty());
     let view_param = params.as_ref().and_then(|p| p.get("view"));
-    let asset = params.as_ref().and_then(|p| p.get("asset")).filter(|s| !s.is_empty());
+    let asset = params
+        .as_ref()
+        .and_then(|p| p.get("asset"))
+        .filter(|s| !s.is_empty());
     let view = if let Some(id) = album {
         View::Album(id)
     } else if let Some(v) = view_param.as_deref().and_then(View::from_type_str) {
@@ -219,7 +225,9 @@ fn read_view() -> (View, Option<String>) {
 }
 
 fn write_view(view: &View, asset: Option<&str>) {
-    let Ok(params) = web_sys::UrlSearchParams::new() else { return };
+    let Ok(params) = web_sys::UrlSearchParams::new() else {
+        return;
+    };
     match view {
         View::Album(id) => params.set("album", id),
         View::Folder => {}
@@ -231,9 +239,17 @@ fn write_view(view: &View, asset: Option<&str>) {
         params.set("asset", id);
     }
     let qs = params.to_string().as_string().unwrap_or_default();
-    let next = if qs.is_empty() { "/photos".to_owned() } else { format!("/photos?{qs}") };
+    let next = if qs.is_empty() {
+        "/photos".to_owned()
+    } else {
+        format!("/photos?{qs}")
+    };
     let loc = window().location();
-    let current = format!("{}{}", loc.pathname().unwrap_or_default(), loc.search().unwrap_or_default());
+    let current = format!(
+        "{}{}",
+        loc.pathname().unwrap_or_default(),
+        loc.search().unwrap_or_default()
+    );
     if next != current
         && let Ok(history) = window().history()
     {
@@ -279,7 +295,10 @@ fn hevc_playable() -> bool {
         .create_element("video")
         .ok()
         .and_then(|el| el.dyn_into::<web_sys::HtmlVideoElement>().ok())
-        .is_some_and(|v| !v.can_play_type("video/mp4; codecs=\"hvc1.1.6.L93.B0\"").is_empty())
+        .is_some_and(|v| {
+            !v.can_play_type("video/mp4; codecs=\"hvc1.1.6.L93.B0\"")
+                .is_empty()
+        })
 }
 
 fn read_zoom() -> u32 {
@@ -303,7 +322,10 @@ fn query_assets_url(view: &View, after: &str) -> String {
     if !after.is_empty() {
         params.set("cursor", after);
     }
-    format!("{BASE}/assets?{}", params.to_string().as_string().unwrap_or_default())
+    format!(
+        "{BASE}/assets?{}",
+        params.to_string().as_string().unwrap_or_default()
+    )
 }
 
 /// Runs work that may need the Locked folder; a 423 asks for the password, then retries.
@@ -391,7 +413,10 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
         notice_seq.try_update(|s| *s = s.wrapping_add(1));
     };
     let fail = move |msg: String| {
-        show_notice(PhotosNotice { message: error_message(&msg), undo: None });
+        show_notice(PhotosNotice {
+            message: error_message(&msg),
+            undo: None,
+        });
     };
 
     let locked_closed = Memo::new(move |_| view.get() == View::Locked && !folder.unlocked());
@@ -407,9 +432,8 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
         }),
         _ => None,
     });
-    let album_owner = Memo::new(move |_| {
-        current_album.with(|a| a.as_ref().is_some_and(|a| a.role == "owner"))
-    });
+    let album_owner =
+        Memo::new(move |_| current_album.with(|a| a.as_ref().is_some_and(|a| a.role == "owner")));
     let title = Memo::new(move |_| match view.get() {
         View::Album(_) => current_album
             .with(|a| a.as_ref().map(|a| a.name.clone()))
@@ -491,7 +515,9 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
         let ticket = generation.get_value();
         let url = query_assets_url(&view.get_untracked(), &after);
         spawn_local(async move {
-            let Ok(page) = api::get::<PhotoPage>(&url).await else { return };
+            let Ok(page) = api::get::<PhotoPage>(&url).await else {
+                return;
+            };
             if generation.try_get_value() != Some(ticket) {
                 return;
             }
@@ -562,7 +588,9 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                 return;
             }
             load_overview();
-            let busy = selected.try_with_untracked(|s| !s.is_empty()).unwrap_or(false)
+            let busy = selected
+                .try_with_untracked(|s| !s.is_empty())
+                .unwrap_or(false)
                 || open.try_with_untracked(Option::is_some).unwrap_or(false);
             if !busy {
                 load_items();
@@ -573,17 +601,18 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
     // During an Immich import the sidebar bar updates every few seconds; new photos appear as they arrive.
     Effect::new(move |_| {
         let _ = overview_seq.get();
-        let (has_immich, imported) = overview.with_untracked(|o| match o.as_ref().and_then(|o| o.immich.as_ref()) {
-            Some(i) => (true, i.imported),
-            None => (false, 0),
-        });
+        let (has_immich, imported) =
+            overview.with_untracked(|o| match o.as_ref().and_then(|o| o.immich.as_ref()) {
+                Some(i) => (true, i.imported),
+                None => (false, 0),
+            });
         let ended = import_running.get_value() && !has_immich;
         import_running.set_value(has_immich);
         if imported != imported_seen.get_value() || ended {
             let changed = imported > imported_seen.get_value() || ended;
             imported_seen.set_value(imported);
-            let busy = selected.with_untracked(|s| !s.is_empty())
-                || open.with_untracked(Option::is_some);
+            let busy =
+                selected.with_untracked(|s| !s.is_empty()) || open.with_untracked(Option::is_some);
             if changed && !busy {
                 load_items();
             }
@@ -739,94 +768,108 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
             undo: Option<(Option<bool>, Option<bool>)>,
             reload_after: bool,
         ) {
-            run_guarded(folder, unlock_action, notice, "change these photos", move || {
-                let ids = ids.clone();
-                let csrf_tok = session.with_value(|s| s.csrf_token.clone());
-                async move {
-                    let mut body = serde_json::Map::new();
-                    body.insert("ids".to_owned(), json!(ids));
-                    if let Some(f) = favorite {
-                        body.insert("favorite".to_owned(), json!(f));
-                    }
-                    if let Some(a) = archived {
-                        body.insert("archived".to_owned(), json!(a));
-                    }
-                    api::send::<Value>(&format!("{BASE}/assets"), "PATCH", Some(Value::Object(body)), &csrf_tok)
+            run_guarded(
+                folder,
+                unlock_action,
+                notice,
+                "change these photos",
+                move || {
+                    let ids = ids.clone();
+                    let csrf_tok = session.with_value(|s| s.csrf_token.clone());
+                    async move {
+                        let mut body = serde_json::Map::new();
+                        body.insert("ids".to_owned(), json!(ids));
+                        if let Some(f) = favorite {
+                            body.insert("favorite".to_owned(), json!(f));
+                        }
+                        if let Some(a) = archived {
+                            body.insert("archived".to_owned(), json!(a));
+                        }
+                        api::send::<Value>(
+                            &format!("{BASE}/assets"),
+                            "PATCH",
+                            Some(Value::Object(body)),
+                            &csrf_tok,
+                        )
                         .await?;
-                    let cur_view = view.get_untracked();
-                    let leaves = archived.is_some_and(|a| {
-                        if cur_view == View::Archive {
-                            !a
+                        let cur_view = view.get_untracked();
+                        let leaves = archived.is_some_and(|a| {
+                            if cur_view == View::Archive {
+                                !a
+                            } else {
+                                !matches!(cur_view, View::Album(_) | View::Favorites | View::Locked)
+                                    && a
+                            }
+                        }) || (favorite == Some(false) && cur_view == View::Favorites);
+                        if leaves {
+                            items.try_update(|list| list.retain(|i| !ids.contains(&i.id)));
+                            selected.try_set(HashSet::new());
+                            if open
+                                .with_untracked(|o| o.as_ref().is_some_and(|id| ids.contains(id)))
+                            {
+                                open.try_set(None);
+                            }
                         } else {
-                            !matches!(cur_view, View::Album(_) | View::Favorites | View::Locked) && a
-                        }
-                    }) || (favorite == Some(false) && cur_view == View::Favorites);
-                    if leaves {
-                        items.try_update(|list| list.retain(|i| !ids.contains(&i.id)));
-                        selected.try_set(HashSet::new());
-                        if open.with_untracked(|o| o.as_ref().is_some_and(|id| ids.contains(id))) {
-                            open.try_set(None);
-                        }
-                    } else {
-                        items.try_update(|list| {
-                            for item in list.iter_mut() {
-                                if ids.contains(&item.id) {
-                                    if let Some(f) = favorite {
-                                        item.favorite = f;
-                                    }
-                                    if let Some(a) = archived {
-                                        item.archived = a;
+                            items.try_update(|list| {
+                                for item in list.iter_mut() {
+                                    if ids.contains(&item.id) {
+                                        if let Some(f) = favorite {
+                                            item.favorite = f;
+                                        }
+                                        if let Some(a) = archived {
+                                            item.archived = a;
+                                        }
                                     }
                                 }
-                            }
-                        });
-                        selected.try_set(HashSet::new());
-                    }
-                    load_overview_cb.run(());
-                    if reload_after {
-                        load_items_cb.run(());
-                    }
-                    if let Some((undo_fav, undo_arch)) = undo {
-                        let msg = if let Some(a) = archived {
-                            if a {
-                                format!("{} archived", noun(ids.len()))
+                            });
+                            selected.try_set(HashSet::new());
+                        }
+                        load_overview_cb.run(());
+                        if reload_after {
+                            load_items_cb.run(());
+                        }
+                        if let Some((undo_fav, undo_arch)) = undo {
+                            let msg = if let Some(a) = archived {
+                                if a {
+                                    format!("{} archived", noun(ids.len()))
+                                } else {
+                                    format!("{} restored to the library", noun(ids.len()))
+                                }
+                            } else if favorite == Some(true) {
+                                format!("{} added to Favorites", noun(ids.len()))
                             } else {
-                                format!("{} restored to the library", noun(ids.len()))
-                            }
-                        } else if favorite == Some(true) {
-                            format!("{} added to Favorites", noun(ids.len()))
-                        } else {
-                            format!("{} removed from Favorites", noun(ids.len()))
-                        };
-                        let ids_undo = ids.clone();
-                        notice.try_set(Some(PhotosNotice {
-                            message: msg,
-                            undo: Some(Arc::new(move || {
-                                dispatch(
-                                    folder,
-                                    unlock_action,
-                                    notice,
-                                    notice_seq,
-                                    view,
-                                    items,
-                                    selected,
-                                    open,
-                                    session,
-                                    load_overview_cb,
-                                    load_items_cb,
-                                    ids_undo.clone(),
-                                    undo_fav,
-                                    undo_arch,
-                                    None,
-                                    true,
-                                );
-                            })),
-                        }));
-                        notice_seq.try_update(|s| *s = s.wrapping_add(1));
+                                format!("{} removed from Favorites", noun(ids.len()))
+                            };
+                            let ids_undo = ids.clone();
+                            notice.try_set(Some(PhotosNotice {
+                                message: msg,
+                                undo: Some(Arc::new(move || {
+                                    dispatch(
+                                        folder,
+                                        unlock_action,
+                                        notice,
+                                        notice_seq,
+                                        view,
+                                        items,
+                                        selected,
+                                        open,
+                                        session,
+                                        load_overview_cb,
+                                        load_items_cb,
+                                        ids_undo.clone(),
+                                        undo_fav,
+                                        undo_arch,
+                                        None,
+                                        true,
+                                    );
+                                })),
+                            }));
+                            notice_seq.try_update(|s| *s = s.wrapping_add(1));
+                        }
+                        Ok(())
                     }
-                    Ok(())
-                }
-            });
+                },
+            );
         }
         dispatch(
             folder,
@@ -849,252 +892,312 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
     };
 
     let trash_assets = move |ids: Vec<String>| {
-        run_guarded(folder, unlock_action, notice, "move these photos", move || {
-            let ids = ids.clone();
-            let csrf_tok = csrf();
-            async move {
-                let res: TrashedResponse = api::send(
-                    &format!("{BASE}/assets/trash"),
-                    "POST",
-                    Some(json!({ "ids": ids })),
-                    &csrf_tok,
-                )
-                .await?;
-                let trashed = res.trashed;
-                remove_local(trashed.clone());
-                load_overview();
-                show_notice(PhotosNotice {
-                    message: format!("{} moved to the trash", noun(ids.len())),
-                    undo: Some(Arc::new(move || {
-                        let trashed = trashed.clone();
-                        let csrf_tok = csrf();
-                        spawn_local(async move {
-                            match api::send::<Value>(
-                                &format!("{BASE}/assets/restore"),
-                                "POST",
-                                Some(json!({ "ids": trashed })),
-                                &csrf_tok,
-                            )
-                            .await
-                            {
-                                Ok(_) => refresh(),
-                                Err(cause) => fail(cause.message),
-                            }
-                        });
-                    })),
-                });
-                Ok(())
-            }
-        });
+        run_guarded(
+            folder,
+            unlock_action,
+            notice,
+            "move these photos",
+            move || {
+                let ids = ids.clone();
+                let csrf_tok = csrf();
+                async move {
+                    let res: TrashedResponse = api::send(
+                        &format!("{BASE}/assets/trash"),
+                        "POST",
+                        Some(json!({ "ids": ids })),
+                        &csrf_tok,
+                    )
+                    .await?;
+                    let trashed = res.trashed;
+                    remove_local(trashed.clone());
+                    load_overview();
+                    show_notice(PhotosNotice {
+                        message: format!("{} moved to the trash", noun(ids.len())),
+                        undo: Some(Arc::new(move || {
+                            let trashed = trashed.clone();
+                            let csrf_tok = csrf();
+                            spawn_local(async move {
+                                match api::send::<Value>(
+                                    &format!("{BASE}/assets/restore"),
+                                    "POST",
+                                    Some(json!({ "ids": trashed })),
+                                    &csrf_tok,
+                                )
+                                .await
+                                {
+                                    Ok(_) => refresh(),
+                                    Err(cause) => fail(cause.message),
+                                }
+                            });
+                        })),
+                    });
+                    Ok(())
+                }
+            },
+        );
     };
 
     let restore_assets = move |ids: Vec<String>| {
-        run_guarded(folder, unlock_action, notice, "restore these photos", move || {
-            let ids = ids.clone();
-            let csrf_tok = csrf();
-            async move {
-                let res: RestoredResponse = api::send(
-                    &format!("{BASE}/assets/restore"),
-                    "POST",
-                    Some(json!({ "ids": ids })),
-                    &csrf_tok,
-                )
-                .await?;
-                let restored = res.restored;
-                remove_local(restored.clone());
-                load_overview();
-                show_notice(PhotosNotice {
-                    message: format!("{} restored", noun(ids.len())),
-                    undo: Some(Arc::new(move || {
-                        let restored = restored.clone();
-                        let csrf_tok = csrf();
-                        spawn_local(async move {
-                            match api::send::<Value>(
-                                &format!("{BASE}/assets/trash"),
-                                "POST",
-                                Some(json!({ "ids": restored })),
-                                &csrf_tok,
-                            )
-                            .await
-                            {
-                                Ok(_) => refresh(),
-                                Err(cause) => fail(cause.message),
-                            }
-                        });
-                    })),
-                });
-                Ok(())
-            }
-        });
+        run_guarded(
+            folder,
+            unlock_action,
+            notice,
+            "restore these photos",
+            move || {
+                let ids = ids.clone();
+                let csrf_tok = csrf();
+                async move {
+                    let res: RestoredResponse = api::send(
+                        &format!("{BASE}/assets/restore"),
+                        "POST",
+                        Some(json!({ "ids": ids })),
+                        &csrf_tok,
+                    )
+                    .await?;
+                    let restored = res.restored;
+                    remove_local(restored.clone());
+                    load_overview();
+                    show_notice(PhotosNotice {
+                        message: format!("{} restored", noun(ids.len())),
+                        undo: Some(Arc::new(move || {
+                            let restored = restored.clone();
+                            let csrf_tok = csrf();
+                            spawn_local(async move {
+                                match api::send::<Value>(
+                                    &format!("{BASE}/assets/trash"),
+                                    "POST",
+                                    Some(json!({ "ids": restored })),
+                                    &csrf_tok,
+                                )
+                                .await
+                                {
+                                    Ok(_) => refresh(),
+                                    Err(cause) => fail(cause.message),
+                                }
+                            });
+                        })),
+                    });
+                    Ok(())
+                }
+            },
+        );
     };
 
     let lock_photos = move |ids: Vec<String>| {
-        run_guarded(folder, unlock_action, notice, "move photos into it", move || {
-            let ids = ids.clone();
-            let csrf_tok = csrf();
-            async move {
-                let res: LockedMovedResponse = api::send(
-                    &format!("{BASE}/assets/lock"),
-                    "POST",
-                    Some(json!({ "ids": ids })),
-                    &csrf_tok,
-                )
-                .await?;
-                let moved = res.moved;
-                let moved_ids: Vec<String> = moved.iter().map(|m| m.id.clone()).collect();
-                remove_local(moved_ids.clone());
-                load_overview();
-                show_notice(PhotosNotice {
-                    message: format!("{} moved to the Locked folder", noun(ids.len())),
-                    undo: Some(Arc::new(move || {
-                        let moved = moved.clone();
-                        let moved_ids = moved_ids.clone();
-                        run_guarded(folder, unlock_action, notice, "move them back", move || {
+        run_guarded(
+            folder,
+            unlock_action,
+            notice,
+            "move photos into it",
+            move || {
+                let ids = ids.clone();
+                let csrf_tok = csrf();
+                async move {
+                    let res: LockedMovedResponse = api::send(
+                        &format!("{BASE}/assets/lock"),
+                        "POST",
+                        Some(json!({ "ids": ids })),
+                        &csrf_tok,
+                    )
+                    .await?;
+                    let moved = res.moved;
+                    let moved_ids: Vec<String> = moved.iter().map(|m| m.id.clone()).collect();
+                    remove_local(moved_ids.clone());
+                    load_overview();
+                    show_notice(PhotosNotice {
+                        message: format!("{} moved to the Locked folder", noun(ids.len())),
+                        undo: Some(Arc::new(move || {
                             let moved = moved.clone();
                             let moved_ids = moved_ids.clone();
-                            let csrf_tok = csrf();
-                            async move {
-                                api::send::<Value>(
-                                    &format!("{BASE}/assets/unlock"),
-                                    "POST",
-                                    Some(json!({ "ids": moved_ids, "to": moved })),
-                                    &csrf_tok,
-                                )
-                                .await?;
-                                refresh();
-                                Ok(())
-                            }
-                        });
-                    })),
-                });
-                Ok(())
-            }
-        });
+                            run_guarded(
+                                folder,
+                                unlock_action,
+                                notice,
+                                "move them back",
+                                move || {
+                                    let moved = moved.clone();
+                                    let moved_ids = moved_ids.clone();
+                                    let csrf_tok = csrf();
+                                    async move {
+                                        api::send::<Value>(
+                                            &format!("{BASE}/assets/unlock"),
+                                            "POST",
+                                            Some(json!({ "ids": moved_ids, "to": moved })),
+                                            &csrf_tok,
+                                        )
+                                        .await?;
+                                        refresh();
+                                        Ok(())
+                                    }
+                                },
+                            );
+                        })),
+                    });
+                    Ok(())
+                }
+            },
+        );
     };
 
     let unlock_photos = move |ids: Vec<String>| {
-        run_guarded(folder, unlock_action, notice, "move photos out of it", move || {
-            let ids = ids.clone();
-            let csrf_tok = csrf();
-            async move {
-                let res: UnlockedMovedResponse = api::send(
-                    &format!("{BASE}/assets/unlock"),
-                    "POST",
-                    Some(json!({ "ids": ids })),
-                    &csrf_tok,
-                )
-                .await?;
-                let moved = res.moved;
-                remove_local(moved.clone());
-                load_overview();
-                let dest = overview
-                    .with_untracked(|o| o.as_ref().map(|o| o.upload_folder.clone()).filter(|s| !s.is_empty()))
-                    .unwrap_or_else(|| "your Photos folder".to_owned());
-                show_notice(PhotosNotice {
-                    message: format!("{} moved to {dest}", noun(ids.len())),
-                    undo: Some(Arc::new(move || {
-                        let moved = moved.clone();
-                        run_guarded(folder, unlock_action, notice, "move them back", move || {
+        run_guarded(
+            folder,
+            unlock_action,
+            notice,
+            "move photos out of it",
+            move || {
+                let ids = ids.clone();
+                let csrf_tok = csrf();
+                async move {
+                    let res: UnlockedMovedResponse = api::send(
+                        &format!("{BASE}/assets/unlock"),
+                        "POST",
+                        Some(json!({ "ids": ids })),
+                        &csrf_tok,
+                    )
+                    .await?;
+                    let moved = res.moved;
+                    remove_local(moved.clone());
+                    load_overview();
+                    let dest = overview
+                        .with_untracked(|o| {
+                            o.as_ref()
+                                .map(|o| o.upload_folder.clone())
+                                .filter(|s| !s.is_empty())
+                        })
+                        .unwrap_or_else(|| "your Photos folder".to_owned());
+                    show_notice(PhotosNotice {
+                        message: format!("{} moved to {dest}", noun(ids.len())),
+                        undo: Some(Arc::new(move || {
                             let moved = moved.clone();
-                            let csrf_tok = csrf();
-                            async move {
-                                api::send::<Value>(
-                                    &format!("{BASE}/assets/lock"),
-                                    "POST",
-                                    Some(json!({ "ids": moved })),
-                                    &csrf_tok,
-                                )
-                                .await?;
-                                refresh();
-                                Ok(())
-                            }
-                        });
-                    })),
-                });
-                Ok(())
-            }
-        });
+                            run_guarded(
+                                folder,
+                                unlock_action,
+                                notice,
+                                "move them back",
+                                move || {
+                                    let moved = moved.clone();
+                                    let csrf_tok = csrf();
+                                    async move {
+                                        api::send::<Value>(
+                                            &format!("{BASE}/assets/lock"),
+                                            "POST",
+                                            Some(json!({ "ids": moved })),
+                                            &csrf_tok,
+                                        )
+                                        .await?;
+                                        refresh();
+                                        Ok(())
+                                    }
+                                },
+                            );
+                        })),
+                    });
+                    Ok(())
+                }
+            },
+        );
     };
 
     let stack_photos = move |ids: Vec<String>| {
-        run_guarded(folder, unlock_action, notice, "stack these photos", move || {
-            let ids = ids.clone();
-            let csrf_tok = csrf();
-            async move {
-                let created: IdResponse = api::send(
-                    &format!("{BASE}/stacks"),
-                    "POST",
-                    Some(json!({ "ids": ids })),
-                    &csrf_tok,
-                )
-                .await?;
-                refresh();
-                let stack_id = created.id;
-                show_notice(PhotosNotice {
-                    message: format!("Stacked {} photos", ids.len()),
-                    undo: Some(Arc::new(move || {
-                        let stack_id = stack_id.clone();
-                        let csrf_tok = csrf();
-                        spawn_local(async move {
-                            match api::request::<Value>(
-                                &format!("{BASE}/stacks/{stack_id}"),
-                                Req { method: "DELETE", csrf: Some(&csrf_tok), ..Default::default() },
-                            )
-                            .await
-                            {
-                                Ok(_) => refresh(),
-                                Err(cause) => fail(cause.message),
-                            }
-                        });
-                    })),
-                });
-                Ok(())
-            }
-        });
+        run_guarded(
+            folder,
+            unlock_action,
+            notice,
+            "stack these photos",
+            move || {
+                let ids = ids.clone();
+                let csrf_tok = csrf();
+                async move {
+                    let created: IdResponse = api::send(
+                        &format!("{BASE}/stacks"),
+                        "POST",
+                        Some(json!({ "ids": ids })),
+                        &csrf_tok,
+                    )
+                    .await?;
+                    refresh();
+                    let stack_id = created.id;
+                    show_notice(PhotosNotice {
+                        message: format!("Stacked {} photos", ids.len()),
+                        undo: Some(Arc::new(move || {
+                            let stack_id = stack_id.clone();
+                            let csrf_tok = csrf();
+                            spawn_local(async move {
+                                match api::request::<Value>(
+                                    &format!("{BASE}/stacks/{stack_id}"),
+                                    Req {
+                                        method: "DELETE",
+                                        csrf: Some(&csrf_tok),
+                                        ..Default::default()
+                                    },
+                                )
+                                .await
+                                {
+                                    Ok(_) => refresh(),
+                                    Err(cause) => fail(cause.message),
+                                }
+                            });
+                        })),
+                    });
+                    Ok(())
+                }
+            },
+        );
     };
 
     let unstack_photos = move |value: PhotoStack| {
-        run_guarded(folder, unlock_action, notice, "unstack these photos", move || {
-            let value = value.clone();
-            let csrf_tok = csrf();
-            async move {
-                api::request::<Value>(
-                    &format!("{BASE}/stacks/{}", value.id),
-                    Req { method: "DELETE", csrf: Some(&csrf_tok), ..Default::default() },
-                )
-                .await?;
-                member.try_set(None);
-                refresh();
-                let count = value.items.len();
-                let mut restack_ids = vec![value.primary_id.clone()];
-                for item in &value.items {
-                    if item.id != value.primary_id {
-                        restack_ids.push(item.id.clone());
+        run_guarded(
+            folder,
+            unlock_action,
+            notice,
+            "unstack these photos",
+            move || {
+                let value = value.clone();
+                let csrf_tok = csrf();
+                async move {
+                    api::request::<Value>(
+                        &format!("{BASE}/stacks/{}", value.id),
+                        Req {
+                            method: "DELETE",
+                            csrf: Some(&csrf_tok),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                    member.try_set(None);
+                    refresh();
+                    let count = value.items.len();
+                    let mut restack_ids = vec![value.primary_id.clone()];
+                    for item in &value.items {
+                        if item.id != value.primary_id {
+                            restack_ids.push(item.id.clone());
+                        }
                     }
+                    show_notice(PhotosNotice {
+                        message: format!("Unstacked {count} photos"),
+                        undo: Some(Arc::new(move || {
+                            let restack_ids = restack_ids.clone();
+                            let csrf_tok = csrf();
+                            spawn_local(async move {
+                                match api::send::<Value>(
+                                    &format!("{BASE}/stacks"),
+                                    "POST",
+                                    Some(json!({ "ids": restack_ids })),
+                                    &csrf_tok,
+                                )
+                                .await
+                                {
+                                    Ok(_) => refresh(),
+                                    Err(cause) => fail(cause.message),
+                                }
+                            });
+                        })),
+                    });
+                    Ok(())
                 }
-                show_notice(PhotosNotice {
-                    message: format!("Unstacked {count} photos"),
-                    undo: Some(Arc::new(move || {
-                        let restack_ids = restack_ids.clone();
-                        let csrf_tok = csrf();
-                        spawn_local(async move {
-                            match api::send::<Value>(
-                                &format!("{BASE}/stacks"),
-                                "POST",
-                                Some(json!({ "ids": restack_ids })),
-                                &csrf_tok,
-                            )
-                            .await
-                            {
-                                Ok(_) => refresh(),
-                                Err(cause) => fail(cause.message),
-                            }
-                        });
-                    })),
-                });
-                Ok(())
-            }
-        });
+            },
+        );
     };
 
     let leave_album = move |target: PhotoAlbum| {
@@ -1103,7 +1206,11 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
         spawn_local(async move {
             match api::request::<Value>(
                 &format!("{BASE}/albums/{}/members/{user_id}", target.id),
-                Req { method: "DELETE", csrf: Some(&csrf_tok), ..Default::default() },
+                Req {
+                    method: "DELETE",
+                    csrf: Some(&csrf_tok),
+                    ..Default::default()
+                },
             )
             .await
             {
@@ -1141,7 +1248,10 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                     } else {
                         format!("Already in {}", target.name)
                     };
-                    show_notice(PhotosNotice { message: msg, undo: None });
+                    show_notice(PhotosNotice {
+                        message: msg,
+                        undo: None,
+                    });
                 }
                 Err(cause) => fail(cause.message),
             }
@@ -1149,7 +1259,9 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
     };
 
     let remove_from_album = move |ids: Vec<String>| {
-        let View::Album(album_id) = view.get_untracked() else { return };
+        let View::Album(album_id) = view.get_untracked() else {
+            return;
+        };
         let album_name = current_album
             .with_untracked(|a| a.as_ref().map(|a| a.name.clone()))
             .unwrap_or_else(|| "the album".to_owned());
@@ -1196,8 +1308,10 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
 
     let upload_files = move |raw_files: Vec<web_sys::File>| {
         let had_files = !raw_files.is_empty();
-        let list: Vec<web_sys::File> =
-            raw_files.into_iter().filter(is_supported_upload_file).collect();
+        let list: Vec<web_sys::File> = raw_files
+            .into_iter()
+            .filter(is_supported_upload_file)
+            .collect();
         if list.is_empty() {
             if had_files {
                 show_notice(PhotosNotice {
@@ -1316,7 +1430,11 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                         if !upload_id.is_empty() {
                             let _ = api::request::<Value>(
                                 &format!("/api/v1/files/uploads/{upload_id}"),
-                                Req { method: "DELETE", csrf: Some(&csrf_tok), ..Default::default() },
+                                Req {
+                                    method: "DELETE",
+                                    csrf: Some(&csrf_tok),
+                                    ..Default::default()
+                                },
                             )
                             .await;
                         }
@@ -1340,7 +1458,9 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
     let has_viewer = Memo::new(move |_| current_asset.with(Option::is_some));
 
     let step = move |delta: isize| {
-        let Some(idx) = current_index.get_untracked() else { return };
+        let Some(idx) = current_index.get_untracked() else {
+            return;
+        };
         let next_idx = idx as isize + delta;
         let list = items.get_untracked();
         if next_idx >= 0
@@ -1401,9 +1521,7 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                 close_viewer();
             }
             "f" => {
-                if !in_trash
-                    && let Some(cur) = current_asset.get_untracked()
-                {
+                if !in_trash && let Some(cur) = current_asset.get_untracked() {
                     event.prevent_default();
                     update_assets(vec![cur.id], Some(!cur.favorite), None, None, false);
                 }
@@ -1425,7 +1543,10 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
         let mut actions = Vec::new();
         let target_new = target.clone();
         actions.push(MenuAction::new("New album\u{2026}", "plus").run(move || {
-            album_dialog.set(Some(AlbumDialogState { album: None, ids: Some(target_new.clone()) }));
+            album_dialog.set(Some(AlbumDialogState {
+                album: None,
+                ids: Some(target_new.clone()),
+            }));
         }));
         let cur_view = view.get_untracked();
         let list: Vec<PhotoAlbum> = overview.with_untracked(|o| {
@@ -1460,7 +1581,8 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
             let a_rename = a.clone();
             let a_del = a;
             vec![
-                MenuAction::new("Share\u{2026}", "share").run(move || sharing.set(Some(a_share.clone()))),
+                MenuAction::new("Share\u{2026}", "share")
+                    .run(move || sharing.set(Some(a_share.clone()))),
                 MenuAction::new("Rename album", "pencil").run(move || {
                     album_dialog.set(Some(AlbumDialogState {
                         album: Some(a_rename.clone()),
@@ -1473,9 +1595,11 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                     .run(move || confirm.set(Some(a_del.clone()))),
             ]
         } else {
-            vec![MenuAction::new("Leave album", "logout")
-                .danger()
-                .run(move || leave_album(a.clone()))]
+            vec![
+                MenuAction::new("Leave album", "logout")
+                    .danger()
+                    .run(move || leave_album(a.clone())),
+            ]
         }
     };
 
@@ -1513,7 +1637,10 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                     .danger()
                     .separator()
                     .run(move || {
-                        deleting.set(Some(DeletingState { ids: vec![id_del.clone()], empty: false }));
+                        deleting.set(Some(DeletingState {
+                            ids: vec![id_del.clone()],
+                            empty: false,
+                        }));
                     }),
             ];
         }
@@ -1531,20 +1658,35 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                     .danger()
                     .separator()
                     .run(move || {
-                        deleting.set(Some(DeletingState { ids: vec![id_del.clone()], empty: false }));
+                        deleting.set(Some(DeletingState {
+                            ids: vec![id_del.clone()],
+                            empty: false,
+                        }));
                     }),
             ];
         }
         let mut list = vec![
             MenuAction::new("Add to album", "plus").items(album_menu_actions(vec![id.clone()])),
             MenuAction::new(
-                if asset.archived { "Restore to library" } else { "Archive" },
+                if asset.archived {
+                    "Restore to library"
+                } else {
+                    "Archive"
+                },
                 if asset.archived { "undo" } else { "archive" },
             )
             .run({
                 let id = id.clone();
                 let archived = asset.archived;
-                move || update_assets(vec![id.clone()], None, Some(!archived), Some((None, Some(archived))), false)
+                move || {
+                    update_assets(
+                        vec![id.clone()],
+                        None,
+                        Some(!archived),
+                        Some((None, Some(archived))),
+                        false,
+                    )
+                }
             }),
         ];
         if is_album {
@@ -1625,7 +1767,11 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                     let month = month_label(ts);
                     let heading = if month != last_month {
                         last_month = month.clone();
-                        Some(if in_trash { format!("Deleted {month}") } else { month })
+                        Some(if in_trash {
+                            format!("Deleted {month}")
+                        } else {
+                            month
+                        })
                     } else {
                         None
                     };
@@ -1635,9 +1781,8 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
         })
     });
 
-    let has_immich = Memo::new(move |_| {
-        overview.with(|o| o.as_ref().and_then(|o| o.immich.as_ref()).is_some())
-    });
+    let has_immich =
+        Memo::new(move |_| overview.with(|o| o.as_ref().and_then(|o| o.immich.as_ref()).is_some()));
     let immich_progress = Signal::derive(move || {
         overview.with(|o| {
             o.as_ref()
@@ -2663,7 +2808,10 @@ fn PhotoTile(
     } else {
         "Photo"
     };
-    let taken = local_date_time(item.taken_at, &[("dateStyle", "medium"), ("timeStyle", "short")]);
+    let taken = local_date_time(
+        item.taken_at,
+        &[("dateStyle", "medium"), ("timeStyle", "short")],
+    );
     let fav_part = if item.favorite { ", favorite" } else { "" };
     let stack_part = match &item.stack {
         Some(s) => format!(", stack of {}", s.count),
@@ -2672,7 +2820,11 @@ fn PhotoTile(
     let open_label = format!("{kind_label} {}, {taken}{fav_part}{stack_part}", item.name);
     let check_label = format!("Select {}", item.name);
     let is_video = item.kind == "video";
-    let dur = if item.duration > 0.0 { format_duration(item.duration) } else { String::new() };
+    let dur = if item.duration > 0.0 {
+        format_duration(item.duration)
+    } else {
+        String::new()
+    };
     let is_live = has_live(&item);
     let stack_count = item.stack.as_ref().map(|s| s.count);
     let is_fav = item.favorite;
@@ -2726,7 +2878,11 @@ fn PhotoTile(
 fn Thumb(asset: PhotoAsset, #[prop(default = "s")] size: &'static str) -> impl IntoView {
     let failed = RwSignal::new(false);
     let initial_failed = asset.thumbnail == "failed" && asset.kind == "video";
-    let icon = if asset.kind == "video" { "video" } else { "image" };
+    let icon = if asset.kind == "video" {
+        "video"
+    } else {
+        "image"
+    };
     let name = asset.name.clone();
     let sep = if size == "m" { "&" } else { "?" };
     let src = format!("{}{sep}v={}", thumb_url(&asset.id, size), asset.revision);
@@ -2802,12 +2958,19 @@ fn Viewer(
 
     // Fetch stack details when the open asset belongs to a stack.
     let stack_key = Memo::new(move |_| {
-        asset.with(|a| (a.id.clone(), a.stack.as_ref().map(|s| (s.id.clone(), s.count))))
+        asset.with(|a| {
+            (
+                a.id.clone(),
+                a.stack.as_ref().map(|s| (s.id.clone(), s.count)),
+            )
+        })
     });
     Effect::new(move |_| {
         let (_, stack_ref) = stack_key.get();
         stack.set(None);
-        let Some((stack_id, _)) = stack_ref else { return };
+        let Some((stack_id, _)) = stack_ref else {
+            return;
+        };
         let ticket = stack_seq.get_untracked().wrapping_add(1);
         stack_seq.set(ticket);
         spawn_local(async move {
@@ -2820,7 +2983,15 @@ fn Viewer(
     });
 
     let stage_key = Memo::new(move |_| {
-        shown.with(|s| (s.id.clone(), s.kind.clone(), s.live.clone(), s.playback.clone(), s.revision))
+        shown.with(|s| {
+            (
+                s.id.clone(),
+                s.kind.clone(),
+                s.live.clone(),
+                s.playback.clone(),
+                s.revision,
+            )
+        })
     });
 
     let menu_actions = move |_: ()| -> Vec<MenuAction> {
@@ -2830,16 +3001,14 @@ fn Viewer(
             let mut sub = Vec::new();
             if shown_now.id != st.primary_id {
                 let st_cover = st.clone();
-                sub.push(
-                    MenuAction::new("Make this the cover", "star")
-                        .run(move || { on_cover.try_run(st_cover.clone()); }),
-                );
+                sub.push(MenuAction::new("Make this the cover", "star").run(move || {
+                    on_cover.try_run(st_cover.clone());
+                }));
             }
             let st_unstack = st;
-            sub.push(
-                MenuAction::new("Unstack", "close")
-                    .run(move || { on_unstack.try_run(st_unstack.clone()); }),
-            );
+            sub.push(MenuAction::new("Unstack", "close").run(move || {
+                on_unstack.try_run(st_unstack.clone());
+            }));
             actions.push(MenuAction::new("Stack", "stack").separator().items(sub));
         }
         actions
@@ -3080,7 +3249,11 @@ fn VideoStage(
         if pb == "original"
             || (!do_convert && a.video_codec.as_deref() == Some("hevc") && hevc_playable())
         {
-            let suffix = if pb == "original" { "" } else { "?source=original" };
+            let suffix = if pb == "original" {
+                ""
+            } else {
+                "?source=original"
+            };
             playback.set(Some(Playback {
                 state: "ready".to_owned(),
                 progress: 1.0,
@@ -3304,7 +3477,9 @@ fn Details(
     });
 
     let save = move || {
-        let Some(cur) = detail.get_untracked() else { return };
+        let Some(cur) = detail.get_untracked() else {
+            return;
+        };
         let desc = description.get_untracked();
         if read_only.get_untracked() || desc.trim() == cur.description {
             return;
@@ -3345,7 +3520,9 @@ fn Details(
                             d.description = trimmed.clone();
                         }
                     });
-                    { on_changed.try_run(rev); };
+                    {
+                        on_changed.try_run(rev);
+                    };
                     saving.try_set("saved");
                 }
                 Err(cause) => {
@@ -3353,7 +3530,9 @@ fn Details(
                     if cause.status == 409 {
                         conflict.try_set(true);
                     } else {
-                        { on_error.try_run(cause.message); };
+                        {
+                            on_error.try_run(cause.message);
+                        };
                     }
                 }
             }
@@ -3368,10 +3547,12 @@ fn Details(
                     <p>{error.get()}</p>
                     <button class="secondary-button" on:click=move |_| load()>"Retry"</button>
                 </div>
-            }.into_any();
+            }
+            .into_any();
         }
         let Some(d) = detail.get() else {
-            return view! { <p class="photos-empty" role="status">"Loading details\u{2026}"</p> }.into_any();
+            return view! { <p class="photos-empty" role="status">"Loading details\u{2026}"</p> }
+                .into_any();
         };
 
         let e = &d.exif;
@@ -3462,11 +3643,20 @@ fn Details(
         let trashed_at = d.asset.trashed_at.filter(|&t| t > 0.0);
         let taken_date = local_date(
             d.asset.taken_at,
-            &[("weekday", "long"), ("year", "numeric"), ("month", "long"), ("day", "numeric")],
+            &[
+                ("weekday", "long"),
+                ("year", "numeric"),
+                ("month", "long"),
+                ("day", "numeric"),
+            ],
         );
         let taken_time = local_time(
             d.asset.taken_at,
-            &[("hour", "numeric"), ("minute", "2-digit"), ("timeZoneName", "short")],
+            &[
+                ("hour", "numeric"),
+                ("minute", "2-digit"),
+                ("timeZoneName", "short"),
+            ],
         );
         let dims = if d.asset.width > 0.0 {
             format!("{} \u{00d7} {} \u{00b7} ", d.asset.width, d.asset.height)
@@ -3479,7 +3669,11 @@ fn Details(
             String::new()
         };
         let size_str = format_bytes(d.asset.size);
-        let file_icon = if d.asset.kind == "video" { "video" } else { "image" };
+        let file_icon = if d.asset.kind == "video" {
+            "video"
+        } else {
+            "image"
+        };
         let is_live = has_live(&d.asset);
         let location = match (d.latitude, d.longitude) {
             (Some(lat), Some(lon)) => Some(format!("{lat:.5}, {lon:.5}")),
@@ -3675,7 +3869,9 @@ fn DuplicatesView(
                     });
                     cursor.try_set(page.cursor);
                 }
-                Err(cause) => { error.try_set(error_message(&cause.message)); }
+                Err(cause) => {
+                    error.try_set(error_message(&cause.message));
+                }
             }
         });
     };
@@ -3704,41 +3900,47 @@ fn DuplicatesView(
                             list.retain(|x| x.key != group.key);
                         }
                     });
-                    { on_changed.try_run(()); };
+                    {
+                        on_changed.try_run(());
+                    };
                     let kept_n = chosen.len();
                     let trashed_n = trashed.len();
-                    { on_notice.try_run(PhotosNotice {
-                        message: format!("Kept {kept_n}, moved {trashed_n} to the trash"),
-                        undo: Some(Arc::new(move || {
-                            let trashed = trashed.clone();
-                            let csrf_tok = session.with_value(|s| s.csrf_token.clone());
-                            spawn_local(async move {
-                                match api::send::<Value>(
-                                    &format!("{BASE}/assets/restore"),
-                                    "POST",
-                                    Some(json!({ "ids": trashed })),
-                                    &csrf_tok,
-                                )
-                                .await
-                                {
-                                    Ok(_) => {
-                                        on_changed.run(());
-                                        load(String::new());
+                    {
+                        on_notice.try_run(PhotosNotice {
+                            message: format!("Kept {kept_n}, moved {trashed_n} to the trash"),
+                            undo: Some(Arc::new(move || {
+                                let trashed = trashed.clone();
+                                let csrf_tok = session.with_value(|s| s.csrf_token.clone());
+                                spawn_local(async move {
+                                    match api::send::<Value>(
+                                        &format!("{BASE}/assets/restore"),
+                                        "POST",
+                                        Some(json!({ "ids": trashed })),
+                                        &csrf_tok,
+                                    )
+                                    .await
+                                    {
+                                        Ok(_) => {
+                                            on_changed.run(());
+                                            load(String::new());
+                                        }
+                                        Err(cause) => on_notice.run(PhotosNotice {
+                                            message: error_message(&cause.message),
+                                            undo: None,
+                                        }),
                                     }
-                                    Err(cause) => on_notice.run(PhotosNotice {
-                                        message: error_message(&cause.message),
-                                        undo: None,
-                                    }),
-                                }
-                            });
-                        })),
-                    }); };
+                                });
+                            })),
+                        });
+                    };
                 }
                 Err(cause) => {
-                    { on_notice.try_run(PhotosNotice {
-                        message: error_message(&cause.message),
-                        undo: None,
-                    }); };
+                    {
+                        on_notice.try_run(PhotosNotice {
+                            message: error_message(&cause.message),
+                            undo: None,
+                        });
+                    };
                     if cause.status == 409 {
                         load(String::new());
                     }
@@ -3766,17 +3968,23 @@ fn DuplicatesView(
                             list.retain(|x| x.key != group.key);
                         }
                     });
-                    { on_changed.try_run(()); };
-                    { on_notice.try_run(PhotosNotice {
-                        message: "Marked as not duplicates".to_owned(),
-                        undo: None,
-                    }); };
+                    {
+                        on_changed.try_run(());
+                    };
+                    {
+                        on_notice.try_run(PhotosNotice {
+                            message: "Marked as not duplicates".to_owned(),
+                            undo: None,
+                        });
+                    };
                 }
                 Err(cause) => {
-                    { on_notice.try_run(PhotosNotice {
-                        message: error_message(&cause.message),
-                        undo: None,
-                    }); };
+                    {
+                        on_notice.try_run(PhotosNotice {
+                            message: error_message(&cause.message),
+                            undo: None,
+                        });
+                    };
                 }
             }
             busy.try_set(String::new());
@@ -3981,13 +4189,20 @@ fn DeleteDialog(
                         &csrf_tok,
                     )
                     .await?;
-                    Ok((Some(r.deleted), format!("Deleted {} permanently", noun(ids_vec.len()))))
+                    Ok((
+                        Some(r.deleted),
+                        format!("Deleted {} permanently", noun(ids_vec.len())),
+                    ))
                 }
                 .await
             };
             match result {
-                Ok(done) => { on_deleted.try_run(done); },
-                Err(cause) if cause.status == 423 => { on_locked.try_run(()); },
+                Ok(done) => {
+                    on_deleted.try_run(done);
+                }
+                Err(cause) if cause.status == 423 => {
+                    on_locked.try_run(());
+                }
                 Err(cause) => {
                     error.try_set(error_message(&cause.message));
                     busy.try_set(false);
@@ -3996,7 +4211,11 @@ fn DeleteDialog(
         });
     };
 
-    let title = if empty { "Empty the trash?" } else { "Delete permanently?" };
+    let title = if empty {
+        "Empty the trash?"
+    } else {
+        "Delete permanently?"
+    };
     let body_text = StoredValue::new(if empty {
         "Every photo and video in the trash is deleted from Files with its versions. This cannot be undone.".to_owned()
     } else {
@@ -4007,8 +4226,14 @@ fn DeleteDialog(
             format!("These {len} items are")
         };
         let poss = if len == 1 { "its" } else { "their" };
-        let locked_part = if locked { ", without going through the trash" } else { "" };
-        format!("{items_phrase} deleted from Files with {poss} versions{locked_part}. This cannot be undone.")
+        let locked_part = if locked {
+            ", without going through the trash"
+        } else {
+            ""
+        };
+        format!(
+            "{items_phrase} deleted from Files with {poss} versions{locked_part}. This cannot be undone."
+        )
     });
 
     view! {
@@ -4090,7 +4315,9 @@ fn AlbumDialog(
                 }
             };
             match result {
-                Ok(saved) => { on_saved.try_run((saved, !is_rename)); },
+                Ok(saved) => {
+                    on_saved.try_run((saved, !is_rename));
+                }
                 Err(cause) => {
                     error.try_set(error_message(&cause.message));
                     busy.try_set(false);
@@ -4099,7 +4326,11 @@ fn AlbumDialog(
         });
     };
 
-    let title = if is_rename { "Rename album" } else { "New album" };
+    let title = if is_rename {
+        "Rename album"
+    } else {
+        "New album"
+    };
     let ids_count = ids_sv.with_value(|v| v.as_ref().map(Vec::len).unwrap_or(0));
 
     view! {
@@ -4151,11 +4382,17 @@ fn ConfirmBody(
         spawn_local(async move {
             match api::request::<Value>(
                 &format!("{BASE}/albums/{id}"),
-                Req { method: "DELETE", csrf: Some(&csrf_tok), ..Default::default() },
+                Req {
+                    method: "DELETE",
+                    csrf: Some(&csrf_tok),
+                    ..Default::default()
+                },
             )
             .await
             {
-                Ok(_) => { on_deleted.try_run(()); },
+                Ok(_) => {
+                    on_deleted.try_run(());
+                }
                 Err(cause) => {
                     error.try_set(error_message(&cause.message));
                     busy.try_set(false);
@@ -4198,7 +4435,11 @@ fn PhotosSettings(
             .filter(|s| !s.is_empty())
             .map(str::to_owned)
             .or_else(|| {
-                overview.with(|o| o.as_ref().map(|o| o.upload_folder.clone()).filter(|s| !s.is_empty()))
+                overview.with(|o| {
+                    o.as_ref()
+                        .map(|o| o.upload_folder.clone())
+                        .filter(|s| !s.is_empty())
+                })
             })
             .unwrap_or_else(|| "pics".to_owned())
     });
@@ -4208,7 +4449,9 @@ fn PhotosSettings(
     let save_folder = move |event: web_sys::SubmitEvent| {
         event.prevent_default();
         let current = value.get_untracked();
-        let Some(parts) = photo_folder_parts(&current) else { return };
+        let Some(parts) = photo_folder_parts(&current) else {
+            return;
+        };
         let next = parts.join("/");
         draft.set(None);
         if next != saved.get_untracked() {
@@ -4220,7 +4463,9 @@ fn PhotosSettings(
             );
             spawn_local(async move {
                 crate::sleep(800).await;
-                { on_changed.try_run(()); };
+                {
+                    on_changed.try_run(());
+                };
             });
         }
     };

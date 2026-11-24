@@ -12,13 +12,23 @@ pub fn read_note(input: &Value, previous: Option<&Value>) -> Result<(String, Val
         Some(c) if c.len() <= 262_144 && !c.contains('\0') => c.to_owned(),
         _ => return Err(invalid("A note must contain at most 256 KiB of Markdown.")),
     };
-    let pick = |key: &str| p.get(key).filter(|v| !v.is_null()).or_else(|| previous.and_then(|v| v.get(key)).filter(|v| !v.is_null())).cloned();
-    let title = field(&pick("title").unwrap_or(json!("Untitled note")), 255)?.trim().to_owned();
+    let pick = |key: &str| {
+        p.get(key)
+            .filter(|v| !v.is_null())
+            .or_else(|| previous.and_then(|v| v.get(key)).filter(|v| !v.is_null()))
+            .cloned()
+    };
+    let title = field(&pick("title").unwrap_or(json!("Untitled note")), 255)?
+        .trim()
+        .to_owned();
     if title.is_empty() {
         return Err(invalid("A note needs a title."));
     }
     let tags = pick("tags").unwrap_or(json!([]));
-    let tags = tags.as_array().filter(|t| t.len() <= 50).ok_or_else(|| invalid("Use at most 50 tags."))?;
+    let tags = tags
+        .as_array()
+        .filter(|t| t.len() <= 50)
+        .ok_or_else(|| invalid("Use at most 50 tags."))?;
     let mut unique: Vec<String> = Vec::new();
     for tag in tags {
         let tag = field(tag, 100)?.trim().to_owned();
@@ -27,9 +37,14 @@ pub fn read_note(input: &Value, previous: Option<&Value>) -> Result<(String, Val
         }
     }
     let favorite = match p.get("favorite") {
-        None | Some(Value::Null) => previous.and_then(|v| v["favorite"].as_bool()).unwrap_or(false),
+        None | Some(Value::Null) => previous
+            .and_then(|v| v["favorite"].as_bool())
+            .unwrap_or(false),
         Some(Value::Bool(b)) => *b,
         Some(_) => return Err(invalid("Invalid favorite value.")),
     };
-    Ok((content, json!({ "kind": "note", "title": title, "tags": unique, "favorite": favorite })))
+    Ok((
+        content,
+        json!({ "kind": "note", "title": title, "tags": unique, "favorite": favorite }),
+    ))
 }

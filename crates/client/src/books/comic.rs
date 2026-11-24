@@ -71,7 +71,9 @@ pub fn ComicView(
     Effect::new(move |_| {
         let idx = index.get();
         failed.set(false);
-        { on_page.try_run(idx); };
+        {
+            on_page.try_run(idx);
+        };
         let prefix = base.get_value();
         for n in [idx + 1, idx + 2] {
             if n < pages
@@ -99,7 +101,9 @@ pub fn ComicView(
     });
 
     let on_click = move |event: web_sys::MouseEvent| {
-        let Some(node) = root.get_untracked() else { return };
+        let Some(node) = root.get_untracked() else {
+            return;
+        };
         let rect = node.get_bounding_client_rect();
         if rect.width() <= 0.0 {
             return;

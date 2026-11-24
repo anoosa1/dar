@@ -104,7 +104,12 @@ impl Bridge {
     }
 
     pub fn status(&self) -> BridgeStatus {
-        self.inner.state.lock().expect("bridge state").status.clone()
+        self.inner
+            .state
+            .lock()
+            .expect("bridge state")
+            .status
+            .clone()
     }
 
     /// Sends an RPC request to the bridge and waits up to `timeout` for its answer.
@@ -190,21 +195,17 @@ impl Bridge {
             send_sigterm(pid);
         }
         if let Some(mut exit_rx) = exit_rx {
-            let exited = tokio::time::timeout(
-                Duration::from_secs(5),
-                exit_rx.wait_for(|&done| done),
-            )
-            .await
-            .is_ok();
+            let exited =
+                tokio::time::timeout(Duration::from_secs(5), exit_rx.wait_for(|&done| done))
+                    .await
+                    .is_ok();
             if !exited {
                 if let Some(tx) = kill_tx {
                     let _ = tx.send(());
                 }
-                let _ = tokio::time::timeout(
-                    Duration::from_secs(2),
-                    exit_rx.wait_for(|&done| done),
-                )
-                .await;
+                let _ =
+                    tokio::time::timeout(Duration::from_secs(2), exit_rx.wait_for(|&done| done))
+                        .await;
             }
         }
     }
@@ -333,7 +334,10 @@ impl Bridge {
                             };
 
                             if let (Some(method), Some(id)) = (
-                                frame.get("method").and_then(Value::as_str).map(str::to_owned),
+                                frame
+                                    .get("method")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_owned),
                                 frame.get("id").and_then(Value::as_str).map(str::to_owned),
                             ) {
                                 let params = frame
@@ -343,12 +347,8 @@ impl Bridge {
                                         _ => None,
                                     })
                                     .unwrap_or_default();
-                                let handler = bridge
-                                    .inner
-                                    .handler
-                                    .lock()
-                                    .expect("bridge handler")
-                                    .clone();
+                                let handler =
+                                    bridge.inner.handler.lock().expect("bridge handler").clone();
                                 let tx = stdin_tx.clone();
                                 tokio::spawn(async move {
                                     let reply = match handler {
@@ -370,8 +370,10 @@ impl Bridge {
                                 continue;
                             }
 
-                            if let Some(event_name) =
-                                frame.get("event").and_then(Value::as_str).map(str::to_owned)
+                            if let Some(event_name) = frame
+                                .get("event")
+                                .and_then(Value::as_str)
+                                .map(str::to_owned)
                             {
                                 let account = frame
                                     .get("account")
@@ -385,12 +387,8 @@ impl Bridge {
                                         _ => None,
                                     })
                                     .unwrap_or_default();
-                                let handler = bridge
-                                    .inner
-                                    .handler
-                                    .lock()
-                                    .expect("bridge handler")
-                                    .clone();
+                                let handler =
+                                    bridge.inner.handler.lock().expect("bridge handler").clone();
                                 if let Some(h) = handler {
                                     h.event(account, event_name, data);
                                 }
@@ -458,8 +456,7 @@ impl Bridge {
                     state.status.available = false;
                     fail_all(&mut state, "The chat bridge stopped.");
                     if state.closing
-                        || state.status.detail
-                            == "The chat bridge is not installed on this server."
+                        || state.status.detail == "The chat bridge is not installed on this server."
                     {
                         None
                     } else {
@@ -493,7 +490,9 @@ impl Bridge {
         {
             let bridge = self.clone();
             tokio::spawn(async move {
-                let Ok(hello) = bridge.call("hello", json!({}), Duration::from_secs(10)).await
+                let Ok(hello) = bridge
+                    .call("hello", json!({}), Duration::from_secs(10))
+                    .await
                 else {
                     return;
                 };
@@ -523,12 +522,7 @@ impl Bridge {
                     return;
                 }
                 if should_notify_ready {
-                    let handler = bridge
-                        .inner
-                        .handler
-                        .lock()
-                        .expect("bridge handler")
-                        .clone();
+                    let handler = bridge.inner.handler.lock().expect("bridge handler").clone();
                     if let Some(h) = handler {
                         h.on_ready();
                     }

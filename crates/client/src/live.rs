@@ -42,7 +42,11 @@ struct Token {
 
 impl Live {
     pub fn new() -> Self {
-        Self { status: RwSignal::new(LiveStatus::Connecting), connection: RwSignal::new(None), started: RwSignal::new(None) }
+        Self {
+            status: RwSignal::new(LiveStatus::Connecting),
+            connection: RwSignal::new(None),
+            started: RwSignal::new(None),
+        }
     }
 
     /// Opens the connection for `session` once; later calls reuse it.
@@ -74,7 +78,8 @@ impl Live {
                     self.status.set(LiveStatus::Open);
                     // Messages are applied here; callbacks run as each one is processed.
                     while connection.advance_one_message_async().await.is_ok() {}
-                    if self.started.get_untracked().as_deref() != Some(session.csrf_token.as_str()) {
+                    if self.started.get_untracked().as_deref() != Some(session.csrf_token.as_str())
+                    {
                         return;
                     }
                     self.status.set(LiveStatus::Reconnecting);
@@ -96,9 +101,16 @@ impl Live {
     }
 
     async fn connect(&self, session: &BrowserSession, tab: &str) -> Result<Connection, String> {
-        let token: Token = api::request(&format!("/api/v1/auth/token?tab={tab}"), Req { method: "POST", csrf: Some(&session.csrf_token), ..Default::default() })
-            .await
-            .map_err(|e| e.message)?;
+        let token: Token = api::request(
+            &format!("/api/v1/auth/token?tab={tab}"),
+            Req {
+                method: "POST",
+                csrf: Some(&session.csrf_token),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|e| e.message)?;
         let connection = DbConnection::builder()
             .with_uri(token.database_url.as_str())
             .with_database_name(token.database_name)
@@ -119,7 +131,9 @@ impl Default for Live {
 }
 
 /// The reducer callback that reports its outcome on `sender`.
-pub fn replied(sender: oneshot::Sender<Result<(), String>>) -> impl FnOnce(&ReducerEventContext, Result<Result<(), String>, InternalError>) + Send + 'static {
+pub fn replied(
+    sender: oneshot::Sender<Result<(), String>>,
+) -> impl FnOnce(&ReducerEventContext, Result<Result<(), String>, InternalError>) + Send + 'static {
     move |_, result| {
         let _ = sender.send(match result {
             Ok(inner) => inner,
@@ -129,24 +143,34 @@ pub fn replied(sender: oneshot::Sender<Result<(), String>>) -> impl FnOnce(&Redu
 }
 
 /// Calls a reducer and waits for its result: `reducer(|tx| c.reducers.x_then(args, replied(tx)))`.
-pub async fn reducer(invoke: impl FnOnce(oneshot::Sender<Result<(), String>>) -> spacetimedb_sdk::Result<()>) -> Result<(), String> {
+pub async fn reducer(
+    invoke: impl FnOnce(oneshot::Sender<Result<(), String>>) -> spacetimedb_sdk::Result<()>,
+) -> Result<(), String> {
     let (sender, receiver) = oneshot::channel();
     invoke(sender).map_err(|e| e.to_string())?;
-    receiver.await.unwrap_or_else(|_| Err("The connection was interrupted. Try again.".into()))
+    receiver
+        .await
+        .unwrap_or_else(|_| Err("The connection was interrupted. Try again.".into()))
 }
 
 /// The procedure callback that reports its JSON result on `sender`.
-pub fn answered(sender: oneshot::Sender<Result<String, String>>) -> impl FnOnce(&ProcedureEventContext, Result<String, InternalError>) + Send + 'static {
+pub fn answered(
+    sender: oneshot::Sender<Result<String, String>>,
+) -> impl FnOnce(&ProcedureEventContext, Result<String, InternalError>) + Send + 'static {
     move |_, result| {
         let _ = sender.send(result.map_err(|e| e.to_string()));
     }
 }
 
 /// Calls a procedure and parses its JSON result, which may carry `{error:{code}}`.
-pub async fn procedure<T: serde::de::DeserializeOwned>(invoke: impl FnOnce(oneshot::Sender<Result<String, String>>)) -> Result<T, String> {
+pub async fn procedure<T: serde::de::DeserializeOwned>(
+    invoke: impl FnOnce(oneshot::Sender<Result<String, String>>),
+) -> Result<T, String> {
     let (sender, receiver) = oneshot::channel();
     invoke(sender);
-    let value = receiver.await.unwrap_or_else(|_| Err("The connection was interrupted. Try again.".into()))?;
+    let value = receiver
+        .await
+        .unwrap_or_else(|_| Err("The connection was interrupted. Try again.".into()))?;
     api::read_procedure(&value)
 }
 
@@ -161,5 +185,6 @@ pub fn register(live: Live) {
 
 /// The open connection, if any.
 pub fn connection() -> Option<Connection> {
-    LIVE.with(|l| l.get()).and_then(|live| live.connection.try_get_untracked().flatten())
+    LIVE.with(|l| l.get())
+        .and_then(|live| live.connection.try_get_untracked().flatten())
 }

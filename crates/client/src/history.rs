@@ -10,16 +10,16 @@ use serde_json::json;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::api::{self, format_bytes, BrowserSession, Req};
+use crate::api::{self, BrowserSession, Req, format_bytes};
 use crate::dates::local_date_time;
-use crate::git::diff::{count_lines, text_lines, unified_hunks, Diff, DiffStat};
+use crate::git::diff::{Diff, DiffStat, count_lines, text_lines, unified_hunks};
 use crate::git::parts::{
-    format_int, git_path, kind_label, plural, short, HistoryBranch, HistoryChange,
-    HistoryChangeset, HistoryDetail, HistoryGitRef, HistoryOverview, HistoryStatus,
     HISTORY_LIMITS_DEPTH, HISTORY_LIMITS_FILES, HISTORY_LIMITS_MESSAGE_BYTES, HISTORY_LIMITS_REPOS,
+    HistoryBranch, HistoryChange, HistoryChangeset, HistoryDetail, HistoryGitRef, HistoryOverview,
+    HistoryStatus, format_int, git_path, kind_label, plural, short,
 };
 use crate::icons::Icon;
-use crate::ui::{unique_id, window, Dialog, EditorPane};
+use crate::ui::{Dialog, EditorPane, unique_id, window};
 
 fn base(folder_id: &str) -> String {
     format!("/api/v1/files/history/{folder_id}")
@@ -77,17 +77,56 @@ fn when(value: f64) -> String {
 }
 
 fn is_textual_extension(path: &str) -> bool {
-    let Some(ext) = path.rsplit('.').next() else { return false };
+    let Some(ext) = path.rsplit('.').next() else {
+        return false;
+    };
     if ext.len() == path.len() {
         return false;
     }
     matches!(
         ext.to_ascii_lowercase().as_str(),
-        "md" | "markdown" | "txt" | "csv" | "json" | "yaml" | "yml" | "toml" | "xml"
-            | "html" | "htm" | "css" | "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs"
-            | "mts" | "cts" | "mjsx" | "cjsx" | "mtsx" | "ctsx"
-            | "py" | "rb" | "go" | "rs" | "java" | "kt" | "swift" | "c" | "h" | "cpp"
-            | "sh" | "ini" | "conf" | "env" | "sql" | "ics" | "vcf" | "svg" | "log"
+        "md" | "markdown"
+            | "txt"
+            | "csv"
+            | "json"
+            | "yaml"
+            | "yml"
+            | "toml"
+            | "xml"
+            | "html"
+            | "htm"
+            | "css"
+            | "js"
+            | "jsx"
+            | "ts"
+            | "tsx"
+            | "mjs"
+            | "cjs"
+            | "mts"
+            | "cts"
+            | "mjsx"
+            | "cjsx"
+            | "mtsx"
+            | "ctsx"
+            | "py"
+            | "rb"
+            | "go"
+            | "rs"
+            | "java"
+            | "kt"
+            | "swift"
+            | "c"
+            | "h"
+            | "cpp"
+            | "sh"
+            | "ini"
+            | "conf"
+            | "env"
+            | "sql"
+            | "ics"
+            | "vcf"
+            | "svg"
+            | "log"
     )
 }
 
@@ -113,7 +152,11 @@ fn textual(change: &HistoryChange) -> bool {
     if let Some(t) = change.media_type.as_deref().filter(|s| !s.is_empty()) {
         types.push(t);
     }
-    if let Some(t) = change.previous_media_type.as_deref().filter(|s| !s.is_empty()) {
+    if let Some(t) = change
+        .previous_media_type
+        .as_deref()
+        .filter(|s| !s.is_empty())
+    {
         types.push(t);
     }
     !types.is_empty() && types.iter().all(|t| is_textual_mime(t))
@@ -129,8 +172,13 @@ fn content_url(folder_id: &str, version_id: Option<&str>, file_id: Option<&str>)
     }
 }
 
-async fn fetch_text(url: Option<String>, signal: &web_sys::AbortSignal) -> Result<String, &'static str> {
-    let Some(url) = url else { return Ok(String::new()) };
+async fn fetch_text(
+    url: Option<String>,
+    signal: &web_sys::AbortSignal,
+) -> Result<String, &'static str> {
+    let Some(url) = url else {
+        return Ok(String::new());
+    };
     let init = web_sys::RequestInit::new();
     init.set_signal(Some(signal));
     let promise = window().fetch_with_str_and_init(&url, &init);
@@ -155,7 +203,11 @@ async fn fetch_text(url: Option<String>, signal: &web_sys::AbortSignal) -> Resul
 
 #[derive(Clone, Debug)]
 enum LoadedDiff {
-    Patch { patch: String, added: usize, removed: usize },
+    Patch {
+        patch: String,
+        added: usize,
+        removed: usize,
+    },
     Note(String),
 }
 
@@ -192,10 +244,14 @@ pub fn ChangeRow(
                 }
                 s
             };
-            diff.set(Some(LoadedDiff::Note(format!("{size_note}. No text preview for this file type."))));
+            diff.set(Some(LoadedDiff::Note(format!(
+                "{size_note}. No text preview for this file type."
+            ))));
             return;
         }
-        let Ok(controller) = web_sys::AbortController::new() else { return };
+        let Ok(controller) = web_sys::AbortController::new() else {
+            return;
+        };
         let signal = controller.signal();
         let abort_ref = SendWrapper::new(controller);
         let signal_check = SendWrapper::new(signal.clone());
@@ -231,7 +287,11 @@ pub fn ChangeRow(
                     let b = text_lines(&next);
                     let patch = unified_hunks(&a, &b, &[]);
                     let (added, removed) = count_lines(&a, &b);
-                    let _ = diff.try_set(Some(LoadedDiff::Patch { patch, added, removed }));
+                    let _ = diff.try_set(Some(LoadedDiff::Patch {
+                        patch,
+                        added,
+                        removed,
+                    }));
                 }
                 Err(code) => {
                     let note = if code == "binary" {
@@ -356,7 +416,9 @@ fn CommitPane(
         let token = csrf.get_value();
         spawn_local(async move {
             match api::send::<serde_json::Value>(&url, "POST", Some(body), &token).await {
-                Ok(_) => { on_done.try_run(format!("Committed {}.", plural(count, "change", None))); },
+                Ok(_) => {
+                    on_done.try_run(format!("Committed {}.", plural(count, "change", None)));
+                }
                 Err(cause) => {
                     let _ = error.try_set(history_failure(&cause.message));
                     let _ = busy.try_set(false);
@@ -459,17 +521,33 @@ fn ChangesetPane(
 
     Effect::new(move |_| {
         let _ = attempt.get();
-        let Ok(controller) = web_sys::AbortController::new() else { return };
+        let Ok(controller) = web_sys::AbortController::new() else {
+            return;
+        };
         let signal = controller.signal();
         let abort_ref = SendWrapper::new(controller);
         let signal_check = SendWrapper::new(signal.clone());
         on_cleanup(move || abort_ref.take().abort());
 
         error.set(String::new());
-        let url = format!("{}/commits/{}", base(&folder_sv.get_value()), changeset_sv.with_value(|c| c.id.clone()));
+        let url = format!(
+            "{}/commits/{}",
+            base(&folder_sv.get_value()),
+            changeset_sv.with_value(|c| c.id.clone())
+        );
         spawn_local(async move {
-            match api::request::<HistoryDetail>(&url, Req { signal: Some(signal), ..Default::default() }).await {
-                Ok(d) => { let _ = detail.try_set(Some(d)); }
+            match api::request::<HistoryDetail>(
+                &url,
+                Req {
+                    signal: Some(signal),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(d) => {
+                    let _ = detail.try_set(Some(d));
+                }
                 Err(cause) => {
                     if !signal_check.aborted() {
                         let _ = error.try_set(history_failure(&cause.message));
@@ -488,7 +566,12 @@ fn ChangesetPane(
         let token = csrf.get_value();
         spawn_local(async move {
             match api::send::<serde_json::Value>(&url, "POST", Some(body), &token).await {
-                Ok(_) => { on_done.try_run(format!("Folder restored to \u{201c}{}\u{201d}.", cs.message)); },
+                Ok(_) => {
+                    on_done.try_run(format!(
+                        "Folder restored to \u{201c}{}\u{201d}.",
+                        cs.message
+                    ));
+                }
                 Err(cause) => {
                     let _ = error.try_set(history_failure(&cause.message));
                     let _ = confirm.try_set(false);
@@ -609,11 +692,13 @@ fn BranchPane(
                         let _ = confirm.try_set(false);
                         return;
                     }
-                    { on_done.try_run(if action == "merge" {
-                        "Agent changes merged and committed.".to_owned()
-                    } else {
-                        "Agent branch discarded.".to_owned()
-                    }); };
+                    {
+                        on_done.try_run(if action == "merge" {
+                            "Agent changes merged and committed.".to_owned()
+                        } else {
+                            "Agent branch discarded.".to_owned()
+                        });
+                    };
                 }
                 Err(cause) => {
                     let _ = error.try_set(history_failure(&cause.message));
@@ -772,7 +857,8 @@ pub fn FolderHistory(
     #[prop(into)] revision: Signal<u64>,
     session: BrowserSession,
     /// Kept by the caller when the sheet re-renders this tab, so a result notice survives it.
-    #[prop(optional)] notice: Option<RwSignal<String>>,
+    #[prop(optional)]
+    notice: Option<RwSignal<String>>,
 ) -> impl IntoView {
     let kept_notice = notice.is_some();
     let data: RwSignal<Option<HistoryOverview>> = RwSignal::new(None);
@@ -789,7 +875,10 @@ pub fn FolderHistory(
 
     // Also called when a reply arrives, after the tab may have closed: `try_` throughout.
     let load = move || {
-        let (Some(fid), Some(last)) = (folder_id.try_get_untracked(), sequence.try_get_untracked()) else { return };
+        let (Some(fid), Some(last)) = (folder_id.try_get_untracked(), sequence.try_get_untracked())
+        else {
+            return;
+        };
         let current = last + 1;
         let _ = sequence.try_set(current);
         let url = base(&fid);
@@ -852,7 +941,9 @@ pub fn FolderHistory(
     };
 
     let load_more = move |_| {
-        let Some(before) = next.get_untracked() else { return };
+        let Some(before) = next.get_untracked() else {
+            return;
+        };
         let url = format!("{}?before={before}", base(&folder_id.get_untracked()));
         spawn_local(async move {
             match api::get::<HistoryOverview>(&url).await {
@@ -922,7 +1013,10 @@ pub fn FolderHistory(
             .into_any();
         }
 
-        let status = overview.status.clone().unwrap_or(HistoryStatus { changes: Vec::new(), token: String::new() });
+        let status = overview.status.clone().unwrap_or(HistoryStatus {
+            changes: Vec::new(),
+            token: String::new(),
+        });
         let status_sv = StoredValue::new(status.clone());
         let repo_rev = overview.repo.as_ref().map(|r| r.revision).unwrap_or(0);
         let folder_name = StoredValue::new(overview.folder.name.clone());

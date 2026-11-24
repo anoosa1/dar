@@ -33,7 +33,12 @@ struct Page {
 /// Folder mode: the destination is the highlighted folder row, otherwise the folder being
 /// viewed; a row's chevron (or double-click) opens it.
 #[component]
-pub fn FolderPicker(#[prop(into)] initial_folder_id: String, exclude_ids: Vec<String>, #[prop(into)] disabled: Signal<bool>, on_change: Callback<Option<Selection>>) -> impl IntoView {
+pub fn FolderPicker(
+    #[prop(into)] initial_folder_id: String,
+    exclude_ids: Vec<String>,
+    #[prop(into)] disabled: Signal<bool>,
+    on_change: Callback<Option<Selection>>,
+) -> impl IntoView {
     let parent = RwSignal::new(initial_folder_id);
     let cursor = RwSignal::new(String::new());
     let previous: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
@@ -45,19 +50,32 @@ pub fn FolderPicker(#[prop(into)] initial_folder_id: String, exclude_ids: Vec<St
     let sequence = RwSignal::new(0u32);
     let here = |value: &Option<Page>| -> Option<Selection> {
         Some(match value.as_ref().and_then(|p| p.folder.clone()) {
-            Some(folder) => Selection { kind: "folder".into(), ..folder },
-            None => Selection { id: String::new(), name: "All files".into(), kind: "folder".into() },
+            Some(folder) => Selection {
+                kind: "folder".into(),
+                ..folder
+            },
+            None => Selection {
+                id: String::new(),
+                name: "All files".into(),
+                kind: "folder".into(),
+            },
         })
     };
     Effect::new(move |_| {
         attempt.track();
-        let params = format!("parentId={}&cursor={}&kind=folder", js_sys::encode_uri_component(&parent.get()), js_sys::encode_uri_component(&cursor.get()));
+        let params = format!(
+            "parentId={}&cursor={}&kind=folder",
+            js_sys::encode_uri_component(&parent.get()),
+            js_sys::encode_uri_component(&cursor.get())
+        );
         let id = sequence.get_untracked() + 1;
         sequence.set(id);
         page.set(None);
         error.set(String::new());
         selected.set(None);
-        { on_change.try_run(None); };
+        {
+            on_change.try_run(None);
+        };
         spawn_local(async move {
             let value = api::get::<Page>(&format!("/api/v1/files/picker?{params}")).await;
             if sequence.try_get_untracked() != Some(id) {
@@ -66,7 +84,9 @@ pub fn FolderPicker(#[prop(into)] initial_folder_id: String, exclude_ids: Vec<St
             match value {
                 Ok(value) => {
                     let value = Some(value);
-                    { on_change.try_run(here(&value)); };
+                    {
+                        on_change.try_run(here(&value));
+                    };
                     page.set(value);
                 }
                 Err(e) => error.set(e.message),
@@ -80,16 +100,43 @@ pub fn FolderPicker(#[prop(into)] initial_folder_id: String, exclude_ids: Vec<St
         query.set(String::new());
     };
     let choose = move |item: Selection| {
-        let next = if selected.with_untracked(|s| s.as_ref().is_some_and(|s| s.id == item.id)) { None } else { Some(item) };
+        let next = if selected.with_untracked(|s| s.as_ref().is_some_and(|s| s.id == item.id)) {
+            None
+        } else {
+            Some(item)
+        };
         selected.set(next.clone());
-        { on_change.try_run(next.or_else(|| page.with_untracked(here))); };
+        {
+            on_change.try_run(next.or_else(|| page.with_untracked(here)));
+        };
     };
     let exclude = StoredValue::new(exclude_ids);
     let items = Memo::new(move |_| {
         let q = query.get().trim().to_lowercase();
-        page.with(|p| p.as_ref().map(|p| p.items.iter().filter(|i| !exclude.with_value(|e| e.contains(&i.id)) && i.name.to_lowercase().contains(&q)).cloned().collect::<Vec<_>>()).unwrap_or_default())
+        page.with(|p| {
+            p.as_ref()
+                .map(|p| {
+                    p.items
+                        .iter()
+                        .filter(|i| {
+                            !exclude.with_value(|e| e.contains(&i.id))
+                                && i.name.to_lowercase().contains(&q)
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        })
     });
-    let up = move || page.with(|p| p.as_ref().and_then(|p| p.folder.as_ref().map(|_| p.ancestors.last().map(|a| a.id.clone()).unwrap_or_default())));
+    let up = move || {
+        page.with(|p| {
+            p.as_ref().and_then(|p| {
+                p.folder
+                    .as_ref()
+                    .map(|_| p.ancestors.last().map(|a| a.id.clone()).unwrap_or_default())
+            })
+        })
+    };
     let destination = move || selected.get().or_else(|| page.with(here));
     view! {
         <section class="dar-file-picker" aria-label="Dar folder picker" aria-busy=move || (page.with(Option::is_none) && error.with(String::is_empty)).to_string()>

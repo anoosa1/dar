@@ -35,7 +35,10 @@ impl std::fmt::Display for RequestError {
 
 impl RequestError {
     fn unexpected(status: u16) -> Self {
-        Self { status, message: "The instance returned an unexpected response. Try again shortly.".into() }
+        Self {
+            status,
+            message: "The instance returned an unexpected response. Try again shortly.".into(),
+        }
     }
 }
 
@@ -52,7 +55,11 @@ pub struct Req<'a> {
 
 pub async fn fetch(url: &str, req: Req<'_>) -> Result<web_sys::Response, RequestError> {
     let init = web_sys::RequestInit::new();
-    init.set_method(if req.method.is_empty() { "GET" } else { req.method });
+    init.set_method(if req.method.is_empty() {
+        "GET"
+    } else {
+        req.method
+    });
     let headers = web_sys::Headers::new().expect("headers");
     if req.raw.is_none() {
         let _ = headers.set("content-type", "application/json");
@@ -72,10 +79,15 @@ pub async fn fetch(url: &str, req: Req<'_>) -> Result<web_sys::Response, Request
     if let Some(signal) = &req.signal {
         init.set_signal(Some(signal));
     }
-    let promise = web_sys::window().expect("window").fetch_with_str_and_init(url, &init);
+    let promise = web_sys::window()
+        .expect("window")
+        .fetch_with_str_and_init(url, &init);
     match JsFuture::from(promise).await {
         Ok(response) => Ok(response.unchecked_into()),
-        Err(_) => Err(RequestError { status: 0, message: "The connection was interrupted. Try again.".into() }),
+        Err(_) => Err(RequestError {
+            status: 0,
+            message: "The connection was interrupted. Try again.".into(),
+        }),
     }
 }
 
@@ -84,12 +96,20 @@ async fn request_text(url: &str, req: Req<'_>) -> Result<(u16, String), RequestE
     let status = response.status();
     note_pim_revision(url, &response);
     let text = match response.text() {
-        Ok(promise) => JsFuture::from(promise).await.ok().and_then(|v| v.as_string()).ok_or_else(|| RequestError::unexpected(status))?,
+        Ok(promise) => JsFuture::from(promise)
+            .await
+            .ok()
+            .and_then(|v| v.as_string())
+            .ok_or_else(|| RequestError::unexpected(status))?,
         Err(_) => return Err(RequestError::unexpected(status)),
     };
     if !response.ok() {
-        let value: serde_json::Value = serde_json::from_str(&text).map_err(|_| RequestError::unexpected(status))?;
-        let message = value["error"]["message"].as_str().unwrap_or("The request could not be completed.").to_owned();
+        let value: serde_json::Value =
+            serde_json::from_str(&text).map_err(|_| RequestError::unexpected(status))?;
+        let message = value["error"]["message"]
+            .as_str()
+            .unwrap_or("The request could not be completed.")
+            .to_owned();
         return Err(RequestError { status, message });
     }
     Ok((status, text))
@@ -106,17 +126,35 @@ pub async fn get<T: DeserializeOwned>(url: &str) -> Result<T, RequestError> {
 }
 
 /// A JSON request with a body and the session's CSRF token.
-pub async fn send<T: DeserializeOwned>(url: &str, method: &str, body: Option<serde_json::Value>, csrf: &str) -> Result<T, RequestError> {
-    request(url, Req { method, body: body.map(|b| b.to_string()), csrf: Some(csrf), ..Default::default() }).await
+pub async fn send<T: DeserializeOwned>(
+    url: &str,
+    method: &str,
+    body: Option<serde_json::Value>,
+    csrf: &str,
+) -> Result<T, RequestError> {
+    request(
+        url,
+        Req {
+            method,
+            body: body.map(|b| b.to_string()),
+            csrf: Some(csrf),
+            ..Default::default()
+        },
+    )
+    .await
 }
 
 fn check_procedure_error(value: &str) -> Result<(), String> {
     if !value.contains("\"error\"") {
         return Ok(());
     }
-    let parsed: serde_json::Value = serde_json::from_str(value).map_err(|_| "The request could not be completed.".to_owned())?;
+    let parsed: serde_json::Value = serde_json::from_str(value)
+        .map_err(|_| "The request could not be completed.".to_owned())?;
     if let Some(error) = parsed.get("error").filter(|e| !e.is_null()) {
-        return Err(error["code"].as_str().unwrap_or("The request could not be completed.").to_owned());
+        return Err(error["code"]
+            .as_str()
+            .unwrap_or("The request could not be completed.")
+            .to_owned());
     }
     Ok(())
 }
@@ -159,8 +197,14 @@ mod tests {
 
     #[test]
     fn procedure_errors_carry_the_code() {
-        assert_eq!(read_procedure::<serde_json::Value>(r#"{"error":{"code":"conflict"}}"#), Err("conflict".into()));
-        assert_eq!(read_procedure::<serde_json::Value>(r#"{"ok":true}"#).unwrap()["ok"], true);
+        assert_eq!(
+            read_procedure::<serde_json::Value>(r#"{"error":{"code":"conflict"}}"#),
+            Err("conflict".into())
+        );
+        assert_eq!(
+            read_procedure::<serde_json::Value>(r#"{"ok":true}"#).unwrap()["ok"],
+            true
+        );
     }
 }
 
@@ -171,8 +215,20 @@ thread_local! {
 /// Contacts, Calendar, Notes and Tasks responses carry the account's change revision, so a
 /// page can tell whether live updates are newer than what it loaded (`loadedPimRevision`).
 fn note_pim_revision(url: &str, response: &web_sys::Response) {
-    let pim = ["/api/v1/contacts", "/api/v1/calendar", "/api/v1/notes", "/api/v1/tasks", "/api/v1/pim"].iter().any(|p| url.starts_with(p));
-    if let Some(value) = pim.then(|| response.headers().get("x-dar-pim-revision").ok().flatten()).flatten().and_then(|v| v.parse::<f64>().ok()) {
+    let pim = [
+        "/api/v1/contacts",
+        "/api/v1/calendar",
+        "/api/v1/notes",
+        "/api/v1/tasks",
+        "/api/v1/pim",
+    ]
+    .iter()
+    .any(|p| url.starts_with(p));
+    if let Some(value) = pim
+        .then(|| response.headers().get("x-dar-pim-revision").ok().flatten())
+        .flatten()
+        .and_then(|v| v.parse::<f64>().ok())
+    {
         PIM_REVISION.with(|r| r.set(r.get().max(value)));
     }
 }

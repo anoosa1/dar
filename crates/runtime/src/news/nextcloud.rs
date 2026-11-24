@@ -75,7 +75,9 @@ fn bool_param(value: Option<&Value>, fallback: bool) -> bool {
 }
 
 fn parse_ids(value: Option<&Value>) -> Result<Vec<i64>> {
-    let Some(arr) = value.and_then(Value::as_array) else { return Ok(Vec::new()) };
+    let Some(arr) = value.and_then(Value::as_array) else {
+        return Ok(Vec::new());
+    };
     let mut out = Vec::new();
     for v in arr {
         let n = num(Some(v), 0)?;
@@ -155,7 +157,15 @@ fn nc_item(row: &Value) -> Value {
 }
 
 async fn call(runtime: &Runtime, session_id: &str, operation: &str, value: Value) -> Result<Value> {
-    runtime.db.operation("service_news", operation, READ_OPERATIONS, json!([session_id, operation, value.to_string()])).await
+    runtime
+        .db
+        .operation(
+            "service_news",
+            operation,
+            READ_OPERATIONS,
+            json!([session_id, operation, value.to_string()]),
+        )
+        .await
 }
 
 pub async fn handle_nextcloud(
@@ -176,14 +186,27 @@ pub async fn handle_nextcloud(
     static ITEM_STATE_RE: OnceLock<Regex> = OnceLock::new();
     static GUID_STAR_RE: OnceLock<Regex> = OnceLock::new();
 
-    let ocs_user_re = OCS_USER_RE.get_or_init(|| Regex::new(r"^/ocs/v[12]\.php/cloud/user$").expect("ocs user regex"));
-    let ocs_cap_re = OCS_CAP_RE.get_or_init(|| Regex::new(r"^/ocs/v[12]\.php/cloud/capabilities$").expect("ocs cap regex"));
-    let api_re = API_RE.get_or_init(|| Regex::new(r"^(?:/index\.php)?/apps/news/api/v1-([23])(/.*)?$").expect("api regex"));
-    let folder_re = FOLDER_RE.get_or_init(|| Regex::new(r"^/folders/(\d+)(/read)?$").expect("folder regex"));
-    let feed_re = FEED_RE.get_or_init(|| Regex::new(r"^/feeds/(\d+)(?:/(move|rename|read))?$").expect("feed regex"));
-    let multi_re = MULTI_RE.get_or_init(|| Regex::new(r"^/items/(read|unread|star|unstar)/multiple$").expect("multi regex"));
-    let item_state_re = ITEM_STATE_RE.get_or_init(|| Regex::new(r"^/items/(\d+)/(read|unread|star|unstar)$").expect("item state regex"));
-    let guid_star_re = GUID_STAR_RE.get_or_init(|| Regex::new(r"^/items/(\d+)/([a-f0-9]{32})/(star|unstar)$").expect("guid star regex"));
+    let ocs_user_re = OCS_USER_RE
+        .get_or_init(|| Regex::new(r"^/ocs/v[12]\.php/cloud/user$").expect("ocs user regex"));
+    let ocs_cap_re = OCS_CAP_RE.get_or_init(|| {
+        Regex::new(r"^/ocs/v[12]\.php/cloud/capabilities$").expect("ocs cap regex")
+    });
+    let api_re = API_RE.get_or_init(|| {
+        Regex::new(r"^(?:/index\.php)?/apps/news/api/v1-([23])(/.*)?$").expect("api regex")
+    });
+    let folder_re =
+        FOLDER_RE.get_or_init(|| Regex::new(r"^/folders/(\d+)(/read)?$").expect("folder regex"));
+    let feed_re = FEED_RE
+        .get_or_init(|| Regex::new(r"^/feeds/(\d+)(?:/(move|rename|read))?$").expect("feed regex"));
+    let multi_re = MULTI_RE.get_or_init(|| {
+        Regex::new(r"^/items/(read|unread|star|unstar)/multiple$").expect("multi regex")
+    });
+    let item_state_re = ITEM_STATE_RE.get_or_init(|| {
+        Regex::new(r"^/items/(\d+)/(read|unread|star|unstar)$").expect("item state regex")
+    });
+    let guid_star_re = GUID_STAR_RE.get_or_init(|| {
+        Regex::new(r"^/items/(\d+)/([a-f0-9]{32})/(star|unstar)$").expect("guid star regex")
+    });
 
     let rest = path.strip_prefix(NEXTCLOUD_BASE).unwrap_or("");
     let trimmed = rest.trim_end_matches('/');
@@ -195,7 +218,11 @@ pub async fn handle_nextcloud(
         return Err(AppError::new("invalidOrigin", 403));
     }
     if *method == Method::OPTIONS {
-        return Ok((StatusCode::NO_CONTENT, [(header::ALLOW, "GET, POST, PUT, DELETE, OPTIONS")]).into_response());
+        return Ok((
+            StatusCode::NO_CONTENT,
+            [(header::ALLOW, "GET, POST, PUT, DELETE, OPTIONS")],
+        )
+            .into_response());
     }
     if sub == "/status.php" {
         return ok(json!({
@@ -211,12 +238,21 @@ pub async fn handle_nextcloud(
     }
 
     // HTTP Basic with an app password; the scope decides read or write access.
-    let authorization = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).unwrap_or("");
-    let Some(encoded) = authorization.strip_prefix("Basic ").filter(|_| authorization.len() <= 2048) else {
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let Some(encoded) = authorization
+        .strip_prefix("Basic ")
+        .filter(|_| authorization.len() <= 2048)
+    else {
         return Err(AppError::new("unauthenticated", 401));
     };
-    let decoded_bytes = B64.decode(encoded).map_err(|_| AppError::new("unauthenticated", 401))?;
-    let decoded = String::from_utf8(decoded_bytes).map_err(|_| AppError::new("unauthenticated", 401))?;
+    let decoded_bytes = B64
+        .decode(encoded)
+        .map_err(|_| AppError::new("unauthenticated", 401))?;
+    let decoded =
+        String::from_utf8(decoded_bytes).map_err(|_| AppError::new("unauthenticated", 401))?;
     let Some((username, secret)) = decoded.split_once(':') else {
         return Err(AppError::new("unauthenticated", 401));
     };
@@ -225,7 +261,13 @@ pub async fn handle_nextcloud(
     }
 
     let write = !matches!(*method, Method::GET | Method::HEAD);
-    let session = runtime.db.read("service_pim_authenticate", json!([username, digest_token(secret), "news", write])).await?;
+    let session = runtime
+        .db
+        .read(
+            "service_pim_authenticate",
+            json!([username, digest_token(secret), "news", write]),
+        )
+        .await?;
     let session_id = session["sessionId"].as_str().unwrap_or_default();
     let session_username = session["username"].as_str().unwrap_or_default();
 
@@ -259,9 +301,12 @@ pub async fn handle_nextcloud(
 
     let mut input: Map<String, Value> = Map::new();
     if write {
-        let bytes = axum::body::to_bytes(body, 256 * 1024).await.map_err(|_| AppError::new("requestTooLarge", 413))?;
+        let bytes = axum::body::to_bytes(body, 256 * 1024)
+            .await
+            .map_err(|_| AppError::new("requestTooLarge", 413))?;
         if !bytes.is_empty() {
-            let value: Value = serde_json::from_slice(&bytes).map_err(|_| AppError::new("invalidJson", 400))?;
+            let value: Value =
+                serde_json::from_slice(&bytes).map_err(|_| AppError::new("invalidJson", 400))?;
             if let Value::Object(map) = value {
                 input = map;
             }
@@ -269,11 +314,19 @@ pub async fn handle_nextcloud(
     }
 
     let param = |name: &str| -> Option<Value> {
-        input.get(name).filter(|v| !v.is_null()).cloned().or_else(|| query.get(name).map(|s| Value::String(s.clone())))
+        input
+            .get(name)
+            .filter(|v| !v.is_null())
+            .cloned()
+            .or_else(|| query.get(name).map(|s| Value::String(s.clone())))
     };
     let scope = || -> Result<Map<String, Value>> {
         let idx = num(param("type").as_ref(), 3)?;
-        let kind = if (0..4).contains(&idx) { TYPE_NAMES[idx as usize] } else { "all" };
+        let kind = if (0..4).contains(&idx) {
+            TYPE_NAMES[idx as usize]
+        } else {
+            "all"
+        };
         let id = num(param("id").as_ref(), 0)?;
         let mut map = Map::new();
         map.insert("type".into(), json!(kind));
@@ -288,19 +341,33 @@ pub async fn handle_nextcloud(
         return ok(json!({ "version": "24.0.0" }));
     }
     if route == "/status" && *method == Method::GET {
-        return ok(json!({ "version": "24.0.0", "warnings": { "improperlyConfiguredCron": false, "incorrectDbCharset": false } }));
+        return ok(
+            json!({ "version": "24.0.0", "warnings": { "improperlyConfiguredCron": false, "incorrectDbCharset": false } }),
+        );
     }
     if route == "/user" && *method == Method::GET {
-        return ok(json!({ "userId": session_username, "displayName": session_username, "lastLoginTimestamp": 0, "avatar": Value::Null }));
+        return ok(
+            json!({ "userId": session_username, "displayName": session_username, "lastLoginTimestamp": 0, "avatar": Value::Null }),
+        );
     }
     if route == "/folders" {
         if *method == Method::GET {
             let overview = call(runtime, session_id, "overview", json!({})).await?;
-            let folders: Vec<Value> = overview["folders"].as_array().map(|a| a.iter().map(nc_folder).collect()).unwrap_or_default();
+            let folders: Vec<Value> = overview["folders"]
+                .as_array()
+                .map(|a| a.iter().map(nc_folder).collect())
+                .unwrap_or_default();
             return ok(json!({ "folders": folders }));
         }
         if *method == Method::POST {
-            let created = call(runtime, session_id, "createFolder", json!({ "name": str_of(input.get("name")) })).await.map_err(|e| match e.code.as_str() {
+            let created = call(
+                runtime,
+                session_id,
+                "createFolder",
+                json!({ "name": str_of(input.get("name")) }),
+            )
+            .await
+            .map_err(|e| match e.code.as_str() {
                 "alreadyExists" => AppError::with("alreadyExists", 409, "Folder exists"),
                 "invalidInput" => AppError::with("invalidInput", 422, "Invalid folder name"),
                 _ => e,
@@ -309,14 +376,27 @@ pub async fn handle_nextcloud(
         }
     }
     if let Some(caps) = folder_re.captures(route) {
-        let id: u64 = caps[1].parse().map_err(|_| AppError::new("invalidInput", 422))?;
+        let id: u64 = caps[1]
+            .parse()
+            .map_err(|_| AppError::new("invalidInput", 422))?;
         if caps.get(2).is_some() && (*method == Method::PUT || *method == Method::POST) {
             call(runtime, session_id, "markRead", json!({ "type": "folder", "id": id, "newestItemId": num(param("newestItemId").as_ref(), 0)? })).await?;
             return empty_ok();
         }
         if caps.get(2).is_none() && *method == Method::PUT {
-            call(runtime, session_id, "renameFolder", json!({ "id": id, "name": str_of(input.get("name")) })).await.map_err(|e| {
-                if e.code == "alreadyExists" { AppError::with("alreadyExists", 409, "Folder exists") } else { e }
+            call(
+                runtime,
+                session_id,
+                "renameFolder",
+                json!({ "id": id, "name": str_of(input.get("name")) }),
+            )
+            .await
+            .map_err(|e| {
+                if e.code == "alreadyExists" {
+                    AppError::with("alreadyExists", 409, "Folder exists")
+                } else {
+                    e
+                }
             })?;
             return empty_ok();
         }
@@ -328,7 +408,10 @@ pub async fn handle_nextcloud(
     if route == "/feeds" {
         if *method == Method::GET {
             let value = call(runtime, session_id, "overview", json!({})).await?;
-            let feeds: Vec<Value> = value["feeds"].as_array().map(|a| a.iter().map(|r| nc_feed(r, v13)).collect()).unwrap_or_default();
+            let feeds: Vec<Value> = value["feeds"]
+                .as_array()
+                .map(|a| a.iter().map(|r| nc_feed(r, v13)).collect())
+                .unwrap_or_default();
             let mut body = Map::new();
             body.insert("feeds".into(), Value::Array(feeds));
             body.insert("starredCount".into(), value["starredCount"].clone());
@@ -344,32 +427,54 @@ pub async fn handle_nextcloud(
                 return Err(AppError::with("invalidInput", 422, "Invalid feed address"));
             }
             let folder_id = num(input.get("folderId"), 0)?;
-            let created = news.subscribe(session_id, &target, folder_id, None, false).await.map_err(|e| {
-                if e.code == "alreadyExists" {
-                    AppError::with("alreadyExists", 409, "Feed exists")
-                } else if !matches!(e.code.as_str(), "forbidden" | "unauthenticated" | "notFound") {
-                    AppError::with(&e.code, 422, &e.message)
-                } else {
-                    e
-                }
-            })?;
+            let created = news
+                .subscribe(session_id, &target, folder_id, None, false)
+                .await
+                .map_err(|e| {
+                    if e.code == "alreadyExists" {
+                        AppError::with("alreadyExists", 409, "Feed exists")
+                    } else if !matches!(
+                        e.code.as_str(),
+                        "forbidden" | "unauthenticated" | "notFound"
+                    ) {
+                        AppError::with(&e.code, 422, &e.message)
+                    } else {
+                        e
+                    }
+                })?;
             let overview = call(runtime, session_id, "overview", json!({})).await?;
-            return ok(json!({ "feeds": [nc_feed(&created, v13)], "newestItemId": overview["newestItemId"] }));
+            return ok(
+                json!({ "feeds": [nc_feed(&created, v13)], "newestItemId": overview["newestItemId"] }),
+            );
         }
     }
     if let Some(caps) = feed_re.captures(route) {
-        let id: u64 = caps[1].parse().map_err(|_| AppError::new("invalidInput", 422))?;
+        let id: u64 = caps[1]
+            .parse()
+            .map_err(|_| AppError::new("invalidInput", 422))?;
         let action = caps.get(2).map(|m| m.as_str());
         if action.is_none() && *method == Method::DELETE {
             call(runtime, session_id, "deleteFeed", json!({ "id": id })).await?;
             return empty_ok();
         }
         if action == Some("move") && (*method == Method::PUT || *method == Method::POST) {
-            call(runtime, session_id, "updateFeed", json!({ "id": id, "folderId": num(input.get("folderId"), 0)? })).await?;
+            call(
+                runtime,
+                session_id,
+                "updateFeed",
+                json!({ "id": id, "folderId": num(input.get("folderId"), 0)? }),
+            )
+            .await?;
             return empty_ok();
         }
         if action == Some("rename") && (*method == Method::PUT || *method == Method::POST) {
-            call(runtime, session_id, "updateFeed", json!({ "id": id, "title": str_of(input.get("feedTitle")) })).await?;
+            call(
+                runtime,
+                session_id,
+                "updateFeed",
+                json!({ "id": id, "title": str_of(input.get("feedTitle")) }),
+            )
+            .await?;
             return empty_ok();
         }
         if action == Some("read") && (*method == Method::PUT || *method == Method::POST) {
@@ -383,31 +488,56 @@ pub async fn handle_nextcloud(
         let mut params = scope()?;
         params.insert("offset".into(), json!(num(param("offset").as_ref(), 0)?));
         params.insert("batch".into(), json!(batch_arg));
-        params.insert("getRead".into(), json!(bool_param(param("getRead").as_ref(), true)));
-        params.insert("oldestFirst".into(), json!(bool_param(param("oldestFirst").as_ref(), false)));
+        params.insert(
+            "getRead".into(),
+            json!(bool_param(param("getRead").as_ref(), true)),
+        );
+        params.insert(
+            "oldestFirst".into(),
+            json!(bool_param(param("oldestFirst").as_ref(), false)),
+        );
         params.insert("bodies".into(), json!(true));
         let result = call(runtime, session_id, "items", Value::Object(params)).await?;
-        let items: Vec<Value> = result["items"].as_array().map(|a| a.iter().map(nc_item).collect()).unwrap_or_default();
+        let items: Vec<Value> = result["items"]
+            .as_array()
+            .map(|a| a.iter().map(nc_item).collect())
+            .unwrap_or_default();
         return ok(json!({ "items": items }));
     }
     if route == "/items/updated" && *method == Method::GET {
         let since = num(param("lastModified").as_ref(), 0)?;
-        let last_modified = if since < 1_000_000_000_000 { since.saturating_mul(1_000_000) } else { since };
+        let last_modified = if since < 1_000_000_000_000 {
+            since.saturating_mul(1_000_000)
+        } else {
+            since
+        };
         let mut params = scope()?;
         params.insert("lastModified".into(), json!(last_modified));
         let result = call(runtime, session_id, "itemsUpdated", Value::Object(params)).await?;
-        let items: Vec<Value> = result["items"].as_array().map(|a| a.iter().map(nc_item).collect()).unwrap_or_default();
+        let items: Vec<Value> = result["items"]
+            .as_array()
+            .map(|a| a.iter().map(nc_item).collect())
+            .unwrap_or_default();
         return ok(json!({ "items": items }));
     }
     if route == "/items/read" && (*method == Method::PUT || *method == Method::POST) {
-        call(runtime, session_id, "markRead", json!({ "type": "all", "newestItemId": num(param("newestItemId").as_ref(), 0)? })).await?;
+        call(
+            runtime,
+            session_id,
+            "markRead",
+            json!({ "type": "all", "newestItemId": num(param("newestItemId").as_ref(), 0)? }),
+        )
+        .await?;
         return empty_ok();
     }
     if let Some(caps) = multi_re.captures(route)
         && (*method == Method::PUT || *method == Method::POST)
     {
         let action = &caps[1];
-        let list = input.get("itemIds").filter(|v| !v.is_null()).or_else(|| input.get("items"));
+        let list = input
+            .get("itemIds")
+            .filter(|v| !v.is_null())
+            .or_else(|| input.get("items"));
         if action == "star" || action == "unstar" {
             let starred = action == "star";
             if let Some(arr) = list.and_then(Value::as_array)
@@ -419,19 +549,39 @@ pub async fn handle_nextcloud(
                     let guid_hash = str_of(v.get("guidHash"));
                     items.push(json!({ "feedId": feed_id, "guidHash": guid_hash }));
                 }
-                call(runtime, session_id, "starByGuid", json!({ "items": items, "starred": starred })).await?;
+                call(
+                    runtime,
+                    session_id,
+                    "starByGuid",
+                    json!({ "items": items, "starred": starred }),
+                )
+                .await?;
             } else {
-                call(runtime, session_id, "setItems", json!({ "ids": parse_ids(list)?, "starred": starred })).await?;
+                call(
+                    runtime,
+                    session_id,
+                    "setItems",
+                    json!({ "ids": parse_ids(list)?, "starred": starred }),
+                )
+                .await?;
             }
         } else {
-            call(runtime, session_id, "setItems", json!({ "ids": parse_ids(list)?, "unread": action == "unread" })).await?;
+            call(
+                runtime,
+                session_id,
+                "setItems",
+                json!({ "ids": parse_ids(list)?, "unread": action == "unread" }),
+            )
+            .await?;
         }
         return empty_ok();
     }
     if let Some(caps) = item_state_re.captures(route)
         && (*method == Method::PUT || *method == Method::POST)
     {
-        let id: u64 = caps[1].parse().map_err(|_| AppError::new("invalidInput", 422))?;
+        let id: u64 = caps[1]
+            .parse()
+            .map_err(|_| AppError::new("invalidInput", 422))?;
         let action = &caps[2];
         let payload = if action == "read" || action == "unread" {
             json!({ "ids": [id], "unread": action == "unread" })
@@ -447,10 +597,18 @@ pub async fn handle_nextcloud(
     if let Some(caps) = guid_star_re.captures(route)
         && (*method == Method::PUT || *method == Method::POST)
     {
-        let feed_id: u64 = caps[1].parse().map_err(|_| AppError::new("invalidInput", 422))?;
+        let feed_id: u64 = caps[1]
+            .parse()
+            .map_err(|_| AppError::new("invalidInput", 422))?;
         let guid_hash = &caps[2];
         let starred = &caps[3] == "star";
-        let result = call(runtime, session_id, "starByGuid", json!({ "items": [{ "feedId": feed_id, "guidHash": guid_hash }], "starred": starred })).await?;
+        let result = call(
+            runtime,
+            session_id,
+            "starByGuid",
+            json!({ "items": [{ "feedId": feed_id, "guidHash": guid_hash }], "starred": starred }),
+        )
+        .await?;
         if result["changed"].as_u64().unwrap_or(0) == 0 {
             return Err(AppError::with("notFound", 404, "Item not found"));
         }

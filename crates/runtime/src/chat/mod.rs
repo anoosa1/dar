@@ -83,7 +83,13 @@ pub(crate) fn local_name(
 ) -> String {
     let cleaned: String = file_name
         .chars()
-        .map(|c| if matches!(c, '/' | '\\' | '\0') { '_' } else { c })
+        .map(|c| {
+            if matches!(c, '/' | '\\' | '\0') {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
     let given = cleaned.trim();
     if !given.is_empty() && given != "." && given != ".." {

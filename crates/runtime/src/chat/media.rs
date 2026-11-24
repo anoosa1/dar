@@ -169,10 +169,13 @@ impl ChatMedia {
             }
         };
 
-        let value = rx
-            .wait_for(|v| v.is_some())
-            .await
-            .map_err(|_| AppError::with("failed", 502, "The attachment could not be downloaded. Try again."))?;
+        let value = rx.wait_for(|v| v.is_some()).await.map_err(|_| {
+            AppError::with(
+                "failed",
+                502,
+                "The attachment could not be downloaded. Try again.",
+            )
+        })?;
         (*value).clone().expect("download result")
     }
 
@@ -304,7 +307,9 @@ impl ChatMedia {
                 return Err(AppError::with(
                     "notConnected",
                     409,
-                    &format!("{name} is not connected, so the attachment cannot be downloaded now."),
+                    &format!(
+                        "{name} is not connected, so the attachment cannot be downloaded now."
+                    ),
                 ));
             }
             let (status, msg) = state_error("failed").expect("failed error");
@@ -431,13 +436,7 @@ impl ChatMedia {
                 .call(
                     "service_begin_upload",
                     json!([
-                        session_id,
-                        upload_id,
-                        file_id,
-                        folder_id,
-                        candidate,
-                        row.size,
-                        row.mime,
+                        session_id, upload_id, file_id, folder_id, candidate, row.size, row.mime,
                         0,
                     ]),
                 )

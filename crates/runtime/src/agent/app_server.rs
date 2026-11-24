@@ -244,7 +244,10 @@ pub fn open_app_server<H: AppServerHandlers>(
                 return false;
             };
             let id = message.get("id").cloned();
-            let method = message.get("method").and_then(Value::as_str).map(str::to_owned);
+            let method = message
+                .get("method")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
             let params = message
                 .get("params")
                 .and_then(Value::as_object)
@@ -257,7 +260,9 @@ pub fn open_app_server<H: AppServerHandlers>(
                     let srv = server_read.clone();
                     tokio::spawn(async move {
                         match h.request(method, params).await {
-                            Ok(result) => srv.write_json(&json!({ "id": id_val, "result": result })),
+                            Ok(result) => {
+                                srv.write_json(&json!({ "id": id_val, "result": result }))
+                            }
                             Err(err) => srv.write_json(&json!({
                                 "id": id_val,
                                 "error": { "code": -32000, "message": err.message },

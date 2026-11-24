@@ -53,7 +53,12 @@ pub async fn task_windows_page_and_keep_collection_scope(t: &Ctx) -> Result<()> 
         let path = path.to_owned();
         async move {
             let r = session.post(&path, &body).await?;
-            ensure!((200..300).contains(&r.status), "POST {path}: {} {}", r.status, r.text());
+            ensure!(
+                (200..300).contains(&r.status),
+                "POST {path}: {} {}",
+                r.status,
+                r.text()
+            );
             r.json()
         }
     };
@@ -121,7 +126,10 @@ pub async fn notebook_export_import_and_unicode_search(t: &Ctx) -> Result<()> {
     let session = login(&base).await?;
 
     let book = session
-        .post("/api/v1/notes/notebooks", &json!({"name": "Notebook pagination"}))
+        .post(
+            "/api/v1/notes/notebooks",
+            &json!({"name": "Notebook pagination"}),
+        )
         .await?
         .json()?;
     let book_id = book["id"].as_str().context("book id")?;
@@ -155,7 +163,9 @@ pub async fn notebook_export_import_and_unicode_search(t: &Ctx) -> Result<()> {
     );
 
     let q = encode_uri_component("zoë");
-    let endpoint = format!("/api/v1/notes/items?collection={book_id}&q={q}&tag=proof&view=favorites&sort=title");
+    let endpoint = format!(
+        "/api/v1/notes/items?collection={book_id}&q={q}&tag=proof&view=favorites&sort=title"
+    );
     let first = session.get(&endpoint).await?.json()?;
     let next_cursor = first["nextCursor"].as_str().context("nextCursor")?;
     let second = session
@@ -183,7 +193,10 @@ pub async fn notebook_export_import_and_unicode_search(t: &Ctx) -> Result<()> {
         .await?
         .json()?;
     assert_eq!(exported["format"], "dar-notebook-v1");
-    let mut exported_items = exported["items"].as_array().context("exported items")?.clone();
+    let mut exported_items = exported["items"]
+        .as_array()
+        .context("exported items")?
+        .clone();
     exported_items.sort_by(|a, b| {
         a["title"]
             .as_str()
@@ -291,11 +304,13 @@ pub async fn due_only_task_alarms_and_completion(t: &Ctx) -> Result<()> {
     deliver(db).await?;
 
     inbox = session.get("/api/v1/pim/reminders").await?.json()?;
-    assert!(!inbox["items"]
-        .as_array()
-        .context("inbox items")?
-        .iter()
-        .any(|i| i["resourceId"] == task_id));
+    assert!(
+        !inbox["items"]
+            .as_array()
+            .context("inbox items")?
+            .iter()
+            .any(|i| i["resourceId"] == task_id)
+    );
     Ok(())
 }
 
@@ -457,7 +472,14 @@ pub async fn notes_revisions_fidelity_move_copy_trash_and_sharing(t: &Ctx) -> Re
         api_request(session, &format!("/api/v1/notes{path}"), method, body, tag).await
     }
 
-    let r = api(&admin, "/notebooks", "POST", Some(&json!({"name": "Notes proof"})), None).await?;
+    let r = api(
+        &admin,
+        "/notebooks",
+        "POST",
+        Some(&json!({"name": "Notes proof"})),
+        None,
+    )
+    .await?;
     assert_eq!(r.status, 201);
     let book = r.json()?;
     let book_id = book["id"].as_str().context("book id")?;
@@ -492,7 +514,9 @@ pub async fn notes_revisions_fidelity_move_copy_trash_and_sharing(t: &Ctx) -> Re
         &admin,
         &format!("/items/{id}"),
         "PUT",
-        Some(&json!({"title": "Edited", "content": content, "tags": ["project"], "favorite": true})),
+        Some(
+            &json!({"title": "Edited", "content": content, "tags": ["project"], "favorite": true}),
+        ),
         Some(&tag),
     )
     .await?;
@@ -529,11 +553,13 @@ pub async fn notes_revisions_fidelity_move_copy_trash_and_sharing(t: &Ctx) -> Re
     )
     .await?
     .json()?;
-    assert!(search["items"]
-        .as_array()
-        .context("search items")?
-        .iter()
-        .any(|n| n["id"] == id.as_str()));
+    assert!(
+        search["items"]
+            .as_array()
+            .context("search items")?
+            .iter()
+            .any(|n| n["id"] == id.as_str())
+    );
 
     let r = api(
         &admin,
@@ -654,9 +680,15 @@ pub async fn notes_revisions_fidelity_move_copy_trash_and_sharing(t: &Ctx) -> Re
         200
     );
     assert_eq!(
-        api(&admin, &format!("/items/{id}"), "DELETE", None, Some(&etag(&note)))
-            .await?
-            .status,
+        api(
+            &admin,
+            &format!("/items/{id}"),
+            "DELETE",
+            None,
+            Some(&etag(&note))
+        )
+        .await?
+        .status,
         200
     );
     assert_eq!(
@@ -689,15 +721,27 @@ pub async fn notes_revisions_fidelity_move_copy_trash_and_sharing(t: &Ctx) -> Re
     assert_eq!(note["collectionId"], book_id);
 
     assert_eq!(
-        api(&admin, &format!("/items/{id}"), "DELETE", None, Some(&etag(&note)))
-            .await?
-            .status,
+        api(
+            &admin,
+            &format!("/items/{id}"),
+            "DELETE",
+            None,
+            Some(&etag(&note))
+        )
+        .await?
+        .status,
         200
     );
     assert_eq!(
-        api(&admin, &format!("/trash/{id}"), "DELETE", None, Some(&etag(&note)))
-            .await?
-            .status,
+        api(
+            &admin,
+            &format!("/trash/{id}"),
+            "DELETE",
+            None,
+            Some(&etag(&note))
+        )
+        .await?
+        .status,
         200
     );
     assert_eq!(
@@ -723,7 +767,14 @@ pub async fn tasks_hierarchy_cycles_completion_copy_move_and_vtodo(t: &Ctx) -> R
         api_request(session, &format!("/api/v1/tasks{path}"), method, body, tag).await
     }
 
-    let r = api(&admin, "/lists", "POST", Some(&json!({"name": "Tasks proof"})), None).await?;
+    let r = api(
+        &admin,
+        "/lists",
+        "POST",
+        Some(&json!({"name": "Tasks proof"})),
+        None,
+    )
+    .await?;
     assert_eq!(r.status, 201);
     let list = r.json()?;
     let list_id = list["id"].as_str().context("list id")?;
@@ -756,7 +807,9 @@ pub async fn tasks_hierarchy_cycles_completion_copy_move_and_vtodo(t: &Ctx) -> R
         &admin,
         "/items",
         "POST",
-        Some(&json!({"collectionId": list_id, "data": {"title": "Child", "parentUid": parent_uid}})),
+        Some(
+            &json!({"collectionId": list_id, "data": {"title": "Child", "parentUid": parent_uid}}),
+        ),
         None,
     )
     .await?;
@@ -855,9 +908,15 @@ pub async fn tasks_hierarchy_cycles_completion_copy_move_and_vtodo(t: &Ctx) -> R
             .is_empty()
     );
 
-    let exported = api(&admin, &format!("/lists/{dest_id}/export"), "GET", None, None)
-        .await?
-        .text();
+    let exported = api(
+        &admin,
+        &format!("/lists/{dest_id}/export"),
+        "GET",
+        None,
+        None,
+    )
+    .await?
+    .text();
     assert!(exported.contains("BEGIN:VTODO"));
 
     let events = admin

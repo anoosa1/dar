@@ -11,7 +11,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::workspace::{ChatAvatar, narrow, now, phone_of};
-use super::{BASE, CHAT_LIMITS_ACCOUNTS, CHAT_LIMITS_NAME, ChatAccount, ChatFriend, ChatLinkState, ChatMessage, ChatThread, local_name, platform_name, qr_matrix, qr_path, search_params};
+use super::{
+    BASE, CHAT_LIMITS_ACCOUNTS, CHAT_LIMITS_NAME, ChatAccount, ChatFriend, ChatLinkState,
+    ChatMessage, ChatThread, local_name, platform_name, qr_matrix, qr_path, search_params,
+};
 use crate::api::{self, BrowserSession, Req, format_bytes};
 use crate::files::picker::{FolderPicker, Selection};
 use crate::files::types::FileTile;
@@ -24,17 +27,32 @@ fn write_clipboard(text: &str) {
 }
 
 #[component]
-pub(super) fn SaveMediaPane(session: BrowserSession, thread_id: String, message: ChatMessage, platform: String, on_close: Callback<()>, on_saved: Callback<String>) -> impl IntoView {
+pub(super) fn SaveMediaPane(
+    session: BrowserSession,
+    thread_id: String,
+    message: ChatMessage,
+    platform: String,
+    on_close: Callback<()>,
+    on_saved: Callback<String>,
+) -> impl IntoView {
     let folder: RwSignal<Option<Selection>> = RwSignal::new(None);
     let busy = RwSignal::new(false);
     let error = RwSignal::new(String::new());
     let media = message.media.clone().unwrap_or_default();
-    let name = local_name(&message.kind, &media.mime, &message.file_name, message.at, &platform);
+    let name = local_name(
+        &message.kind,
+        &media.mime,
+        &message.file_name,
+        message.at,
+        &platform,
+    );
     let csrf = StoredValue::new(session.csrf_token.clone());
     let request = StoredValue::new((thread_id, message.message_id.clone()));
     let save = move |event: web_sys::SubmitEvent| {
         event.prevent_default();
-        let Some(target) = folder.get_untracked() else { return };
+        let Some(target) = folder.get_untracked() else {
+            return;
+        };
         busy.set(true);
         error.set(String::new());
         let (thread_id, message_id) = request.get_value();
@@ -72,13 +90,23 @@ pub(super) fn SaveMediaPane(session: BrowserSession, thread_id: String, message:
 }
 
 #[component]
-pub(super) fn LinkPane(session: BrowserSession, account_id: Option<String>, platform: Option<String>, on_close: Callback<()>, on_linked: Callback<String>) -> impl IntoView {
+pub(super) fn LinkPane(
+    session: BrowserSession,
+    account_id: Option<String>,
+    platform: Option<String>,
+    on_close: Callback<()>,
+    on_linked: Callback<String>,
+) -> impl IntoView {
     let given = platform.is_some();
     let again = account_id.is_some();
     let account_id = StoredValue::new(account_id);
     let platform = RwSignal::new(platform.unwrap_or_else(|| "whatsapp".into()));
     let discord = Memo::new(move |_| platform.get() == "discord");
-    let method = RwSignal::new(if narrow() { "phone".to_owned() } else { "qr".to_owned() });
+    let method = RwSignal::new(if narrow() {
+        "phone".to_owned()
+    } else {
+        "qr".to_owned()
+    });
     let name = RwSignal::new("Personal".to_owned());
     let phone = RwSignal::new(String::new());
     let link: RwSignal<Option<ChatLinkState>> = RwSignal::new(None);
@@ -99,14 +127,21 @@ pub(super) fn LinkPane(session: BrowserSession, account_id: Option<String>, plat
         let tick = move || {
             let id = id.clone();
             spawn_local(async move {
-                if let Ok(next) = api::get::<ChatLinkState>(&format!("{BASE}/accounts/{id}/link")).await {
+                if let Ok(next) =
+                    api::get::<ChatLinkState>(&format!("{BASE}/accounts/{id}/link")).await
+                {
                     if cancelled.with_value(|c| c.load(Ordering::Relaxed)) {
                         return;
                     }
                     let paired = next.state == "paired";
                     link.try_set(Some(next));
                     if paired {
-                        let _ = set_timeout_with_handle(move || { on_linked.try_run(id.clone()); }, Duration::from_millis(1200));
+                        let _ = set_timeout_with_handle(
+                            move || {
+                                on_linked.try_run(id.clone());
+                            },
+                            Duration::from_millis(1200),
+                        );
                     }
                 }
             });
@@ -138,9 +173,15 @@ pub(super) fn LinkPane(session: BrowserSession, account_id: Option<String>, plat
             struct Started {
                 account_id: String,
             }
-            match api::send::<Started>(&format!("{BASE}/accounts/link"), "POST", Some(body), &csrf).await {
+            match api::send::<Started>(&format!("{BASE}/accounts/link"), "POST", Some(body), &csrf)
+                .await
+            {
                 Ok(result) => {
-                    link.try_set(Some(ChatLinkState { account_id: result.account_id, state: "starting".into(), ..Default::default() }));
+                    link.try_set(Some(ChatLinkState {
+                        account_id: result.account_id,
+                        state: "starting".into(),
+                        ..Default::default()
+                    }));
                 }
                 Err(cause) => {
                     error.try_set(cause.message);
@@ -151,17 +192,38 @@ pub(super) fn LinkPane(session: BrowserSession, account_id: Option<String>, plat
     };
     let close = move || {
         cancelled.with_value(|c| c.store(true, Ordering::Relaxed));
-        let target = id.get_untracked().filter(|_| state.get_untracked().as_deref() != Some("paired"));
+        let target = id
+            .get_untracked()
+            .filter(|_| state.get_untracked().as_deref() != Some("paired"));
         let csrf = csrf.get_value();
         spawn_local(async move {
             if let Some(id) = target {
-                let _ = api::request::<Value>(&format!("{BASE}/accounts/{id}/link"), Req { method: "DELETE", csrf: Some(&csrf), ..Default::default() }).await;
+                let _ = api::request::<Value>(
+                    &format!("{BASE}/accounts/{id}/link"),
+                    Req {
+                        method: "DELETE",
+                        csrf: Some(&csrf),
+                        ..Default::default()
+                    },
+                )
+                .await;
             }
-            { on_close.try_run(()); };
+            {
+                on_close.try_run(());
+            };
         });
     };
-    let qr = Memo::new(move |_| link.with(|l| l.as_ref().and_then(|l| l.qr.clone())).and_then(|text| qr_matrix(&text).ok()).map(|m| qr_path(&m)));
-    let left = move || link.with(|l| l.as_ref().and_then(|l| l.expires_at)).map_or(0, |at| ((at - clock.get()) / 1000.0).round().max(0.0) as i64);
+    let qr = Memo::new(move |_| {
+        link.with(|l| l.as_ref().and_then(|l| l.qr.clone()))
+            .and_then(|text| qr_matrix(&text).ok())
+            .map(|m| qr_path(&m))
+    });
+    let left = move || {
+        link.with(|l| l.as_ref().and_then(|l| l.expires_at))
+            .map_or(0, |at| {
+                ((at - clock.get()) / 1000.0).round().max(0.0) as i64
+            })
+    };
     let service = Memo::new(move |_| platform_name(&platform.get()));
     let title = Signal::derive(move || {
         if again {
@@ -269,18 +331,37 @@ struct ContactChoice {
 
 impl Default for ContactChoice {
     fn default() -> Self {
-        Self { name: String::new(), phone: String::new(), label: String::new(), book: String::new(), href: String::new() }
+        Self {
+            name: String::new(),
+            phone: String::new(),
+            label: String::new(),
+            book: String::new(),
+            href: String::new(),
+        }
     }
 }
 
-fn open_chat(csrf: String, body: Value, busy: RwSignal<bool>, error: RwSignal<String>, on_opened: Callback<ChatThread>, phone: bool) {
+fn open_chat(
+    csrf: String,
+    body: Value,
+    busy: RwSignal<bool>,
+    error: RwSignal<String>,
+    on_opened: Callback<ChatThread>,
+    phone: bool,
+) {
     busy.set(true);
     error.set(String::new());
     spawn_local(async move {
         match api::send::<ChatThread>(&format!("{BASE}/chats"), "POST", Some(body), &csrf).await {
-            Ok(thread) => { on_opened.try_run(thread); },
+            Ok(thread) => {
+                on_opened.try_run(thread);
+            }
             Err(cause) => {
-                error.try_set(if phone && cause.message == "invalidInput" { "Enter the full number with its country code.".into() } else { cause.message });
+                error.try_set(if phone && cause.message == "invalidInput" {
+                    "Enter the full number with its country code.".into()
+                } else {
+                    cause.message
+                });
                 busy.try_set(false);
             }
         }
@@ -289,7 +370,12 @@ fn open_chat(csrf: String, body: Value, busy: RwSignal<bool>, error: RwSignal<St
 
 /// New chat: pick a Dar contact with a phone number, or type a number.
 #[component]
-pub(super) fn NewChatPane(session: BrowserSession, account: ChatAccount, on_close: Callback<()>, on_opened: Callback<ChatThread>) -> impl IntoView {
+pub(super) fn NewChatPane(
+    session: BrowserSession,
+    account: ChatAccount,
+    on_close: Callback<()>,
+    on_opened: Callback<ChatThread>,
+) -> impl IntoView {
     let query = RwSignal::new(String::new());
     let choices: RwSignal<Option<Vec<ContactChoice>>> = RwSignal::new(None);
     let busy = RwSignal::new(false);
@@ -306,21 +392,46 @@ pub(super) fn NewChatPane(session: BrowserSession, account: ChatAccount, on_clos
                 struct Items {
                     items: Vec<ContactChoice>,
                 }
-                let result = api::get::<Items>(&format!("{BASE}/contacts?{}", search_params(&[("accountId", &id), ("q", &q)]))).await;
+                let result = api::get::<Items>(&format!(
+                    "{BASE}/contacts?{}",
+                    search_params(&[("accountId", &id), ("q", &q)])
+                ))
+                .await;
                 choices.try_set(Some(result.map(|r| r.items).unwrap_or_default()));
             });
         };
-        let delay = if query.get_untracked().is_empty() { 0 } else { 200 };
+        let delay = if query.get_untracked().is_empty() {
+            0
+        } else {
+            200
+        };
         if let Ok(handle) = set_timeout_with_handle(fetch, Duration::from_millis(delay)) {
             on_cleanup(move || handle.clear());
         }
     });
     let number = Memo::new(move |_| {
-        let typed: String = query.get().chars().filter(|c| c.is_ascii_digit() || *c == '+').collect();
+        let typed: String = query
+            .get()
+            .chars()
+            .filter(|c| c.is_ascii_digit() || *c == '+')
+            .collect();
         let digits = typed.strip_prefix('+').unwrap_or(&typed);
-        if (7..=15).contains(&digits.len()) && digits.chars().all(|c| c.is_ascii_digit()) { typed } else { String::new() }
+        if (7..=15).contains(&digits.len()) && digits.chars().all(|c| c.is_ascii_digit()) {
+            typed
+        } else {
+            String::new()
+        }
     });
-    let open = move |phone: String| open_chat(csrf.get_value(), json!({ "accountId": account_id.get_value(), "phone": phone }), busy, error, on_opened, true);
+    let open = move |phone: String| {
+        open_chat(
+            csrf.get_value(),
+            json!({ "accountId": account_id.get_value(), "phone": phone }),
+            busy,
+            error,
+            on_opened,
+            true,
+        )
+    };
     let name = account.name.clone();
     view! {
         <EditorPane title="New chat" on_close=on_close>
@@ -372,7 +483,12 @@ pub(super) fn NewChatPane(session: BrowserSession, account: ChatAccount, on_clos
 
 /// Discord: start a direct message with a friend.
 #[component]
-pub(super) fn NewMessagePane(session: BrowserSession, account: ChatAccount, on_close: Callback<()>, on_opened: Callback<ChatThread>) -> impl IntoView {
+pub(super) fn NewMessagePane(
+    session: BrowserSession,
+    account: ChatAccount,
+    on_close: Callback<()>,
+    on_opened: Callback<ChatThread>,
+) -> impl IntoView {
     let query = RwSignal::new(String::new());
     let friends: RwSignal<Option<Vec<ChatFriend>>> = RwSignal::new(None);
     let busy = RwSignal::new(false);
@@ -384,7 +500,12 @@ pub(super) fn NewMessagePane(session: BrowserSession, account: ChatAccount, on_c
         struct Friends {
             friends: Vec<ChatFriend>,
         }
-        match api::get::<Friends>(&format!("{BASE}/friends?{}", search_params(&[("accountId", &account_id.get_value())]))).await {
+        match api::get::<Friends>(&format!(
+            "{BASE}/friends?{}",
+            search_params(&[("accountId", &account_id.get_value())])
+        ))
+        .await
+        {
             Ok(r) => {
                 friends.try_set(Some(r.friends));
             }
@@ -396,9 +517,29 @@ pub(super) fn NewMessagePane(session: BrowserSession, account: ChatAccount, on_c
     });
     let shown = Memo::new(move |_| {
         let q = query.get().trim().to_lowercase();
-        friends.with(|f| f.iter().flatten().filter(|f| q.is_empty() || f.name.to_lowercase().contains(&q) || f.username.to_lowercase().contains(&q)).take(50).cloned().collect::<Vec<_>>())
+        friends.with(|f| {
+            f.iter()
+                .flatten()
+                .filter(|f| {
+                    q.is_empty()
+                        || f.name.to_lowercase().contains(&q)
+                        || f.username.to_lowercase().contains(&q)
+                })
+                .take(50)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
     });
-    let open = move |user: String| open_chat(csrf.get_value(), json!({ "accountId": account_id.get_value(), "user": user }), busy, error, on_opened, false);
+    let open = move |user: String| {
+        open_chat(
+            csrf.get_value(),
+            json!({ "accountId": account_id.get_value(), "user": user }),
+            busy,
+            error,
+            on_opened,
+            false,
+        )
+    };
     let name = account.name.clone();
     view! {
         <EditorPane title="New message" on_close=on_close>
@@ -444,9 +585,20 @@ struct Book {
 
 /// Saves a WhatsApp number as a Dar contact; nothing is written to WhatsApp.
 #[component]
-pub(super) fn AddContactPane(session: BrowserSession, thread: ChatThread, on_close: Callback<()>, on_saved: Callback<String>) -> impl IntoView {
+pub(super) fn AddContactPane(
+    session: BrowserSession,
+    thread: ChatThread,
+    on_close: Callback<()>,
+    on_saved: Callback<String>,
+) -> impl IntoView {
     let phone = phone_of(&thread.jid);
-    let name = RwSignal::new(if !thread.whatsapp_name.is_empty() && thread.whatsapp_name != phone { thread.whatsapp_name.clone() } else { String::new() });
+    let name = RwSignal::new(
+        if !thread.whatsapp_name.is_empty() && thread.whatsapp_name != phone {
+            thread.whatsapp_name.clone()
+        } else {
+            String::new()
+        },
+    );
     let books: RwSignal<Option<Vec<Book>>> = RwSignal::new(None);
     let book = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
@@ -460,7 +612,8 @@ pub(super) fn AddContactPane(session: BrowserSession, thread: ChatThread, on_clo
         }
         match api::get::<Items>("/api/v1/contacts/books").await {
             Ok(r) => {
-                let writable: Vec<Book> = r.items.into_iter().filter(|b| b.role != "read").collect();
+                let writable: Vec<Book> =
+                    r.items.into_iter().filter(|b| b.role != "read").collect();
                 book.try_set(writable.first().map(|b| b.id.clone()).unwrap_or_default());
                 books.try_set(Some(writable));
             }
@@ -481,9 +634,21 @@ pub(super) fn AddContactPane(session: BrowserSession, thread: ChatThread, on_clo
         let phone = phone_sv.get_value();
         spawn_local(async move {
             let body = json!({ "data": { "displayName": display, "phones": [{ "value": phone, "label": "cell" }] } }).to_string();
-            let result = api::request::<Value>(&format!("/api/v1/contacts/books/{target}/items"), Req { method: "POST", body: Some(body), csrf: Some(&csrf), headers: &[("if-none-match", "*")], ..Default::default() }).await;
+            let result = api::request::<Value>(
+                &format!("/api/v1/contacts/books/{target}/items"),
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&csrf),
+                    headers: &[("if-none-match", "*")],
+                    ..Default::default()
+                },
+            )
+            .await;
             match result {
-                Ok(_) => { on_saved.try_run(display); },
+                Ok(_) => {
+                    on_saved.try_run(display);
+                }
                 Err(cause) => {
                     error.try_set(cause.message);
                     busy.try_set(false);
@@ -513,7 +678,12 @@ pub(super) fn AddContactPane(session: BrowserSession, thread: ChatThread, on_clo
 }
 
 #[component]
-pub(super) fn RenamePane(session: BrowserSession, account: ChatAccount, on_close: Callback<()>, on_saved: Callback<()>) -> impl IntoView {
+pub(super) fn RenamePane(
+    session: BrowserSession,
+    account: ChatAccount,
+    on_close: Callback<()>,
+    on_saved: Callback<()>,
+) -> impl IntoView {
     let name = RwSignal::new(account.name.clone());
     let busy = RwSignal::new(false);
     let error = RwSignal::new(String::new());
@@ -523,10 +693,23 @@ pub(super) fn RenamePane(session: BrowserSession, account: ChatAccount, on_close
         event.prevent_default();
         busy.set(true);
         error.set(String::new());
-        let (csrf, id, value) = (csrf.get_value(), id.get_value(), name.get_untracked().trim().to_owned());
+        let (csrf, id, value) = (
+            csrf.get_value(),
+            id.get_value(),
+            name.get_untracked().trim().to_owned(),
+        );
         spawn_local(async move {
-            match api::send::<Value>(&format!("{BASE}/accounts/{id}"), "PATCH", Some(json!({ "name": value })), &csrf).await {
-                Ok(_) => { on_saved.try_run(()); },
+            match api::send::<Value>(
+                &format!("{BASE}/accounts/{id}"),
+                "PATCH",
+                Some(json!({ "name": value })),
+                &csrf,
+            )
+            .await
+            {
+                Ok(_) => {
+                    on_saved.try_run(());
+                }
                 Err(cause) => {
                     error.try_set(cause.message);
                     busy.try_set(false);
@@ -549,7 +732,12 @@ pub(super) fn RenamePane(session: BrowserSession, account: ChatAccount, on_close
 }
 
 #[component]
-pub(super) fn ChatSettings(accounts: Signal<Vec<ChatAccount>>, on_close: Callback<()>, on_link: Callback<()>, actions: Callback<ChatAccount, Vec<MenuAction>>) -> impl IntoView {
+pub(super) fn ChatSettings(
+    accounts: Signal<Vec<ChatAccount>>,
+    on_close: Callback<()>,
+    on_link: Callback<()>,
+    actions: Callback<ChatAccount, Vec<MenuAction>>,
+) -> impl IntoView {
     let section = RwSignal::new("Accounts");
     let notice = RwSignal::new(None);
     view! {

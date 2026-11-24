@@ -10,31 +10,34 @@ pub mod types;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use spacetimedb_sdk::{DbContext, SubscriptionHandle as _, Table};
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 
-use crate::api::{self, format_bytes, BrowserSession, Req};
+use crate::api::{self, BrowserSession, Req, format_bytes};
 use crate::dates::{local_date_time, relative, short_date};
 use crate::icons::Icon;
-use crate::live::{answered, procedure, reducer, replied, Connection, Live, LiveStatus};
+use crate::live::{Connection, Live, LiveStatus, answered, procedure, reducer, replied};
 use crate::module_bindings::*;
 use crate::settings::{AppSettingsButton, FilesSettings};
 use crate::shared::{context, save_preferences};
 use crate::shell::WorkspaceHeader;
-use crate::ui::{document, listen, window, ActionMenu, ConnectionState, ConnectionStatus, Dialog, EditorPane, MenuAction, Select};
-use editor::{editable_text, write_text_file, TextEditor, TextFile};
+use crate::ui::{
+    ActionMenu, ConnectionState, ConnectionStatus, Dialog, EditorPane, MenuAction, Select,
+    document, listen, window,
+};
+use editor::{TextEditor, TextFile, editable_text, write_text_file};
 use locked::{LockedFolder, UnlockDialog, UnlockForm};
 use picker::{FolderPicker, Selection};
 use preview::FilePreview;
-use types::{file_type_label, FileTile};
+use types::{FileTile, file_type_label};
 
 /// A Files entry as the module's views and procedures describe it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -57,7 +60,21 @@ pub struct FileEntry {
 
 impl From<crate::module_bindings::FileEntry> for FileEntry {
     fn from(e: crate::module_bindings::FileEntry) -> Self {
-        Self { id: e.id, owner_id: e.owner_id, parent_id: e.parent_id, name: e.name, kind: e.kind, blob_id: e.blob_id, size: e.size, media_type: e.media_type, revision: e.revision, modified_at: e.modified_at, trashed: e.trashed, favorite: e.favorite, list_key: e.list_key }
+        Self {
+            id: e.id,
+            owner_id: e.owner_id,
+            parent_id: e.parent_id,
+            name: e.name,
+            kind: e.kind,
+            blob_id: e.blob_id,
+            size: e.size,
+            media_type: e.media_type,
+            revision: e.revision,
+            modified_at: e.modified_at,
+            trashed: e.trashed,
+            favorite: e.favorite,
+            list_key: e.list_key,
+        }
     }
 }
 
@@ -119,10 +136,19 @@ fn listed(rows: impl Iterator<Item = crate::module_bindings::FileEntry>) -> Vec<
     rows
 }
 
-const SECTIONS: [(&str, &str, &str); 5] = [("files", "All files", "folder"), ("favorites", "Favorites", "star"), ("shared", "Shared with you", "share"), ("locked", "Locked folder", "lock"), ("trash", "Deleted files", "trash")];
+const SECTIONS: [(&str, &str, &str); 5] = [
+    ("files", "All files", "folder"),
+    ("favorites", "Favorites", "star"),
+    ("shared", "Shared with you", "share"),
+    ("locked", "Locked folder", "lock"),
+    ("trash", "Deleted files", "trash"),
+];
 
 fn is_uuid_like(id: &str) -> bool {
-    id.len() == 36 && id.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase() || b == b'-')
+    id.len() == 36
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase() || b == b'-')
 }
 
 fn read_location() -> (&'static str, String) {
@@ -130,11 +156,22 @@ fn read_location() -> (&'static str, String) {
     let params = web_sys::UrlSearchParams::new_with_str(&search).expect("params");
     let section = params.get("section").unwrap_or_default();
     let id = params.get("folder").unwrap_or_default();
-    (SECTIONS.iter().find(|s| s.0 == section).map(|s| s.0).unwrap_or("files"), if is_uuid_like(&id) { id } else { String::new() })
+    (
+        SECTIONS
+            .iter()
+            .find(|s| s.0 == section)
+            .map(|s| s.0)
+            .unwrap_or("files"),
+        if is_uuid_like(&id) { id } else { String::new() },
+    )
 }
 
 fn modifier() -> &'static str {
-    let mac = window().navigator().platform().map(|p| p.contains("Mac") || p.contains("iPhone") || p.contains("iPad")).unwrap_or(false);
+    let mac = window()
+        .navigator()
+        .platform()
+        .map(|p| p.contains("Mac") || p.contains("iPhone") || p.contains("iPad"))
+        .unwrap_or(false);
     if mac { "⌘" } else { "Ctrl+" }
 }
 
@@ -144,7 +181,8 @@ fn failure(text: &str) -> String {
     if has("lockedFolder") {
         "Unlock the Locked folder with your password to continue.".into()
     } else if has("conflict") {
-        "This item changed or that name is already in use. Refresh the details and try again.".into()
+        "This item changed or that name is already in use. Refresh the details and try again."
+            .into()
     } else if has("forbidden") || has("unauthenticated") {
         "Your access changed. Refresh the page or sign in again.".into()
     } else if has("invalidName") {
@@ -159,7 +197,10 @@ fn failure(text: &str) -> String {
 }
 
 fn thumbnail_ok(entry: &FileEntry) -> bool {
-    matches!(entry.media_type.as_str(), "image/png" | "image/jpeg" | "image/gif" | "image/webp") && entry.size <= 8.0 * 1024.0 * 1024.0
+    matches!(
+        entry.media_type.as_str(),
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+    ) && entry.size <= 8.0 * 1024.0 * 1024.0
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -213,8 +254,15 @@ fn cancel_upload(id: &str) {
 }
 
 /// Sends `file` to an upload reservation with progress (`XMLHttpRequest`, as the React client).
-async fn put_upload(transfer: &str, url: &str, csrf: &str, file: &web_sys::File, progress: impl Fn(f64) + 'static) -> Result<(), String> {
-    let xhr = web_sys::XmlHttpRequest::new().map_err(|_| "The upload could not be completed.".to_owned())?;
+async fn put_upload(
+    transfer: &str,
+    url: &str,
+    csrf: &str,
+    file: &web_sys::File,
+    progress: impl Fn(f64) + 'static,
+) -> Result<(), String> {
+    let xhr = web_sys::XmlHttpRequest::new()
+        .map_err(|_| "The upload could not be completed.".to_owned())?;
     let (sender, receiver) = futures::channel::oneshot::channel::<Result<(), String>>();
     let sender = std::rc::Rc::new(RefCell::new(Some(sender)));
     let finish = {
@@ -227,7 +275,14 @@ async fn put_upload(transfer: &str, url: &str, csrf: &str, file: &web_sys::File,
     };
     let _ = xhr.open("PUT", url);
     let _ = xhr.set_request_header("x-csrf-token", csrf);
-    let on_progress = Closure::<dyn FnMut(web_sys::ProgressEvent)>::new(move |e: web_sys::ProgressEvent| progress(if e.length_computable() { e.loaded() / e.total() } else { 0.0 }));
+    let on_progress =
+        Closure::<dyn FnMut(web_sys::ProgressEvent)>::new(move |e: web_sys::ProgressEvent| {
+            progress(if e.length_computable() {
+                e.loaded() / e.total()
+            } else {
+                0.0
+            })
+        });
     if let Ok(upload) = xhr.upload() {
         upload.set_onprogress(Some(on_progress.as_ref().unchecked_ref()));
     }
@@ -239,19 +294,35 @@ async fn put_upload(transfer: &str, url: &str, csrf: &str, file: &web_sys::File,
                 finish(Ok(()))
             } else {
                 let text = xhr.response_text().ok().flatten().unwrap_or_default();
-                let message = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v| v["error"]["message"].as_str().map(str::to_owned));
-                finish(Err(message.unwrap_or_else(|| "The upload could not be completed.".into())))
+                let message = serde_json::from_str::<serde_json::Value>(&text)
+                    .ok()
+                    .and_then(|v| v["error"]["message"].as_str().map(str::to_owned));
+                finish(Err(message.unwrap_or_else(|| {
+                    "The upload could not be completed.".into()
+                })))
             }
         })
     };
-    let on_error = { let finish = finish.clone(); Closure::<dyn FnMut()>::new(move || finish(Err("The connection was interrupted. Try the upload again.".into()))) };
-    let on_abort = { let finish = finish.clone(); Closure::<dyn FnMut()>::new(move || finish(Err("Upload cancelled.".into()))) };
+    let on_error = {
+        let finish = finish.clone();
+        Closure::<dyn FnMut()>::new(move || {
+            finish(Err(
+                "The connection was interrupted. Try the upload again.".into()
+            ))
+        })
+    };
+    let on_abort = {
+        let finish = finish.clone();
+        Closure::<dyn FnMut()>::new(move || finish(Err("Upload cancelled.".into())))
+    };
     xhr.set_onload(Some(on_load.as_ref().unchecked_ref()));
     xhr.set_onerror(Some(on_error.as_ref().unchecked_ref()));
     xhr.set_onabort(Some(on_abort.as_ref().unchecked_ref()));
     UPLOADS.with(|u| u.borrow_mut().insert(transfer.to_owned(), xhr.clone()));
     let _ = xhr.send_with_opt_blob(Some(file));
-    let result = receiver.await.unwrap_or_else(|_| Err("Upload cancelled.".into()));
+    let result = receiver
+        .await
+        .unwrap_or_else(|_| Err("Upload cancelled.".into()));
     drop((on_progress, on_load, on_error, on_abort));
     result
 }
@@ -273,7 +344,13 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     let roles: RwSignal<HashMap<String, String>> = RwSignal::new(HashMap::new());
     let clipboard_key = format!("dar.file-clipboard.{user_id}");
     let clipboard: RwSignal<Option<Clipboard>> = RwSignal::new(
-        window().session_storage().ok().flatten().and_then(|s| s.get_item(&clipboard_key).ok().flatten()).and_then(|v| serde_json::from_str::<Clipboard>(&v).ok()).filter(|c| c.user_id == user_id && (c.mode == "cut" || c.mode == "copy")),
+        window()
+            .session_storage()
+            .ok()
+            .flatten()
+            .and_then(|s| s.get_item(&clipboard_key).ok().flatten())
+            .and_then(|v| serde_json::from_str::<Clipboard>(&v).ok())
+            .filter(|c| c.user_id == user_id && (c.mode == "cut" || c.mode == "copy")),
     );
     let clipboard_key = StoredValue::new(clipboard_key);
     let connection: RwSignal<Option<Connection>> = RwSignal::new(None);
@@ -323,23 +400,42 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     let replacement_input = NodeRef::<html::Input>::new();
     let detail_sequence = RwSignal::new(0u32);
     let navigation_ready = Arc::new(AtomicBool::new(false));
-    let initial_file = RwSignal::new(web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default()).ok().and_then(|p| p.get("file")));
+    let initial_file = RwSignal::new(
+        web_sys::UrlSearchParams::new_with_str(&window().location().search().unwrap_or_default())
+            .ok()
+            .and_then(|p| p.get("file")),
+    );
 
     let preferences = Memo::new(move |_| shared.preferences.value.get().unwrap_or_default());
-    let visible = Memo::new(move |_| rows.with(|r| r.iter().take(200).cloned().collect::<Vec<_>>()));
+    let visible =
+        Memo::new(move |_| rows.with(|r| r.iter().take(200).cloned().collect::<Vec<_>>()));
     let has_more = Memo::new(move |_| rows.with(|r| r.len() > 200));
     let in_locked = Memo::new(move |_| section.get() == "locked");
-    let locked_open = Memo::new(move |_| in_locked.get() && locked.unlocked() && locked.state.with(|s| s.as_ref().is_some_and(|s| !s.folder_id.is_empty())));
+    let locked_open = Memo::new(move |_| {
+        in_locked.get()
+            && locked.unlocked()
+            && locked
+                .state
+                .with(|s| s.as_ref().is_some_and(|s| !s.folder_id.is_empty()))
+    });
     let folder = Memo::new(move |_| {
         if in_locked.get() {
             let p = parent_id.get();
-            if p.is_empty() { locked.state.with(|s| s.as_ref().map(|s| s.folder_id.clone()).unwrap_or_default()) } else { p }
+            if p.is_empty() {
+                locked
+                    .state
+                    .with(|s| s.as_ref().map(|s| s.folder_id.clone()).unwrap_or_default())
+            } else {
+                p
+            }
         } else {
             parent_id.get()
         }
     });
     let writable_here = Memo::new(move |_| section.get() == "files" || locked_open.get());
-    let connected = Memo::new(move |_| connection.with(Option::is_some) && state.get() == ConnectionState::Ready);
+    let connected = Memo::new(move |_| {
+        connection.with(Option::is_some) && state.get() == ConnectionState::Ready
+    });
 
     Effect::new(move |_| grid.set(preferences.with(|p| p.files_view.as_deref() == Some("grid"))));
     Effect::new(move |_| {
@@ -356,39 +452,61 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     let remember = move |value: Option<Clipboard>| {
         clipboard.set(value.clone());
-        let stored = window().session_storage().ok().flatten().map(|s| match &value {
-            Some(v) => s.set_item(&clipboard_key.get_value(), &serde_json::to_string(v).unwrap_or_default()),
-            None => s.remove_item(&clipboard_key.get_value()),
-        });
+        let stored = window()
+            .session_storage()
+            .ok()
+            .flatten()
+            .map(|s| match &value {
+                Some(v) => s.set_item(
+                    &clipboard_key.get_value(),
+                    &serde_json::to_string(v).unwrap_or_default(),
+                ),
+                None => s.remove_item(&clipboard_key.get_value()),
+            });
         if !matches!(stored, Some(Ok(()))) {
             notice.set("The clipboard is available until you leave Files.".into());
         }
     };
     let collect = move |entry: &FileEntry, mode: &str| {
-        remember(Some(Clipboard { user_id: me.get_value(), id: entry.id.clone(), name: entry.name.clone(), revision: entry.revision, mode: mode.into() }));
-        notice.set(format!("{} is ready to {mode}. Choose a folder and paste.", entry.name));
+        remember(Some(Clipboard {
+            user_id: me.get_value(),
+            id: entry.id.clone(),
+            name: entry.name.clone(),
+            revision: entry.revision,
+            mode: mode.into(),
+        }));
+        notice.set(format!(
+            "{} is ready to {mode}. Choose a folder and paste.",
+            entry.name
+        ));
     };
 
     // Runs `work`; its error becomes the page's error; returns whether it succeeded.
-    let perform = move |work: std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>, message: String| async move {
-        error.set(String::new());
-        busy.set(true);
-        let result = work.await;
-        busy.set(false);
-        match result {
-            Ok(()) => {
-                if !message.is_empty() {
-                    notice.set(message);
+    let perform =
+        move |work: std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>,
+              message: String| async move {
+            error.set(String::new());
+            busy.set(true);
+            let result = work.await;
+            busy.set(false);
+            match result {
+                Ok(()) => {
+                    if !message.is_empty() {
+                        notice.set(message);
+                    }
+                    true
                 }
-                true
+                Err(e) => {
+                    error.set(failure(&e));
+                    false
+                }
             }
-            Err(e) => {
-                error.set(failure(&e));
-                false
-            }
-        }
+        };
+    let conn = move || {
+        connection
+            .get_untracked()
+            .ok_or_else(|| "Wait for the connection to return.".to_owned())
     };
-    let conn = move || connection.get_untracked().ok_or_else(|| "Wait for the connection to return.".to_owned());
 
     let show_details = move |entry_id: String| {
         let sequence = detail_sequence.get_untracked() + 1;
@@ -408,7 +526,11 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         });
     };
     let select = move |entry: &FileEntry| {
-        tab.set(preferences.with_untracked(|p| p.files_details_tab.clone()).unwrap_or_else(|| "details".into()));
+        tab.set(
+            preferences
+                .with_untracked(|p| p.files_details_tab.clone())
+                .unwrap_or_else(|| "details".into()),
+        );
         selected.set(HashSet::from([entry.id.clone()]));
         public_link.set(String::new());
         show_details(entry.id.clone());
@@ -435,8 +557,16 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             params.push(format!("folder={id}"));
         }
         let pathname = window().location().pathname().unwrap_or_default();
-        let url = if params.is_empty() { pathname } else { format!("{pathname}?{}", params.join("&")) };
-        let _ = window().history().expect("history").push_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url));
+        let url = if params.is_empty() {
+            pathname
+        } else {
+            format!("{pathname}?{}", params.join("&"))
+        };
+        let _ = window().history().expect("history").push_state_with_url(
+            &wasm_bindgen::JsValue::NULL,
+            "",
+            Some(&url),
+        );
         loading.set(true);
         section.set(next);
         parent_id.set(id);
@@ -468,8 +598,19 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             match file_details(&entry.id).await {
                 Ok(d) => {
                     let mut crumbs = d.ancestors;
-                    crumbs.push(Crumb { id: entry.id.clone(), name: entry.name.clone() });
-                    navigate(if in_locked.get_untracked() { "locked" } else { "files" }, entry.id.clone(), crumbs);
+                    crumbs.push(Crumb {
+                        id: entry.id.clone(),
+                        name: entry.name.clone(),
+                    });
+                    navigate(
+                        if in_locked.get_untracked() {
+                            "locked"
+                        } else {
+                            "files"
+                        },
+                        entry.id.clone(),
+                        crumbs,
+                    );
                 }
                 Err(e) => error.set(failure(&e)),
             }
@@ -489,13 +630,20 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             Box::pin(async move {
                 let c = conn()?;
                 for entry in list {
-                    reducer(|tx| c.reducers.trash_entry_then(entry.id.clone(), entry.revision, replied(tx))).await?;
+                    reducer(|tx| {
+                        c.reducers
+                            .trash_entry_then(entry.id.clone(), entry.revision, replied(tx))
+                    })
+                    .await?;
                 }
                 selected.set(HashSet::new());
                 details.set(None);
                 Ok(())
             }),
-            format!("{count} item{} moved to deleted files.", if count == 1 { "" } else { "s" }),
+            format!(
+                "{count} item{} moved to deleted files.",
+                if count == 1 { "" } else { "s" }
+            ),
         )
         .await;
         if ok {
@@ -513,9 +661,15 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         }
     };
     let undo_last_trash = move || {
-        let Some(targets) = undo_trash.get_untracked() else { return };
+        let Some(targets) = undo_trash.get_untracked() else {
+            return;
+        };
         undo_trash.set(None);
-        let label = if targets.len() == 1 { targets[0].name.clone() } else { format!("{} items", targets.len()) };
+        let label = if targets.len() == 1 {
+            targets[0].name.clone()
+        } else {
+            format!("{} items", targets.len())
+        };
         spawn_local(async move {
             perform(
                 Box::pin(async move {
@@ -523,7 +677,14 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                     for entry in targets {
                         let current = file_details(&entry.id).await?.entry;
                         if current.trashed {
-                            reducer(|tx| c.reducers.restore_entry_then(entry.id.clone(), current.revision, replied(tx))).await?;
+                            reducer(|tx| {
+                                c.reducers.restore_entry_then(
+                                    entry.id.clone(),
+                                    current.revision,
+                                    replied(tx),
+                                )
+                            })
+                            .await?;
                         }
                     }
                     Ok(())
@@ -534,32 +695,76 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         });
     };
     let move_to_locked = move |entries: Vec<FileEntry>, folder_id: Option<String>| {
-        let folder_id = folder_id.or_else(|| locked.unlocked().then(|| locked.state.with_untracked(|s| s.as_ref().map(|s| s.folder_id.clone()))).flatten());
+        let folder_id = folder_id.or_else(|| {
+            locked
+                .unlocked()
+                .then(|| {
+                    locked
+                        .state
+                        .with_untracked(|s| s.as_ref().map(|s| s.folder_id.clone()))
+                })
+                .flatten()
+        });
         let Some(folder_id) = folder_id else {
             let entries = StoredValue::new(entries);
-            unlock_action.set(Some(("move items into it".into(), Callback::new(move |id: String| {
-                let entries = entries.get_value();
-                spawn_local(async move {
-                    let label = if entries.len() == 1 { entries[0].name.clone() } else { format!("{} items", entries.len()) };
-                    let c = conn();
-                    perform(Box::pin(async move {
-                        let c = c?;
-                        for e in entries { reducer(|tx| c.reducers.move_entry_then(e.id.clone(), id.clone(), e.revision, None, replied(tx))).await?; }
-                        selected.set(HashSet::new());
-                        details.set(None);
-                        Ok(())
-                    }), format!("{label} moved to the Locked folder.")).await;
-                });
-            }))));
+            unlock_action.set(Some((
+                "move items into it".into(),
+                Callback::new(move |id: String| {
+                    let entries = entries.get_value();
+                    spawn_local(async move {
+                        let label = if entries.len() == 1 {
+                            entries[0].name.clone()
+                        } else {
+                            format!("{} items", entries.len())
+                        };
+                        let c = conn();
+                        perform(
+                            Box::pin(async move {
+                                let c = c?;
+                                for e in entries {
+                                    reducer(|tx| {
+                                        c.reducers.move_entry_then(
+                                            e.id.clone(),
+                                            id.clone(),
+                                            e.revision,
+                                            None,
+                                            replied(tx),
+                                        )
+                                    })
+                                    .await?;
+                                }
+                                selected.set(HashSet::new());
+                                details.set(None);
+                                Ok(())
+                            }),
+                            format!("{label} moved to the Locked folder."),
+                        )
+                        .await;
+                    });
+                }),
+            )));
             return;
         };
-        let label = if entries.len() == 1 { entries[0].name.clone() } else { format!("{} items", entries.len()) };
+        let label = if entries.len() == 1 {
+            entries[0].name.clone()
+        } else {
+            format!("{} items", entries.len())
+        };
         spawn_local(async move {
             perform(
                 Box::pin(async move {
                     let c = conn()?;
                     for e in entries {
-                        reducer(|tx| c.reducers.move_entry_then(e.id.clone(), folder_id.clone(), e.revision, None, replied(tx))).await?;
+                        reducer(|tx| {
+                            c.reducers.move_entry_then(
+                                e.id.clone(),
+                                folder_id.clone(),
+                                e.revision,
+                                None,
+                                replied(tx),
+                            )
+                        })
+                        .await?;
                     }
                     selected.set(HashSet::new());
                     details.set(None);
@@ -571,7 +776,9 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         });
     };
     let paste = move || {
-        let Some(captured) = clipboard.get_untracked() else { return };
+        let Some(captured) = clipboard.get_untracked() else {
+            return;
+        };
         spawn_local(async move {
             perform(
                 Box::pin(async move {
@@ -582,25 +789,64 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         return Err("Restore the source item before pasting.".into());
                     }
                     if source.entry.revision != captured.revision {
-                        return Err("The source changed. Copy or cut it again before pasting.".into());
+                        return Err(
+                            "The source changed. Copy or cut it again before pasting.".into()
+                        );
                     }
                     if captured.mode == "cut" && source.entry.parent_id == here {
                         return Err("Choose a different destination for this item.".into());
                     }
-                    if captured.mode == "copy" && rows.try_with_untracked(|r| r.iter().any(|row| row.name == source.entry.name)).unwrap_or(false) {
-                        open_modal(Modal { kind: ModalKind::Copy, entry: Some(source.entry), entries: Vec::new() });
+                    if captured.mode == "copy"
+                        && rows
+                            .try_with_untracked(|r| {
+                                r.iter().any(|row| row.name == source.entry.name)
+                            })
+                            .unwrap_or(false)
+                    {
+                        open_modal(Modal {
+                            kind: ModalKind::Copy,
+                            entry: Some(source.entry),
+                            entries: Vec::new(),
+                        });
                         target_path.set(path.try_get_untracked().unwrap_or_default());
                         return Ok(());
                     }
                     let id = crate::random_uuid();
                     if captured.mode == "cut" {
-                        reducer(|tx| c.reducers.move_entry_then(captured.id.clone(), here.clone(), captured.revision, None, replied(tx))).await?;
+                        reducer(|tx| {
+                            c.reducers.move_entry_then(
+                                captured.id.clone(),
+                                here.clone(),
+                                captured.revision,
+                                None,
+                                replied(tx),
+                            )
+                        })
+                        .await?;
                         remember(None);
                     } else {
-                        reducer(|tx| c.reducers.copy_entry_then(captured.id.clone(), id.clone(), here.clone(), source.entry.name.clone(), captured.revision, replied(tx))).await?;
+                        reducer(|tx| {
+                            c.reducers.copy_entry_then(
+                                captured.id.clone(),
+                                id.clone(),
+                                here.clone(),
+                                source.entry.name.clone(),
+                                captured.revision,
+                                replied(tx),
+                            )
+                        })
+                        .await?;
                     }
-                    selected.set(HashSet::from([if captured.mode == "cut" { captured.id.clone() } else { id }]));
-                    notice.set(if captured.mode == "cut" { "Item moved.".into() } else { "Item copied.".into() });
+                    selected.set(HashSet::from([if captured.mode == "cut" {
+                        captured.id.clone()
+                    } else {
+                        id
+                    }]));
+                    notice.set(if captured.mode == "cut" {
+                        "Item moved.".into()
+                    } else {
+                        "Item copied.".into()
+                    });
                     Ok(())
                 }),
                 String::new(),
@@ -628,47 +874,164 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             }
         });
     };
-    let run = move |work: std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>, message: &str| {
-        let message = message.to_owned();
-        spawn_local(async move {
-            perform(work, message).await;
-        });
-    };
+    let run =
+        move |work: std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>,
+              message: &str| {
+            let message = message.to_owned();
+            spawn_local(async move {
+                perform(work, message).await;
+            });
+        };
     let menu_items = move |entry: FileEntry| -> Vec<MenuAction> {
         let owner = entry.owner_id == me.get_value();
-        let write = owner || roles.with_untracked(|r| r.get(&entry.id).is_some_and(|r| r == "write"));
+        let write =
+            owner || roles.with_untracked(|r| r.get(&entry.id).is_some_and(|r| r == "write"));
         let busy_now = busy.get_untracked();
         let e = StoredValue::new(entry.clone());
         if entry.trashed {
             return vec![
                 MenuAction::new("Details", "info").run(move || select(&e.get_value())),
-                MenuAction::new("Restore", "history").disabled(!owner || busy_now).run(move || {
-                    let entry = e.get_value();
-                    run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.restore_entry_then(entry.id.clone(), entry.revision, replied(tx))).await }), "Item restored.");
-                }),
-                MenuAction::new("Delete permanently", "trash").danger().separator().disabled(!owner || busy_now).run(move || open_modal(Modal { kind: ModalKind::Delete, entry: Some(e.get_value()), entries: Vec::new() })),
+                MenuAction::new("Restore", "history")
+                    .disabled(!owner || busy_now)
+                    .run(move || {
+                        let entry = e.get_value();
+                        run(
+                            Box::pin(async move {
+                                let c = conn()?;
+                                reducer(|tx| {
+                                    c.reducers.restore_entry_then(
+                                        entry.id.clone(),
+                                        entry.revision,
+                                        replied(tx),
+                                    )
+                                })
+                                .await
+                            }),
+                            "Item restored.",
+                        );
+                    }),
+                MenuAction::new("Delete permanently", "trash")
+                    .danger()
+                    .separator()
+                    .disabled(!owner || busy_now)
+                    .run(move || {
+                        open_modal(Modal {
+                            kind: ModalKind::Delete,
+                            entry: Some(e.get_value()),
+                            entries: Vec::new(),
+                        })
+                    }),
             ];
         }
         let mut list = if entry.kind == "file" {
-            vec![MenuAction::new("Preview", "eye").run(move || set_preview(Some(e.get_value()))), MenuAction::new("Download", "download").href(format!("/api/v1/files/{}/content", entry.id))]
+            vec![
+                MenuAction::new("Preview", "eye").run(move || set_preview(Some(e.get_value()))),
+                MenuAction::new("Download", "download")
+                    .href(format!("/api/v1/files/{}/content", entry.id)),
+            ]
         } else {
             vec![MenuAction::new("Open folder", "folder").run(move || open_entry(e.get_value()))]
         };
         list.push(MenuAction::new("Details", "info").run(move || select(&e.get_value())));
-        list.push(MenuAction::new(if entry.favorite { "Remove favorite" } else { "Add to favorites" }, "star").separator().disabled(!owner || busy_now).run(move || {
-            let entry = e.get_value();
-            run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.favorite_entry_then(entry.id.clone(), !entry.favorite, entry.revision, replied(tx))).await }), "");
+        list.push(
+            MenuAction::new(
+                if entry.favorite {
+                    "Remove favorite"
+                } else {
+                    "Add to favorites"
+                },
+                "star",
+            )
+            .separator()
+            .disabled(!owner || busy_now)
+            .run(move || {
+                let entry = e.get_value();
+                run(
+                    Box::pin(async move {
+                        let c = conn()?;
+                        reducer(|tx| {
+                            c.reducers.favorite_entry_then(
+                                entry.id.clone(),
+                                !entry.favorite,
+                                entry.revision,
+                                replied(tx),
+                            )
+                        })
+                        .await
+                    }),
+                    "",
+                );
+            }),
+        );
+        list.push(
+            MenuAction::new("Rename", "pencil")
+                .shortcut("F2")
+                .disabled(!write || busy_now)
+                .run(move || {
+                    open_modal(Modal {
+                        kind: ModalKind::Rename,
+                        entry: Some(e.get_value()),
+                        entries: Vec::new(),
+                    })
+                }),
+        );
+        list.push(
+            MenuAction::new("Move to…", "move")
+                .disabled(!owner || busy_now)
+                .run(move || {
+                    open_modal(Modal {
+                        kind: ModalKind::Move,
+                        entry: Some(e.get_value()),
+                        entries: Vec::new(),
+                    })
+                }),
+        );
+        list.push(MenuAction::new("Copy to…", "copy").run(move || {
+            open_modal(Modal {
+                kind: ModalKind::Copy,
+                entry: Some(e.get_value()),
+                entries: Vec::new(),
+            })
         }));
-        list.push(MenuAction::new("Rename", "pencil").shortcut("F2").disabled(!write || busy_now).run(move || open_modal(Modal { kind: ModalKind::Rename, entry: Some(e.get_value()), entries: Vec::new() })));
-        list.push(MenuAction::new("Move to…", "move").disabled(!owner || busy_now).run(move || open_modal(Modal { kind: ModalKind::Move, entry: Some(e.get_value()), entries: Vec::new() })));
-        list.push(MenuAction::new("Copy to…", "copy").run(move || open_modal(Modal { kind: ModalKind::Copy, entry: Some(e.get_value()), entries: Vec::new() })));
-        list.push(MenuAction::new("Copy", "copy").separator().shortcut(format!("{}C", modifier())).run(move || collect(&e.get_value(), "copy")));
-        list.push(MenuAction::new("Cut", "scissors").shortcut(format!("{}X", modifier())).disabled(!owner || busy_now).run(move || collect(&e.get_value(), "cut")));
+        list.push(
+            MenuAction::new("Copy", "copy")
+                .separator()
+                .shortcut(format!("{}C", modifier()))
+                .run(move || collect(&e.get_value(), "copy")),
+        );
+        list.push(
+            MenuAction::new("Cut", "scissors")
+                .shortcut(format!("{}X", modifier()))
+                .disabled(!owner || busy_now)
+                .run(move || collect(&e.get_value(), "cut")),
+        );
         if in_locked.get_untracked() {
-            list.push(MenuAction::new("Delete permanently", "trash").danger().separator().disabled(!owner || busy_now).run(move || open_modal(Modal { kind: ModalKind::Delete, entry: Some(e.get_value()), entries: Vec::new() })));
+            list.push(
+                MenuAction::new("Delete permanently", "trash")
+                    .danger()
+                    .separator()
+                    .disabled(!owner || busy_now)
+                    .run(move || {
+                        open_modal(Modal {
+                            kind: ModalKind::Delete,
+                            entry: Some(e.get_value()),
+                            entries: Vec::new(),
+                        })
+                    }),
+            );
         } else {
-            list.push(MenuAction::new("Move to Locked folder", "lock").separator().disabled(!owner || busy_now).run(move || move_to_locked(vec![e.get_value()], None)));
-            list.push(MenuAction::new("Move to deleted files", "trash").danger().disabled(!owner || busy_now).run(move || request_trash(vec![e.get_value()])));
+            list.push(
+                MenuAction::new("Move to Locked folder", "lock")
+                    .separator()
+                    .disabled(!owner || busy_now)
+                    .run(move || move_to_locked(vec![e.get_value()], None)),
+            );
+            list.push(
+                MenuAction::new("Move to deleted files", "trash")
+                    .danger()
+                    .disabled(!owner || busy_now)
+                    .run(move || request_trash(vec![e.get_value()])),
+            );
         }
         list
     };
@@ -676,10 +1039,33 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     // Keyboard shortcuts: F2 renames; Ctrl/Cmd C, X and V copy, cut and paste.
     listen(&document(), "keydown", false, move |event| {
         let e: web_sys::KeyboardEvent = event.unchecked_into();
-        let in_field = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()).and_then(|t| t.closest("input,textarea,select,[contenteditable=true],[role=combobox]").ok().flatten()).is_some();
-        let has_selection = window().get_selection().ok().flatten().and_then(|s| s.to_string().as_string()).is_some_and(|s| !s.is_empty());
-        let dialog_open = document().query_selector("dialog[open]").ok().flatten().is_some();
-        if e.default_prevented() || modal.with_untracked(Option::is_some) || settings.get_untracked() || dialog_open || in_field || has_selection {
+        let in_field = e
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            .and_then(|t| {
+                t.closest("input,textarea,select,[contenteditable=true],[role=combobox]")
+                    .ok()
+                    .flatten()
+            })
+            .is_some();
+        let has_selection = window()
+            .get_selection()
+            .ok()
+            .flatten()
+            .and_then(|s| s.to_string().as_string())
+            .is_some_and(|s| !s.is_empty());
+        let dialog_open = document()
+            .query_selector("dialog[open]")
+            .ok()
+            .flatten()
+            .is_some();
+        if e.default_prevented()
+            || modal.with_untracked(Option::is_some)
+            || settings.get_untracked()
+            || dialog_open
+            || in_field
+            || has_selection
+        {
             return;
         }
         let chosen = selected.get_untracked();
@@ -687,38 +1073,49 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         if e.key() == "F2" && chosen.len() == 1 {
             if let Some(entry) = entry.filter(|e| !e.trashed) {
                 e.prevent_default();
-                open_modal(Modal { kind: ModalKind::Rename, entry: Some(entry), entries: Vec::new() });
+                open_modal(Modal {
+                    kind: ModalKind::Rename,
+                    entry: Some(entry),
+                    entries: Vec::new(),
+                });
             }
         } else if e.ctrl_key() || e.meta_key() {
             let key = e.key().to_lowercase();
-            if key == "v" && clipboard.with_untracked(Option::is_some) && writable_here.get_untracked() {
+            if key == "v"
+                && clipboard.with_untracked(Option::is_some)
+                && writable_here.get_untracked()
+            {
                 e.prevent_default();
                 paste();
-            } else if (key == "c" || key == "x") && chosen.len() == 1
-                && let Some(entry) = entry.filter(|en| !en.trashed && (key == "c" || en.owner_id == me.get_value())) {
-                    e.prevent_default();
-                    collect(&entry, if key == "x" { "cut" } else { "copy" });
-                }
+            } else if (key == "c" || key == "x")
+                && chosen.len() == 1
+                && let Some(entry) =
+                    entry.filter(|en| !en.trashed && (key == "c" || en.owner_id == me.get_value()))
+            {
+                e.prevent_default();
+                collect(&entry, if key == "x" { "cut" } else { "copy" });
+            }
         }
     });
 
     // The page's shared live connection; Files adds its own subscription to it.
-    Effect::new(move |_| {
-        match live.status.get() {
-            LiveStatus::Reconnecting => state.set(ConnectionState::Reconnecting),
-            LiveStatus::Error => state.set(ConnectionState::Error),
-            _ => {}
-        }
+    Effect::new(move |_| match live.status.get() {
+        LiveStatus::Reconnecting => state.set(ConnectionState::Reconnecting),
+        LiveStatus::Error => state.set(ConnectionState::Error),
+        _ => {}
     });
     {
         let navigation_ready = navigation_ready.clone();
         Effect::new(move |_| {
-            let Some(c) = live.connection.get() else { return };
+            let Some(c) = live.connection.get() else {
+                return;
+            };
             let disposed = Arc::new(AtomicBool::new(false));
             let sync_files = {
                 let (disposed, navigation_ready) = (disposed.clone(), navigation_ready.clone());
                 move |ctx: &EventContext| {
-                    if disposed.load(Ordering::Relaxed) || !navigation_ready.load(Ordering::Relaxed) {
+                    if disposed.load(Ordering::Relaxed) || !navigation_ready.load(Ordering::Relaxed)
+                    {
                         return;
                     }
                     let next = listed(ctx.db.my_files().iter());
@@ -734,24 +1131,43 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         return;
                     }
                     let next = ctx.db.my_usage().iter().next();
-                    if usage.try_with_untracked(|cur| *cur != next).unwrap_or(false) {
+                    if usage
+                        .try_with_untracked(|cur| *cur != next)
+                        .unwrap_or(false)
+                    {
                         usage.try_set(next);
                     }
                 }
             };
             let ids = (
-                c.db.my_files().on_insert({ let s = sync_files.clone(); move |ctx, _| s(ctx) }),
-                c.db.my_files().on_delete({ let s = sync_files.clone(); move |ctx, _| s(ctx) }),
-                c.db.my_usage().on_insert({ let s = sync_usage.clone(); move |ctx, _| s(ctx) }),
-                c.db.my_usage().on_delete({ let s = sync_usage.clone(); move |ctx, _| s(ctx) }),
+                c.db.my_files().on_insert({
+                    let s = sync_files.clone();
+                    move |ctx, _| s(ctx)
+                }),
+                c.db.my_files().on_delete({
+                    let s = sync_files.clone();
+                    move |ctx, _| s(ctx)
+                }),
+                c.db.my_usage().on_insert({
+                    let s = sync_usage.clone();
+                    move |ctx, _| s(ctx)
+                }),
+                c.db.my_usage().on_delete({
+                    let s = sync_usage.clone();
+                    move |ctx, _| s(ctx)
+                }),
                 c.db.me().on_delete({
                     let disposed = disposed.clone();
                     // Another app's unsubscribing also removes the row from the cache; only a real deletion signs out.
-                        move |ctx: &EventContext, _| {
-                        if !disposed.load(Ordering::Relaxed) && !matches!(ctx.event, spacetimedb_sdk::Event::UnsubscribeApplied) {
+                    move |ctx: &EventContext, _| {
+                        if !disposed.load(Ordering::Relaxed)
+                            && !matches!(ctx.event, spacetimedb_sdk::Event::UnsubscribeApplied)
+                        {
                             rows.try_set(Vec::new());
                             details.try_set(None);
-                            { on_signed_out.try_run(()); };
+                            {
+                                on_signed_out.try_run(());
+                            };
                         }
                     }
                 }),
@@ -759,7 +1175,8 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             let handle = c
                 .subscription_builder()
                 .on_applied({
-                    let (disposed, navigation_ready, c) = (disposed.clone(), navigation_ready.clone(), c.clone());
+                    let (disposed, navigation_ready, c) =
+                        (disposed.clone(), navigation_ready.clone(), c.clone());
                     move |ctx| {
                         if disposed.load(Ordering::Relaxed) {
                             return;
@@ -781,7 +1198,11 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         }
                     }
                 })
-                .subscribe(["SELECT * FROM me", "SELECT * FROM my_files", "SELECT * FROM my_usage"]);
+                .subscribe([
+                    "SELECT * FROM me",
+                    "SELECT * FROM my_files",
+                    "SELECT * FROM my_usage",
+                ]);
             let kept = send_wrapper::SendWrapper::new((c.clone(), handle, ids));
             on_cleanup(move || {
                 disposed.store(true, Ordering::Relaxed);
@@ -803,7 +1224,13 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         Effect::new(move |_| {
             epoch.track();
             let Some(c) = connection.get() else { return };
-            let (here, current_section, q, at, open) = (folder.get(), section.get(), query.get(), cursor.get(), locked_open.get());
+            let (here, current_section, q, at, open) = (
+                folder.get(),
+                section.get(),
+                query.get(),
+                cursor.get(),
+                locked_open.get(),
+            );
             let id = browse_sequence.get_untracked() + 1;
             browse_sequence.set(id);
             navigation_ready.store(false, Ordering::Relaxed);
@@ -825,8 +1252,16 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 if browse_sequence.try_get_untracked() != Some(id) {
                     return;
                 }
-                let browsed_section = if current_section == "locked" { "files".to_owned() } else { current_section.to_owned() };
-                let result = reducer(|tx| c.reducers.browse_then(here, browsed_section, q, at, replied(tx))).await;
+                let browsed_section = if current_section == "locked" {
+                    "files".to_owned()
+                } else {
+                    current_section.to_owned()
+                };
+                let result = reducer(|tx| {
+                    c.reducers
+                        .browse_then(here, browsed_section, q, at, replied(tx))
+                })
+                .await;
                 if browse_sequence.try_get_untracked() != Some(id) {
                     return;
                 }
@@ -862,7 +1297,9 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     });
     // The breadcrumb path of a folder opened by address.
     Effect::new(move |_| {
-        let (Some(_), p) = (connection.get(), parent_id.get()) else { return };
+        let (Some(_), p) = (connection.get(), parent_id.get()) else {
+            return;
+        };
         if p.is_empty() || path.with_untracked(|path| path.last().is_some_and(|c| c.id == p)) {
             return;
         }
@@ -871,7 +1308,10 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 Ok(d) => {
                     if parent_id.try_get_untracked().as_ref() == Some(&p) {
                         let mut crumbs = d.ancestors;
-                        crumbs.push(Crumb { id: d.entry.id, name: d.entry.name });
+                        crumbs.push(Crumb {
+                            id: d.entry.id,
+                            name: d.entry.name,
+                        });
                         path.set(crumbs);
                     }
                 }
@@ -884,7 +1324,9 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         if connection.with(Option::is_none) || state.get() != ConnectionState::Ready {
             return;
         }
-        let Some(id) = initial_file.get_untracked() else { return };
+        let Some(id) = initial_file.get_untracked() else {
+            return;
+        };
         initial_file.set(None);
         spawn_local(async move {
             match file_details(&id).await {
@@ -900,7 +1342,9 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     // Open details follow the row's revision.
     Effect::new(move |_| {
         let rows = rows.get();
-        let Some(current) = details.get_untracked() else { return };
+        let Some(current) = details.get_untracked() else {
+            return;
+        };
         match rows.iter().find(|r| r.id == current.entry.id) {
             Some(row) if row.revision != current.entry.revision => show_details(row.id.clone()),
             None => show_details(current.entry.id.clone()),
@@ -917,19 +1361,30 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     // Each file goes to its own folder (a folder upload), else to the folder on screen.
     // The optional label is shown in the Uploads panel (for folder uploads, the path inside the uploaded folder).
-    let upload_into = move |files: Vec<(web_sys::File, Option<String>, Option<String>)>, replace: Option<FileEntry>| {
+    let upload_into = move |files: Vec<(web_sys::File, Option<String>, Option<String>)>,
+                            replace: Option<FileEntry>| {
         let files = send_wrapper::SendWrapper::new(files);
         let csrf_token = csrf();
         spawn_local(async move {
             for (file, target, label) in files.take() {
                 // Files closed: the remaining uploads do not start.
-                let Some(current) = folder.try_get_untracked() else { break };
+                let Some(current) = folder.try_get_untracked() else {
+                    break;
+                };
                 let here = target.unwrap_or(current);
                 let transfer = crate::random_uuid();
                 let controller = web_sys::AbortController::new().expect("abort controller");
                 RESERVATIONS.with(|r| r.borrow_mut().insert(transfer.clone(), controller.clone()));
                 let display_name = label.unwrap_or_else(|| file.name());
-                transfers.update(|t| t.push(Transfer { id: transfer.clone(), name: display_name, progress: 0.0, status: "uploading", message: String::new() }));
+                transfers.update(|t| {
+                    t.push(Transfer {
+                        id: transfer.clone(),
+                        name: display_name,
+                        progress: 0.0,
+                        status: "uploading",
+                        message: String::new(),
+                    })
+                });
                 let update = move |id: &str, f: &dyn Fn(&mut Transfer)| {
                     transfers.try_update(|t| {
                         if let Some(t) = t.iter_mut().find(|t| t.id == id) {
@@ -942,7 +1397,17 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                     body["fileId"] = r.id.clone().into();
                     body["expectedRevision"] = r.revision.into();
                 }
-                let reservation = api::request::<serde_json::Value>("/api/v1/files/uploads", Req { method: "POST", body: Some(body.to_string()), csrf: Some(&csrf_token), signal: Some(controller.signal()), ..Default::default() }).await;
+                let reservation = api::request::<serde_json::Value>(
+                    "/api/v1/files/uploads",
+                    Req {
+                        method: "POST",
+                        body: Some(body.to_string()),
+                        csrf: Some(&csrf_token),
+                        signal: Some(controller.signal()),
+                        ..Default::default()
+                    },
+                )
+                .await;
                 let mut upload_id = None;
                 let result = match reservation {
                     Err(e) => Err(e.message),
@@ -951,7 +1416,14 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         let id = value["id"].as_str().unwrap_or_default().to_owned();
                         upload_id = Some(id.clone());
                         let progress_id = transfer.clone();
-                        put_upload(&transfer, &format!("/api/v1/files/uploads/{id}"), &csrf_token, &file, move |p| update(&progress_id, &|t| t.progress = p)).await
+                        put_upload(
+                            &transfer,
+                            &format!("/api/v1/files/uploads/{id}"),
+                            &csrf_token,
+                            &file,
+                            move |p| update(&progress_id, &|t| t.progress = p),
+                        )
+                        .await
                     }
                 };
                 match result {
@@ -960,14 +1432,26 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         t.status = "complete";
                     }),
                     Err(cause) => {
-                        let message = if controller.signal().aborted() { "Upload cancelled.".to_owned() } else { failure(&cause) };
+                        let message = if controller.signal().aborted() {
+                            "Upload cancelled.".to_owned()
+                        } else {
+                            failure(&cause)
+                        };
                         let cancelled = message.contains("cancelled");
                         update(&transfer, &|t| {
                             t.status = if cancelled { "cancelled" } else { "error" };
                             t.message = message.clone();
                         });
                         if let Some(id) = upload_id {
-                            let _ = api::request::<serde_json::Value>(&format!("/api/v1/files/uploads/{id}"), Req { method: "DELETE", csrf: Some(&csrf_token), ..Default::default() }).await;
+                            let _ = api::request::<serde_json::Value>(
+                                &format!("/api/v1/files/uploads/{id}"),
+                                Req {
+                                    method: "DELETE",
+                                    csrf: Some(&csrf_token),
+                                    ..Default::default()
+                                },
+                            )
+                            .await;
                         }
                     }
                 }
@@ -976,7 +1460,12 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             }
         });
     };
-    let upload = move |files: Vec<web_sys::File>, replace: Option<FileEntry>| upload_into(files.into_iter().map(|f| (f, None, None)).collect(), replace);
+    let upload = move |files: Vec<web_sys::File>, replace: Option<FileEntry>| {
+        upload_into(
+            files.into_iter().map(|f| (f, None, None)).collect(),
+            replace,
+        )
+    };
     // A folder upload recreates the folder and its subfolders here, then uploads each file into
     // its folder. A top-level name already used here gets a number, as Files names are unique.
     let upload_folder = move |tree: folder_upload::Tree| {
@@ -986,12 +1475,17 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         let tree = send_wrapper::SendWrapper::new(tree);
         spawn_local(async move {
             let tree = tree.take();
-            let Some(here) = folder.try_get_untracked() else { return };
-            let mut taken: std::collections::HashSet<String> = visible.with_untracked(|v| v.iter().map(|e| e.name.to_lowercase()).collect());
+            let Some(here) = folder.try_get_untracked() else {
+                return;
+            };
+            let mut taken: std::collections::HashSet<String> =
+                visible.with_untracked(|v| v.iter().map(|e| e.name.to_lowercase()).collect());
             let mut ids: HashMap<String, String> = HashMap::from([(String::new(), here.clone())]);
             let mut top_names: HashMap<String, String> = HashMap::new();
             for path in &tree.folders {
-                let (parent, raw_name) = path.rsplit_once('/').map_or(("", path.as_str()), |(p, n)| (p, n));
+                let (parent, raw_name) = path
+                    .rsplit_once('/')
+                    .map_or(("", path.as_str()), |(p, n)| (p, n));
                 let name = if parent.is_empty() {
                     let mut unique = raw_name.to_owned();
                     let mut n = 1;
@@ -1005,14 +1499,29 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 } else {
                     raw_name.to_owned()
                 };
-                let Some(parent_id) = ids.get(parent).cloned() else { continue };
+                let Some(parent_id) = ids.get(parent).cloned() else {
+                    continue;
+                };
                 let id = crate::random_uuid();
                 let created = match connection.try_get_untracked().flatten() {
-                    Some(c) => reducer(|tx| c.reducers.create_folder_then(id.clone(), parent_id, name.clone(), replied(tx))).await,
+                    Some(c) => {
+                        reducer(|tx| {
+                            c.reducers.create_folder_then(
+                                id.clone(),
+                                parent_id,
+                                name.clone(),
+                                replied(tx),
+                            )
+                        })
+                        .await
+                    }
                     None => Err("Wait for the connection to return.".to_owned()),
                 };
                 if let Err(cause) = created {
-                    error.try_set(format!("\u{201c}{name}\u{201d} could not be created: {}", failure(&cause)));
+                    error.try_set(format!(
+                        "\u{201c}{name}\u{201d} could not be created: {}",
+                        failure(&cause)
+                    ));
                     return;
                 }
                 ids.insert(path.clone(), id);
@@ -1029,52 +1538,165 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             upload_into(files, None);
         });
     };
-    let files_of = |input: &web_sys::HtmlInputElement| -> Vec<web_sys::File> { input.files().map(|list| (0..list.length()).filter_map(|i| list.item(i)).collect()).unwrap_or_default() };
+    let files_of = |input: &web_sys::HtmlInputElement| -> Vec<web_sys::File> {
+        input
+            .files()
+            .map(|list| (0..list.length()).filter_map(|i| list.item(i)).collect())
+            .unwrap_or_default()
+    };
 
     let submit_modal = move |event: web_sys::SubmitEvent| {
         event.prevent_default();
-        let Some(m) = modal.get_untracked() else { return };
-        if matches!(m.kind, ModalKind::Move | ModalKind::Copy) && target_folder.with_untracked(Option::is_none) {
+        let Some(m) = modal.get_untracked() else {
+            return;
+        };
+        if matches!(m.kind, ModalKind::Move | ModalKind::Copy)
+            && target_folder.with_untracked(Option::is_none)
+        {
             return;
         }
-        let name = event.target().and_then(|t| t.dyn_into::<web_sys::HtmlFormElement>().ok()).and_then(|f| web_sys::FormData::new_with_form(&f).ok()).and_then(|d| d.get("name").as_string()).unwrap_or_default();
-        let target = target_folder.get_untracked().map(|t| t.id).unwrap_or_default();
+        let name = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::HtmlFormElement>().ok())
+            .and_then(|f| web_sys::FormData::new_with_form(&f).ok())
+            .and_then(|d| d.get("name").as_string())
+            .unwrap_or_default();
+        let target = target_folder
+            .get_untracked()
+            .map(|t| t.id)
+            .unwrap_or_default();
         let many = m.entries.clone();
-        let message = if m.entry.is_none() && !many.is_empty() && matches!(m.kind, ModalKind::Move | ModalKind::Copy) {
-            format!("{} {} {}.", many.len(), if many.len() == 1 { "item" } else { "items" }, if m.kind == ModalKind::Move { "moved" } else { "copied" })
+        let message = if m.entry.is_none()
+            && !many.is_empty()
+            && matches!(m.kind, ModalKind::Move | ModalKind::Copy)
+        {
+            format!(
+                "{} {} {}.",
+                many.len(),
+                if many.len() == 1 { "item" } else { "items" },
+                if m.kind == ModalKind::Move {
+                    "moved"
+                } else {
+                    "copied"
+                }
+            )
         } else {
             "Changes saved.".into()
         };
         let here = folder.get_untracked();
-        let chosen = visible.with_untracked(|v| v.iter().filter(|e| selected.with_untracked(|s| s.contains(&e.id))).cloned().collect::<Vec<_>>());
+        let chosen = visible.with_untracked(|v| {
+            v.iter()
+                .filter(|e| selected.with_untracked(|s| s.contains(&e.id)))
+                .cloned()
+                .collect::<Vec<_>>()
+        });
         spawn_local(async move {
             let ok = perform(
                 Box::pin(async move {
-                    let c = connection.get_untracked().ok_or_else(|| "Wait for the connection to return.".to_owned())?;
+                    let c = connection
+                        .get_untracked()
+                        .ok_or_else(|| "Wait for the connection to return.".to_owned())?;
                     match (m.kind, &m.entry) {
-                        (ModalKind::Folder, _) => reducer(|tx| c.reducers.create_folder_then(crate::random_uuid(), here.clone(), name.clone(), replied(tx))).await?,
-                        (ModalKind::Rename, Some(e)) => reducer(|tx| c.reducers.rename_entry_then(e.id.clone(), name.clone(), e.revision, replied(tx))).await?,
-                        (ModalKind::Move, Some(e)) => reducer(|tx| c.reducers.move_entry_then(e.id.clone(), target.clone(), e.revision, None, replied(tx))).await?,
-                        (ModalKind::Copy, Some(e)) => reducer(|tx| c.reducers.copy_entry_then(e.id.clone(), crate::random_uuid(), target.clone(), name.clone(), e.revision, replied(tx))).await?,
+                        (ModalKind::Folder, _) => {
+                            reducer(|tx| {
+                                c.reducers.create_folder_then(
+                                    crate::random_uuid(),
+                                    here.clone(),
+                                    name.clone(),
+                                    replied(tx),
+                                )
+                            })
+                            .await?
+                        }
+                        (ModalKind::Rename, Some(e)) => {
+                            reducer(|tx| {
+                                c.reducers.rename_entry_then(
+                                    e.id.clone(),
+                                    name.clone(),
+                                    e.revision,
+                                    replied(tx),
+                                )
+                            })
+                            .await?
+                        }
+                        (ModalKind::Move, Some(e)) => {
+                            reducer(|tx| {
+                                c.reducers.move_entry_then(
+                                    e.id.clone(),
+                                    target.clone(),
+                                    e.revision,
+                                    None,
+                                    replied(tx),
+                                )
+                            })
+                            .await?
+                        }
+                        (ModalKind::Copy, Some(e)) => {
+                            reducer(|tx| {
+                                c.reducers.copy_entry_then(
+                                    e.id.clone(),
+                                    crate::random_uuid(),
+                                    target.clone(),
+                                    name.clone(),
+                                    e.revision,
+                                    replied(tx),
+                                )
+                            })
+                            .await?
+                        }
                         // Several selected items keep their names; copies into the same folder are marked as copies.
                         (ModalKind::Move, None) => {
                             for item in &many {
-                                reducer(|tx| c.reducers.move_entry_then(item.id.clone(), target.clone(), item.revision, None, replied(tx))).await?;
+                                reducer(|tx| {
+                                    c.reducers.move_entry_then(
+                                        item.id.clone(),
+                                        target.clone(),
+                                        item.revision,
+                                        None,
+                                        replied(tx),
+                                    )
+                                })
+                                .await?;
                             }
                             selected.set(HashSet::new());
                             details.set(None);
                         }
                         (ModalKind::Copy, None) => {
                             for item in &many {
-                                let name = if item.parent_id == target { format!("{} copy", item.name) } else { item.name.clone() };
-                                reducer(|tx| c.reducers.copy_entry_then(item.id.clone(), crate::random_uuid(), target.clone(), name, item.revision, replied(tx))).await?;
+                                let name = if item.parent_id == target {
+                                    format!("{} copy", item.name)
+                                } else {
+                                    item.name.clone()
+                                };
+                                reducer(|tx| {
+                                    c.reducers.copy_entry_then(
+                                        item.id.clone(),
+                                        crate::random_uuid(),
+                                        target.clone(),
+                                        name,
+                                        item.revision,
+                                        replied(tx),
+                                    )
+                                })
+                                .await?;
                             }
                             selected.set(HashSet::new());
                         }
                         (ModalKind::Delete, entry) => {
-                            let targets = match entry { Some(e) => vec![e.clone()], None if !many.is_empty() => many.clone(), None => chosen };
+                            let targets = match entry {
+                                Some(e) => vec![e.clone()],
+                                None if !many.is_empty() => many.clone(),
+                                None => chosen,
+                            };
                             for item in targets {
-                                reducer(|tx| c.reducers.delete_entry_then(item.id.clone(), item.revision, replied(tx))).await?;
+                                reducer(|tx| {
+                                    c.reducers.delete_entry_then(
+                                        item.id.clone(),
+                                        item.revision,
+                                        replied(tx),
+                                    )
+                                })
+                                .await?;
                             }
                             selected.set(HashSet::new());
                             details.set(None);
@@ -1093,21 +1715,49 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     };
     let share = move |event: web_sys::SubmitEvent| {
         event.prevent_default();
-        let Some(d) = details.get_untracked() else { return };
-        let data = event.target().and_then(|t| t.dyn_into::<web_sys::HtmlFormElement>().ok()).and_then(|f| web_sys::FormData::new_with_form(&f).ok());
-        let field = |name: &str| data.as_ref().and_then(|d| d.get(name).as_string()).unwrap_or_default();
+        let Some(d) = details.get_untracked() else {
+            return;
+        };
+        let data = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::HtmlFormElement>().ok())
+            .and_then(|f| web_sys::FormData::new_with_form(&f).ok());
+        let field = |name: &str| {
+            data.as_ref()
+                .and_then(|d| d.get(name).as_string())
+                .unwrap_or_default()
+        };
         let (username, role) = (field("username"), field("role"));
         let entry = d.entry;
         spawn_local(async move {
             let id = entry.id.clone();
-            let ok = perform(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.grant_access_then(crate::random_uuid(), entry.id.clone(), username, role, entry.revision, replied(tx))).await }), "Sharing updated.".into()).await;
+            let ok = perform(
+                Box::pin(async move {
+                    let c = conn()?;
+                    reducer(|tx| {
+                        c.reducers.grant_access_then(
+                            crate::random_uuid(),
+                            entry.id.clone(),
+                            username,
+                            role,
+                            entry.revision,
+                            replied(tx),
+                        )
+                    })
+                    .await
+                }),
+                "Sharing updated.".into(),
+            )
+            .await;
             if ok {
                 show_details(id);
             }
         });
     };
     let make_public_link = move || {
-        let Some(d) = details.get_untracked() else { return };
+        let Some(d) = details.get_untracked() else {
+            return;
+        };
         spawn_local(async move {
             let entry = d.entry;
             let id = entry.id.clone();
@@ -1116,8 +1766,21 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                     let c = conn()?;
                     let (token, digest) = crate::secret_and_digest().await?;
                     let expires = js_sys::Date::now() + 7.0 * 86_400_000.0;
-                    reducer(|tx| c.reducers.create_public_share_then(crate::random_uuid(), entry.id.clone(), digest, expires, entry.revision, replied(tx))).await?;
-                    public_link.set(format!("{}/public/files/{token}", window().location().origin().unwrap_or_default()));
+                    reducer(|tx| {
+                        c.reducers.create_public_share_then(
+                            crate::random_uuid(),
+                            entry.id.clone(),
+                            digest,
+                            expires,
+                            entry.revision,
+                            replied(tx),
+                        )
+                    })
+                    .await?;
+                    public_link.set(format!(
+                        "{}/public/files/{token}",
+                        window().location().origin().unwrap_or_default()
+                    ));
                     Ok(())
                 }),
                 String::new(),
@@ -1129,26 +1792,53 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     let title = move || {
         if !parent_id.with(String::is_empty) {
-            path.with(|p| p.last().map(|c| c.name.clone())).unwrap_or_else(|| "Folder".into())
+            path.with(|p| p.last().map(|c| c.name.clone()))
+                .unwrap_or_else(|| "Folder".into())
         } else {
-            SECTIONS.iter().find(|s| s.0 == section.get()).map(|s| s.1).unwrap_or("All files").to_owned()
+            SECTIONS
+                .iter()
+                .find(|s| s.0 == section.get())
+                .map(|s| s.1)
+                .unwrap_or("All files")
+                .to_owned()
         }
     };
     let chosen = Memo::new(move |_| details.with(|d| d.as_ref().map(|d| d.entry.clone())));
     let owner = Memo::new(move |_| details.with(|d| d.as_ref().is_some_and(|d| d.role == "owner")));
-    let can_write = Memo::new(move |_| owner.get() || details.with(|d| d.as_ref().is_some_and(|d| d.role == "write")));
+    let can_write = Memo::new(move |_| {
+        owner.get() || details.with(|d| d.as_ref().is_some_and(|d| d.role == "write"))
+    });
     // Folders show their history where files show versions; a remembered tab maps across.
     let shown_tab = Memo::new(move |_| {
         let t = tab.get();
         let folder = chosen.with(|c| c.as_ref().is_some_and(|c| c.kind == "folder"));
-        if folder && t == "versions" { "history".to_owned() } else if !folder && t == "history" { "versions".to_owned() } else { t }
+        if folder && t == "versions" {
+            "history".to_owned()
+        } else if !folder && t == "history" {
+            "versions".to_owned()
+        } else {
+            t
+        }
     });
 
     let selection_actions = move || {
-        let chosen_items: Vec<FileEntry> = visible.with(|v| v.iter().filter(|e| selected.with(|s| s.contains(&e.id))).cloned().collect());
+        let chosen_items: Vec<FileEntry> = visible.with(|v| {
+            v.iter()
+                .filter(|e| selected.with(|s| s.contains(&e.id)))
+                .cloned()
+                .collect()
+        });
         let owned = chosen_items.iter().all(|e| e.owner_id == me.get_value());
         let off = !connected.get() || busy.get() || chosen_items.is_empty();
-        let count = format!("{} {}", chosen_items.len(), if chosen_items.len() == 1 { "item" } else { "items" });
+        let count = format!(
+            "{} {}",
+            chosen_items.len(),
+            if chosen_items.len() == 1 {
+                "item"
+            } else {
+                "items"
+            }
+        );
         let items = StoredValue::new(chosen_items.clone());
         if section.get() == "trash" {
             let count2 = count.clone();
@@ -1204,9 +1894,43 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         let s = section.get();
         let q = !query.with(String::is_empty);
         let locked_here = in_locked.get();
-        let icon = if s == "trash" { "trash" } else if s == "shared" { "share" } else if q { "search" } else if locked_here { "lock" } else { "folder" };
-        let heading = if q { "No matching files" } else if locked_here { "Nothing locked yet" } else if s == "trash" { "Nothing in deleted files" } else if s == "shared" { "No shared files" } else if s == "favorites" { "No favorites" } else { "No files" };
-        let text = if q { "Search matches the beginning of a filename in this folder." } else if locked_here { "Choose Move to Locked folder on a file or folder, or upload here. Deleting here is permanent." } else if s == "files" { "Drop your first file here, or upload something to get started." } else if s == "favorites" { "Mark a file or folder as a favorite to find it here." } else if s == "shared" { "When someone shares with you, it will appear here." } else { "Items you delete will appear here for recovery." };
+        let icon = if s == "trash" {
+            "trash"
+        } else if s == "shared" {
+            "share"
+        } else if q {
+            "search"
+        } else if locked_here {
+            "lock"
+        } else {
+            "folder"
+        };
+        let heading = if q {
+            "No matching files"
+        } else if locked_here {
+            "Nothing locked yet"
+        } else if s == "trash" {
+            "Nothing in deleted files"
+        } else if s == "shared" {
+            "No shared files"
+        } else if s == "favorites" {
+            "No favorites"
+        } else {
+            "No files"
+        };
+        let text = if q {
+            "Search matches the beginning of a filename in this folder."
+        } else if locked_here {
+            "Choose Move to Locked folder on a file or folder, or upload here. Deleting here is permanent."
+        } else if s == "files" {
+            "Drop your first file here, or upload something to get started."
+        } else if s == "favorites" {
+            "Mark a file or folder as a favorite to find it here."
+        } else if s == "shared" {
+            "When someone shares with you, it will appear here."
+        } else {
+            "Items you delete will appear here for recovery."
+        };
         view! {
             <div class="empty-state"><span class="empty-icon"><Icon name=icon/></span><h2>{heading}</h2><p>{text}</p>
                 {(writable_here.get() && !q).then(|| view! { <button class="primary-button" disabled=move || !connected.get() on:click=move |_| if let Some(i) = upload_input.get_untracked() { i.click() }><Icon name="upload"/>"Upload your first file"</button> })}
@@ -1254,7 +1978,12 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             </article>
         }
     };
-    let row_key = |e: &FileEntry| format!("{}:{}:{}:{}:{}:{}", e.id, e.revision, e.favorite, e.trashed, e.name, e.modified_at);
+    let row_key = |e: &FileEntry| {
+        format!(
+            "{}:{}:{}:{}:{}:{}",
+            e.id, e.revision, e.favorite, e.trashed, e.name, e.modified_at
+        )
+    };
 
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum ListingMode {
@@ -1286,7 +2015,8 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         }
     });
 
-    let listing = move || match listing_mode.get() {
+    let listing = move || {
+        match listing_mode.get() {
         ListingMode::LockedForm => view! { <UnlockForm folder=locked description="Enter your password to open it. Files here are hidden from All files, search, sharing, WebDAV and other apps, including Photos’ library." on_unlocked=Callback::new(move |_| error.set(String::new()))/> }.into_any(),
         ListingMode::LockedChecking => view! { <p class="muted" role="status">{move || { let e = locked.error.get(); if e.is_empty() { "Checking the Locked folder…".to_owned() } else { e } }}</p> }.into_any(),
         ListingMode::Disconnected => ().into_any(),
@@ -1303,12 +2033,23 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 <tbody><For each=move || visible.get() key=row_key children=row_view/></tbody>
             </table></div>
         }.into_any(),
+    }
     };
 
     // The panel is rebuilt for another item only. A newer revision of the open one (a change in
     // the folder, a restore) refreshes its parts in place, so the History tab keeps its panes,
     // notices and the replies still in flight.
-    let details_key = Memo::new(move |_| details.with(|d| d.as_ref().map(|d| (d.entry.id.clone(), d.entry.kind == "folder", d.entry.trashed))));
+    let details_key = Memo::new(move |_| {
+        details.with(|d| {
+            d.as_ref().map(|d| {
+                (
+                    d.entry.id.clone(),
+                    d.entry.kind == "folder",
+                    d.entry.trashed,
+                )
+            })
+        })
+    });
     let details_panel = move || {
         let (entry_id, is_folder, trashed) = details_key.get()?;
         let overview = move || {
@@ -1341,22 +2082,40 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 <div class="quick-actions">{quick}</div>
             })
         };
-        let tabs = ["details", if is_folder { "history" } else { "versions" }, "sharing"];
+        let tabs = [
+            "details",
+            if is_folder { "history" } else { "versions" },
+            "sharing",
+        ];
         let content = move || {
             // History follows the folder's revision itself; the other tabs show the row.
             if shown_tab.get() == "history" {
                 return if trashed {
-                    view! { <p class="muted">"Restore this folder to see its history."</p> }.into_any()
+                    view! { <p class="muted">"Restore this folder to see its history."</p> }
+                        .into_any()
                 } else {
-                    let revision = Signal::derive(move || details.with(|d| d.as_ref().map_or(0, |d| d.entry.revision as u64)));
+                    let revision = Signal::derive(move || {
+                        details.with(|d| d.as_ref().map_or(0, |d| d.entry.revision as u64))
+                    });
                     view! { <crate::history::FolderHistory folder_id=Signal::stored(entry_id.clone()) revision=revision session=session.get_value() notice=history_notice/> }.into_any()
                 };
             }
-            let Some(d) = details.get() else { return ().into_any() };
+            let Some(d) = details.get() else {
+                return ().into_any();
+            };
             let entry = d.entry.clone();
             let e = StoredValue::new(entry.clone());
-            let location = std::iter::once("All files".to_owned()).chain(d.ancestors.iter().map(|a| a.name.clone())).collect::<Vec<_>>().join(" › ");
-            let access = if owner.get() { "You own this item" } else if can_write.get() { "You can edit" } else { "You can view" };
+            let location = std::iter::once("All files".to_owned())
+                .chain(d.ancestors.iter().map(|a| a.name.clone()))
+                .collect::<Vec<_>>()
+                .join(" › ");
+            let access = if owner.get() {
+                "You own this item"
+            } else if can_write.get() {
+                "You can edit"
+            } else {
+                "You can view"
+            };
             match shown_tab.get().as_str() {
                 "details" => view! {
                     <div class="property-card">
@@ -1460,7 +2219,13 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
 
     let modal_title = move |m: &Modal| -> String {
         let n = m.entries.len();
-        let items = |verb: &str, one: &str| if n > 0 { format!("{verb} {n} {}", if n == 1 { "item" } else { "items" }) } else { one.to_owned() };
+        let items = |verb: &str, one: &str| {
+            if n > 0 {
+                format!("{verb} {n} {}", if n == 1 { "item" } else { "items" })
+            } else {
+                one.to_owned()
+            }
+        };
         match m.kind {
             ModalKind::Folder => "New folder".into(),
             ModalKind::Rename => "Rename item".into(),
@@ -1470,13 +2235,36 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         }
     };
     let modal_form = move |m: Modal| {
-        let has_name = matches!(m.kind, ModalKind::Folder | ModalKind::Rename) || (m.kind == ModalKind::Copy && m.entry.is_some());
-        let default_name = match (&m.kind, &m.entry) { (ModalKind::Copy, Some(e)) => format!("{} copy", e.name), (_, Some(e)) => e.name.clone(), _ => String::new() };
+        let has_name = matches!(m.kind, ModalKind::Folder | ModalKind::Rename)
+            || (m.kind == ModalKind::Copy && m.entry.is_some());
+        let default_name = match (&m.kind, &m.entry) {
+            (ModalKind::Copy, Some(e)) => format!("{} copy", e.name),
+            (_, Some(e)) => e.name.clone(),
+            _ => String::new(),
+        };
         let picking = matches!(m.kind, ModalKind::Move | ModalKind::Copy);
-        let exclude: Vec<String> = match &m.entry { Some(e) => vec![e.id.clone()], None => m.entries.iter().map(|e| e.id.clone()).collect() };
-        let delete_text = match &m.entry { Some(e) => format!("This permanently removes “{}” and their versions. This cannot be undone.", e.name), None => format!("This permanently removes {} selected items and their versions. This cannot be undone.", if m.entries.is_empty() { selected.with_untracked(HashSet::len) } else { m.entries.len() }) };
+        let exclude: Vec<String> = match &m.entry {
+            Some(e) => vec![e.id.clone()],
+            None => m.entries.iter().map(|e| e.id.clone()).collect(),
+        };
+        let delete_text = match &m.entry {
+            Some(e) => format!(
+                "This permanently removes “{}” and their versions. This cannot be undone.",
+                e.name
+            ),
+            None => format!(
+                "This permanently removes {} selected items and their versions. This cannot be undone.",
+                if m.entries.is_empty() {
+                    selected.with_untracked(HashSet::len)
+                } else {
+                    m.entries.len()
+                }
+            ),
+        };
         let kind = m.kind;
-        let initial = target_path.with_untracked(|p| p.last().map(|c| c.id.clone())).unwrap_or_default();
+        let initial = target_path
+            .with_untracked(|p| p.last().map(|c| c.id.clone()))
+            .unwrap_or_default();
         view! {
             <form on:submit=submit_modal>
                 {has_name.then(|| view! { <label>"Name"<input name="name" required maxlength="255" value=default_name.clone() autofocus/></label> })}

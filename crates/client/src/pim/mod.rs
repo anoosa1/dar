@@ -24,7 +24,9 @@ use crate::live::Live;
 use crate::module_bindings::*;
 use crate::settings::{AppSettings, AppSettingsButton};
 use crate::shell::WorkspaceHeader;
-use crate::ui::{ActionMenu, ConnectionState, ConnectionStatus, Dialog, EditorPane, MenuAction, Select};
+use crate::ui::{
+    ActionMenu, ConnectionState, ConnectionStatus, Dialog, EditorPane, MenuAction, Select,
+};
 
 /// Reports how a save went to the form that started it (`Ok` closes it, `Err` shows the message).
 pub type Done = Callback<Result<(), String>>;
@@ -59,9 +61,28 @@ pub fn etag(id: &str, revision: u64) -> String {
 }
 
 /// A JSON request with the session's CSRF token and optional `If-Match`.
-pub async fn send<T: serde::de::DeserializeOwned>(url: &str, method: &str, body: Option<Value>, csrf: &str, if_match: Option<String>) -> Result<T, api::RequestError> {
-    let headers: Vec<(&str, &str)> = if_match.as_deref().map(|m| vec![("if-match", m)]).unwrap_or_default();
-    api::request(url, Req { method, body: body.map(|b| b.to_string()), csrf: Some(csrf), headers: &headers, ..Default::default() }).await
+pub async fn send<T: serde::de::DeserializeOwned>(
+    url: &str,
+    method: &str,
+    body: Option<Value>,
+    csrf: &str,
+    if_match: Option<String>,
+) -> Result<T, api::RequestError> {
+    let headers: Vec<(&str, &str)> = if_match
+        .as_deref()
+        .map(|m| vec![("if-match", m)])
+        .unwrap_or_default();
+    api::request(
+        url,
+        Req {
+            method,
+            body: body.map(|b| b.to_string()),
+            csrf: Some(csrf),
+            headers: &headers,
+            ..Default::default()
+        },
+    )
+    .await
 }
 
 /// Live change tracking (`usePim`): `epoch` moves when the account's PIM data changes.
@@ -79,16 +100,27 @@ impl PimLive {
 
 pub fn use_pim(on_signed_out: Callback<()>) -> PimLive {
     let live = expect_context::<Live>();
-    let pim = PimLive { epoch: RwSignal::new(0), state: RwSignal::new(ConnectionState::Connecting) };
+    let pim = PimLive {
+        epoch: RwSignal::new(0),
+        state: RwSignal::new(ConnectionState::Connecting),
+    };
     Effect::new(move |_| match live.status.get() {
         crate::live::LiveStatus::Reconnecting => pim.state.set(ConnectionState::Reconnecting),
         crate::live::LiveStatus::Error => pim.state.set(ConnectionState::Error),
         _ => {}
     });
     Effect::new(move |_| {
-        let Some(c) = live.connection.get() else { return };
+        let Some(c) = live.connection.get() else {
+            return;
+        };
         let disposed = Arc::new(AtomicBool::new(false));
-        let current = |ctx: &EventContext| ctx.db.my_pim_changes().iter().next().map_or(0.0, |r| r.revision as f64);
+        let current = |ctx: &EventContext| {
+            ctx.db
+                .my_pim_changes()
+                .iter()
+                .next()
+                .map_or(0.0, |r| r.revision as f64)
+        };
         // Initial and replayed data only reload what is newer than the page loaded.
         let compare = {
             let disposed = disposed.clone();
@@ -98,13 +130,20 @@ pub fn use_pim(on_signed_out: Callback<()>) -> PimLive {
                 }
             }
         };
-        let inserted = c.db.my_pim_changes().on_insert({ let compare = compare.clone(); move |ctx, _| compare(ctx) });
+        let inserted = c.db.my_pim_changes().on_insert({
+            let compare = compare.clone();
+            move |ctx, _| compare(ctx)
+        });
         let deleted = c.db.me().on_delete({
             let disposed = disposed.clone();
             // Another app's unsubscribing also removes the row from the cache; only a real deletion signs out.
-                move |ctx: &EventContext, _| {
-                if !disposed.load(Ordering::Relaxed) && !matches!(ctx.event, spacetimedb_sdk::Event::UnsubscribeApplied) {
-                    { on_signed_out.try_run(()); };
+            move |ctx: &EventContext, _| {
+                if !disposed.load(Ordering::Relaxed)
+                    && !matches!(ctx.event, spacetimedb_sdk::Event::UnsubscribeApplied)
+                {
+                    {
+                        on_signed_out.try_run(());
+                    };
                 }
             }
         });
@@ -117,7 +156,13 @@ pub fn use_pim(on_signed_out: Callback<()>) -> PimLive {
                         return;
                     }
                     pim.state.try_set(ConnectionState::Ready);
-                    if ctx.db.my_pim_changes().iter().next().is_some_and(|r| r.revision as f64 > api::loaded_pim_revision()) {
+                    if ctx
+                        .db
+                        .my_pim_changes()
+                        .iter()
+                        .next()
+                        .is_some_and(|r| r.revision as f64 > api::loaded_pim_revision())
+                    {
                         pim.epoch.try_update(|e| *e += 1);
                     }
                 }
@@ -145,7 +190,10 @@ pub fn use_pim(on_signed_out: Callback<()>) -> PimLive {
 
 /// A collection's color, drawn with SVG fill so no inline styles are needed.
 #[component]
-pub fn CollectionDot(#[prop(into)] color: Signal<String>, #[prop(optional, into)] class: Option<&'static str>) -> impl IntoView {
+pub fn CollectionDot(
+    #[prop(into)] color: Signal<String>,
+    #[prop(optional, into)] class: Option<&'static str>,
+) -> impl IntoView {
     view! {
         <svg class=class.unwrap_or("collection-dot") viewBox="0 0 16 16" aria-hidden="true">
             <circle cx="8" cy="8" r="5" fill=move || { let c = color.get(); if c.is_empty() { "currentColor".to_owned() } else { c } }></circle>
@@ -154,13 +202,22 @@ pub fn CollectionDot(#[prop(into)] color: Signal<String>, #[prop(optional, into)
 }
 
 pub fn initials(name: &str) -> String {
-    let value: String = name.split_whitespace().filter_map(|w| w.chars().next()).collect::<String>().chars().take(2).collect::<String>().to_uppercase();
+    let value: String = name
+        .split_whitespace()
+        .filter_map(|w| w.chars().next())
+        .collect::<String>()
+        .chars()
+        .take(2)
+        .collect::<String>()
+        .to_uppercase();
     if value.is_empty() { "?".into() } else { value }
 }
 
 /// One of six palette classes, stable for a given name (`avatarHue`).
 pub fn avatar_hue(name: &str) -> String {
-    let hash = name.chars().fold(0u32, |hash, c| hash.wrapping_mul(31).wrapping_add(c as u32));
+    let hash = name
+        .chars()
+        .fold(0u32, |hash, c| hash.wrapping_mul(31).wrapping_add(c as u32));
     format!("avatar-hue-{}", hash % 6)
 }
 
@@ -203,10 +260,21 @@ pub fn PimShell(
     Effect::new(move |previous: Option<bool>| {
         let open = has_details.get();
         // The panel renders (or leaves) in the same pass, so focus moves on the next frame.
-        if open && previous == Some(false) && crate::ui::window().match_media("(max-width:800px)").ok().flatten().is_some_and(|m| m.matches()) {
+        if open
+            && previous == Some(false)
+            && crate::ui::window()
+                .match_media("(max-width:800px)")
+                .ok()
+                .flatten()
+                .is_some_and(|m| m.matches())
+        {
             request_animation_frame(move || {
                 if let Some(p) = panel.try_get_untracked().flatten() {
-                    let target = p.query_selector("[aria-label^=\"Close\"]").ok().flatten().and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
+                    let target = p
+                        .query_selector("[aria-label^=\"Close\"]")
+                        .ok()
+                        .flatten()
+                        .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
                     let _ = target.unwrap_or_else(|| p.clone().into()).focus();
                 }
             });
@@ -214,14 +282,33 @@ pub fn PimShell(
             // Focus returns to the button or link that opened the details, or else to the list.
             request_animation_frame(move || {
                 let document = crate::ui::document();
-                let on_body = document.active_element().is_none_or(|a| document.body().is_some_and(|b| a == *AsRef::<web_sys::Element>::as_ref(&b)));
+                let on_body = document.active_element().is_none_or(|a| {
+                    document
+                        .body()
+                        .is_some_and(|b| a == *AsRef::<web_sys::Element>::as_ref(&b))
+                });
                 if !on_body {
                     return;
                 }
-                let shown = origin.try_with_value(|o| o.clone().filter(|t| t.is_connected() && { let b = t.get_bounding_client_rect(); b.width() > 0.0 && b.height() > 0.0 })).flatten();
+                let shown = origin
+                    .try_with_value(|o| {
+                        o.clone().filter(|t| {
+                            t.is_connected() && {
+                                let b = t.get_bounding_client_rect();
+                                b.width() > 0.0 && b.height() > 0.0
+                            }
+                        })
+                    })
+                    .flatten();
                 match shown {
-                    Some(t) => { let _ = t.focus(); }
-                    None => if let Some(m) = main.try_get_untracked().flatten() { let _ = m.focus(); },
+                    Some(t) => {
+                        let _ = t.focus();
+                    }
+                    None => {
+                        if let Some(m) = main.try_get_untracked().flatten() {
+                            let _ = m.focus();
+                        }
+                    }
                 }
             });
         }
@@ -230,7 +317,11 @@ pub fn PimShell(
     Effect::new(move |_| {
         if let Some(m) = main.get() {
             crate::ui::listen(&m, "click", true, move |event| {
-                let target = event.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()).and_then(|t| t.closest("button,a").ok().flatten()).and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
+                let target = event
+                    .target()
+                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                    .and_then(|t| t.closest("button,a").ok().flatten())
+                    .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
                 origin.set_value(target);
             });
         }
@@ -269,10 +360,17 @@ pub fn PimShell(
 
 /// Name and color of an address book or calendar (`CollectionEditor`).
 #[component]
-pub fn CollectionEditor(#[prop(into)] title: String, #[prop(optional)] collection: Option<Collection>, on_save: Callback<(String, String, Done)>, on_close: Callback<()>) -> impl IntoView {
+pub fn CollectionEditor(
+    #[prop(into)] title: String,
+    #[prop(optional)] collection: Option<Collection>,
+    on_save: Callback<(String, String, Done)>,
+    on_close: Callback<()>,
+) -> impl IntoView {
     let error = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
-    let (name, color) = collection.map(|c| (c.name, c.color)).unwrap_or_else(|| (String::new(), "#73396f".into()));
+    let (name, color) = collection
+        .map(|c| (c.name, c.color))
+        .unwrap_or_else(|| (String::new(), "#73396f".into()));
     let (name, color) = (StoredValue::new(name), StoredValue::new(color));
     view! {
         <EditorPane title=title on_close=on_close>
@@ -310,7 +408,13 @@ struct Grants {
 
 /// Sharing an address book or calendar with another account (`Sharing`).
 #[component]
-pub fn Sharing(collection: Collection, #[prop(into)] base: String, session: BrowserSession, on_close: Callback<()>, on_changed: Callback<()>) -> impl IntoView {
+pub fn Sharing(
+    collection: Collection,
+    #[prop(into)] base: String,
+    session: BrowserSession,
+    on_close: Callback<()>,
+    on_changed: Callback<()>,
+) -> impl IntoView {
     let grants: RwSignal<Vec<Grant>> = RwSignal::new(Vec::new());
     let current = RwSignal::new(collection.clone());
     let error = RwSignal::new(String::new());
@@ -325,7 +429,9 @@ pub fn Sharing(collection: Collection, #[prop(into)] base: String, session: Brow
                 (Ok(row), Ok(list)) => {
                     current.set(row);
                     grants.set(list.items);
-                    { on_changed.try_run(()); };
+                    {
+                        on_changed.try_run(());
+                    };
                 }
                 (Err(e), _) | (_, Err(e)) => error.set(e.message),
             }
@@ -375,22 +481,45 @@ pub fn Sharing(collection: Collection, #[prop(into)] base: String, session: Brow
 
 /// The collection-row pattern with paging sized to the sidebar (`CollectionNavigation`).
 #[component]
-pub fn CollectionNavigation(#[prop(into)] rows: Signal<Vec<Collection>>, #[prop(into)] selected: Signal<String>, noun: &'static str, on_select: Callback<Collection>, on_edit: Callback<Collection>, on_share: Callback<Collection>, on_delete: Callback<Collection>) -> impl IntoView {
+pub fn CollectionNavigation(
+    #[prop(into)] rows: Signal<Vec<Collection>>,
+    #[prop(into)] selected: Signal<String>,
+    noun: &'static str,
+    on_select: Callback<Collection>,
+    on_edit: Callback<Collection>,
+    on_share: Callback<Collection>,
+    on_delete: Callback<Collection>,
+) -> impl IntoView {
     let list = NodeRef::<html::Div>::new();
     let page = RwSignal::new(0usize);
     let size = RwSignal::new(1usize);
     // As in React: the page follows the selection only when the selection, size or row set
     // changes, and the size follows the list's height through a ResizeObserver.
     let count = Memo::new(move |_| rows.with(Vec::len));
-    let ids = Memo::new(move |_| rows.with(|r| r.iter().map(|row| row.id.clone()).collect::<Vec<_>>().join(",")));
+    let ids = Memo::new(move |_| {
+        rows.with(|r| {
+            r.iter()
+                .map(|row| row.id.clone())
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+    });
     Effect::new(move |_| {
         let Some(node) = list.get() else { return };
         let count = count.get();
         let measure = {
             let node = node.clone();
             move || {
-                let width = crate::ui::window().inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(1000.0);
-                size.try_set(if width <= 800.0 { count.max(1) } else { ((node.client_height() as f64 / 42.0).floor() as usize).max(1) });
+                let width = crate::ui::window()
+                    .inner_width()
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1000.0);
+                size.try_set(if width <= 800.0 {
+                    count.max(1)
+                } else {
+                    ((node.client_height() as f64 / 42.0).floor() as usize).max(1)
+                });
             }
         };
         let callback = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(measure.clone());

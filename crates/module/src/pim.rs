@@ -19,31 +19,55 @@ const REFRESH_CHOICES: [f64; 4] = [15.0, 60.0, 360.0, 1440.0];
 /// A non-empty string of at most `max` UTF-16 units without NUL (`text`).
 fn text(value: &Value, max: usize) -> Res<String> {
     match value.as_str() {
-        Some(s) if !s.is_empty() && s.encode_utf16().count() <= max && !s.contains('\0') => Ok(s.to_owned()),
+        Some(s) if !s.is_empty() && s.encode_utf16().count() <= max && !s.contains('\0') => {
+            Ok(s.to_owned())
+        }
         _ => fail("invalidInput"),
     }
 }
 
 fn id(value: &Value) -> Res<String> {
     let result = text(value, 36)?;
-    if result.len() == 36 && result.bytes().all(|b| matches!(b, b'a'..=b'f' | b'0'..=b'9' | b'-')) { Ok(result) } else { fail("invalidInput") }
+    if result.len() == 36
+        && result
+            .bytes()
+            .all(|b| matches!(b, b'a'..=b'f' | b'0'..=b'9' | b'-'))
+    {
+        Ok(result)
+    } else {
+        fail("invalidInput")
+    }
 }
 
 fn expected(actual: u32, value: &Value) -> Res<()> {
-    if value.as_f64() == Some(actual as f64) { Ok(()) } else { fail("conflict") }
+    if value.as_f64() == Some(actual as f64) {
+        Ok(())
+    } else {
+        fail("conflict")
+    }
 }
 
 fn color(value: &Value) -> Res<String> {
     let c = text(value, 7)?;
-    if c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit()) { Ok(c) } else { fail("invalidInput") }
+    if c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(c)
+    } else {
+        fail("invalidInput")
+    }
 }
 
 fn subscription_url(value: &Value) -> Res<String> {
     let raw = text(value, 2048)?;
     let trimmed = raw.trim();
-    let url = if trimmed.to_lowercase().starts_with("webcals://") { format!("https://{}", &trimmed[10..]) } else { trimmed.to_owned() };
+    let url = if trimmed.to_lowercase().starts_with("webcals://") {
+        format!("https://{}", &trimmed[10..])
+    } else {
+        trimmed.to_owned()
+    };
     let lower = url.to_lowercase();
-    let scheme = ["http://", "https://", "webcal://"].iter().find(|s| lower.starts_with(**s));
+    let scheme = ["http://", "https://", "webcal://"]
+        .iter()
+        .find(|s| lower.starts_with(**s));
     match scheme {
         Some(s) if url.len() > s.len() && !url.chars().any(char::is_whitespace) => Ok(url),
         _ => fail("invalidInput"),
@@ -64,29 +88,61 @@ fn due_key(at: f64) -> String {
 fn bump(ctx: &ReducerContext, user_id: &str) {
     match ctx.db.pim_changes().user_id().find(user_id.to_owned()) {
         Some(old) => {
-            ctx.db.pim_changes().user_id().update(PimChange { revision: old.revision + 1, ..old });
+            ctx.db.pim_changes().user_id().update(PimChange {
+                revision: old.revision + 1,
+                ..old
+            });
         }
         None => {
-            ctx.db.pim_changes().insert(PimChange { user_id: user_id.into(), revision: 1 });
+            ctx.db.pim_changes().insert(PimChange {
+                user_id: user_id.into(),
+                revision: 1,
+            });
         }
     }
 }
 
 fn notify(ctx: &ReducerContext, collection: &PimCollection) {
     bump(ctx, &collection.owner_id);
-    for grant in ctx.db.pim_grants().collection_id().filter(collection.id.as_str()).collect::<Vec<_>>() {
+    for grant in ctx
+        .db
+        .pim_grants()
+        .collection_id()
+        .filter(collection.id.as_str())
+        .collect::<Vec<_>>()
+    {
         bump(ctx, &grant.user_id);
     }
 }
 
 /// A collection the user may use, with their role; writes need owner or write access.
-fn collection(ctx: &ReducerContext, user_id: &str, value: &Value, write: bool) -> Res<(PimCollection, String)> {
-    let row = ctx.db.pim_collections().id().find(id(value)?).ok_or("notFound")?;
+fn collection(
+    ctx: &ReducerContext,
+    user_id: &str,
+    value: &Value,
+    write: bool,
+) -> Res<(PimCollection, String)> {
+    let row = ctx
+        .db
+        .pim_collections()
+        .id()
+        .find(id(value)?)
+        .ok_or("notFound")?;
     if row.kind == "notes" && !crate::app_settings::app_enabled(ctx, "notes") {
         return fail("notFound");
     }
-    let role = if row.owner_id == user_id { Some("owner".to_owned()) } else { ctx.db.pim_grants().id().find(format!("{}/{user_id}", row.id)).map(|g| g.role) };
-    let Some(role) = role else { return fail("notFound") };
+    let role = if row.owner_id == user_id {
+        Some("owner".to_owned())
+    } else {
+        ctx.db
+            .pim_grants()
+            .id()
+            .find(format!("{}/{user_id}", row.id))
+            .map(|g| g.role)
+    };
+    let Some(role) = role else {
+        return fail("notFound");
+    };
     if write && role == "read" {
         return fail("forbidden");
     }
@@ -94,14 +150,29 @@ fn collection(ctx: &ReducerContext, user_id: &str, value: &Value, write: bool) -
 }
 
 fn invalidate_reminders(ctx: &ReducerContext, resource_id: &str) {
-    ctx.db.pim_reminder_cursors().resource_id().delete(resource_id.to_owned());
-    for reminder in ctx.db.pim_reminders().resource_id().filter(resource_id).collect::<Vec<_>>() {
+    ctx.db
+        .pim_reminder_cursors()
+        .resource_id()
+        .delete(resource_id.to_owned());
+    for reminder in ctx
+        .db
+        .pim_reminders()
+        .resource_id()
+        .filter(resource_id)
+        .collect::<Vec<_>>()
+    {
         ctx.db.pim_reminders().id().delete(reminder.id);
     }
 }
 
 fn log(ctx: &ReducerContext, owner_id: &str, resource_id: &str, action: &str) {
-    ctx.db.activity().insert(Activity { id: unused_uuid(ctx), owner_id: owner_id.into(), file_id: resource_id.into(), action: action.into(), at: now(ctx) });
+    ctx.db.activity().insert(Activity {
+        id: unused_uuid(ctx),
+        owner_id: owner_id.into(),
+        file_id: resource_id.into(),
+        action: action.into(),
+        at: now(ctx),
+    });
 }
 
 fn collection_json(row: &PimCollection, role: &str) -> Value {
@@ -115,7 +186,12 @@ fn projection(row: &PimResource) -> Value {
 }
 
 /// A task's parent chain stays within its calendar and ends (`validateTaskParent`).
-fn validate_task_parent(ctx: &ReducerContext, collection_id: &str, uid: &str, projection_text: &str) -> Res<()> {
+fn validate_task_parent(
+    ctx: &ReducerContext,
+    collection_id: &str,
+    uid: &str,
+    projection_text: &str,
+) -> Res<()> {
     let data: Value = serde_json::from_str(projection_text).unwrap_or_default();
     if data["kind"] != "task" {
         return Ok(());
@@ -127,7 +203,14 @@ fn validate_task_parent(ctx: &ReducerContext, collection_id: &str, uid: &str, pr
             return fail("invalidInput");
         }
         seen.push(parent.clone());
-        let Some(row) = ctx.db.pim_resources().uid_key().find(format!("{collection_id}/{parent}")) else { return fail("invalidInput") };
+        let Some(row) = ctx
+            .db
+            .pim_resources()
+            .uid_key()
+            .find(format!("{collection_id}/{parent}"))
+        else {
+            return fail("invalidInput");
+        };
         let data = projection(&row);
         if data["kind"] != "task" {
             return fail("invalidInput");
@@ -137,8 +220,18 @@ fn validate_task_parent(ctx: &ReducerContext, collection_id: &str, uid: &str, pr
     Ok(())
 }
 
-fn collections(ctx: &ReducerContext, user_id: &str, allows: &dyn Fn(&str) -> bool) -> Res<Vec<Value>> {
-    let mut rows: Vec<(PimCollection, String)> = ctx.db.pim_collections().owner_id().filter(user_id).map(|r| (r, "owner".to_owned())).collect();
+fn collections(
+    ctx: &ReducerContext,
+    user_id: &str,
+    allows: &dyn Fn(&str) -> bool,
+) -> Res<Vec<Value>> {
+    let mut rows: Vec<(PimCollection, String)> = ctx
+        .db
+        .pim_collections()
+        .owner_id()
+        .filter(user_id)
+        .map(|r| (r, "owner".to_owned()))
+        .collect();
     for grant in ctx.db.pim_grants().user_id().filter(user_id) {
         if let Some(row) = ctx.db.pim_collections().id().find(grant.collection_id) {
             rows.push((row, grant.role));
@@ -167,7 +260,12 @@ fn search(ctx: &ReducerContext, user_id: &str, p: &Value) -> Res<Value> {
     if kind != "notes" && kind != "contacts" {
         return fail("invalidInput");
     }
-    let q = p["q"].as_str().unwrap_or_default().nfc().collect::<String>().to_lowercase();
+    let q = p["q"]
+        .as_str()
+        .unwrap_or_default()
+        .nfc()
+        .collect::<String>()
+        .to_lowercase();
     let cursor = p["cursor"].as_str().unwrap_or_default().to_owned();
     let wanted = p["collection"].as_str().unwrap_or_default();
     let tag = p["tag"].as_str().unwrap_or_default();
@@ -184,32 +282,64 @@ fn search(ctx: &ReducerContext, user_id: &str, p: &Value) -> Res<Value> {
             let data = projection(&row);
             let contact = data.get("displayName").is_some();
             if contact {
-                for g in data["groups"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                for g in data["groups"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                {
                     groups.insert(g.to_owned());
                 }
             }
             if !q.is_empty() {
-                let haystack = format!("{}\n{}", row.projection, if contact { "" } else { row.content.as_str() });
-                if !haystack.nfc().collect::<String>().to_lowercase().contains(&q) {
+                let haystack = format!(
+                    "{}\n{}",
+                    row.projection,
+                    if contact { "" } else { row.content.as_str() }
+                );
+                if !haystack
+                    .nfc()
+                    .collect::<String>()
+                    .to_lowercase()
+                    .contains(&q)
+                {
                     continue;
                 }
             }
             if favorite && data["favorite"] != json!(true) {
                 continue;
             }
-            if !tag.is_empty() && !data[if contact { "groups" } else { "tags" }].as_array().is_some_and(|l| l.iter().any(|v| v == tag)) {
+            if !tag.is_empty()
+                && !data[if contact { "groups" } else { "tags" }]
+                    .as_array()
+                    .is_some_and(|l| l.iter().any(|v| v == tag))
+            {
                 continue;
             }
             let name = if contact {
-                let preferred = data[if by_last { "lastName" } else { "firstName" }].as_str().unwrap_or_default();
-                if preferred.is_empty() { data["displayName"].as_str().unwrap_or_default().to_owned() } else { preferred.to_owned() }
+                let preferred = data[if by_last { "lastName" } else { "firstName" }]
+                    .as_str()
+                    .unwrap_or_default();
+                if preferred.is_empty() {
+                    data["displayName"].as_str().unwrap_or_default().to_owned()
+                } else {
+                    preferred.to_owned()
+                }
             } else {
                 data["title"].as_str().unwrap_or_default().to_owned()
             };
             let key = if !contact && p["sort"] != "title" {
-                format!("{:013}\u{0}{}", 9_999_999_999_999i64 - row.modified_at as i64, row.id)
+                format!(
+                    "{:013}\u{0}{}",
+                    9_999_999_999_999i64 - row.modified_at as i64,
+                    row.id
+                )
             } else {
-                format!("{}\u{0}{}", name.nfc().collect::<String>().to_lowercase(), row.id)
+                format!(
+                    "{}\u{0}{}",
+                    name.nfc().collect::<String>().to_lowercase(),
+                    row.id
+                )
             };
             if key <= cursor {
                 continue;
@@ -236,27 +366,51 @@ fn search(ctx: &ReducerContext, user_id: &str, p: &Value) -> Res<Value> {
             }
         }
     }
-    let next = if results.len() > 200 { results[199].0.clone() } else { String::new() };
-    Ok(json!({ "items": results.into_iter().take(200).map(|(_, v)| v).collect::<Vec<_>>(), "groups": groups.into_iter().collect::<Vec<_>>(), "nextCursor": next }))
+    let next = if results.len() > 200 {
+        results[199].0.clone()
+    } else {
+        String::new()
+    };
+    Ok(
+        json!({ "items": results.into_iter().take(200).map(|(_, v)| v).collect::<Vec<_>>(), "groups": groups.into_iter().collect::<Vec<_>>(), "nextCursor": next }),
+    )
 }
 
 /// One operation for a checked session (`pimOperation`); `scope` limits app passwords.
-pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &Value, scope: Option<&str>, batch: bool) -> Res<Value> {
+pub fn pim_operation(
+    ctx: &ReducerContext,
+    user_id: &str,
+    operation: &str,
+    p: &Value,
+    scope: Option<&str>,
+    batch: bool,
+) -> Res<Value> {
     let at = now(ctx);
-    let allows = |kind: &str| scope.is_none_or(|s| password_allows(s, kind, "read") || password_allows(s, kind, "write"));
+    let allows = |kind: &str| {
+        scope.is_none_or(|s| password_allows(s, kind, "read") || password_allows(s, kind, "write"))
+    };
     if scope.is_some() && !["collections", "list", "read", "put", "delete"].contains(&operation) {
         return fail("forbidden");
     }
     match operation {
         "resource" => {
-            let row = ctx.db.pim_resources().id().find(p["id"].as_str().unwrap_or_default().to_owned()).ok_or("notFound")?;
+            let row = ctx
+                .db
+                .pim_resources()
+                .id()
+                .find(p["id"].as_str().unwrap_or_default().to_owned())
+                .ok_or("notFound")?;
             collection(ctx, user_id, &json!(row.collection_id), false)?;
             return Ok(serde_json::to_value(row).unwrap_or_default());
         }
         "search" => return search(ctx, user_id, p),
         "collections" => return Ok(Value::Array(collections(ctx, user_id, &allows)?)),
         "subscribe" | "createCollection" => {
-            let kind = if operation == "subscribe" { "calendar".to_owned() } else { text(&p["kind"], 255)? };
+            let kind = if operation == "subscribe" {
+                "calendar".to_owned()
+            } else {
+                text(&p["kind"], 255)?
+            };
             if kind == "notes" && !crate::app_settings::app_enabled(ctx, "notes") {
                 return fail("notFound");
             }
@@ -266,30 +420,64 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
             if ctx.db.pim_collections().owner_id().filter(user_id).count() >= 100 {
                 return fail("operationTooLarge");
             }
-            let row = PimCollection { id: id(&p["id"])?, owner_id: user_id.into(), kind: kind.clone(), name: text(&json!(text(&p["name"], 255)?.trim()), 255)?, color: color(&p["color"])?, revision: 1, modified_at: at };
+            let row = PimCollection {
+                id: id(&p["id"])?,
+                owner_id: user_id.into(),
+                kind: kind.clone(),
+                name: text(&json!(text(&p["name"], 255)?.trim()), 255)?,
+                color: color(&p["color"])?,
+                revision: 1,
+                modified_at: at,
+            };
             if operation == "subscribe" {
                 let subscription = PimSubscription {
-                    collection_id: row.id.clone(), owner_id: user_id.into(), url: subscription_url(&p["url"])?, refresh_minutes: refresh_choice(&p["refreshMinutes"])?,
-                    next_at: due_key(at), last_sync_at: 0.0, last_error: String::new(), etag: String::new(), last_modified: String::new(),
+                    collection_id: row.id.clone(),
+                    owner_id: user_id.into(),
+                    url: subscription_url(&p["url"])?,
+                    refresh_minutes: refresh_choice(&p["refreshMinutes"])?,
+                    next_at: due_key(at),
+                    last_sync_at: 0.0,
+                    last_error: String::new(),
+                    etag: String::new(),
+                    last_modified: String::new(),
                 };
                 ctx.db.pim_subscriptions().insert(subscription);
             }
             ctx.db.pim_collections().insert(row.clone());
             notify(ctx, &row);
-            log(ctx, user_id, &row.id, if operation == "subscribe" { "calendar.subscribed".into() } else { format!("{kind}.collectionCreated") }.as_str());
+            log(
+                ctx,
+                user_id,
+                &row.id,
+                if operation == "subscribe" {
+                    "calendar.subscribed".into()
+                } else {
+                    format!("{kind}.collectionCreated")
+                }
+                .as_str(),
+            );
             return Ok(collection_json(&row, "owner"));
         }
         "preferences" => {
-            return Ok(match ctx.db.pim_preferences().user_id().find(user_id.to_owned()) {
-                Some(r) => json!({ "userId": r.user_id, "value": r.value, "revision": r.revision }),
-                None => json!({ "userId": user_id, "value": "{}", "revision": 0 }),
-            });
+            return Ok(
+                match ctx.db.pim_preferences().user_id().find(user_id.to_owned()) {
+                    Some(r) => {
+                        json!({ "userId": r.user_id, "value": r.value, "revision": r.revision })
+                    }
+                    None => json!({ "userId": user_id, "value": "{}", "revision": 0 }),
+                },
+            );
         }
         "savePreferences" => {
             let old = ctx.db.pim_preferences().user_id().find(user_id.to_owned());
             expected(old.as_ref().map_or(0, |o| o.revision), &p["revision"])?;
-            let row = PimPreference { user_id: user_id.into(), value: text(&p["value"], 16_384)?, revision: old.as_ref().map_or(0, |o| o.revision) + 1 };
-            let value = json!({ "userId": row.user_id, "value": row.value, "revision": row.revision });
+            let row = PimPreference {
+                user_id: user_id.into(),
+                value: text(&p["value"], 16_384)?,
+                revision: old.as_ref().map_or(0, |o| o.revision) + 1,
+            };
+            let value =
+                json!({ "userId": row.user_id, "value": row.value, "revision": row.revision });
             if old.is_some() {
                 ctx.db.pim_preferences().user_id().update(row);
             } else {
@@ -299,31 +487,72 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
             return Ok(value);
         }
         "reminders" => {
-            let rows: Vec<PimReminder> = ctx.db.pim_reminders().user_id().filter(user_id).filter(|r| !r.acknowledged && r.due_at <= at).take(200).collect();
+            let rows: Vec<PimReminder> = ctx
+                .db
+                .pim_reminders()
+                .user_id()
+                .filter(user_id)
+                .filter(|r| !r.acknowledged && r.due_at <= at)
+                .take(200)
+                .collect();
             return Ok(serde_json::to_value(rows).unwrap_or_default());
         }
         "acknowledge" => {
-            let reminder = ctx.db.pim_reminders().id().find(text(&p["id"], 255)?).filter(|r| r.user_id == user_id).ok_or("notFound")?;
-            ctx.db.pim_reminders().id().update(PimReminder { acknowledged: true, ..reminder });
+            let reminder = ctx
+                .db
+                .pim_reminders()
+                .id()
+                .find(text(&p["id"], 255)?)
+                .filter(|r| r.user_id == user_id)
+                .ok_or("notFound")?;
+            ctx.db.pim_reminders().id().update(PimReminder {
+                acknowledged: true,
+                ..reminder
+            });
             bump(ctx, user_id);
             return Ok(json!({ "ok": true }));
         }
         _ => {}
     }
-    let (c, role) = collection(ctx, user_id, &p["collectionId"], !["list", "read", "grants", "page"].contains(&operation))?;
+    let (c, role) = collection(
+        ctx,
+        user_id,
+        &p["collectionId"],
+        !["list", "read", "grants", "page"].contains(&operation),
+    )?;
     if !allows(&c.kind) {
         return fail("forbidden");
     }
     if operation == "page" {
         let cursor = p["cursor"].as_str().unwrap_or_default().to_owned();
-        let lower = if cursor.is_empty() { Bound::Unbounded } else { Bound::Excluded(cursor.as_str()) };
-        let items: Vec<PimResource> = ctx.db.pim_resources().by_collection_href().filter((c.id.as_str(), (lower, Bound::Unbounded))).take(201).collect();
-        let next = if items.len() > 200 { items[199].href.clone() } else { String::new() };
-        return Ok(json!({ "items": items.into_iter().take(200).collect::<Vec<_>>(), "nextCursor": next }));
+        let lower = if cursor.is_empty() {
+            Bound::Unbounded
+        } else {
+            Bound::Excluded(cursor.as_str())
+        };
+        let items: Vec<PimResource> = ctx
+            .db
+            .pim_resources()
+            .by_collection_href()
+            .filter((c.id.as_str(), (lower, Bound::Unbounded)))
+            .take(201)
+            .collect();
+        let next = if items.len() > 200 {
+            items[199].href.clone()
+        } else {
+            String::new()
+        };
+        return Ok(
+            json!({ "items": items.into_iter().take(200).collect::<Vec<_>>(), "nextCursor": next }),
+        );
     }
     let metadata_only = operation == "list" && p["metadataOnly"] == json!(true);
     if let Some(s) = scope {
-        let permission = if ["list", "read"].contains(&operation) && !metadata_only { "read" } else { "write" };
+        let permission = if ["list", "read"].contains(&operation) && !metadata_only {
+            "read"
+        } else {
+            "write"
+        };
         if !password_allows(s, &c.kind, permission) {
             return fail("forbidden");
         }
@@ -343,18 +572,40 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
         return Ok(json!({ "collection": collection_json(&c, &role), "items": rows }));
     }
     if operation == "updateSubscription" || operation == "refreshSubscription" {
-        let subscription = ctx.db.pim_subscriptions().collection_id().find(c.id.clone());
-        let Some(subscription) = subscription.filter(|_| role == "owner") else { return fail("forbidden") };
+        let subscription = ctx
+            .db
+            .pim_subscriptions()
+            .collection_id()
+            .find(c.id.clone());
+        let Some(subscription) = subscription.filter(|_| role == "owner") else {
+            return fail("forbidden");
+        };
         let update = operation == "updateSubscription";
-        let url = if update && !p["url"].is_null() { subscription_url(&p["url"])? } else { subscription.url.clone() };
-        let refresh = if update && !p["refreshMinutes"].is_null() { refresh_choice(&p["refreshMinutes"])? } else { subscription.refresh_minutes };
+        let url = if update && !p["url"].is_null() {
+            subscription_url(&p["url"])?
+        } else {
+            subscription.url.clone()
+        };
+        let refresh = if update && !p["refreshMinutes"].is_null() {
+            refresh_choice(&p["refreshMinutes"])?
+        } else {
+            subscription.refresh_minutes
+        };
         let same = url == subscription.url;
         let next = PimSubscription {
             url,
             refresh_minutes: refresh,
             next_at: due_key(at),
-            etag: if same { subscription.etag.clone() } else { String::new() },
-            last_modified: if same { subscription.last_modified.clone() } else { String::new() },
+            etag: if same {
+                subscription.etag.clone()
+            } else {
+                String::new()
+            },
+            last_modified: if same {
+                subscription.last_modified.clone()
+            } else {
+                String::new()
+            },
             ..subscription
         };
         let value = json!({ "url": next.url, "refreshMinutes": next.refresh_minutes, "lastSyncAt": next.last_sync_at, "lastError": next.last_error });
@@ -362,7 +613,15 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
         notify(ctx, &c);
         return Ok(value);
     }
-    if ["renameCollection", "deleteCollection", "share", "revoke", "grants"].contains(&operation) {
+    if [
+        "renameCollection",
+        "deleteCollection",
+        "share",
+        "revoke",
+        "grants",
+    ]
+    .contains(&operation)
+    {
         if role != "owner" {
             return fail("forbidden");
         }
@@ -374,7 +633,13 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
                 .filter(c.id.as_str())
                 .map(|g| {
                     let mut value = serde_json::to_value(&g).unwrap_or_default();
-                    value["username"] = json!(ctx.db.accounts().id().find(g.user_id.clone()).map(|a| a.username));
+                    value["username"] = json!(
+                        ctx.db
+                            .accounts()
+                            .id()
+                            .find(g.user_id.clone())
+                            .map(|a| a.username)
+                    );
                     value
                 })
                 .collect();
@@ -383,10 +648,23 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
         expected(c.revision, &p["revision"])?;
         match operation {
             "share" => {
-                let user = ctx.db.accounts().username().find(text(&p["username"], 255)?.to_lowercase());
+                let user = ctx
+                    .db
+                    .accounts()
+                    .username()
+                    .find(text(&p["username"], 255)?.to_lowercase());
                 let role = text(&p["role"], 255)?;
-                let Some(user) = user.filter(|u| u.enabled && u.id != user_id && (role == "read" || role == "write")) else { return fail("invalidInput") };
-                let grant = PimGrant { id: format!("{}/{}", c.id, user.id), collection_id: c.id.clone(), user_id: user.id.clone(), role };
+                let Some(user) = user.filter(|u| {
+                    u.enabled && u.id != user_id && (role == "read" || role == "write")
+                }) else {
+                    return fail("invalidInput");
+                };
+                let grant = PimGrant {
+                    id: format!("{}/{}", c.id, user.id),
+                    collection_id: c.id.clone(),
+                    user_id: user.id.clone(),
+                    role,
+                };
                 if ctx.db.pim_grants().id().find(grant.id.clone()).is_some() {
                     ctx.db.pim_grants().id().update(grant);
                 } else {
@@ -395,13 +673,24 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
                 bump(ctx, &user.id);
             }
             "revoke" => {
-                let grant = ctx.db.pim_grants().id().find(text(&p["id"], 255)?).filter(|g| g.collection_id == c.id).ok_or("notFound")?;
+                let grant = ctx
+                    .db
+                    .pim_grants()
+                    .id()
+                    .find(text(&p["id"], 255)?)
+                    .filter(|g| g.collection_id == c.id)
+                    .ok_or("notFound")?;
                 ctx.db.pim_grants().id().delete(grant.id.clone());
                 bump(ctx, &grant.user_id);
             }
             "deleteCollection" => {
                 notify(ctx, &c);
-                let rows: Vec<PimResource> = ctx.db.pim_resources().collection_id().filter(c.id.as_str()).collect();
+                let rows: Vec<PimResource> = ctx
+                    .db
+                    .pim_resources()
+                    .collection_id()
+                    .filter(c.id.as_str())
+                    .collect();
                 if rows.len() > 10_000 {
                     return fail("operationTooLarge");
                 }
@@ -412,19 +701,47 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
                     invalidate_reminders(ctx, &row.id);
                     ctx.db.pim_resources().id().delete(row.id);
                 }
-                for grant in ctx.db.pim_grants().collection_id().filter(c.id.as_str()).collect::<Vec<_>>() {
+                for grant in ctx
+                    .db
+                    .pim_grants()
+                    .collection_id()
+                    .filter(c.id.as_str())
+                    .collect::<Vec<_>>()
+                {
                     ctx.db.pim_grants().id().delete(grant.id);
                 }
-                ctx.db.pim_subscriptions().collection_id().delete(c.id.clone());
+                ctx.db
+                    .pim_subscriptions()
+                    .collection_id()
+                    .delete(c.id.clone());
                 ctx.db.pim_collections().id().delete(c.id.clone());
-                log(ctx, user_id, &c.id, &format!("{}.collectionDeleted", c.kind));
+                log(
+                    ctx,
+                    user_id,
+                    &c.id,
+                    &format!("{}.collectionDeleted", c.kind),
+                );
                 return Ok(json!({ "ok": true }));
             }
             _ => {}
         }
-        let new_color = if p["color"].is_null() { c.color.clone() } else { color(&p["color"])? };
-        let name = if operation == "renameCollection" { text(&json!(text(&p["name"], 255)?.trim()), 255)? } else { c.name.clone() };
-        let updated = PimCollection { name, color: new_color, revision: c.revision + 1, modified_at: at, ..c.clone() };
+        let new_color = if p["color"].is_null() {
+            c.color.clone()
+        } else {
+            color(&p["color"])?
+        };
+        let name = if operation == "renameCollection" {
+            text(&json!(text(&p["name"], 255)?.trim()), 255)?
+        } else {
+            c.name.clone()
+        };
+        let updated = PimCollection {
+            name,
+            color: new_color,
+            revision: c.revision + 1,
+            modified_at: at,
+            ..c.clone()
+        };
         ctx.db.pim_collections().id().update(updated.clone());
         notify(ctx, &c);
         log(ctx, user_id, &c.id, &format!("{}.{operation}", c.kind));
@@ -436,38 +753,82 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
         "notes" => ".md",
         _ => ".ics",
     };
-    let stem_ok = href.len() > extension.len() && href[..href.len() - extension.len()].bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'));
+    let stem_ok = href.len() > extension.len()
+        && href[..href.len() - extension.len()]
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'));
     if !href.ends_with(extension) || !stem_ok {
         return fail("invalidInput");
     }
-    let old = ctx.db.pim_resources().href_key().find(format!("{}/{href}", c.id));
+    let old = ctx
+        .db
+        .pim_resources()
+        .href_key()
+        .find(format!("{}/{href}", c.id));
     if operation == "read" {
-        return old.map(|o| serde_json::to_value(o).unwrap_or_default()).ok_or_else(|| "notFound".to_owned());
+        return old
+            .map(|o| serde_json::to_value(o).unwrap_or_default())
+            .ok_or_else(|| "notFound".to_owned());
     }
     // Subscribed calendars change only through their sync.
-    let subscribed = ctx.db.pim_subscriptions().collection_id().find(c.id.clone()).is_some();
+    let subscribed = ctx
+        .db
+        .pim_subscriptions()
+        .collection_id()
+        .find(c.id.clone())
+        .is_some();
     if ["move", "put", "delete"].contains(&operation) && subscribed {
         return fail("forbidden");
     }
     if operation == "move" {
-        let Some(old) = old.filter(|_| batch) else { return fail("invalidInput") };
+        let Some(old) = old.filter(|_| batch) else {
+            return fail("invalidInput");
+        };
         expected(old.revision, &p["revision"])?;
         let (target, target_role) = collection(ctx, user_id, &p["targetCollectionId"], true)?;
-        if ctx.db.pim_subscriptions().collection_id().find(target.id.clone()).is_some() || target.kind != c.kind || target.owner_id != c.owner_id {
+        if ctx
+            .db
+            .pim_subscriptions()
+            .collection_id()
+            .find(target.id.clone())
+            .is_some()
+            || target.kind != c.kind
+            || target.owner_id != c.owner_id
+        {
             return fail("forbidden");
         }
         if target.id == c.id {
             return Ok(serde_json::to_value(old).unwrap_or_default());
         }
-        if ctx.db.pim_resources().uid_key().find(format!("{}/{}", target.id, old.uid)).is_some() || ctx.db.pim_resources().href_key().find(format!("{}/{href}", target.id)).is_some() {
+        if ctx
+            .db
+            .pim_resources()
+            .uid_key()
+            .find(format!("{}/{}", target.id, old.uid))
+            .is_some()
+            || ctx
+                .db
+                .pim_resources()
+                .href_key()
+                .find(format!("{}/{href}", target.id))
+                .is_some()
+        {
             return fail("conflict");
         }
         let moved = PimResource {
             collection_id: target.id.clone(),
             href_key: format!("{}/{href}", target.id),
             uid_key: format!("{}/{}", target.id, old.uid),
-            content: if p["content"].is_null() { old.content.clone() } else { text(&p["content"], 262_144)? },
-            projection: if p["projection"].is_null() { old.projection.clone() } else { text(&p["projection"], 65_536)? },
+            content: if p["content"].is_null() {
+                old.content.clone()
+            } else {
+                text(&p["content"], 262_144)?
+            },
+            projection: if p["projection"].is_null() {
+                old.projection.clone()
+            } else {
+                text(&p["projection"], 65_536)?
+            },
             revision: old.revision + 1,
             modified_at: at,
             ..old.clone()
@@ -477,10 +838,19 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
         ctx.db.pim_resources().insert(moved.clone());
         validate_task_parent(ctx, &target.id, &old.uid, &moved.projection)?;
         if target.kind == "calendar" {
-            ctx.db.pim_reminder_cursors().insert(PimReminderCursor { resource_id: old.id.clone(), revision: moved.revision, at, run_at: due_key(at + 1000.0) });
+            ctx.db.pim_reminder_cursors().insert(PimReminderCursor {
+                resource_id: old.id.clone(),
+                revision: moved.revision,
+                at,
+                run_at: due_key(at + 1000.0),
+            });
         }
         for (item, _) in [(&c, &role), (&target, &target_role)] {
-            ctx.db.pim_collections().id().update(PimCollection { revision: item.revision + 1, modified_at: at, ..item.clone() });
+            ctx.db.pim_collections().id().update(PimCollection {
+                revision: item.revision + 1,
+                modified_at: at,
+                ..item.clone()
+            });
             notify(ctx, item);
         }
         log(ctx, &c.owner_id, &old.id, &format!("{}.moved", c.kind));
@@ -492,11 +862,20 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
     expected(old.as_ref().map_or(0, |o| o.revision), &p["revision"])?;
     let resource_id;
     if operation == "delete" {
-        let Some(old) = old else { return fail("notFound") };
+        let Some(old) = old else {
+            return fail("notFound");
+        };
         if c.kind == "notes" {
             crate::workspace::trash_note(ctx, &old)?;
         }
-        if projection(&old)["kind"] == "task" && ctx.db.pim_resources().collection_id().filter(c.id.as_str()).any(|child| projection(&child)["parentUid"] == old.uid.as_str()) {
+        if projection(&old)["kind"] == "task"
+            && ctx
+                .db
+                .pim_resources()
+                .collection_id()
+                .filter(c.id.as_str())
+                .any(|child| projection(&child)["parentUid"] == old.uid.as_str())
+        {
             return fail("conflict");
         }
         invalidate_reminders(ctx, &old.id);
@@ -512,17 +891,36 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
         let new_projection = text(&p["projection"], 65_536)?;
         let data: Value = serde_json::from_str(&new_projection).unwrap_or_default();
         if let Some(o) = &old
-            && c.kind == "calendar" && (projection(o)["kind"] == "task") != (data["kind"] == "task") {
-                return fail("invalidInput");
-            }
-        if duplicate.as_ref().is_some_and(|d| Some(&d.id) != old.as_ref().map(|o| &o.id)) {
+            && c.kind == "calendar"
+            && (projection(o)["kind"] == "task") != (data["kind"] == "task")
+        {
+            return fail("invalidInput");
+        }
+        if duplicate
+            .as_ref()
+            .is_some_and(|d| Some(&d.id) != old.as_ref().map(|o| &o.id))
+        {
             return fail("conflict");
         }
-        if old.is_none() && ctx.db.pim_resources().collection_id().filter(c.id.as_str()).count() >= 10_000 {
+        if old.is_none()
+            && ctx
+                .db
+                .pim_resources()
+                .collection_id()
+                .filter(c.id.as_str())
+                .count()
+                >= 10_000
+        {
             return fail("operationTooLarge");
         }
         let content = match p["content"].as_str() {
-            Some(s) if s.encode_utf16().count() <= 262_144 && !s.contains('\0') && (c.kind == "notes" || !s.is_empty()) => s.to_owned(),
+            Some(s)
+                if s.encode_utf16().count() <= 262_144
+                    && !s.contains('\0')
+                    && (c.kind == "notes" || !s.is_empty()) =>
+            {
+                s.to_owned()
+            }
             _ => return fail("invalidInput"),
         };
         let row = PimResource {
@@ -542,10 +940,17 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
         };
         validate_task_parent(ctx, &c.id, &uid, &row.projection)?;
         if data["kind"] == "task" && data["status"] == "COMPLETED" {
-            let open_child = ctx.db.pim_resources().collection_id().filter(c.id.as_str()).any(|child| {
-                let d = projection(&child);
-                d["parentUid"] == uid.as_str() && !["COMPLETED", "CANCELLED"].contains(&d["status"].as_str().unwrap_or_default())
-            });
+            let open_child = ctx
+                .db
+                .pim_resources()
+                .collection_id()
+                .filter(c.id.as_str())
+                .any(|child| {
+                    let d = projection(&child);
+                    d["parentUid"] == uid.as_str()
+                        && !["COMPLETED", "CANCELLED"]
+                            .contains(&d["status"].as_str().unwrap_or_default())
+                });
             if open_child {
                 return fail("conflict");
             }
@@ -558,33 +963,73 @@ pub fn pim_operation(ctx: &ReducerContext, user_id: &str, operation: &str, p: &V
             ctx.db.pim_resources().insert(row.clone());
         }
         if c.kind == "calendar" {
-            ctx.db.pim_reminder_cursors().insert(PimReminderCursor { resource_id: row.id.clone(), revision: row.revision, at, run_at: due_key(at + 1000.0) });
+            ctx.db.pim_reminder_cursors().insert(PimReminderCursor {
+                resource_id: row.id.clone(),
+                revision: row.revision,
+                at,
+                run_at: due_key(at + 1000.0),
+            });
         }
     }
-    ctx.db.pim_collections().id().update(PimCollection { revision: c.revision + 1, modified_at: at, ..c.clone() });
+    ctx.db.pim_collections().id().update(PimCollection {
+        revision: c.revision + 1,
+        modified_at: at,
+        ..c.clone()
+    });
     notify(ctx, &c);
-    log(ctx, &c.owner_id, &resource_id, &format!("{}.{operation}", c.kind));
+    log(
+        ctx,
+        &c.owner_id,
+        &resource_id,
+        &format!("{}.{operation}", c.kind),
+    );
     if operation == "delete" {
         return Ok(json!({ "ok": true }));
     }
-    Ok(ctx.db.pim_resources().href_key().find(format!("{}/{href}", c.id)).map(|r| serde_json::to_value(r).unwrap_or_default()).unwrap_or_default())
+    Ok(ctx
+        .db
+        .pim_resources()
+        .href_key()
+        .find(format!("{}/{href}", c.id))
+        .map(|r| serde_json::to_value(r).unwrap_or_default())
+        .unwrap_or_default())
 }
 
 /// A Contacts or Calendar operation for a browser session or an app password's protocol
 /// session, with the account's change counter as of the result.
 #[spacetimedb::procedure]
-pub fn service_pim(ctx: &mut ProcedureContext, sessionId: String, operation: String, payload: String) -> String {
+pub fn service_pim(
+    ctx: &mut ProcedureContext,
+    sessionId: String,
+    operation: String,
+    payload: String,
+) -> String {
     let session_id = sessionId;
     run(ctx, |tx| {
         service(tx)?;
         let user = from_session(tx, &session_id)?;
         let password = tx.db.app_passwords().session_id().find(session_id.clone());
-        if password.as_ref().is_some_and(|p| p.revoked || p.expires_at <= now(tx)) {
+        if password
+            .as_ref()
+            .is_some_and(|p| p.revoked || p.expires_at <= now(tx))
+        {
             return fail("unauthenticated");
         }
         let p: Value = serde_json::from_str(&payload).map_err(|_| "invalidInput")?;
-        let value = pim_operation(tx, &user.id, &operation, &p, password.as_ref().map(|p| p.scope.as_str()), false)?;
-        let revision = tx.db.pim_changes().user_id().find(user.id.clone()).map_or(0, |r| r.revision);
+        let value = pim_operation(
+            tx,
+            &user.id,
+            &operation,
+            &p,
+            password.as_ref().map(|p| p.scope.as_str()),
+            false,
+        )?;
+        let revision = tx
+            .db
+            .pim_changes()
+            .user_id()
+            .find(user.id.clone())
+            .map_or(0, |r| r.revision);
         Ok(json!({ "value": value, "revision": revision }).to_string())
     })
 }
@@ -592,7 +1037,16 @@ pub fn service_pim(ctx: &mut ProcedureContext, sessionId: String, operation: Str
 #[spacetimedb::view(accessor = my_pim_changes, public)]
 pub fn my_pim_changes(ctx: &ViewContext) -> Option<PimChange> {
     let user = user_for_view(ctx)?;
-    Some(ctx.db.pim_changes().user_id().find(user.id.clone()).unwrap_or(PimChange { user_id: user.id, revision: 0 }))
+    Some(
+        ctx.db
+            .pim_changes()
+            .user_id()
+            .find(user.id.clone())
+            .unwrap_or(PimChange {
+                user_id: user.id,
+                revision: 0,
+            }),
+    )
 }
 
 /// Calendar resources due reminder planning (`reminderWork`): the runtime expands each one's
@@ -601,18 +1055,59 @@ pub fn reminder_work(ctx: &ReducerContext) -> Value {
     let at = now(ctx);
     let mut result = Vec::new();
     let upper = due_key(at);
-    for cursor in ctx.db.pim_reminder_cursors().run_at().filter((Bound::Unbounded, Bound::Included(upper.as_str()))) {
-        let Some(row) = ctx.db.pim_resources().id().find(cursor.resource_id.clone()) else { continue };
-        let Some(c) = ctx.db.pim_collections().id().find(row.collection_id.clone()) else { continue };
-        if c.kind != "calendar" || !ctx.db.accounts().id().find(c.owner_id.clone()).is_some_and(|a| a.enabled) || ctx.db.pim_subscriptions().collection_id().find(c.id.clone()).is_some() {
+    for cursor in ctx
+        .db
+        .pim_reminder_cursors()
+        .run_at()
+        .filter((Bound::Unbounded, Bound::Included(upper.as_str())))
+    {
+        let Some(row) = ctx.db.pim_resources().id().find(cursor.resource_id.clone()) else {
+            continue;
+        };
+        let Some(c) = ctx
+            .db
+            .pim_collections()
+            .id()
+            .find(row.collection_id.clone())
+        else {
+            continue;
+        };
+        if c.kind != "calendar"
+            || !ctx
+                .db
+                .accounts()
+                .id()
+                .find(c.owner_id.clone())
+                .is_some_and(|a| a.enabled)
+            || ctx
+                .db
+                .pim_subscriptions()
+                .collection_id()
+                .find(c.id.clone())
+                .is_some()
+        {
             continue;
         }
-        let from = if cursor.revision == row.revision { cursor.at } else { row.modified_at };
+        let from = if cursor.revision == row.revision {
+            cursor.at
+        } else {
+            row.modified_at
+        };
         if from >= at - 1000.0 {
             continue;
         }
-        let preferences: Value = ctx.db.pim_preferences().user_id().find(c.owner_id.clone()).and_then(|p| serde_json::from_str(&p.value).ok()).unwrap_or(json!({}));
-        let timezone = preferences.get("timezone").cloned().filter(|t| !t.is_null()).unwrap_or(json!("UTC"));
+        let preferences: Value = ctx
+            .db
+            .pim_preferences()
+            .user_id()
+            .find(c.owner_id.clone())
+            .and_then(|p| serde_json::from_str(&p.value).ok())
+            .unwrap_or(json!({}));
+        let timezone = preferences
+            .get("timezone")
+            .cloned()
+            .filter(|t| !t.is_null())
+            .unwrap_or(json!("UTC"));
         result.push(json!({ "resource": crate::row(&row), "from": from, "to": at.min(from + 7.0 * 86_400_000.0), "userId": c.owner_id, "timezone": timezone }));
         if result.len() >= 200 {
             break;
@@ -621,10 +1116,23 @@ pub fn reminder_work(ctx: &ReducerContext) -> Value {
     Value::Array(result)
 }
 
-pub fn commit_reminders(ctx: &ReducerContext, resource_id: &str, revision: u32, from: f64, to: f64, reminders: &Value) -> Res<()> {
+pub fn commit_reminders(
+    ctx: &ReducerContext,
+    resource_id: &str,
+    revision: u32,
+    from: f64,
+    to: f64,
+    reminders: &Value,
+) -> Res<()> {
     let resource = ctx.db.pim_resources().id().find(resource_id.to_owned());
-    let cursor = ctx.db.pim_reminder_cursors().resource_id().find(resource_id.to_owned());
-    let Some(resource) = resource.filter(|r| r.revision == revision) else { return fail("conflict") };
+    let cursor = ctx
+        .db
+        .pim_reminder_cursors()
+        .resource_id()
+        .find(resource_id.to_owned());
+    let Some(resource) = resource.filter(|r| r.revision == revision) else {
+        return fail("conflict");
+    };
     let start = match &cursor {
         Some(c) if c.revision == revision => c.at,
         _ => resource.modified_at,
@@ -632,25 +1140,52 @@ pub fn commit_reminders(ctx: &ReducerContext, resource_id: &str, revision: u32, 
     if start != from {
         return fail("conflict");
     }
-    let Some(reminders) = reminders.as_array() else { return fail("invalidInput") };
-    if !to.is_finite() || to <= from || to > now(ctx) || to - from > 7.0 * 86_400_000.0 || reminders.len() > 2000 {
+    let Some(reminders) = reminders.as_array() else {
+        return fail("invalidInput");
+    };
+    if !to.is_finite()
+        || to <= from
+        || to > now(ctx)
+        || to - from > 7.0 * 86_400_000.0
+        || reminders.len() > 2000
+    {
         return fail("invalidInput");
     }
-    let c = ctx.db.pim_collections().id().find(resource.collection_id.clone()).expect("collection");
+    let c = ctx
+        .db
+        .pim_collections()
+        .id()
+        .find(resource.collection_id.clone())
+        .expect("collection");
     for row in reminders {
         let due_at = row.get("dueAt").and_then(Value::as_f64);
         let rid = row.get("id").and_then(Value::as_str);
         let title = row.get("title").and_then(Value::as_str);
-        let (Some(due_at), Some(rid), Some(title)) = (due_at, rid, title) else { return fail("invalidInput") };
+        let (Some(due_at), Some(rid), Some(title)) = (due_at, rid, title) else {
+            return fail("invalidInput");
+        };
         if !due_at.is_finite() || due_at < from || due_at > to || rid.encode_utf16().count() > 200 {
             return fail("invalidInput");
         }
         let id = format!("{resource_id}/{revision}/{rid}");
         if ctx.db.pim_reminders().id().find(id.clone()).is_none() {
-            ctx.db.pim_reminders().insert(PimReminder { id, user_id: c.owner_id.clone(), resource_id: resource_id.into(), resource_revision: revision, due_at, title: title.into(), acknowledged: false });
+            ctx.db.pim_reminders().insert(PimReminder {
+                id,
+                user_id: c.owner_id.clone(),
+                resource_id: resource_id.into(),
+                resource_revision: revision,
+                due_at,
+                title: title.into(),
+                acknowledged: false,
+            });
         }
     }
-    let next = PimReminderCursor { resource_id: resource_id.into(), revision, at: to, run_at: due_key(now(ctx) + 60_000.0) };
+    let next = PimReminderCursor {
+        resource_id: resource_id.into(),
+        revision,
+        at: to,
+        run_at: due_key(now(ctx) + 60_000.0),
+    };
     if cursor.is_some() {
         ctx.db.pim_reminder_cursors().resource_id().update(next);
     } else {
@@ -663,12 +1198,19 @@ pub fn commit_reminders(ctx: &ReducerContext, resource_id: &str, revision: u32, 
 }
 
 pub fn defer_reminder(ctx: &ReducerContext, resource_id: &str, revision: u32, from: f64) {
-    if let Some(cursor) = ctx.db.pim_reminder_cursors().resource_id().find(resource_id.to_owned())
+    if let Some(cursor) = ctx
+        .db
+        .pim_reminder_cursors()
+        .resource_id()
+        .find(resource_id.to_owned())
         && cursor.revision == revision
         && cursor.at == from
     {
         let run_at = due_key(now(ctx) + 300_000.0);
-        ctx.db.pim_reminder_cursors().resource_id().update(PimReminderCursor { run_at, ..cursor });
+        ctx.db
+            .pim_reminder_cursors()
+            .resource_id()
+            .update(PimReminderCursor { run_at, ..cursor });
     }
 }
 
@@ -683,13 +1225,31 @@ pub fn pim_subscription_work(ctx: &ReducerContext, operation: &str, p: &Value) -
     if operation == "due" {
         let mut rows = Vec::new();
         let upper = due_key(at);
-        for row in ctx.db.pim_subscriptions().next_at().filter((Bound::Unbounded, Bound::Included(upper.as_str()))).collect::<Vec<_>>() {
-            if !ctx.db.accounts().id().find(row.owner_id.clone()).is_some_and(|a| a.enabled) {
+        for row in ctx
+            .db
+            .pim_subscriptions()
+            .next_at()
+            .filter((Bound::Unbounded, Bound::Included(upper.as_str())))
+            .collect::<Vec<_>>()
+        {
+            if !ctx
+                .db
+                .accounts()
+                .id()
+                .find(row.owner_id.clone())
+                .is_some_and(|a| a.enabled)
+            {
                 continue;
             }
             // A lease: a crashed or slow sync is retried later instead of running twice.
             rows.push(json!({ "collectionId": row.collection_id, "url": row.url, "etag": row.etag, "lastModified": row.last_modified }));
-            ctx.db.pim_subscriptions().collection_id().update(PimSubscription { next_at: due_key(at + 15.0 * 60_000.0), ..row });
+            ctx.db
+                .pim_subscriptions()
+                .collection_id()
+                .update(PimSubscription {
+                    next_at: due_key(at + 15.0 * 60_000.0),
+                    ..row
+                });
             if rows.len() >= 10 {
                 break;
             }
@@ -697,20 +1257,51 @@ pub fn pim_subscription_work(ctx: &ReducerContext, operation: &str, p: &Value) -
         return Ok(Value::Array(rows));
     }
     let c = ctx.db.pim_collections().id().find(id(&p["collectionId"])?);
-    let subscription = c.as_ref().and_then(|c| ctx.db.pim_subscriptions().collection_id().find(c.id.clone()));
-    let (Some(c), Some(subscription)) = (c, subscription) else { return Ok(json!({ "ok": false })) };
+    let subscription = c.as_ref().and_then(|c| {
+        ctx.db
+            .pim_subscriptions()
+            .collection_id()
+            .find(c.id.clone())
+    });
+    let (Some(c), Some(subscription)) = (c, subscription) else {
+        return Ok(json!({ "ok": false }));
+    };
     match operation {
         "put" => {
-            let Some(items) = p.get("items").and_then(Value::as_array).filter(|i| i.len() <= 200) else { return fail("invalidInput") };
+            let Some(items) = p
+                .get("items")
+                .and_then(Value::as_array)
+                .filter(|i| i.len() <= 200)
+            else {
+                return fail("invalidInput");
+            };
             let mut changed = 0;
-            let mut count = ctx.db.pim_resources().collection_id().filter(c.id.as_str()).count();
+            let mut count = ctx
+                .db
+                .pim_resources()
+                .collection_id()
+                .filter(c.id.as_str())
+                .count();
             for input in items {
                 let uid = text(&input["uid"], 1024)?;
                 let href = text(&input["href"], 255)?;
-                let old = ctx.db.pim_resources().uid_key().find(format!("{}/{uid}", c.id));
-                let valid_href = href.len() == 44 && href.ends_with(".ics") && href[..40].bytes().all(|b| matches!(b, b'a'..=b'f' | b'0'..=b'9'));
-                let content = input.get("content").and_then(Value::as_str).filter(|s| s.encode_utf16().count() <= 262_144);
-                let (true, Some(content)) = (valid_href, content) else { return fail("invalidInput") };
+                let old = ctx
+                    .db
+                    .pim_resources()
+                    .uid_key()
+                    .find(format!("{}/{uid}", c.id));
+                let valid_href = href.len() == 44
+                    && href.ends_with(".ics")
+                    && href[..40]
+                        .bytes()
+                        .all(|b| matches!(b, b'a'..=b'f' | b'0'..=b'9'));
+                let content = input
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .filter(|s| s.encode_utf16().count() <= 262_144);
+                let (true, Some(content)) = (valid_href, content) else {
+                    return fail("invalidInput");
+                };
                 if old.as_ref().is_some_and(|o| o.content == content) {
                     continue;
                 }
@@ -736,7 +1327,13 @@ pub fn pim_subscription_work(ctx: &ReducerContext, operation: &str, p: &Value) -
                     if count > 10_000 {
                         return fail("operationTooLarge");
                     }
-                    if ctx.db.pim_resources().href_key().find(row.href_key.clone()).is_some() {
+                    if ctx
+                        .db
+                        .pim_resources()
+                        .href_key()
+                        .find(row.href_key.clone())
+                        .is_some()
+                    {
                         continue;
                     }
                     ctx.db.pim_resources().insert(row);
@@ -744,7 +1341,11 @@ pub fn pim_subscription_work(ctx: &ReducerContext, operation: &str, p: &Value) -
                 changed += 1;
             }
             if changed > 0 {
-                ctx.db.pim_collections().id().update(PimCollection { revision: c.revision + 1, modified_at: at, ..c.clone() });
+                ctx.db.pim_collections().id().update(PimCollection {
+                    revision: c.revision + 1,
+                    modified_at: at,
+                    ..c.clone()
+                });
                 notify(ctx, &c);
             }
             Ok(json!({ "changed": changed }))
@@ -755,8 +1356,15 @@ pub fn pim_subscription_work(ctx: &ReducerContext, operation: &str, p: &Value) -
                 if uids.len() > 10_000 {
                     return fail("operationTooLarge");
                 }
-                let keep: std::collections::HashSet<String> = uids.iter().map(|v| crate::text_of(Some(v))).collect();
-                for row in ctx.db.pim_resources().collection_id().filter(c.id.as_str()).collect::<Vec<_>>() {
+                let keep: std::collections::HashSet<String> =
+                    uids.iter().map(|v| crate::text_of(Some(v))).collect();
+                for row in ctx
+                    .db
+                    .pim_resources()
+                    .collection_id()
+                    .filter(c.id.as_str())
+                    .collect::<Vec<_>>()
+                {
                     if !keep.contains(&row.uid) {
                         invalidate_reminders(ctx, &row.id);
                         ctx.db.pim_resources().id().delete(row.id);
@@ -764,12 +1372,34 @@ pub fn pim_subscription_work(ctx: &ReducerContext, operation: &str, p: &Value) -
                     }
                 }
             }
-            let error = p.get("error").and_then(Value::as_str).map(|e| clip(e, 500)).unwrap_or_default();
+            let error = p
+                .get("error")
+                .and_then(Value::as_str)
+                .map(|e| clip(e, 500))
+                .unwrap_or_default();
             // Failures retry within the hour; successes wait for the chosen interval.
-            let wait = subscription.refresh_minutes.min(if error.is_empty() { subscription.refresh_minutes } else { 60 }) as f64 * 60_000.0;
-            let header = |key: &str, old: &str| if !error.is_empty() { old.to_owned() } else { p.get(key).and_then(Value::as_str).map(|s| clip(s, 500)).unwrap_or_default() };
+            let wait = subscription.refresh_minutes.min(if error.is_empty() {
+                subscription.refresh_minutes
+            } else {
+                60
+            }) as f64
+                * 60_000.0;
+            let header = |key: &str, old: &str| {
+                if !error.is_empty() {
+                    old.to_owned()
+                } else {
+                    p.get(key)
+                        .and_then(Value::as_str)
+                        .map(|s| clip(s, 500))
+                        .unwrap_or_default()
+                }
+            };
             let next = PimSubscription {
-                last_sync_at: if error.is_empty() { at } else { subscription.last_sync_at },
+                last_sync_at: if error.is_empty() {
+                    at
+                } else {
+                    subscription.last_sync_at
+                },
                 next_at: due_key(at + wait),
                 etag: header("etag", &subscription.etag),
                 last_modified: header("lastModified", &subscription.last_modified),
@@ -778,7 +1408,11 @@ pub fn pim_subscription_work(ctx: &ReducerContext, operation: &str, p: &Value) -
             };
             ctx.db.pim_subscriptions().collection_id().update(next);
             if changed {
-                ctx.db.pim_collections().id().update(PimCollection { revision: c.revision + 1, modified_at: at, ..c.clone() });
+                ctx.db.pim_collections().id().update(PimCollection {
+                    revision: c.revision + 1,
+                    modified_at: at,
+                    ..c.clone()
+                });
             }
             notify(ctx, &c);
             Ok(json!({ "ok": true }))
@@ -800,40 +1434,72 @@ pub fn pim_snapshot(ctx: &ReducerContext) -> Value {
 }
 
 pub fn restore_pim(ctx: &ReducerContext, data: Option<&Value>) -> Res<()> {
-    let Some(data) = data.filter(|d| !d.is_null()) else { return Ok(()) };
+    let Some(data) = data.filter(|d| !d.is_null()) else {
+        return Ok(());
+    };
     let rows = |key: &str| crate::identity::snapshot_rows::<Value>(data, key);
     for row in crate::identity::snapshot_rows::<PimCollection>(data, "collections")? {
-        if ctx.db.accounts().id().find(row.owner_id.clone()).is_none() || !["contacts", "calendar", "notes"].contains(&row.kind.as_str()) {
+        if ctx.db.accounts().id().find(row.owner_id.clone()).is_none()
+            || !["contacts", "calendar", "notes"].contains(&row.kind.as_str())
+        {
             return fail("invalidInput");
         }
         ctx.db.pim_collections().insert(row);
     }
     for row in crate::identity::snapshot_rows::<PimResource>(data, "resources")? {
-        if ctx.db.pim_collections().id().find(row.collection_id.clone()).is_none() || row.href_key != format!("{}/{}", row.collection_id, row.href) || row.uid_key != format!("{}/{}", row.collection_id, row.uid) {
+        if ctx
+            .db
+            .pim_collections()
+            .id()
+            .find(row.collection_id.clone())
+            .is_none()
+            || row.href_key != format!("{}/{}", row.collection_id, row.href)
+            || row.uid_key != format!("{}/{}", row.collection_id, row.uid)
+        {
             return fail("invalidInput");
         }
         ctx.db.pim_resources().insert(row);
     }
     for row in crate::identity::snapshot_rows::<PimGrant>(data, "grants")? {
-        if ctx.db.pim_collections().id().find(row.collection_id.clone()).is_none() || ctx.db.accounts().id().find(row.user_id.clone()).is_none() {
+        if ctx
+            .db
+            .pim_collections()
+            .id()
+            .find(row.collection_id.clone())
+            .is_none()
+            || ctx.db.accounts().id().find(row.user_id.clone()).is_none()
+        {
             return fail("invalidInput");
         }
         ctx.db.pim_grants().insert(row);
     }
     for row in crate::identity::snapshot_rows::<PimPreference>(data, "preferences")? {
-        if !["instance:appearance", "instance:apps"].contains(&row.user_id.as_str()) && ctx.db.accounts().id().find(row.user_id.clone()).is_none() {
+        if !["instance:appearance", "instance:apps"].contains(&row.user_id.as_str())
+            && ctx.db.accounts().id().find(row.user_id.clone()).is_none()
+        {
             return fail("invalidInput");
         }
         ctx.db.pim_preferences().insert(row);
     }
     for row in crate::identity::snapshot_rows::<PimReminder>(data, "reminders")? {
-        if ctx.db.accounts().id().find(row.user_id.clone()).is_none() || ctx.db.pim_resources().id().find(row.resource_id.clone()).is_none() {
+        if ctx.db.accounts().id().find(row.user_id.clone()).is_none()
+            || ctx
+                .db
+                .pim_resources()
+                .id()
+                .find(row.resource_id.clone())
+                .is_none()
+        {
             return fail("invalidInput");
         }
         ctx.db.pim_reminders().insert(row);
     }
     for row in crate::identity::snapshot_rows::<PimSubscription>(data, "subscriptions")? {
-        let c = ctx.db.pim_collections().id().find(row.collection_id.clone());
+        let c = ctx
+            .db
+            .pim_collections()
+            .id()
+            .find(row.collection_id.clone());
         if !c.is_some_and(|c| c.kind == "calendar" && c.owner_id == row.owner_id) {
             return fail("invalidInput");
         }
@@ -841,17 +1507,55 @@ pub fn restore_pim(ctx: &ReducerContext, data: Option<&Value>) -> Res<()> {
     }
     for row in rows("cursors")? {
         let resource_id = crate::text_of(row.get("resourceId"));
-        let (Some(revision), Some(at)) = (row.get("revision").and_then(Value::as_f64), row.get("at").and_then(Value::as_f64)) else { return fail("invalidInput") };
-        if ctx.db.pim_resources().id().find(resource_id.clone()).is_none() {
+        let (Some(revision), Some(at)) = (
+            row.get("revision").and_then(Value::as_f64),
+            row.get("at").and_then(Value::as_f64),
+        ) else {
+            return fail("invalidInput");
+        };
+        if ctx
+            .db
+            .pim_resources()
+            .id()
+            .find(resource_id.clone())
+            .is_none()
+        {
             return fail("invalidInput");
         }
-        let run_at = row.get("runAt").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned).unwrap_or_else(|| due_key(at));
-        ctx.db.pim_reminder_cursors().insert(PimReminderCursor { resource_id, revision: revision as u32, at, run_at });
+        let run_at = row
+            .get("runAt")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| due_key(at));
+        ctx.db.pim_reminder_cursors().insert(PimReminderCursor {
+            resource_id,
+            revision: revision as u32,
+            at,
+            run_at,
+        });
     }
     for row in ctx.db.pim_resources().iter().collect::<Vec<_>>() {
-        let calendar = ctx.db.pim_collections().id().find(row.collection_id.clone()).is_some_and(|c| c.kind == "calendar");
-        if calendar && ctx.db.pim_reminder_cursors().resource_id().find(row.id.clone()).is_none() {
-            ctx.db.pim_reminder_cursors().insert(PimReminderCursor { resource_id: row.id.clone(), revision: row.revision, at: row.modified_at, run_at: due_key(row.modified_at) });
+        let calendar = ctx
+            .db
+            .pim_collections()
+            .id()
+            .find(row.collection_id.clone())
+            .is_some_and(|c| c.kind == "calendar");
+        if calendar
+            && ctx
+                .db
+                .pim_reminder_cursors()
+                .resource_id()
+                .find(row.id.clone())
+                .is_none()
+        {
+            ctx.db.pim_reminder_cursors().insert(PimReminderCursor {
+                resource_id: row.id.clone(),
+                revision: row.revision,
+                at: row.modified_at,
+                run_at: due_key(row.modified_at),
+            });
         }
     }
     Ok(())
@@ -866,7 +1570,14 @@ pub fn service_pim_reminder_work(ctx: &mut ProcedureContext) -> String {
 }
 
 #[spacetimedb::reducer]
-pub fn service_pim_commit_reminders(ctx: &ReducerContext, resourceId: String, revision: u32, from: f64, to: f64, reminders: String) -> Res<()> {
+pub fn service_pim_commit_reminders(
+    ctx: &ReducerContext,
+    resourceId: String,
+    revision: u32,
+    from: f64,
+    to: f64,
+    reminders: String,
+) -> Res<()> {
     service(ctx)?;
     let reminders: Value = serde_json::from_str(&reminders).map_err(|_| "invalidInput")?;
     commit_reminders(ctx, &resourceId, revision, from, to, &reminders)
@@ -874,7 +1585,11 @@ pub fn service_pim_commit_reminders(ctx: &ReducerContext, resourceId: String, re
 
 /// Calendar subscription sync; the runtime fetches, the module validates and stores.
 #[spacetimedb::procedure]
-pub fn service_pim_subscriptions(ctx: &mut ProcedureContext, operation: String, payload: String) -> String {
+pub fn service_pim_subscriptions(
+    ctx: &mut ProcedureContext,
+    operation: String,
+    payload: String,
+) -> String {
     crate::run_json(ctx, |tx| {
         service(tx)?;
         let p: Value = serde_json::from_str(&payload).map_err(|_| "invalidInput")?;
@@ -883,7 +1598,12 @@ pub fn service_pim_subscriptions(ctx: &mut ProcedureContext, operation: String, 
 }
 
 #[spacetimedb::reducer]
-pub fn service_pim_defer_reminder(ctx: &ReducerContext, resourceId: String, revision: u32, from: f64) -> Res<()> {
+pub fn service_pim_defer_reminder(
+    ctx: &ReducerContext,
+    resourceId: String,
+    revision: u32,
+    from: f64,
+) -> Res<()> {
     service(ctx)?;
     defer_reminder(ctx, &resourceId, revision, from);
     Ok(())

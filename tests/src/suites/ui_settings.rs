@@ -7,14 +7,20 @@ use std::time::Duration;
 
 pub const SUITE: Suite = Suite {
     name: "ui-settings",
-    cases: &[case!(app_preferences_and_hidden_file_windows, 60), case!(personal_profile_edits, 60)],
+    cases: &[
+        case!(app_preferences_and_hidden_file_windows, 60),
+        case!(personal_profile_edits, 60),
+    ],
 };
 
 async fn account(base: &str) -> Result<Session> {
     let admin = login(base).await?;
     let username = format!("ux-{}", &uuid()[..8]);
     admin
-        .post("/api/v1/auth/users", &json!({ "username": username, "displayName": "UX settings", "password": PASSWORD }))
+        .post(
+            "/api/v1/auth/users",
+            &json!({ "username": username, "displayName": "UX settings", "password": PASSWORD }),
+        )
         .await?
         .expect(201)?;
     login_as(base, &username, PASSWORD).await
@@ -27,7 +33,10 @@ pub async fn app_preferences_and_hidden_file_windows(t: &Ctx) -> Result<()> {
     let endpoint = "/api/v1/pim/preferences";
 
     let initial = user.get(endpoint).await?.expect(200)?;
-    let etag = initial.header("etag").context("initial preferences etag")?.to_owned();
+    let etag = initial
+        .header("etag")
+        .context("initial preferences etag")?
+        .to_owned();
 
     let resp = Reply::from(
         user.request("PUT", endpoint)
@@ -123,7 +132,10 @@ pub async fn app_preferences_and_hidden_file_windows(t: &Ctx) -> Result<()> {
         )
         .await?;
         assert_eq!(resp.status, 200);
-        tokio::time::timeout(Duration::from_secs(10), rx).await.map_err(|_| Error::new("hidden file insert did not arrive"))?.ok();
+        tokio::time::timeout(Duration::from_secs(10), rx)
+            .await
+            .map_err(|_| Error::new("hidden file insert did not arrive"))?
+            .ok();
         assert!(live.db.my_files().iter().any(|r| r.id == hidden.file_id));
         Ok::<(), Error>(())
     }
@@ -193,13 +205,18 @@ pub async fn personal_profile_edits(t: &Ctx) -> Result<()> {
         assert_eq!(bad.status, 400);
     }
 
-    let missing_rev = user.put(endpoint, &json!({ "displayName": "missing revision" })).await?;
+    let missing_rev = user
+        .put(endpoint, &json!({ "displayName": "missing revision" }))
+        .await?;
     assert_eq!(missing_rev.status, 428);
 
     assert_ne!(other.get_json(endpoint).await?["id"], json!(id));
 
     let session_info = user.get_json("/api/v1/auth/session").await?;
-    assert_eq!(session_info["user"]["displayName"], json!("Changed display"));
+    assert_eq!(
+        session_info["user"]["displayName"],
+        json!("Changed display")
+    );
 
     let invalid = Reply::from(
         user.request("PUT", endpoint)

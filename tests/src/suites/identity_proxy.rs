@@ -19,20 +19,34 @@ struct Proxy {
 }
 
 impl Proxy {
-    async fn send(&mut self, method: &str, url: &str, headers: &[(&str, &str)], body: Option<String>) -> Result<Reply> {
+    async fn send(
+        &mut self,
+        method: &str,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Option<String>,
+    ) -> Result<Reply> {
         let parsed = url::Url::parse(url)?;
-        ensure!(parsed.origin().ascii_serialization() == self.origin, "expected origin {}, got {url}", self.origin);
+        ensure!(
+            parsed.origin().ascii_serialization() == self.origin,
+            "expected origin {}, got {url}",
+            self.origin
+        );
         let mut target = format!("{}{}", self.backend, parsed.path());
         if let Some(query) = parsed.query() {
             target.push('?');
             target.push_str(query);
         }
         let mut request = session::client()
-            .request(reqwest::Method::from_bytes(method.as_bytes()).unwrap(), target)
+            .request(
+                reqwest::Method::from_bytes(method.as_bytes()).unwrap(),
+                target,
+            )
             .header("host", "identity.example.test")
             .header("x-forwarded-proto", "https");
         for (name, value) in headers {
-            if !name.eq_ignore_ascii_case("host") && !name.eq_ignore_ascii_case("x-forwarded-proto") {
+            if !name.eq_ignore_ascii_case("host") && !name.eq_ignore_ascii_case("x-forwarded-proto")
+            {
                 request = request.header(*name, *value);
             }
         }

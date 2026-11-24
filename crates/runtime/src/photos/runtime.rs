@@ -19,7 +19,9 @@ use crate::blobs::is_blob_id;
 use crate::db::Database;
 use crate::digests::Sha1;
 use crate::error::{AppError, Result};
-use crate::photos::media::{cache_path, make_thumbnail, make_video, perceptual_hash, read_facts, video_path};
+use crate::photos::media::{
+    cache_path, make_thumbnail, make_video, perceptual_hash, read_facts, video_path,
+};
 use crate::photos::{now_ms, sha1_hex_to_base64};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -164,10 +166,18 @@ impl PhotosRuntime {
     /// Starts (or reports) preparing a browser-playable copy.
     pub async fn video(&self, request: VideoRequest) -> VideoStatus {
         let Ok(file) = video_path(&self.inner.cache, &request.blob_id) else {
-            return VideoStatus { state: "failed", progress: 0.0, file: None };
+            return VideoStatus {
+                state: "failed",
+                progress: 0.0,
+                file: None,
+            };
         };
         if tokio::fs::metadata(&file).await.is_ok_and(|m| m.len() > 0) {
-            return VideoStatus { state: "ready", progress: 1.0, file: Some(file) };
+            return VideoStatus {
+                state: "ready",
+                progress: 1.0,
+                file: Some(file),
+            };
         }
         let now = now_ms();
         {
@@ -175,12 +185,20 @@ impl PhotosRuntime {
             if let Some(known) = videos.get(&request.blob_id)
                 && (known.state != "failed" || known.until.unwrap_or(0.0) > now)
             {
-                return VideoStatus { state: known.state, progress: known.progress, file: None };
+                return VideoStatus {
+                    state: known.state,
+                    progress: known.progress,
+                    file: None,
+                };
             }
         }
         let mut queue = self.inner.video_queue.lock().expect("video_queue");
         if queue.len() >= 50 {
-            return VideoStatus { state: "failed", progress: 0.0, file: None };
+            return VideoStatus {
+                state: "failed",
+                progress: 0.0,
+                file: None,
+            };
         }
         {
             let mut videos = self.inner.videos.lock().expect("videos");
@@ -188,17 +206,29 @@ impl PhotosRuntime {
             if let Some(known) = videos.get(&request.blob_id)
                 && (known.state != "failed" || known.until.unwrap_or(0.0) > now)
             {
-                return VideoStatus { state: known.state, progress: known.progress, file: None };
+                return VideoStatus {
+                    state: known.state,
+                    progress: known.progress,
+                    file: None,
+                };
             }
             videos.insert(
                 request.blob_id.clone(),
-                VideoEntry { state: "preparing", progress: 0.0, until: None },
+                VideoEntry {
+                    state: "preparing",
+                    progress: 0.0,
+                    until: None,
+                },
             );
         }
         queue.push_back(request);
         drop(queue);
         self.inner.video_notify.notify_one();
-        VideoStatus { state: "preparing", progress: 0.0, file: None }
+        VideoStatus {
+            state: "preparing",
+            progress: 0.0,
+            file: None,
+        }
     }
 
     pub fn video_file(&self, blob_id: &str) -> std::io::Result<PathBuf> {
@@ -232,14 +262,24 @@ impl PhotosRuntime {
     }
 
     pub async fn hash_link_password(&self, password: String) -> Result<String> {
-        let _permit = self.inner.hashing.acquire().await.map_err(|_| AppError::internal())?;
+        let _permit = self
+            .inner
+            .hashing
+            .acquire()
+            .await
+            .map_err(|_| AppError::internal())?;
         tokio::task::spawn_blocking(move || auth::hash_password(&password))
             .await
             .map_err(|_| AppError::internal())
     }
 
     pub async fn check_link_password(&self, password: String, verifier: String) -> Result<bool> {
-        let _permit = self.inner.hashing.acquire().await.map_err(|_| AppError::internal())?;
+        let _permit = self
+            .inner
+            .hashing
+            .acquire()
+            .await
+            .map_err(|_| AppError::internal())?;
         tokio::task::spawn_blocking(move || auth::verify_password(&password, &verifier))
             .await
             .map_err(|_| AppError::internal())
@@ -291,7 +331,9 @@ async fn run_thumbnail(inner: &Arc<Inner>, blob_id: &str, kind: &str, size: &str
             let size = size.to_owned();
             tokio::spawn(async move {
                 let ok = match inner.slots.acquire().await {
-                    Ok(_permit) => make_thumbnail(&inner.cache, &source, &blob_id, &kind, &size).await,
+                    Ok(_permit) => {
+                        make_thumbnail(&inner.cache, &source, &blob_id, &kind, &size).await
+                    }
                     Err(_) => false,
                 };
                 let _ = tx.send(Some(ok));
@@ -314,8 +356,19 @@ async fn run_thumbnail(inner: &Arc<Inner>, blob_id: &str, kind: &str, size: &str
 async fn index_job(inner: &Arc<Inner>, job: &PhotoJob) -> Result<()> {
     let source = blob_path(&inner.root, &job.blob_id)?;
     let mut facts = {
-        let _permit = inner.slots.acquire().await.map_err(|_| AppError::internal())?;
-        read_facts(&source, &job.kind, job.modified_at, &job.name, &job.media_type).await
+        let _permit = inner
+            .slots
+            .acquire()
+            .await
+            .map_err(|_| AppError::internal())?;
+        read_facts(
+            &source,
+            &job.kind,
+            job.modified_at,
+            &job.name,
+            &job.media_type,
+        )
+        .await
     };
     let ok = run_thumbnail(inner, &job.blob_id, &job.kind, "s").await;
     if ok
@@ -333,7 +386,10 @@ async fn index_job(inner: &Arc<Inner>, job: &PhotoJob) -> Result<()> {
     });
     inner
         .db
-        .call("service_photos_worker", json!(["store", payload.to_string()]))
+        .call(
+            "service_photos_worker",
+            json!(["store", payload.to_string()]),
+        )
         .await?;
     Ok(())
 }
@@ -417,7 +473,11 @@ async fn video_loop(inner: Arc<Inner>, cancel_rx: watch::Receiver<bool>) {
         let Ok(source) = blob_path(&inner.root, &request.blob_id) else {
             inner.videos.lock().expect("videos").insert(
                 request.blob_id,
-                VideoEntry { state: "failed", progress: 0.0, until: Some(now_ms() + 600_000.0) },
+                VideoEntry {
+                    state: "failed",
+                    progress: 0.0,
+                    until: Some(now_ms() + 600_000.0),
+                },
             );
             continue;
         };
@@ -431,7 +491,12 @@ async fn video_loop(inner: Arc<Inner>, cancel_rx: watch::Receiver<bool>) {
             &request.audio,
             request.duration,
             move |fraction| {
-                if let Some(entry) = progress_inner.videos.lock().expect("videos").get_mut(&blob_id) {
+                if let Some(entry) = progress_inner
+                    .videos
+                    .lock()
+                    .expect("videos")
+                    .get_mut(&blob_id)
+                {
                     entry.progress = fraction;
                 }
             },
@@ -444,7 +509,11 @@ async fn video_loop(inner: Arc<Inner>, cancel_rx: watch::Receiver<bool>) {
         } else {
             videos.insert(
                 request.blob_id,
-                VideoEntry { state: "failed", progress: 0.0, until: Some(now_ms() + 600_000.0) },
+                VideoEntry {
+                    state: "failed",
+                    progress: 0.0,
+                    until: Some(now_ms() + 600_000.0),
+                },
             );
         }
     }

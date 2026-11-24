@@ -12,7 +12,12 @@ pub const SUITE: Suite = Suite {
     cases: &[case!(claude_cli_runs)],
 };
 
-async fn agent_req(session: &Session, route: &str, value: Option<&Value>, if_match: Option<u64>) -> Result<Reply> {
+async fn agent_req(
+    session: &Session,
+    route: &str,
+    value: Option<&Value>,
+    if_match: Option<u64>,
+) -> Result<Reply> {
     let method = if value.is_some() { "POST" } else { "GET" };
     let mut req = session.request(method, &format!("/api/v1/agent{route}"));
     if let Some(rev) = if_match {
@@ -24,7 +29,12 @@ async fn agent_req(session: &Session, route: &str, value: Option<&Value>, if_mat
     Reply::from(req.send().await?).await
 }
 
-async fn call_agent(session: &Session, route: &str, value: Option<&Value>, if_match: Option<u64>) -> Result<Value> {
+async fn call_agent(
+    session: &Session,
+    route: &str,
+    value: Option<&Value>,
+    if_match: Option<u64>,
+) -> Result<Value> {
     let reply = agent_req(session, route, value, if_match).await?;
     ensure!(
         (200..300).contains(&reply.status),
@@ -57,12 +67,23 @@ where
 }
 
 async fn thread_revision(session: &Session, thread_id: &str) -> Result<u64> {
-    call_agent(session, &format!("/threads/{thread_id}/messages"), None, None).await?["thread"]["revision"]
+    call_agent(
+        session,
+        &format!("/threads/{thread_id}/messages"),
+        None,
+        None,
+    )
+    .await?["thread"]["revision"]
         .as_u64()
         .context("thread revision")
 }
 
-async fn start_run(session: &Session, thread_id: &str, content: &str, extra: Value) -> Result<Value> {
+async fn start_run(
+    session: &Session,
+    thread_id: &str,
+    content: &str,
+    extra: Value,
+) -> Result<Value> {
     let rev = thread_revision(session, thread_id).await?;
     let mut body = json!({
         "id": uuid(),
@@ -75,7 +96,13 @@ async fn start_run(session: &Session, thread_id: &str, content: &str, extra: Val
             body[k] = v.clone();
         }
     }
-    call_agent(session, &format!("/threads/{thread_id}/runs"), Some(&body), Some(rev)).await
+    call_agent(
+        session,
+        &format!("/threads/{thread_id}/runs"),
+        Some(&body),
+        Some(rev),
+    )
+    .await
 }
 
 async fn claude_cli_runs(ctx: &Ctx) -> Result<()> {

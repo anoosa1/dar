@@ -33,12 +33,8 @@ pub(crate) const AGENT_READ_OPERATIONS: [&str; 9] = [
     "run",
 ];
 
-pub(crate) const HISTORY_READ_OPERATIONS: [&str; 4] = [
-    "overview",
-    "changeset",
-    "content",
-    "branch",
-];
+pub(crate) const HISTORY_READ_OPERATIONS: [&str; 4] =
+    ["overview", "changeset", "content", "branch"];
 
 #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
 pub(crate) const O_NOFOLLOW: i32 = 0o100000;

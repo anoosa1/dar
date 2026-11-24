@@ -50,12 +50,22 @@ pub struct Rect {
 
 impl Rect {
     pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     /// A rectangle spanning two corners, in any order.
     pub fn spanning(a: (f64, f64), b: (f64, f64)) -> Self {
-        Self { x: a.0.min(b.0), y: a.1.min(b.1), width: (a.0 - b.0).abs(), height: (a.1 - b.1).abs() }
+        Self {
+            x: a.0.min(b.0),
+            y: a.1.min(b.1),
+            width: (a.0 - b.0).abs(),
+            height: (a.1 - b.1).abs(),
+        }
     }
 
     pub fn right(&self) -> f64 {
@@ -71,11 +81,17 @@ impl Rect {
     }
 
     pub fn intersects(&self, other: &Rect) -> bool {
-        self.x < other.right() && other.x < self.right() && self.y < other.bottom() && other.y < self.bottom()
+        self.x < other.right()
+            && other.x < self.right()
+            && self.y < other.bottom()
+            && other.y < self.bottom()
     }
 
     pub fn contains(&self, other: &Rect) -> bool {
-        other.x >= self.x && other.y >= self.y && other.right() <= self.right() && other.bottom() <= self.bottom()
+        other.x >= self.x
+            && other.y >= self.y
+            && other.right() <= self.right()
+            && other.bottom() <= self.bottom()
     }
 
     pub fn contains_point(&self, (x, y): (f64, f64)) -> bool {
@@ -84,7 +100,12 @@ impl Rect {
 
     pub fn union(&self, other: &Rect) -> Rect {
         let (x, y) = (self.x.min(other.x), self.y.min(other.y));
-        Rect { x, y, width: self.right().max(other.right()) - x, height: self.bottom().max(other.bottom()) - y }
+        Rect {
+            x,
+            y,
+            width: self.right().max(other.right()) - x,
+            height: self.bottom().max(other.bottom()) - y,
+        }
     }
 
     /// The middle of `side`, where an edge attaches.
@@ -104,12 +125,22 @@ impl Rect {
             let (ax, ay) = self.anchor(s);
             (ax - point.0).powi(2) + (ay - point.1).powi(2)
         };
-        Side::ALL.into_iter().min_by(|a, b| distance(*a).total_cmp(&distance(*b))).unwrap_or(Side::Right)
+        Side::ALL
+            .into_iter()
+            .min_by(|a, b| distance(*a).total_cmp(&distance(*b)))
+            .unwrap_or(Side::Right)
     }
 }
 
 /// Card colours: the six presets (`"1"` red … `"6"` purple) or a `#rrggbb` hex colour.
-pub const PRESETS: [(&str, &str); 6] = [("1", "Red"), ("2", "Orange"), ("3", "Yellow"), ("4", "Green"), ("5", "Cyan"), ("6", "Purple")];
+pub const PRESETS: [(&str, &str); 6] = [
+    ("1", "Red"),
+    ("2", "Orange"),
+    ("3", "Yellow"),
+    ("4", "Green"),
+    ("5", "Cyan"),
+    ("6", "Purple"),
+];
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Color {
@@ -125,7 +156,8 @@ pub fn color(value: Option<&str>) -> Option<Color> {
         return Some(Color::Preset(n));
     }
     let hex = value.strip_prefix('#')?;
-    (matches!(hex.len(), 3 | 6) && hex.bytes().all(|b| b.is_ascii_hexdigit())).then(|| Color::Hex(format!("#{}", hex.to_ascii_lowercase())))
+    (matches!(hex.len(), 3 | 6) && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| Color::Hex(format!("#{}", hex.to_ascii_lowercase())))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -260,13 +292,32 @@ fn take_number(map: &mut Map<String, Value>, key: &str) -> f64 {
 }
 
 fn parse_node(value: Value) -> Option<Node> {
-    let Value::Object(mut map) = value else { return None };
+    let Value::Object(mut map) = value else {
+        return None;
+    };
     let id = take_str(&mut map, "id")?;
     let kind = take_str(&mut map, "type").unwrap_or_else(|| "text".into());
     let (x, y) = (take_number(&mut map, "x"), take_number(&mut map, "y"));
-    let (width, height) = (take_number(&mut map, "width"), take_number(&mut map, "height"));
+    let (width, height) = (
+        take_number(&mut map, "width"),
+        take_number(&mut map, "height"),
+    );
     let color = take_str(&mut map, "color");
-    let mut node = Node { id, kind, x, y, width, height, color, text: String::new(), file: String::new(), subpath: None, url: String::new(), label: None, extra: Map::new() };
+    let mut node = Node {
+        id,
+        kind,
+        x,
+        y,
+        width,
+        height,
+        color,
+        text: String::new(),
+        file: String::new(),
+        subpath: None,
+        url: String::new(),
+        label: None,
+        extra: Map::new(),
+    };
     match node.kind.as_str() {
         "text" => node.text = take_str(&mut map, "text").unwrap_or_default(),
         "file" => {
@@ -282,7 +333,9 @@ fn parse_node(value: Value) -> Option<Node> {
 }
 
 fn parse_edge(value: Value) -> Option<Edge> {
-    let Value::Object(mut map) = value else { return None };
+    let Value::Object(mut map) = value else {
+        return None;
+    };
     let id = take_str(&mut map, "id")?;
     let from_node = take_str(&mut map, "fromNode")?;
     let to_node = take_str(&mut map, "toNode")?;
@@ -296,7 +349,9 @@ fn parse_edge(value: Value) -> Option<Edge> {
     let from_side = side(&mut map, "fromSide");
     let to_side = side(&mut map, "toSide");
     let end = |map: &mut Map<String, Value>, key: &str| {
-        let parsed = map.get(key).and_then(|v| matches!(v.as_str(), Some("none" | "arrow")).then(|| End::parse(Some(v), End::None)));
+        let parsed = map.get(key).and_then(|v| {
+            matches!(v.as_str(), Some("none" | "arrow")).then(|| End::parse(Some(v), End::None))
+        });
         if parsed.is_some() {
             map.remove(key);
         }
@@ -326,15 +381,28 @@ pub fn parse(source: &str) -> Result<Canvas, String> {
     if source.trim().is_empty() {
         return Ok(Canvas::default());
     }
-    let value: Value = serde_json::from_str(source).map_err(|e| format!("This canvas is not valid JSON ({e})."))?;
-    let Value::Object(mut map) = value else { return Err("This canvas is not a JSON Canvas object.".into()) };
+    let value: Value = serde_json::from_str(source)
+        .map_err(|e| format!("This canvas is not valid JSON ({e})."))?;
+    let Value::Object(mut map) = value else {
+        return Err("This canvas is not a JSON Canvas object.".into());
+    };
     let list = |v: Option<Value>| match v {
         Some(Value::Array(items)) => items,
         _ => Vec::new(),
     };
-    let nodes = list(map.remove("nodes")).into_iter().filter_map(parse_node).collect();
-    let edges = list(map.remove("edges")).into_iter().filter_map(parse_edge).collect();
-    Ok(Canvas { nodes, edges, extra: map })
+    let nodes = list(map.remove("nodes"))
+        .into_iter()
+        .filter_map(parse_node)
+        .collect();
+    let edges = list(map.remove("edges"))
+        .into_iter()
+        .filter_map(parse_edge)
+        .collect();
+    Ok(Canvas {
+        nodes,
+        edges,
+        extra: map,
+    })
 }
 
 /// Coordinates are integers in JSON Canvas.
@@ -367,7 +435,10 @@ fn object(fields: Vec<(&str, Value)>, extra: &Map<String, Value>) -> String {
 }
 
 fn node_json(node: &Node) -> String {
-    let mut fields: Vec<(&str, Value)> = vec![("id", node.id.clone().into()), ("type", node.kind.clone().into())];
+    let mut fields: Vec<(&str, Value)> = vec![
+        ("id", node.id.clone().into()),
+        ("type", node.kind.clone().into()),
+    ];
     match node.kind.as_str() {
         "text" => fields.push(("text", node.text.clone().into())),
         "file" => {
@@ -384,7 +455,12 @@ fn node_json(node: &Node) -> String {
         }
         _ => {}
     }
-    fields.extend([("x", int(node.x)), ("y", int(node.y)), ("width", int(node.width)), ("height", int(node.height))]);
+    fields.extend([
+        ("x", int(node.x)),
+        ("y", int(node.y)),
+        ("width", int(node.width)),
+        ("height", int(node.height)),
+    ]);
     if let Some(color) = &node.color {
         fields.push(("color", color.clone().into()));
     }
@@ -392,7 +468,10 @@ fn node_json(node: &Node) -> String {
 }
 
 fn edge_json(edge: &Edge) -> String {
-    let mut fields: Vec<(&str, Value)> = vec![("id", edge.id.clone().into()), ("fromNode", edge.from_node.clone().into())];
+    let mut fields: Vec<(&str, Value)> = vec![
+        ("id", edge.id.clone().into()),
+        ("fromNode", edge.from_node.clone().into()),
+    ];
     if let Some(side) = edge.from_side {
         fields.push(("fromSide", side.name().into()));
     }
@@ -418,14 +497,28 @@ fn edge_json(edge: &Edge) -> String {
 /// Writes a canvas as Obsidian does: tab-indented, one node or edge per line.
 pub fn serialize(canvas: &Canvas) -> String {
     let list = |items: Vec<String>| {
-        if items.is_empty() { "[]".to_owned() } else { format!("[\n\t\t{}\n\t]", items.join(",\n\t\t")) }
+        if items.is_empty() {
+            "[]".to_owned()
+        } else {
+            format!("[\n\t\t{}\n\t]", items.join(",\n\t\t"))
+        }
     };
     let mut parts = vec![
-        format!("\t\"nodes\":{}", list(canvas.nodes.iter().map(node_json).collect())),
-        format!("\t\"edges\":{}", list(canvas.edges.iter().map(edge_json).collect())),
+        format!(
+            "\t\"nodes\":{}",
+            list(canvas.nodes.iter().map(node_json).collect())
+        ),
+        format!(
+            "\t\"edges\":{}",
+            list(canvas.edges.iter().map(edge_json).collect())
+        ),
     ];
     for (key, value) in &canvas.extra {
-        parts.push(format!("\t{}:{}", serde_json::to_string(key).unwrap_or_default(), serde_json::to_string(value).unwrap_or_default()));
+        parts.push(format!(
+            "\t{}:{}",
+            serde_json::to_string(key).unwrap_or_default(),
+            serde_json::to_string(value).unwrap_or_default()
+        ));
     }
     format!("{{\n{}\n}}", parts.join(",\n"))
 }
@@ -458,7 +551,11 @@ pub const MAX_ZOOM: f64 = 4.0;
 
 impl Default for View {
     fn default() -> Self {
-        Self { x: 0.0, y: 0.0, zoom: 1.0 }
+        Self {
+            x: 0.0,
+            y: 0.0,
+            zoom: 1.0,
+        }
     }
 }
 
@@ -475,16 +572,29 @@ impl View {
     pub fn zoom_at(&self, zoom: f64, at: (f64, f64)) -> View {
         let zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
         let world = self.to_world(at);
-        View { x: at.0 - world.0 * zoom, y: at.1 - world.1 * zoom, zoom }
+        View {
+            x: at.0 - world.0 * zoom,
+            y: at.1 - world.1 * zoom,
+            zoom,
+        }
     }
 
     /// Shows `rect` centred in a `width` × `height` stage with `margin` around it, at most at
     /// 100%.
     pub fn fit(rect: Rect, width: f64, height: f64, margin: f64) -> View {
-        let room = ((width - 2.0 * margin).max(1.0), (height - 2.0 * margin).max(1.0));
-        let zoom = (room.0 / rect.width.max(1.0)).min(room.1 / rect.height.max(1.0)).clamp(MIN_ZOOM, 1.0);
+        let room = (
+            (width - 2.0 * margin).max(1.0),
+            (height - 2.0 * margin).max(1.0),
+        );
+        let zoom = (room.0 / rect.width.max(1.0))
+            .min(room.1 / rect.height.max(1.0))
+            .clamp(MIN_ZOOM, 1.0);
         let (cx, cy) = rect.center();
-        View { x: width / 2.0 - cx * zoom, y: height / 2.0 - cy * zoom, zoom }
+        View {
+            x: width / 2.0 - cx * zoom,
+            y: height / 2.0 - cy * zoom,
+            zoom,
+        }
     }
 
     /// The world rectangle the stage shows.
@@ -499,7 +609,11 @@ pub fn facing_sides(from: &Rect, to: &Rect) -> (Side, Side) {
     let (a, b) = (from.center(), to.center());
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     if dx.abs() >= dy.abs() {
-        if dx >= 0.0 { (Side::Right, Side::Left) } else { (Side::Left, Side::Right) }
+        if dx >= 0.0 {
+            (Side::Right, Side::Left)
+        } else {
+            (Side::Left, Side::Right)
+        }
     } else if dy >= 0.0 {
         (Side::Bottom, Side::Top)
     } else {
@@ -509,7 +623,12 @@ pub fn facing_sides(from: &Rect, to: &Rect) -> (Side, Side) {
 
 /// An edge's curve: start, two control points, end (a cubic Bézier leaving and entering the
 /// cards along their sides' normals).
-pub fn curve(from: (f64, f64), from_side: Side, to: (f64, f64), to_side: Option<Side>) -> [(f64, f64); 4] {
+pub fn curve(
+    from: (f64, f64),
+    from_side: Side,
+    to: (f64, f64),
+    to_side: Option<Side>,
+) -> [(f64, f64); 4] {
     let distance = ((to.0 - from.0).powi(2) + (to.1 - from.1).powi(2)).sqrt();
     let reach = (distance * 0.4).clamp(30.0, 160.0);
     let (nx, ny) = from_side.normal();
@@ -526,19 +645,34 @@ pub fn curve(from: (f64, f64), from_side: Side, to: (f64, f64), to_side: Option<
 
 pub fn path_data(c: &[(f64, f64); 4]) -> String {
     let f = |v: f64| format!("{:.1}", v);
-    format!("M{} {} C{} {} {} {} {} {}", f(c[0].0), f(c[0].1), f(c[1].0), f(c[1].1), f(c[2].0), f(c[2].1), f(c[3].0), f(c[3].1))
+    format!(
+        "M{} {} C{} {} {} {} {} {}",
+        f(c[0].0),
+        f(c[0].1),
+        f(c[1].0),
+        f(c[1].1),
+        f(c[2].0),
+        f(c[2].1),
+        f(c[3].0),
+        f(c[3].1)
+    )
 }
 
 /// The point at `t` on the curve.
 pub fn curve_point(c: &[(f64, f64); 4], t: f64) -> (f64, f64) {
     let u = 1.0 - t;
     let (a, b, cc, d) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
-    (a * c[0].0 + b * c[1].0 + cc * c[2].0 + d * c[3].0, a * c[0].1 + b * c[1].1 + cc * c[2].1 + d * c[3].1)
+    (
+        a * c[0].0 + b * c[1].0 + cc * c[2].0 + d * c[3].0,
+        a * c[0].1 + b * c[1].1 + cc * c[2].1 + d * c[3].1,
+    )
 }
 
 /// An arrowhead (three points) with its tip at `tip`, pointing along `direction`.
 pub fn arrow(tip: (f64, f64), direction: (f64, f64), size: f64) -> [(f64, f64); 3] {
-    let length = (direction.0.powi(2) + direction.1.powi(2)).sqrt().max(f64::EPSILON);
+    let length = (direction.0.powi(2) + direction.1.powi(2))
+        .sqrt()
+        .max(f64::EPSILON);
     let (dx, dy) = (direction.0 / length, direction.1 / length);
     let base = (tip.0 - dx * size, tip.1 - dy * size);
     let (px, py) = (-dy * size * 0.55, dx * size * 0.55);
@@ -546,17 +680,30 @@ pub fn arrow(tip: (f64, f64), direction: (f64, f64), size: f64) -> [(f64, f64); 
 }
 
 pub fn polygon_points(points: &[(f64, f64)]) -> String {
-    points.iter().map(|(x, y)| format!("{x:.1},{y:.1}")).collect::<Vec<_>>().join(" ")
+    points
+        .iter()
+        .map(|(x, y)| format!("{x:.1},{y:.1}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The nodes a group carries when it moves: those lying inside it (and inside those, for
 /// nested groups), by geometry as Obsidian does.
 pub fn group_members(canvas: &Canvas, group_ids: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    let mut queue: Vec<Rect> = canvas.nodes.iter().filter(|n| n.is_group() && group_ids.contains(&n.id)).map(Node::rect).collect();
+    let mut queue: Vec<Rect> = canvas
+        .nodes
+        .iter()
+        .filter(|n| n.is_group() && group_ids.contains(&n.id))
+        .map(Node::rect)
+        .collect();
     while let Some(area) = queue.pop() {
         for node in &canvas.nodes {
-            if group_ids.contains(&node.id) || out.contains(&node.id) || !area.contains(&node.rect()) || node.rect() == area {
+            if group_ids.contains(&node.id)
+                || out.contains(&node.id)
+                || !area.contains(&node.rect())
+                || node.rect() == area
+            {
                 continue;
             }
             out.push(node.id.clone());
@@ -570,7 +717,15 @@ pub fn group_members(canvas: &Canvas, group_ids: &[String]) -> Vec<String> {
 
 /// The text a card is known by in lists and labels.
 pub fn summary(node: &Node) -> String {
-    let first_line = |s: &str| s.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default().trim_start_matches('#').trim().to_owned();
+    let first_line = |s: &str| {
+        s.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or_default()
+            .trim_start_matches('#')
+            .trim()
+            .to_owned()
+    };
     let text = match node.kind.as_str() {
         "text" => first_line(&node.text),
         "file" => node.file.rsplit('/').next().unwrap_or_default().to_owned(),
@@ -579,7 +734,11 @@ pub fn summary(node: &Node) -> String {
         _ => String::new(),
     };
     let text: String = text.chars().take(80).collect();
-    if text.is_empty() { "Empty".into() } else { text }
+    if text.is_empty() {
+        "Empty".into()
+    } else {
+        text
+    }
 }
 
 pub fn kind_label(kind: &str) -> &'static str {
@@ -613,7 +772,11 @@ pub fn is_canvas(name: &str) -> bool {
 
 /// A canvas file's name without `.canvas`.
 pub fn stem(name: &str) -> &str {
-    if is_canvas(name) { &name[..name.len() - ".canvas".len()] } else { name }
+    if is_canvas(name) {
+        &name[..name.len() - ".canvas".len()]
+    } else {
+        name
+    }
 }
 
 /// `Untitled.canvas`, or `Untitled 2.canvas` and so on when the name is taken (`taken` holds
@@ -624,7 +787,10 @@ pub fn unique_name(base: &str, taken: &[String]) -> String {
     if free(&first) {
         return first;
     }
-    (2..1000).map(|n| format!("{base} {n}.canvas")).find(|name| free(name)).unwrap_or_else(|| format!("{base} {}.canvas", taken.len() + 1))
+    (2..1000)
+        .map(|n| format!("{base} {n}.canvas"))
+        .find(|name| free(name))
+        .unwrap_or_else(|| format!("{base} {}.canvas", taken.len() + 1))
 }
 
 /// Default card sizes, as Obsidian makes them.
@@ -658,13 +824,26 @@ impl Canvas {
     /// The card at a world point: the topmost card, else the topmost group (cards lie above
     /// groups). `skip` lists cards to look through.
     pub fn hit(&self, point: (f64, f64), skip: &[String]) -> Option<&Node> {
-        let under: Vec<&Node> = self.nodes.iter().rev().filter(|n| !skip.contains(&n.id) && n.rect().contains_point(point)).collect();
-        under.iter().copied().find(|n| !n.is_group()).or_else(|| under.first().copied())
+        let under: Vec<&Node> = self
+            .nodes
+            .iter()
+            .rev()
+            .filter(|n| !skip.contains(&n.id) && n.rect().contains_point(point))
+            .collect();
+        under
+            .iter()
+            .copied()
+            .find(|n| !n.is_group())
+            .or_else(|| under.first().copied())
     }
 
     /// The cards a move of `ids` carries: those cards and everything inside the groups among them.
     pub fn carried(&self, ids: &[String]) -> Vec<String> {
-        let mut out: Vec<String> = ids.iter().filter(|id| self.node(id).is_some()).cloned().collect();
+        let mut out: Vec<String> = ids
+            .iter()
+            .filter(|id| self.node(id).is_some())
+            .cloned()
+            .collect();
         for member in group_members(self, ids) {
             if !out.contains(&member) {
                 out.push(member);
@@ -676,7 +855,9 @@ impl Canvas {
     /// Removes cards (with the edges attached to them) and edges.
     pub fn remove(&mut self, nodes: &[String], edges: &[String]) {
         self.nodes.retain(|n| !nodes.contains(&n.id));
-        self.edges.retain(|e| !edges.contains(&e.id) && !nodes.contains(&e.from_node) && !nodes.contains(&e.to_node));
+        self.edges.retain(|e| {
+            !edges.contains(&e.id) && !nodes.contains(&e.from_node) && !nodes.contains(&e.to_node)
+        });
     }
 
     /// Adds an edge between two different cards, unless the same connection exists.
@@ -685,7 +866,10 @@ impl Canvas {
             return false;
         }
         let exists = self.edges.iter().any(|e| {
-            e.from_node == from.0 && e.to_node == to.0 && e.from_side.unwrap_or(from.1) == from.1 && e.to_side.unwrap_or(to.1) == to.1
+            e.from_node == from.0
+                && e.to_node == to.0
+                && e.from_side.unwrap_or(from.1) == from.1
+                && e.to_side.unwrap_or(to.1) == to.1
         });
         if exists {
             return false;
@@ -696,7 +880,11 @@ impl Canvas {
 
     /// The cards a marquee touches.
     pub fn within(&self, area: &Rect) -> Vec<String> {
-        self.nodes.iter().filter(|n| area.intersects(&n.rect())).map(|n| n.id.clone()).collect()
+        self.nodes
+            .iter()
+            .filter(|n| area.intersects(&n.rect()))
+            .map(|n| n.id.clone())
+            .collect()
     }
 }
 
@@ -714,14 +902,25 @@ pub const ARROW_SIZE: f64 = 12.0;
 
 /// The curve between two cards, leaving `from_side` and entering `to_side` (or the sides facing
 /// each other when an edge does not store them).
-pub fn edge_curve(from: &Rect, from_side: Option<Side>, to: &Rect, to_side: Option<Side>) -> [(f64, f64); 4] {
+pub fn edge_curve(
+    from: &Rect,
+    from_side: Option<Side>,
+    to: &Rect,
+    to_side: Option<Side>,
+) -> [(f64, f64); 4] {
     let (facing_from, facing_to) = facing_sides(from, to);
-    let (fs, ts) = (from_side.unwrap_or(facing_from), to_side.unwrap_or(facing_to));
+    let (fs, ts) = (
+        from_side.unwrap_or(facing_from),
+        to_side.unwrap_or(facing_to),
+    );
     curve(from.anchor(fs), fs, to.anchor(ts), Some(ts))
 }
 
 pub fn edge_shape(canvas: &Canvas, edge: &Edge) -> Option<EdgeShape> {
-    let (from, to) = (canvas.node(&edge.from_node)?.rect(), canvas.node(&edge.to_node)?.rect());
+    let (from, to) = (
+        canvas.node(&edge.from_node)?.rect(),
+        canvas.node(&edge.to_node)?.rect(),
+    );
     let c = edge_curve(&from, edge.from_side, &to, edge.to_side);
     let head = |tip: (f64, f64), back: (f64, f64)| {
         let direction = (tip.0 - back.0, tip.1 - back.1);
@@ -738,7 +937,18 @@ pub fn edge_shape(canvas: &Canvas, edge: &Edge) -> Option<EdgeShape> {
 /// The CSS class for a colour (`is-color-1` … `is-color-6`, `has-hex`) and the hex value to set.
 pub fn color_class(value: Option<&str>) -> (&'static str, Option<String>) {
     match color(value) {
-        Some(Color::Preset(n)) => (["", "is-color-1", "is-color-2", "is-color-3", "is-color-4", "is-color-5", "is-color-6"][usize::from(n)], None),
+        Some(Color::Preset(n)) => (
+            [
+                "",
+                "is-color-1",
+                "is-color-2",
+                "is-color-3",
+                "is-color-4",
+                "is-color-5",
+                "is-color-6",
+            ][usize::from(n)],
+            None,
+        ),
         Some(Color::Hex(hex)) => ("has-hex", Some(hex)),
         None => ("", None),
     }
@@ -792,7 +1002,10 @@ mod tests {
         assert_eq!(parse(&written).unwrap(), canvas);
         // Writing is stable.
         assert_eq!(serialize(&parse(&written).unwrap()), written);
-        assert!(written.starts_with("{\n\t\"nodes\":[\n\t\t{\"id\":\"a1\",\"type\":\"text\""), "{written}");
+        assert!(
+            written.starts_with("{\n\t\"nodes\":[\n\t\t{\"id\":\"a1\",\"type\":\"text\""),
+            "{written}"
+        );
     }
 
     #[test]
@@ -813,7 +1026,10 @@ mod tests {
     #[test]
     fn empty_and_invalid_files() {
         assert_eq!(parse("").unwrap(), Canvas::default());
-        assert_eq!(serialize(&Canvas::default()), "{\n\t\"nodes\":[],\n\t\"edges\":[]\n}");
+        assert_eq!(
+            serialize(&Canvas::default()),
+            "{\n\t\"nodes\":[],\n\t\"edges\":[]\n}"
+        );
         assert!(parse("[1]").is_err());
         assert!(parse("{nope").is_err());
         // Nodes without an ID and edges without ends are skipped.
@@ -835,7 +1051,11 @@ mod tests {
 
     #[test]
     fn view_math() {
-        let view = View { x: 100.0, y: 50.0, zoom: 2.0 };
+        let view = View {
+            x: 100.0,
+            y: 50.0,
+            zoom: 2.0,
+        };
         assert_eq!(view.to_world((300.0, 250.0)), (100.0, 100.0));
         assert_eq!(view.to_screen((100.0, 100.0)), (300.0, 250.0));
         // Zooming keeps the point under the pointer in place.
@@ -861,15 +1081,24 @@ mod tests {
         assert_eq!(a.anchor(Side::Left), (0.0, 25.0));
         assert_eq!(a.nearest_side((110.0, 20.0)), Side::Right);
         assert_eq!(a.nearest_side((40.0, -5.0)), Side::Top);
-        assert_eq!(Rect::spanning((10.0, 5.0), (-10.0, 25.0)), Rect::new(-10.0, 5.0, 20.0, 20.0));
+        assert_eq!(
+            Rect::spanning((10.0, 5.0), (-10.0, 25.0)),
+            Rect::new(-10.0, 5.0, 20.0, 20.0)
+        );
         assert!(a.intersects(&Rect::new(90.0, 40.0, 50.0, 50.0)));
         assert!(!a.intersects(&Rect::new(100.0, 0.0, 10.0, 10.0)));
         assert!(a.contains(&Rect::new(10.0, 10.0, 20.0, 20.0)));
-        assert_eq!(a.union(&Rect::new(150.0, -10.0, 10.0, 10.0)), Rect::new(0.0, -10.0, 160.0, 60.0));
+        assert_eq!(
+            a.union(&Rect::new(150.0, -10.0, 10.0, 10.0)),
+            Rect::new(0.0, -10.0, 160.0, 60.0)
+        );
         let b = Rect::new(300.0, 0.0, 100.0, 50.0);
         assert_eq!(facing_sides(&a, &b), (Side::Right, Side::Left));
         assert_eq!(facing_sides(&b, &a), (Side::Left, Side::Right));
-        assert_eq!(facing_sides(&a, &Rect::new(0.0, 300.0, 100.0, 50.0)), (Side::Bottom, Side::Top));
+        assert_eq!(
+            facing_sides(&a, &Rect::new(0.0, 300.0, 100.0, 50.0)),
+            (Side::Bottom, Side::Top)
+        );
     }
 
     #[test]
@@ -892,20 +1121,38 @@ mod tests {
         let members = group_members(&canvas, &["c3".to_owned()]);
         assert!(members.contains(&"a1".to_owned()));
         assert!(members.contains(&"b2".to_owned()));
-        assert!(!members.contains(&"d4".to_owned()), "d4 reaches below the group");
+        assert!(
+            !members.contains(&"d4".to_owned()),
+            "d4 reaches below the group"
+        );
     }
 
     #[test]
     fn editing_helpers() {
         let mut canvas = parse(SAMPLE).unwrap();
         // Cards lie above groups; skipped cards are looked through.
-        assert_eq!(canvas.hit((0.0, 50.0), &[]).map(|n| n.id.as_str()), Some("a1"));
-        assert_eq!(canvas.hit((300.0, 300.0), &[]).map(|n| n.id.as_str()), Some("c3"));
-        assert_eq!(canvas.hit((0.0, 50.0), &["a1".to_owned()]).map(|n| n.id.as_str()), Some("c3"));
+        assert_eq!(
+            canvas.hit((0.0, 50.0), &[]).map(|n| n.id.as_str()),
+            Some("a1")
+        );
+        assert_eq!(
+            canvas.hit((300.0, 300.0), &[]).map(|n| n.id.as_str()),
+            Some("c3")
+        );
+        assert_eq!(
+            canvas
+                .hit((0.0, 50.0), &["a1".to_owned()])
+                .map(|n| n.id.as_str()),
+            Some("c3")
+        );
         assert!(canvas.hit((5000.0, 0.0), &[]).is_none());
         // A group carries what lies inside it.
         let carried = canvas.carried(&["c3".to_owned()]);
-        assert!(carried.contains(&"c3".to_owned()) && carried.contains(&"a1".to_owned()) && !carried.contains(&"d4".to_owned()));
+        assert!(
+            carried.contains(&"c3".to_owned())
+                && carried.contains(&"a1".to_owned())
+                && !carried.contains(&"d4".to_owned())
+        );
         // Connecting: not to itself, not twice.
         assert!(canvas.connect("n1".into(), ("a1", Side::Bottom), ("d4", Side::Top)));
         assert!(!canvas.connect("n2".into(), ("a1", Side::Bottom), ("d4", Side::Top)));
@@ -913,12 +1160,30 @@ mod tests {
         assert!(!canvas.connect("n4".into(), ("a1", Side::Bottom), ("zz", Side::Top)));
         let value: Value = serde_json::from_str(&serialize(&canvas)).unwrap();
         let added = &value["edges"][2];
-        assert_eq!((added["fromNode"].as_str(), added["fromSide"].as_str(), added["toNode"].as_str(), added["toSide"].as_str()), (Some("a1"), Some("bottom"), Some("d4"), Some("top")));
-        assert!(added.get("fromEnd").is_none() && added.get("toEnd").is_none(), "{added}");
+        assert_eq!(
+            (
+                added["fromNode"].as_str(),
+                added["fromSide"].as_str(),
+                added["toNode"].as_str(),
+                added["toSide"].as_str()
+            ),
+            (Some("a1"), Some("bottom"), Some("d4"), Some("top"))
+        );
+        assert!(
+            added.get("fromEnd").is_none() && added.get("toEnd").is_none(),
+            "{added}"
+        );
         // Removing a card drops its edges.
         canvas.remove(&["b2".to_owned()], &[]);
         assert!(canvas.node("b2").is_none());
-        assert_eq!(canvas.edges.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["n1"]);
+        assert_eq!(
+            canvas
+                .edges
+                .iter()
+                .map(|e| e.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["n1"]
+        );
         canvas.remove(&[], &["n1".to_owned()]);
         assert!(canvas.edges.is_empty());
         // A marquee selects the cards it touches.
@@ -935,7 +1200,12 @@ mod tests {
         assert!(shape.path.starts_with("M210.0 80.0 C"), "{}", shape.path);
         assert!(shape.path.ends_with("400.0 100.0"), "{}", shape.path);
         assert!(shape.from_arrow.is_none());
-        assert!(shape.to_arrow.as_deref().is_some_and(|p| p.starts_with("400.0,100.0 ")));
+        assert!(
+            shape
+                .to_arrow
+                .as_deref()
+                .is_some_and(|p| p.starts_with("400.0,100.0 "))
+        );
         assert!((shape.middle.0 - 305.0).abs() < 1e-9 && (shape.middle.1 - 90.0).abs() < 1e-9);
         // Without stored sides the edge takes the facing ones: d4 lies mostly left of b2.
         let shape = edge_shape(&canvas, &canvas.edges[1]).unwrap();
@@ -945,7 +1215,10 @@ mod tests {
         dangling.to_node = "missing".into();
         assert!(edge_shape(&canvas, &dangling).is_none());
         assert_eq!(color_class(Some("2")), ("is-color-2", None));
-        assert_eq!(color_class(Some("#FF0000")), ("has-hex", Some("#ff0000".to_owned())));
+        assert_eq!(
+            color_class(Some("#FF0000")),
+            ("has-hex", Some("#ff0000".to_owned()))
+        );
         assert_eq!(color_class(Some("bad")), ("", None));
     }
 
@@ -954,7 +1227,13 @@ mod tests {
         assert!(is_canvas("Board.canvas") && is_canvas("B.CANVAS") && !is_canvas("Board.md"));
         assert_eq!(stem("Plan.canvas"), "Plan");
         assert_eq!(unique_name("Untitled", &[]), "Untitled.canvas");
-        assert_eq!(unique_name("Untitled", &["untitled.canvas".into(), "Untitled 2.canvas".into()]), "Untitled 3.canvas");
+        assert_eq!(
+            unique_name(
+                "Untitled",
+                &["untitled.canvas".into(), "Untitled 2.canvas".into()]
+            ),
+            "Untitled 3.canvas"
+        );
         assert_eq!(default_size("text", ""), (250.0, 60.0));
         assert_eq!(default_size("file", "image/png"), (400.0, 300.0));
     }

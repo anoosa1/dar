@@ -10,7 +10,7 @@ use leptos::task::spawn_local;
 
 use crate::api::{self, BrowserSession};
 use crate::icons::Icon;
-use crate::shared::{context, save_preferences, Preferences, PREFERENCES};
+use crate::shared::{PREFERENCES, Preferences, context, save_preferences};
 use crate::ui::{active_element, unique_id, use_body_class};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -45,14 +45,21 @@ pub fn SettingsSheet(
     let (id, panel) = (unique_id(), unique_id());
     let previous = send_wrapper::SendWrapper::new(active_element());
     on_cleanup(move || {
-        if let Some(p) = previous.take().filter(|p| p.is_connected() && p.get_bounding_client_rect().width() > 0.0) {
+        if let Some(p) = previous
+            .take()
+            .filter(|p| p.is_connected() && p.get_bounding_client_rect().width() > 0.0)
+        {
             let _ = p.focus();
         }
     });
     Effect::new(move |_| {
         let Some(sheet) = sheet.get() else { return };
-        let selected = tabs.get_untracked().and_then(|t| t.query_selector("[aria-selected=\"true\"]").ok().flatten());
-        let target: web_sys::HtmlElement = selected.map(wasm_bindgen::JsCast::unchecked_into).unwrap_or_else(|| sheet);
+        let selected = tabs
+            .get_untracked()
+            .and_then(|t| t.query_selector("[aria-selected=\"true\"]").ok().flatten());
+        let target: web_sys::HtmlElement = selected
+            .map(wasm_bindgen::JsCast::unchecked_into)
+            .unwrap_or_else(|| sheet);
         let _ = target.focus();
     });
     // A notice disappears after eight seconds.
@@ -138,7 +145,13 @@ pub fn SaveStatus(#[prop(into)] state: Signal<Option<SaveState>>) -> impl IntoVi
 
 /// Label and explanation on the left, the control on the right.
 #[component]
-pub fn SettingRow(#[prop(into)] label: String, #[prop(into)] hint: String, #[prop(into)] state: Signal<Option<SaveState>>, #[prop(optional)] stacked: bool, children: Children) -> impl IntoView {
+pub fn SettingRow(
+    #[prop(into)] label: String,
+    #[prop(into)] hint: String,
+    #[prop(into)] state: Signal<Option<SaveState>>,
+    #[prop(optional)] stacked: bool,
+    children: Children,
+) -> impl IntoView {
     view! {
         <div class=format!("settings-row {}", if stacked { "is-stacked" } else { "" })>
             <div class="settings-row-text"><span class="settings-row-label">{label}</span><small>{hint}</small></div>
@@ -150,7 +163,13 @@ pub fn SettingRow(#[prop(into)] label: String, #[prop(into)] hint: String, #[pro
 
 /// An on/off row: the whole row is the switch's label.
 #[component]
-pub fn SettingSwitch(#[prop(into)] label: String, #[prop(into)] hint: String, #[prop(into)] state: Signal<Option<SaveState>>, #[prop(into)] checked: Signal<bool>, on_change: Callback<bool>) -> impl IntoView {
+pub fn SettingSwitch(
+    #[prop(into)] label: String,
+    #[prop(into)] hint: String,
+    #[prop(into)] state: Signal<Option<SaveState>>,
+    #[prop(into)] checked: Signal<bool>,
+    on_change: Callback<bool>,
+) -> impl IntoView {
     let id = unique_id();
     view! {
         <label class="settings-row settings-switch">
@@ -163,7 +182,12 @@ pub fn SettingSwitch(#[prop(into)] label: String, #[prop(into)] hint: String, #[
 
 /// Two or three choices as a segmented radio group.
 #[component]
-pub fn Segmented(#[prop(into)] label: String, #[prop(into)] value: Signal<String>, options: Vec<(&'static str, &'static str)>, on_change: Callback<String>) -> impl IntoView {
+pub fn Segmented(
+    #[prop(into)] label: String,
+    #[prop(into)] value: Signal<String>,
+    options: Vec<(&'static str, &'static str)>,
+    on_change: Callback<String>,
+) -> impl IntoView {
     let name = unique_id();
     view! {
         <div role="radiogroup" aria-label=label class="ui-segmented">
@@ -195,7 +219,10 @@ pub struct Saver {
 }
 
 fn field(p: &Preferences, key: &str) -> serde_json::Value {
-    serde_json::to_value(p).ok().and_then(|v| v.get(key).cloned()).unwrap_or(serde_json::Value::Null)
+    serde_json::to_value(p)
+        .ok()
+        .and_then(|v| v.get(key).cloned())
+        .unwrap_or(serde_json::Value::Null)
 }
 
 impl Saver {
@@ -213,7 +240,11 @@ impl Saver {
             queue: StoredValue::new(Default::default()),
         };
         // The page has usually just loaded these preferences; reuse them rather than asking again.
-        match shared.value.get_untracked().filter(|_| shared.age() < 2000.0) {
+        match shared
+            .value
+            .get_untracked()
+            .filter(|_| shared.age() < 2000.0)
+        {
             Some(fresh) => {
                 saver.saved.set(Some(fresh.clone()));
                 saver.preferences.set(Some(fresh));
@@ -247,10 +278,20 @@ impl Saver {
     }
 
     pub fn value(self, key: &'static str) -> serde_json::Value {
-        self.preferences.with(|p| p.as_ref().map(|p| field(p, key)).unwrap_or(serde_json::Value::Null))
+        self.preferences.with(|p| {
+            p.as_ref()
+                .map(|p| field(p, key))
+                .unwrap_or(serde_json::Value::Null)
+        })
     }
 
-    pub fn change(self, key: &'static str, value: serde_json::Value, message: String, undoable: bool) {
+    pub fn change(
+        self,
+        key: &'static str,
+        value: serde_json::Value,
+        message: String,
+        undoable: bool,
+    ) {
         let set_local = move |v: serde_json::Value| {
             self.preferences.try_update(|p| {
                 if let Some(p) = p
@@ -278,7 +319,9 @@ impl Saver {
         spawn_local(async move {
             // Saves run in order: each waits for any initial load and previous save to finish.
             let _turn = queue.lock().await;
-            let Some(session) = self.session.try_get_value() else { return };
+            let Some(session) = self.session.try_get_value() else {
+                return;
+            };
             let saved = match self.saved.try_get_untracked().flatten() {
                 Some(s) => s,
                 None => match api::get::<Preferences>(PREFERENCES).await {
@@ -308,14 +351,23 @@ impl Saver {
                 s.insert(key, SaveState::Saving);
             });
             // A missing value (undoing a first change) is left out, as JSON.stringify drops `undefined`.
-            let body = |revision: u64| if value.is_null() { serde_json::json!({ "revision": revision }) } else { serde_json::json!({ "revision": revision, key: value.clone() }) };
+            let body = |revision: u64| {
+                if value.is_null() {
+                    serde_json::json!({ "revision": revision })
+                } else {
+                    serde_json::json!({ "revision": revision, key: value.clone() })
+                }
+            };
             let revision = saved.revision;
             let mut result = save_preferences(body(revision), revision, &session).await;
             if let Err(e) = &result
                 && e.status == 412
             {
                 match api::get::<Preferences>(PREFERENCES).await {
-                    Ok(latest) if field(&latest, key) == before => result = save_preferences(body(latest.revision), latest.revision, &session).await,
+                    Ok(latest) if field(&latest, key) == before => {
+                        result =
+                            save_preferences(body(latest.revision), latest.revision, &session).await
+                    }
                     Ok(latest) => {
                         self.saved.try_set(Some(latest));
                     }
@@ -335,11 +387,19 @@ impl Saver {
                     self.states.try_update(|s| {
                         s.insert(key, SaveState::Saved);
                     });
-                    let undo = undoable.then(|| std::sync::Arc::new(move || self.change(key, before.clone(), "Change undone".into(), false)) as std::sync::Arc<dyn Fn() + Send + Sync>);
+                    let undo = undoable.then(|| {
+                        std::sync::Arc::new(move || {
+                            self.change(key, before.clone(), "Change undone".into(), false)
+                        }) as std::sync::Arc<dyn Fn() + Send + Sync>
+                    });
                     self.notice.try_set(Some(Notice { message, undo }));
                 }
                 Err(e) => {
-                    let previous = self.saved.try_with_untracked(|s| s.as_ref().map(|s| field(s, key))).flatten().unwrap_or(serde_json::Value::Null);
+                    let previous = self
+                        .saved
+                        .try_with_untracked(|s| s.as_ref().map(|s| field(s, key)))
+                        .flatten()
+                        .unwrap_or(serde_json::Value::Null);
                     set_local(previous);
                     self.states.try_update(|s| {
                         s.insert(key, SaveState::Error);
@@ -378,9 +438,15 @@ pub fn AppSettingsButton(#[prop(into)] app: String, on_click: Callback<()>) -> i
 pub fn FilesSettings(session: BrowserSession, on_close: Callback<()>) -> impl IntoView {
     let saver = Saver::new(session);
     let section = RwSignal::new("General");
-    let text = move |key: &'static str, default: &'static str| Signal::derive(move || saver.value(key).as_str().unwrap_or(default).to_owned());
-    let flag = move |key: &'static str, default: bool| Signal::derive(move || saver.value(key).as_bool().unwrap_or(default));
-    let set = move |key: &'static str, value: serde_json::Value, message: String| saver.change(key, value, message, true);
+    let text = move |key: &'static str, default: &'static str| {
+        Signal::derive(move || saver.value(key).as_str().unwrap_or(default).to_owned())
+    };
+    let flag = move |key: &'static str, default: bool| {
+        Signal::derive(move || saver.value(key).as_bool().unwrap_or(default))
+    };
+    let set = move |key: &'static str, value: serde_json::Value, message: String| {
+        saver.change(key, value, message, true)
+    };
     let capital = |v: &str| format!("{}{}", v[..1].to_uppercase(), &v[1..]);
     view! {
         <SettingsSheet title="Files settings" icon="folder" sections=vec!["General", "Keyboard shortcuts"] section=section on_close=on_close notice=saver.notice>
@@ -416,19 +482,36 @@ pub fn FilesSettings(session: BrowserSession, on_close: Callback<()>) -> impl In
 
 /// The settings sheet of an app (`AppSettings`).
 #[component]
-pub fn AppSettings(app: &'static str, session: BrowserSession, on_close: Callback<()>) -> impl IntoView {
+pub fn AppSettings(
+    app: &'static str,
+    session: BrowserSession,
+    on_close: Callback<()>,
+) -> impl IntoView {
     if app == "files" {
         return view! { <FilesSettings session=session on_close=on_close/> }.into_any();
     }
     let saver = Saver::new(session.clone());
     let section = RwSignal::new("General");
-    let (name, icon) = if app == "contacts" { ("Contacts", "contacts") } else { ("Calendar", "calendar") };
-    let text = move |key: &'static str, default: &'static str| Signal::derive(move || {
-        let v = saver.value(key);
-        v.as_str().map(str::to_owned).or_else(|| v.as_i64().map(|n| n.to_string())).unwrap_or_else(|| default.to_owned())
-    });
-    let flag = move |key: &'static str, default: bool| Signal::derive(move || saver.value(key).as_bool().unwrap_or(default));
-    let set = move |key: &'static str, value: serde_json::Value, message: String| saver.change(key, value, message, true);
+    let (name, icon) = if app == "contacts" {
+        ("Contacts", "contacts")
+    } else {
+        ("Calendar", "calendar")
+    };
+    let text = move |key: &'static str, default: &'static str| {
+        Signal::derive(move || {
+            let v = saver.value(key);
+            v.as_str()
+                .map(str::to_owned)
+                .or_else(|| v.as_i64().map(|n| n.to_string()))
+                .unwrap_or_else(|| default.to_owned())
+        })
+    };
+    let flag = move |key: &'static str, default: bool| {
+        Signal::derive(move || saver.value(key).as_bool().unwrap_or(default))
+    };
+    let set = move |key: &'static str, value: serde_json::Value, message: String| {
+        saver.change(key, value, message, true)
+    };
     let session = StoredValue::new(session);
     view! {
         <SettingsSheet title=format!("{name} settings") icon=icon sections=vec!["General", "Import and export", "Keyboard shortcuts"] section=section on_close=on_close notice=saver.notice>

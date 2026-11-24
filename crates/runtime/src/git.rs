@@ -53,7 +53,12 @@ pub fn path_str(path: &Path) -> &str {
 pub fn git_command(home: &Path, args: &[&str], env: &[(&str, &str)]) -> tokio::process::Command {
     let mut command = tokio::process::Command::new("git");
     command
-        .args(["-c", "core.hooksPath=/dev/null", "-c", "protocol.allow=never"])
+        .args([
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "protocol.allow=never",
+        ])
         .args(args)
         .env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
@@ -83,28 +88,47 @@ impl Out {
 }
 
 fn unavailable() -> AppError {
-    AppError::with("gitUnavailable", 503, "Git is not available on this server.")
+    AppError::with(
+        "gitUnavailable",
+        503,
+        "Git is not available on this server.",
+    )
 }
 fn failed() -> AppError {
     AppError::with("gitFailed", 502, "Git could not complete the request.")
 }
 
 /// Runs Git to completion with `input`; Git's error text stays out of responses.
-pub async fn git_full(home: &Path, args: &[&str], env: &[(&str, &str)], input: &[u8], allow_failure: bool, timeout: Duration) -> Result<Out> {
-    let mut child = git_command(home, args, env).spawn().map_err(|_| unavailable())?;
+pub async fn git_full(
+    home: &Path,
+    args: &[&str],
+    env: &[(&str, &str)],
+    input: &[u8],
+    allow_failure: bool,
+    timeout: Duration,
+) -> Result<Out> {
+    let mut child = git_command(home, args, env)
+        .spawn()
+        .map_err(|_| unavailable())?;
     let mut stdin = child.stdin.take().expect("stdin");
     let data = input.to_vec();
     let writer = tokio::spawn(async move {
         let _ = stdin.write_all(&data).await;
         drop(stdin);
     });
-    let output = tokio::time::timeout(timeout, child.wait_with_output()).await.map_err(|_| failed())?.map_err(|_| unavailable())?;
+    let output = tokio::time::timeout(timeout, child.wait_with_output())
+        .await
+        .map_err(|_| failed())?
+        .map_err(|_| unavailable())?;
     let _ = writer.await;
     let code = output.status.code().unwrap_or(-1);
     if code != 0 && !allow_failure {
         return Err(failed());
     }
-    Ok(Out { stdout: output.stdout, code })
+    Ok(Out {
+        stdout: output.stdout,
+        code,
+    })
 }
 
 pub async fn git(home: &Path, args: &[&str]) -> Result<Out> {
@@ -119,15 +143,24 @@ pub async fn git_may_fail(home: &Path, args: &[&str]) -> Result<Out> {
 }
 
 pub fn lines(value: &[u8]) -> Vec<String> {
-    String::from_utf8_lossy(value).split('\n').filter(|l| !l.is_empty()).map(str::to_owned).collect()
+    String::from_utf8_lossy(value)
+        .split('\n')
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 fn hex_bytes(sha: &str) -> Vec<u8> {
-    (0..sha.len() / 2).map(|i| u8::from_str_radix(&sha[2 * i..2 * i + 2], 16).unwrap_or(0)).collect()
+    (0..sha.len() / 2)
+        .map(|i| u8::from_str_radix(&sha[2 * i..2 * i + 2], 16).unwrap_or(0))
+        .collect()
 }
 
 pub fn is_sha(value: &str) -> bool {
-    value.len() == 40 && value.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    value.len() == 40
+        && value
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 // ---- Objects --------------------------------------------------------------------------------
@@ -145,16 +178,46 @@ impl ObjectWriter {
         is_sha(sha) && self.file(sha).exists()
     }
     async fn write(&self, kind: &str, content: &[u8]) -> Result<String> {
-        let out = git_in(&self.dir, &["--git-dir", path_str(&self.dir), "hash-object", "-w", "--literally", "-t", kind, "--stdin"], content).await?;
+        let out = git_in(
+            &self.dir,
+            &[
+                "--git-dir",
+                path_str(&self.dir),
+                "hash-object",
+                "-w",
+                "--literally",
+                "-t",
+                kind,
+                "--stdin",
+            ],
+            content,
+        )
+        .await?;
         Ok(out.text())
     }
     /// A stored blob as a Git blob, returning its ID.
     async fn write_blob(&self, file: &Path, size: f64) -> Result<String> {
-        let length = tokio::fs::metadata(file).await.map_err(|_| AppError::new("contentUnavailable", 503))?.len();
+        let length = tokio::fs::metadata(file)
+            .await
+            .map_err(|_| AppError::new("contentUnavailable", 503))?
+            .len();
         if length as f64 != size {
             return Err(AppError::new("contentUnavailable", 503));
         }
-        Ok(git(&self.dir, &["--git-dir", path_str(&self.dir), "hash-object", "-w", "--no-filters", "--", path_str(file)]).await?.text())
+        Ok(git(
+            &self.dir,
+            &[
+                "--git-dir",
+                path_str(&self.dir),
+                "hash-object",
+                "-w",
+                "--no-filters",
+                "--",
+                path_str(file),
+            ],
+        )
+        .await?
+        .text())
     }
 }
 
@@ -201,11 +264,17 @@ fn set_path(node: &TreeNode, parts: &[&str], leaf: Option<Node>) -> Arc<TreeNode
             entries.insert(name.into(), Node::Tree(next));
         }
     }
-    Arc::new(TreeNode { entries, sha: OnceLock::new() })
+    Arc::new(TreeNode {
+        entries,
+        sha: OnceLock::new(),
+    })
 }
 
 /// Git's tree order: names compared as bytes, a folder as if its name ended in "/".
-fn hash_tree<'a>(node: &'a TreeNode, objects: &'a ObjectWriter) -> Pin<Box<dyn std::future::Future<Output = Result<String>> + Send + 'a>> {
+fn hash_tree<'a>(
+    node: &'a TreeNode,
+    objects: &'a ObjectWriter,
+) -> Pin<Box<dyn std::future::Future<Output = Result<String>> + Send + 'a>> {
     Box::pin(async move {
         if let Some(sha) = node.sha.get() {
             return Ok(sha.clone());
@@ -213,8 +282,20 @@ fn hash_tree<'a>(node: &'a TreeNode, objects: &'a ObjectWriter) -> Pin<Box<dyn s
         let mut items: Vec<(Vec<u8>, String, String, String)> = Vec::new();
         for (name, child) in &node.entries {
             let (key, mode, sha) = match child {
-                Node::Tree(t) => (format!("{name}/"), "40000".to_owned(), hash_tree(t, objects).await?),
-                Node::Blob { mode, sha } => (name.clone(), if mode.is_empty() { "100644".into() } else { mode.clone() }, sha.clone()),
+                Node::Tree(t) => (
+                    format!("{name}/"),
+                    "40000".to_owned(),
+                    hash_tree(t, objects).await?,
+                ),
+                Node::Blob { mode, sha } => (
+                    name.clone(),
+                    if mode.is_empty() {
+                        "100644".into()
+                    } else {
+                        mode.clone()
+                    },
+                    sha.clone(),
+                ),
             };
             items.push((key.into_bytes(), name.clone(), mode, sha));
         }
@@ -232,16 +313,39 @@ fn hash_tree<'a>(node: &'a TreeNode, objects: &'a ObjectWriter) -> Pin<Box<dyn s
 
 /// A commit's tree, read back from the repository.
 async fn load_tree(dir: &Path, commit: &str) -> Result<Arc<TreeNode>> {
-    let out = git(dir, &["--git-dir", path_str(dir), "ls-tree", "-r", "-t", "-z", "--full-tree", commit]).await?;
+    let out = git(
+        dir,
+        &[
+            "--git-dir",
+            path_str(dir),
+            "ls-tree",
+            "-r",
+            "-t",
+            "-z",
+            "--full-tree",
+            commit,
+        ],
+    )
+    .await?;
     // Built bottom-up: deeper paths first, so each tree is complete when its parent takes it.
     let mut records: Vec<(String, String, String, String)> = Vec::new();
-    for record in String::from_utf8_lossy(&out.stdout).split('\0').filter(|r| !r.is_empty()) {
-        let Some((meta, file)) = record.split_once('\t') else { continue };
+    for record in String::from_utf8_lossy(&out.stdout)
+        .split('\0')
+        .filter(|r| !r.is_empty())
+    {
+        let Some((meta, file)) = record.split_once('\t') else {
+            continue;
+        };
         let parts: Vec<&str> = meta.split(' ').collect();
         if parts.len() < 3 {
             continue;
         }
-        records.push((parts[0].into(), parts[1].into(), parts[2].into(), file.into()));
+        records.push((
+            parts[0].into(),
+            parts[1].into(),
+            parts[2].into(),
+            file.into(),
+        ));
     }
     let mut trees: HashMap<String, TreeNode> = HashMap::new();
     trees.insert(String::new(), TreeNode::default());
@@ -258,10 +362,24 @@ async fn load_tree(dir: &Path, commit: &str) -> Result<Arc<TreeNode>> {
         }
         let (parent, name) = file.rsplit_once('/').unwrap_or(("", file));
         if let Some(t) = trees.get_mut(parent) {
-            t.entries.insert(name.into(), Node::Blob { mode: if mode == "100644" { String::new() } else { mode.clone() }, sha: sha.clone() });
+            t.entries.insert(
+                name.into(),
+                Node::Blob {
+                    mode: if mode == "100644" {
+                        String::new()
+                    } else {
+                        mode.clone()
+                    },
+                    sha: sha.clone(),
+                },
+            );
         }
     }
-    let mut folders: Vec<String> = records.iter().filter(|r| r.1 == "tree").map(|r| r.3.clone()).collect();
+    let mut folders: Vec<String> = records
+        .iter()
+        .filter(|r| r.1 == "tree")
+        .map(|r| r.3.clone())
+        .collect();
     folders.sort_by_key(|f| std::cmp::Reverse(f.matches('/').count()));
     for folder in folders {
         let node = trees.remove(&folder).expect("tree");
@@ -348,28 +466,63 @@ struct LocalState {
 }
 
 fn clean(value: &str) -> String {
-    value.chars().filter(|c| !"<>\n\r\0".contains(*c)).collect::<String>().trim().to_owned()
+    value
+        .chars()
+        .filter(|c| !"<>\n\r\0".contains(*c))
+        .collect::<String>()
+        .trim()
+        .to_owned()
 }
 
 /// The Git commit for a Dar commit: same tree, author and time every time it is made.
 fn native_commit(tree: &str, parent: Option<&str>, commit: &ExportCommit) -> Vec<u8> {
-    let name = Some(clean(&commit.author.name)).filter(|n| !n.is_empty()).or_else(|| Some(clean(&commit.author.username)).filter(|n| !n.is_empty())).unwrap_or_else(|| "Dar".into());
-    let user: String = commit.author.username.chars().filter(|c| !"<>".contains(*c) && !c.is_whitespace()).collect();
-    let who = format!("{name} <{}@dar.invalid> {} +0000", if user.is_empty() { "dar" } else { &user }, (commit.created_at / 1000.0).floor() as i64);
+    let name = Some(clean(&commit.author.name))
+        .filter(|n| !n.is_empty())
+        .or_else(|| Some(clean(&commit.author.username)).filter(|n| !n.is_empty()))
+        .unwrap_or_else(|| "Dar".into());
+    let user: String = commit
+        .author
+        .username
+        .chars()
+        .filter(|c| !"<>".contains(*c) && !c.is_whitespace())
+        .collect();
+    let who = format!(
+        "{name} <{}@dar.invalid> {} +0000",
+        if user.is_empty() { "dar" } else { &user },
+        (commit.created_at / 1000.0).floor() as i64
+    );
     let parent = parent.map(|p| format!("parent {p}\n")).unwrap_or_default();
-    format!("tree {tree}\n{parent}author {who}\ncommitter {who}\n\n{}\n", commit.message).into_bytes()
+    format!(
+        "tree {tree}\n{parent}author {who}\ncommitter {who}\n\n{}\n",
+        commit.message
+    )
+    .into_bytes()
 }
 
 fn header_of(raw: &[u8]) -> Vec<String> {
-    let end = raw.windows(2).position(|w| w == b"\n\n").unwrap_or(raw.len());
-    String::from_utf8_lossy(&raw[..end]).split('\n').map(str::to_owned).collect()
+    let end = raw
+        .windows(2)
+        .position(|w| w == b"\n\n")
+        .unwrap_or(raw.len());
+    String::from_utf8_lossy(&raw[..end])
+        .split('\n')
+        .map(str::to_owned)
+        .collect()
 }
 
 fn mismatch() -> AppError {
-    AppError::with("historyMismatch", 500, "This folder's history does not match its Git objects.")
+    AppError::with(
+        "historyMismatch",
+        500,
+        "This folder's history does not match its Git objects.",
+    )
 }
 fn history_unavailable() -> AppError {
-    AppError::with("historyUnavailable", 503, "This folder's history could not be read.")
+    AppError::with(
+        "historyUnavailable",
+        503,
+        "This folder's history could not be read.",
+    )
 }
 
 struct Materialized {
@@ -391,7 +544,13 @@ pub type Guard = tokio::sync::OwnedMutexGuard<()>;
 
 impl Repositories {
     pub fn new(db: Database, root: &Path, blobs: Blobs) -> Self {
-        Repositories { db, base: root.join("git"), blobs, locks: Mutex::new(HashMap::new()), touched: Mutex::new(HashSet::new()) }
+        Repositories {
+            db,
+            base: root.join("git"),
+            blobs,
+            locks: Mutex::new(HashMap::new()),
+            touched: Mutex::new(HashSet::new()),
+        }
     }
 
     pub fn dir_of(&self, folder_id: &str) -> PathBuf {
@@ -400,7 +559,10 @@ impl Repositories {
 
     /// The folder's lock; work on its repository holds it.
     pub async fn lock(&self, folder_id: &str) -> Guard {
-        self.touched.lock().expect("touched").insert(folder_id.to_owned());
+        self.touched
+            .lock()
+            .expect("touched")
+            .insert(folder_id.to_owned());
         let lock = {
             let mut locks = self.locks.lock().expect("locks");
             locks.retain(|_, l| Arc::strong_count(l) > 1);
@@ -410,7 +572,14 @@ impl Repositories {
     }
 
     pub async fn call(&self, session_id: &str, operation: &str, document: Value) -> Result<Value> {
-        self.db.operation("service_git", operation, &READ_OPERATIONS, json!([session_id, operation, document.to_string()])).await
+        self.db
+            .operation(
+                "service_git",
+                operation,
+                &READ_OPERATIONS,
+                json!([session_id, operation, document.to_string()]),
+            )
+            .await
     }
 
     async fn prepare(&self, dir: &Path, generation: f64) -> Result<LocalState> {
@@ -422,12 +591,29 @@ impl Repositories {
         }
         let _ = tokio::fs::remove_dir_all(dir).await;
         create_private_dir(&self.base).await?;
-        git(&self.base, &["init", "--bare", "-q", "-b", "main", path_str(dir)]).await?;
+        git(
+            &self.base,
+            &["init", "--bare", "-q", "-b", "main", path_str(dir)],
+        )
+        .await?;
         let config = dir.join("config");
-        for (key, value) in [("uploadpack.allowFilter", "true"), ("uploadpack.allowReachableSHA1InWant", "true"), ("gc.autoDetach", "false"), ("core.logAllRefUpdates", "false"), ("receive.denyDeletes", "true")] {
-            git(&self.base, &["config", "--file", path_str(&config), key, value]).await?;
+        for (key, value) in [
+            ("uploadpack.allowFilter", "true"),
+            ("uploadpack.allowReachableSHA1InWant", "true"),
+            ("gc.autoDetach", "false"),
+            ("core.logAllRefUpdates", "false"),
+            ("receive.denyDeletes", "true"),
+        ] {
+            git(
+                &self.base,
+                &["config", "--file", path_str(&config), key, value],
+            )
+            .await?;
         }
-        let state = LocalState { generation, revision: -1.0 };
+        let state = LocalState {
+            generation,
+            revision: -1.0,
+        };
         save_state(dir, &state).await?;
         Ok(state)
     }
@@ -436,24 +622,56 @@ impl Repositories {
         if shas.is_empty() {
             return Ok(Vec::new());
         }
-        let out = git_in(dir, &["--git-dir", path_str(dir), "cat-file", "--batch-check"], format!("{}\n", shas.join("\n")).as_bytes()).await?;
-        Ok(lines(&out.stdout).into_iter().filter(|l| l.ends_with(" missing")).map(|l| l.split(' ').next().unwrap_or_default().to_owned()).collect())
+        let out = git_in(
+            dir,
+            &["--git-dir", path_str(dir), "cat-file", "--batch-check"],
+            format!("{}\n", shas.join("\n")).as_bytes(),
+        )
+        .await?;
+        Ok(lines(&out.stdout)
+            .into_iter()
+            .filter(|l| l.ends_with(" missing"))
+            .map(|l| l.split(' ').next().unwrap_or_default().to_owned())
+            .collect())
     }
 
     /// Writes Git objects for commits (base first) from their bases' trees, and the Git commits
     /// Dar's own commits get. Returns the pins to record.
-    async fn materialize(&self, dir: &Path, commits: &mut [ExportCommit], trees: &mut HashMap<String, Arc<TreeNode>>, shas: &mut HashMap<String, String>) -> Result<Materialized> {
-        let objects = ObjectWriter { dir: dir.to_owned() };
-        let (mut pins, mut blob_pins, mut hashed) = (Vec::new(), BTreeMap::<String, Value>::new(), HashMap::<String, String>::new());
+    async fn materialize(
+        &self,
+        dir: &Path,
+        commits: &mut [ExportCommit],
+        trees: &mut HashMap<String, Arc<TreeNode>>,
+        shas: &mut HashMap<String, String>,
+    ) -> Result<Materialized> {
+        let objects = ObjectWriter {
+            dir: dir.to_owned(),
+        };
+        let (mut pins, mut blob_pins, mut hashed) = (
+            Vec::new(),
+            BTreeMap::<String, Value>::new(),
+            HashMap::<String, String>::new(),
+        );
         let mut children: HashMap<String, usize> = HashMap::new();
         for commit in commits.iter() {
             *children.entry(commit.parent_id.clone()).or_default() += 1;
         }
         for commit in commits.iter_mut() {
-            let mut tree = if commit.parent_id.is_empty() { empty_node() } else { trees.get(&commit.parent_id).cloned().ok_or_else(history_unavailable)? };
+            let mut tree = if commit.parent_id.is_empty() {
+                empty_node()
+            } else {
+                trees
+                    .get(&commit.parent_id)
+                    .cloned()
+                    .ok_or_else(history_unavailable)?
+            };
             for change in &commit.changes {
                 if change.kind == "deleted" || change.kind == "renamed" {
-                    let from = if change.kind == "renamed" { &change.previous_path } else { &change.path };
+                    let from = if change.kind == "renamed" {
+                        &change.previous_path
+                    } else {
+                        &change.path
+                    };
                     tree = set_path(&tree, &from.split('/').collect::<Vec<_>>(), None);
                 }
             }
@@ -462,10 +680,16 @@ impl Repositories {
                     continue;
                 }
                 let blob_id = change.blob_id.clone().unwrap_or_default();
-                let mut sha = change.sha.clone().filter(|s| !s.is_empty()).or_else(|| hashed.get(&blob_id).cloned());
+                let mut sha = change
+                    .sha
+                    .clone()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| hashed.get(&blob_id).cloned());
                 if sha.as_ref().is_none_or(|s| !objects.exists(s)) {
                     let file = self.blobs.path(&blob_id)?;
-                    let written = objects.write_blob(&file, change.size.unwrap_or(0.0)).await?;
+                    let written = objects
+                        .write_blob(&file, change.size.unwrap_or(0.0))
+                        .await?;
                     if sha.as_ref().is_some_and(|s| *s != written) {
                         return Err(mismatch());
                     }
@@ -476,29 +700,54 @@ impl Repositories {
                 }
                 let sha = sha.expect("sha");
                 hashed.insert(blob_id, sha.clone());
-                tree = set_path(&tree, &change.path.split('/').collect::<Vec<_>>(), Some(Node::Blob { mode: change.mode.clone(), sha }));
+                tree = set_path(
+                    &tree,
+                    &change.path.split('/').collect::<Vec<_>>(),
+                    Some(Node::Blob {
+                        mode: change.mode.clone(),
+                        sha,
+                    }),
+                );
             }
             let tree_sha = hash_tree(&tree, &objects).await?;
             if let Some(raw) = commit.raw.as_ref().filter(|r| !r.is_empty()) {
-                let raw = base64::engine::general_purpose::STANDARD.decode(raw).map_err(|_| mismatch())?;
-                if header_of(&raw).first().map(String::as_str) != Some(format!("tree {tree_sha}").as_str()) {
+                let raw = base64::engine::general_purpose::STANDARD
+                    .decode(raw)
+                    .map_err(|_| mismatch())?;
+                if header_of(&raw).first().map(String::as_str)
+                    != Some(format!("tree {tree_sha}").as_str())
+                {
                     return Err(mismatch());
                 }
                 if Some(objects.write("commit", &raw).await?) != commit.sha {
                     return Err(mismatch());
                 }
             } else {
-                let parent = if commit.parent_id.is_empty() { None } else { Some(shas.get(&commit.parent_id).cloned().ok_or_else(history_unavailable)?) };
+                let parent = if commit.parent_id.is_empty() {
+                    None
+                } else {
+                    Some(
+                        shas.get(&commit.parent_id)
+                            .cloned()
+                            .ok_or_else(history_unavailable)?,
+                    )
+                };
                 let raw = native_commit(&tree_sha, parent.as_deref(), commit);
                 let sha = objects.write("commit", &raw).await?;
                 commit.sha = Some(sha.clone());
-                let author = Some(clean(&commit.author.name)).filter(|n| !n.is_empty()).unwrap_or_else(|| commit.author.username.clone());
+                let author = Some(clean(&commit.author.name))
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| commit.author.username.clone());
                 pins.push(json!({ "id": commit.id, "sha": sha, "raw": base64::engine::general_purpose::STANDARD.encode(&raw), "parents": parent.map(|p| vec![p]).unwrap_or_default(), "author": author }));
             }
             shas.insert(commit.id.clone(), commit.sha.clone().unwrap_or_default());
             trees.insert(commit.id.clone(), tree);
             // A tree is kept only while commits based on it are still to come.
-            let left = children.get(&commit.parent_id).copied().unwrap_or(1).saturating_sub(1);
+            let left = children
+                .get(&commit.parent_id)
+                .copied()
+                .unwrap_or(1)
+                .saturating_sub(1);
             children.insert(commit.parent_id.clone(), left);
             if left == 0 {
                 trees.remove(&commit.parent_id);
@@ -507,7 +756,10 @@ impl Repositories {
                 trees.remove(&commit.id);
             }
         }
-        Ok(Materialized { pins, blobs: blob_pins.into_values().collect() })
+        Ok(Materialized {
+            pins,
+            blobs: blob_pins.into_values().collect(),
+        })
     }
 
     async fn pin(&self, session_id: &str, folder_id: &str, result: Materialized) -> Result<()> {
@@ -516,9 +768,19 @@ impl Repositories {
         while i < count {
             let commits: Vec<Value> = result.pins.iter().skip(i).take(1000).cloned().collect();
             let blobs: Vec<Value> = result.blobs.iter().skip(i).take(1000).cloned().collect();
-            let answer = self.call(session_id, "pin", json!({ "folderId": folder_id, "commits": commits, "blobs": blobs })).await?;
+            let answer = self
+                .call(
+                    session_id,
+                    "pin",
+                    json!({ "folderId": folder_id, "commits": commits, "blobs": blobs }),
+                )
+                .await?;
             if answer["conflict"] == json!(true) {
-                return Err(AppError::with("conflict", 409, "The folder's history changed; try again."));
+                return Err(AppError::with(
+                    "conflict",
+                    409,
+                    "The folder's history changed; try again.",
+                ));
             }
             i += 1000;
         }
@@ -526,8 +788,20 @@ impl Repositories {
     }
 
     async fn set_refs(&self, dir: &Path, wanted: &BTreeMap<String, String>) -> Result<()> {
-        let out = git(dir, &["--git-dir", path_str(dir), "for-each-ref", "--format=%(objectname) %(refname)"]).await?;
-        let have: HashMap<String, String> = lines(&out.stdout).into_iter().filter_map(|l| l.split_once(' ').map(|(s, n)| (n.to_owned(), s.to_owned()))).collect();
+        let out = git(
+            dir,
+            &[
+                "--git-dir",
+                path_str(dir),
+                "for-each-ref",
+                "--format=%(objectname) %(refname)",
+            ],
+        )
+        .await?;
+        let have: HashMap<String, String> = lines(&out.stdout)
+            .into_iter()
+            .filter_map(|l| l.split_once(' ').map(|(s, n)| (n.to_owned(), s.to_owned())))
+            .collect();
         let mut input = String::new();
         for (name, sha) in wanted {
             if have.get(name) != Some(sha) {
@@ -540,14 +814,27 @@ impl Repositories {
             }
         }
         if !input.is_empty() {
-            git_in(dir, &["--git-dir", path_str(dir), "update-ref", "--stdin"], input.as_bytes()).await?;
+            git_in(
+                dir,
+                &["--git-dir", path_str(dir), "update-ref", "--stdin"],
+                input.as_bytes(),
+            )
+            .await?;
         }
         Ok(())
     }
 
     /// Brings a folder's repository up to date with its history. The caller holds the lock.
-    pub async fn sync_locked(&self, session_id: &str, folder_id: &str) -> Result<(PathBuf, GitState)> {
-        let state: GitState = serde_json::from_value(self.call(session_id, "state", json!({ "folderId": folder_id })).await?).map_err(|_| history_unavailable())?;
+    pub async fn sync_locked(
+        &self,
+        session_id: &str,
+        folder_id: &str,
+    ) -> Result<(PathBuf, GitState)> {
+        let state: GitState = serde_json::from_value(
+            self.call(session_id, "state", json!({ "folderId": folder_id }))
+                .await?,
+        )
+        .map_err(|_| history_unavailable())?;
         let dir = self.dir_of(folder_id);
         let local = self.prepare(&dir, state.generation).await?;
         if local.revision == state.revision && state.pending.is_empty() {
@@ -556,15 +843,28 @@ impl Repositories {
         let mut shas: HashMap<String, String> = HashMap::new();
         let mut main = state.main.clone();
         let mut needed: Vec<String> = Vec::new();
-        for sha in state.main.iter().chain(state.base.iter()).chain(state.refs.iter().map(|r| &r.sha)) {
+        for sha in state
+            .main
+            .iter()
+            .chain(state.base.iter())
+            .chain(state.refs.iter().map(|r| &r.sha))
+        {
             if !sha.is_empty() && !needed.contains(sha) {
                 needed.push(sha.clone());
             }
         }
         if !self.missing(&dir, &needed).await?.is_empty() {
             // The cache is new or incomplete: rebuild every commit from the database.
-            let all: GitExport = serde_json::from_value(self.call(session_id, "export", json!({ "folderId": folder_id })).await?).map_err(|_| history_unavailable())?;
-            let by_id: HashMap<String, ExportCommit> = all.commits.iter().map(|c| (c.id.clone(), c.clone())).collect();
+            let all: GitExport = serde_json::from_value(
+                self.call(session_id, "export", json!({ "folderId": folder_id }))
+                    .await?,
+            )
+            .map_err(|_| history_unavailable())?;
+            let by_id: HashMap<String, ExportCommit> = all
+                .commits
+                .iter()
+                .map(|c| (c.id.clone(), c.clone()))
+                .collect();
             let mut ordered: Vec<ExportCommit> = Vec::new();
             let mut done: HashSet<String> = HashSet::from([String::new()]);
             for commit in &all.commits {
@@ -595,13 +895,26 @@ impl Repositories {
                     shas.insert(commit.id.clone(), sha.clone());
                 }
             }
-            let made = self.materialize(&dir, &mut ordered, &mut HashMap::new(), &mut shas).await?;
+            let made = self
+                .materialize(&dir, &mut ordered, &mut HashMap::new(), &mut shas)
+                .await?;
             self.pin(session_id, folder_id, made).await?;
             let objects = ObjectWriter { dir: dir.clone() };
             for tag in &all.tags {
-                objects.write("tag", &base64::engine::general_purpose::STANDARD.decode(&tag.raw).map_err(|_| mismatch())?).await?;
+                objects
+                    .write(
+                        "tag",
+                        &base64::engine::general_purpose::STANDARD
+                            .decode(&tag.raw)
+                            .map_err(|_| mismatch())?,
+                    )
+                    .await?;
             }
-            main = if all.head_id.is_empty() { None } else { shas.get(&all.head_id).cloned() };
+            main = if all.head_id.is_empty() {
+                None
+            } else {
+                shas.get(&all.head_id).cloned()
+            };
         } else if !state.pending.is_empty() {
             let mut pending = state.pending.clone();
             let mut trees: HashMap<String, Arc<TreeNode>> = HashMap::new();
@@ -611,16 +924,29 @@ impl Repositories {
                 trees.insert(first.clone(), load_tree(&dir, &base).await?);
                 shas.insert(first, base);
             }
-            let made = self.materialize(&dir, &mut pending, &mut trees, &mut shas).await?;
+            let made = self
+                .materialize(&dir, &mut pending, &mut trees, &mut shas)
+                .await?;
             self.pin(session_id, folder_id, made).await?;
             main = shas.get(&pending.last().expect("pending").id).cloned();
         }
-        let mut wanted: BTreeMap<String, String> = state.refs.iter().map(|r| (r.name.clone(), r.sha.clone())).collect();
+        let mut wanted: BTreeMap<String, String> = state
+            .refs
+            .iter()
+            .map(|r| (r.name.clone(), r.sha.clone()))
+            .collect();
         if let Some(main) = &main {
             wanted.insert(MAIN_REF.into(), main.clone());
         }
         self.set_refs(&dir, &wanted).await?;
-        save_state(&dir, &LocalState { generation: state.generation, revision: state.revision }).await?;
+        save_state(
+            &dir,
+            &LocalState {
+                generation: state.generation,
+                revision: state.revision,
+            },
+        )
+        .await?;
         Ok((dir, GitState { main, ..state }))
     }
 
@@ -635,19 +961,50 @@ impl Repositories {
             return;
         }
         let args = [
-            "--git-dir", path_str(dir), "-c", "gc.auto=250", "-c", "gc.autoPackLimit=8", "-c", "gc.autoDetach=false", "-c", "gc.pruneExpire=now", "-c", "repack.writeBitmaps=true", "-c", "gc.writeCommitGraph=true", "gc", "--auto", "--quiet",
+            "--git-dir",
+            path_str(dir),
+            "-c",
+            "gc.auto=250",
+            "-c",
+            "gc.autoPackLimit=8",
+            "-c",
+            "gc.autoDetach=false",
+            "-c",
+            "gc.pruneExpire=now",
+            "-c",
+            "repack.writeBitmaps=true",
+            "-c",
+            "gc.writeCommitGraph=true",
+            "gc",
+            "--auto",
+            "--quiet",
         ];
         let _ = git_full(dir, &args, &[], b"", true, Duration::from_secs(1800)).await;
     }
 
     /// Removes repositories of folders that no longer keep history, and packs the ones used since last time.
     pub async fn maintain(&self) {
-        let Ok(mut entries) = tokio::fs::read_dir(&self.base).await else { return };
-        let Ok(rows) = self.db.read("service_git_repos", json!([])).await else { return };
-        let repos: HashSet<String> = rows.as_array().map(|r| r.iter().filter_map(|row| row["id"].as_str().map(|id| format!("{id}.git"))).collect()).unwrap_or_default();
+        let Ok(mut entries) = tokio::fs::read_dir(&self.base).await else {
+            return;
+        };
+        let Ok(rows) = self.db.read("service_git_repos", json!([])).await else {
+            return;
+        };
+        let repos: HashSet<String> = rows
+            .as_array()
+            .map(|r| {
+                r.iter()
+                    .filter_map(|row| row["id"].as_str().map(|id| format!("{id}.git")))
+                    .collect()
+            })
+            .unwrap_or_default();
         while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let folder = name.strip_suffix(".git").filter(|f| f.len() == 36 && f.bytes().all(|b| matches!(b, b'a'..=b'f' | b'0'..=b'9' | b'-')));
+            let folder = name.strip_suffix(".git").filter(|f| {
+                f.len() == 36
+                    && f.bytes()
+                        .all(|b| matches!(b, b'a'..=b'f' | b'0'..=b'9' | b'-'))
+            });
             if let Some(folder) = folder
                 && !repos.contains(&name)
             {
@@ -673,46 +1030,110 @@ impl Repositories {
     pub async fn bundle(&self, session_id: &str, folder_id: &str, name: &str) -> Result<Response> {
         let (dir, state) = self.sync(session_id, folder_id).await?;
         if state.main.is_none() && state.refs.is_empty() {
-            return Err(AppError::with("nothingToExport", 409, "Commit something before exporting."));
+            return Err(AppError::with(
+                "nothingToExport",
+                409,
+                "Commit something before exporting.",
+            ));
         }
         let work = self.base.join(format!("bundle-{}", crate::auth::uuid()));
         create_private_dir(&work).await?;
         let file = work.join("history.bundle");
-        let made = git(&dir, &["--git-dir", path_str(&dir), "bundle", "create", "-q", path_str(&file), "--all"]).await;
+        let made = git(
+            &dir,
+            &[
+                "--git-dir",
+                path_str(&dir),
+                "bundle",
+                "create",
+                "-q",
+                path_str(&file),
+                "--all",
+            ],
+        )
+        .await;
         let opened = match made {
-            Ok(_) => tokio::fs::File::open(&file).await.map_err(|_| AppError::internal()),
+            Ok(_) => tokio::fs::File::open(&file)
+                .await
+                .map_err(|_| AppError::internal()),
             Err(e) => Err(e),
         };
         // The open file outlives its name, so the work folder goes now.
         let _ = tokio::fs::remove_dir_all(&work).await;
         let handle = opened?;
-        let size = handle.metadata().await.map_err(|_| AppError::internal())?.len();
-        let cleaned: String = name.chars().filter(|c| c.is_alphanumeric() || *c == '_' || " .-".contains(*c)).collect::<String>().trim().to_owned();
-        let filename = format!("{}.bundle", if cleaned.is_empty() { "history" } else { &cleaned });
+        let size = handle
+            .metadata()
+            .await
+            .map_err(|_| AppError::internal())?
+            .len();
+        let cleaned: String = name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_' || " .-".contains(*c))
+            .collect::<String>()
+            .trim()
+            .to_owned();
+        let filename = format!(
+            "{}.bundle",
+            if cleaned.is_empty() {
+                "history"
+            } else {
+                &cleaned
+            }
+        );
         let mut response = Body::from_stream(ReaderStream::new(handle)).into_response();
         let headers = response.headers_mut();
-        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        );
         headers.insert(header::CONTENT_LENGTH, HeaderValue::from(size));
-        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
-        headers.insert(header::CONTENT_DISPOSITION, HeaderValue::from_str(&format!("attachment; filename*=UTF-8''{}", encode_component(&filename))).map_err(|_| AppError::internal())?);
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("private, no-store"),
+        );
+        headers.insert(
+            header::CONTENT_DISPOSITION,
+            HeaderValue::from_str(&format!(
+                "attachment; filename*=UTF-8''{}",
+                encode_component(&filename)
+            ))
+            .map_err(|_| AppError::internal())?,
+        );
         Ok(response)
     }
 }
 
 async fn create_private_dir(dir: &Path) -> Result<()> {
-    tokio::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir).await.map_err(|_| AppError::internal())
+    tokio::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .await
+        .map_err(|_| AppError::internal())
 }
 
 async fn save_state(dir: &Path, state: &LocalState) -> Result<()> {
     let file = dir.join("dar-state.json");
-    tokio::fs::write(&file, serde_json::to_vec(state).expect("state")).await.map_err(|_| AppError::internal())?;
-    let _ = tokio::fs::set_permissions(&file, std::os::unix::fs::PermissionsExt::from_mode(0o600)).await;
+    tokio::fs::write(&file, serde_json::to_vec(state).expect("state"))
+        .await
+        .map_err(|_| AppError::internal())?;
+    let _ = tokio::fs::set_permissions(&file, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+        .await;
     Ok(())
 }
 
 /// `encodeURIComponent`.
 pub fn encode_component(value: &str) -> String {
-    value.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
+    value
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect()
 }
 
 /// `decodeURIComponent`; `None` for malformed escapes or bytes that are not UTF-8.
@@ -745,7 +1166,10 @@ const FLUSH: &[u8] = b"0000";
 /// A request body, inflated when Git compressed it.
 pub fn body_stream(headers: &HeaderMap, body: Body) -> Result<ByteStream> {
     let raw: ByteStream = Box::pin(body.into_data_stream().map(|r| r.map_err(io::Error::other)));
-    match headers.get(header::CONTENT_ENCODING).and_then(|v| v.to_str().ok()) {
+    match headers
+        .get(header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+    {
         None | Some("identity") => Ok(raw),
         Some("gzip" | "x-gzip") => gunzip(raw),
         Some(_) => Err(AppError::new("unsupportedEncoding", 415)),
@@ -760,7 +1184,13 @@ fn gunzip(mut raw: ByteStream) -> Result<ByteStream> {
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|_| AppError::with("unsupportedEncoding", 415, "This server cannot read compressed requests."))?;
+        .map_err(|_| {
+            AppError::with(
+                "unsupportedEncoding",
+                415,
+                "This server cannot read compressed requests.",
+            )
+        })?;
     let mut stdin = child.stdin.take().expect("stdin");
     tokio::spawn(async move {
         while let Some(Ok(chunk)) = raw.next().await {
@@ -808,8 +1238,16 @@ impl PacketReader {
         if !self.fill(4).await {
             return Err(early());
         }
-        let length = std::str::from_utf8(&self.buffer[..4]).ok().and_then(|s| usize::from_str_radix(s, 16).ok());
-        let Some(length) = length.filter(|l| !(1..=3).contains(l) && *l <= 65520) else { return Err(AppError::with("invalidRequest", 400, "The Git request is malformed.")) };
+        let length = std::str::from_utf8(&self.buffer[..4])
+            .ok()
+            .and_then(|s| usize::from_str_radix(s, 16).ok());
+        let Some(length) = length.filter(|l| !(1..=3).contains(l) && *l <= 65520) else {
+            return Err(AppError::with(
+                "invalidRequest",
+                400,
+                "The Git request is malformed.",
+            ));
+        };
         if length == 0 {
             self.buffer.drain(..4);
             return Ok(None);
@@ -844,19 +1282,36 @@ impl BatchReader {
     }
     async fn header(&mut self) -> Result<BatchHeader> {
         let mut line = Vec::new();
-        if self.reader.read_until(b'\n', &mut line).await.map_err(|_| Self::broken())? == 0 {
+        if self
+            .reader
+            .read_until(b'\n', &mut line)
+            .await
+            .map_err(|_| Self::broken())?
+            == 0
+        {
             return Err(Self::broken());
         }
         let text = String::from_utf8_lossy(&line).trim_end().to_owned();
         let parts: Vec<&str> = text.split(' ').collect();
         if parts.get(1) == Some(&"missing") || parts.len() < 3 {
-            return Err(AppError::with("invalidRequest", 400, "The push is missing objects."));
+            return Err(AppError::with(
+                "invalidRequest",
+                400,
+                "The push is missing objects.",
+            ));
         }
-        Ok(BatchHeader { sha: parts[0].into(), kind: parts[1].into(), size: parts[2].parse().unwrap_or(0) })
+        Ok(BatchHeader {
+            sha: parts[0].into(),
+            kind: parts[1].into(),
+            size: parts[2].parse().unwrap_or(0),
+        })
     }
     async fn read(&mut self, size: usize) -> Result<Vec<u8>> {
         let mut data = vec![0u8; size + 1];
-        self.reader.read_exact(&mut data).await.map_err(|_| Self::broken())?;
+        self.reader
+            .read_exact(&mut data)
+            .await
+            .map_err(|_| Self::broken())?;
         data.pop();
         Ok(data)
     }
@@ -875,27 +1330,62 @@ struct Target {
 
 fn uuid_like(value: &str) -> bool {
     let b = value.as_bytes();
-    b.len() == 36 && b.iter().enumerate().all(|(i, c)| if [8, 13, 18, 23].contains(&i) { *c == b'-' } else { matches!(c, b'a'..=b'f' | b'0'..=b'9') })
+    b.len() == 36
+        && b.iter().enumerate().all(|(i, c)| {
+            if [8, 13, 18, 23].contains(&i) {
+                *c == b'-'
+            } else {
+                matches!(c, b'a'..=b'f' | b'0'..=b'9')
+            }
+        })
 }
 
 fn target_of(path: &str) -> Result<Target> {
-    let rest = path.strip_prefix("/dav/git/").ok_or_else(AppError::not_found)?;
-    let (middle, route) = ["/info/refs", "/git-upload-pack", "/git-receive-pack"].iter().find_map(|r| rest.strip_suffix(r).map(|m| (m, *r))).ok_or_else(AppError::not_found)?;
+    let rest = path
+        .strip_prefix("/dav/git/")
+        .ok_or_else(AppError::not_found)?;
+    let (middle, route) = ["/info/refs", "/git-upload-pack", "/git-receive-pack"]
+        .iter()
+        .find_map(|r| rest.strip_suffix(r).map(|m| (m, *r)))
+        .ok_or_else(AppError::not_found)?;
     let id = middle.strip_suffix(".git").unwrap_or(middle);
     if uuid_like(id) && !middle.contains('/') {
-        return Ok(Target { folder: Some(id.into()), alias: None, route });
+        return Ok(Target {
+            folder: Some(id.into()),
+            alias: None,
+            route,
+        });
     }
-    let (user, folder) = middle.strip_suffix(".git").and_then(|m| m.split_once('/')).ok_or_else(AppError::not_found)?;
+    let (user, folder) = middle
+        .strip_suffix(".git")
+        .and_then(|m| m.split_once('/'))
+        .ok_or_else(AppError::not_found)?;
     if user.is_empty() || folder.is_empty() {
         return Err(AppError::not_found());
     }
     let user = decode_component(user).ok_or_else(AppError::not_found)?;
-    let folder = folder.split('/').map(decode_component).collect::<Option<Vec<_>>>().ok_or_else(AppError::not_found)?.join("/");
-    Ok(Target { folder: None, alias: Some((user, folder)), route })
+    let folder = folder
+        .split('/')
+        .map(decode_component)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(AppError::not_found)?
+        .join("/");
+    Ok(Target {
+        folder: None,
+        alias: Some((user, folder)),
+        route,
+    })
 }
 
 /// `/dav/git/<folderId>.git`: Git's smart HTTP protocol, signed in with an app password with Files access.
-pub async fn handle_http(runtime: crate::http::Shared, method: &Method, path: &str, query: &HashMap<String, String>, headers: &HeaderMap, body: Body) -> Result<Response> {
+pub async fn handle_http(
+    runtime: crate::http::Shared,
+    method: &Method,
+    path: &str,
+    query: &HashMap<String, String>,
+    headers: &HeaderMap,
+    body: Body,
+) -> Result<Response> {
     let target = target_of(path)?;
     let origin = &runtime.config.origin;
     if let Some(o) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok())
@@ -903,24 +1393,57 @@ pub async fn handle_http(runtime: crate::http::Shared, method: &Method, path: &s
     {
         return Err(AppError::new("invalidOrigin", 403));
     }
-    let service = if target.route == "/info/refs" { query.get("service").cloned().unwrap_or_default() } else { target.route[1..].to_owned() };
+    let service = if target.route == "/info/refs" {
+        query.get("service").cloned().unwrap_or_default()
+    } else {
+        target.route[1..].to_owned()
+    };
     if service != "git-upload-pack" && service != "git-receive-pack" {
-        return Err(git_service_error("smartHttpRequired", "Use a Git client that speaks the smart HTTP protocol.", 403));
+        return Err(git_service_error(
+            "smartHttpRequired",
+            "Use a Git client that speaks the smart HTTP protocol.",
+            403,
+        ));
     }
-    let content_type = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default();
-    let wrong = if target.route == "/info/refs" { *method != Method::GET } else { *method != Method::POST || content_type != format!("application/x-{service}-request") };
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    let wrong = if target.route == "/info/refs" {
+        *method != Method::GET
+    } else {
+        *method != Method::POST || content_type != format!("application/x-{service}-request")
+    };
     if wrong {
         return Err(AppError::not_found());
     }
     let write = service == "git-receive-pack";
-    let authorization = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).unwrap_or_default();
-    let encoded = authorization.strip_prefix("Basic ").filter(|_| authorization.len() <= 2048).ok_or(AppError::new("unauthenticated", 401))?;
-    let decoded = base64::engine::general_purpose::STANDARD.decode(encoded.trim()).map(|d| String::from_utf8_lossy(&d).into_owned()).unwrap_or_default();
-    let (user, secret) = decoded.split_once(':').filter(|(u, _)| !u.is_empty()).ok_or(AppError::new("unauthenticated", 401))?;
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    let encoded = authorization
+        .strip_prefix("Basic ")
+        .filter(|_| authorization.len() <= 2048)
+        .ok_or(AppError::new("unauthenticated", 401))?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .map(|d| String::from_utf8_lossy(&d).into_owned())
+        .unwrap_or_default();
+    let (user, secret) = decoded
+        .split_once(':')
+        .filter(|(u, _)| !u.is_empty())
+        .ok_or(AppError::new("unauthenticated", 401))?;
     if !crate::auth::is_token(secret) {
         return Err(AppError::new("unauthenticated", 401));
     }
-    let auth = runtime.db.read("service_protocol_authenticate", json!([user, crate::auth::digest_token(secret), write])).await?;
+    let auth = runtime
+        .db
+        .read(
+            "service_protocol_authenticate",
+            json!([user, crate::auth::digest_token(secret), write]),
+        )
+        .await?;
     let session_id = auth["sessionId"].as_str().unwrap_or_default().to_owned();
     let repos = &runtime.git;
     let folder_id = match (&target.folder, &target.alias) {
@@ -929,51 +1452,105 @@ pub async fn handle_http(runtime: crate::http::Shared, method: &Method, path: &s
             if alias_user.to_lowercase() != user.to_lowercase() {
                 return Err(AppError::not_found());
             }
-            repos.call(&session_id, "resolve", json!({ "path": alias_path })).await?["folderId"].as_str().unwrap_or_default().to_owned()
+            repos
+                .call(&session_id, "resolve", json!({ "path": alias_path }))
+                .await?["folderId"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
         }
         _ => return Err(AppError::not_found()),
     };
     let protocol = headers
         .get("git-protocol")
         .and_then(|v| v.to_str().ok())
-        .filter(|p| !p.is_empty() && p.len() <= 256 && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.=:-".contains(&b)))
+        .filter(|p| {
+            !p.is_empty()
+                && p.len() <= 256
+                && p.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"_.=:-".contains(&b))
+        })
         .unwrap_or_default()
         .to_owned();
     let mut response = if service == "git-upload-pack" {
-        upload_pack(repos, &session_id, &folder_id, target.route == "/info/refs", &protocol, headers, body).await?
+        upload_pack(
+            repos,
+            &session_id,
+            &folder_id,
+            target.route == "/info/refs",
+            &protocol,
+            headers,
+            body,
+        )
+        .await?
     } else if target.route == "/info/refs" {
         // receive-pack's advertisement: the refs as the database has them.
         let (_, state) = repos.sync(&session_id, &folder_id).await?;
-        let mut refs: Vec<(String, String)> = state.main.iter().map(|m| (MAIN_REF.to_owned(), m.clone())).collect();
+        let mut refs: Vec<(String, String)> = state
+            .main
+            .iter()
+            .map(|m| (MAIN_REF.to_owned(), m.clone()))
+            .collect();
         refs.extend(state.refs.iter().map(|r| (r.name.clone(), r.sha.clone())));
         let capabilities = "report-status delete-refs side-band-64k quiet atomic ofs-delta object-format=sha1 agent=dar";
         let mut out = pkt(b"# service=git-receive-pack\n");
         out.extend_from_slice(FLUSH);
         if refs.is_empty() {
-            out.extend(pkt(format!("{ZERO} capabilities^{{}}\0{capabilities}\n").as_bytes()));
+            out.extend(pkt(
+                format!("{ZERO} capabilities^{{}}\0{capabilities}\n").as_bytes()
+            ));
         }
         for (index, (name, sha)) in refs.iter().enumerate() {
-            let caps = if index == 0 { format!("\0{capabilities}") } else { String::new() };
+            let caps = if index == 0 {
+                format!("\0{capabilities}")
+            } else {
+                String::new()
+            };
             out.extend(pkt(format!("{sha} {name}{caps}\n").as_bytes()));
         }
         out.extend_from_slice(FLUSH);
-        ([(header::CONTENT_TYPE, "application/x-git-receive-pack-advertisement")], out).into_response()
+        (
+            [(
+                header::CONTENT_TYPE,
+                "application/x-git-receive-pack-advertisement",
+            )],
+            out,
+        )
+            .into_response()
     } else {
         receive_pack(runtime.clone(), &session_id, &folder_id, headers, body).await?
     };
-    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache, max-age=0, must-revalidate"));
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-cache, max-age=0, must-revalidate"),
+    );
     Ok(response)
 }
 
-async fn upload_pack(repos: &Repositories, session_id: &str, folder_id: &str, advertise: bool, protocol: &str, headers: &HeaderMap, body: Body) -> Result<Response> {
+async fn upload_pack(
+    repos: &Repositories,
+    session_id: &str,
+    folder_id: &str,
+    advertise: bool,
+    protocol: &str,
+    headers: &HeaderMap,
+    body: Body,
+) -> Result<Response> {
     let (dir, _) = repos.sync(session_id, folder_id).await?;
     let mut args = vec!["upload-pack", "--stateless-rpc"];
     if advertise {
         args.push("--http-backend-info-refs");
     }
     args.push(path_str(&dir));
-    let env: Vec<(&str, &str)> = if protocol.is_empty() { Vec::new() } else { vec![("GIT_PROTOCOL", protocol)] };
-    let mut child = git_command(&dir, &args, &env).stderr(Stdio::null()).spawn().map_err(|_| unavailable())?;
+    let env: Vec<(&str, &str)> = if protocol.is_empty() {
+        Vec::new()
+    } else {
+        vec![("GIT_PROTOCOL", protocol)]
+    };
+    let mut child = git_command(&dir, &args, &env)
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| unavailable())?;
     let mut stdin = child.stdin.take().expect("stdin");
     if advertise {
         drop(stdin);
@@ -994,8 +1571,13 @@ async fn upload_pack(repos: &Repositories, session_id: &str, folder_id: &str, ad
         prefix.extend(pkt(b"# service=git-upload-pack\n"));
         prefix.extend_from_slice(FLUSH);
     }
-    let output = stream::once(async move { Ok::<_, io::Error>(Bytes::from(prefix)) }).chain(with_exit(ReaderStream::new(stdout), child));
-    let kind = if advertise { "application/x-git-upload-pack-advertisement" } else { "application/x-git-upload-pack-result" };
+    let output = stream::once(async move { Ok::<_, io::Error>(Bytes::from(prefix)) })
+        .chain(with_exit(ReaderStream::new(stdout), child));
+    let kind = if advertise {
+        "application/x-git-upload-pack-advertisement"
+    } else {
+        "application/x-git-upload-pack-result"
+    };
     Ok(([(header::CONTENT_TYPE, kind)], Body::from_stream(output)).into_response())
 }
 
@@ -1023,8 +1605,21 @@ fn push_failure(code: &str) -> Option<&'static str> {
 /// Commit and tag header problems Git itself accepts by default; tree problems stay errors.
 fn fsck_ignored() -> String {
     [
-        "badDate", "badDateOverflow", "badEmail", "badName", "badTimezone", "missingAuthor", "missingCommitter", "missingEmail", "missingNameBeforeEmail", "missingSpaceBeforeDate", "missingSpaceBeforeEmail", "zeroPaddedDate", "multipleAuthors",
-        "missingTaggerEntry", "badTagName",
+        "badDate",
+        "badDateOverflow",
+        "badEmail",
+        "badName",
+        "badTimezone",
+        "missingAuthor",
+        "missingCommitter",
+        "missingEmail",
+        "missingNameBeforeEmail",
+        "missingSpaceBeforeDate",
+        "missingSpaceBeforeEmail",
+        "zeroPaddedDate",
+        "multipleAuthors",
+        "missingTaggerEntry",
+        "badTagName",
     ]
     .iter()
     .map(|id| format!("{id}=ignore"))
@@ -1038,33 +1633,65 @@ struct Outcome {
 }
 
 /// git-receive-pack: quarantine the pack, read what it adds, let the database decide, then report per ref.
-async fn receive_pack(runtime: crate::http::Shared, session_id: &str, folder_id: &str, headers: &HeaderMap, body: Body) -> Result<Response> {
-    let mut reader = PacketReader { buffer: Vec::new(), done: false, source: body_stream(headers, body)? };
+async fn receive_pack(
+    runtime: crate::http::Shared,
+    session_id: &str,
+    folder_id: &str,
+    headers: &HeaderMap,
+    body: Body,
+) -> Result<Response> {
+    let mut reader = PacketReader {
+        buffer: Vec::new(),
+        done: false,
+        source: body_stream(headers, body)?,
+    };
     let mut commands: Vec<RefCommand> = Vec::new();
     let mut capabilities: HashSet<String> = HashSet::new();
     while let Some(packet) = reader.packet().await? {
         let mut text = String::from_utf8_lossy(&packet).into_owned();
         if let Some(nul) = text.find('\0') {
             if commands.is_empty() {
-                capabilities = text[nul + 1..].trim().split(' ').map(str::to_owned).collect();
+                capabilities = text[nul + 1..]
+                    .trim()
+                    .split(' ')
+                    .map(str::to_owned)
+                    .collect();
             }
             text.truncate(nul);
         }
         if text.starts_with("shallow ") {
-            return Err(AppError::with("shallowPush", 400, "Dar cannot take a push from a shallow clone."));
+            return Err(AppError::with(
+                "shallowPush",
+                400,
+                "Dar cannot take a push from a shallow clone.",
+            ));
         }
         let parts: Vec<&str> = text.trim_end_matches('\n').split(' ').collect();
-        let (old, new, name) = (parts.first().copied().unwrap_or_default(), parts.get(1).copied().unwrap_or_default(), parts.get(2).copied().unwrap_or_default());
+        let (old, new, name) = (
+            parts.first().copied().unwrap_or_default(),
+            parts.get(1).copied().unwrap_or_default(),
+            parts.get(2).copied().unwrap_or_default(),
+        );
         if !is_sha(old) || !is_sha(new) || name.is_empty() || commands.len() >= 1000 {
-            return Err(AppError::with("invalidRequest", 400, "The Git request is malformed."));
+            return Err(AppError::with(
+                "invalidRequest",
+                400,
+                "The Git request is malformed.",
+            ));
         }
-        commands.push(RefCommand { old: old.into(), new: new.into(), name: name.into() });
+        commands.push(RefCommand {
+            old: old.into(),
+            new: new.into(),
+            name: name.into(),
+        });
     }
     let side_band = capabilities.contains("side-band-64k");
     let report = capabilities.contains("report-status");
     let atomic = capabilities.contains("atomic");
     let (dir, _) = runtime.git.sync(session_id, folder_id).await?;
-    let quarantine = dir.join("objects").join(format!("incoming-{}", crate::auth::uuid()));
+    let quarantine = dir
+        .join("objects")
+        .join(format!("incoming-{}", crate::auth::uuid()));
     let mut unpack = "ok".to_owned();
     let mut early_error: Option<String> = None;
     let unpacked = async {
@@ -1074,8 +1701,15 @@ async fn receive_pack(runtime: crate::http::Shared, session_id: &str, folder_id:
             let strict = format!("--strict={}", fsck_ignored());
             let max = format!("--max-input-size={PACK_BYTES}");
             let env = quarantine_env(&dir, &quarantine);
-            let env_ref: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-            let mut child = git_command(&dir, &["index-pack", "--stdin", "--fix-thin", &strict, &max], &env_ref).spawn().map_err(|_| unavailable())?;
+            let env_ref: Vec<(&str, &str)> =
+                env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            let mut child = git_command(
+                &dir,
+                &["index-pack", "--stdin", "--fix-thin", &strict, &max],
+                &env_ref,
+            )
+            .spawn()
+            .map_err(|_| unavailable())?;
             let mut stdin = child.stdin.take().expect("stdin");
             let mut rest = reader.rest();
             let feeding = async {
@@ -1091,7 +1725,10 @@ async fn receive_pack(runtime: crate::http::Shared, session_id: &str, folder_id:
             let output = output.map_err(|_| unavailable())?;
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                let reason = stderr.lines().find_map(|l| l.split_once("fatal: ").map(|(_, m)| m.chars().take(200).collect::<String>()));
+                let reason = stderr.lines().find_map(|l| {
+                    l.split_once("fatal: ")
+                        .map(|(_, m)| m.chars().take(200).collect::<String>())
+                });
                 unpack = reason.unwrap_or_else(|| "the pack could not be read".into());
             }
         } else {
@@ -1122,7 +1759,18 @@ async fn receive_pack(runtime: crate::http::Shared, session_id: &str, folder_id:
         } else {
             let _guard = runtime2.git.lock(&folder).await;
             let env = quarantine_env(&dir, &quarantine);
-            match apply_push(&runtime2, &session, &folder, &dir, &env, &commands2, atomic, &quarantine).await {
+            match apply_push(
+                &runtime2,
+                &session,
+                &folder,
+                &dir,
+                &env,
+                &commands2,
+                atomic,
+                &quarantine,
+            )
+            .await
+            {
                 Ok(outcome) => {
                     results = outcome.results;
                     messages = outcome.messages;
@@ -1166,7 +1814,10 @@ async fn receive_pack(runtime: crate::http::Shared, session_id: &str, folder_id:
         out.extend_from_slice(FLUSH);
         out
     };
-    let kind = [(header::CONTENT_TYPE, "application/x-git-receive-pack-result")];
+    let kind = [(
+        header::CONTENT_TYPE,
+        "application/x-git-receive-pack-result",
+    )];
     if !(side_band && report) {
         return Ok((kind, apply.await).into_response());
     }
@@ -1191,7 +1842,9 @@ async fn receive_pack(runtime: crate::http::Shared, session_id: &str, folder_id:
             }
         }
     });
-    let output = stream::unfold(receiver, |mut r| async move { r.recv().await.map(|b| (Ok::<_, io::Error>(b), r)) });
+    let output = stream::unfold(receiver, |mut r| async move {
+        r.recv().await.map(|b| (Ok::<_, io::Error>(b), r))
+    });
     Ok((kind, Body::from_stream(output)).into_response())
 }
 
@@ -1199,14 +1852,19 @@ fn quarantine_env(dir: &Path, quarantine: &Path) -> Vec<(String, String)> {
     vec![
         ("GIT_DIR".into(), path_str(dir).into()),
         ("GIT_OBJECT_DIRECTORY".into(), path_str(quarantine).into()),
-        ("GIT_ALTERNATE_OBJECT_DIRECTORIES".into(), path_str(&dir.join("objects")).into()),
+        (
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES".into(),
+            path_str(&dir.join("objects")).into(),
+        ),
         ("GIT_QUARANTINE_PATH".into(), path_str(quarantine).into()),
     ]
 }
 
 fn failure_text(error: &AppError) -> String {
     if error.status < 500 {
-        push_failure(&error.code).map(str::to_owned).unwrap_or_else(|| error.message.clone())
+        push_failure(&error.code)
+            .map(str::to_owned)
+            .unwrap_or_else(|| error.message.clone())
     } else if error.code == "quotaExceeded" {
         push_failure("quotaExceeded").expect("message").into()
     } else {
@@ -1243,7 +1901,11 @@ impl Change {
 }
 
 fn mode_of(value: &str) -> String {
-    if value == "100644" { String::new() } else { value.to_owned() }
+    if value == "100644" {
+        String::new()
+    } else {
+        value.to_owned()
+    }
 }
 
 fn utf16_prefix(value: &str, units: usize) -> String {
@@ -1251,7 +1913,10 @@ fn utf16_prefix(value: &str, units: usize) -> String {
 }
 
 fn now_ms() -> f64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("clock").as_millis() as f64
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_millis() as f64
 }
 
 /// `git log`'s author text without its address.
@@ -1264,7 +1929,11 @@ fn without_email(value: &str) -> String {
 
 fn parse_commit(sha: &str, raw: Vec<u8>) -> Result<ParsedCommit> {
     if raw.len() > OBJECT_BYTES {
-        return Err(AppError::with("objectTooLarge", 413, &format!("Commit {} is too large for Dar.", &sha[..7])));
+        return Err(AppError::with(
+            "objectTooLarge",
+            413,
+            &format!("Commit {} is too large for Dar.", &sha[..7]),
+        ));
     }
     let header = header_of(&raw);
     let (mut parents, mut author, mut time) = (Vec::new(), String::new(), 0.0);
@@ -1278,22 +1947,40 @@ fn parse_commit(sha: &str, raw: Vec<u8>) -> Result<ParsedCommit> {
             if let Some(after) = c.rsplit_once('>').map(|(_, a)| a.trim()) {
                 let mut parts = after.split_whitespace();
                 let (seconds, zone) = (parts.next(), parts.next());
-                let zone_ok = zone.is_some_and(|z| z.len() == 5 && (z.starts_with('+') || z.starts_with('-')) && z[1..].bytes().all(|b| b.is_ascii_digit()));
-                if let Some(s) = seconds.filter(|s| s.bytes().all(|b| b.is_ascii_digit()) && zone_ok && parts.next().is_none()) {
+                let zone_ok = zone.is_some_and(|z| {
+                    z.len() == 5
+                        && (z.starts_with('+') || z.starts_with('-'))
+                        && z[1..].bytes().all(|b| b.is_ascii_digit())
+                });
+                if let Some(s) = seconds.filter(|s| {
+                    s.bytes().all(|b| b.is_ascii_digit()) && zone_ok && parts.next().is_none()
+                }) {
                     time = s.parse::<f64>().unwrap_or(0.0) * 1000.0;
                 }
             }
         }
     }
     let end = raw.windows(2).position(|w| w == b"\n\n");
-    let message = end.map(|e| String::from_utf8_lossy(&raw[e + 2..]).replace('\u{fffd}', "")).unwrap_or_default().trim().to_owned();
-    let message = if message.is_empty() { "(no message)".to_owned() } else { message };
+    let message = end
+        .map(|e| String::from_utf8_lossy(&raw[e + 2..]).replace('\u{fffd}', ""))
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    let message = if message.is_empty() {
+        "(no message)".to_owned()
+    } else {
+        message
+    };
     let author = utf16_prefix(&author, 256);
     Ok(ParsedCommit {
         sha: sha.into(),
         raw,
         parents,
-        author: if author.is_empty() { "Unknown".into() } else { author },
+        author: if author.is_empty() {
+            "Unknown".into()
+        } else {
+            author
+        },
         message: utf16_prefix(&message, MESSAGE_UNITS),
         time: if time == 0.0 { now_ms() } else { time },
         changes: Vec::new(),
@@ -1319,33 +2006,78 @@ fn parse_diff(output: &[u8]) -> Result<Vec<Vec<Change>>> {
         };
         let fields: Vec<&str> = meta.split(' ').collect();
         if fields.len() < 5 {
-            return Err(AppError::with("gitFailed", 502, "Git could not read the push."));
+            return Err(AppError::with(
+                "gitFailed",
+                502,
+                "Git could not read the push.",
+            ));
         }
-        let (old_mode, new_mode, old_sha, new_sha, status) = (fields[0], fields[1], fields[2], fields[3], fields[4]);
+        let (old_mode, new_mode, old_sha, new_sha, status) =
+            (fields[0], fields[1], fields[2], fields[3], fields[4]);
         if old_mode == "160000" || new_mode == "160000" {
-            return Err(AppError::with("unsupportedSubmodule", 400, "Dar does not keep Git submodules."));
+            return Err(AppError::with(
+                "unsupportedSubmodule",
+                400,
+                "Dar does not keep Git submodules.",
+            ));
         }
         for mode in [old_mode, new_mode] {
             if !["000000", "100644", "100755", "120000"].contains(&mode) {
-                return Err(AppError::with("unsupportedMode", 400, &format!("Dar cannot keep files with Git mode {mode}.")));
+                return Err(AppError::with(
+                    "unsupportedMode",
+                    400,
+                    &format!("Dar cannot keep files with Git mode {mode}."),
+                ));
             }
         }
         i += 1;
         let first = tokens.get(i).copied().unwrap_or_default().to_owned();
-        let current = result.last_mut().ok_or_else(|| AppError::with("gitFailed", 502, "Git could not read the push."))?;
-        let base = Change { path: first.clone(), previous_path: String::new(), kind: "modified", mode: mode_of(new_mode), previous_mode: mode_of(old_mode), blob: new_sha.into(), previous_blob: old_sha.into(), media_type: String::new() };
+        let current = result
+            .last_mut()
+            .ok_or_else(|| AppError::with("gitFailed", 502, "Git could not read the push."))?;
+        let base = Change {
+            path: first.clone(),
+            previous_path: String::new(),
+            kind: "modified",
+            mode: mode_of(new_mode),
+            previous_mode: mode_of(old_mode),
+            blob: new_sha.into(),
+            previous_blob: old_sha.into(),
+            media_type: String::new(),
+        };
         match status.chars().next() {
             Some(k @ ('R' | 'C')) => {
                 i += 1;
                 let second = tokens.get(i).copied().unwrap_or_default().to_owned();
                 if k == 'R' {
-                    current.push(Change { path: second, previous_path: first, kind: "renamed", ..base });
+                    current.push(Change {
+                        path: second,
+                        previous_path: first,
+                        kind: "renamed",
+                        ..base
+                    });
                 } else {
-                    current.push(Change { path: second, kind: "added", previous_mode: String::new(), previous_blob: String::new(), ..base });
+                    current.push(Change {
+                        path: second,
+                        kind: "added",
+                        previous_mode: String::new(),
+                        previous_blob: String::new(),
+                        ..base
+                    });
                 }
             }
-            Some('A') => current.push(Change { kind: "added", previous_mode: String::new(), previous_blob: String::new(), ..base }),
-            Some('D') => current.push(Change { kind: "deleted", mode: String::new(), blob: String::new(), ..base }),
+            Some('A') => current.push(Change {
+                kind: "added",
+                previous_mode: String::new(),
+                previous_blob: String::new(),
+                ..base
+            }),
+            Some('D') => current.push(Change {
+                kind: "deleted",
+                mode: String::new(),
+                blob: String::new(),
+                ..base
+            }),
             _ => current.push(base),
         }
         i += 1;
@@ -1355,7 +2087,10 @@ fn parse_diff(output: &[u8]) -> Result<Vec<Vec<Change>>> {
 
 /// Media types by extension, for files written outside a browser upload (`media-types.ts`).
 pub fn media_type_of(name: &str) -> &'static str {
-    let extension = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).filter(|e| !e.is_empty() && e.bytes().all(|b| b.is_ascii_alphanumeric()));
+    let extension = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .filter(|e| !e.is_empty() && e.bytes().all(|b| b.is_ascii_alphanumeric()));
     match extension.as_deref() {
         Some("md" | "markdown") => "text/markdown",
         Some("txt") => "text/plain",
@@ -1377,20 +2112,44 @@ pub fn media_type_of(name: &str) -> &'static str {
 }
 
 fn utf8_sample(sample: &[u8]) -> bool {
-    std::str::from_utf8(sample).is_ok() || sample.len() == 8192 && (1..=3).any(|cut| std::str::from_utf8(&sample[..8192 - cut]).is_ok())
+    std::str::from_utf8(sample).is_ok()
+        || sample.len() == 8192
+            && (1..=3).any(|cut| std::str::from_utf8(&sample[..8192 - cut]).is_ok())
 }
 
 async fn batch_check(dir: &Path, env: &[(&str, &str)], shas: &[String]) -> Result<Vec<String>> {
     let input = format!("{}\n", shas.join("\n"));
-    Ok(lines(&git_full(dir, &["cat-file", "--batch-check"], env, input.as_bytes(), false, Duration::from_secs(300)).await?.stdout))
+    Ok(lines(
+        &git_full(
+            dir,
+            &["cat-file", "--batch-check"],
+            env,
+            input.as_bytes(),
+            false,
+            Duration::from_secs(300),
+        )
+        .await?
+        .stdout,
+    ))
 }
 
 /// Reads the pushed objects with Git and hands the push to the database; returns each ref's error, if any.
 #[allow(clippy::too_many_arguments)]
-async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id: &str, dir: &Path, env: &[(String, String)], commands: &[RefCommand], atomic: bool, quarantine: &Path) -> Result<Outcome> {
+async fn apply_push(
+    runtime: &crate::http::Runtime,
+    session_id: &str,
+    folder_id: &str,
+    dir: &Path,
+    env: &[(String, String)],
+    commands: &[RefCommand],
+    atomic: bool,
+    quarantine: &Path,
+) -> Result<Outcome> {
     let repos = &runtime.git;
     let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    let run = async |args: &[&str], input: &[u8]| git_full(dir, args, &env, input, false, Duration::from_secs(300)).await;
+    let run = async |args: &[&str], input: &[u8]| {
+        git_full(dir, args, &env, input, false, Duration::from_secs(300)).await
+    };
     let (_, state) = repos.sync_locked(session_id, folder_id).await?;
     let mut results: HashMap<String, Option<String>> = HashMap::new();
     let mut messages: Vec<String> = Vec::new();
@@ -1404,7 +2163,10 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
     if !tips.is_empty() {
         for line in batch_check(dir, &env, &tips).await? {
             let parts: Vec<&str> = line.split(' ').collect();
-            types.insert(parts[0].into(), parts.get(1).copied().unwrap_or_default().into());
+            types.insert(
+                parts[0].into(),
+                parts.get(1).copied().unwrap_or_default().into(),
+            );
         }
     }
     // Annotated tags: keep each tag object down to the commit it names.
@@ -1416,13 +2178,26 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
         while kind == "tag" && depth < 16 {
             let raw = run(&["cat-file", "tag", &sha], b"").await?.stdout;
             if raw.len() > OBJECT_BYTES {
-                return Err(AppError::with("objectTooLarge", 413, "A tag is too large for Dar."));
+                return Err(AppError::with(
+                    "objectTooLarge",
+                    413,
+                    "A tag is too large for Dar.",
+                ));
             }
             let header = header_of(&raw);
-            let find = |prefix: &str| header.iter().find_map(|l| l.strip_prefix(prefix).map(str::to_owned)).unwrap_or_default();
+            let find = |prefix: &str| {
+                header
+                    .iter()
+                    .find_map(|l| l.strip_prefix(prefix).map(str::to_owned))
+                    .unwrap_or_default()
+            };
             let target = find("object ");
             let target_type = find("type ");
-            let tagger = header.iter().find_map(|l| l.strip_prefix("tagger ")).map(without_email).unwrap_or_default();
+            let tagger = header
+                .iter()
+                .find_map(|l| l.strip_prefix("tagger "))
+                .map(without_email)
+                .unwrap_or_default();
             tags.push(json!({ "sha": sha, "raw": base64::engine::general_purpose::STANDARD.encode(&raw), "target": target, "author": utf16_prefix(&tagger, 256) }));
             sha = target;
             kind = target_type;
@@ -1442,22 +2217,35 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
         lines(&run(&args, b"").await?.stdout)
     };
     if fresh.len() > COMMITS {
-        return Err(AppError::with("pushTooLarge", 413, &format!("Push at most {COMMITS} new commits at a time.")));
+        return Err(AppError::with(
+            "pushTooLarge",
+            413,
+            &format!("Push at most {COMMITS} new commits at a time."),
+        ));
     }
     let mut order: Vec<String> = Vec::new();
     let mut commits: HashMap<String, ParsedCommit> = HashMap::new();
     if !fresh.is_empty() {
-        let mut child = git_command(dir, &["cat-file", "--batch"], &env).stderr(Stdio::null()).spawn().map_err(|_| unavailable())?;
+        let mut child = git_command(dir, &["cat-file", "--batch"], &env)
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| unavailable())?;
         let mut stdin = child.stdin.take().expect("stdin");
         let input = format!("{}\n", fresh.join("\n"));
         tokio::spawn(async move {
             let _ = stdin.write_all(input.as_bytes()).await;
         });
-        let mut batch = BatchReader { reader: BufReader::new(child.stdout.take().expect("stdout")) };
+        let mut batch = BatchReader {
+            reader: BufReader::new(child.stdout.take().expect("stdout")),
+        };
         for sha in &fresh {
             let header = batch.header().await?;
             if header.kind != "commit" {
-                return Err(AppError::with("invalidRequest", 400, "The push is malformed."));
+                return Err(AppError::with(
+                    "invalidRequest",
+                    400,
+                    "The push is malformed.",
+                ));
             }
             let raw = batch.read(header.size).await?;
             commits.insert(sha.clone(), parse_commit(sha, raw)?);
@@ -1466,7 +2254,15 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
     }
     // main's new commits, oldest first, and their changes against main's previous commit.
     let current_main = state.main.clone().unwrap_or_else(|| ZERO.into());
-    let main_command = commands.iter().find(|c| c.name == MAIN_REF && c.new != ZERO && c.old == current_main && types.get(&c.new).map(String::as_str) == Some("commit")).cloned();
+    let main_command = commands
+        .iter()
+        .find(|c| {
+            c.name == MAIN_REF
+                && c.new != ZERO
+                && c.old == current_main
+                && types.get(&c.new).map(String::as_str) == Some("commit")
+        })
+        .cloned();
     let chain: Vec<String> = match &main_command {
         Some(c) => {
             let mut args = vec!["rev-list", "--first-parent", "--reverse", c.new.as_str()];
@@ -1478,7 +2274,11 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
         None => Vec::new(),
     };
     if chain.len() > COMMITS {
-        return Err(AppError::with("pushTooLarge", 413, &format!("Push at most {COMMITS} new commits at a time.")));
+        return Err(AppError::with(
+            "pushTooLarge",
+            413,
+            &format!("Push at most {COMMITS} new commits at a time."),
+        ));
     }
     let mut diffs: Vec<String> = Vec::new();
     let mut targets: Vec<(bool, String)> = Vec::new();
@@ -1491,9 +2291,14 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
         targets.push((true, sha.clone()));
     }
     for (index, sha) in chain.iter().enumerate() {
-        let base = if index > 0 { Some(chain[index - 1].clone()) } else { state.main.clone() };
+        let base = if index > 0 {
+            Some(chain[index - 1].clone())
+        } else {
+            state.main.clone()
+        };
         if let Some(commit) = commits.get(sha)
-            && (commit.parents.first() == base.as_ref() || base.is_none() && commit.parents.is_empty())
+            && (commit.parents.first() == base.as_ref()
+                || base.is_none() && commit.parents.is_empty())
         {
             continue;
         }
@@ -1506,9 +2311,29 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
     let mut chain_changes: HashMap<String, Vec<Change>> = HashMap::new();
     if !diffs.is_empty() {
         let input = format!("{}\n", diffs.join("\n"));
-        let parsed = parse_diff(&run(&["diff-tree", "--stdin", "-r", "-z", "-M", "--raw", "--root", "--always"], input.as_bytes()).await?.stdout)?;
+        let parsed = parse_diff(
+            &run(
+                &[
+                    "diff-tree",
+                    "--stdin",
+                    "-r",
+                    "-z",
+                    "-M",
+                    "--raw",
+                    "--root",
+                    "--always",
+                ],
+                input.as_bytes(),
+            )
+            .await?
+            .stdout,
+        )?;
         if parsed.len() != targets.len() {
-            return Err(AppError::with("gitFailed", 502, "Git could not read the push."));
+            return Err(AppError::with(
+                "gitFailed",
+                502,
+                "Git could not read the push.",
+            ));
         }
         for ((is_commit, sha), changes) in targets.into_iter().zip(parsed) {
             if is_commit {
@@ -1518,9 +2343,17 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
             }
         }
     }
-    let all_changes: Vec<&Change> = commits.values().flat_map(|c| c.changes.iter()).chain(chain_changes.values().flatten()).collect();
+    let all_changes: Vec<&Change> = commits
+        .values()
+        .flat_map(|c| c.changes.iter())
+        .chain(chain_changes.values().flatten())
+        .collect();
     if all_changes.len() > CHANGES {
-        return Err(AppError::with("pushTooLarge", 413, "This push changes too many files at once; push fewer commits at a time."));
+        return Err(AppError::with(
+            "pushTooLarge",
+            413,
+            "This push changes too many files at once; push fewer commits at a time.",
+        ));
     }
     // Content: sizes from Git; the database says which it already has.
     let mut wanted: Vec<String> = Vec::new();
@@ -1534,30 +2367,65 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
         for line in batch_check(dir, &env, &wanted).await? {
             let parts: Vec<&str> = line.split(' ').collect();
             if parts.get(1) != Some(&"blob") {
-                return Err(AppError::with("invalidRequest", 400, "The push is missing objects."));
+                return Err(AppError::with(
+                    "invalidRequest",
+                    400,
+                    "The push is missing objects.",
+                ));
             }
             let size: u64 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
             if size > MAX_FILE_BYTES {
-                return Err(AppError::with("uploadTooLarge", 413, "A file in this push is larger than Dar allows."));
+                return Err(AppError::with(
+                    "uploadTooLarge",
+                    413,
+                    "A file in this push is larger than Dar allows.",
+                ));
             }
             sizes.insert(parts[0].into(), size);
         }
     }
-    let blobs_in: Vec<Value> = wanted.iter().map(|sha| json!({ "sha": sha, "size": sizes.get(sha).copied().unwrap_or(0) })).collect();
-    let begin = repos.call(session_id, "pushBegin", json!({ "folderId": folder_id, "blobs": blobs_in })).await?;
+    let blobs_in: Vec<Value> = wanted
+        .iter()
+        .map(|sha| json!({ "sha": sha, "size": sizes.get(sha).copied().unwrap_or(0) }))
+        .collect();
+    let begin = repos
+        .call(
+            session_id,
+            "pushBegin",
+            json!({ "folderId": folder_id, "blobs": blobs_in }),
+        )
+        .await?;
     let rows = begin["blobs"].as_array().cloned().unwrap_or_default();
     let mut text: HashMap<String, bool> = HashMap::new();
     let mut stored: Vec<Value> = Vec::new();
-    let uploads: Vec<(String, String)> = rows.iter().filter_map(|r| Some((r["sha"].as_str()?.to_owned(), r["uploadId"].as_str()?.to_owned()))).collect();
+    let uploads: Vec<(String, String)> = rows
+        .iter()
+        .filter_map(|r| {
+            Some((
+                r["sha"].as_str()?.to_owned(),
+                r["uploadId"].as_str()?.to_owned(),
+            ))
+        })
+        .collect();
     for row in &rows {
         if let (Some(sha), Some(blob_id)) = (row["sha"].as_str(), row["blobId"].as_str()) {
             stored.push(json!({ "sha": sha, "size": sizes.get(sha).copied().unwrap_or(0), "blobId": blob_id }));
         }
     }
     if !uploads.is_empty() {
-        let mut child = git_command(dir, &["cat-file", "--batch"], &env).stderr(Stdio::null()).spawn().map_err(|_| unavailable())?;
+        let mut child = git_command(dir, &["cat-file", "--batch"], &env)
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| unavailable())?;
         let mut stdin = child.stdin.take().expect("stdin");
-        let input = format!("{}\n", uploads.iter().map(|u| u.0.as_str()).collect::<Vec<_>>().join("\n"));
+        let input = format!(
+            "{}\n",
+            uploads
+                .iter()
+                .map(|u| u.0.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
         tokio::spawn(async move {
             let _ = stdin.write_all(input.as_bytes()).await;
         });
@@ -1571,33 +2439,46 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
                 header
             };
             if header.sha != *sha || header.size as u64 != size {
-                return Err(AppError::with("gitFailed", 502, "Git could not read the push."));
+                return Err(AppError::with(
+                    "gitFailed",
+                    502,
+                    "Git could not read the push.",
+                ));
             }
             let mut sample: Option<Vec<u8>> = None;
             let digest = {
-                let source = stream::unfold((&mut reader, size, &mut sample), |(r, left, sample)| async move {
-                    if left == 0 {
-                        return None;
-                    }
-                    let mut buffer = vec![0u8; left.min(64 * 1024) as usize];
-                    match r.read(&mut buffer).await {
-                        Ok(0) | Err(_) => Some((Err(io::Error::other("short")), (r, 0, sample))),
-                        Ok(n) => {
-                            buffer.truncate(n);
-                            if sample.is_none() {
-                                *sample = Some(buffer[..n.min(8192)].to_vec());
-                            }
-                            Some((Ok(Bytes::from(buffer)), (r, left - n as u64, sample)))
+                let source = stream::unfold(
+                    (&mut reader, size, &mut sample),
+                    |(r, left, sample)| async move {
+                        if left == 0 {
+                            return None;
                         }
-                    }
-                });
+                        let mut buffer = vec![0u8; left.min(64 * 1024) as usize];
+                        match r.read(&mut buffer).await {
+                            Ok(0) | Err(_) => {
+                                Some((Err(io::Error::other("short")), (r, 0, sample)))
+                            }
+                            Ok(n) => {
+                                buffer.truncate(n);
+                                if sample.is_none() {
+                                    *sample = Some(buffer[..n.min(8192)].to_vec());
+                                }
+                                Some((Ok(Bytes::from(buffer)), (r, left - n as u64, sample)))
+                            }
+                        }
+                    },
+                );
                 runtime.blobs.receive(Box::pin(source), size).await?
             };
             let mut newline = [0u8; 1];
-            reader.read_exact(&mut newline).await.map_err(|_| BatchReader::broken())?;
+            reader
+                .read_exact(&mut newline)
+                .await
+                .map_err(|_| BatchReader::broken())?;
             // UTF-8 at the start (cut at a character boundary) makes an unknown extension plain text.
             text.insert(sha.clone(), sample.as_ref().is_some_and(|s| utf8_sample(s)));
-            stored.push(json!({ "sha": sha, "size": size, "uploadId": upload_id, "digest": digest }));
+            stored
+                .push(json!({ "sha": sha, "size": size, "uploadId": upload_id, "digest": digest }));
         }
     }
     // By extension; else plain text for UTF-8 content; else (""), the type stored content already has.
@@ -1606,8 +2487,18 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
             return change.json();
         }
         let guess = media_type_of(&change.path);
-        let media = if guess != "application/octet-stream" { guess } else if text.get(&change.blob) == Some(&true) { "text/plain" } else { "" };
-        Change { media_type: media.into(), ..change.clone() }.json()
+        let media = if guess != "application/octet-stream" {
+            guess
+        } else if text.get(&change.blob) == Some(&true) {
+            "text/plain"
+        } else {
+            ""
+        };
+        Change {
+            media_type: media.into(),
+            ..change.clone()
+        }
+        .json()
     };
     let mut document = json!({
         "folderId": folder_id,
@@ -1625,7 +2516,10 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
     }
     let outcome = repos.call(session_id, "push", document).await?;
     for row in outcome["results"].as_array().cloned().unwrap_or_default() {
-        results.insert(row["name"].as_str().unwrap_or_default().to_owned(), row["error"].as_str().map(str::to_owned));
+        results.insert(
+            row["name"].as_str().unwrap_or_default().to_owned(),
+            row["error"].as_str().map(str::to_owned),
+        );
     }
     // Keep the objects: refused refs leave them unreachable, which is harmless.
     let pack = quarantine.join("pack");
@@ -1639,7 +2533,9 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
     let target = dir.join("objects").join("pack");
     let _ = tokio::fs::create_dir_all(&target).await;
     for name in names {
-        tokio::fs::rename(pack.join(&name), target.join(&name)).await.map_err(|_| AppError::internal())?;
+        tokio::fs::rename(pack.join(&name), target.join(&name))
+            .await
+            .map_err(|_| AppError::internal())?;
     }
     let _ = repos.sync_locked(session_id, folder_id).await;
     if main_command.is_some() && results.get(MAIN_REF).cloned().flatten().is_none() {
@@ -1650,11 +2546,29 @@ async fn apply_push(runtime: &crate::http::Runtime, session_id: &str, folder_id:
 
 /// A ref change made in Dar, such as a merge from the Git app: checked and applied exactly like a
 /// push of the same refs, atomically. The caller holds the folder's lock.
-pub async fn push_from_dar(runtime: &crate::http::Runtime, session_id: &str, folder_id: &str, dir: &Path, commands: &[RefCommand]) -> Result<HashMap<String, Option<String>>> {
-    let quarantine = dir.join("objects").join(format!("incoming-{}", crate::auth::uuid()));
+pub async fn push_from_dar(
+    runtime: &crate::http::Runtime,
+    session_id: &str,
+    folder_id: &str,
+    dir: &Path,
+    commands: &[RefCommand],
+) -> Result<HashMap<String, Option<String>>> {
+    let quarantine = dir
+        .join("objects")
+        .join(format!("incoming-{}", crate::auth::uuid()));
     create_private_dir(&quarantine.join("pack")).await?;
     let env = vec![("GIT_DIR".to_owned(), path_str(dir).to_owned())];
-    let result = apply_push(runtime, session_id, folder_id, dir, &env, commands, true, &quarantine).await;
+    let result = apply_push(
+        runtime,
+        session_id,
+        folder_id,
+        dir,
+        &env,
+        commands,
+        true,
+        &quarantine,
+    )
+    .await;
     let _ = tokio::fs::remove_dir_all(&quarantine).await;
     Ok(result?.results)
 }
@@ -1666,11 +2580,17 @@ mod tests {
     #[test]
     fn addresses_and_packets() {
         let t = target_of("/dav/git/0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a.git/info/refs").unwrap();
-        assert_eq!(t.folder.as_deref(), Some("0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a"));
+        assert_eq!(
+            t.folder.as_deref(),
+            Some("0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a")
+        );
         let t = target_of("/dav/git/amina/Projects/My%20site.git/git-upload-pack").unwrap();
         assert_eq!(t.alias, Some(("amina".into(), "Projects/My site".into())));
         assert!(target_of("/dav/git/amina/x.git/other").is_err());
-        assert_eq!(pkt(b"# service=git-upload-pack\n"), b"001e# service=git-upload-pack\n");
+        assert_eq!(
+            pkt(b"# service=git-upload-pack\n"),
+            b"001e# service=git-upload-pack\n"
+        );
         assert_eq!(media_type_of("README.MD"), "text/markdown");
         assert_eq!(media_type_of("a.bin"), "application/octet-stream");
     }
@@ -1682,9 +2602,22 @@ mod tests {
         output.extend_from_slice(raw);
         let parsed = parse_diff(&output).unwrap();
         assert_eq!(parsed.len(), 1);
-        assert_eq!((parsed[0][0].kind, parsed[0][0].path.as_str()), ("added", "a.txt"));
-        assert_eq!((parsed[0][1].kind, parsed[0][1].previous_path.as_str(), parsed[0][1].path.as_str()), ("renamed", "a.txt", "b.txt"));
+        assert_eq!(
+            (parsed[0][0].kind, parsed[0][0].path.as_str()),
+            ("added", "a.txt")
+        );
+        assert_eq!(
+            (
+                parsed[0][1].kind,
+                parsed[0][1].previous_path.as_str(),
+                parsed[0][1].path.as_str()
+            ),
+            ("renamed", "a.txt", "b.txt")
+        );
         let commit = parse_commit("abcdefabcdefabcdefabcdefabcdefabcdefabcd", b"tree x\nauthor Amina <a@b> 1 +0000\ncommitter Amina <a@b> 1700000000 +0100\n\nHello\n".to_vec()).unwrap();
-        assert_eq!((commit.author.as_str(), commit.time, commit.message.as_str()), ("Amina", 1_700_000_000_000.0, "Hello"));
+        assert_eq!(
+            (commit.author.as_str(), commit.time, commit.message.as_str()),
+            ("Amina", 1_700_000_000_000.0, "Hello")
+        );
     }
 }

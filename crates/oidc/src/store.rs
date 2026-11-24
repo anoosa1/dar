@@ -34,8 +34,14 @@ impl Prompt {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum InteractionResult {
-    Login { account_id: String, native_session_id: String, at: i64 },
-    Consent { grant_id: String },
+    Login {
+        account_id: String,
+        native_session_id: String,
+        at: i64,
+    },
+    Consent {
+        grant_id: String,
+    },
     Denied,
 }
 
@@ -160,7 +166,12 @@ pub struct MemoryStore {
 
 impl MemoryStore {
     fn revoke_grants(&mut self, matches: impl Fn(&GrantRecord) -> bool) {
-        let ids: BTreeSet<String> = self.grants.values().filter(|g| matches(g)).map(|g| g.id.clone()).collect();
+        let ids: BTreeSet<String> = self
+            .grants
+            .values()
+            .filter(|g| matches(g))
+            .map(|g| g.id.clone())
+            .collect();
         self.grants.retain(|id, _| !ids.contains(id));
         self.tokens.retain(|_, t| !ids.contains(&t.grant_id));
         self.codes.retain(|_, c| !ids.contains(&c.grant_id));
@@ -170,19 +181,30 @@ impl MemoryStore {
     }
 
     pub fn counts(&self) -> (usize, usize, usize, usize) {
-        (self.sessions.len(), self.grants.len(), self.codes.len(), self.tokens.len())
+        (
+            self.sessions.len(),
+            self.grants.len(),
+            self.codes.len(),
+            self.tokens.len(),
+        )
     }
 }
 
 impl Store for MemoryStore {
     fn session(&self, key: &str) -> Option<ProviderSession> {
-        self.sessions.get(key).filter(|s| s.expires_at > crate::now()).cloned()
+        self.sessions
+            .get(key)
+            .filter(|s| s.expires_at > crate::now())
+            .cloned()
     }
     fn save_session(&mut self, key: &str, session: ProviderSession) {
         self.sessions.insert(key.to_owned(), session);
     }
     fn interaction(&self, key: &str) -> Option<Interaction> {
-        self.interactions.get(key).filter(|i| i.expires_at > crate::now()).cloned()
+        self.interactions
+            .get(key)
+            .filter(|i| i.expires_at > crate::now())
+            .cloned()
     }
     fn save_interaction(&mut self, key: &str, interaction: Interaction) {
         self.interactions.insert(key.to_owned(), interaction);
@@ -191,7 +213,10 @@ impl Store for MemoryStore {
         self.interactions.remove(key);
     }
     fn grant(&self, id: &str) -> Option<GrantRecord> {
-        self.grants.get(id).filter(|g| g.expires_at > crate::now()).cloned()
+        self.grants
+            .get(id)
+            .filter(|g| g.expires_at > crate::now())
+            .cloned()
     }
     fn save_grant(&mut self, grant: GrantRecord) {
         self.grants.insert(grant.id.clone(), grant);
@@ -213,7 +238,10 @@ impl Store for MemoryStore {
         }
     }
     fn token(&self, key: &str) -> Option<TokenRecord> {
-        self.tokens.get(key).filter(|t| t.expires_at > crate::now()).cloned()
+        self.tokens
+            .get(key)
+            .filter(|t| t.expires_at > crate::now())
+            .cloned()
     }
     fn save_token(&mut self, key: &str, token: TokenRecord) {
         self.tokens.insert(key.to_owned(), token);

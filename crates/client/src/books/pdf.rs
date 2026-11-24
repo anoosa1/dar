@@ -23,11 +23,11 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 
 use crate::books::pdf_text::{
-    build_text_layer, current_selection, find_on_page, fold_query, paint_marks, parse_runs, PdfFindState,
-    PdfHighlight, PdfMatch, PdfSelection, PdfTextRun,
+    PdfFindState, PdfHighlight, PdfMatch, PdfSelection, PdfTextRun, build_text_layer,
+    current_selection, find_on_page, fold_query, paint_marks, parse_runs,
 };
 use crate::icons::Icon;
-use crate::ui::{document, listen, window, Listener};
+use crate::ui::{Listener, document, listen, window};
 
 const GAP: f64 = 12.0;
 const PAD: f64 = 16.0;
@@ -205,9 +205,10 @@ fn ensure_worker(pool: &mut WorkerPool) -> Result<web_sys::Worker, String> {
     opts.set_type(web_sys::WorkerType::Module);
     let worker = web_sys::Worker::new_with_options(&url, &opts)
         .map_err(|_| "The PDF viewer could not start.".to_owned())?;
-    let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(|event: web_sys::MessageEvent| {
-        handle_worker_message(event.data());
-    });
+    let on_message =
+        Closure::<dyn FnMut(web_sys::MessageEvent)>::new(|event: web_sys::MessageEvent| {
+            handle_worker_message(event.data());
+        });
     let on_error = Closure::<dyn FnMut(web_sys::Event)>::new(|_| {
         handle_worker_fatal("The PDF viewer could not start.".to_owned());
     });
@@ -249,7 +250,9 @@ fn handle_worker_message(data: JsValue) {
     };
     match kind.as_str() {
         "opened" => {
-            let Some(id) = get_u32(&data, "id") else { return };
+            let Some(id) = get_u32(&data, "id") else {
+                return;
+            };
             let pages = get_f64(&data, "pages").unwrap_or(0.0).max(0.0) as usize;
             let mut sizes = Vec::with_capacity(pages);
             if let Ok(raw_sizes) = Reflect::get(&data, &JsValue::from_str("sizes"))
@@ -294,18 +297,26 @@ fn handle_worker_message(data: JsValue) {
                     }
                     let label: String = trimmed.chars().take(200).collect();
                     let page = get_f64(&item, "page").map(|n| n as i32).unwrap_or(-1);
-                    let depth = get_f64(&item, "depth").map(|n| (n as usize).min(6)).unwrap_or(0);
+                    let depth = get_f64(&item, "depth")
+                        .map(|n| (n as usize).min(6))
+                        .unwrap_or(0);
                     outline.push(PdfOutlineEntry { label, page, depth });
                 }
             }
 
             let tx = WORKER_POOL.with(|cell| cell.borrow_mut().open_waiters.remove(&id));
             if let Some(tx) = tx {
-                tx.send(Ok(OpenedDoc { pages, sizes, outline }));
+                tx.send(Ok(OpenedDoc {
+                    pages,
+                    sizes,
+                    outline,
+                }));
             }
         }
         "error" => {
-            let Some(id) = get_u32(&data, "id") else { return };
+            let Some(id) = get_u32(&data, "id") else {
+                return;
+            };
             let message = get_str(&data, "message")
                 .filter(|m| !m.is_empty())
                 .unwrap_or_else(|| "The PDF could not be loaded.".to_owned());
@@ -315,7 +326,9 @@ fn handle_worker_message(data: JsValue) {
             }
         }
         "page" => {
-            let Some(request) = get_u32(&data, "request") else { return };
+            let Some(request) = get_u32(&data, "request") else {
+                return;
+            };
             let width = get_u32(&data, "width").unwrap_or(0);
             let height = get_u32(&data, "height").unwrap_or(0);
             let buffer = Reflect::get(&data, &JsValue::from_str("buffer"))
@@ -325,25 +338,35 @@ fn handle_worker_message(data: JsValue) {
             if let Some(tx) = tx {
                 match buffer {
                     Some(buffer) if width > 0 && height > 0 => {
-                        tx.send(Ok(RenderedPage { width, height, buffer }));
+                        tx.send(Ok(RenderedPage {
+                            width,
+                            height,
+                            buffer,
+                        }));
                     }
                     _ => tx.send(Err("This page could not be drawn.".to_owned())),
                 }
             }
         }
         "text" => {
-            let Some(request) = get_u32(&data, "request") else { return };
+            let Some(request) = get_u32(&data, "request") else {
+                return;
+            };
             let tx = WORKER_POOL.with(|cell| cell.borrow_mut().text_waiters.remove(&request));
             if let Some(tx) = tx {
                 tx.send(Ok(parse_runs(&data)));
             }
         }
         "render-error" => {
-            let Some(request) = get_u32(&data, "request") else { return };
+            let Some(request) = get_u32(&data, "request") else {
+                return;
+            };
             let message = get_str(&data, "message")
                 .filter(|m| !m.is_empty())
                 .unwrap_or_else(|| "This page could not be drawn.".to_owned());
-            if let Some(tx) = WORKER_POOL.with(|cell| cell.borrow_mut().text_waiters.remove(&request)) {
+            if let Some(tx) =
+                WORKER_POOL.with(|cell| cell.borrow_mut().text_waiters.remove(&request))
+            {
                 tx.send(Err(message));
                 return;
             }
@@ -448,7 +471,10 @@ fn cancel_render(req_id: u32) {
 }
 
 /// Asks the worker for the text of `page`.
-fn start_text(doc_id: u32, page: usize) -> Result<(u32, OneshotReceiver<Result<Vec<PdfTextRun>, String>>), String> {
+fn start_text(
+    doc_id: u32,
+    page: usize,
+) -> Result<(u32, OneshotReceiver<Result<Vec<PdfTextRun>, String>>), String> {
     let (tx, rx) = oneshot();
     let (worker, req_id) = WORKER_POOL.with(|cell| {
         let mut pool = cell.borrow_mut();
@@ -485,10 +511,19 @@ async fn page_text(doc_id: u32, page: usize) -> Vec<PdfTextRun> {
 
 /// Builds a browser `ImageData` directly over a transferred `ArrayBuffer` without copying
 /// pixel bytes through the main client's WASM heap.
-fn image_data_from_buffer(buffer: &ArrayBuffer, width: u32, height: u32) -> Result<web_sys::ImageData, JsValue> {
+fn image_data_from_buffer(
+    buffer: &ArrayBuffer,
+    width: u32,
+    height: u32,
+) -> Result<web_sys::ImageData, JsValue> {
     let clamped = Uint8ClampedArray::new(buffer);
-    let ctor: Function = Reflect::get(&js_sys::global(), &JsValue::from_str("ImageData"))?.dyn_into()?;
-    let args = Array::of3(&clamped, &JsValue::from_f64(width as f64), &JsValue::from_f64(height as f64));
+    let ctor: Function =
+        Reflect::get(&js_sys::global(), &JsValue::from_str("ImageData"))?.dyn_into()?;
+    let args = Array::of3(
+        &clamped,
+        &JsValue::from_f64(width as f64),
+        &JsValue::from_f64(height as f64),
+    );
     Reflect::construct(&ctor, &args)?.dyn_into()
 }
 
@@ -564,7 +599,9 @@ fn compute_layout(sizes: &[(f64, f64)], width: f64, height: f64, zoom: PdfZoom) 
     let scale = match zoom {
         PdfZoom::Scale(val) => val,
         PdfZoom::Width => ((width - PAD * 2.0) / widest).max(0.2),
-        PdfZoom::Page => (((width - PAD * 2.0) / widest).min((height - PAD * 2.0) / tallest)).max(0.2),
+        PdfZoom::Page => {
+            (((width - PAD * 2.0) / widest).min((height - PAD * 2.0) / tallest)).max(0.2)
+        }
     };
     let mut tops = Vec::with_capacity(sizes.len());
     let mut total = PAD;
@@ -590,11 +627,14 @@ pub fn PdfView(
     #[prop(optional)] on_zoom: Option<Callback<PdfZoom>>,
     #[prop(optional)] on_error: Option<Callback<String>>,
     /// Saved highlights to draw over their pages.
-    #[prop(optional)] highlights: Option<Signal<Vec<PdfHighlight>>>,
+    #[prop(optional)]
+    highlights: Option<Signal<Vec<PdfHighlight>>>,
     /// When set, selecting text offers a Highlight action that reports the selection here.
-    #[prop(optional)] on_highlight: Option<Callback<PdfSelection>>,
+    #[prop(optional)]
+    on_highlight: Option<Callback<PdfSelection>>,
     /// Find's progress after each search or step (see [`PdfHandle::find`]).
-    #[prop(optional)] on_find: Option<Callback<PdfFindState>>,
+    #[prop(optional)]
+    on_find: Option<Callback<PdfFindState>>,
 ) -> impl IntoView {
     let scroller = NodeRef::<html::Div>::new();
     let pages_node = NodeRef::<html::Div>::new();
@@ -620,7 +660,8 @@ pub fn PdfView(
     let kept = StoredValue::new((0usize, 0.0_f64));
 
     // Close the current document in the shared worker when `url` changes or this view unmounts.
-    let active_open: StoredValue<Option<SendWrapper<(Rc<Cell<bool>>, u32)>>> = StoredValue::new(None);
+    let active_open: StoredValue<Option<SendWrapper<(Rc<Cell<bool>>, u32)>>> =
+        StoredValue::new(None);
     let close_active = move || {
         let _ = active_open.try_update_value(|slot| {
             if let Some(prev) = slot.take() {
@@ -704,7 +745,8 @@ pub fn PdfView(
             let _ = width.try_set(node_for_cb.client_width() as f64);
             let _ = height.try_set(node_for_cb.client_height() as f64);
         });
-        let observer = web_sys::ResizeObserver::new(cb.as_ref().unchecked_ref()).expect("ResizeObserver");
+        let observer =
+            web_sys::ResizeObserver::new(cb.as_ref().unchecked_ref()).expect("ResizeObserver");
         observer.observe(&node);
         let kept_obs = SendWrapper::new((observer, cb));
         on_cleanup(move || {
@@ -724,7 +766,9 @@ pub fn PdfView(
         let total = layout.with(|l| l.total);
         if let Some(node) = pages_node.get() {
             let el: &web_sys::HtmlElement = &node;
-            let _ = el.style().set_property("--pdf-height", &format!("{}px", total.round() as i64));
+            let _ = el
+                .style()
+                .set_property("--pdf-height", &format!("{}px", total.round() as i64));
         }
     });
 
@@ -754,9 +798,15 @@ pub fn PdfView(
     };
 
     let go_to_fn = move |target: usize, frac: f64| {
-        let Some(node) = scroller.try_get_untracked().flatten() else { return };
-        let Some(s) = sizes.try_get_untracked() else { return };
-        let Some(l) = layout.try_get_untracked() else { return };
+        let Some(node) = scroller.try_get_untracked().flatten() else {
+            return;
+        };
+        let Some(s) = sizes.try_get_untracked() else {
+            return;
+        };
+        let Some(l) = layout.try_get_untracked() else {
+            return;
+        };
         if l.tops.is_empty() || s.is_empty() {
             return;
         }
@@ -791,8 +841,12 @@ pub fn PdfView(
 
     // Update visible window and report scroll position (rAF-throttled).
     let update_visible = move || {
-        let Some(node) = scroller.try_get_untracked().flatten() else { return };
-        let Some(l) = layout.try_get_untracked() else { return };
+        let Some(node) = scroller.try_get_untracked().flatten() else {
+            return;
+        };
+        let Some(l) = layout.try_get_untracked() else {
+            return;
+        };
         if l.tops.is_empty() {
             return;
         }
@@ -859,11 +913,16 @@ pub fn PdfView(
 
     // Page text: asked for once per page and document, kept for the text layer and Find.
     let ensure_text = Callback::new(move |index: usize| {
-        let Some(current_doc) = doc_id.try_get_untracked().flatten() else { return };
+        let Some(current_doc) = doc_id.try_get_untracked().flatten() else {
+            return;
+        };
         if texts.with_untracked(|t| t.contains_key(&index)) {
             return;
         }
-        if !text_pending.try_update_value(|p| p.insert(index)).unwrap_or(false) {
+        if !text_pending
+            .try_update_value(|p| p.insert(index))
+            .unwrap_or(false)
+        {
             return;
         }
         spawn_local(async move {
@@ -900,9 +959,15 @@ pub fn PdfView(
         matches.with(|m| m.iter().position(|x| (x.page, x.ordinal) == current))
     });
     let scroll_to_match = move |found: &PdfMatch| {
-        let Some(node) = scroller.try_get_untracked().flatten() else { return };
-        let Some(l) = layout.try_get_untracked() else { return };
-        let Some(top) = l.tops.get(found.page) else { return };
+        let Some(node) = scroller.try_get_untracked().flatten() else {
+            return;
+        };
+        let Some(l) = layout.try_get_untracked() else {
+            return;
+        };
+        let Some(top) = l.tops.get(found.page) else {
+            return;
+        };
         let ph = sizes.with_untracked(|s| s.get(found.page).map_or(792.0, |s| s.1));
         let y = found.rects.first().map_or(0.0, |r| r.y);
         let target = top + y * ph * l.scale - f64::from(node.client_height()) / 3.0;
@@ -912,7 +977,10 @@ pub fn PdfView(
     // has been read (so a later page read early never jumps ahead of a nearer match).
     Effect::new(move |_| {
         let list = matches.get();
-        if find_current.get_untracked().is_some_and(|c| list.iter().any(|m| (m.page, m.ordinal) == c)) {
+        if find_current
+            .get_untracked()
+            .is_some_and(|c| list.iter().any(|m| (m.page, m.ordinal) == c))
+        {
             return;
         }
         if list.is_empty() {
@@ -938,7 +1006,11 @@ pub fn PdfView(
             let searching = !find_query.with(Vec::is_empty);
             let total = sizes.with(Vec::len);
             let complete = !searching || texts.with(|t| t.len() >= total);
-            let _ = cb.try_run(PdfFindState { matches: count, current, complete });
+            let _ = cb.try_run(PdfFindState {
+                matches: count,
+                current,
+                complete,
+            });
         });
     }
     let run_find = move |query: String| {
@@ -947,7 +1019,9 @@ pub fn PdfView(
         find_seq.set_value(seq);
         let _ = find_current.try_set(None);
         let _ = find_query.try_set(folded.clone());
-        let Some(current_doc) = doc_id.try_get_untracked().flatten() else { return };
+        let Some(current_doc) = doc_id.try_get_untracked().flatten() else {
+            return;
+        };
         if folded.is_empty() {
             return;
         }
@@ -957,10 +1031,15 @@ pub fn PdfView(
         spawn_local(async move {
             let total = sizes.try_with_untracked(Vec::len).unwrap_or(0);
             for index in (here.min(total)..total).chain(0..here.min(total)) {
-                if find_seq.try_get_value() != Some(seq) || doc_id.try_get_untracked().flatten() != Some(current_doc) {
+                if find_seq.try_get_value() != Some(seq)
+                    || doc_id.try_get_untracked().flatten() != Some(current_doc)
+                {
                     return;
                 }
-                if texts.try_with_untracked(|t| t.contains_key(&index)).unwrap_or(true) {
+                if texts
+                    .try_with_untracked(|t| t.contains_key(&index))
+                    .unwrap_or(true)
+                {
                     continue;
                 }
                 let runs = page_text(current_doc, index).await;
@@ -974,7 +1053,9 @@ pub fn PdfView(
         });
     };
     let step_find = move |direction: i32| {
-        let Some(list) = matches.try_get_untracked() else { return };
+        let Some(list) = matches.try_get_untracked() else {
+            return;
+        };
         if list.is_empty() {
             return;
         }
@@ -992,7 +1073,9 @@ pub fn PdfView(
     // Selecting text offers Highlight (Books); the action sits under the selection's end.
     if on_highlight.is_some() {
         listen(&document(), "selectionchange", false, move |_| {
-            let Some(node) = scroller.try_get_untracked().flatten() else { return };
+            let Some(node) = scroller.try_get_untracked().flatten() else {
+                return;
+            };
             let found = current_selection(&node);
             let place = found.as_ref().and_then(|_| {
                 let pages = pages_node.try_get_untracked().flatten()?;
@@ -1009,7 +1092,9 @@ pub fn PdfView(
         });
     }
     let take_highlight = move || {
-        let Some(found) = selection.try_update_value(|s| s.take()).flatten() else { return };
+        let Some(found) = selection.try_update_value(|s| s.take()).flatten() else {
+            return;
+        };
         if let Some(sel) = window().get_selection().ok().flatten() {
             let _ = sel.remove_all_ranges();
         }
@@ -1183,7 +1268,8 @@ fn PdfPage(
     let text_ref = NodeRef::<html::Div>::new();
     let marks_ref = NodeRef::<html::Div>::new();
     let page_runs = Memo::new(move |_| texts.with(|t| t.get(&index).cloned()));
-    let has_text = Memo::new(move |_| page_runs.with(|r| r.as_ref().is_some_and(|r| !r.is_empty())));
+    let has_text =
+        Memo::new(move |_| page_runs.with(|r| r.as_ref().is_some_and(|r| !r.is_empty())));
 
     // The text layer: asked for with the page, rebuilt only when the text arrives.
     Effect::new(move |_| {
@@ -1201,13 +1287,22 @@ fn PdfPage(
         let mut marks = Vec::new();
         highlights.with(|list| {
             for h in list {
-                marks.extend(h.rects.iter().filter(|r| r.page == index).map(|r| (*r, "pdf-view-highlight")));
+                marks.extend(
+                    h.rects
+                        .iter()
+                        .filter(|r| r.page == index)
+                        .map(|r| (*r, "pdf-view-highlight")),
+                );
             }
         });
         let now = current.get();
         matches.with(|list| {
             for m in list.iter().filter(|m| m.page == index) {
-                let class = if now == Some((m.page, m.ordinal)) { "pdf-view-match is-current" } else { "pdf-view-match" };
+                let class = if now == Some((m.page, m.ordinal)) {
+                    "pdf-view-match is-current"
+                } else {
+                    "pdf-view-match"
+                };
                 marks.extend(m.rects.iter().map(|r| (*r, class)));
             }
         });
@@ -1242,7 +1337,9 @@ fn PdfPage(
     on_cleanup(move || cancel_current());
 
     Effect::new(move |_| {
-        let Some(current_doc) = doc_id.get() else { return };
+        let Some(current_doc) = doc_id.get() else {
+            return;
+        };
         let scale = layout.with(|l| l.scale);
         let (pw, ph) = sizes.with_untracked(|s| s.get(index).copied().unwrap_or((612.0, 792.0)));
         cancel_current();
@@ -1299,7 +1396,9 @@ fn PdfPage(
                     let Ok(ctx) = ctx_obj.dyn_into::<web_sys::CanvasRenderingContext2d>() else {
                         return;
                     };
-                    let Ok(image) = image_data_from_buffer(&rendered.buffer, rendered.width, rendered.height) else {
+                    let Ok(image) =
+                        image_data_from_buffer(&rendered.buffer, rendered.width, rendered.height)
+                    else {
                         return;
                     };
                     target.set_width(rendered.width);

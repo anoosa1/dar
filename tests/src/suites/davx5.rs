@@ -20,8 +20,7 @@ pub async fn files_mounts_discover_from_generic_root(t: &Ctx) -> Result<()> {
 
     let files = basic_auth(
         "admin",
-        app_password(&session, "Files mount proof", "v2 files:read files:write")
-            .await?["secret"]
+        app_password(&session, "Files mount proof", "v2 files:read files:write").await?["secret"]
             .as_str()
             .context("files secret")?,
     );
@@ -141,10 +140,12 @@ pub async fn discovery_and_etag_sync_one_credential(t: &Ctx) -> Result<()> {
 
     let denied = dav_request("PROPFIND", &format!("{base}/dav/"), &[("depth", "0")], None).await?;
     assert_eq!(denied.status, 401);
-    assert!(denied
-        .header("www-authenticate")
-        .unwrap_or_default()
-        .contains("Basic"));
+    assert!(
+        denied
+            .header("www-authenticate")
+            .unwrap_or_default()
+            .contains("Basic")
+    );
 
     let options = dav_request("OPTIONS", &format!("{base}/dav/"), &[], None).await?;
     assert_eq!(options.status, 204);
@@ -175,7 +176,11 @@ pub async fn discovery_and_etag_sync_one_credential(t: &Ctx) -> Result<()> {
     for kind in ["contacts", "calendar"] {
         let api = format!(
             "/api/v1/{kind}/{}",
-            if kind == "contacts" { "books" } else { "calendars" }
+            if kind == "contacts" {
+                "books"
+            } else {
+                "calendars"
+            }
         );
         let collection = session
             .post(
@@ -225,7 +230,9 @@ pub async fn discovery_and_etag_sync_one_credential(t: &Ctx) -> Result<()> {
         let content = if kind == "contacts" {
             format!("BEGIN:VCARD\r\nVERSION:3.0\r\nUID:{uid}\r\nFN:DAVx5 contact\r\nEND:VCARD\r\n")
         } else {
-            format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:{uid}\r\nDTSTART:20261109T120000Z\r\nDTEND:20261109T130000Z\r\nSUMMARY:DAVx5 event\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+            format!(
+                "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:{uid}\r\nDTSTART:20261109T120000Z\r\nDTEND:20261109T130000Z\r\nSUMMARY:DAVx5 event\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+            )
         };
         let resource = format!(
             "{href}{uid}{}",

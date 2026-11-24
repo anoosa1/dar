@@ -491,7 +491,9 @@ pub(crate) fn valid_link_password(value: &str) -> bool {
 }
 
 pub(crate) fn encode_uri_component(value: &str) -> String {
-    js_sys::encode_uri_component(value).as_string().unwrap_or_else(|| value.to_owned())
+    js_sys::encode_uri_component(value)
+        .as_string()
+        .unwrap_or_else(|| value.to_owned())
 }
 
 pub(crate) fn css_escape(value: &str) -> String {
@@ -529,7 +531,9 @@ pub(crate) async fn copy_to_clipboard(text: &str) -> Result<(), ()> {
         .map_err(|_| ())?
         .dyn_into()
         .map_err(|_| ())?;
-    wasm_bindgen_futures::JsFuture::from(promise).await.map_err(|_| ())?;
+    wasm_bindgen_futures::JsFuture::from(promise)
+        .await
+        .map_err(|_| ())?;
     Ok(())
 }
 
@@ -545,7 +549,8 @@ pub(crate) async fn put_upload_file(
     file: &web_sys::File,
     progress: impl Fn(f64) + 'static,
 ) -> Result<String, String> {
-    let xhr = web_sys::XmlHttpRequest::new().map_err(|_| "The upload could not be completed.".to_owned())?;
+    let xhr = web_sys::XmlHttpRequest::new()
+        .map_err(|_| "The upload could not be completed.".to_owned())?;
     let (sender, receiver) = futures::channel::oneshot::channel::<Result<String, String>>();
     let sender = Rc::new(RefCell::new(Some(sender)));
     let finish = {
@@ -560,13 +565,14 @@ pub(crate) async fn put_upload_file(
     if let Some(token) = csrf {
         let _ = xhr.set_request_header("x-csrf-token", token);
     }
-    let on_progress = Closure::<dyn FnMut(web_sys::ProgressEvent)>::new(move |e: web_sys::ProgressEvent| {
-        progress(if e.length_computable() && e.total() > 0.0 {
-            e.loaded() / e.total()
-        } else {
-            0.0
+    let on_progress =
+        Closure::<dyn FnMut(web_sys::ProgressEvent)>::new(move |e: web_sys::ProgressEvent| {
+            progress(if e.length_computable() && e.total() > 0.0 {
+                e.loaded() / e.total()
+            } else {
+                0.0
+            });
         });
-    });
     if let Ok(upload) = xhr.upload() {
         upload.set_onprogress(Some(on_progress.as_ref().unchecked_ref()));
     }
@@ -589,13 +595,17 @@ pub(crate) async fn put_upload_file(
     let on_error = {
         let finish = finish.clone();
         Closure::<dyn FnMut()>::new(move || {
-            finish(Err("The connection was interrupted. Try the upload again.".to_owned()));
+            finish(Err(
+                "The connection was interrupted. Try the upload again.".to_owned()
+            ));
         })
     };
     xhr.set_onload(Some(on_load.as_ref().unchecked_ref()));
     xhr.set_onerror(Some(on_error.as_ref().unchecked_ref()));
     let _ = xhr.send_with_opt_blob(Some(file));
-    let result = receiver.await.unwrap_or_else(|_| Err("The upload could not be completed.".to_owned()));
+    let result = receiver
+        .await
+        .unwrap_or_else(|_| Err("The upload could not be completed.".to_owned()));
     drop((on_progress, on_load, on_error));
     result
 }

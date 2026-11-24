@@ -12,13 +12,38 @@ use super::model::{self, Canvas, Rect, Side};
 enum Gesture {
     #[default]
     Idle,
-    Pan { start: (f64, f64), view: model::View, moved: bool, clear: bool },
+    Pan {
+        start: (f64, f64),
+        view: model::View,
+        moved: bool,
+        clear: bool,
+    },
     /// `narrow`: a card of a larger selection pressed without Shift; a click without moving selects only it.
-    Move { start: (f64, f64), origins: Vec<(String, f64, f64)>, moved: bool, narrow: Option<String> },
-    Resize { start: (f64, f64), id: String, rect: Rect, moved: bool },
-    Marquee { start: (f64, f64), base: Vec<String> },
-    Connect { from: String, side: Side },
-    Pinch { distance: f64, middle: (f64, f64), view: model::View },
+    Move {
+        start: (f64, f64),
+        origins: Vec<(String, f64, f64)>,
+        moved: bool,
+        narrow: Option<String>,
+    },
+    Resize {
+        start: (f64, f64),
+        id: String,
+        rect: Rect,
+        moved: bool,
+    },
+    Marquee {
+        start: (f64, f64),
+        base: Vec<String>,
+    },
+    Connect {
+        from: String,
+        side: Side,
+    },
+    Pinch {
+        distance: f64,
+        middle: (f64, f64),
+        view: model::View,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -34,7 +59,9 @@ pub(super) struct Gestures {
 }
 
 fn element(event: &web_sys::Event) -> Option<web_sys::Element> {
-    event.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+    event
+        .target()
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
 }
 
 fn closest(element: &web_sys::Element, selector: &str) -> Option<web_sys::Element> {
@@ -105,7 +132,11 @@ impl Gestures {
                 self.settle(board);
                 let points = self.touches.get_value();
                 let (a, b) = (points[0].1, points[1].1);
-                self.current.set_value(Gesture::Pinch { distance: distance(a, b).max(1.0), middle: middle(a, b), view: board.view.get_untracked() });
+                self.current.set_value(Gesture::Pinch {
+                    distance: distance(a, b).max(1.0),
+                    middle: middle(a, b),
+                    view: board.view.get_untracked(),
+                });
                 let _ = stage.set_pointer_capture(event.pointer_id());
                 return;
             }
@@ -117,20 +148,43 @@ impl Gestures {
         let world = view.to_world(point);
         let locked = board.locked.get_untracked();
         let gesture = if button == 1 || self.space.get_value() {
-            Gesture::Pan { start: point, view, moved: false, clear: false }
+            Gesture::Pan {
+                start: point,
+                view,
+                moved: false,
+                clear: false,
+            }
         } else if let Some(handle) = closest(&target, "[data-handle]").filter(|_| !locked) {
             let id = handle.get_attribute("data-node").unwrap_or_default();
-            let side = handle.get_attribute("data-handle").and_then(|s| Side::parse(&s)).unwrap_or(Side::Right);
-            let Some(anchor) = board.doc.with_untracked(|c| c.node(&id).map(|n| n.rect().anchor(side))) else { return };
+            let side = handle
+                .get_attribute("data-handle")
+                .and_then(|s| Side::parse(&s))
+                .unwrap_or(Side::Right);
+            let Some(anchor) = board
+                .doc
+                .with_untracked(|c| c.node(&id).map(|n| n.rect().anchor(side)))
+            else {
+                return;
+            };
             board.finish_edit();
             board.connecting.set(Some((anchor, side, world)));
             Gesture::Connect { from: id, side }
         } else if let Some(handle) = closest(&target, "[data-resize]").filter(|_| !locked) {
             let id = handle.get_attribute("data-resize").unwrap_or_default();
-            let Some(rect) = board.doc.with_untracked(|c| c.node(&id).map(model::Node::rect)) else { return };
+            let Some(rect) = board
+                .doc
+                .with_untracked(|c| c.node(&id).map(model::Node::rect))
+            else {
+                return;
+            };
             board.select_only(&id);
             self.before.set_value(Some(board.doc.get_untracked()));
-            Gesture::Resize { start: world, id, rect, moved: false }
+            Gesture::Resize {
+                start: world,
+                id,
+                rect,
+                moved: false,
+            }
         } else if let Some(card) = closest(&target, "[data-node-id]") {
             let id = card.get_attribute("data-node-id").unwrap_or_default();
             let mut narrow = None;
@@ -144,27 +198,56 @@ impl Gestures {
                     narrow = Some(id.clone());
                 }
             }
-            let writing = board.editing.with_untracked(|e| e.as_deref() == Some(id.as_str()));
+            let writing = board
+                .editing
+                .with_untracked(|e| e.as_deref() == Some(id.as_str()));
             if locked || writing || !board.is_selected(&id) {
-                Gesture::Pan { start: point, view, moved: false, clear: false }
+                Gesture::Pan {
+                    start: point,
+                    view,
+                    moved: false,
+                    clear: false,
+                }
             } else {
-                let ids = board.doc.with_untracked(|c| c.carried(&board.selected.get_untracked()));
-                let origins = board.doc.with_untracked(|c| ids.iter().filter_map(|id| c.node(id).map(|n| (id.clone(), n.x, n.y))).collect());
+                let ids = board
+                    .doc
+                    .with_untracked(|c| c.carried(&board.selected.get_untracked()));
+                let origins = board.doc.with_untracked(|c| {
+                    ids.iter()
+                        .filter_map(|id| c.node(id).map(|n| (id.clone(), n.x, n.y)))
+                        .collect()
+                });
                 self.before.set_value(Some(board.doc.get_untracked()));
-                Gesture::Move { start: world, origins, moved: false, narrow }
+                Gesture::Move {
+                    start: world,
+                    origins,
+                    moved: false,
+                    narrow,
+                }
             }
         } else if let Some(edge) = closest(&target, "[data-edge-id]") {
             board.select_edge(&edge.get_attribute("data-edge-id").unwrap_or_default());
             Gesture::Idle
         } else if event.shift_key() && !touch {
             board.marquee.set(Some(Rect::spanning(world, world)));
-            Gesture::Marquee { start: world, base: board.selected.get_untracked() }
+            Gesture::Marquee {
+                start: world,
+                base: board.selected.get_untracked(),
+            }
         } else {
-            Gesture::Pan { start: point, view, moved: false, clear: true }
+            Gesture::Pan {
+                start: point,
+                view,
+                moved: false,
+                clear: true,
+            }
         };
         // Pans and moves capture the pointer once they move, so a press on a card's link or
         // button still clicks it (and focuses the card).
-        if matches!(gesture, Gesture::Connect { .. } | Gesture::Resize { .. } | Gesture::Marquee { .. }) {
+        if matches!(
+            gesture,
+            Gesture::Connect { .. } | Gesture::Resize { .. } | Gesture::Marquee { .. }
+        ) {
             let _ = stage.set_pointer_capture(event.pointer_id());
         }
         self.current.set_value(gesture);
@@ -184,17 +267,31 @@ impl Gestures {
         let world = view.to_world(point);
         match &mut gesture {
             Gesture::Idle => return,
-            Gesture::Pan { start, view: from, moved, .. } => {
+            Gesture::Pan {
+                start,
+                view: from,
+                moved,
+                ..
+            } => {
                 let (dx, dy) = (point.0 - start.0, point.1 - start.1);
                 if !*moved && dx.hypot(dy) > 3.0 {
                     *moved = true;
                     let _ = stage.set_pointer_capture(event.pointer_id());
                 }
                 if *moved {
-                    board.view.set(model::View { x: from.x + dx, y: from.y + dy, zoom: from.zoom });
+                    board.view.set(model::View {
+                        x: from.x + dx,
+                        y: from.y + dy,
+                        zoom: from.zoom,
+                    });
                 }
             }
-            Gesture::Move { start, origins, moved, .. } => {
+            Gesture::Move {
+                start,
+                origins,
+                moved,
+                ..
+            } => {
                 let (dx, dy) = (world.0 - start.0, world.1 - start.1);
                 if !*moved && dx.hypot(dy) * view.zoom > 3.0 {
                     *moved = true;
@@ -212,7 +309,12 @@ impl Gestures {
                     });
                 }
             }
-            Gesture::Resize { start, id, rect, moved } => {
+            Gesture::Resize {
+                start,
+                id,
+                rect,
+                moved,
+            } => {
                 let (dx, dy) = (world.0 - start.0, world.1 - start.1);
                 if !*moved && dx.hypot(dy) * view.zoom > 2.0 {
                     *moved = true;
@@ -246,7 +348,11 @@ impl Gestures {
                     }
                 });
             }
-            Gesture::Pinch { distance: start, middle: center, view: from } => {
+            Gesture::Pinch {
+                distance: start,
+                middle: center,
+                view: from,
+            } => {
                 let points = self.touches.get_value();
                 if points.len() < 2 {
                     return;
@@ -254,18 +360,29 @@ impl Gestures {
                 let (a, b) = (points[0].1, points[1].1);
                 let (now, at) = (distance(a, b).max(1.0), middle(a, b));
                 let next = from.zoom_at(from.zoom * now / *start, *center);
-                board.view.set(model::View { x: next.x + at.0 - center.0, y: next.y + at.1 - center.1, zoom: next.zoom });
+                board.view.set(model::View {
+                    x: next.x + at.0 - center.0,
+                    y: next.y + at.1 - center.1,
+                    zoom: next.zoom,
+                });
             }
         }
         self.current.set_value(gesture);
     }
 
-    pub fn up(self, board: Board, stage: &web_sys::Element, event: &web_sys::PointerEvent, cancelled: bool) {
+    pub fn up(
+        self,
+        board: Board,
+        stage: &web_sys::Element,
+        event: &web_sys::PointerEvent,
+        cancelled: bool,
+    ) {
         if stage.has_pointer_capture(event.pointer_id()) {
             let _ = stage.release_pointer_capture(event.pointer_id());
         }
         if event.pointer_type() == "touch" {
-            self.touches.update_value(|t| t.retain(|(id, _)| *id != event.pointer_id()));
+            self.touches
+                .update_value(|t| t.retain(|(id, _)| *id != event.pointer_id()));
         }
         board.from_pointer.set_value(false);
         let gesture = self.current.get_value();
@@ -308,8 +425,15 @@ impl Gestures {
                 if cancelled {
                     return;
                 }
-                let world = board.view.get_untracked().to_world(stage_point(stage, event.client_x(), event.client_y()));
-                let target = board.doc.with_untracked(|c| c.hit(world, std::slice::from_ref(&from)).map(|n| (n.id.clone(), n.rect().nearest_side(world))));
+                let world = board.view.get_untracked().to_world(stage_point(
+                    stage,
+                    event.client_x(),
+                    event.client_y(),
+                ));
+                let target = board.doc.with_untracked(|c| {
+                    c.hit(world, std::slice::from_ref(&from))
+                        .map(|n| (n.id.clone(), n.rect().nearest_side(world)))
+                });
                 if let Some((to, to_side)) = target {
                     let mut made = None;
                     board.change(|c| {
@@ -349,7 +473,11 @@ impl Gestures {
         } else if let Some(edge) = closest(&target, "[data-edge-id]") {
             board.begin_edge_edit(&edge.get_attribute("data-edge-id").unwrap_or_default());
         } else {
-            let world = board.view.get_untracked().to_world(stage_point(stage, event.client_x(), event.client_y()));
+            let world = board.view.get_untracked().to_world(stage_point(
+                stage,
+                event.client_x(),
+                event.client_y(),
+            ));
             if let Some(id) = board.add_card("text", "", world, |_| {}) {
                 board.begin_edit(&id);
             }
@@ -437,7 +565,10 @@ impl Gestures {
                         board.begin_edge_edit(&edge);
                         true
                     }
-                    None => match board.selected.with_untracked(|s| (s.len() == 1).then(|| s[0].clone())) {
+                    None => match board
+                        .selected
+                        .with_untracked(|s| (s.len() == 1).then(|| s[0].clone()))
+                    {
                         Some(id) => {
                             board.activate(&id);
                             true

@@ -66,20 +66,30 @@ pub fn valid_app_id(id: &str) -> bool {
         return false;
     }
     let parts: Vec<&str> = id.split('.').collect();
-    (3..=8).contains(&parts.len()) && parts.iter().all(|p| p.chars().next().is_some_and(|c| c.is_ascii_lowercase()) && p.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'))
+    (3..=8).contains(&parts.len())
+        && parts.iter().all(|p| {
+            p.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+                && p.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        })
 }
 
 fn safe_file(name: &str) -> bool {
     if name.len() > 180 || name.split('/').any(|p| p == "." || p == "..") {
         return false;
     }
-    let Some((stem, extension)) = name.rsplit_once('.') else { return false };
+    let Some((stem, extension)) = name.rsplit_once('.') else {
+        return false;
+    };
     if !["js", "css", "svg", "png", "webp", "json"].contains(&extension) {
         return false;
     }
     // [a-zA-Z0-9_-]+ separated by single / or .
     let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
-    !stem.is_empty() && stem.split(['/', '.']).all(|p| !p.is_empty() && p.chars().all(word))
+    !stem.is_empty()
+        && stem
+            .split(['/', '.'])
+            .all(|p| !p.is_empty() && p.chars().all(word))
 }
 
 /// Reads a regular file below `root`, refusing links on the way.
@@ -105,14 +115,34 @@ pub fn read_package(input: &PackageInput) -> io::Result<Package> {
     }
     let root = fs::canonicalize(&input.path)?;
     let raw = regular(&root, "dar-app.json", 32768)?;
-    let m: Manifest = serde_json::from_slice(&raw).map_err(|_| invalid("Invalid app manifest or unsupported API."))?;
+    let m: Manifest = serde_json::from_slice(&raw)
+        .map_err(|_| invalid("Invalid app manifest or unsupported API."))?;
     let unique = |v: &[String]| v.iter().collect::<std::collections::HashSet<_>>().len() == v.len();
-    let version_ok = m.version.split('.').count() == 3 && m.version.split('.').all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()));
-    let valid = valid_app_id(&m.id) && !m.name.trim().is_empty() && m.name.chars().count() <= 60 && version_ok && m.api_version == json!(1)
-        && m.license.as_str().is_some_and(|l| l.chars().count() <= 100) && m.files.len() <= 200 && unique(&m.files) && m.files.iter().all(|f| safe_file(f))
-        && m.files.contains(&m.client) && m.client.ends_with(".js") && m.styles.iter().all(|s| m.files.contains(s) && s.ends_with(".css"))
-        && m.permissions.iter().all(|p| PERMISSIONS.contains(&p.as_str())) && unique(&m.permissions)
-        && m.server.as_ref().is_none_or(|s| m.files.contains(s) && s.ends_with(".js"));
+    let version_ok = m.version.split('.').count() == 3
+        && m.version
+            .split('.')
+            .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()));
+    let valid = valid_app_id(&m.id)
+        && !m.name.trim().is_empty()
+        && m.name.chars().count() <= 60
+        && version_ok
+        && m.api_version == json!(1)
+        && m.license.as_str().is_some_and(|l| l.chars().count() <= 100)
+        && m.files.len() <= 200
+        && unique(&m.files)
+        && m.files.iter().all(|f| safe_file(f))
+        && m.files.contains(&m.client)
+        && m.client.ends_with(".js")
+        && m.styles
+            .iter()
+            .all(|s| m.files.contains(s) && s.ends_with(".css"))
+        && m.permissions
+            .iter()
+            .all(|p| PERMISSIONS.contains(&p.as_str()))
+        && unique(&m.permissions)
+        && m.server
+            .as_ref()
+            .is_none_or(|s| m.files.contains(s) && s.ends_with(".js"));
     if !valid {
         return Err(invalid("Invalid app manifest or unsupported API."));
     }
@@ -136,7 +166,13 @@ pub fn read_package(input: &PackageInput) -> io::Result<Package> {
     if input.digest.as_ref().is_some_and(|d| *d != digest) {
         return Err(invalid("Package digest mismatch."));
     }
-    Ok(Package { root, manifest: m, manifest_text: raw, digest, assets })
+    Ok(Package {
+        root,
+        manifest: m,
+        manifest_text: raw,
+        digest,
+        assets,
+    })
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -163,9 +199,12 @@ pub fn load(filename: &Path) -> io::Result<Registry> {
     if std::env::var("DAR_DISABLE_APPS").as_deref() == Ok("1") {
         return Ok(registry);
     }
-    let inputs: Vec<PackageInput> = serde_json::from_slice(&fs::read(filename)?).map_err(|_| invalid("Invalid registry."))?;
+    let inputs: Vec<PackageInput> =
+        serde_json::from_slice(&fs::read(filename)?).map_err(|_| invalid("Invalid registry."))?;
     if inputs.len() > 100 {
-        return Err(invalid("App registry must contain up to 100 package entries."));
+        return Err(invalid(
+            "App registry must contain up to 100 package entries.",
+        ));
     }
     for input in inputs {
         match read_package(&input) {
@@ -174,10 +213,17 @@ pub fn load(filename: &Path) -> io::Result<Registry> {
                     id: app.manifest.id.clone(),
                     name: app.manifest.name.clone(),
                     version: app.manifest.version.clone(),
-                    status: if input.enabled == Some(false) { "Disabled" } else { "Ready" }.into(),
+                    status: if input.enabled == Some(false) {
+                        "Disabled"
+                    } else {
+                        "Ready"
+                    }
+                    .into(),
                     permissions: app.manifest.permissions.clone(),
                 });
-                registry.packages.insert(app.manifest.id.clone(), app.clone());
+                registry
+                    .packages
+                    .insert(app.manifest.id.clone(), app.clone());
                 if input.enabled != Some(false) {
                     registry.apps.insert(app.manifest.id.clone(), app);
                 }
@@ -186,7 +232,9 @@ pub fn load(filename: &Path) -> io::Result<Registry> {
                 id: format!("invalid-{}", registry.inventory.len() + 1),
                 name: "Unavailable package".into(),
                 version: String::new(),
-                status: "Invalid package, duplicate ID or unsupported API. Check host configuration.".into(),
+                status:
+                    "Invalid package, duplicate ID or unsupported API. Check host configuration."
+                        .into(),
                 permissions: Vec::new(),
             }),
         }
@@ -201,7 +249,16 @@ pub fn load_or_report(filename: &Path) -> Registry {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Registry::default(),
         Err(_) => {
             eprintln!("Installed app registry is unavailable; starting without external apps.");
-            Registry { inventory: vec![InventoryItem { id: "registry".into(), name: "App registry".into(), version: String::new(), status: "Invalid registry. Check host configuration.".into(), permissions: Vec::new() }], ..Default::default() }
+            Registry {
+                inventory: vec![InventoryItem {
+                    id: "registry".into(),
+                    name: "App registry".into(),
+                    version: String::new(),
+                    status: "Invalid registry. Check host configuration.".into(),
+                    permissions: Vec::new(),
+                }],
+                ..Default::default()
+            }
         }
     }
 }
@@ -237,7 +294,11 @@ pub fn manage(root: &Path, command: &str, argument: Option<&str>) -> io::Result<
         }
         ("apps-install", Some(source)) => {
             let source = std::path::absolute(source)?;
-            let app = read_package(&PackageInput { path: source.to_string_lossy().into_owned(), digest: None, enabled: None })?;
+            let app = read_package(&PackageInput {
+                path: source.to_string_lossy().into_owned(),
+                digest: None,
+                enabled: None,
+            })?;
             let packages = root.join("appPackages");
             match fs::create_dir(&packages) {
                 Ok(()) => {
@@ -260,13 +321,24 @@ pub fn manage(root: &Path, command: &str, argument: Option<&str>) -> io::Result<
                     fs::create_dir_all(target.parent().expect("parent"))?;
                     crate::root::create_durable_file(&target, bytes)?;
                 }
-                crate::root::create_durable_file(&staging.join("dar-app.json"), &app.manifest_text)?;
-                read_package(&PackageInput { path: staging.to_string_lossy().into_owned(), digest: Some(app.digest.clone()), enabled: None })?;
+                crate::root::create_durable_file(
+                    &staging.join("dar-app.json"),
+                    &app.manifest_text,
+                )?;
+                read_package(&PackageInput {
+                    path: staging.to_string_lossy().into_owned(),
+                    digest: Some(app.digest.clone()),
+                    enabled: None,
+                })?;
                 sync(&staging)?;
                 match fs::rename(&staging, &destination) {
                     Ok(()) => {}
                     Err(_) if destination.is_dir() => {
-                        read_package(&PackageInput { path: destination.to_string_lossy().into_owned(), digest: Some(app.digest.clone()), enabled: None })?;
+                        read_package(&PackageInput {
+                            path: destination.to_string_lossy().into_owned(),
+                            digest: Some(app.digest.clone()),
+                            enabled: None,
+                        })?;
                     }
                     Err(e) => return Err(e),
                 }
@@ -280,7 +352,11 @@ pub fn manage(root: &Path, command: &str, argument: Option<&str>) -> io::Result<
                     retained.push(input);
                 }
             }
-            retained.push(PackageInput { path: destination.to_string_lossy().into_owned(), digest: Some(app.digest.clone()), enabled: Some(true) });
+            retained.push(PackageInput {
+                path: destination.to_string_lossy().into_owned(),
+                digest: Some(app.digest.clone()),
+                enabled: Some(true),
+            });
             inputs = retained;
         }
         ("apps-enable" | "apps-disable" | "apps-uninstall", Some(id)) => {
@@ -293,7 +369,10 @@ pub fn manage(root: &Path, command: &str, argument: Option<&str>) -> io::Result<
                 }
                 found = true;
                 if command != "apps-uninstall" {
-                    updated.push(PackageInput { enabled: Some(command == "apps-enable"), ..input });
+                    updated.push(PackageInput {
+                        enabled: Some(command == "apps-enable"),
+                        ..input
+                    });
                 }
             }
             if !found {
@@ -301,9 +380,18 @@ pub fn manage(root: &Path, command: &str, argument: Option<&str>) -> io::Result<
             }
             inputs = updated;
         }
-        _ => return Err(invalid("Usage: apps-list, apps-install <built-package-directory>, apps-enable|apps-disable|apps-uninstall <app-id>")),
+        _ => {
+            return Err(invalid(
+                "Usage: apps-list, apps-install <built-package-directory>, apps-enable|apps-disable|apps-uninstall <app-id>",
+            ));
+        }
     }
-    crate::root::write_durable_file(&file, serde_json::to_string_pretty(&inputs).expect("registry").as_bytes())?;
+    crate::root::write_durable_file(
+        &file,
+        serde_json::to_string_pretty(&inputs)
+            .expect("registry")
+            .as_bytes(),
+    )?;
     Ok("App configuration saved. Restart Dar to apply it. App data is retained.".into())
 }
 
@@ -328,8 +416,15 @@ mod tests {
         assert!(valid_app_id("org.dar.prayer-times"));
         assert!(!valid_app_id("org.dar"));
         assert!(!valid_app_id("Org.dar.x"));
-        assert!(safe_file("assets/app.js") && safe_file("style.css") && safe_file("a-b_c/d.min.js"));
-        assert!(!safe_file("../x.js") && !safe_file("x.exe") && !safe_file("a//b.js") && !safe_file(".js"));
+        assert!(
+            safe_file("assets/app.js") && safe_file("style.css") && safe_file("a-b_c/d.min.js")
+        );
+        assert!(
+            !safe_file("../x.js")
+                && !safe_file("x.exe")
+                && !safe_file("a//b.js")
+                && !safe_file(".js")
+        );
     }
 
     #[test]
@@ -344,11 +439,18 @@ mod tests {
         manage(&root, "apps-install", Some(package.to_str().unwrap())).unwrap();
         let registry = load(&root.join("apps.json")).unwrap();
         let app = &registry.apps["org.example.test"];
-        assert_eq!(app.descriptor()["clientUrl"], format!("/appAssets/org.example.test/{}/app.js", app.digest));
+        assert_eq!(
+            app.descriptor()["clientUrl"],
+            format!("/appAssets/org.example.test/{}/app.js", app.digest)
+        );
         manage(&root, "apps-disable", Some("org.example.test")).unwrap();
         let registry = load(&root.join("apps.json")).unwrap();
         assert!(registry.apps.is_empty() && registry.inventory[0].status == "Disabled");
-        assert!(manage(&root, "apps-list", None).unwrap().contains("\"enabled\": false"));
+        assert!(
+            manage(&root, "apps-list", None)
+                .unwrap()
+                .contains("\"enabled\": false")
+        );
         manage(&root, "apps-uninstall", Some("org.example.test")).unwrap();
         assert!(load(&root.join("apps.json")).unwrap().inventory.is_empty());
         assert!(manage(&root, "apps-enable", Some("org.example.test")).is_err());

@@ -7,10 +7,56 @@ use wasm_bindgen::JsCast;
 use crate::ui::document;
 
 const ALLOWED: &[&str] = &[
-    "a", "abbr", "b", "blockquote", "br", "caption", "cite", "code", "dd", "del", "dfn", "div",
-    "dl", "dt", "em", "figcaption", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i",
-    "img", "ins", "kbd", "li", "mark", "ol", "p", "pre", "q", "s", "samp", "small", "span",
-    "strong", "sub", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "time", "tr", "u",
+    "a",
+    "abbr",
+    "b",
+    "blockquote",
+    "br",
+    "caption",
+    "cite",
+    "code",
+    "dd",
+    "del",
+    "dfn",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "figcaption",
+    "figure",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "hr",
+    "i",
+    "img",
+    "ins",
+    "kbd",
+    "li",
+    "mark",
+    "ol",
+    "p",
+    "pre",
+    "q",
+    "s",
+    "samp",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "time",
+    "tr",
+    "u",
     "ul",
 ];
 
@@ -38,7 +84,9 @@ fn walk(
 ) {
     let children = from.child_nodes();
     for i in 0..children.length() {
-        let Some(child) = children.item(i) else { continue };
+        let Some(child) = children.item(i) else {
+            continue;
+        };
         let node_type = child.node_type();
         if node_type == web_sys::Node::TEXT_NODE {
             let text = child.text_content().unwrap_or_default();
@@ -65,9 +113,13 @@ fn walk(
                 *hidden += 1;
                 continue;
             }
-            let Ok(el) = doc.create_element("img") else { continue };
+            let Ok(el) = doc.create_element("img") else {
+                continue;
+            };
             let image: web_sys::HtmlImageElement = el.unchecked_into();
-            let encoded = js_sys::encode_uri_component(&src).as_string().unwrap_or_default();
+            let encoded = js_sys::encode_uri_component(&src)
+                .as_string()
+                .unwrap_or_default();
             image.set_src(&format!("/api/v1/news/image?url={encoded}"));
             image.set_alt(&element.get_attribute("alt").unwrap_or_default());
             let _ = image.set_attribute("loading", "lazy");
@@ -76,9 +128,14 @@ fn walk(
             let _ = to.append_child(&image);
             continue;
         }
-        let Ok(copy) = doc.create_element(&tag) else { continue };
+        let Ok(copy) = doc.create_element(&tag) else {
+            continue;
+        };
         if tag == "a"
-            && let Some(href) = safe_url(element.get_attribute("href"), &["http:", "https:", "mailto:"])
+            && let Some(href) = safe_url(
+                element.get_attribute("href"),
+                &["http:", "https:", "mailto:"],
+            )
         {
             let _ = copy.set_attribute("href", &href);
             let _ = copy.set_attribute("target", "_blank");

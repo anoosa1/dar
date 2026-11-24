@@ -8,7 +8,7 @@ use wasm_bindgen::JsCast;
 
 use crate::api::{self, BrowserSession, Req};
 use crate::live::Live;
-use crate::navigation::{intercept_links, set_route, Route};
+use crate::navigation::{Route, intercept_links, set_route};
 use crate::shared::{self, context};
 use crate::ui::{listen, window};
 
@@ -26,7 +26,10 @@ pub fn App() -> impl IntoView {
     let status: RwSignal<Option<bool>> = RwSignal::new(None);
     let session: RwSignal<Option<BrowserSession>> = RwSignal::new(None);
     let error = RwSignal::new(false);
-    let route = Route { path: RwSignal::new(window().location().pathname().unwrap_or_default()), visit: RwSignal::new(0) };
+    let route = Route {
+        path: RwSignal::new(window().location().pathname().unwrap_or_default()),
+        visit: RwSignal::new(0),
+    };
     set_route(route);
     provide_context(route);
     let live = Live::new();
@@ -64,7 +67,17 @@ pub fn App() -> impl IntoView {
         status.set(Some(true));
     });
     // Only a change between shared links, identity interactions and the apps remounts the root.
-    let page_kind = Memo::new(move |_| route.path.with(|p| if p.starts_with("/s/") { 1 } else if p.starts_with("/identity/interaction/") { 2 } else { 0 }));
+    let page_kind = Memo::new(move |_| {
+        route.path.with(|p| {
+            if p.starts_with("/s/") {
+                1
+            } else if p.starts_with("/identity/interaction/") {
+                2
+            } else {
+                0
+            }
+        })
+    });
     move || {
         if error.get() {
             return view! {
@@ -77,7 +90,9 @@ pub fn App() -> impl IntoView {
         if kind == 1 {
             return view! { <crate::photos::PublicPhotos/> }.into_any();
         }
-        let Some(initialized) = status.get() else { return opening().into_any() };
+        let Some(initialized) = status.get() else {
+            return opening().into_any();
+        };
         // An identity interaction signs in inline, before the sign-in screen.
         if kind == 2 {
             route.visit.track();
@@ -114,12 +129,18 @@ fn SignedIn(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoVi
         let session = session.get_value();
         match path.as_str() {
             "/contacts" | "/calendar" | "/identity" | "/settings" => {
-                let app = crate::lazy_apps::LazyApp::from_kind(if path == "/settings" { "identity" } else { &path[1..] });
+                let app = crate::lazy_apps::LazyApp::from_kind(if path == "/settings" {
+                    "identity"
+                } else {
+                    &path[1..]
+                });
                 view! { <crate::lazy_apps::LoadApp app=app.expect("listed above") session=session on_signed_out=on_signed_out/> }.into_any()
             }
-            "/news" | "/mail" | "/chat" | "/photos" | "/books" | "/git" | "/agent" | "/notes" | "/tasks" => {
+            "/news" | "/mail" | "/chat" | "/photos" | "/books" | "/git" | "/agent" | "/notes"
+            | "/tasks" => {
                 let kind = path[1..].to_owned();
-                view! { <OptionalWorkspace kind=kind session=session on_signed_out=on_signed_out/> }.into_any()
+                view! { <OptionalWorkspace kind=kind session=session on_signed_out=on_signed_out/> }
+                    .into_any()
             }
             other if other.starts_with("/apps/") => {
                 let id = other.split('/').nth(2).unwrap_or_default().to_owned();
@@ -127,7 +148,8 @@ fn SignedIn(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoVi
             }
             _ => {
                 crate::lazy_apps::preload_soon();
-                view! { <crate::files::Files session=session on_signed_out=on_signed_out/> }.into_any()
+                view! { <crate::files::Files session=session on_signed_out=on_signed_out/> }
+                    .into_any()
             }
         }
     };
@@ -137,10 +159,19 @@ fn SignedIn(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoVi
 /// The theme follows the account's appearance preference, or the system.
 fn use_appearance(session: &BrowserSession) {
     let key = format!("dar.appearance.{}", session.user.id);
-    let saved = window().local_storage().ok().flatten().and_then(|s| s.get_item(&key).ok().flatten());
+    let saved = window()
+        .local_storage()
+        .ok()
+        .flatten()
+        .and_then(|s| s.get_item(&key).ok().flatten());
     let value = RwSignal::new(saved.unwrap_or_else(|| "system".into()));
     let preferences = context().preferences;
-    let pref_appearance = Memo::new(move |_| preferences.value.with(|p| p.as_ref().map(|p| p.appearance.clone().unwrap_or_else(|| "system".into()))));
+    let pref_appearance = Memo::new(move |_| {
+        preferences.value.with(|p| {
+            p.as_ref()
+                .map(|p| p.appearance.clone().unwrap_or_else(|| "system".into()))
+        })
+    });
     Effect::new(move |_| {
         if let Some(next) = pref_appearance.get() {
             if let Some(s) = window().local_storage().ok().flatten() {
@@ -153,14 +184,28 @@ fn use_appearance(session: &BrowserSession) {
     });
     Effect::new(move |_| apply_theme(Some(value.get())));
     if let Ok(Some(media)) = window().match_media("(prefers-color-scheme: dark)") {
-        listen(&media, "change", false, move |_| apply_theme(Some(value.get_untracked())));
+        listen(&media, "change", false, move |_| {
+            apply_theme(Some(value.get_untracked()))
+        });
     }
 }
 
 fn apply_theme(value: Option<String>) {
     let value = value.unwrap_or_else(|| "system".into());
-    let dark = window().match_media("(prefers-color-scheme: dark)").ok().flatten().is_some_and(|m| m.matches());
-    let theme = if value == "system" { if dark { "mocha".to_owned() } else { "latte".to_owned() } } else { value };
+    let dark = window()
+        .match_media("(prefers-color-scheme: dark)")
+        .ok()
+        .flatten()
+        .is_some_and(|m| m.matches());
+    let theme = if value == "system" {
+        if dark {
+            "mocha".to_owned()
+        } else {
+            "latte".to_owned()
+        }
+    } else {
+        value
+    };
     if let Some(root) = window().document().and_then(|d| d.document_element()) {
         let _ = root.set_attribute("data-theme", &theme);
     }
@@ -190,7 +235,12 @@ fn Auth(initialized: bool, on_login: Callback<BrowserSession>) -> impl IntoView 
     });
     let submit = move |event: web_sys::SubmitEvent| {
         event.prevent_default();
-        let Some(form) = event.target().and_then(|t| t.dyn_into::<web_sys::HtmlFormElement>().ok()) else { return };
+        let Some(form) = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::HtmlFormElement>().ok())
+        else {
+            return;
+        };
         let data = web_sys::FormData::new_with_form(&form).expect("form data");
         let mut body = serde_json::Map::new();
         for name in ["displayName", "username", "password", "bootstrapToken"] {
@@ -201,9 +251,23 @@ fn Auth(initialized: bool, on_login: Callback<BrowserSession>) -> impl IntoView 
         busy.set(true);
         error.set(String::new());
         spawn_local(async move {
-            let url = format!("/api/v1/auth/{}", if initialized { "login" } else { "setup" });
-            match api::request::<BrowserSession>(&url, Req { method: "POST", body: Some(serde_json::Value::Object(body).to_string()), ..Default::default() }).await {
-                Ok(session) => { on_login.try_run(session); },
+            let url = format!(
+                "/api/v1/auth/{}",
+                if initialized { "login" } else { "setup" }
+            );
+            match api::request::<BrowserSession>(
+                &url,
+                Req {
+                    method: "POST",
+                    body: Some(serde_json::Value::Object(body).to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(session) => {
+                    on_login.try_run(session);
+                }
                 Err(e) => error.set(e.message),
             }
             busy.set(false);
@@ -236,13 +300,19 @@ fn Auth(initialized: bool, on_login: Callback<BrowserSession>) -> impl IntoView 
 
 /// Notes, Tasks and the optional apps open unless an administrator disabled them (`OptionalWorkspace`).
 #[component]
-fn OptionalWorkspace(kind: String, session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoView {
+fn OptionalWorkspace(
+    kind: String,
+    session: BrowserSession,
+    on_signed_out: Callback<()>,
+) -> impl IntoView {
     let settings = context().app_settings;
     let kind = StoredValue::new(kind);
     let session = StoredValue::new(session);
     let enabled = Memo::new(move |_| {
         let kind = kind.get_value();
-        settings.value.with(|s| s.as_ref().map(|s| !s.disabled.contains(&kind)))
+        settings
+            .value
+            .with(|s| s.as_ref().map(|s| !s.disabled.contains(&kind)))
     });
     move || {
         let kind = kind.get_value();

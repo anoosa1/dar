@@ -32,7 +32,14 @@ impl<T: Send + Sync + 'static> Copy for Shared<T> {}
 impl<T: DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> Shared<T> {
     /// Fetches now, again on each of `events`, and on focus once stale.
     pub fn new(url: &'static str, events: &'static [&'static str]) -> Self {
-        let shared = Self { value: RwSignal::new(None), error: RwSignal::new(String::new()), url, sequence: RwSignal::new(0), fetched_at: RwSignal::new(0.0), received_at: RwSignal::new(0.0) };
+        let shared = Self {
+            value: RwSignal::new(None),
+            error: RwSignal::new(String::new()),
+            url,
+            sequence: RwSignal::new(0),
+            fetched_at: RwSignal::new(0.0),
+            received_at: RwSignal::new(0.0),
+        };
         for name in events {
             listen(&window(), name, false, move |_| shared.refresh());
         }
@@ -57,7 +64,10 @@ impl<T: DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> Shared<T> 
             match result {
                 Ok(value) => {
                     self.received_at.set(js_sys::Date::now());
-                    if self.value.with_untracked(|cur| cur.as_ref() != Some(&value)) {
+                    if self
+                        .value
+                        .with_untracked(|cur| cur.as_ref() != Some(&value))
+                    {
                         self.value.set(Some(value));
                     }
                     if !self.error.with_untracked(String::is_empty) {
@@ -71,7 +81,11 @@ impl<T: DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> Shared<T> 
 
     /// Milliseconds since the latest value arrived.
     pub fn age(self) -> f64 {
-        if self.value.with_untracked(Option::is_none) { f64::INFINITY } else { js_sys::Date::now() - self.received_at.get_untracked() }
+        if self.value.with_untracked(Option::is_none) {
+            f64::INFINITY
+        } else {
+            js_sys::Date::now() - self.received_at.get_untracked()
+        }
     }
 }
 
@@ -144,9 +158,23 @@ pub fn context() -> Context {
 }
 
 /// Saves a partial preference update at `revision`; the server merges it.
-pub async fn save_preferences(value: serde_json::Value, revision: u64, session: &BrowserSession) -> Result<Preferences, RequestError> {
+pub async fn save_preferences(
+    value: serde_json::Value,
+    revision: u64,
+    session: &BrowserSession,
+) -> Result<Preferences, RequestError> {
     let tag = format!("\"preferences:{revision}\"");
-    let result = api::request::<Preferences>(PREFERENCES, Req { method: "PUT", body: Some(value.to_string()), csrf: Some(&session.csrf_token), headers: &[("if-match", &tag)], ..Default::default() }).await?;
+    let result = api::request::<Preferences>(
+        PREFERENCES,
+        Req {
+            method: "PUT",
+            body: Some(value.to_string()),
+            csrf: Some(&session.csrf_token),
+            headers: &[("if-match", &tag)],
+            ..Default::default()
+        },
+    )
+    .await?;
     let _ = window().dispatch_event(&web_sys::Event::new("dar:preferences").expect("event"));
     Ok(result)
 }

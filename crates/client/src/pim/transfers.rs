@@ -18,9 +18,21 @@ struct List {
 #[component]
 pub fn CollectionTransfers(session: BrowserSession, app: &'static str) -> impl IntoView {
     let (endpoint, noun, plural, format, accept) = if app == "contacts" {
-        ("/api/v1/contacts/books", "Address book", "address books", "vCard", ".vcf,text/vcard")
+        (
+            "/api/v1/contacts/books",
+            "Address book",
+            "address books",
+            "vCard",
+            ".vcf,text/vcard",
+        )
     } else {
-        ("/api/v1/calendar/calendars", "Calendar", "calendars", "ICS", ".ics,text/calendar")
+        (
+            "/api/v1/calendar/calendars",
+            "Calendar",
+            "calendars",
+            "ICS",
+            ".ics,text/calendar",
+        )
     };
     let collections: RwSignal<Vec<Collection>> = RwSignal::new(Vec::new());
     let selected = RwSignal::new(String::new());
@@ -41,11 +53,18 @@ pub fn CollectionTransfers(session: BrowserSession, app: &'static str) -> impl I
         }
         loaded.set(true);
     });
-    let collection = Memo::new(move |_| collections.with(|c| c.iter().find(|x| x.id == selected.get()).cloned()));
+    let collection = Memo::new(move |_| {
+        collections.with(|c| c.iter().find(|x| x.id == selected.get()).cloned())
+    });
     let read_only = move || collection.with(|c| c.as_ref().is_some_and(|c| c.role == "read"));
     let import = move || {
-        let Some(c) = collection.get_untracked() else { return };
-        let source = file.get_untracked().and_then(|f| f.files()).and_then(|l| l.item(0));
+        let Some(c) = collection.get_untracked() else {
+            return;
+        };
+        let source = file
+            .get_untracked()
+            .and_then(|f| f.files())
+            .and_then(|l| l.item(0));
         let pasted = content.get_untracked();
         if source.is_none() && pasted.is_empty() {
             return;
@@ -62,10 +81,22 @@ pub fn CollectionTransfers(session: BrowserSession, app: &'static str) -> impl I
                     return Err("Import exceeds 2 MiB.".to_owned());
                 }
                 let value = match &source {
-                    Some(f) => wasm_bindgen_futures::JsFuture::from(f.text()).await.ok().and_then(|v| v.as_string()).unwrap_or_default(),
+                    Some(f) => wasm_bindgen_futures::JsFuture::from(f.text())
+                        .await
+                        .ok()
+                        .and_then(|v| v.as_string())
+                        .unwrap_or_default(),
                     None => pasted,
                 };
-                let result: Value = send(&format!("{endpoint}/{}/import", c.id), "POST", Some(json!({ "content": value })), &csrf.get_value(), None).await.map_err(|e| e.message)?;
+                let result: Value = send(
+                    &format!("{endpoint}/{}/import", c.id),
+                    "POST",
+                    Some(json!({ "content": value })),
+                    &csrf.get_value(),
+                    None,
+                )
+                .await
+                .map_err(|e| e.message)?;
                 Ok(result["items"].as_array().cloned().unwrap_or_default())
             }
             .await;

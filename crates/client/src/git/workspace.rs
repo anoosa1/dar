@@ -210,7 +210,9 @@ fn read_state() -> InitialState {
     let search = window().location().search().unwrap_or_default();
     let params = web_sys::UrlSearchParams::new_with_str(&search).ok();
     let get = |key: &str| params.as_ref().and_then(|p| p.get(key));
-    let view = get("view").map(|v| View::from_str(&v)).unwrap_or(View::Overview);
+    let view = get("view")
+        .map(|v| View::from_str(&v))
+        .unwrap_or(View::Overview);
     let tab = get("tab").map(|v| Tab::from_str(&v)).unwrap_or(Tab::Code);
     let issue = get("issue").and_then(|raw| {
         if !raw.is_empty()
@@ -291,7 +293,10 @@ pub fn GitWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> imp
             let check = signal.clone();
             let result = api::request::<Vec<GitRepository>>(
                 &format!("{API}/repositories"),
-                Req { signal, ..Default::default() },
+                Req {
+                    signal,
+                    ..Default::default()
+                },
             )
             .await;
             if load_seq.try_get_untracked() != Some(seq)
@@ -363,7 +368,11 @@ pub fn GitWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> imp
         let id = current.id;
         let handle = set_timeout_with_handle(
             move || {
-                if notice.try_get_untracked().flatten().is_some_and(|n| n.id == id) {
+                if notice
+                    .try_get_untracked()
+                    .flatten()
+                    .is_some_and(|n| n.id == id)
+                {
                     let _ = notice.try_set(None);
                 }
             },
@@ -377,7 +386,10 @@ pub fn GitWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> imp
     let notify = Callback::new(move |text: String| {
         let next_id = notice_seq.get_untracked() + 1;
         notice_seq.set(next_id);
-        notice.set(Some(Notice { id: next_id, message: text }));
+        notice.set(Some(Notice {
+            id: next_id,
+            message: text,
+        }));
     });
 
     let open_repo = Callback::new(move |(id, next_tab): (String, Tab)| {
@@ -422,9 +434,12 @@ pub fn GitWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> imp
     // tracker change reloads the list (open issue counts, `updatedAt`), which must not rebuild
     // an open conversation or form and lose its draft. The sheet's content follows
     // `tracker_version` and the repository's revision instead.
-    let current_repo_id = Memo::new(move |_| current_repo.with(|r| r.as_ref().map(|r| r.id.clone())));
-    let repo_revision = Memo::new(move |_| current_repo.with(|r| r.as_ref().map_or(0, |r| r.revision)));
-    let issue_version = Signal::derive(move || tracker_version.get().wrapping_add(repo_revision.get()));
+    let current_repo_id =
+        Memo::new(move |_| current_repo.with(|r| r.as_ref().map(|r| r.id.clone())));
+    let repo_revision =
+        Memo::new(move |_| current_repo.with(|r| r.as_ref().map_or(0, |r| r.revision)));
+    let issue_version =
+        Signal::derive(move || tracker_version.get().wrapping_add(repo_revision.get()));
     let has_details = Memo::new(move |_| current_repo.get().is_some() && sheet.get().is_some());
     let session_sv = StoredValue::new(session.clone());
     let username = session.user.username.clone();
@@ -806,7 +821,10 @@ pub fn GitWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> imp
 }
 
 #[component]
-fn RepoMark(#[prop(into)] name: String, #[prop(optional, into)] size: &'static str) -> impl IntoView {
+fn RepoMark(
+    #[prop(into)] name: String,
+    #[prop(optional, into)] size: &'static str,
+) -> impl IntoView {
     let initial = name
         .chars()
         .next()
@@ -853,7 +871,10 @@ fn Refs(refs: Vec<GitRef>) -> impl IntoView {
 
 #[component]
 fn Overview(repos: Vec<GitRepository>, on_open: Callback<String>) -> impl IntoView {
-    let activity = use_load::<GitActivity>(Signal::derive(move || Some(format!("{API}/activity"))), Signal::derive(|| 0u64));
+    let activity = use_load::<GitActivity>(
+        Signal::derive(move || Some(format!("{API}/activity"))),
+        Signal::derive(|| 0u64),
+    );
     let repo_count = repos.len();
     view! {
         <div class="git-scroll git-overview">
@@ -1010,7 +1031,8 @@ fn Heatmap(times: Vec<f64>, repos: usize) -> impl IntoView {
     let mut cells: Vec<HeatCell> = Vec::with_capacity(53 * 7);
     let mut months: Vec<String> = Vec::with_capacity(53);
     for step in 0..(53 * 7) {
-        let day = Date::new_with_year_month_day(first_year, first_month, first_day_offset + step as i32);
+        let day =
+            Date::new_with_year_month_day(first_year, first_month, first_day_offset + step as i32);
         let ms = day.get_time();
         let count = counts.get(&(ms as i64)).copied().unwrap_or(0);
         cells.push(HeatCell {
@@ -1144,7 +1166,8 @@ fn RepositoryList(repos: Vec<GitRepository>, on_open: Callback<String>) -> impl 
 
 #[component]
 fn AgentBranches(repos: Vec<GitRepository>, on_open: Callback<String>) -> impl IntoView {
-    let with_branches: Vec<GitRepository> = repos.into_iter().filter(|r| r.agent_branches > 0).collect();
+    let with_branches: Vec<GitRepository> =
+        repos.into_iter().filter(|r| r.agent_branches > 0).collect();
     let with_branches_sv = StoredValue::new(with_branches);
     let rows: RwSignal<Option<Vec<(GitRepository, GitAgentBranch)>>> = RwSignal::new(None);
     let error = RwSignal::new(String::new());
@@ -1166,7 +1189,10 @@ fn AgentBranches(repos: Vec<GitRepository>, on_open: Callback<String>) -> impl I
             for repo in list {
                 let res = api::request::<GitBranches>(
                     &format!("{}/branches", repo_api(&repo.id)),
-                    Req { signal: signal.clone(), ..Default::default() },
+                    Req {
+                        signal: signal.clone(),
+                        ..Default::default()
+                    },
                 )
                 .await;
                 match res {
@@ -1285,11 +1311,17 @@ fn Repository(
             let tags_url = format!("{}/tags", repo_api(&id));
             let branches_fut = api::request::<GitBranches>(
                 &branches_url,
-                Req { signal: signal.clone(), ..Default::default() },
+                Req {
+                    signal: signal.clone(),
+                    ..Default::default()
+                },
             );
             let tags_fut = api::request::<Vec<GitTag>>(
                 &tags_url,
-                Req { signal, ..Default::default() },
+                Req {
+                    signal,
+                    ..Default::default()
+                },
             );
             match futures::try_join!(branches_fut, tags_fut) {
                 Ok((branches, tags)) => {
@@ -1309,16 +1341,20 @@ fn Repository(
 
     let changed = Callback::new(move |_| {
         version.update(|n| *n += 1);
-        { on_changed.try_run(()); };
+        {
+            on_changed.try_run(());
+        };
     });
 
     let pull_from = Callback::new(move |head: String| {
-        { on_edit.try_run(IssueEditing::Issue {
-            kind: "pull".to_owned(),
-            issue: None,
-            base: Some("main".to_owned()),
-            head: Some(head),
-        }); };
+        {
+            on_edit.try_run(IssueEditing::Issue {
+                kind: "pull".to_owned(),
+                issue: None,
+                base: Some("main".to_owned()),
+                head: Some(head),
+            });
+        };
     });
 
     let more_actions = Callback::new(move |_| {
@@ -1581,10 +1617,17 @@ fn DeleteRef(
     } else if target.commits.unwrap_or(0) > 0 {
         format!(
             "{} only on {name}. They are removed from Dar and their storage is released. Clones that already have them keep them.",
-            plural(target.commits.unwrap_or(0), "commit is", Some("commits are"))
+            plural(
+                target.commits.unwrap_or(0),
+                "commit is",
+                Some("commits are")
+            )
         )
     } else {
-        format!("{name} is removed from {}. Its commits are also on main, so nothing else changes.", repo.name)
+        format!(
+            "{name} is removed from {}. Its commits are also on main, so nothing else changes.",
+            repo.name
+        )
     };
     let repo_id = repo.id.clone();
     let full_name = target.name.clone();
@@ -1651,9 +1694,15 @@ fn CloneMenu(
             let _ = html.focus();
         }
         listen(&document(), "pointerdown", false, move |event| {
-            let target = event.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok());
-            let in_panel = panel.get_untracked().is_some_and(|p| p.contains(target.as_ref()));
-            let in_trigger = trigger.get_untracked().is_some_and(|t| t.contains(target.as_ref()));
+            let target = event
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Node>().ok());
+            let in_panel = panel
+                .get_untracked()
+                .is_some_and(|p| p.contains(target.as_ref()));
+            let in_trigger = trigger
+                .get_untracked()
+                .is_some_and(|t| t.contains(target.as_ref()));
             if !in_panel && !in_trigger {
                 open.set(false);
             }
@@ -1825,7 +1874,11 @@ fn RefPicker(
     let display_value = Signal::derive(move || {
         let v = value.get();
         if v.is_empty() {
-            if all { "all".to_owned() } else { "main".to_owned() }
+            if all {
+                "all".to_owned()
+            } else {
+                "main".to_owned()
+            }
         } else {
             v
         }
@@ -1879,7 +1932,11 @@ fn Code(
         let r = repo.get();
         let _rev = r.revision;
         let current_ref = git_ref.get();
-        let ref_val = if current_ref.is_empty() { "main" } else { current_ref.as_str() };
+        let ref_val = if current_ref.is_empty() {
+            "main"
+        } else {
+            current_ref.as_str()
+        };
         Some(format!(
             "{}/commits?{}",
             repo_api(&r.id),
@@ -1887,8 +1944,14 @@ fn Code(
         ))
     });
 
-    let tree = use_load::<GitTree>(tree_url, Signal::derive(move || repo.with(|r| r.revision as u64)));
-    let latest = use_load::<GitCommitPage>(latest_url, Signal::derive(move || repo.with(|r| r.revision as u64)));
+    let tree = use_load::<GitTree>(
+        tree_url,
+        Signal::derive(move || repo.with(|r| r.revision as u64)),
+    );
+    let latest = use_load::<GitCommitPage>(
+        latest_url,
+        Signal::derive(move || repo.with(|r| r.revision as u64)),
+    );
 
     view! {
         {move || {
@@ -2102,7 +2165,13 @@ fn Commits(
         .ok()
         .flatten()
         .and_then(|s| s.get_item("dar.git.commits").ok().flatten())
-        .map(|v| if v == "list" { "list".to_owned() } else { "graph".to_owned() })
+        .map(|v| {
+            if v == "list" {
+                "list".to_owned()
+            } else {
+                "graph".to_owned()
+            }
+        })
         .unwrap_or_else(|| "graph".to_owned());
     let mode = RwSignal::new(initial_mode);
     let pages: RwSignal<Vec<GitCommitPage>> = RwSignal::new(Vec::new());
@@ -2153,7 +2222,14 @@ fn Commits(
         }
         spawn_local(async move {
             let check = signal.clone();
-            let res = api::request::<GitCommitPage>(&url, Req { signal, ..Default::default() }).await;
+            let res = api::request::<GitCommitPage>(
+                &url,
+                Req {
+                    signal,
+                    ..Default::default()
+                },
+            )
+            .await;
             if check.as_ref().is_some_and(|s| s.aborted()) {
                 return;
             }
@@ -2750,7 +2826,10 @@ fn CommitSheet(
     notify: Callback<String>,
 ) -> impl IntoView {
     let url = format!("{}/commits/{sha}", repo_api(&repo.id));
-    let load = use_load::<GitCommitDetail>(Signal::derive(move || Some(url.clone())), Signal::derive(|| 0u64));
+    let load = use_load::<GitCommitDetail>(
+        Signal::derive(move || Some(url.clone())),
+        Signal::derive(|| 0u64),
+    );
     let wrap = RwSignal::new(false);
     let restoring = RwSignal::new(false);
     let root = NodeRef::<html::Div>::new();
@@ -2942,7 +3021,10 @@ fn RestoreFolder(
 ) -> impl IntoView {
     let busy = RwSignal::new(false);
     let error = RwSignal::new(String::new());
-    let restore = commit.restore.clone().expect("RestoreFolder requires restore metadata");
+    let restore = commit
+        .restore
+        .clone()
+        .expect("RestoreFolder requires restore metadata");
     let repo_id = repo.id.clone();
     let csrf = session.csrf_token.clone();
 
@@ -3009,8 +3091,14 @@ fn CompareSheet(
         query_string(&[("base", base.as_str()), ("head", head.as_str())])
     );
     let branches_url = format!("{}/branches", repo_api(&repo.id));
-    let compare = use_load::<GitCompare>(Signal::derive(move || Some(compare_url.clone())), Signal::derive(|| 0u64));
-    let lists = use_load::<GitBranches>(Signal::derive(move || Some(branches_url.clone())), Signal::derive(|| 0u64));
+    let compare = use_load::<GitCompare>(
+        Signal::derive(move || Some(compare_url.clone())),
+        Signal::derive(|| 0u64),
+    );
+    let lists = use_load::<GitBranches>(
+        Signal::derive(move || Some(branches_url.clone())),
+        Signal::derive(|| 0u64),
+    );
     let root = NodeRef::<html::Div>::new();
     focus_sheet(root);
 
@@ -3038,7 +3126,10 @@ fn CompareSheet(
                 }
             }
         }
-        names.into_iter().map(|n| (n.clone(), n)).collect::<Vec<_>>()
+        names
+            .into_iter()
+            .map(|n| (n.clone(), n))
+            .collect::<Vec<_>>()
     });
 
     view! {
@@ -3225,13 +3316,14 @@ fn FileSheet(
             if signal.as_ref().is_some_and(|s| s.aborted()) {
                 return;
             }
-            let response: web_sys::Response = match fetched.and_then(|v| v.dyn_into::<web_sys::Response>()) {
-                Ok(r) => r,
-                Err(_) => {
-                    let _ = error.try_set("This file could not be loaded.".to_owned());
-                    return;
-                }
-            };
+            let response: web_sys::Response =
+                match fetched.and_then(|v| v.dyn_into::<web_sys::Response>()) {
+                    Ok(r) => r,
+                    Err(_) => {
+                        let _ = error.try_set("This file could not be loaded.".to_owned());
+                        return;
+                    }
+                };
             if !response.ok() {
                 let _ = error.try_set("This file could not be loaded.".to_owned());
                 return;
@@ -3266,7 +3358,11 @@ fn FileSheet(
     let name_md = is_markdown_path(&name);
     let name_contents = format!("Contents of {name}");
     let download_label = format!("Download {name}");
-    let ref_display = if git_ref.len() == 40 { short(&git_ref) } else { git_ref };
+    let ref_display = if git_ref.len() == 40 {
+        short(&git_ref)
+    } else {
+        git_ref
+    };
     let subtitle = format!("{path} \u{00b7} {ref_display}");
 
     view! {
@@ -3314,7 +3410,8 @@ struct UploadReservation {
 async fn track_folder(folder_id: &str, csrf: &str) -> Result<(), String> {
     let init = web_sys::RequestInit::new();
     init.set_method("POST");
-    let headers = web_sys::Headers::new().map_err(|_| "History could not be turned on for this folder.".to_owned())?;
+    let headers = web_sys::Headers::new()
+        .map_err(|_| "History could not be turned on for this folder.".to_owned())?;
     let _ = headers.set("content-type", "application/json");
     let _ = headers.set("x-csrf-token", csrf);
     init.set_headers(&headers);
@@ -3330,7 +3427,11 @@ async fn track_folder(folder_id: &str, csrf: &str) -> Result<(), String> {
         return Ok(());
     }
     let text = match resp.text().map(JsFuture::from) {
-        Ok(fut) => fut.await.ok().and_then(|v| v.as_string()).unwrap_or_default(),
+        Ok(fut) => fut
+            .await
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default(),
         Err(_) => String::new(),
     };
     if text.contains("quotaExceeded") {
@@ -3436,19 +3537,19 @@ fn NewRepository(
                     init.set_headers(&headers);
                     init.set_body(&JsValue::from_str(&text));
                     let put_url = format!("/api/v1/files/uploads/{}", reservation.id);
-                    let put_resp: web_sys::Response = JsFuture::from(
-                        window().fetch_with_str_and_init(&put_url, &init),
-                    )
-                    .await
-                    .and_then(|v| v.dyn_into::<web_sys::Response>())
-                    .map_err(|_| "The README could not be added.".to_owned())?;
+                    let put_resp: web_sys::Response =
+                        JsFuture::from(window().fetch_with_str_and_init(&put_url, &init))
+                            .await
+                            .and_then(|v| v.dyn_into::<web_sys::Response>())
+                            .map_err(|_| "The README could not be added.".to_owned())?;
                     if !put_resp.ok() {
                         return Err("The README could not be added.".to_owned());
                     }
 
-                    let status = api::get::<HistoryOverview>(&format!("/api/v1/files/history/{id}"))
-                        .await
-                        .map_err(|e| e.message)?;
+                    let status =
+                        api::get::<HistoryOverview>(&format!("/api/v1/files/history/{id}"))
+                            .await
+                            .map_err(|e| e.message)?;
                     let status_token = status
                         .status
                         .map(|s| s.token)
@@ -3468,7 +3569,9 @@ fn NewRepository(
             .await;
 
             match result {
-                Ok(id) => { on_created.try_run(id); },
+                Ok(id) => {
+                    on_created.try_run(id);
+                }
                 Err(msg) => {
                     let _ = error.try_set(msg);
                     let _ = busy.try_set(false);

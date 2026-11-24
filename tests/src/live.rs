@@ -11,7 +11,7 @@
 use crate::session::Session;
 use crate::{Error, Result};
 use dar_bindings::{DbConnection, ProcedureEventContext, ReducerEventContext};
-use spacetimedb_sdk::{DbContext as _, __codegen::InternalError};
+use spacetimedb_sdk::{__codegen::InternalError, DbContext as _};
 use std::ops::Deref;
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -40,13 +40,27 @@ impl Live {
         let connected = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
         let failed = connected.clone();
         let connection = tokio::task::block_in_place(|| {
-            DbConnection::builder().with_uri(uri).with_database_name(name).with_token(Some(token))
-                .on_connect(move |_, _, _| { if let Some(s) = connected.lock().unwrap().take() { let _ = s.send(Ok(())); } })
-                .on_connect_error(move |_, error| { if let Some(s) = failed.lock().unwrap().take() { let _ = s.send(Err(Error::new(error.to_string()))); } })
+            DbConnection::builder()
+                .with_uri(uri)
+                .with_database_name(name)
+                .with_token(Some(token))
+                .on_connect(move |_, _, _| {
+                    if let Some(s) = connected.lock().unwrap().take() {
+                        let _ = s.send(Ok(()));
+                    }
+                })
+                .on_connect_error(move |_, error| {
+                    if let Some(s) = failed.lock().unwrap().take() {
+                        let _ = s.send(Err(Error::new(error.to_string())));
+                    }
+                })
                 .build()
-        }).map_err(|error| Error::new(format!("connecting to SpacetimeDB: {error}")))?;
+        })
+        .map_err(|error| Error::new(format!("connecting to SpacetimeDB: {error}")))?;
         connection.run_threaded();
-        tokio::time::timeout(CALL_TIMEOUT, on_connect).await.map_err(|_| Error::new("SpacetimeDB did not accept the connection in time"))?
+        tokio::time::timeout(CALL_TIMEOUT, on_connect)
+            .await
+            .map_err(|_| Error::new("SpacetimeDB did not accept the connection in time"))?
             .map_err(|_| Error::new("the connection closed before it was accepted"))??;
         let live = Live { connection };
         live.subscribe(queries).await?;
@@ -61,11 +75,22 @@ impl Live {
         let (sender, receiver) = oneshot::channel::<Result<()>>();
         let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
         let on_error = sender.clone();
-        self.connection.subscription_builder()
-            .on_applied(move |_| { if let Some(s) = sender.lock().unwrap().take() { let _ = s.send(Ok(())); } })
-            .on_error(move |_, error| { if let Some(s) = on_error.lock().unwrap().take() { let _ = s.send(Err(Error::new(error.to_string()))); } })
+        self.connection
+            .subscription_builder()
+            .on_applied(move |_| {
+                if let Some(s) = sender.lock().unwrap().take() {
+                    let _ = s.send(Ok(()));
+                }
+            })
+            .on_error(move |_, error| {
+                if let Some(s) = on_error.lock().unwrap().take() {
+                    let _ = s.send(Err(Error::new(error.to_string())));
+                }
+            })
             .subscribe(queries.iter().map(|q| q.to_string()).collect::<Vec<_>>());
-        tokio::time::timeout(CALL_TIMEOUT, receiver).await.map_err(|_| Error::new(format!("subscribing to {queries:?} timed out")))?
+        tokio::time::timeout(CALL_TIMEOUT, receiver)
+            .await
+            .map_err(|_| Error::new(format!("subscribing to {queries:?} timed out")))?
             .map_err(|_| Error::new("the subscription was dropped"))?
     }
 
@@ -81,15 +106,27 @@ impl Drop for Live {
 }
 
 /// The callback a `*_then` reducer call takes; [`reducer`] makes one for you.
-pub type Reply = Box<dyn FnOnce(&ReducerEventContext, std::result::Result<std::result::Result<(), String>, InternalError>) + Send + 'static>;
+pub type Reply = Box<
+    dyn FnOnce(
+            &ReducerEventContext,
+            std::result::Result<std::result::Result<(), String>, InternalError>,
+        ) + Send
+        + 'static,
+>;
 
 /// Calls a reducer and waits for its outcome: `Err` with the reducer's message (and the
 /// caller's line) when it failed.
 #[track_caller]
-pub fn reducer(invoke: impl FnOnce(Reply) -> spacetimedb_sdk::Result<()>) -> impl std::future::Future<Output = Result<()>> {
+pub fn reducer(
+    invoke: impl FnOnce(Reply) -> spacetimedb_sdk::Result<()>,
+) -> impl std::future::Future<Output = Result<()>> {
     let location = std::panic::Location::caller();
     let outcome = call_reducer(invoke);
-    async move { outcome.await.map_err(|error| error.context(format!("reducer at {location}"))) }
+    async move {
+        outcome
+            .await
+            .map_err(|error| error.context(format!("reducer at {location}")))
+    }
 }
 
 async fn call_reducer(invoke: impl FnOnce(Reply) -> spacetimedb_sdk::Result<()>) -> Result<()> {
@@ -100,20 +137,32 @@ async fn call_reducer(invoke: impl FnOnce(Reply) -> spacetimedb_sdk::Result<()>)
             Ok(Err(message)) => Err(Error::new(message)),
             Err(error) => Err(Error::new(error.to_string())),
         });
-    })).map_err(|error| Error::new(format!("calling the reducer: {error}")))?;
-    tokio::time::timeout(CALL_TIMEOUT, receiver).await.map_err(|_| Error::new("the reducer did not answer in time"))?.map_err(|_| Error::new("the connection closed"))?
+    }))
+    .map_err(|error| Error::new(format!("calling the reducer: {error}")))?;
+    tokio::time::timeout(CALL_TIMEOUT, receiver)
+        .await
+        .map_err(|_| Error::new("the reducer did not answer in time"))?
+        .map_err(|_| Error::new("the connection closed"))?
 }
 
 /// The callback a `*_then` procedure call takes; [`procedure`] makes one for you.
-pub type Answer = Box<dyn FnOnce(&ProcedureEventContext, std::result::Result<String, InternalError>) + Send + 'static>;
+pub type Answer = Box<
+    dyn FnOnce(&ProcedureEventContext, std::result::Result<String, InternalError>) + Send + 'static,
+>;
 
 /// Calls a procedure returning JSON text and parses it. A Rust procedure reports errors in-band
 /// as `{"error":{"code":…}}`, which becomes `Err` with the code (and the caller's line).
 #[track_caller]
-pub fn procedure(invoke: impl FnOnce(Answer)) -> impl std::future::Future<Output = Result<serde_json::Value>> {
+pub fn procedure(
+    invoke: impl FnOnce(Answer),
+) -> impl std::future::Future<Output = Result<serde_json::Value>> {
     let location = std::panic::Location::caller();
     let outcome = call_procedure(invoke);
-    async move { outcome.await.map_err(|error| error.context(format!("procedure at {location}"))) }
+    async move {
+        outcome
+            .await
+            .map_err(|error| error.context(format!("procedure at {location}")))
+    }
 }
 
 async fn call_procedure(invoke: impl FnOnce(Answer)) -> Result<serde_json::Value> {
@@ -121,9 +170,17 @@ async fn call_procedure(invoke: impl FnOnce(Answer)) -> Result<serde_json::Value
     invoke(Box::new(move |_, outcome| {
         let _ = sender.send(outcome.map_err(|error| Error::new(error.to_string())));
     }));
-    let text = tokio::time::timeout(CALL_TIMEOUT, receiver).await.map_err(|_| Error::new("the procedure did not answer in time"))?.map_err(|_| Error::new("the connection closed"))??;
-    let value: serde_json::Value = serde_json::from_str(&text).map_err(|error| Error::new(format!("procedure result is not JSON ({error}): {text}")))?;
-    if let Some(code) = value.get("error").and_then(|e| e.get("code")).and_then(|c| c.as_str()) {
+    let text = tokio::time::timeout(CALL_TIMEOUT, receiver)
+        .await
+        .map_err(|_| Error::new("the procedure did not answer in time"))?
+        .map_err(|_| Error::new("the connection closed"))??;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|error| Error::new(format!("procedure result is not JSON ({error}): {text}")))?;
+    if let Some(code) = value
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_str())
+    {
         return Err(Error::new(code.to_owned()));
     }
     Ok(value)

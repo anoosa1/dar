@@ -22,21 +22,39 @@ use crate::root::{RootLock, create_durable_file, libc_nofollow, open_root, sync_
 type Outcome = Result<String, String>;
 
 const SNAPSHOT_FORMATS: [&str; 12] = [
-    "dar-backup-v1", "dar-backup-v2", "dar-backup-v3", "dar-backup-v4", "dar-backup-v5", "dar-backup-v6",
-    "dar-backup-v7", "dar-backup-v8", "dar-backup-v9", "dar-backup-v10", "dar-backup-v11", "dar-backup-v12",
+    "dar-backup-v1",
+    "dar-backup-v2",
+    "dar-backup-v3",
+    "dar-backup-v4",
+    "dar-backup-v5",
+    "dar-backup-v6",
+    "dar-backup-v7",
+    "dar-backup-v8",
+    "dar-backup-v9",
+    "dar-backup-v10",
+    "dar-backup-v11",
+    "dar-backup-v12",
 ];
 
 fn required(name: &str) -> Result<String, String> {
-    std::env::var(name).ok().filter(|v| !v.is_empty()).ok_or_else(|| format!("{name} is required."))
+    std::env::var(name)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| format!("{name} is required."))
 }
 
 fn database() -> Result<Database, String> {
-    let token = fs::read_to_string(required("DAR_DATABASE_TOKEN_FILE")?).map_err(|e| format!("The database token could not be read: {e}"))?;
+    let token = fs::read_to_string(required("DAR_DATABASE_TOKEN_FILE")?)
+        .map_err(|e| format!("The database token could not be read: {e}"))?;
     let token = token.trim();
     if token.is_empty() {
         return Err("A database service credential is required.".into());
     }
-    Ok(Database::new(&required("DAR_DATABASE_URL")?, &required("DAR_DATABASE_NAME")?, token))
+    Ok(Database::new(
+        &required("DAR_DATABASE_URL")?,
+        &required("DAR_DATABASE_NAME")?,
+        token,
+    ))
 }
 
 async fn call(db: &Database, function: &str, args: Value) -> Result<Value, String> {
@@ -48,16 +66,33 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn private_directory(path: &Path) -> Result<(), String> {
-    fs::DirBuilder::new().mode(0o700).create(path).map_err(|e| format!("{}: {e}", path.display()))
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(path)
+        .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Copies a regular file to a new private file, checking its size and digest when given.
-fn copy_verified(source: &Path, destination: &Path, expected: Option<(u64, &str)>) -> Result<(), String> {
-    let mut input = OpenOptions::new().read(true).custom_flags(libc_nofollow()).open(source).map_err(|e| format!("{}: {e}", source.display()))?;
+fn copy_verified(
+    source: &Path,
+    destination: &Path,
+    expected: Option<(u64, &str)>,
+) -> Result<(), String> {
+    let mut input = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc_nofollow())
+        .open(source)
+        .map_err(|e| format!("{}: {e}", source.display()))?;
     if !input.metadata().map_err(|e| e.to_string())?.is_file() {
         return Err("Backup content is not a regular file.".into());
     }
-    let mut output = OpenOptions::new().write(true).create_new(true).mode(0o600).custom_flags(libc_nofollow()).open(destination).map_err(|e| format!("{}: {e}", destination.display()))?;
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc_nofollow())
+        .open(destination)
+        .map_err(|e| format!("{}: {e}", destination.display()))?;
     let (mut hash, mut size, mut buffer) = (Sha256::new(), 0u64, vec![0u8; 128 * 1024]);
     loop {
         let read = input.read(&mut buffer).map_err(|e| e.to_string())?;
@@ -66,7 +101,9 @@ fn copy_verified(source: &Path, destination: &Path, expected: Option<(u64, &str)
         }
         hash.update(&buffer[..read]);
         size += read as u64;
-        output.write_all(&buffer[..read]).map_err(|e| e.to_string())?;
+        output
+            .write_all(&buffer[..read])
+            .map_err(|e| e.to_string())?;
     }
     if let Some((want_size, want_digest)) = expected
         && (want_size != size || want_digest != hex(&hash.finalize()))
@@ -89,7 +126,13 @@ fn blob_list(snapshot: &Value) -> Result<Vec<(String, u64, String)>, String> {
         .as_array()
         .ok_or("The snapshot lists no content.")?
         .iter()
-        .map(|b| Ok((b["id"].as_str().ok_or("Bad snapshot.")?.to_owned(), b["size"].as_u64().ok_or("Bad snapshot.")?, b["digest"].as_str().ok_or("Bad snapshot.")?.to_owned())))
+        .map(|b| {
+            Ok((
+                b["id"].as_str().ok_or("Bad snapshot.")?.to_owned(),
+                b["size"].as_u64().ok_or("Bad snapshot.")?,
+                b["digest"].as_str().ok_or("Bad snapshot.")?.to_owned(),
+            ))
+        })
         .collect()
 }
 
@@ -102,23 +145,50 @@ async fn backup(db: &Database, root: &Path, destination: &Path) -> Outcome {
     let id = crate::root::uuid();
     private_directory(destination)?;
     let snapshot = call(db, "service_backup", json!([id])).await?;
-    create_durable_file(&destination.join("pending.json"), json!({ "format": "dar-backup-v1", "id": id }).to_string().as_bytes()).map_err(|e| e.to_string())?;
+    create_durable_file(
+        &destination.join("pending.json"),
+        json!({ "format": "dar-backup-v1", "id": id })
+            .to_string()
+            .as_bytes(),
+    )
+    .map_err(|e| e.to_string())?;
     private_directory(&destination.join("blobs"))?;
     let blobs = blob_list(&snapshot)?;
     for (blob, size, digest) in &blobs {
-        copy_verified(&blob_path(root, blob)?, &blob_path(destination, blob)?, Some((*size, digest)))?;
+        copy_verified(
+            &blob_path(root, blob)?,
+            &blob_path(destination, blob)?,
+            Some((*size, digest)),
+        )?;
     }
     let secrets = root.join("secrets");
-    copy_verified(&secrets.join("signing-key.json"), &destination.join("signing-key.json"), None)?;
-    copy_verified(&secrets.join("identity-keyring.key"), &destination.join("identity-keyring.key"), None)?;
+    copy_verified(
+        &secrets.join("signing-key.json"),
+        &destination.join("signing-key.json"),
+        None,
+    )?;
+    copy_verified(
+        &secrets.join("identity-keyring.key"),
+        &destination.join("identity-keyring.key"),
+        None,
+    )?;
     if has_oidc_keyring(snapshot["format"].as_str().unwrap_or_default()) {
-        copy_verified(&secrets.join("oidc-keyring.json"), &destination.join("oidc-keyring.json"), None)?;
+        copy_verified(
+            &secrets.join("oidc-keyring.json"),
+            &destination.join("oidc-keyring.json"),
+            None,
+        )?;
     }
     let text = snapshot.to_string();
-    create_durable_file(&destination.join("snapshot.json"), text.as_bytes()).map_err(|e| e.to_string())?;
+    create_durable_file(&destination.join("snapshot.json"), text.as_bytes())
+        .map_err(|e| e.to_string())?;
     sync_directory(&destination.join("blobs")).map_err(|e| e.to_string())?;
     let complete = json!({ "format": "dar-backup-v1", "snapshotDigest": hex(&Sha256::digest(text.as_bytes())) });
-    create_durable_file(&destination.join("complete.json"), complete.to_string().as_bytes()).map_err(|e| e.to_string())?;
+    create_durable_file(
+        &destination.join("complete.json"),
+        complete.to_string().as_bytes(),
+    )
+    .map_err(|e| e.to_string())?;
     sync_directory(destination).map_err(|e| e.to_string())?;
     sync_directory(destination.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
     // A completed backup owns its copies; a failed one keeps its pins until released.
@@ -134,30 +204,64 @@ async fn restore(db: &Database, source: &Path, root: &Path) -> Outcome {
         }
     }
     let text = fs::read_to_string(source.join("snapshot.json")).map_err(|e| e.to_string())?;
-    let complete: Value = serde_json::from_str(&fs::read_to_string(source.join("complete.json")).map_err(|e| e.to_string())?).map_err(|_| "Incomplete or corrupted backup.")?;
-    if complete["format"] != "dar-backup-v1" || complete["snapshotDigest"].as_str() != Some(hex(&Sha256::digest(text.as_bytes())).as_str()) {
+    let complete: Value = serde_json::from_str(
+        &fs::read_to_string(source.join("complete.json")).map_err(|e| e.to_string())?,
+    )
+    .map_err(|_| "Incomplete or corrupted backup.")?;
+    if complete["format"] != "dar-backup-v1"
+        || complete["snapshotDigest"].as_str()
+            != Some(hex(&Sha256::digest(text.as_bytes())).as_str())
+    {
         return Err("Incomplete or corrupted backup.".into());
     }
-    let snapshot: Value = serde_json::from_str(&text).map_err(|_| "Incomplete or corrupted backup.")?;
+    let snapshot: Value =
+        serde_json::from_str(&text).map_err(|_| "Incomplete or corrupted backup.")?;
     let format = snapshot["format"].as_str().unwrap_or_default();
     if !SNAPSHOT_FORMATS.contains(&format) {
         return Err("Unsupported backup format.".into());
     }
     let root = open_root(root).map_err(|e| e.to_string())?;
     let _lock = RootLock::acquire(&root).map_err(|e| e.to_string())?;
-    let empty = |dir: &str, allowed: &[&str]| fs::read_dir(root.join(dir)).map(|entries| entries.flatten().all(|e| allowed.contains(&e.file_name().to_string_lossy().as_ref()))).unwrap_or(true);
-    if !empty("blobs", &[]) || !empty("agent-workspaces", &[]) || !empty("secrets", &["bootstrap-token", "database-token"]) {
+    let empty = |dir: &str, allowed: &[&str]| {
+        fs::read_dir(root.join(dir))
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .all(|e| allowed.contains(&e.file_name().to_string_lossy().as_ref()))
+            })
+            .unwrap_or(true)
+    };
+    if !empty("blobs", &[])
+        || !empty("agent-workspaces", &[])
+        || !empty("secrets", &["bootstrap-token", "database-token"])
+    {
         return Err("Restore requires an empty content and identity root.".into());
     }
     let blobs = blob_list(&snapshot)?;
     for (blob, size, digest) in &blobs {
-        copy_verified(&blob_path(source, blob)?, &blob_path(&root, blob)?, Some((*size, digest)))?;
+        copy_verified(
+            &blob_path(source, blob)?,
+            &blob_path(&root, blob)?,
+            Some((*size, digest)),
+        )?;
     }
     let secrets = root.join("secrets");
-    copy_verified(&source.join("signing-key.json"), &secrets.join("signing-key.json"), None)?;
-    copy_verified(&source.join("identity-keyring.key"), &secrets.join("identity-keyring.key"), None)?;
+    copy_verified(
+        &source.join("signing-key.json"),
+        &secrets.join("signing-key.json"),
+        None,
+    )?;
+    copy_verified(
+        &source.join("identity-keyring.key"),
+        &secrets.join("identity-keyring.key"),
+        None,
+    )?;
     if has_oidc_keyring(format) {
-        copy_verified(&source.join("oidc-keyring.json"), &secrets.join("oidc-keyring.json"), None)?;
+        copy_verified(
+            &source.join("oidc-keyring.json"),
+            &secrets.join("oidc-keyring.json"),
+            None,
+        )?;
     }
     sync_directory(&root.join("blobs")).map_err(|e| e.to_string())?;
     sync_directory(&secrets).map_err(|e| e.to_string())?;
@@ -177,11 +281,20 @@ async fn export_files(db: &Database, root: &Path, username: &str, destination: &
         for entry in value["files"].as_array().ok_or("Unsafe export metadata.")? {
             let file_id = entry["id"].as_str().unwrap_or_default();
             let name = entry["name"].as_str().unwrap_or_default();
-            if file_id.len() != 36 || !file_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') || name.contains(['\0', '/', '\\']) || name == "." || name == ".." {
+            if file_id.len() != 36
+                || !file_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+                || name.contains(['\0', '/', '\\'])
+                || name == "."
+                || name == ".."
+            {
                 return Err("Unsafe export metadata.".to_owned());
             }
             let mut metadata = entry.clone();
-            let blob_id = metadata.as_object_mut().and_then(|m| m.remove("blobId")).and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
+            let blob_id = metadata
+                .as_object_mut()
+                .and_then(|m| m.remove("blobId"))
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default();
             if entry["kind"] == "file" {
                 let mut short = String::new();
                 for c in name.chars() {
@@ -190,16 +303,39 @@ async fn export_files(db: &Database, root: &Path, username: &str, destination: &
                     }
                     short.push(c);
                 }
-                let extension = if short != name { name.rfind('.').map(|i| &name[i..]).filter(|e| (2..=13).contains(&e.len()) && e[1..].chars().all(|c| c.is_ascii_alphanumeric())).unwrap_or("") } else { "" };
+                let extension = if short != name {
+                    name.rfind('.')
+                        .map(|i| &name[i..])
+                        .filter(|e| {
+                            (2..=13).contains(&e.len())
+                                && e[1..].chars().all(|c| c.is_ascii_alphanumeric())
+                        })
+                        .unwrap_or("")
+                } else {
+                    ""
+                };
                 let content = format!("files/{file_id}-{short}{extension}");
-                let (_, size, digest) = blobs.iter().find(|(b, _, _)| *b == blob_id).ok_or("Unsafe export metadata.")?;
-                copy_verified(&blob_path(root, &blob_id)?, &destination.join(&content), Some((*size, digest)))?;
+                let (_, size, digest) = blobs
+                    .iter()
+                    .find(|(b, _, _)| *b == blob_id)
+                    .ok_or("Unsafe export metadata.")?;
+                copy_verified(
+                    &blob_path(root, &blob_id)?,
+                    &destination.join(&content),
+                    Some((*size, digest)),
+                )?;
                 metadata["contentFile"] = json!(content);
             }
             manifest.push(metadata);
         }
         let document = json!({ "format": "dar-files-export-v1", "exportId": id, "username": value["username"], "exportedAt": chrono_now(), "files": manifest });
-        create_durable_file(&destination.join("manifest.json"), serde_json::to_string_pretty(&document).unwrap_or_default().as_bytes()).map_err(|e| e.to_string())?;
+        create_durable_file(
+            &destination.join("manifest.json"),
+            serde_json::to_string_pretty(&document)
+                .unwrap_or_default()
+                .as_bytes(),
+        )
+        .map_err(|e| e.to_string())?;
         sync_directory(&destination.join("files")).map_err(|e| e.to_string())?;
         sync_directory(destination).map_err(|e| e.to_string())?;
         Ok(json!({ "files": manifest.len() }).to_string())
@@ -214,7 +350,11 @@ fn chrono_now() -> String {
 
 async fn account(db: &Database, username: &str) -> Result<Value, String> {
     let user = call(db, "service_account", json!([username.to_lowercase()])).await?;
-    if user.is_null() { Err("Account not found.".into()) } else { Ok(user) }
+    if user.is_null() {
+        Err("Account not found.".into())
+    } else {
+        Ok(user)
+    }
 }
 
 const USAGE: &str = "Usage: dar-runtime backup|restore <directory>, export-files <username> <directory>, release-backup <id>, enable-user|disable-user <username>, recover-password <username> <protected-password-file>, configure-oidc <file> [optional], deliver-reminders, reconcile-storage or sweep-orphans";
@@ -222,7 +362,19 @@ const USAGE: &str = "Usage: dar-runtime backup|restore <directory>, export-files
 /// Runs an operator command; `None` when `args` names none (the runtime then starts).
 pub async fn run(args: &[String]) -> Option<i32> {
     let name = args.first()?.as_str();
-    let known = ["backup", "restore", "export-files", "release-backup", "enable-user", "disable-user", "recover-password", "deliver-reminders", "reconcile-storage", "sweep-orphans", "configure-oidc"];
+    let known = [
+        "backup",
+        "restore",
+        "export-files",
+        "release-backup",
+        "enable-user",
+        "disable-user",
+        "recover-password",
+        "deliver-reminders",
+        "reconcile-storage",
+        "sweep-orphans",
+        "configure-oidc",
+    ];
     if !known.contains(&name) {
         return None;
     }

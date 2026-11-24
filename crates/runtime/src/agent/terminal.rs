@@ -12,7 +12,9 @@ use serde_json::{Value, json};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-use crate::agent::app_server::{AppServer, AppServerHandlers, Json, RequestFuture, open_app_server};
+use crate::agent::app_server::{
+    AppServer, AppServerHandlers, Json, RequestFuture, open_app_server,
+};
 use crate::agent::codex::CodexConfig;
 use crate::agent::utf16_len;
 use crate::auth::uuid;

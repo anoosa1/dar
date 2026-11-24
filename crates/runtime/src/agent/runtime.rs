@@ -33,12 +33,10 @@ use crate::agent::codex::{
 };
 use crate::agent::discovery::{codex_search_directories, find_codex_executable};
 use crate::agent::terminal::Terminals;
-use crate::agent::workspace::{
-    Source, branch_changes, git, prepare_workspace, scan,
-};
+use crate::agent::workspace::{Source, branch_changes, git, prepare_workspace, scan};
 use crate::agent::{
-    CancelToken, HISTORY_READ_OPERATIONS, active_agent_run, agent_provider_name,
-    agent_provider_of, home_dir, slice_utf16, tail_utf16, utf16_len,
+    CancelToken, HISTORY_READ_OPERATIONS, active_agent_run, agent_provider_name, agent_provider_of,
+    home_dir, slice_utf16, tail_utf16, utf16_len,
 };
 use crate::auth::{is_uuid, uuid};
 use crate::blobs::Blobs;
@@ -219,7 +217,9 @@ struct OrderedMap<V> {
 
 impl<V> Default for OrderedMap<V> {
     fn default() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 }
 
@@ -329,7 +329,9 @@ async fn configuration(filename: &Path, name: &str) -> Result<Option<CodexConfig
             return Err(AppError::with(
                 "codexConfigurationInvalid",
                 503,
-                &format!("{name} configuration is invalid. Ask the administrator to check the executable, {name} home and Dar account ID."),
+                &format!(
+                    "{name} configuration is invalid. Ask the administrator to check the executable, {name} home and Dar account ID."
+                ),
             ));
         }
     };
@@ -337,7 +339,9 @@ async fn configuration(filename: &Path, name: &str) -> Result<Option<CodexConfig
         AppError::with(
             "codexConfigurationInvalid",
             503,
-            &format!("{name} configuration is invalid. Ask the administrator to check the executable, {name} home and Dar account ID."),
+            &format!(
+                "{name} configuration is invalid. Ask the administrator to check the executable, {name} home and Dar account ID."
+            ),
         )
     };
     if !stat.is_file() || stat.file_type().is_symlink() || stat.len() > 16_384 {
@@ -402,7 +406,8 @@ async fn configuration(filename: &Path, name: &str) -> Result<Option<CodexConfig
     }))
 }
 
-type DeliverFn = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>;
+type DeliverFn =
+    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>;
 /// Records (`true`) or forgets (`false`) a steering message in the run's document.
 type SteerFn = Arc<dyn Fn(String, bool) + Send + Sync>;
 
@@ -569,7 +574,9 @@ impl RunDocState {
 
 fn count_u64(value: Option<&Value>) -> u64 {
     match value.and_then(Value::as_f64) {
-        Some(n) if n.is_finite() && n.fract() == 0.0 && n >= 0.0 && n <= 9_007_199_254_740_991.0 => {
+        Some(n)
+            if n.is_finite() && n.fract() == 0.0 && n >= 0.0 && n <= 9_007_199_254_740_991.0 =>
+        {
             n as u64
         }
         _ => 0,
@@ -591,7 +598,11 @@ fn format_messages(items: &[AgentMessageRow]) -> String {
         .map(|m| {
             format!(
                 "{}:\n{}",
-                if m.role == "user" { "User" } else { "Assistant" },
+                if m.role == "user" {
+                    "User"
+                } else {
+                    "Assistant"
+                },
                 m.content
             )
         })
@@ -681,7 +692,10 @@ impl AgentRuntime {
 
     async fn operation(&self, session_id: &str, name: &str, value: Value) -> Result<Value> {
         self.db
-            .call("service_agent", json!([session_id, name, value.to_string()]))
+            .call(
+                "service_agent",
+                json!([session_id, name, value.to_string()]),
+            )
             .await
     }
 
@@ -712,18 +726,19 @@ impl AgentRuntime {
     }
 
     async fn codex_connection(&self, user_id: &str) -> CheckedProvider {
-        let unavailable = |config: Option<CodexConfig>, message: &str, configured: bool| CheckedProvider {
-            config,
-            status: ProviderStatus {
-                id: "codex",
-                name: "Codex",
-                configured,
-                connected: false,
-                commands: None,
-                message: message.to_owned(),
-            },
-            models: Vec::new(),
-        };
+        let unavailable =
+            |config: Option<CodexConfig>, message: &str, configured: bool| CheckedProvider {
+                config,
+                status: ProviderStatus {
+                    id: "codex",
+                    name: "Codex",
+                    configured,
+                    connected: false,
+                    commands: None,
+                    message: message.to_owned(),
+                },
+                models: Vec::new(),
+            };
         let config = match configuration(&self.codex_file, "Codex").await {
             Ok(Some(c)) => c,
             Ok(None) => {
@@ -809,18 +824,19 @@ impl AgentRuntime {
     }
 
     async fn claude_connection(&self, user_id: &str) -> CheckedProvider {
-        let unavailable = |config: Option<ClaudeConfig>, message: &str, configured: bool| CheckedProvider {
-            config,
-            status: ProviderStatus {
-                id: "claude",
-                name: "Claude Code",
-                configured,
-                connected: false,
-                commands: None,
-                message: message.to_owned(),
-            },
-            models: Vec::new(),
-        };
+        let unavailable =
+            |config: Option<ClaudeConfig>, message: &str, configured: bool| CheckedProvider {
+                config,
+                status: ProviderStatus {
+                    id: "claude",
+                    name: "Claude Code",
+                    configured,
+                    connected: false,
+                    commands: None,
+                    message: message.to_owned(),
+                },
+                models: Vec::new(),
+            };
         let config = match configuration(&self.claude_file, "Claude Code").await {
             Ok(Some(c)) => c,
             Ok(None) => {
@@ -911,11 +927,16 @@ impl AgentRuntime {
     }
 
     async fn connection(&self, user_id: &str) -> ConnectionCheck {
-        let (codex, claude) =
-            tokio::join!(self.codex_connection(user_id), self.claude_connection(user_id));
+        let (codex, claude) = tokio::join!(
+            self.codex_connection(user_id),
+            self.claude_connection(user_id)
+        );
         let all = [&codex, &claude];
-        let usable: Vec<&CheckedProvider> =
-            all.iter().copied().filter(|item| item.status.connected).collect();
+        let usable: Vec<&CheckedProvider> = all
+            .iter()
+            .copied()
+            .filter(|item| item.status.connected)
+            .collect();
         let configured: Vec<&CheckedProvider> = all
             .iter()
             .copied()
@@ -999,18 +1020,20 @@ impl AgentRuntime {
                 .await?;
             server.notify("initialized", json!({}));
             let value = server.request("account/rateLimits/read", json!({})).await?;
-            let snapshots: Vec<&Map<String, Value>> = if let Some(by_id) = value
-                .get("rateLimitsByLimitId")
-                .and_then(Value::as_object)
-            {
-                by_id.values().filter_map(Value::as_object).take(6).collect()
-            } else {
-                value
-                    .get("rateLimits")
-                    .and_then(Value::as_object)
-                    .into_iter()
-                    .collect()
-            };
+            let snapshots: Vec<&Map<String, Value>> =
+                if let Some(by_id) = value.get("rateLimitsByLimitId").and_then(Value::as_object) {
+                    by_id
+                        .values()
+                        .filter_map(Value::as_object)
+                        .take(6)
+                        .collect()
+                } else {
+                    value
+                        .get("rateLimits")
+                        .and_then(Value::as_object)
+                        .into_iter()
+                        .collect()
+                };
             let finite = |v: Option<&Value>| v.and_then(Value::as_f64).filter(|n| n.is_finite());
             let mut windows = Vec::new();
             let mut plan: Option<String> = None;
@@ -1026,17 +1049,15 @@ impl AgentRuntime {
                     .and_then(Value::as_str)
                     .or_else(|| snapshot.get("limitId").and_then(Value::as_str))
                     .unwrap_or("Codex");
-                for (key, fallback_label) in [
-                    ("primary", "Short window"),
-                    ("secondary", "Weekly window"),
-                ] {
+                for (key, fallback_label) in
+                    [("primary", "Short window"), ("secondary", "Weekly window")]
+                {
                     if let Some(window) = snapshot.get(key).and_then(Value::as_object)
                         && let Some(used) = finite(window.get("usedPercent"))
                     {
                         let minutes = finite(window.get("windowDurationMins"));
-                        let resets = finite(window.get("resetsAt")).map(|r| {
-                            if r < 1e12 { r * 1000.0 } else { r }
-                        });
+                        let resets = finite(window.get("resetsAt"))
+                            .map(|r| if r < 1e12 { r * 1000.0 } else { r });
                         let span_label = match minutes {
                             Some(m) if m != 0.0 => {
                                 if m >= 1440.0 {
@@ -1092,9 +1113,13 @@ impl AgentRuntime {
             let claude_part = match self.status_workspace().await {
                 Ok(ws) => match claude_limits(config, &ws).await {
                     Ok(v) => v,
-                    Err(e) => json!({ "available": false, "plan": null, "windows": [], "message": e.message }),
+                    Err(e) => {
+                        json!({ "available": false, "plan": null, "windows": [], "message": e.message })
+                    }
                 },
-                Err(e) => json!({ "available": false, "plan": null, "windows": [], "message": e.message }),
+                Err(e) => {
+                    json!({ "available": false, "plan": null, "windows": [], "message": e.message })
+                }
             };
             parts.push(("claude", claude_part));
         }
@@ -1133,12 +1158,7 @@ impl AgentRuntime {
         };
         let windows: Vec<Value> = ready
             .iter()
-            .flat_map(|(_, part)| {
-                part["windows"]
-                    .as_array()
-                    .cloned()
-                    .unwrap_or_default()
-            })
+            .flat_map(|(_, part)| part["windows"].as_array().cloned().unwrap_or_default())
             .collect();
         json!({ "available": true, "plan": plan, "windows": windows })
     }
@@ -1255,7 +1275,10 @@ impl AgentRuntime {
             git_hosts: vec!["github.com".into()],
         };
         let workspace = self.status_workspace().await?;
-        if claude_account(&discovered, &workspace, None).await?.is_none() {
+        if claude_account(&discovered, &workspace, None)
+            .await?
+            .is_none()
+        {
             return Err(AppError::with(
                 "claudeLoginRequired",
                 409,
@@ -1377,7 +1400,10 @@ impl AgentRuntime {
                 AppError::with(
                     "invalidModel",
                     400,
-                    &format!("Choose one of the available {} models.", agent_provider_name(which)),
+                    &format!(
+                        "Choose one of the available {} models.",
+                        agent_provider_name(which)
+                    ),
                 )
             })?;
         if which == "claude" && p.get("mode").and_then(Value::as_str) == Some("compact") {
@@ -1432,7 +1458,11 @@ impl AgentRuntime {
         let run = self
             .operation(session_id, "startRun", Value::Object(p))
             .await?;
-        let run_id = run.get("id").and_then(Value::as_str).unwrap_or("").to_owned();
+        let run_id = run
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned();
         if run.get("status").and_then(Value::as_str) == Some("queued") && !run_id.is_empty() {
             let (entry, should_spawn, done_tx) = {
                 let mut active = self.active.lock().expect("active");
@@ -1454,9 +1484,7 @@ impl AgentRuntime {
                     (Some(entry), true, Some(done_tx))
                 }
             };
-            if should_spawn
-                && let (Some(entry), Some(done_tx)) = (entry, done_tx)
-            {
+            if should_spawn && let (Some(entry), Some(done_tx)) = (entry, done_tx) {
                 let runtime = self.clone();
                 let sid = session_id.to_owned();
                 tokio::spawn(async move {
@@ -2040,7 +2068,12 @@ impl AgentRuntime {
             initialized: Arc<AtomicBool>,
             status: Arc<Mutex<Option<&'static str>>>,
             proc_slot: Arc<Mutex<Option<ClaudeProcess>>>,
-            stream_state: Mutex<(String, String, HashMap<String, usize>, HashMap<String, usize>)>,
+            stream_state: Mutex<(
+                String,
+                String,
+                HashMap<String, usize>,
+                HashMap<String, usize>,
+            )>,
         }
 
         impl TurnHandlers {
@@ -2172,7 +2205,8 @@ impl AgentRuntime {
                                 {
                                     let trimmed = thinking.trim();
                                     if !trimmed.is_empty() {
-                                        let id = format!("thinking-{message_id}-{}", st.steps.len());
+                                        let id =
+                                            format!("thinking-{message_id}-{}", st.steps.len());
                                         let label = st.limit(trimmed, 2000);
                                         st.record_step(AgentStep {
                                             id,
@@ -2247,7 +2281,8 @@ impl AgentRuntime {
                                             .take(50)
                                             .map(|entry| {
                                                 let o = entry.as_object();
-                                                let txt = st.text(o.and_then(|x| x.get("content")), 500);
+                                                let txt =
+                                                    st.text(o.and_then(|x| x.get("content")), 500);
                                                 let done = o
                                                     .and_then(|x| x.get("status"))
                                                     .and_then(Value::as_str)
@@ -2284,7 +2319,8 @@ impl AgentRuntime {
                                             items: None,
                                         });
                                     } else if name == "Read" {
-                                        let rel = self.relative(&mut st, input_obj.get("file_path"));
+                                        let rel =
+                                            self.relative(&mut st, input_obj.get("file_path"));
                                         let label = st.limit(&format!("Read {rel}"), 2000);
                                         st.record_step(AgentStep {
                                             id: step_id,
@@ -2347,7 +2383,8 @@ impl AgentRuntime {
                                     .map(|part| {
                                         part.as_object()
                                             .filter(|o| {
-                                                o.get("type").and_then(Value::as_str) == Some("text")
+                                                o.get("type").and_then(Value::as_str)
+                                                    == Some("text")
                                             })
                                             .and_then(|o| o.get("text"))
                                             .and_then(Value::as_str)
@@ -2551,10 +2588,8 @@ impl AgentRuntime {
                                 cmd
                             } else {
                                 let fp = st.text(input_obj.get("file_path"), 2000);
-                                let rel = fp
-                                    .strip_prefix(&ws_prefix)
-                                    .map(str::to_owned)
-                                    .unwrap_or(fp);
+                                let rel =
+                                    fp.strip_prefix(&ws_prefix).map(str::to_owned).unwrap_or(fp);
                                 if !rel.is_empty() {
                                     rel
                                 } else if !tool.is_empty() {
@@ -2645,13 +2680,14 @@ impl AgentRuntime {
 
                 {
                     let st_steer = state.clone();
-                    *entry.steer_fn.lock().expect("steer_fn") = Some(Arc::new(move |msg_id, keep| {
-                        st_steer.lock().expect("state").steered(msg_id, keep);
-                    }));
+                    *entry.steer_fn.lock().expect("steer_fn") =
+                        Some(Arc::new(move |msg_id, keep| {
+                            st_steer.lock().expect("state").steered(msg_id, keep);
+                        }));
                     let c_deliver = claude.clone();
                     let status_deliver = status.clone();
-                    *entry.deliver_fn.lock().expect("deliver_fn") =
-                        Some(Arc::new(move |content: String| {
+                    *entry.deliver_fn.lock().expect("deliver_fn") = Some(Arc::new(
+                        move |content: String| {
                             let c = c_deliver.clone();
                             let s = status_deliver.clone();
                             Box::pin(async move {
@@ -2670,7 +2706,8 @@ impl AgentRuntime {
                                 }));
                                 Ok(())
                             })
-                        }));
+                        },
+                    ));
                 }
 
                 let mut blocks = vec![json!({ "type": "text", "text": prompt })];
@@ -2843,8 +2880,7 @@ impl AgentRuntime {
                                 output: tail,
                                 items: None,
                             });
-                            if let Some(agg) =
-                                item.get("aggregatedOutput").and_then(Value::as_str)
+                            if let Some(agg) = item.get("aggregatedOutput").and_then(Value::as_str)
                             {
                                 st.remember_output(item_id, agg);
                                 st.refresh_output();
@@ -3019,10 +3055,9 @@ impl AgentRuntime {
                                 .map(|entry| {
                                     let o = entry.as_object();
                                     let txt = st.text(o.and_then(|x| x.get("step")), 500);
-                                    let done = o
-                                        .and_then(|x| x.get("status"))
-                                        .and_then(Value::as_str)
-                                        == Some("completed");
+                                    let done =
+                                        o.and_then(|x| x.get("status")).and_then(Value::as_str)
+                                            == Some("completed");
                                     StepItem {
                                         text: if txt.is_empty() { "Step".into() } else { txt },
                                         done,
@@ -3078,8 +3113,7 @@ impl AgentRuntime {
                             });
                             st.data.mode.as_deref() == Some("compact")
                         };
-                        if is_compact
-                            && let Some(tx) = self.completion.lock().expect("comp").take()
+                        if is_compact && let Some(tx) = self.completion.lock().expect("comp").take()
                         {
                             let _ = tx.send(Ok("completed"));
                         }
@@ -3114,12 +3148,12 @@ impl AgentRuntime {
                             let mut st = self.state.lock().expect("state");
                             st.data.error = st.limit(msg, 2000);
                         }
-                        let st_val = match turn.and_then(|t| t.get("status")).and_then(Value::as_str)
-                        {
-                            Some("completed") => "completed",
-                            Some("interrupted") => "cancelled",
-                            _ => "failed",
-                        };
+                        let st_val =
+                            match turn.and_then(|t| t.get("status")).and_then(Value::as_str) {
+                                Some("completed") => "completed",
+                                Some("interrupted") => "cancelled",
+                                _ => "failed",
+                            };
                         if let Some(tx) = self.completion.lock().expect("comp").take() {
                             let _ = tx.send(Ok(st_val));
                         }
@@ -3626,12 +3660,7 @@ impl AgentRuntime {
             }
             clean.insert(slice_utf16(key, 200).to_owned(), items);
         }
-        let pending = entry
-            .expect("entry")
-            .answer
-            .lock()
-            .expect("answer")
-            .take();
+        let pending = entry.expect("entry").answer.lock().expect("answer").take();
         let Some(pending) = pending else {
             return Err(AppError::with(
                 "questionUnavailable",
@@ -3773,7 +3802,9 @@ impl AgentRuntime {
         let _ = self
             .operation(session_id, "history", json!({ "threadId": thread_id }))
             .await?;
-        let info = self.attachment_info(user_id, thread_id, attachment_id).await?;
+        let info = self
+            .attachment_info(user_id, thread_id, attachment_id)
+            .await?;
         let path = self
             .root
             .join("agent-workspaces")
@@ -3801,12 +3832,10 @@ impl AgentRuntime {
         )
         .map_err(|_| AppError::internal())?;
         let projects = self.operation(session_id, "projects", json!({})).await?;
-        let project = projects["items"]
-            .as_array()
-            .and_then(|arr| {
-                arr.iter()
-                    .find(|item| item["id"].as_str() == Some(history.thread.project_id.as_str()))
-            });
+        let project = projects["items"].as_array().and_then(|arr| {
+            arr.iter()
+                .find(|item| item["id"].as_str() == Some(history.thread.project_id.as_str()))
+        });
         let Some(project) = project.filter(|p| p["sourceType"].as_str() == Some("files")) else {
             return Ok(json!({ "tracked": false }));
         };
@@ -3990,7 +4019,11 @@ impl AgentRuntime {
                 }
             }
             "commit" => {
-                let message = p.get("message").and_then(Value::as_str).unwrap_or("").trim();
+                let message = p
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim();
                 if message.is_empty() || utf16_len(message) > 500 {
                     return Err(AppError::with(
                         "invalidInput",
@@ -4027,7 +4060,11 @@ impl AgentRuntime {
         }
 
         let (branch_raw, status_raw, log_raw) = tokio::try_join!(
-            git(&work, &["rev-parse", "--abbrev-ref", "HEAD"], cancel.clone()),
+            git(
+                &work,
+                &["rev-parse", "--abbrev-ref", "HEAD"],
+                cancel.clone()
+            ),
             git(&work, &["status", "--porcelain"], cancel.clone()),
             git(&work, &["log", "-5", "--format=%h%x09%s"], cancel.clone()),
         )?;
@@ -4084,13 +4121,17 @@ impl AgentRuntime {
                     ));
                 };
                 assert_no_codex_rules(config).await?;
-                self.terminals.open(config, user_id, thread_id, rows, cols).await
+                self.terminals
+                    .open(config, user_id, thread_id, rows, cols)
+                    .await
             }
             "read" => {
                 let after = match p.get("after") {
                     None => 0usize,
                     Some(Value::String(s)) if s.is_empty() => 0usize,
-                    Some(Value::String(s)) => s.parse::<usize>().map_err(|_| AppError::invalid())?,
+                    Some(Value::String(s)) => {
+                        s.parse::<usize>().map_err(|_| AppError::invalid())?
+                    }
                     Some(Value::Number(n)) => {
                         let f = n.as_f64().ok_or_else(AppError::invalid)?;
                         if f.fract() != 0.0 || f < 0.0 || f > 9_007_199_254_740_991.0 {

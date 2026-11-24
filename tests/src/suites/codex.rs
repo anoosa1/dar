@@ -20,7 +20,13 @@ pub const SUITE: Suite = Suite {
     cases: &[case!(codex_cli_and_browser)],
 };
 
-async fn agent_req(session: &Session, method: &str, route: &str, value: Option<&Value>, if_match: Option<u64>) -> Result<Reply> {
+async fn agent_req(
+    session: &Session,
+    method: &str,
+    route: &str,
+    value: Option<&Value>,
+    if_match: Option<u64>,
+) -> Result<Reply> {
     let mut req = session.request(method, &format!("/api/v1/agent{route}"));
     if let Some(rev) = if_match {
         req = req.header("if-match", format!("\"{rev}\""));
@@ -31,7 +37,12 @@ async fn agent_req(session: &Session, method: &str, route: &str, value: Option<&
     Reply::from(req.send().await?).await
 }
 
-async fn call_agent(session: &Session, route: &str, value: Option<&Value>, if_match: Option<u64>) -> Result<Value> {
+async fn call_agent(
+    session: &Session,
+    route: &str,
+    value: Option<&Value>,
+    if_match: Option<u64>,
+) -> Result<Value> {
     let method = if value.is_some() { "POST" } else { "GET" };
     let reply = agent_req(session, method, route, value, if_match).await?;
     ensure!(
@@ -65,12 +76,23 @@ where
 }
 
 async fn thread_revision(session: &Session, thread_id: &str) -> Result<u64> {
-    call_agent(session, &format!("/threads/{thread_id}/messages"), None, None).await?["thread"]["revision"]
+    call_agent(
+        session,
+        &format!("/threads/{thread_id}/messages"),
+        None,
+        None,
+    )
+    .await?["thread"]["revision"]
         .as_u64()
         .context("thread revision")
 }
 
-async fn start_run(session: &Session, thread_id: &str, content: &str, extra: Value) -> Result<Value> {
+async fn start_run(
+    session: &Session,
+    thread_id: &str,
+    content: &str,
+    extra: Value,
+) -> Result<Value> {
     let rev = thread_revision(session, thread_id).await?;
     let mut body = json!({
         "id": uuid(),
@@ -83,7 +105,13 @@ async fn start_run(session: &Session, thread_id: &str, content: &str, extra: Val
             body[k] = v.clone();
         }
     }
-    call_agent(session, &format!("/threads/{thread_id}/runs"), Some(&body), Some(rev)).await
+    call_agent(
+        session,
+        &format!("/threads/{thread_id}/runs"),
+        Some(&body),
+        Some(rev),
+    )
+    .await
 }
 
 async fn codex_cli_and_browser(ctx: &Ctx) -> Result<()> {
@@ -907,149 +935,313 @@ async fn codex_browser_flow(base: &str, root: &Path, project_id: &str) -> Result
     }
 
     let result: Result<()> = async {
-        sign_in_at(&page, &format!("{base}/agent?project={project_id}"), "admin", PASSWORD).await?;
-        page.get_by_role("button", "New thread").first().click().await?;
-        page.get_by_role("button", "Project: Files code. Change project").click().await?;
+        sign_in_at(
+            &page,
+            &format!("{base}/agent?project={project_id}"),
+            "admin",
+            PASSWORD,
+        )
+        .await?;
+        page.get_by_role("button", "New thread")
+            .first()
+            .click()
+            .await?;
+        page.get_by_role("button", "Project: Files code. Change project")
+            .click()
+            .await?;
         page.get_by_role("complementary", "Choose project")
             .get_by_role("button", "Files code Dar Files")
             .click()
             .await?;
         page.get_by_label("Message").wait_for().await?;
-        page.locator("[data-editor-pane]").wait_for_state(State::Hidden).await?;
-        page.get_by_label("Message").fill("Update the greeting from the browser.").await?;
+        page.locator("[data-editor-pane]")
+            .wait_for_state(State::Hidden)
+            .await?;
+        page.get_by_label("Message")
+            .fill("Update the greeting from the browser.")
+            .await?;
         page.get_by_role("button", "Run with Codex").click().await?;
 
-        page.get_by_text("Codex · completed").wait_for_state(State::Attached).await?;
-        page.locator(".agent-message-assistant").get_by_text("The edit is ready.").wait_for().await?;
+        page.get_by_text("Codex · completed")
+            .wait_for_state(State::Attached)
+            .await?;
+        page.locator(".agent-message-assistant")
+            .get_by_text("The edit is ready.")
+            .wait_for()
+            .await?;
         ensure!(!page.locator(".agent-review").is_visible().await?);
         page.get_by_role("button", "Show changes").click().await?;
         page.get_by_role("region", "File diff").wait_for().await?;
         ensure!(page.locator(".code-diff-line.added").count().await? > 0);
         ensure!(page.locator(".code-diff-line.removed").count().await? > 0);
-        page.get_by_role("button", regex("^Worked for")).first().click().await?;
-        page.get_by_text("Checking the greeting file before editing.").wait_for().await?;
-        page.locator(".agent-plan").get_by_text("Update greeting").wait_for().await?;
-        page.get_by_role("button", regex("Ran fixture test command")).click().await?;
-        page.locator(".agent-step-output").filter_has_text("fixture check passed").wait_for().await?;
+        page.get_by_role("button", regex("^Worked for"))
+            .first()
+            .click()
+            .await?;
+        page.get_by_text("Checking the greeting file before editing.")
+            .wait_for()
+            .await?;
+        page.locator(".agent-plan")
+            .get_by_text("Update greeting")
+            .wait_for()
+            .await?;
+        page.get_by_role("button", regex("Ran fixture test command"))
+            .click()
+            .await?;
+        page.locator(".agent-step-output")
+            .filter_has_text("fixture check passed")
+            .wait_for()
+            .await?;
 
-        page.get_by_role("button", regex("^Codex model: Fixture model, Medium reasoning")).click().await?;
+        page.get_by_role(
+            "button",
+            regex("^Codex model: Fixture model, Medium reasoning"),
+        )
+        .click()
+        .await?;
         page.get_by_role("radio", "High").click().await?;
         page.keyboard().press("Escape").await?;
-        page.get_by_role("button", regex("^Codex model: Fixture model, High reasoning")).wait_for().await?;
+        page.get_by_role(
+            "button",
+            regex("^Codex model: Fixture model, High reasoning"),
+        )
+        .wait_for()
+        .await?;
 
         page.get_by_label("Message").fill("/effort l").await?;
         page.get_by_role("option", regex("Low")).click().await?;
-        page.get_by_role("button", regex("^Codex model: Fixture model, Low reasoning")).wait_for().await?;
+        page.get_by_role(
+            "button",
+            regex("^Codex model: Fixture model, Low reasoning"),
+        )
+        .wait_for()
+        .await?;
 
         page.get_by_role("button", "Wrap lines").click().await?;
-        ensure!(page.get_by_role("button", "Wrap lines").get_attribute("aria-pressed").await?.as_deref() == Some("true"));
+        ensure!(
+            page.get_by_role("button", "Wrap lines")
+                .get_attribute("aria-pressed")
+                .await?
+                .as_deref()
+                == Some("true")
+        );
         page.get_by_role("button", "Collapse diff").click().await?;
         ensure!(page.get_by_role("region", "File diff").count().await? == 0);
         page.get_by_role("button", "Expand diff").click().await?;
-        page.get_by_role("button", "Apply this edit to Files").click().await?;
-        page.get_by_role("button", "Applied to Files").wait_for().await?;
+        page.get_by_role("button", "Apply this edit to Files")
+            .click()
+            .await?;
+        page.get_by_role("button", "Applied to Files")
+            .wait_for()
+            .await?;
 
         page.reload().await?;
-        page.locator(".agent-message-assistant").get_by_text("The edit is ready.").wait_for().await?;
+        page.locator(".agent-message-assistant")
+            .get_by_text("The edit is ready.")
+            .wait_for()
+            .await?;
 
-        page.get_by_label("Message").fill("Save context without another model call.").await?;
-        page.get_by_role("button", "Message actions").click().await?;
+        page.get_by_label("Message")
+            .fill("Save context without another model call.")
+            .await?;
+        page.get_by_role("button", "Message actions")
+            .click()
+            .await?;
         page.get_by_role("menuitem", "Save only").click().await?;
-        page.get_by_text("Message saved. It has not been sent to a model.").wait_for().await?;
+        page.get_by_text("Message saved. It has not been sent to a model.")
+            .wait_for()
+            .await?;
         page.reload().await?;
-        page.get_by_label("Conversation messages").get_by_text("Saved · not sent to a model").wait_for().await?;
+        page.get_by_label("Conversation messages")
+            .get_by_text("Saved · not sent to a model")
+            .wait_for()
+            .await?;
 
         for theme in ["latte", "mocha"] {
-            page.evaluate_with("value => { document.documentElement.dataset.theme = value; }", json!(theme)).await?;
+            page.evaluate_with(
+                "value => { document.documentElement.dataset.theme = value; }",
+                json!(theme),
+            )
+            .await?;
             for width in [1440u32, 390] {
                 page.set_viewport_size(width, 844).await?;
                 if width == 390 {
                     page.get_by_role("button", "Changes").click().await?;
-                    page.locator(".code-diff").wait_for_state(State::Visible).await?;
+                    page.locator(".code-diff")
+                        .wait_for_state(State::Visible)
+                        .await?;
                     page.get_by_role("button", "Terminal").click().await?;
-                    page.get_by_text(contains("fixture check passed")).wait_for().await?;
+                    page.get_by_text(contains("fixture check passed"))
+                        .wait_for()
+                        .await?;
                     page.get_by_role("button", "Conversation").click().await?;
                 }
-                ensure!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await? == json!(false));
-                ensure!(page.evaluate("() => document.documentElement.scrollHeight <= innerHeight + 1").await? == json!(true));
-                page.screenshot(root.join(format!("codex-{theme}-{width}.png")), true).await?;
+                ensure!(
+                    page.evaluate("() => document.documentElement.scrollWidth > innerWidth")
+                        .await?
+                        == json!(false)
+                );
+                ensure!(
+                    page.evaluate("() => document.documentElement.scrollHeight <= innerHeight + 1")
+                        .await?
+                        == json!(true)
+                );
+                page.screenshot(root.join(format!("codex-{theme}-{width}.png")), true)
+                    .await?;
             }
         }
 
         page.set_viewport_size(1440, 950).await?;
         page.get_by_role("button", "Close changes").click().await?;
-        page.get_by_role("button", "New thread").first().click().await?;
-        page.get_by_role("button", "Project: Files code. Change project").wait_for().await?;
+        page.get_by_role("button", "New thread")
+            .first()
+            .click()
+            .await?;
+        page.get_by_role("button", "Project: Files code. Change project")
+            .wait_for()
+            .await?;
         page.get_by_label("Message").fill("WAIT_FOR_CANCEL").await?;
-        page.locator(".agent-send:not(:disabled)").wait_for().await?;
+        page.locator(".agent-send:not(:disabled)")
+            .wait_for()
+            .await?;
         page.get_by_label("Message").press("Enter").await?;
-        page.get_by_role("region", "Work log").get_by_text("fixture waiting for cancellation").wait_for().await?;
-        page.get_by_label("Message").fill("Keep this next-turn draft").await?;
+        page.get_by_role("region", "Work log")
+            .get_by_text("fixture waiting for cancellation")
+            .wait_for()
+            .await?;
+        page.get_by_label("Message")
+            .fill("Keep this next-turn draft")
+            .await?;
         page.get_by_role("button", "Stop").click().await?;
-        page.get_by_text("Codex · cancelled").first().wait_for_state(State::Attached).await?;
+        page.get_by_text("Codex · cancelled")
+            .first()
+            .wait_for_state(State::Attached)
+            .await?;
         page.reload().await?;
-        page.get_by_text("Codex · cancelled").first().wait_for_state(State::Attached).await?;
+        page.get_by_text("Codex · cancelled")
+            .first()
+            .wait_for_state(State::Attached)
+            .await?;
         ensure!(page.get_by_label("Message").input_value().await? == "Keep this next-turn draft");
 
         // App-server interactions in a fresh thread: steering, a blocking question, plan mode and an image.
-        page.get_by_role("button", "New thread").first().click().await?;
+        page.get_by_role("button", "New thread")
+            .first()
+            .click()
+            .await?;
         let composer = page.get_by_label("Message");
         let log = page.get_by_role("region", "Work log");
         composer.fill("WAIT_FOR_STEER").await?;
         composer.press("Enter").await?;
-        log.get_by_text("fixture waiting for guidance").wait_for().await?;
+        log.get_by_text("fixture waiting for guidance")
+            .wait_for()
+            .await?;
 
         composer.fill("Use blue").await?;
-        page.get_by_role("button", "Steer the running turn").click().await?;
-        page.locator(".agent-message-assistant").get_by_text("Steered: Use blue").wait_for().await?;
-        let steered_msg = page.locator(".agent-message-user").filter_has_text("Use blue");
+        page.get_by_role("button", "Steer the running turn")
+            .click()
+            .await?;
+        page.locator(".agent-message-assistant")
+            .get_by_text("Steered: Use blue")
+            .wait_for()
+            .await?;
+        let steered_msg = page
+            .locator(".agent-message-user")
+            .filter_has_text("Use blue");
         steered_msg.wait_for().await?;
-        ensure!(steered_msg.get_by_text(contains("Saved · not sent to a model")).count().await? == 0);
+        ensure!(
+            steered_msg
+                .get_by_text(contains("Saved · not sent to a model"))
+                .count()
+                .await?
+                == 0
+        );
 
         // The reply shows while the turn is still running, and Enter steers a running turn: a new
         // task waits until the turn has ended (Stop gives way to Send).
-        page.get_by_role("button", "Stop").wait_for_state(State::Detached).await?;
+        page.get_by_role("button", "Stop")
+            .wait_for_state(State::Detached)
+            .await?;
         composer.fill("ASK_QUESTION").await?;
         composer.press("Enter").await?;
         let card = page.get_by_role("form", "Codex is asking");
-        card.get_by_text("Which color should the greeting use?").wait_for().await?;
+        card.get_by_text("Which color should the greeting use?")
+            .wait_for()
+            .await?;
         card.get_by_role("radio", regex("Blue")).check().await?;
         card.get_by_role("button", "Send answer").click().await?;
-        page.locator(".agent-message-assistant").get_by_text("You chose Blue.").wait_for().await?;
+        page.locator(".agent-message-assistant")
+            .get_by_text("You chose Blue.")
+            .wait_for()
+            .await?;
         card.wait_for_state(State::Detached).await?;
 
-        page.get_by_role("button", "Stop").wait_for_state(State::Detached).await?;
+        page.get_by_role("button", "Stop")
+            .wait_for_state(State::Detached)
+            .await?;
         let plan_toggle = page.get_by_role("button", "Plan");
         plan_toggle.click().await?;
         ensure!(plan_toggle.get_attribute("aria-pressed").await?.as_deref() == Some("true"));
         composer.fill("PLAN_ONLY").await?;
         composer.press("Enter").await?;
-        page.locator(".agent-message-assistant").get_by_text("Planned without editing.").wait_for().await?;
-        page.get_by_role("button", "Stop").wait_for_state(State::Detached).await?;
+        page.locator(".agent-message-assistant")
+            .get_by_text("Planned without editing.")
+            .wait_for()
+            .await?;
+        page.get_by_role("button", "Stop")
+            .wait_for_state(State::Detached)
+            .await?;
         plan_toggle.click().await?;
         ensure!(plan_toggle.get_attribute("aria-pressed").await?.as_deref() == Some("false"));
 
         let png: [u8; 16] = [
-            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52,
         ];
         page.locator(".agent-composer input[type=file]")
-            .set_input_files(vec![FilePayload::new("pixel.png", "image/png", png.to_vec())])
+            .set_input_files(vec![FilePayload::new(
+                "pixel.png",
+                "image/png",
+                png.to_vec(),
+            )])
             .await?;
-        page.get_by_role("list", "Attached images").get_by_role("img", "pixel.png").wait_for().await?;
-        page.locator(".agent-pictures li[data-status=ready]").wait_for().await?;
+        page.get_by_role("list", "Attached images")
+            .get_by_role("img", "pixel.png")
+            .wait_for()
+            .await?;
+        page.locator(".agent-pictures li[data-status=ready]")
+            .wait_for()
+            .await?;
         composer.fill("DESCRIBE_IMAGE").await?;
         composer.press("Enter").await?;
-        page.locator(".agent-message-assistant").get_by_text("Saw 1 image.").wait_for().await?;
-        page.locator(".agent-message-images").get_by_role("img", "pixel.png").wait_for().await?;
+        page.locator(".agent-message-assistant")
+            .get_by_text("Saw 1 image.")
+            .wait_for()
+            .await?;
+        page.locator(".agent-message-images")
+            .get_by_role("img", "pixel.png")
+            .wait_for()
+            .await?;
         ensure!(page.get_by_role("list", "Attached images").count().await? == 0);
-        page.screenshot(root.join("codex-interactive.png"), true).await?;
+        page.screenshot(root.join("codex-interactive.png"), true)
+            .await?;
 
         // Fork from a message, Codex review, Markdown export, snooze and usage limits.
-        let first = page.locator(".agent-message-user").filter_has_text("WAIT_FOR_STEER");
+        let first = page
+            .locator(".agent-message-user")
+            .filter_has_text("WAIT_FOR_STEER");
         first.hover().await?;
-        first.get_by_role("button", "Fork from here").click().await?;
-        page.get_by_role("heading", "Fork: WAIT_FOR_STEER").wait_for().await?;
-        page.locator(".agent-message-user").get_by_text("WAIT_FOR_STEER").wait_for().await?;
+        first
+            .get_by_role("button", "Fork from here")
+            .click()
+            .await?;
+        page.get_by_role("heading", "Fork: WAIT_FOR_STEER")
+            .wait_for()
+            .await?;
+        page.locator(".agent-message-user")
+            .get_by_text("WAIT_FOR_STEER")
+            .wait_for()
+            .await?;
         ensure!(page.locator(".agent-message").count().await? == 1);
 
         composer.fill("/review").await?;
@@ -1062,7 +1254,9 @@ async fn codex_browser_flow(base: &str, root: &Path, project_id: &str) -> Result
         let download = page
             .wait_for_download(async {
                 page.get_by_role("button", "Thread actions").click().await?;
-                page.get_by_role("menuitem", "Export as Markdown").click().await
+                page.get_by_role("menuitem", "Export as Markdown")
+                    .click()
+                    .await
             })
             .await?;
         ensure!(
@@ -1071,29 +1265,60 @@ async fn codex_browser_flow(base: &str, root: &Path, project_id: &str) -> Result
             download.suggested_filename
         );
 
-        page.locator(".agent-thread-row").filter_has_text("Fork: WAIT_FOR_STEER").hover().await?;
-        page.get_by_role("button", "Actions for Fork: WAIT_FOR_STEER").click().await?;
+        page.locator(".agent-thread-row")
+            .filter_has_text("Fork: WAIT_FOR_STEER")
+            .hover()
+            .await?;
+        page.get_by_role("button", "Actions for Fork: WAIT_FOR_STEER")
+            .click()
+            .await?;
         page.get_by_role("menuitem", "Snooze").click().await?;
         page.get_by_role("menuitem", "In 1 hour").click().await?;
         let snoozed_shelf = page
             .locator(".agent-shelves details")
             .filter_has(&page.locator("summary").filter_has_text("Snoozed"));
-        snoozed_shelf.get_by_text("Fork: WAIT_FOR_STEER").wait_for_state(State::Attached).await?;
+        snoozed_shelf
+            .get_by_text("Fork: WAIT_FOR_STEER")
+            .wait_for_state(State::Attached)
+            .await?;
         snoozed_shelf.locator("summary").click().await?;
-        snoozed_shelf.get_by_text("Fork: WAIT_FOR_STEER").wait_for().await?;
-        page.locator(".agent-thread-row").filter_has_text("Fork: WAIT_FOR_STEER").hover().await?;
-        page.get_by_role("button", "Actions for Fork: WAIT_FOR_STEER").click().await?;
-        page.get_by_role("menuitem", "Unsnooze thread").click().await?;
-        snoozed_shelf.get_by_text("Fork: WAIT_FOR_STEER").wait_for_state(State::Detached).await?;
+        snoozed_shelf
+            .get_by_text("Fork: WAIT_FOR_STEER")
+            .wait_for()
+            .await?;
+        page.locator(".agent-thread-row")
+            .filter_has_text("Fork: WAIT_FOR_STEER")
+            .hover()
+            .await?;
+        page.get_by_role("button", "Actions for Fork: WAIT_FOR_STEER")
+            .click()
+            .await?;
+        page.get_by_role("menuitem", "Unsnooze thread")
+            .click()
+            .await?;
+        snoozed_shelf
+            .get_by_text("Fork: WAIT_FOR_STEER")
+            .wait_for_state(State::Detached)
+            .await?;
 
         page.get_by_role("button", "Agent settings").click().await?;
-        page.get_by_role("dialog", "Agent settings").get_by_text("42%").wait_for().await?;
+        page.get_by_role("dialog", "Agent settings")
+            .get_by_text("42%")
+            .wait_for()
+            .await?;
         page.keyboard().press("Escape").await?;
 
         // Sharing: owner grants read-only access; the grantee sees messages without a composer.
         let friend = format!("reader-{}", &uuid()[..6]);
-        let admin_session = page.request().get(&format!("{base}/api/v1/auth/session")).await?.json()?;
-        let csrf = admin_session["csrfToken"].as_str().context("csrfToken")?.to_owned();
+        let admin_session = page
+            .request()
+            .get(&format!("{base}/api/v1/auth/session"))
+            .await?
+            .json()?;
+        let csrf = admin_session["csrfToken"]
+            .as_str()
+            .context("csrfToken")?
+            .to_owned();
         let created_friend = page
             .request()
             .post(
@@ -1104,12 +1329,20 @@ async fn codex_browser_flow(base: &str, root: &Path, project_id: &str) -> Result
             .await?;
         ensure!(created_friend.status == 201);
 
-        page.locator(".agent-thread-select").filter_has_text("Fork: WAIT_FOR_STEER").click().await?;
-        page.get_by_role("heading", "Fork: WAIT_FOR_STEER").wait_for().await?;
+        page.locator(".agent-thread-select")
+            .filter_has_text("Fork: WAIT_FOR_STEER")
+            .click()
+            .await?;
+        page.get_by_role("heading", "Fork: WAIT_FOR_STEER")
+            .wait_for()
+            .await?;
         page.get_by_role("button", "Thread actions").click().await?;
         page.get_by_role("menuitem", "Share…").click().await?;
         let share_dialog = page.get_by_role("dialog", "Share thread");
-        share_dialog.get_by_placeholder("Dar username").fill(&friend).await?;
+        share_dialog
+            .get_by_placeholder("Dar username")
+            .fill(&friend)
+            .await?;
         share_dialog.get_by_role("button", "Share").click().await?;
         share_dialog
             .get_by_role("list", "People with access")
@@ -1122,15 +1355,25 @@ async fn codex_browser_flow(base: &str, root: &Path, project_id: &str) -> Result
         let reader_res: Result<()> = async {
             let reader = reader_context.new_page().await?;
             sign_in_at(&reader, &format!("{base}/agent"), &friend, PASSWORD).await?;
-            reader.locator(".agent-thread-select").filter_has_text("Fork: WAIT_FOR_STEER").click().await?;
-            reader.get_by_role("note", ()).get_by_text("Codex fixture").wait_for().await?;
+            reader
+                .locator(".agent-thread-select")
+                .filter_has_text("Fork: WAIT_FOR_STEER")
+                .click()
+                .await?;
+            reader
+                .get_by_role("note", ())
+                .get_by_text("Codex fixture")
+                .wait_for()
+                .await?;
             reader
                 .locator(".agent-message-assistant")
                 .get_by_text("Review: greeting.txt changed; no issues found.")
                 .wait_for()
                 .await?;
             ensure!(reader.get_by_label("Message").count().await? == 0);
-            reader.screenshot(root.join("codex-shared.png"), true).await?;
+            reader
+                .screenshot(root.join("codex-shared.png"), true)
+                .await?;
             Ok(())
         }
         .await;
@@ -1142,27 +1385,46 @@ async fn codex_browser_flow(base: &str, root: &Path, project_id: &str) -> Result
             .filter_has_not_text("Fork")
             .click()
             .await?;
-        page.get_by_role("heading", "WAIT_FOR_STEER").wait_for().await?;
-        page.get_by_role("button", "Toggle command output").click().await?;
+        page.get_by_role("heading", "WAIT_FOR_STEER")
+            .wait_for()
+            .await?;
+        page.get_by_role("button", "Toggle command output")
+            .click()
+            .await?;
         page.get_by_role("tab", "Terminal").click().await?;
         page.get_by_role("button", "Open terminal").click().await?;
         let shell_screen = page.get_by_role("log", "Terminal");
-        shell_screen.get_by_text(contains("$")).first().wait_for().await?;
+        shell_screen
+            .get_by_text(contains("$"))
+            .first()
+            .wait_for()
+            .await?;
         shell_screen.press("e").await?;
         page.keyboard().type_text("cho from browser").await?;
         page.keyboard().press("Enter").await?;
         shell_screen.get_by_text("from browser").wait_for().await?;
-        page.screenshot(root.join("codex-terminal.png"), true).await?;
+        page.screenshot(root.join("codex-terminal.png"), true)
+            .await?;
         page.get_by_role("button", "End session").click().await?;
         page.get_by_role("button", "Restart")
             .or(&page.get_by_role("button", "Start a new terminal"))
             .first()
             .wait_for()
             .await?;
-        page.get_by_role("button", "Close command output").click().await?;
+        page.get_by_role("button", "Close command output")
+            .click()
+            .await?;
 
-        let session_info = page.request().get(&format!("{base}/api/v1/auth/session")).await?.json()?;
-        let projects = page.request().get(&format!("{base}/api/v1/agent/projects")).await?.json()?;
+        let session_info = page
+            .request()
+            .get(&format!("{base}/api/v1/auth/session"))
+            .await?
+            .json()?;
+        let projects = page
+            .request()
+            .get(&format!("{base}/api/v1/agent/projects"))
+            .await?
+            .json()?;
         let project = projects["items"]
             .as_array()
             .context("projects items")?
@@ -1172,14 +1434,23 @@ async fn codex_browser_flow(base: &str, root: &Path, project_id: &str) -> Result
         let source_ref = project["sourceRef"].as_str().context("project sourceRef")?;
         let folders = page
             .request()
-            .get(&format!("{base}/api/v1/agent/folders?parentId={source_ref}"))
+            .get(&format!(
+                "{base}/api/v1/agent/folders?parentId={source_ref}"
+            ))
             .await?
             .json()?;
         ensure!(folders["folder"]["id"] == source_ref);
-        ensure!(session_info["user"]["id"].as_str().is_some_and(|s| !s.is_empty()));
+        ensure!(
+            session_info["user"]["id"]
+                .as_str()
+                .is_some_and(|s| !s.is_empty())
+        );
 
         let page_errors = errors.lock().unwrap().clone();
-        ensure!(page_errors.is_empty(), "unexpected page errors: {page_errors:?}");
+        ensure!(
+            page_errors.is_empty(),
+            "unexpected page errors: {page_errors:?}"
+        );
         Ok(())
     }
     .await;

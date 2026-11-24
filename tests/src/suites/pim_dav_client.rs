@@ -37,7 +37,11 @@ pub async fn vdirsyncer_round_trip(t: &Ctx) -> Result<()> {
     for kind in ["contacts", "calendar"] {
         let base = format!(
             "/api/v1/{kind}/{}",
-            if kind == "contacts" { "books" } else { "calendars" }
+            if kind == "contacts" {
+                "books"
+            } else {
+                "calendars"
+            }
         );
         let collection = session
             .post(
@@ -229,9 +233,11 @@ pub async fn vdirsyncer_round_trip(t: &Ctx) -> Result<()> {
             c.kind
         );
         if c.kind == "calendar" {
-            assert!(contents
-                .iter()
-                .any(|s| s.contains("Changed native task") && s.contains("STATUS:COMPLETED")));
+            assert!(
+                contents
+                    .iter()
+                    .any(|s| s.contains("Changed native task") && s.contains("STATUS:COMPLETED"))
+            );
         }
     }
     Ok(())

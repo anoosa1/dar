@@ -39,7 +39,8 @@ pub(crate) const PHOTOS_READ_OPERATIONS: &[&str] = &[
 pub(crate) const IMMICH_OAUTH_CLIENT_ID: &str = "immich-app";
 pub(crate) const IMMICH_OAUTH_REDIRECT_URI: &str = "app.immich:///oauth-callback";
 
-pub(crate) const RAW_EXTENSIONS: &[&str] = &["dng", "cr2", "cr3", "nef", "arw", "orf", "rw2", "raf"];
+pub(crate) const RAW_EXTENSIONS: &[&str] =
+    &["dng", "cr2", "cr3", "nef", "arw", "orf", "rw2", "raf"];
 
 /// Media types Photos indexes (`photoKind` in `shared/photos.ts`).
 pub(crate) fn photo_kind(media_type: &str, name: &str) -> Option<&'static str> {
@@ -123,16 +124,23 @@ pub(crate) fn parse_iso_ms(value: &str) -> Option<f64> {
 /// Extracts a cookie value by name from the `Cookie` header.
 pub(crate) fn cookie_value(headers: &axum::http::HeaderMap, name: &str) -> Option<String> {
     let cookies = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
-    cookies
-        .split(';')
-        .map(str::trim)
-        .find_map(|part| part.strip_prefix(name)?.strip_prefix('=').map(str::to_owned))
+    cookies.split(';').map(str::trim).find_map(|part| {
+        part.strip_prefix(name)?
+            .strip_prefix('=')
+            .map(str::to_owned)
+    })
 }
 
 /// Formats epoch milliseconds as an ISO-8601 UTC timestamp with millisecond precision (`Date.toISOString`).
 pub(crate) fn iso_ms(ms: f64) -> String {
-    let clamped = if ms.is_finite() && ms > 0.0 { ms.trunc() as i64 } else { 0 };
+    let clamped = if ms.is_finite() && ms > 0.0 {
+        ms.trunc() as i64
+    } else {
+        0
+    };
     chrono::DateTime::<chrono::Utc>::from_timestamp_millis(clamped)
-        .unwrap_or_else(|| chrono::DateTime::<chrono::Utc>::from_timestamp_millis(0).expect("epoch"))
+        .unwrap_or_else(|| {
+            chrono::DateTime::<chrono::Utc>::from_timestamp_millis(0).expect("epoch")
+        })
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }

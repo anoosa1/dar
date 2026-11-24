@@ -33,9 +33,15 @@ pub fn parse_opml(text: &str) -> Result<Vec<OpmlFeed>> {
     let mut opml = false;
 
     loop {
-        let event = reader.read_event().map_err(|_| invalid_opml("This file is not valid OPML."))?;
+        let event = reader
+            .read_event()
+            .map_err(|_| invalid_opml("This file is not valid OPML."))?;
         match event {
-            Event::DocType(_) => return Err(invalid_opml("This OPML file uses a document type, which is not supported.")),
+            Event::DocType(_) => {
+                return Err(invalid_opml(
+                    "This OPML file uses a document type, which is not supported.",
+                ));
+            }
             Event::Start(ref e) | Event::Empty(ref e) => {
                 let is_empty = matches!(event, Event::Empty(_));
                 if !is_empty {
@@ -55,7 +61,9 @@ pub fn parse_opml(text: &str) -> Result<Vec<OpmlFeed>> {
                 let mut attrs: HashMap<String, String> = HashMap::new();
                 for attr in e.attributes() {
                     let attr = attr.map_err(|_| invalid_opml("This file is not valid OPML."))?;
-                    let val = attr.normalized_value(quick_xml::XmlVersion::Implicit1_0).map_err(|_| invalid_opml("This file is not valid OPML."))?;
+                    let val = attr
+                        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                        .map_err(|_| invalid_opml("This file is not valid OPML."))?;
                     attrs.insert(attr.key.as_ref().to_owned(), val.into_owned());
                 }
                 let get = |k: &str| attrs.get(k).map(String::as_str).unwrap_or("");
@@ -71,27 +79,39 @@ pub fn parse_opml(text: &str) -> Result<Vec<OpmlFeed>> {
                 if !xml_url.is_empty() {
                     let url = absolute(xml_url, "", &["http", "https"]);
                     if !url.is_empty() && !feeds.iter().any(|f| f.url == url) {
-                        let folder = stack.iter().find(|s| !s.is_empty()).cloned().unwrap_or_default();
-                        feeds.push(OpmlFeed { url, title: trunc_utf16(label, LIMIT_TITLE).to_owned(), folder });
+                        let folder = stack
+                            .iter()
+                            .find(|s| !s.is_empty())
+                            .cloned()
+                            .unwrap_or_default();
+                        feeds.push(OpmlFeed {
+                            url,
+                            title: trunc_utf16(label, LIMIT_TITLE).to_owned(),
+                            folder,
+                        });
                     }
                 }
                 if !is_empty {
-                    stack.push(if !xml_url.is_empty() { String::new() } else { label.to_owned() });
+                    stack.push(if !xml_url.is_empty() {
+                        String::new()
+                    } else {
+                        label.to_owned()
+                    });
                 }
             }
             Event::End(ref e) => {
-                depth = depth.checked_sub(1).ok_or_else(|| invalid_opml("This file is not valid OPML."))?;
+                depth = depth
+                    .checked_sub(1)
+                    .ok_or_else(|| invalid_opml("This file is not valid OPML."))?;
                 if e.name().as_ref() == "outline" {
                     stack.pop();
                 }
             }
-            Event::GeneralRef(r) => {
-                match r.resolve_char_ref() {
-                    Ok(Some(_)) => {}
-                    Ok(None) if quick_xml::escape::resolve_predefined_entity(&r).is_some() => {}
-                    _ => return Err(invalid_opml("This file is not valid OPML.")),
-                }
-            }
+            Event::GeneralRef(r) => match r.resolve_char_ref() {
+                Ok(Some(_)) => {}
+                Ok(None) if quick_xml::escape::resolve_predefined_entity(&r).is_some() => {}
+                _ => return Err(invalid_opml("This file is not valid OPML.")),
+            },
             Event::Eof => break,
             _ => {}
         }
@@ -100,7 +120,9 @@ pub fn parse_opml(text: &str) -> Result<Vec<OpmlFeed>> {
         return Err(invalid_opml("This file is not valid OPML."));
     }
     if feeds.len() > LIMIT_FEEDS {
-        return Err(invalid_opml(&format!("OPML files can hold at most {LIMIT_FEEDS} feeds.")));
+        return Err(invalid_opml(&format!(
+            "OPML files can hold at most {LIMIT_FEEDS} feeds."
+        )));
     }
     Ok(feeds)
 }
@@ -112,7 +134,11 @@ pub fn export_opml(data: &Value, owner: &str) -> String {
         let title = escape_html(f["title"].as_str().unwrap_or(""));
         let url = escape_html(f["url"].as_str().unwrap_or(""));
         let link = f["link"].as_str().unwrap_or("");
-        let html_url = if link.is_empty() { String::new() } else { format!(r#" htmlUrl="{}""#, escape_html(link)) };
+        let html_url = if link.is_empty() {
+            String::new()
+        } else {
+            format!(r#" htmlUrl="{}""#, escape_html(link))
+        };
         format!(r#"<outline type="rss" text="{title}" title="{title}" xmlUrl="{url}"{html_url}/>"#)
     };
     let mut groups = String::new();
@@ -120,13 +146,19 @@ pub fn export_opml(data: &Value, owner: &str) -> String {
         let folder_id = folder["id"].as_u64().unwrap_or(0);
         let name = escape_html(folder["name"].as_str().unwrap_or(""));
         groups.push_str(&format!(r#"<outline text="{name}" title="{name}">"#));
-        for feed in feeds.iter().filter(|f| f["folderId"].as_u64().unwrap_or(0) == folder_id) {
+        for feed in feeds
+            .iter()
+            .filter(|f| f["folderId"].as_u64().unwrap_or(0) == folder_id)
+        {
             groups.push_str(&outline(feed));
         }
         groups.push_str("</outline>");
     }
     let mut loose = String::new();
-    for feed in feeds.iter().filter(|f| f["folderId"].as_u64().unwrap_or(0) == 0) {
+    for feed in feeds
+        .iter()
+        .filter(|f| f["folderId"].as_u64().unwrap_or(0) == 0)
+    {
         loose.push_str(&outline(feed));
     }
     let date = httpdate::fmt_http_date(SystemTime::now());
@@ -149,8 +181,16 @@ mod tests {
         assert_eq!(
             feeds,
             vec![
-                OpmlFeed { url: "https://lwn.net/headlines/rss".into(), title: "LWN".into(), folder: "Tech".into() },
-                OpmlFeed { url: "https://loose.example/feed".into(), title: "Loose".into(), folder: "".into() },
+                OpmlFeed {
+                    url: "https://lwn.net/headlines/rss".into(),
+                    title: "LWN".into(),
+                    folder: "Tech".into()
+                },
+                OpmlFeed {
+                    url: "https://loose.example/feed".into(),
+                    title: "Loose".into(),
+                    folder: "".into()
+                },
             ]
         );
         let err = parse_opml(r#"<!DOCTYPE x [<!ENTITY a "b">]><opml/>"#).unwrap_err();
@@ -170,8 +210,16 @@ mod tests {
         assert_eq!(
             parse_opml(&exported).unwrap(),
             vec![
-                OpmlFeed { url: "https://lwn.net/headlines/rss".into(), title: "LWN".into(), folder: "Tech & Code".into() },
-                OpmlFeed { url: "https://loose.example/feed".into(), title: "Loose".into(), folder: "".into() },
+                OpmlFeed {
+                    url: "https://lwn.net/headlines/rss".into(),
+                    title: "LWN".into(),
+                    folder: "Tech & Code".into()
+                },
+                OpmlFeed {
+                    url: "https://loose.example/feed".into(),
+                    title: "Loose".into(),
+                    folder: "".into()
+                },
             ]
         );
     }
