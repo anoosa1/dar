@@ -111,6 +111,61 @@ pub fn my_files(ctx: &ViewContext) -> Vec<FileEntry> {
         ),
     };
     let mut result = Vec::new();
+    if section == "recent" {
+        let mut recent: Vec<FileEntry> = ctx
+            .db
+            .file_entries()
+            .owner_id()
+            .filter(user.id.as_str())
+            .filter(|e| {
+                e.kind == "file"
+                    && !e.trashed
+                    && visible(e)
+                    && view_access(ctx, e, &user.id)
+                    && (query.is_empty() || e.name.to_lowercase().contains(&query))
+            })
+            .collect();
+        recent.sort_by(|a, b| {
+            b.modified_at
+                .total_cmp(&a.modified_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        recent.truncate(100);
+        return recent;
+    }
+    if section == "shared_by_me" || section == "public_links" {
+        let mut items: Vec<FileEntry> = ctx
+            .db
+            .file_entries()
+            .owner_id()
+            .filter(user.id.as_str())
+            .filter(|e| {
+                if e.trashed || !visible(e) || !view_access(ctx, e, &user.id) {
+                    return false;
+                }
+                if !query.is_empty() && !e.name.to_lowercase().contains(&query) {
+                    return false;
+                }
+                if section == "shared_by_me" {
+                    ctx.db.grants().file_id().filter(e.id.as_str()).next().is_some()
+                } else {
+                    ctx.db
+                        .public_shares()
+                        .file_id()
+                        .filter(e.id.as_str())
+                        .next()
+                        .is_some()
+                }
+            })
+            .collect();
+        items.sort_by(|a, b| {
+            b.modified_at
+                .total_cmp(&a.modified_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        items.truncate(201);
+        return items;
+    }
     if section == "favorites" || section == "shared" {
         let prefix = format!("{}/{query}", user.id);
         let (lower, upper) = window_of(
@@ -212,7 +267,16 @@ pub fn browse(
 ) -> Res<()> {
     let parent_id = parentId;
     let user = caller(ctx)?;
-    if !["files", "favorites", "shared", "trash"].contains(&section.as_str())
+    if ![
+        "files",
+        "recent",
+        "favorites",
+        "shared",
+        "shared_by_me",
+        "public_links",
+        "trash",
+    ]
+    .contains(&section.as_str())
         || query.chars().count() > 100
         || cursor.len() > 1024
     {
@@ -528,6 +592,236 @@ pub fn file_details(ctx: &mut ProcedureContext, id: String) -> String {
         let mut entry_value = entry_json(&entry);
         entry_value["listKey"] = json!(entry.list_key);
         Ok(json!({ "entry": entry_value, "role": role, "ancestors": ancestors, "versions": versions, "grants": grants, "publicShares": shares }).to_string())
+    })
+}
+
+/// Sidebar folder tree, counts, folder metadata, Git-tracked folders, and trash metadata.
+#[spacetimedb::procedure]
+pub fn files_overview(ctx: &mut ProcedureContext) -> String {
+    crate::read_result(ctx, |tx| {
+        use std::collections::{HashMap, HashSet};
+        let user = caller(tx)?;
+        let preferences = preferences_of(tx.db.pim_preferences().user_id().find(user.id.clone()));
+        let show_hidden = preferences["filesShowHidden"] == json!(true);
+        let visible = |e: &FileEntry| show_hidden || !e.name.starts_with('.');
+        let owned: Vec<FileEntry> = tx
+            .db
+            .file_entries()
+            .owner_id()
+            .filter(user.id.as_str())
+            .collect();
+        let names_by_id: HashMap<String, String> = owned
+            .iter()
+            .filter(|e| !e.trashed && !is_locked_root(e))
+            .map(|e| (e.id.clone(), e.name.clone()))
+            .collect();
+        let locked_id = find_key(tx, &format!("{}/locked", user.id)).map(|e| e.id);
+        let mut child_counts: HashMap<String, usize> = HashMap::new();
+        let mut tracked_ids: Vec<String> = Vec::new();
+        let mut shared_ids: Vec<String> = Vec::new();
+        let mut trash_parents: HashMap<String, String> = HashMap::new();
+        let mut root_folders: Vec<FileEntry> = Vec::new();
+        let (mut favorites, mut shared_by_you, mut public_links, mut trash_count) =
+            (0usize, 0usize, 0usize, 0usize);
+        let (mut active_bytes, mut trash_bytes) = (0.0f64, 0.0f64);
+        let current_time = now(tx);
+
+        for entry in &owned {
+            if is_locked_root(entry) {
+                continue;
+            }
+            if entry.trashed {
+                if visible(entry) {
+                    trash_count += 1;
+                    let parent_name = if entry.parent_id.is_empty() {
+                        "All files".to_owned()
+                    } else {
+                        names_by_id
+                            .get(&entry.parent_id)
+                            .cloned()
+                            .unwrap_or_else(|| "All files".to_owned())
+                    };
+                    trash_parents.insert(entry.id.clone(), parent_name);
+                }
+                if entry.kind == "file" {
+                    trash_bytes += entry.size;
+                }
+                continue;
+            }
+            // Skip entries inside the Locked folder unless counting total storage.
+            let in_locked = locked_id.as_deref() == Some(entry.parent_id.as_str())
+                || locked_root(tx, entry).is_some();
+            if in_locked {
+                continue;
+            }
+            if entry.kind == "file" {
+                active_bytes += entry.size;
+            }
+            if !visible(entry) {
+                continue;
+            }
+            if !entry.parent_id.is_empty() {
+                *child_counts.entry(entry.parent_id.clone()).or_insert(0) += 1;
+            }
+            if entry.favorite {
+                favorites += 1;
+            }
+            if entry.kind == "folder" && tx.db.file_repos().id().find(entry.id.clone()).is_some() {
+                tracked_ids.push(entry.id.clone());
+            }
+            let has_grant = tx.db.grants().file_id().filter(entry.id.as_str()).next().is_some();
+            let has_link = tx
+                .db
+                .public_shares()
+                .file_id()
+                .filter(entry.id.as_str())
+                .any(|s| s.expires_at > current_time);
+            if has_grant {
+                shared_by_you += 1;
+            }
+            if has_link {
+                public_links += 1;
+            }
+            if has_grant || has_link {
+                shared_ids.push(entry.id.clone());
+            }
+            if entry.kind == "folder" && entry.parent_id.is_empty() {
+                root_folders.push(entry.clone());
+            }
+        }
+        root_folders.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        let tracked_set: HashSet<&str> = tracked_ids.iter().map(String::as_str).collect();
+        let shared_set: HashSet<&str> = shared_ids.iter().map(String::as_str).collect();
+        let root_folders_json: Vec<_> = root_folders
+            .iter()
+            .take(40)
+            .map(|f| {
+                json!({
+                    "id": f.id,
+                    "name": f.name,
+                    "itemCount": child_counts.get(&f.id).copied().unwrap_or(0),
+                    "gitTracked": tracked_set.contains(f.id.as_str()),
+                    "favorite": f.favorite,
+                    "shared": shared_set.contains(f.id.as_str()),
+                })
+            })
+            .collect();
+        let shared_with_you = tx
+            .db
+            .grants()
+            .user_id()
+            .filter(user.id.as_str())
+            .filter(|g| {
+                tx.db
+                    .file_entries()
+                    .id()
+                    .find(g.file_id.clone())
+                    .is_some_and(|e| visible(&e) && access(tx, &e, &user.id, Unlock::Caller).is_some())
+            })
+            .map(|g| g.file_id)
+            .collect::<HashSet<_>>()
+            .len();
+
+        Ok(json!({
+            "rootFolders": root_folders_json,
+            "folderCounts": child_counts,
+            "trackedFolderIds": tracked_ids,
+            "sharedIds": shared_ids,
+            "trashParents": trash_parents,
+            "counts": {
+                "favorites": favorites,
+                "sharedWithYou": shared_with_you,
+                "sharedByYou": shared_by_you,
+                "publicLinks": public_links,
+                "trash": trash_count,
+            },
+            "storage": {
+                "activeBytes": active_bytes,
+                "trashBytes": trash_bytes,
+            }
+        })
+        .to_string())
+    })
+}
+
+/// Resolves a list of selected files/folders into archive entries for ZIP download.
+#[spacetimedb::procedure]
+pub fn service_archive_manifest(
+    ctx: &mut ProcedureContext,
+    sessionId: String,
+    idsJson: String,
+) -> String {
+    let (session_id, ids_json) = (sessionId, idsJson);
+    run(ctx, |tx| {
+        use std::collections::HashSet;
+        let user = browser_user(tx, &session_id)?;
+        let ids: Vec<String> = serde_json::from_str(&ids_json).map_err(|_| "invalidInput")?;
+        if ids.is_empty() || ids.len() > 200 {
+            return fail("invalidInput");
+        }
+        let mut pending: Vec<(FileEntry, String)> = Vec::new();
+        let mut first_name = String::new();
+        for id in &ids {
+            opaque_id(id)?;
+            let entry = tx
+                .db
+                .file_entries()
+                .id()
+                .find(id.clone())
+                .filter(|e| access(tx, e, &user.id, Unlock::Session(&session_id)).is_some())
+                .ok_or("notFound")?;
+            if is_locked_root(&entry) {
+                return fail("forbidden");
+            }
+            if first_name.is_empty() {
+                first_name = entry.name.clone();
+            }
+            let name = entry.name.clone();
+            pending.push((entry, name));
+        }
+        let mut items = Vec::new();
+        let mut seen_paths = HashSet::new();
+        let mut total_bytes = 0.0f64;
+        const MAX_ARCHIVE_FILES: usize = 500;
+        const MAX_ARCHIVE_BYTES: f64 = 512.0 * 1024.0 * 1024.0;
+        while let Some((entry, rel_path)) = pending.pop() {
+            if entry.kind == "folder" {
+                let mut kids = crate::files::children(tx, &entry.owner_id, &entry.id);
+                kids.sort_by(|a, b| b.name.cmp(&a.name));
+                for kid in kids {
+                    if access(tx, &kid, &user.id, Unlock::Session(&session_id)).is_none() {
+                        continue;
+                    }
+                    let next_path = format!("{rel_path}/{}", kid.name);
+                    pending.push((kid, next_path));
+                }
+            } else {
+                if items.len() >= MAX_ARCHIVE_FILES {
+                    return fail("operationTooLarge");
+                }
+                total_bytes += entry.size;
+                if total_bytes > MAX_ARCHIVE_BYTES {
+                    return fail("operationTooLarge");
+                }
+                let mut unique = rel_path.clone();
+                let mut suffix = 2u32;
+                while !seen_paths.insert(unique.to_lowercase()) {
+                    unique = format!("{rel_path} ({suffix})");
+                    suffix += 1;
+                }
+                items.push(json!({
+                    "path": unique,
+                    "blobId": entry.blob_id,
+                    "size": entry.size,
+                }));
+            }
+        }
+        let archive_name = if ids.len() == 1 && !first_name.is_empty() {
+            first_name
+        } else {
+            "dar-files".to_owned()
+        };
+        Ok(json!({ "name": archive_name, "items": items }).to_string())
     })
 }
 

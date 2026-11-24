@@ -749,6 +749,34 @@ pub fn delete_entry(ctx: &ReducerContext, id: String, expectedRevision: u32) -> 
     delete_for(ctx, &user.id, &id, expected_revision, Unlock::Caller)
 }
 
+/// Permanently deletes every trashed item owned by the caller.
+#[spacetimedb::reducer]
+pub fn empty_trash(ctx: &ReducerContext) -> Res<()> {
+    let user = caller(ctx)?;
+    let (lower, upper) = window_of(&format!("{}/trash/", user.id), None);
+    let trashed: Vec<FileEntry> = ctx
+        .db
+        .file_entries()
+        .list_key()
+        .filter((
+            lower.as_ref().map(String::as_str),
+            upper.as_ref().map(String::as_str),
+        ))
+        .filter(|e| e.owner_id == user.id && e.trashed)
+        .take(500)
+        .collect();
+    for entry in trashed {
+        // Re-fetch in case deleting a trashed folder already removed a nested entry.
+        if let Some(current) = ctx.db.file_entries().id().find(entry.id)
+            && current.trashed
+            && current.owner_id == user.id
+        {
+            delete_for(ctx, &user.id, &current.id, current.revision, Unlock::Caller)?;
+        }
+    }
+    Ok(())
+}
+
 // ---------- Uploads ----------
 
 fn valid_media_type(value: &str) -> bool {

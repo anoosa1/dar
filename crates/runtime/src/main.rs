@@ -36,6 +36,7 @@ mod preferences;
 mod root;
 mod scim_model;
 mod thumbnails;
+mod zip_write;
 
 use std::path::PathBuf;
 use std::sync::Arc;

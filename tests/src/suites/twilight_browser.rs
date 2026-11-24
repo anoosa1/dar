@@ -110,6 +110,14 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
         }
         connection.disconnect();
     }
+    for i in 0..14 {
+        upload(
+            &admin,
+            &format!("{marker} file {:02}.txt", i + 1),
+            format!("Scroll check file {}\n", i + 1),
+        )
+        .await?;
+    }
 
     let notes_root = admin.get_json("/api/v1/notes/library").await?["rootId"]
         .as_str()

@@ -37,7 +37,7 @@ use editor::{TextEditor, TextFile, editable_text, write_text_file};
 use locked::{LockedFolder, UnlockDialog, UnlockForm};
 use picker::{FolderPicker, Selection};
 use preview::FilePreview;
-use types::{FileTile, file_type_label};
+use types::{FileTile, file_type, file_type_label};
 
 /// A Files entry as the module's views and procedures describe it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -118,6 +118,46 @@ pub struct Details {
     pub public_shares: Vec<PublicShare>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RootFolder {
+    id: String,
+    name: String,
+    item_count: usize,
+    git_tracked: bool,
+    favorite: bool,
+    shared: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OverviewCounts {
+    favorites: usize,
+    shared_with_you: usize,
+    shared_by_you: usize,
+    public_links: usize,
+    trash: usize,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StorageBreakdown {
+    active_bytes: f64,
+    trash_bytes: f64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FilesOverview {
+    root_folders: Vec<RootFolder>,
+    folder_counts: HashMap<String, usize>,
+    tracked_folder_ids: Vec<String>,
+    shared_ids: Vec<String>,
+    trash_parents: HashMap<String, String>,
+    counts: OverviewCounts,
+    storage: StorageBreakdown,
+}
+
 fn disconnected() -> String {
     "Files are disconnected.".into()
 }
@@ -129,6 +169,51 @@ pub async fn file_details(id: &str) -> Result<Details, String> {
     procedure(|tx| c.procedures.file_details_then(id, answered(tx))).await
 }
 
+async fn fetch_overview() -> Result<FilesOverview, String> {
+    let c = crate::live::connection().ok_or_else(disconnected)?;
+    procedure(|tx| c.procedures.files_overview_then(answered(tx))).await
+}
+
+fn matches_type_filter(entry: &FileEntry, filter: &str) -> bool {
+    if filter == "all" {
+        return true;
+    }
+    if entry.kind == "folder" {
+        return false;
+    }
+    let ty = file_type(&entry.kind, &entry.name, &entry.media_type);
+    match filter {
+        "doc" => matches!(ty, "doc" | "pdf" | "sheet"),
+        "image" => ty == "image",
+        "code" => ty == "code",
+        "archive" => ty == "archive",
+        "media" => matches!(ty, "audio" | "video"),
+        _ => true,
+    }
+}
+
+fn sort_entries(list: &mut [FileEntry], field: &str, asc: bool, folders_first: bool) {
+    list.sort_by(|a, b| {
+        if folders_first {
+            let af = a.kind != "folder";
+            let bf = b.kind != "folder";
+            if af != bf {
+                return af.cmp(&bf);
+            }
+        }
+        let ord = match field {
+            "modified" => a.modified_at.total_cmp(&b.modified_at),
+            "size" => a.size.total_cmp(&b.size),
+            "type" => file_type_label(&a.kind, &a.name, &a.media_type)
+                .cmp(file_type_label(&b.kind, &b.name, &b.media_type)),
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        };
+        let ord = if asc { ord } else { ord.reverse() };
+        ord.then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
 /// Rows in the server's list order: list keys sort by code point, as the index does.
 fn listed(rows: impl Iterator<Item = crate::module_bindings::FileEntry>) -> Vec<FileEntry> {
     let mut rows: Vec<FileEntry> = rows.map(Into::into).collect();
@@ -136,10 +221,11 @@ fn listed(rows: impl Iterator<Item = crate::module_bindings::FileEntry>) -> Vec<
     rows
 }
 
-const SECTIONS: [(&str, &str, &str); 5] = [
+const SECTIONS: [(&str, &str, &str); 6] = [
+    ("recent", "Recent", "clock"),
     ("files", "All files", "folder"),
     ("favorites", "Favorites", "star"),
-    ("shared", "Shared with you", "share"),
+    ("shared", "Shared", "share"),
     ("locked", "Locked folder", "lock"),
     ("trash", "Deleted files", "trash"),
 ];
@@ -386,9 +472,24 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
     let target_folder: RwSignal<Option<Selection>> = RwSignal::new(None);
     let transfers: RwSignal<Vec<Transfer>> = RwSignal::new(Vec::new());
     let public_link = RwSignal::new(String::new());
+    let public_expiry_days = RwSignal::new("7".to_owned());
     let preview_entry: RwSignal<Option<FileEntry>> = RwSignal::new(None);
     let trash_confirmation: RwSignal<Option<Vec<FileEntry>>> = RwSignal::new(None);
+    let empty_trash_confirm = RwSignal::new(false);
     let undo_trash: RwSignal<Option<Vec<FileEntry>>> = RwSignal::new(None);
+    let shared_sub = RwSignal::new("with_you");
+    let sort_field = RwSignal::new(if initial_section == "recent" {
+        "modified"
+    } else {
+        "name"
+    });
+    let sort_asc = RwSignal::new(initial_section != "recent");
+    let type_filter = RwSignal::new("all");
+    let overview: RwSignal<FilesOverview> = RwSignal::new(FilesOverview::default());
+    let overview_seq = RwSignal::new(0u32);
+    let tree_open = RwSignal::new(true);
+    let dragging_id: RwSignal<Option<String>> = RwSignal::new(None);
+    let drop_target: RwSignal<Option<String>> = RwSignal::new(None);
     let upload_input = NodeRef::<html::Input>::new();
     let folder_input = NodeRef::<html::Input>::new();
     // The directory picker (`webkitdirectory`, which `view!` does not know).
@@ -577,6 +678,14 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         query.set(String::new());
         cursor.set(String::new());
         previous.set(Vec::new());
+        type_filter.set("all");
+        if next == "recent" {
+            sort_field.set("modified");
+            sort_asc.set(false);
+        } else if sort_field.get_untracked() == "modified" && !sort_asc.get_untracked() {
+            sort_field.set("name");
+            sort_asc.set(true);
+        }
         sidebar.set(false);
         error.set(String::new());
     };
@@ -882,6 +991,92 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 perform(work, message).await;
             });
         };
+    let download_zip = move |ids: Vec<String>| {
+        if ids.is_empty() {
+            return;
+        }
+        let csrf_token = csrf();
+        run(
+            Box::pin(async move {
+                let response = api::fetch(
+                    "/api/v1/files/archive",
+                    Req {
+                        method: "POST",
+                        body: Some(serde_json::json!({ "ids": ids }).to_string()),
+                        csrf: Some(&csrf_token),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|e| e.message)?;
+                if !response.ok() {
+                    return Err("Could not build the ZIP archive.".into());
+                }
+                let blob_promise = response
+                    .blob()
+                    .map_err(|_| "Could not read the ZIP archive.".to_owned())?;
+                let blob_js = wasm_bindgen_futures::JsFuture::from(blob_promise)
+                    .await
+                    .map_err(|_| "Could not read the ZIP archive.".to_owned())?;
+                let blob: web_sys::Blob = blob_js.unchecked_into();
+                let url = web_sys::Url::create_object_url_with_blob(&blob)
+                    .map_err(|_| "Could not prepare download.".to_owned())?;
+                if let Ok(link) = document().create_element("a") {
+                    let link: web_sys::HtmlAnchorElement = link.unchecked_into();
+                    link.set_href(&url);
+                    link.set_download("dar-files.zip");
+                    if let Some(body) = document().body() {
+                        let _ = body.append_child(&link);
+                    }
+                    link.click();
+                    link.remove();
+                }
+                let revoke_url = url.clone();
+                set_timeout(
+                    move || {
+                        let _ = web_sys::Url::revoke_object_url(&revoke_url);
+                    },
+                    std::time::Duration::from_secs(15),
+                );
+                Ok(())
+            }),
+            "",
+        );
+    };
+    let move_dragged_into = move |dest_id: String| {
+        drop_target.set(None);
+        let Some(drag_id) = dragging_id.get_untracked() else {
+            return;
+        };
+        dragging_id.set(None);
+        if drag_id == dest_id {
+            return;
+        }
+        let Some(entry) = rows.with_untracked(|r| r.iter().find(|e| e.id == drag_id).cloned())
+        else {
+            return;
+        };
+        if entry.owner_id != me.get_value() || entry.parent_id == dest_id || entry.trashed {
+            return;
+        }
+        let name = entry.name.clone();
+        run(
+            Box::pin(async move {
+                let c = conn()?;
+                reducer(|tx| {
+                    c.reducers.move_entry_then(
+                        entry.id.clone(),
+                        dest_id.clone(),
+                        entry.revision,
+                        None,
+                        replied(tx),
+                    )
+                })
+                .await
+            }),
+            &format!("Moved {name}."),
+        );
+    };
     let menu_items = move |entry: FileEntry| -> Vec<MenuAction> {
         let owner = entry.owner_id == me.get_value();
         let write =
@@ -930,7 +1125,11 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                     .href(format!("/api/v1/files/{}/content", entry.id)),
             ]
         } else {
-            vec![MenuAction::new("Open folder", "folder").run(move || open_entry(e.get_value()))]
+            vec![
+                MenuAction::new("Open folder", "folder").run(move || open_entry(e.get_value())),
+                MenuAction::new("Download as ZIP", "download")
+                    .run(move || download_zip(vec![e.get_value().id])),
+            ]
         };
         list.push(MenuAction::new("Details", "info").run(move || select(&e.get_value())));
         list.push(
@@ -1224,9 +1423,10 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         Effect::new(move |_| {
             epoch.track();
             let Some(c) = connection.get() else { return };
-            let (here, current_section, q, at, open) = (
+            let (here, current_section, sub, q, at, open) = (
                 folder.get(),
                 section.get(),
+                shared_sub.get(),
                 query.get(),
                 cursor.get(),
                 locked_open.get(),
@@ -1254,6 +1454,12 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 }
                 let browsed_section = if current_section == "locked" {
                     "files".to_owned()
+                } else if current_section == "shared" {
+                    match sub {
+                        "by_you" => "shared_by_me".to_owned(),
+                        "links" => "public_links".to_owned(),
+                        _ => "shared".to_owned(),
+                    }
                 } else {
                     current_section.to_owned()
                 };
@@ -1336,6 +1542,23 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                     details.set(Some(d));
                 }
                 Err(e) => error.set(failure(&e)),
+            }
+        });
+    });
+    // Refresh sidebar folder tree, counts, Git folder badges, and trash metadata.
+    Effect::new(move |_| {
+        if connection.with(Option::is_none) || state.get() != ConnectionState::Ready {
+            return;
+        }
+        rows.track();
+        usage.track();
+        let seq = overview_seq.get_untracked() + 1;
+        overview_seq.set(seq);
+        spawn_local(async move {
+            if let Ok(next) = fetch_overview().await
+                && overview_seq.try_get_untracked() == Some(seq)
+            {
+                overview.try_set(next);
             }
         });
     });
@@ -1758,6 +1981,12 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         let Some(d) = details.get_untracked() else {
             return;
         };
+        let days = public_expiry_days
+            .get_untracked()
+            .parse::<f64>()
+            .ok()
+            .filter(|v| *v >= 1.0 && *v <= 30.0)
+            .unwrap_or(7.0);
         spawn_local(async move {
             let entry = d.entry;
             let id = entry.id.clone();
@@ -1765,7 +1994,7 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 Box::pin(async move {
                     let c = conn()?;
                     let (token, digest) = crate::secret_and_digest().await?;
-                    let expires = js_sys::Date::now() + 7.0 * 86_400_000.0;
+                    let expires = js_sys::Date::now() + days * 86_400_000.0;
                     reducer(|tx| {
                         c.reducers.create_public_share_then(
                             crate::random_uuid(),
@@ -1851,25 +2080,17 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             }.into_any();
         }
         let favorite = !chosen_items.iter().all(|e| e.favorite);
-        let all_files = chosen_items.iter().all(|e| e.kind == "file");
+        let single_file = (chosen_items.len() == 1 && chosen_items[0].kind == "file")
+            .then(|| chosen_items[0].clone());
         let locked_here = in_locked.get();
         view! {
-            {all_files.then(|| view! { <button class="text-button" aria-label="Download selected files" title="Download" disabled=off on:click=move |_| {
-                for (index, item) in items.get_value().into_iter().enumerate() {
-                    let item = send_wrapper::SendWrapper::new(item);
-                    set_timeout(move || {
-                        let item = item.take();
-                        if let Ok(link) = document().create_element("a") {
-                            let link: web_sys::HtmlAnchorElement = link.unchecked_into();
-                            link.set_href(&format!("/api/v1/files/{}/content", item.id));
-                            link.set_download(&item.name);
-                            if let Some(body) = document().body() { let _ = body.append_child(&link); }
-                            link.click();
-                            link.remove();
-                        }
-                    }, std::time::Duration::from_millis(index as u64 * 250));
-                }
-            }><Icon name="download"/><span>"Download"</span></button> })}
+            {if let Some(single) = single_file {
+                let id = single.id.clone();
+                let name = single.name.clone();
+                view! { <a class="text-button" href=format!("/api/v1/files/{id}/content") download=name aria-label="Download selected file" title="Download"><Icon name="download"/><span>"Download"</span></a> }.into_any()
+            } else {
+                view! { <button class="text-button" aria-label="Download selected items as ZIP" title="Download ZIP" disabled=off on:click=move |_| download_zip(items.get_value().into_iter().map(|i| i.id).collect())><Icon name="download"/><span>"Download ZIP"</span></button> }.into_any()
+            }}
             <button class="text-button" aria-label="Move selected items" title="Move to…" disabled=off || !owned on:click=move |_| open_modal(Modal { kind: ModalKind::Move, entry: None, entries: items.get_value() })><Icon name="move"/><span>"Move to…"</span></button>
             <button class="text-button" aria-label="Copy selected items" title="Copy to…" disabled=off on:click=move |_| open_modal(Modal { kind: ModalKind::Copy, entry: None, entries: items.get_value() })><Icon name="copy"/><span>"Copy to…"</span></button>
             {if locked_here {
@@ -1890,76 +2111,353 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         }.into_any()
     };
 
+    let filtered_rows = Memo::new(move |_| {
+        let mut list: Vec<FileEntry> = visible.with(|v| {
+            let f = type_filter.get();
+            v.iter()
+                .filter(|e| matches_type_filter(e, f))
+                .cloned()
+                .collect()
+        });
+        let folders_first = section.get() != "recent";
+        sort_entries(&mut list, sort_field.get(), sort_asc.get(), folders_first);
+        list
+    });
+    let separate_folders = Memo::new(move |_| {
+        matches!(section.get(), "files" | "locked" | "favorites")
+            && type_filter.get() == "all"
+            && filtered_rows.with(|r| r.iter().any(|e| e.kind == "folder"))
+    });
+    let shelf_folders = Memo::new(move |_| {
+        if separate_folders.get() {
+            filtered_rows.with(|r| {
+                r.iter()
+                    .filter(|e| e.kind == "folder")
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+        } else {
+            Vec::new()
+        }
+    });
+    let file_rows = Memo::new(move |_| {
+        if separate_folders.get() {
+            filtered_rows.with(|r| {
+                r.iter()
+                    .filter(|e| e.kind != "folder")
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+        } else {
+            filtered_rows.get()
+        }
+    });
+    let filter_counts = Memo::new(move |_| {
+        visible.with(|v| {
+            let (mut all, mut doc, mut image, mut code, mut archive, mut media) =
+                (0usize, 0, 0, 0, 0, 0);
+            for e in v {
+                if e.kind == "folder" {
+                    continue;
+                }
+                all += 1;
+                match file_type(&e.kind, &e.name, &e.media_type) {
+                    "doc" | "pdf" | "sheet" => doc += 1,
+                    "image" => image += 1,
+                    "code" => code += 1,
+                    "archive" => archive += 1,
+                    "audio" | "video" => media += 1,
+                    _ => {}
+                }
+            }
+            (all, doc, image, code, archive, media)
+        })
+    });
+    let toggle_sort = move |field: &'static str| {
+        if sort_field.get_untracked() == field {
+            sort_asc.update(|a| *a = !*a);
+        } else {
+            sort_field.set(field);
+            sort_asc.set(matches!(field, "name" | "type"));
+        }
+    };
+    let toggle_favorite = move |entry: FileEntry| {
+        if entry.owner_id != me.get_value() || busy.get_untracked() {
+            return;
+        }
+        run(
+            Box::pin(async move {
+                let c = conn()?;
+                reducer(|tx| {
+                    c.reducers.favorite_entry_then(
+                        entry.id.clone(),
+                        !entry.favorite,
+                        entry.revision,
+                        replied(tx),
+                    )
+                })
+                .await
+            }),
+            "",
+        );
+    };
+    let open_share = move |entry: FileEntry| {
+        tab.set("sharing".into());
+        selected.set(HashSet::from([entry.id.clone()]));
+        public_link.set(String::new());
+        show_details(entry.id);
+    };
+
     let empty_state = move || {
         let s = section.get();
         let q = !query.with(String::is_empty);
+        let filtered = type_filter.get() != "all";
         let locked_here = in_locked.get();
         let icon = if s == "trash" {
             "trash"
         } else if s == "shared" {
             "share"
-        } else if q {
+        } else if s == "recent" {
+            "clock"
+        } else if q || filtered {
             "search"
         } else if locked_here {
             "lock"
         } else {
             "folder"
         };
-        let heading = if q {
+        let heading = if filtered {
+            "No matching files"
+        } else if q {
             "No matching files"
         } else if locked_here {
             "Nothing locked yet"
         } else if s == "trash" {
             "Nothing in deleted files"
+        } else if s == "recent" {
+            "No recent files"
         } else if s == "shared" {
-            "No shared files"
+            match shared_sub.get() {
+                "by_you" => "Nothing shared by you",
+                "links" => "No active public links",
+                _ => "No shared files",
+            }
         } else if s == "favorites" {
             "No favorites"
         } else {
             "No files"
         };
-        let text = if q {
+        let text = if filtered {
+            "No files in this view match the selected type filter."
+        } else if q {
             "Search matches the beginning of a filename in this folder."
         } else if locked_here {
-            "Choose Move to Locked folder on a file or folder, or upload here. Deleting here is permanent."
+            "Choose Move to Locked folder on a file or folder, or use New to upload here. Deleting here is permanent."
         } else if s == "files" {
-            "Drop your first file here, or upload something to get started."
+            "Drop files or folders here, or use New to upload or create something."
+        } else if s == "recent" {
+            "Files you upload or edit will appear here, newest first."
         } else if s == "favorites" {
-            "Mark a file or folder as a favorite to find it here."
+            "Star any file or folder to keep it one click away."
         } else if s == "shared" {
-            "When someone shares with you, it will appear here."
+            match shared_sub.get() {
+                "by_you" => "Files and folders you share with other people will appear here.",
+                "links" => "Public download links you create will appear here so you can manage or revoke them.",
+                _ => "When someone shares with you, it will appear here.",
+            }
         } else {
             "Items you delete will appear here for recovery."
         };
         view! {
             <div class="empty-state"><span class="empty-icon"><Icon name=icon/></span><h2>{heading}</h2><p>{text}</p>
-                {(writable_here.get() && !q).then(|| view! { <button class="primary-button" disabled=move || !connected.get() on:click=move |_| if let Some(i) = upload_input.get_untracked() { i.click() }><Icon name="upload"/>"Upload your first file"</button> })}
+                {filtered.then(|| view! { <button class="secondary-button" on:click=move |_| type_filter.set("all")>"Show all types"</button> })}
+                {(writable_here.get() && !q && !filtered).then(|| view! {
+                    <div class="empty-state-actions">
+                        <button class="primary-button" disabled=move || !connected.get() on:click=move |_| if let Some(i) = upload_input.get_untracked() { i.click() }><Icon name="upload"/>"Upload your first file"</button>
+                        <button class="secondary-button" disabled=move || !connected.get() on:click=move |_| open_modal(Modal { kind: ModalKind::Folder, entry: None, entries: Vec::new() })><Icon name="folder"/>"New folder"</button>
+                    </div>
+                })}
+            </div>
+        }
+    };
+    let folder_tile_view = move |entry: FileEntry| {
+        let id = entry.id.clone();
+        let (sel_id, check_id, toggle_id, drag_id, drop_id, drop_id2, drop_id3, count_id, git_id) = (
+            id.clone(),
+            id.clone(),
+            id.clone(),
+            id.clone(),
+            id.clone(),
+            id.clone(),
+            id.clone(),
+            id.clone(),
+            id.clone(),
+        );
+        let shared_with_me = entry.owner_id != me.get_value();
+        let owned = !shared_with_me;
+        let can_drag = writable_here.get_untracked() && owned && !entry.trashed;
+        let e = StoredValue::new(entry.clone());
+        let item_count = move || overview.with(|o| o.folder_counts.get(&count_id).copied().unwrap_or(0));
+        let git_tracked = move || overview.with(|o| o.tracked_folder_ids.iter().any(|x| x == &git_id));
+        view! {
+            <div class=move || {
+                let is_sel = selected.with(|s| s.contains(&sel_id))
+                    || chosen.with(|c| c.as_ref().is_some_and(|c| c.id == sel_id));
+                let is_drop = drop_target.with(|d| d.as_deref() == Some(drop_id.as_str()));
+                match (is_sel, is_drop) {
+                    (true, true) => "folder-tile is-selected is-drop-target",
+                    (true, false) => "folder-tile is-selected",
+                    (false, true) => "folder-tile is-drop-target",
+                    (false, false) => "folder-tile",
+                }
+            }
+                draggable=if can_drag { "true" } else { "false" }
+                on:dragstart=move |ev: web_sys::DragEvent| {
+                    if can_drag {
+                        dragging_id.set(Some(drag_id.clone()));
+                        if let Some(dt) = ev.data_transfer() {
+                            let _ = dt.set_data("application/x-dar-file-id", &drag_id);
+                        }
+                    }
+                }
+                on:dragend=move |_| { dragging_id.set(None); drop_target.set(None); }
+                on:dragover=move |ev: web_sys::DragEvent| {
+                    if dragging_id.with_untracked(|d| d.as_deref().is_some_and(|src| src != drop_id2.as_str())) {
+                        ev.prevent_default();
+                        ev.stop_propagation();
+                        drop_target.set(Some(drop_id2.clone()));
+                    }
+                }
+                on:dragleave=move |_| {
+                    if drop_target.with_untracked(|d| d.as_deref() == Some(drop_id3.as_str())) {
+                        drop_target.set(None);
+                    }
+                }
+                on:drop=move |ev: web_sys::DragEvent| {
+                    if dragging_id.with_untracked(Option::is_some) {
+                        ev.prevent_default();
+                        ev.stop_propagation();
+                        move_dragged_into(e.get_value().id);
+                    }
+                }>
+                <input type="checkbox" class="folder-tile-check" prop:checked=move || selected.with(|s| s.contains(&check_id)) aria-label=format!("Select {}", entry.name) on:change=move |_| toggle(toggle_id.clone())/>
+                <FileTile kind=entry.kind.clone() name=entry.name.clone() media_type=entry.media_type.clone()/>
+                <div class="folder-tile-body">
+                    <button class="folder-tile-open" on:click=move |_| open_entry(e.get_value())>{entry.name.clone()}</button>
+                    <div class="folder-tile-meta">
+                        <span>{move || { let n = item_count(); format!("{n} {}", if n == 1 { "item" } else { "items" }) }}</span>
+                        {move || git_tracked().then(|| view! { <span class="folder-git-badge" title="Git history tracked"><Icon name="branch"/>"Git"</span> })}
+                    </div>
+                </div>
+                {entry.favorite.then(|| view! { <Icon name="star" class="favorite-icon"/> })}
+                {shared_with_me.then(|| view! { <span class="file-shared" title="Shared with you"><Icon name="share"/><span class="sr-only">"Shared with you"</span></span> })}
+                <ActionMenu label=format!("Actions for {}", entry.name) class="ui-file-actions" on_open=Callback::new(move |_| open_menu(e.get_value())) actions=move |_| menu_items(e.get_value())><Icon name="more"/></ActionMenu>
             </div>
         }
     };
     let row_view = move |entry: FileEntry| {
         let id = entry.id.clone();
-        let (toggle_id, highlight_id, check_id) = (id.clone(), id.clone(), id.clone());
+        let (toggle_id, highlight_id, check_id, drag_id, origin_id, shared_id) = (
+            id.clone(),
+            id.clone(),
+            id.clone(),
+            id.clone(),
+            id.clone(),
+            id.clone(),
+        );
         let shared_with_me = entry.owner_id != me.get_value();
+        let owned = !shared_with_me;
+        let is_file = entry.kind == "file";
+        let is_trashed = entry.trashed;
+        let can_drag = writable_here.get_untracked() && owned && !is_trashed;
         let e = StoredValue::new(entry.clone());
+        let size_text = if is_file {
+            format_bytes(entry.size)
+        } else {
+            "—".to_owned()
+        };
+        let modified_text = relative(entry.modified_at);
+        let phone_sub = if is_file {
+            format!("{size_text} · {modified_text}")
+        } else {
+            format!("Folder · {modified_text}")
+        };
+        let owned_shared = move || !shared_with_me && overview.with(|o| o.shared_ids.iter().any(|x| x == &shared_id));
+        let trash_origin = move || {
+            is_trashed.then(|| {
+                overview.with(|o| {
+                    o.trash_parents
+                        .get(&origin_id)
+                        .cloned()
+                        .unwrap_or_else(|| "All files".to_owned())
+                })
+            })
+        };
         view! {
-            <tr class=move || if selected.with(|s| s.contains(&highlight_id)) || chosen.with(|c| c.as_ref().is_some_and(|c| c.id == highlight_id)) { "is-selected" } else { "" }>
+            <tr class=move || if selected.with(|s| s.contains(&highlight_id)) || chosen.with(|c| c.as_ref().is_some_and(|c| c.id == highlight_id)) { "is-selected" } else { "" }
+                draggable=if can_drag { "true" } else { "false" }
+                on:dragstart=move |ev: web_sys::DragEvent| {
+                    if can_drag {
+                        dragging_id.set(Some(drag_id.clone()));
+                        if let Some(dt) = ev.data_transfer() {
+                            let _ = dt.set_data("application/x-dar-file-id", &drag_id);
+                        }
+                    }
+                }
+                on:dragend=move |_| { dragging_id.set(None); drop_target.set(None); }>
                 <td class="checkbox-cell"><input type="checkbox" prop:checked=move || selected.with(|s| s.contains(&check_id)) aria-label=format!("Select {}", entry.name) on:change=move |_| toggle(toggle_id.clone())/></td>
                 <td><div class="file-name">
                     <FileTile kind=entry.kind.clone() name=entry.name.clone() media_type=entry.media_type.clone()/>
-                    <button class="name-button" on:click=move |_| { let en = e.get_value(); if !en.trashed { open_entry(en) } else { select(&en) } } on:dblclick=move |_| { let en = e.get_value(); if en.kind == "file" && !en.trashed { set_preview(Some(en)) } }>{entry.name.clone()}</button>
-                    {entry.favorite.then(|| view! { <Icon name="star" class="favorite-icon"/> })}
-                    {shared_with_me.then(|| view! { <span class="file-shared" title="Shared with you"><Icon name="share"/><span class="sr-only">"Shared with you"</span></span> })}
+                    <div class="file-name-wrap">
+                        <div class="file-name-line">
+                            <button class="name-button" on:click=move |_| { let en = e.get_value(); if !en.trashed { open_entry(en) } else { select(&en) } } on:dblclick=move |_| { let en = e.get_value(); if en.kind == "file" && !en.trashed { set_preview(Some(en)) } }>{entry.name.clone()}</button>
+                            {entry.favorite.then(|| view! { <Icon name="star" class="favorite-icon"/> })}
+                            {shared_with_me.then(|| view! { <span class="file-shared" title="Shared with you"><Icon name="share"/><span class="sr-only">"Shared with you"</span></span> })}
+                            {move || owned_shared().then(|| view! { <span class="file-shared" title="Shared"><Icon name="share"/></span> })}
+                        </div>
+                        {move || trash_origin().map(|orig| view! { <span class="file-name-origin">{format!("From {orig}")}</span> })}
+                        <span class="file-name-sub">{phone_sub.clone()}</span>
+                    </div>
                 </div></td>
-                <td class="date-cell muted">{relative(entry.modified_at)}</td>
-                <td class="size-cell muted">{if entry.kind == "folder" { "—".to_owned() } else { format_bytes(entry.size) }}</td>
-                <td><ActionMenu label=format!("Actions for {}", entry.name) class="ui-file-actions" on_open=Callback::new(move |_| open_menu(e.get_value())) actions=move |_| menu_items(e.get_value())><Icon name="more"/></ActionMenu></td>
+                <td class="date-cell muted">{modified_text}</td>
+                <td class="size-cell muted">{size_text}</td>
+                <td>
+                    <div class="file-row-actions">
+                        {if is_trashed {
+                            owned.then(|| view! {
+                                <button class="file-restore-pill" aria-label=format!("Restore {}", entry.name) disabled=move || busy.get() on:click=move |_| {
+                                    let en = e.get_value();
+                                    run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.restore_entry_then(en.id.clone(), en.revision, replied(tx))).await }), "Item restored.");
+                                }>"Restore"</button>
+                            }).into_any()
+                        } else {
+                            view! {
+                                <div class="file-row-quick">
+                                    {owned.then(|| view! {
+                                        <button class=if entry.favorite { "icon-button is-starred" } else { "icon-button" }
+                                            aria-label=format!("{} {}", if entry.favorite { "Unfavorite" } else { "Favorite" }, entry.name)
+                                            title=if entry.favorite { "Remove favorite" } else { "Add to favorites" }
+                                            on:click=move |_| toggle_favorite(e.get_value())><Icon name="star"/></button>
+                                    })}
+                                    {(owned && !in_locked.get_untracked()).then(|| view! {
+                                        <button class="icon-button" aria-label=format!("Share {}", entry.name) title="Share" on:click=move |_| open_share(e.get_value())><Icon name="share"/></button>
+                                    })}
+                                    {is_file.then(|| view! {
+                                        <a class="icon-button" href=format!("/api/v1/files/{}/content", entry.id) download=entry.name.clone() aria-label=format!("Download {}", entry.name) title="Download"><Icon name="download"/></a>
+                                    })}
+                                </div>
+                            }.into_any()
+                        }}
+                        <ActionMenu label=format!("Actions for {}", entry.name) class="ui-file-actions" on_open=Callback::new(move |_| open_menu(e.get_value())) actions=move |_| menu_items(e.get_value())><Icon name="more"/></ActionMenu>
+                    </div>
+                </td>
             </tr>
         }
     };
     let card_view = move |entry: FileEntry| {
         let id = entry.id.clone();
         let (class_id, check_id, toggle_id) = (id.clone(), id.clone(), id.clone());
+        let owned = entry.owner_id == me.get_value();
         let e = StoredValue::new(entry.clone());
         let art = if thumbnail_ok(&entry) {
             view! { <img src=format!("/api/v1/files/{}/thumbnail?v={}", entry.id, entry.revision) alt="" loading="lazy" decoding="async"/> }.into_any()
@@ -1967,10 +2465,20 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             view! { <FileTile kind=entry.kind.clone() name=entry.name.clone() media_type=entry.media_type.clone() large=true/> }.into_any()
         };
         view! {
-            <article class=move || if selected.with(|s| s.contains(&class_id)) { "file-card is-selected" } else { "file-card " }>
-                <button class=format!("card-open card-preview-{}", entry.kind) on:click=move |_| open_entry(e.get_value()) aria-label=format!("Open {}", entry.name)>{art}</button>
+            <article class=move || if selected.with(|s| s.contains(&class_id)) { "file-card is-selected" } else { "file-card" }>
+                <div class="card-media-wrap">
+                    <button class=format!("card-open card-preview-{}", entry.kind) on:click=move |_| open_entry(e.get_value()) aria-label=format!("Open {}", entry.name)>{art}</button>
+                    <div class="card-overlay">
+                        <label class="card-ov-chip"><input type="checkbox" prop:checked=move || selected.with(|s| s.contains(&check_id)) aria-label=format!("Select {}", entry.name) on:change=move |_| toggle(toggle_id.clone())/></label>
+                        {(owned && !entry.trashed).then(|| view! {
+                            <button class=if entry.favorite { "card-ov-chip is-starred" } else { "card-ov-chip" }
+                                aria-label=format!("{} {}", if entry.favorite { "Unfavorite" } else { "Favorite" }, entry.name)
+                                title=if entry.favorite { "Remove favorite" } else { "Add to favorites" }
+                                on:click=move |_| toggle_favorite(e.get_value())><Icon name="star"/></button>
+                        })}
+                    </div>
+                </div>
                 <div class="card-caption">
-                    <input type="checkbox" prop:checked=move || selected.with(|s| s.contains(&check_id)) aria-label=format!("Select {}", entry.name) on:change=move |_| toggle(toggle_id.clone())/>
                     <button class="name-button" on:click=move |_| open_entry(e.get_value())>{entry.name.clone()}</button>
                     <ActionMenu label=format!("Actions for {}", entry.name) class="ui-file-actions" on_open=Callback::new(move |_| open_menu(e.get_value())) actions=move |_| menu_items(e.get_value())><Icon name="more"/></ActionMenu>
                 </div>
@@ -2006,7 +2514,7 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
             ListingMode::Disconnected
         } else if loading.get() {
             ListingMode::Loading
-        } else if visible.with(Vec::is_empty) {
+        } else if filtered_rows.with(Vec::is_empty) {
             ListingMode::Empty
         } else if grid.get() {
             ListingMode::Grid
@@ -2015,6 +2523,17 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         }
     });
 
+    let folder_shelf_section = move || {
+        let folders = shelf_folders.get();
+        (!folders.is_empty()).then(|| {
+            let count = folders.len();
+            view! {
+                <div class="files-section-heading">"Folders "<span>{format!("({count})")}</span></div>
+                <div class="folder-shelf"><For each=move || shelf_folders.get() key=row_key children=folder_tile_view/></div>
+            }
+        })
+    };
+
     let listing = move || {
         match listing_mode.get() {
         ListingMode::LockedForm => view! { <UnlockForm folder=locked description="Enter your password to open it. Files here are hidden from All files, search, sharing, WebDAV and other apps, including Photos’ library." on_unlocked=Callback::new(move |_| error.set(String::new()))/> }.into_any(),
@@ -2022,16 +2541,38 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         ListingMode::Disconnected => ().into_any(),
         ListingMode::Loading => view! { <div class="file-skeleton" aria-busy="true" aria-label="Loading files">{(0..4).map(|_| view! { <div><span></span><span></span></div> }).collect_view()}</div> }.into_any(),
         ListingMode::Empty => empty_state().into_any(),
-        ListingMode::Grid => view! { <div class="file-grid"><For each=move || visible.get() key=row_key children=card_view/></div> }.into_any(),
+        ListingMode::Grid => view! {
+            {folder_shelf_section}
+            {move || (!file_rows.with(Vec::is_empty)).then(|| view! {
+                {move || separate_folders.get().then(|| view! { <div class="files-section-heading">"Files "<span>{format!("({})", file_rows.with(Vec::len))}</span></div> })}
+                <div class="file-grid"><For each=move || file_rows.get() key=row_key children=card_view/></div>
+            })}
+        }.into_any(),
         ListingMode::Table => view! {
-            <div class="table-scroll"><table class="file-table">
-                <thead><tr>
-                    <th class="checkbox-cell"><input type="checkbox" aria-label="Select all visible files" prop:checked=move || visible.with(|v| !v.is_empty() && v.iter().all(|e| selected.with(|s| s.contains(&e.id))))
-                        on:change=move |e| selected.set(if event_target_checked(&e) { visible.with_untracked(|v| v.iter().map(|e| e.id.clone()).collect()) } else { HashSet::new() })/></th>
-                    <th>"Name "<span aria-hidden="true">"↑"</span></th><th class="date-cell">"Modified"</th><th class="size-cell">"Size"</th><th><span class="sr-only">"Actions"</span></th>
-                </tr></thead>
-                <tbody><For each=move || visible.get() key=row_key children=row_view/></tbody>
-            </table></div>
+            {folder_shelf_section}
+            {move || (!file_rows.with(Vec::is_empty)).then(|| {
+                let arrow = move |f: &'static str| {
+                    if sort_field.get() == f {
+                        if sort_asc.get() { " ↑" } else { " ↓" }
+                    } else {
+                        ""
+                    }
+                };
+                view! {
+                    {move || separate_folders.get().then(|| view! { <div class="files-section-heading">"Files "<span>{format!("({})", file_rows.with(Vec::len))}</span></div> })}
+                    <div class="table-scroll"><table class=move || if selected.with(HashSet::is_empty) { "file-table" } else { "file-table is-selecting-mobile" }>
+                        <thead><tr>
+                            <th class="checkbox-cell"><input type="checkbox" aria-label="Select all visible files" prop:checked=move || filtered_rows.with(|v| !v.is_empty() && v.iter().all(|e| selected.with(|s| s.contains(&e.id))))
+                                on:change=move |e| selected.set(if event_target_checked(&e) { filtered_rows.with_untracked(|v| v.iter().map(|e| e.id.clone()).collect()) } else { HashSet::new() })/></th>
+                            <th><button type="button" class=move || if sort_field.get() == "name" { "th-sort is-sorted" } else { "th-sort" } on:click=move |_| toggle_sort("name")>"Name"{move || arrow("name")}</button></th>
+                            <th class="date-cell"><button type="button" class=move || if sort_field.get() == "modified" { "th-sort is-sorted" } else { "th-sort" } on:click=move |_| toggle_sort("modified")>{move || if section.get() == "trash" { "Deleted" } else { "Modified" }}{move || arrow("modified")}</button></th>
+                            <th class="size-cell"><button type="button" class=move || if sort_field.get() == "size" { "th-sort is-sorted" } else { "th-sort" } on:click=move |_| toggle_sort("size")>"Size"{move || arrow("size")}</button></th>
+                            <th><span class="sr-only">"Actions"</span></th>
+                        </tr></thead>
+                        <tbody><For each=move || file_rows.get() key=row_key children=row_view/></tbody>
+                    </table></div>
+                }
+            })}
         }.into_any(),
     }
     };
@@ -2131,13 +2672,24 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                     if d.versions.is_empty() {
                         view! { <p class="muted">"Folders don’t have content versions."</p> }.into_any()
                     } else {
-                        d.versions.iter().map(|v| {
+                        let total = d.versions.len();
+                        let file_id = entry.id.clone();
+                        d.versions.iter().enumerate().map(|(idx, v)| {
                             let current = v.blob_id == entry.blob_id;
                             let restorable = !entry.trashed && can_write.get() && !current;
                             let version_id = v.id.clone();
+                            let dl_url = format!("/api/v1/files/{file_id}/content?version={version_id}");
+                            let ver_num = total.saturating_sub(idx);
                             view! {
-                                <div class="version"><Icon name="clock"/><div><strong>{local_date_time(v.created_at, &[])}</strong><span>{format!("{}{}", format_bytes(v.size), if current { " · Current content" } else { "" })}</span></div>
-                                    {restorable.then(|| view! { <button class="text-button" disabled=move || busy.get() on:click=move |_| { let (en, vid) = (e.get_value(), version_id.clone()); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.restore_version_then(en.id.clone(), vid, en.revision, replied(tx))).await }), "Version restored."); }>"Restore"</button> })}
+                                <div class="version">
+                                    <span class="version-badge">{format!("v{ver_num}")}</span>
+                                    <div><strong>{local_date_time(v.created_at, &[])}</strong><span>{format!("{}{}", format_bytes(v.size), if current { " · Current" } else { "" })}</span></div>
+                                    <div class="version-actions">
+                                        {(!entry.trashed).then(|| view! {
+                                            <a class="icon-button" href=dl_url download="" aria-label=format!("Download version {ver_num}") title="Download version"><Icon name="download"/></a>
+                                        })}
+                                        {restorable.then(|| view! { <button class="text-button" disabled=move || busy.get() on:click=move |_| { let (en, vid) = (e.get_value(), version_id.clone()); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.restore_version_then(en.id.clone(), vid, en.revision, replied(tx))).await }), "Version restored."); }>"Restore"</button> })}
+                                    </div>
                                 </div>
                             }
                         }).collect_view().into_any()
@@ -2147,6 +2699,11 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                     if in_locked.get() {
                         view! { <p class="muted">"Items in the Locked folder can’t be shared. Sharing set up before an item was locked pauses until you move it out."</p> }.into_any()
                     } else if owner.get() && !entry.trashed {
+                        let internal_url = format!(
+                            "{}/?file={}",
+                            window().location().origin().unwrap_or_default(),
+                            entry.id
+                        );
                         view! {
                             <h3>"Share with a person"</h3>
                             <form class="share-form" on:submit=share>
@@ -2161,12 +2718,35 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                                         <button class="icon-button" aria-label=format!("Revoke access for {}", g.username) on:click=move |_| { let (gid, en) = (grant_id.clone(), e.get_value()); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.revoke_grant_then(gid, replied(tx))).await?; show_details(en.id); Ok(()) }), ""); }><Icon name="close"/></button></div>
                                 }
                             }).collect_view()}
+                            <div class="grant">
+                                <span><strong>"Internal link"</strong><small>"For people with access"</small></span>
+                                <button type="button" class="text-button" on:click=move |_| {
+                                    let _ = window().navigator().clipboard().write_text(&internal_url);
+                                    notice.set("Internal link copied.".into());
+                                }><Icon name="copy"/>"Copy"</button>
+                            </div>
                             {(entry.kind == "file").then(|| view! {
                                 <h3>"Public download link"</h3>
-                                <p class="muted small">"Anyone with the link can download this file. New links expire after seven days."</p>
-                                <button class="secondary-button" disabled=move || busy.get() on:click=move |_| make_public_link()><Icon name="share"/>"Create link"</button>
-                                {move || (!public_link.get().is_empty()).then(|| view! {
-                                    <label>"Copy this link"<input readonly prop:value=public_link.get() on:focus=move |ev| { if let Some(i) = ev.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) { i.select() } }/><small class="field-hint">"The secret link is shown only here. Save it before closing."</small></label>
+                                <p class="muted small">"Anyone with the link can download this file."</p>
+                                <div class="share-expiry-row">
+                                    <label>"Expires in"<Select value=public_expiry_days aria_label="Link expiration" options=vec![("1".to_owned(), "1 day".to_owned()), ("7".to_owned(), "7 days".to_owned()), ("30".to_owned(), "30 days".to_owned())]/></label>
+                                    <button class="secondary-button" disabled=move || busy.get() on:click=move |_| make_public_link()><Icon name="share"/>"Create link"</button>
+                                </div>
+                                {move || (!public_link.get().is_empty()).then(|| {
+                                    let link_val = public_link.get();
+                                    let copy_val = link_val.clone();
+                                    view! {
+                                        <label>"Copy this link"
+                                            <div class="public-link-copy">
+                                                <input readonly prop:value=link_val on:focus=move |ev| { if let Some(i) = ev.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) { i.select() } }/>
+                                                <button type="button" class="secondary-button" on:click=move |_| {
+                                                    let _ = window().navigator().clipboard().write_text(&copy_val);
+                                                    notice.set("Public link copied.".into());
+                                                }><Icon name="copy"/>"Copy"</button>
+                                            </div>
+                                            <small class="field-hint">"The secret link is shown only here. Save it before closing."</small>
+                                        </label>
+                                    }
                                 })}
                                 {d.public_shares.iter().map(|link| {
                                     let link_id = link.id.clone();
@@ -2196,12 +2776,29 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         let (s, p, crumbs) = (section.get(), parent_id.get(), path.get());
         let in_files = s == "files" && !p.is_empty();
         let in_lock = s == "locked" && !p.is_empty();
+        let show_folder_menu = (s == "files" || locked_open.get()) && connected.get();
+        let current_folder_id = p.clone();
         view! {
             {in_files.then(|| {
                 let parts = crumbs[..crumbs.len().saturating_sub(1)].to_vec();
                 view! {
-                    <button on:click=move |_| navigate("files", String::new(), Vec::new())>"All files"</button>
-                    {parts.iter().enumerate().map(|(index, part)| { let (id, upto) = (part.id.clone(), crumbs[..=index].to_vec()); view! { <span><Icon name="chevron"/><button on:click=move |_| navigate("files", id.clone(), upto.clone())>{part.name.clone()}</button></span> } }).collect_view()}
+                    <button
+                        class=move || if drop_target.with(|d| d.as_deref() == Some("")) { "is-drop-target" } else { "" }
+                        on:click=move |_| navigate("files", String::new(), Vec::new())
+                        on:dragover=move |ev: web_sys::DragEvent| { if dragging_id.with_untracked(Option::is_some) { ev.prevent_default(); drop_target.set(Some(String::new())); } }
+                        on:dragleave=move |_| { if drop_target.with_untracked(|d| d.as_deref() == Some("")) { drop_target.set(None); } }
+                        on:drop=move |ev: web_sys::DragEvent| { if dragging_id.with_untracked(Option::is_some) { ev.prevent_default(); ev.stop_propagation(); move_dragged_into(String::new()); } }>"All files"</button>
+                    {parts.iter().enumerate().map(|(index, part)| {
+                        let (id, id_over, id_leave, id_drop, id_cls, upto) = (part.id.clone(), part.id.clone(), part.id.clone(), part.id.clone(), part.id.clone(), crumbs[..=index].to_vec());
+                        view! {
+                            <span><Icon name="chevron"/><button
+                                class=move || if drop_target.with(|d| d.as_deref() == Some(id_cls.as_str())) { "is-drop-target" } else { "" }
+                                on:click=move |_| navigate("files", id.clone(), upto.clone())
+                                on:dragover=move |ev: web_sys::DragEvent| { if dragging_id.with_untracked(Option::is_some) { ev.prevent_default(); drop_target.set(Some(id_over.clone())); } }
+                                on:dragleave=move |_| { if drop_target.with_untracked(|d| d.as_deref() == Some(id_leave.as_str())) { drop_target.set(None); } }
+                                on:drop=move |ev: web_sys::DragEvent| { if dragging_id.with_untracked(Option::is_some) { ev.prevent_default(); ev.stop_propagation(); move_dragged_into(id_drop.clone()); } }>{part.name.clone()}</button></span>
+                        }
+                    }).collect_view()}
                     <Icon name="chevron"/>
                 }
             })}
@@ -2214,6 +2811,28 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 }
             })}
             <h1>{title()}</h1>
+            {show_folder_menu.then(|| {
+                let fid = current_folder_id.clone();
+                view! {
+                    <ActionMenu label="Current folder options" class="breadcrumb-menu" align_start=true actions=move |_| {
+                        let mut list = vec![
+                            MenuAction::new("New folder", "folder").run(move || open_modal(Modal { kind: ModalKind::Folder, entry: None, entries: Vec::new() })),
+                            MenuAction::new("Upload files", "upload").run(move || if let Some(i) = upload_input.get_untracked() { i.click() }),
+                            MenuAction::new("Upload folder", "upload").run(move || if let Some(i) = folder_input.get_untracked() { i.click() }),
+                        ];
+                        if !fid.is_empty() {
+                            let (f1, f2, f3, f4) = (fid.clone(), fid.clone(), fid.clone(), fid.clone());
+                            list.push(MenuAction::new("Folder details", "info").separator().run(move || { tab.set("details".into()); show_details(f1.clone()); }));
+                            list.push(MenuAction::new("Git folder history", "history").run(move || { tab.set("history".into()); show_details(f2.clone()); }));
+                            if !in_locked.get_untracked() {
+                                list.push(MenuAction::new("Share folder", "share").run(move || { tab.set("sharing".into()); show_details(f3.clone()); }));
+                            }
+                            list.push(MenuAction::new("Download as ZIP", "download").separator().run(move || download_zip(vec![f4.clone()])));
+                        }
+                        list
+                    }><Icon name="chevron"/></ActionMenu>
+                }
+            })}
         }
     };
 
@@ -2315,21 +2934,81 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         let off = !connected.get() || !writable_here.get();
                         vec![
                             MenuAction::new("Folder", "folder").disabled(off).run(move || open_modal(Modal { kind: ModalKind::Folder, entry: None, entries: Vec::new() })),
-                            MenuAction::new("Upload files", "upload").disabled(off).run(move || { sidebar.set(false); if let Some(i) = upload_input.get_untracked() { i.click() } }),
+                            MenuAction::new("Upload files", "upload").separator().disabled(off).run(move || { sidebar.set(false); if let Some(i) = upload_input.get_untracked() { i.click() } }),
                             MenuAction::new("Upload folder", "upload").disabled(off).run(move || { sidebar.set(false); if let Some(i) = folder_input.get_untracked() { i.click() } }),
-                            MenuAction::new("File", "file").disabled(off).items(vec![
+                            MenuAction::new("File", "file").separator().disabled(off).items(vec![
                                 MenuAction::plain("Text file").run(move || { sidebar.set(false); new_file.set(Some("text")); }),
                                 MenuAction::plain("Markdown file").run(move || { sidebar.set(false); new_file.set(Some("markdown")); }),
                             ]),
                         ]
                     }><Icon name="plus"/><span>"New"</span><Icon name="chevron"/></ActionMenu>
-                    <nav>{SECTIONS.iter().map(|&(id, label, icon)| view! {
-                        <button class=move || if section.get() == id { "nav-item active" } else { "nav-item " } aria-current=move || (section.get() == id).then_some("page") on:click=move |_| navigate(id, String::new(), Vec::new())><Icon name=icon/>{label}</button>
+                    <nav>{SECTIONS.iter().map(|&(id, label, icon)| {
+                        let show_divider = id == "locked";
+                        let is_all_files = id == "files";
+                        let badge = move || overview.with(|o| match id {
+                            "favorites" => (o.counts.favorites > 0).then_some(o.counts.favorites),
+                            "shared" => {
+                                let total = o.counts.shared_with_you + o.counts.shared_by_you + o.counts.public_links;
+                                (total > 0).then_some(total)
+                            }
+                            "trash" => (o.counts.trash > 0).then_some(o.counts.trash),
+                            _ => None,
+                        });
+                        view! {
+                            {show_divider.then(|| view! { <div class="nav-divider" aria-hidden="true"></div> })}
+                            <button class=move || if section.get() == id { "nav-item active" } else { "nav-item" }
+                                aria-current=move || (section.get() == id).then_some("page")
+                                on:click=move |_| {
+                                    if is_all_files && section.get_untracked() == "files" && parent_id.with_untracked(String::is_empty) {
+                                        tree_open.update(|o| *o = !*o);
+                                    } else {
+                                        navigate(id, String::new(), Vec::new());
+                                    }
+                                }><Icon name=icon/>{label}{move || badge().map(|n| view! { <span class="nav-count" aria-hidden="true">{n}</span> })}</button>
+                            {is_all_files.then(|| view! {
+                                {move || {
+                                    let folders = overview.with(|o| o.root_folders.clone());
+                                    (tree_open.get() && !folders.is_empty()).then(|| view! {
+                                        <div class="folder-tree" role="group" aria-label="Folders">
+                                            {folders.into_iter().take(12).map(|rf| {
+                                                let (fid, fid_act, fname, fname_lbl) = (rf.id.clone(), rf.id.clone(), rf.name.clone(), rf.name.clone());
+                                                let tracked = rf.git_tracked;
+                                                view! {
+                                                    <button class=move || if section.get() == "files" && parent_id.get() == fid_act { "folder-tree-item active" } else { "folder-tree-item" }
+                                                        aria-label=format!("Go to folder {fname_lbl}")
+                                                        on:click=move |_| navigate("files", fid.clone(), vec![Crumb { id: fid.clone(), name: fname.clone() }])>
+                                                        <Icon name="folder"/><span>{rf.name.clone()}</span>
+                                                        {tracked.then(|| view! { <span class="folder-tree-git" title="Git history tracked" aria-hidden="true"></span> })}
+                                                    </button>
+                                                }
+                                            }).collect_view()}
+                                        </div>
+                                    })
+                                }}
+                            })}
+                        }
                     }).collect_view()}</nav>
-                    <div class="storage"><strong><Icon name="folder"/>"Storage"</strong>
+                    <div class="storage">
+                        <div class="storage-top">
+                            <strong><Icon name="folder"/>"Storage"</strong>
+                            {move || usage.get().filter(|u| u.quota > 0.0).map(|u| view! {
+                                <span class="storage-pct">{format!("{}%", ((u.used / u.quota) * 100.0).round().clamp(0.0, 100.0) as u32)}</span>
+                            })}
+                        </div>
                         {move || match usage.get().filter(|u| u.quota > 0.0) {
-                            Some(u) => view! { <progress max=u.quota value=u.used aria-label="Storage used"></progress><span>{format_bytes(u.used)}" of "{format_bytes(u.quota)}" used"</span> }.into_any(),
-                            None => view! { <span>{format_bytes(usage.with(|u| u.as_ref().map(|u| u.used).unwrap_or(0.0)))}" used"</span> }.into_any(),
+                            Some(u) => view! {
+                                <progress max=u.quota value=u.used aria-label="Storage used"></progress>
+                                <div class="storage-meta"><span>{format_bytes(u.used)}" used"</span><span>{format_bytes(u.quota)}</span></div>
+                            }.into_any(),
+                            None => view! {
+                                <div class="storage-meta"><span>{format_bytes(usage.with(|u| u.as_ref().map(|u| u.used).unwrap_or(0.0)))}" used"</span></div>
+                            }.into_any(),
+                        }}
+                        {move || {
+                            let tb = overview.with(|o| o.storage.trash_bytes);
+                            (tb > 0.0).then(|| view! {
+                                <button type="button" class="storage-trash-link" on:click=move |_| navigate("trash", String::new(), Vec::new())>{format!("{} in deleted files", format_bytes(tb))}</button>
+                            })
                         }}
                     </div>
                     <AppSettingsButton app="files" on_click=Callback::new(move |_| { sidebar.set(false); settings.set(true); })/>
@@ -2340,11 +3019,30 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         <nav class="breadcrumb" aria-label="Breadcrumb">{breadcrumb}</nav>
                         <div class="heading-actions">
                             {move || locked_open.get().then(|| view! { <button class="secondary-button" title="Lock now" on:click=move |_| spawn_local(async move { match locked.lock().await { Ok(_) => navigate("locked", String::new(), Vec::new()), Err(e) => error.set(failure(&e.message)) } })><Icon name="lock"/><span>"Lock"</span></button> })}
-                            <button class="secondary-button files-upload" disabled=move || !connected.get() || !writable_here.get() on:click=move |_| if let Some(i) = upload_input.get_untracked() { i.click() } aria-label="Upload files" title="Upload files"><Icon name="upload"/><span>"Upload"</span></button>
-                            <div class="view-switch" aria-label="File display">
-                                <button class=move || if !grid.get() { "icon-button selected" } else { "icon-button " } aria-label="List view" title="List view" aria-pressed=move || (!grid.get()).to_string() on:click=move |_| change_view(false)><Icon name="list"/></button>
-                                <button class=move || if grid.get() { "icon-button selected" } else { "icon-button " } aria-label="Grid view" title="Grid view" aria-pressed=move || grid.get().to_string() on:click=move |_| change_view(true)><Icon name="grid"/></button>
-                            </div>
+                            {move || (section.get() == "trash" && !visible.with(Vec::is_empty)).then(|| view! {
+                                <button class="files-empty-trash" disabled=move || !connected.get() || busy.get() on:click=move |_| empty_trash_confirm.set(true)><Icon name="trash"/><span>"Empty deleted files"</span></button>
+                            })}
+                            {move || (!(in_locked.get() && !locked_open.get())).then(|| view! {
+                                <div class="view-switch" aria-label="File display">
+                                    <button class=move || if !grid.get() { "icon-button selected" } else { "icon-button" } aria-label="List view" title="List view" aria-pressed=move || (!grid.get()).to_string() on:click=move |_| change_view(false)><Icon name="list"/></button>
+                                    <button class=move || if grid.get() { "icon-button selected" } else { "icon-button" } aria-label="Grid view" title="Grid view" aria-pressed=move || grid.get().to_string() on:click=move |_| change_view(true)><Icon name="grid"/></button>
+                                </div>
+                                <button class=move || if details.with(Option::is_some) { "icon-button files-inspector-toggle is-active" } else { "icon-button files-inspector-toggle" }
+                                    aria-label="Toggle details" title="Toggle details"
+                                    aria-pressed=move || details.with(Option::is_some).to_string()
+                                    on:click=move |_| {
+                                        if details.with_untracked(Option::is_some) {
+                                            details.set(None);
+                                            detail_sequence.update(|s| *s += 1);
+                                        } else if let Some(first_sel) = selected.with_untracked(|s| s.iter().next().cloned()) {
+                                            show_details(first_sel);
+                                        } else if !parent_id.with_untracked(String::is_empty) {
+                                            show_details(parent_id.get_untracked());
+                                        } else if let Some(first) = filtered_rows.with_untracked(|r| r.first().cloned()) {
+                                            select(&first);
+                                        }
+                                    }><Icon name="info"/></button>
+                            })}
                         </div>
                     </div>
                     {move || (!error.get().is_empty()).then(|| view! { <div class="error-banner" role="alert"><span>{error.get()}</span><button class="icon-button" aria-label="Dismiss error" on:click=move |_| error.set(String::new())><Icon name="close"/></button></div> })}
@@ -2358,16 +3056,81 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                             {(undo_trash.with(Option::is_some) && notice.get().ends_with("moved to deleted files.")).then(|| view! { <button class="text-button" on:click=move |_| undo_last_trash()>"Undo"</button> })}
                             <button class="icon-button" aria-label="Dismiss notification" on:click=move |_| notice.set(String::new())><Icon name="close"/></button></div>
                     })}
-                    <div class=move || if selected.with(HashSet::is_empty) { "file-toolbar" } else { "file-toolbar is-selecting" }>
-                        {move || if !selected.with(HashSet::is_empty) {
-                            view! { <button class="icon-button" aria-label="Clear selection" title="Clear selection" on:click=move |_| selected.set(HashSet::new())><Icon name="close"/></button><strong>{selected.with(HashSet::len)}" selected"</strong><span class="file-toolbar-spacer"></span>{selection_actions()} }.into_any()
-                        } else {
-                            let n = visible.with(Vec::len);
-                            let more = has_more.get();
-                            let q = query.get();
-                            view! { <span>{if connection.with(Option::is_some) { n.to_string() } else { "—".into() }}{if more { "+" } else { "" }}" "{if n == 1 && !more { "item" } else { "items" }}{if q.is_empty() { String::new() } else { format!(" starting with “{q}”") }}</span> }.into_any()
-                        }}
-                    </div>
+                    {move || (!(in_locked.get() && !locked_open.get()) && !(section.get() == "trash" && visible.with(Vec::is_empty))).then(|| {
+                        let sort_label = move || {
+                            let dir = if sort_asc.get() { "↑" } else { "↓" };
+                            let name = match sort_field.get() {
+                                "modified" => if section.get() == "trash" { "Deleted" } else { "Modified" },
+                                "size" => "Size",
+                                "type" => "Type",
+                                _ => "Name",
+                            };
+                            format!("{name} {dir}")
+                        };
+                        let sort_menu = move || view! {
+                            <ActionMenu label="Sort files" class="file-sort-menu" actions=move |_| {
+                                let (cur, asc) = (sort_field.get(), sort_asc.get());
+                                vec![
+                                    MenuAction::plain("Name (A–Z)").current(cur == "name" && asc).run(move || { sort_field.set("name"); sort_asc.set(true); }),
+                                    MenuAction::plain("Name (Z–A)").current(cur == "name" && !asc).run(move || { sort_field.set("name"); sort_asc.set(false); }),
+                                    MenuAction::plain("Modified (newest)").separator().current(cur == "modified" && !asc).run(move || { sort_field.set("modified"); sort_asc.set(false); }),
+                                    MenuAction::plain("Modified (oldest)").current(cur == "modified" && asc).run(move || { sort_field.set("modified"); sort_asc.set(true); }),
+                                    MenuAction::plain("Size (largest)").separator().current(cur == "size" && !asc).run(move || { sort_field.set("size"); sort_asc.set(false); }),
+                                    MenuAction::plain("Size (smallest)").current(cur == "size" && asc).run(move || { sort_field.set("size"); sort_asc.set(true); }),
+                                    MenuAction::plain("Type").separator().current(cur == "type").run(move || { sort_field.set("type"); sort_asc.set(true); }),
+                                ]
+                            }><Icon name="sort"/><span>{sort_label}</span></ActionMenu>
+                        };
+                        view! {
+                            <div class=move || if selected.with(HashSet::is_empty) { "file-toolbar" } else { "file-toolbar is-selecting" }>
+                                {move || if !selected.with(HashSet::is_empty) {
+                                    view! { <button class="icon-button" aria-label="Clear selection" title="Clear selection" on:click=move |_| selected.set(HashSet::new())><Icon name="close"/></button><strong>{selected.with(HashSet::len)}" selected"</strong><span class="file-toolbar-spacer"></span>{selection_actions()} }.into_any()
+                                } else if section.get() == "shared" {
+                                    let counts = overview.with(|o| (o.counts.shared_with_you, o.counts.shared_by_you, o.counts.public_links));
+                                    view! {
+                                        <div class="segmented" role="tablist" aria-label="Shared views">
+                                            <button type="button" role="tab" aria-pressed=move || (shared_sub.get() == "with_you").to_string() on:click=move |_| shared_sub.set("with_you")>"Shared with you"{(counts.0 > 0).then(|| format!(" ({})", counts.0))}</button>
+                                            <button type="button" role="tab" aria-pressed=move || (shared_sub.get() == "by_you").to_string() on:click=move |_| shared_sub.set("by_you")>"Shared by you"{(counts.1 > 0).then(|| format!(" ({})", counts.1))}</button>
+                                            <button type="button" role="tab" aria-pressed=move || (shared_sub.get() == "links").to_string() on:click=move |_| shared_sub.set("links")>"Public links"{(counts.2 > 0).then(|| format!(" ({})", counts.2))}</button>
+                                        </div>
+                                        {sort_menu()}
+                                    }.into_any()
+                                } else if section.get() == "trash" {
+                                    let tb = overview.with(|o| o.storage.trash_bytes);
+                                    view! {
+                                        <div class="file-trash-strip">
+                                            <span>"Items keep their original folder until permanently deleted."</span>
+                                            {(tb > 0.0).then(|| view! { <strong>{format!("{} reclaimable", format_bytes(tb))}</strong> })}
+                                        </div>
+                                        {sort_menu()}
+                                    }.into_any()
+                                } else {
+                                    let (all, doc, image, code, archive, media) = filter_counts.get();
+                                    let chips: [(&'static str, &'static str, usize); 6] = [
+                                        ("all", "All", visible.with(Vec::len)),
+                                        ("doc", "Docs", doc),
+                                        ("image", "Images", image),
+                                        ("code", "Code", code),
+                                        ("archive", "Archives", archive),
+                                        ("media", "Media", media),
+                                    ];
+                                    view! {
+                                        <div class="file-filter-chips" role="group" aria-label="Filter by type">
+                                            {chips.into_iter().filter(|(k, _, c)| *k == "all" || *c > 0 || type_filter.get() == *k).map(|(k, lbl, c)| {
+                                                let count_str = if k == "all" && all == 0 && c == 0 { String::new() } else { c.to_string() };
+                                                view! {
+                                                    <button type="button" class=move || if type_filter.get() == k { "file-filter-chip is-active" } else { "file-filter-chip" }
+                                                        aria-pressed=move || (type_filter.get() == k).to_string()
+                                                        on:click=move |_| type_filter.set(k)>{lbl}{(!count_str.is_empty()).then(|| view! { <span>{count_str}</span> })}</button>
+                                                }
+                                            }).collect_view()}
+                                        </div>
+                                        {sort_menu()}
+                                    }.into_any()
+                                }}
+                            </div>
+                        }
+                    })}
                     {listing}
                     {move || (!previous.with(Vec::is_empty) || has_more.get()).then(|| view! {
                         <div class="pagination">
@@ -2454,10 +3217,47 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                     view! { <EditorPane title=title on_close=close_modal>{move || modal_form(m.get_value())}</EditorPane> }.into_any()
                 }
             })}
+            {move || empty_trash_confirm.get().then(|| view! {
+                <Dialog title="Empty deleted files?" on_close=Callback::new(move |_| empty_trash_confirm.set(false))>
+                    <p>"This permanently removes every item in Deleted files and their versions. This cannot be undone."</p>
+                    <div class="dialog-actions">
+                        <button class="text-button" on:click=move |_| empty_trash_confirm.set(false)>"Cancel"</button>
+                        <button class="danger-button" disabled=move || busy.get() on:click=move |_| spawn_local(async move {
+                            let ok = perform(Box::pin(async move {
+                                let c = conn()?;
+                                reducer(|tx| c.reducers.empty_trash_then(replied(tx))).await?;
+                                selected.set(HashSet::new());
+                                details.set(None);
+                                Ok(())
+                            }), "Deleted files emptied.".into()).await;
+                            if ok { empty_trash_confirm.set(false); }
+                        })>"Empty deleted files"</button>
+                    </div>
+                </Dialog>
+            })}
             {move || preview_entry.get().map(|entry| {
-                let siblings: Vec<FileEntry> = visible.get_untracked().into_iter().filter(|i| i.kind == "file" && !editable_text(i)).collect();
+                let siblings: Vec<FileEntry> = filtered_rows.get_untracked().into_iter().filter(|i| i.kind == "file" && !editable_text(i)).collect();
                 let e = StoredValue::new(entry.clone());
-                view! { <FilePreview entry=entry siblings=siblings on_open=Callback::new(move |en| set_preview(Some(en))) on_close=Callback::new(move |_| set_preview(None)) actions=vec![MenuAction::new("Details", "info").run(move || select(&e.get_value()))]/> }
+                let details_open = Signal::derive(move || details.with(Option::is_some));
+                view! {
+                    <FilePreview
+                        entry=entry
+                        siblings=siblings
+                        on_open=Callback::new(move |en| set_preview(Some(en)))
+                        on_close=Callback::new(move |_| set_preview(None))
+                        actions=vec![MenuAction::new("Details", "info").run(move || select(&e.get_value()))]
+                        on_share=Callback::new(move |en| open_share(en))
+                        on_toggle_details=Callback::new(move |en| {
+                            if details.with_untracked(Option::is_some) {
+                                details.set(None);
+                                detail_sequence.update(|s| *s += 1);
+                            } else {
+                                select(&en);
+                            }
+                        })
+                        details_open=details_open
+                    />
+                }
             })}
         </div>
     }

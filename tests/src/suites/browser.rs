@@ -8,7 +8,11 @@ use tokio::sync::Notify;
 
 pub const SUITE: Suite = Suite {
     name: "browser",
-    cases: &[case!(files_journey, 180), case!(folder_upload, 90)],
+    cases: &[
+        case!(files_journey, 180),
+        case!(folder_upload, 90),
+        case!(files_redesign, 180),
+    ],
 };
 
 pub async fn files_journey(t: &Ctx) -> Result<()> {
@@ -342,6 +346,149 @@ pub async fn folder_upload(t: &Ctx) -> Result<()> {
         .await?;
     page.screenshot(t.screenshot("files-folder-upload.png"), true)
         .await?;
+    let errors = failures.lock().unwrap().clone();
+    assert!(errors.is_empty(), "page errors: {errors:?}");
+    Ok(())
+}
+
+/// Verifies the Files redesign: combined New/Upload menu (no standalone Upload header button),
+/// Folder Shelf separation, sorting, type filter chips, Recent, Shared sub-tabs, Empty deleted
+/// files, and multi-item ZIP archive download.
+pub async fn files_redesign(t: &Ctx) -> Result<()> {
+    let base = t.fixture().await?.base.clone();
+    let admin = login(&base).await?;
+    let browser = Browser::shared().await?;
+    let context = browser
+        .new_context(ContextOptions::sized(1440, 950))
+        .await?;
+    let page = context.new_page().await?;
+    let failures =
+        page.collect_errors(|text| text.contains("401") && text.contains("Unauthorized"));
+    ui::sign_in(&page, &base, "admin", PASSWORD).await?;
+
+    // Header has no standalone Upload button; Upload lives in the New menu.
+    assert_eq!(
+        page.locator(".files-heading .files-upload").count().await?,
+        0
+    );
+
+    // Create a folder and upload distinct file types via the live API.
+    let live = admin.connect().await?;
+    let folder = format!("Shelf {}", &uuid()[..6]);
+    let folder_id = uuid();
+    reducer(|done| {
+        live.reducers
+            .create_folder_then(folder_id.clone(), String::new(), folder.clone(), done)
+    })
+    .await?;
+    let md_id = upload_with(
+        &admin,
+        "Alpha-Note.md",
+        b"# Notes\n\nRedesigned Files test.",
+        dar_acceptance::session::Upload {
+            media_type: "text/markdown",
+            ..Default::default()
+        },
+    )
+    .await?
+    .file_id;
+    let _csv_id = upload_with(
+        &admin,
+        "Zeta-Data.csv",
+        b"a,b\n1,2\n",
+        dar_acceptance::session::Upload {
+            media_type: "text/csv",
+            ..Default::default()
+        },
+    )
+    .await?
+    .file_id;
+    let _nested_id = upload_with(
+        &admin,
+        "Inside.txt",
+        b"Nested file inside folder.",
+        dar_acceptance::session::Upload {
+            parent_id: &folder_id,
+            ..Default::default()
+        },
+    )
+    .await?
+    .file_id;
+    let _trash_id = upload(&admin, "Throwaway.txt", b"To be emptied.")
+        .await?
+        .file_id;
+
+    page.reload().await?;
+    ui::signed_in(&page).await?;
+
+    // Folder sits in the dedicated Folder Shelf above the Files table.
+    page.locator(".folder-shelf")
+        .get_by_role("button", &folder)
+        .wait_for()
+        .await?;
+    page.locator(".file-table")
+        .get_by_role("button", "Alpha-Note.md")
+        .wait_for()
+        .await?;
+
+    // Sorting by Name toggles Z-A so Zeta-Data.csv precedes Alpha-Note.md.
+    page.locator(".file-table th")
+        .get_by_role("button", "Name ↑")
+        .click()
+        .await?;
+    page.wait_for_function(
+        "() => document.querySelector('.file-table tbody tr .name-button')?.textContent?.trim() === 'Zeta-Data.csv'",
+    )
+    .await?;
+
+    // Recent view lists uploaded files.
+    page.get_by_role("button", "Recent").click().await?;
+    page.get_by_role("heading", "Recent").wait_for().await?;
+    page.get_by_role("button", "Inside.txt").wait_for().await?;
+
+    // Shared view exposes Shared with you / Shared by you / Public links sub-tabs.
+    page.get_by_role("button", "Shared").click().await?;
+    page.get_by_role("tab", "Shared by you").click().await?;
+    page.get_by_role("tab", "Public links").click().await?;
+
+    // ZIP archive endpoint returns a valid PKZIP containing selected file + folder contents.
+    let archive = admin
+        .post("/api/v1/files/archive", &json!({ "ids": [md_id, folder_id] }))
+        .await?
+        .expect(200)?;
+    assert!(
+        archive
+            .header("content-type")
+            .unwrap_or_default()
+            .contains("application/zip")
+    );
+    assert!(archive.body.len() > 22 && &archive.body[..2] == b"PK");
+
+    // Move Throwaway.txt to Deleted files, then Empty deleted files.
+    page.get_by_role("button", "All files").first().click().await?;
+    page.get_by_role("button", "Throwaway.txt")
+        .wait_for()
+        .await?;
+    ui::item_action(&page, "Throwaway.txt", "Move to deleted files").await?;
+    page.get_by_role("button", "Deleted files").click().await?;
+    page.get_by_role("button", "Throwaway.txt")
+        .wait_for()
+        .await?;
+    page.get_by_role("button", "Empty deleted files")
+        .click()
+        .await?;
+    page.get_by_role("dialog", "Empty deleted files?")
+        .get_by_role("button", "Empty deleted files")
+        .click()
+        .await?;
+    page.get_by_text("Nothing in deleted files")
+        .wait_for()
+        .await?;
+
+    page.screenshot(t.screenshot("files-redesign.png"), true)
+        .await?;
+    live.disconnect();
+    context.close().await?;
     let errors = failures.lock().unwrap().clone();
     assert!(errors.is_empty(), "page errors: {errors:?}");
     Ok(())

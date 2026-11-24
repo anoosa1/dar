@@ -146,31 +146,37 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
 
 ## Apps
 
-- **Files:** the breadcrumb is the title, with Upload and the list/grid switch
-  beside it. New also offers Upload files and Upload folder; a picked or dropped folder
-  is recreated with its subfolders (a name already used gets a number). Rows show a
-  type tile, relative modified date and size; selection turns the toolbar into a tonal bar. Item actions in three-dot menus (Open,
-  Organize, Clipboard, Delete sections); Details is its own action and does not
-  repeat Rename/Move/Copy/Delete. Details: preview, Preview/Download/Favorite/
-  Share quick actions, then Details/Versions/Sharing tabs; folders show History in place of
-  Versions ([folder history](spacetimedb/folder-history.md)): Track history, uncommitted
-  changes with Review and commit (right pane with per-file diffs) and Snapshot, agent
-  branches, the commit list (a commit opens in the right pane with Restore folder to
-  this point), a Git card (clone address with Copy, pushed branches and tags, Open in Git), Download
-  as Git bundle and Stop keeping history. Moving to deleted files
-  shows a toast with Undo. The Locked folder is a sidebar section: a password form
-  (shared with Photos) until unlocked, then a normal folder with a Lock button whose
-  Delete is permanent; Move to Locked folder asks for the password when needed. Storage is a meter card at the bottom of the sidebar.
-  Text and Markdown files open in the Notes editor layout (type, save status,
-  Write/Preview, file menu; centered column with the name as title, edit time
-  and the formatting bar); plain text uses a monospace font. Other files preview
-  in the same sheet (`file-preview.tsx`): images, PDFs (the browser's viewer),
-  video, audio and text, fitted to the sheet, with previous/next (arrow keys),
-  Download and the file menu. The selection bar offers Download (files), Move to…,
-  Copy to…, Move to deleted files (Delete permanently in the Locked folder) and
-  More (favorites, Locked folder); Deleted files offers Restore. The shared folder
-  picker (`file-picker.tsx`) is a small browser: back, breadcrumb, filter, rows with
-  type tiles (click selects, the chevron opens) and the destination below.
+- **Files:** sidebar views (`Recent`, `All files` with a collapsible top-level folder tree,
+  `Favorites`, `Shared` with *Shared with you* / *Shared by you* / *Public links* sub-tabs,
+  `Locked folder`, `Deleted files`) and a storage meter card at the bottom. Upload lives inside the
+  `+ New` menu (Folder, Upload files, Upload folder, File → Text/Markdown) rather than a separate
+  header button; a picked or dropped folder is recreated with its subfolders (a name already used
+  gets a number). The breadcrumb is the title with a current-folder actions menu, beside the
+  list/grid switch and an Inspector toggle (`i`); a command strip below holds lightweight type
+  filter chips (`All`, `Docs`, `Images`, `Code`, `Archives`, `Media`) and a sort menu (Name,
+  Modified, Size, Type) that works in both List and Grid views. Folders sit in a compact horizontal
+  shelf (with item counts and a Git branch badge when tracked) above the sortable Files list/grid.
+  Rows show a type tile, relative modified date, size and hover quick actions (favorite, share,
+  download) beside the three-dot menu; drag-and-drop moves items onto folders and breadcrumbs;
+  selection turns the toolbar into a tonal bar with direct or ZIP download (multi-file/folder),
+  Move to…, Copy to…, Move to deleted files (Delete permanently in the Locked folder) and More.
+  Item actions live in three-dot menus (Open, Organize, Clipboard, Delete sections); Details is its
+  own action and does not repeat Rename/Move/Copy/Delete. Details: preview, Preview/Download/Favorite/
+  Share quick actions, then Details/Versions (with version badges, download and restore)/Sharing
+  (people, selectable expiry and one-click copy for public links) tabs; folders show History in
+  place of Versions ([folder history](spacetimedb/folder-history.md)): Track history, uncommitted
+  changes with Review and commit (right pane with per-file diffs) and Snapshot, agent branches,
+  the commit list (a commit opens in the right pane with Restore folder to this point), a Git card
+  (clone address with Copy, pushed branches and tags, Open in Git), Download as Git bundle and Stop
+  keeping history. Moving to deleted files shows a toast with Undo; Deleted files adds original
+  folder subtitles, inline Restore and Empty deleted files. The Locked folder hides view controls
+  until unlocked, then works as a normal folder with a Lock button whose Delete is permanent.
+  Text and Markdown files open in the Notes editor layout; other files preview in the same sheet
+  (`file-preview.tsx`) with image zoom (`-`/`+`/`Fit`), direct Share, side-by-side Details toggle,
+  previous/next (arrow keys), Download and the file menu. On phones, rows show size and modified
+  time as a subtitle without permanent checkboxes and leave clearance above the `+` button.
+  The shared folder picker (`file-picker.tsx`) is a small browser: back, breadcrumb, filter, rows
+  with type tiles (click selects, the chevron opens) and the destination below.
 - **Contacts:** letter-grouped list under the name sort, with hued avatars, title ·
   organization and the address-book dot. Groups are sidebar rows. The card offers
   Email, Call, Favorite and Edit; values are links. The editor uses sections and

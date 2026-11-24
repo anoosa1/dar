@@ -1394,6 +1394,67 @@ async fn api(r: Api<'_>, body: Body) -> Result<Response> {
                 .await?;
             return Ok(json_response(&json!({ "id": id }), StatusCode::CREATED));
         }
+        (Method::POST, "/api/v1/files/archive") => {
+            let p = r.body(body, 65_536).await?;
+            let ids = p
+                .get("ids")
+                .and_then(Value::as_array)
+                .ok_or_else(|| AppError::new("invalidInput", 400))?;
+            if ids.is_empty() || ids.len() > 200 {
+                return Err(AppError::new("invalidInput", 400));
+            }
+            let manifest = db
+                .read(
+                    "service_archive_manifest",
+                    json!([session_id, serde_json::to_string(ids).unwrap_or_default()]),
+                )
+                .await?;
+            let archive_name = manifest["name"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("dar-files");
+            let safe_name: String = archive_name
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '-' })
+                .collect();
+            let safe_name = if safe_name.trim_matches('-').is_empty() {
+                "dar-files".to_owned()
+            } else {
+                safe_name
+            };
+            let items = manifest["items"]
+                .as_array()
+                .ok_or_else(AppError::internal)?;
+            let mut pairs = Vec::with_capacity(items.len());
+            for item in items {
+                let rel = item["path"].as_str().unwrap_or_default().to_owned();
+                let blob_id = item["blobId"].as_str().unwrap_or_default();
+                let blob_path = runtime.blobs.path(blob_id)?;
+                pairs.push((rel, blob_path));
+            }
+            let bytes = tokio::task::spawn_blocking(move || crate::zip_write::build_zip(&pairs))
+                .await
+                .map_err(|_| AppError::internal())?
+                .map_err(|_| AppError::internal())?;
+            let mut response = Response::new(Body::from(bytes));
+            let headers = response.headers_mut();
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/zip"),
+            );
+            headers.insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, no-store"),
+            );
+            headers.insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&format!(
+                    "attachment; filename=\"{safe_name}.zip\""
+                ))
+                .map_err(|_| AppError::internal())?,
+            );
+            return Ok(response);
+        }
         (Method::POST, "/api/v1/files/uploads") => {
             let p = r.body(body, 16_384).await?;
             let present = |key: &str| {
