@@ -96,27 +96,47 @@ pub async fn sign_in(page: &Page, base: &str, username: &str, password: &str) ->
     page.get_by_label("Username").fill(username).await?;
     page.get_by_label("Password").fill(password).await?;
     page.get_by_role("button", "Sign in").click().await?;
-    page.wait_for_function("() => !document.body.textContent.includes(\"Connecting…\")").await?;
+    signed_in(page).await
+}
+
+/// Waits until the app shown after signing in is up and live: the sign-in page and the startup
+/// screens are gone, the app frame is shown and no live connection is still starting or coming
+/// back. (Only checking that "Connecting…" is absent passes on the sign-in page itself, before
+/// the sign-in request has returned.)
+pub async fn signed_in(page: &Page) -> Result<()> {
+    page.wait_for_function("() => !!document.querySelector('nav.app-rail') && !document.querySelector('.auth-page, .startup-state, .connection-state')").await?;
     Ok(())
 }
 
-/// Opens a menu with `button` until `item` is listed and enabled, then returns it. Dar's menus
-/// take their items' state when they open, so one opened just before a change lands (the live
-/// connection, a settled thread) shows the old state until it is opened again.
-pub async fn open_menu_for(page: &Page, button: &Locator, item: &Locator) -> Result<()> {
+/// Opens a menu with `button` until `item` is listed and enabled. Most menus take their items'
+/// state when they open, so one opened just before a change lands (a settled thread) shows the
+/// old state until it is opened again; the trigger toggles it closed for the next try.
+pub async fn open_menu_for(_page: &Page, button: &Locator, item: &Locator) -> Result<()> {
     let deadline = std::time::Instant::now() + crate::browser::DEFAULT_TIMEOUT;
+    let short = std::time::Duration::from_secs(2);
     loop {
-        button.click().await?;
-        let ready = item.clone().timeout(std::time::Duration::from_secs(2));
-        if ready.wait_for().await.is_ok() && ready.is_enabled().await.unwrap_or(false) {
+        if !menu_expanded(button).await? {
+            button.click().await?;
+        }
+        // An open menu may still enable the item (Files' New menu follows the connection).
+        let ready = item.clone().timeout(short);
+        if ready.wait_for().await.is_ok() && ready.wait_until("(el) => !el.disabled && el.getAttribute('aria-disabled') !== 'true'").await.is_ok() {
             return Ok(());
         }
         if std::time::Instant::now() > deadline {
             crate::bail!("{} did not offer an enabled {}", button.describe(), item.describe());
         }
-        page.keyboard().press("Escape").await?;
-        item.wait_for_state(State::Detached).await.ok();
+        // Not Escape: with every item disabled the focus is on no item, and a key the menu
+        // does not see leaves it open.
+        if menu_expanded(button).await? {
+            button.click().await?;
+        }
+        item.clone().timeout(short).wait_for_state(State::Detached).await.ok();
     }
+}
+
+async fn menu_expanded(button: &Locator) -> Result<bool> {
+    Ok(button.get_attribute("aria-expanded").await?.as_deref() == Some("true"))
 }
 
 /// Clicks `button` until `dialog` is visible. An app still mounting (a lazily loaded app right

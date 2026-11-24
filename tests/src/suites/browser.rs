@@ -20,7 +20,7 @@ pub async fn files_journey(t: &Ctx) -> Result<()> {
     page.get_by_label("Password").fill(PASSWORD).await?;
     page.screenshot(t.screenshot("auth-desktop.png"), true).await?;
     page.get_by_role("button", "Sign in").click().await?;
-    page.wait_for_function("() => !document.body.textContent.includes('Connecting…')").await?;
+    ui::signed_in(&page).await?;
     ui::open_menu_for(&page, &page.get_by_role("button", "New"), &page.get_by_role("menuitem", "Folder")).await?;
     page.get_by_role("menuitem", "Folder").click().await?;
     let folder = format!("Browser {}", &uuid()[..6]);
@@ -97,7 +97,7 @@ pub async fn files_journey(t: &Ctx) -> Result<()> {
     phone.on_page_error(move |message| sink.lock().unwrap().push(message.clone()));
     phone.goto(&base).await?;
     phone.get_by_role("navigation", "Applications").wait_for().await?;
-    phone.wait_for_function("() => !document.body.textContent.includes('Connecting…')").await?;
+    ui::signed_in(&phone).await?;
     phone.get_by_role("button", &folder).click().await?;
     phone.get_by_role("button", "A little hello.txt").wait_for().await?;
     assert_eq!(phone.evaluate("() => document.documentElement.scrollWidth <= innerWidth").await?, json!(true));
@@ -133,7 +133,7 @@ pub async fn folder_upload(t: &Ctx) -> Result<()> {
     page.get_by_label("Password").fill(PASSWORD).await?;
     page.get_by_role("button", "Sign in").click().await?;
     page.get_by_role("button", "New").wait_for().await?;
-    page.wait_for_function("() => !document.body.textContent.includes('Connecting…')").await?;
+    ui::signed_in(&page).await?;
     ui::open_menu_for(&page, &page.get_by_role("button", "New"), &page.get_by_role("menuitem", "Upload folder")).await?;
     page.get_by_role("menuitem", "Upload files").wait_for().await?;
     page.keyboard().press("Escape").await?;

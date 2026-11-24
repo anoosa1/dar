@@ -413,13 +413,16 @@ pub fn IssueSheet(
     let wrap = RwSignal::new(false);
     let busy = RwSignal::new(false);
     let failure = RwSignal::new(String::new());
+    // What the comment composer shows; it is rebuilt only when these change.
+    let composer_key = Memo::new(move |_| issue_load.value.with(|i| i.as_ref().map(|i| (i.number, i.kind.clone(), i.state.clone(), i.permissions.close))));
+    let failed = Memo::new(move |_| !issue_load.error.with(String::is_empty));
 
     let reload_issue = Callback::new(move |_| {
         let u = url.get_value();
         spawn_local(async move {
             match api::get::<GitIssue>(&u).await {
                 Ok(next) => {
-                    let _ = issue_load.value.try_set(Some(next));
+                    issue_load.set(next);
                     { on_changed.try_run(()); };
                 }
                 Err(cause) => {
@@ -442,7 +445,7 @@ pub fn IssueSheet(
             match api::send::<Value>(&u, "PATCH", Some(Value::Object(update)), &token).await {
                 Ok(_) => match api::get::<GitIssue>(&u).await {
                     Ok(next) => {
-                        let _ = issue_load.value.try_set(Some(next));
+                        issue_load.set(next);
                         if let Some(msg) = done {
                             notify.run(msg);
                         }
@@ -607,7 +610,6 @@ pub fn IssueSheet(
                             let current_view = view_mode.get();
                             if !pull || current_view == "conversation" {
                                 let show_merge = pull && iss.state == "open" && iss.permissions.merge;
-                                let iss_for_close = iss.clone();
                                 view! {
                                     <Timeline
                                         issue=iss.clone()
@@ -697,24 +699,6 @@ pub fn IssueSheet(
                                             ().into_any()
                                         }
                                     })}
-                                    <Composer
-                                        issue=iss_for_close.clone()
-                                        repo=repo_sv.get_value()
-                                        session=session_sv.get_value()
-                                        busy=busy
-                                        on_open=on_open
-                                        on_close=Callback::new(move |st: &'static str| {
-                                            let mut map = Map::new();
-                                            map.insert("state".into(), st.into());
-                                            let msg = if st == "closed" {
-                                                format!("Closed #{}", iss_for_close.number)
-                                            } else {
-                                                format!("Reopened #{}", iss_for_close.number)
-                                            };
-                                            change_issue.run((map, Some(msg)));
-                                        })
-                                        on_commented=reload_issue
-                                    />
                                 }.into_any()
                             } else {
                                 if !changes_load.error.with(String::is_empty) {
@@ -803,6 +787,31 @@ pub fn IssueSheet(
                             }
                         }}
                     }.into_any()
+                }}
+                // Its own region: reloads of the issue or its labels rebuild the body above, and a
+                // comment field replaced while someone types loses the text.
+                {move || {
+                    let (number, kind, _, _) = composer_key.get()?;
+                    if failed.get() || (kind == "pull" && view_mode.get() != "conversation") {
+                        return None;
+                    }
+                    let issue = issue_load.value.get_untracked()?;
+                    Some(view! {
+                        <Composer
+                            issue=issue
+                            repo=repo_sv.get_value()
+                            session=session_sv.get_value()
+                            busy=busy
+                            on_open=on_open
+                            on_close=Callback::new(move |st: &'static str| {
+                                let mut map = Map::new();
+                                map.insert("state".into(), st.into());
+                                let msg = if st == "closed" { format!("Closed #{number}") } else { format!("Reopened #{number}") };
+                                change_issue.run((map, Some(msg)));
+                            })
+                            on_commented=reload_issue
+                        />
+                    })
                 }}
             </div>
         </div>
@@ -1714,7 +1723,7 @@ pub fn LabelsEditor(
         let u = format!("{}/labels", repo_api(&repo_sv.with_value(|r| r.id.clone())));
         spawn_local(async move {
             if let Ok(list) = api::get::<Vec<GitLabel>>(&u).await {
-                let _ = loaded.value.try_set(Some(list));
+                loaded.set(list);
             }
             { on_changed.try_run(()); };
         });

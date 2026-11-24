@@ -787,10 +787,11 @@ pub fn FolderHistory(
 
     let session_sv = StoredValue::new(session);
 
+    // Also called when a reply arrives, after the tab may have closed: `try_` throughout.
     let load = move || {
-        let fid = folder_id.get_untracked();
-        let current = sequence.get_untracked() + 1;
-        sequence.set(current);
+        let (Some(fid), Some(last)) = (folder_id.try_get_untracked(), sequence.try_get_untracked()) else { return };
+        let current = last + 1;
+        let _ = sequence.try_set(current);
         let url = base(&fid);
         spawn_local(async move {
             match api::get::<HistoryOverview>(&url).await {

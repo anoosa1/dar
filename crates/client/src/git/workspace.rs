@@ -418,6 +418,13 @@ pub fn GitWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> imp
         }
     });
 
+    // The issue sheet and the editing pane are keyed by the repository's id, not its row: a
+    // tracker change reloads the list (open issue counts, `updatedAt`), which must not rebuild
+    // an open conversation or form and lose its draft. The sheet's content follows
+    // `tracker_version` and the repository's revision instead.
+    let current_repo_id = Memo::new(move |_| current_repo.with(|r| r.as_ref().map(|r| r.id.clone())));
+    let repo_revision = Memo::new(move |_| current_repo.with(|r| r.as_ref().map_or(0, |r| r.revision)));
+    let issue_version = Signal::derive(move || tracker_version.get().wrapping_add(repo_revision.get()));
     let has_details = Memo::new(move |_| current_repo.get().is_some() && sheet.get().is_some());
     let session_sv = StoredValue::new(session.clone());
     let username = session.user.username.clone();
@@ -651,8 +658,13 @@ pub fn GitWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> imp
                     }}
                 </main>
                 {move || {
-                    let repo = current_repo.get()?;
                     let current = sheet.get()?;
+                    let repo = if matches!(current, Sheet::Issue { .. }) {
+                        current_repo_id.get()?;
+                        current_repo.get_untracked()?
+                    } else {
+                        current_repo.get()?
+                    };
                     let label = match &current {
                         Sheet::Commit { .. } => "Commit",
                         Sheet::Compare { .. } => "Compare",
@@ -665,7 +677,7 @@ pub fn GitWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> imp
                                 repo=repo
                                 number=number
                                 session=session_sv.get_value()
-                                version=tracker_version
+                                version=issue_version
                                 notify=notify
                                 on_close=Callback::new(move |_| sheet.set(None))
                                 on_open=Callback::new(move |num| sheet.set(Some(Sheet::Issue { number: num })))
@@ -732,7 +744,8 @@ pub fn GitWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> imp
                 }}
             </div>
             {move || {
-                let repo = current_repo.get()?;
+                current_repo_id.get()?;
+                let repo = current_repo.get_untracked()?;
                 let edit = editing.get()?;
                 match edit {
                     IssueEditing::Issue { kind, issue, base, head } => {

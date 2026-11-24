@@ -2844,6 +2844,9 @@ fn Conversation(
     let busy = RwSignal::new(false);
     let notice = RwSignal::new(String::new());
     let reload = RwSignal::new(0u64);
+    // The history is being reloaded; a send made meanwhile waits for it (`save_action`).
+    let refreshing = RwSignal::new(false);
+    let deferred: RwSignal<Option<(bool, Option<String>, Option<&'static str>)>> = RwSignal::new(None);
     let loading_earlier = RwSignal::new(false);
 
     let controller = StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
@@ -3009,6 +3012,7 @@ fn Conversation(
         let abort_keep = SendWrapper::new(abort);
         on_cleanup(move || abort_keep.abort());
         error.set(String::new());
+        refreshing.set(true);
         spawn_local(async move {
             match api::request::<AgentHistory>(
                 &format!("{BASE}/threads/{tid}/messages"),
@@ -3023,6 +3027,7 @@ fn Conversation(
                     let updated_thread = value.thread.clone();
                     let first_run = value.runs.first().map(|r| r.id.clone());
                     history.try_set(Some(value));
+                    refreshing.try_set(false);
                     { on_changed.try_run(updated_thread); };
                     if let Some(rid) = first_run {
                         { on_run.try_run(rid); };
@@ -3030,6 +3035,7 @@ fn Conversation(
                 }
                 Err(e) => {
                     if !signal.aborted() {
+                        refreshing.try_set(false);
                         error.try_set(failure(&e));
                     }
                 }
@@ -3116,6 +3122,7 @@ fn Conversation(
 
     let save_action = Callback::new(move |(execute, text_opt, special): (bool, Option<String>, Option<&'static str>)| {
         let cur_draft = draft.get_untracked();
+        let requested = text_opt.clone();
         let text = text_opt.unwrap_or_else(|| cur_draft.clone());
         let from_queue = text != cur_draft && special.is_none();
         let Some(cur_hist) = history.get_untracked() else { return };
@@ -3126,6 +3133,12 @@ fn Conversation(
             if execute && !from_queue {
                 steer(text);
             }
+            return;
+        }
+        // A turn that just ended changed the thread: its revision arrives with the history being
+        // reloaded, and sending before that would be refused as a conflict.
+        if refreshing.get_untracked() {
+            deferred.set(Some((execute, requested, special)));
             return;
         }
         let has_pics = images.items.with_untracked(|v| !v.is_empty());
@@ -3292,6 +3305,14 @@ fn Conversation(
                 }
                 busy.try_set(false);
             });
+        }
+    });
+    // A send held while the history reloaded goes out once it has loaded.
+    Effect::new(move |_| {
+        if !refreshing.get()
+            && let Some(args) = deferred.try_update(Option::take).flatten()
+        {
+            save_action.run(args);
         }
     });
 

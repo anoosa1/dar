@@ -1305,36 +1305,56 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         }.into_any(),
     };
 
+    // The panel is rebuilt for another item only. A newer revision of the open one (a change in
+    // the folder, a restore) refreshes its parts in place, so the History tab keeps its panes,
+    // notices and the replies still in flight.
+    let details_key = Memo::new(move |_| details.with(|d| d.as_ref().map(|d| (d.entry.id.clone(), d.entry.kind == "folder", d.entry.trashed))));
     let details_panel = move || {
-        let d = details.get()?;
-        let entry = d.entry.clone();
-        let e = StoredValue::new(entry.clone());
-        let d_sv = StoredValue::new(d);
-        let is_folder = entry.kind == "folder";
-        let preview_art = if thumbnail_ok(&entry) {
-            view! { <img src=format!("/api/v1/files/{}/thumbnail?size=m&v={}", entry.id, entry.revision) alt="" decoding="async"/> }.into_any()
-        } else {
-            view! { <FileTile kind=entry.kind.clone() name=entry.name.clone() media_type=entry.media_type.clone() large=true/> }.into_any()
-        };
-        let summary = view! { {file_type_label(&entry.kind, &entry.name, &entry.media_type)}{if is_folder { String::new() } else { format!(" · {}", format_bytes(entry.size)) }}" · "{relative(entry.modified_at)} };
-        let quick = if entry.trashed {
-            owner.get().then(|| view! { <button class="quick-action" disabled=move || busy.get() on:click=move |_| { let en = e.get_value(); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.restore_entry_then(en.id.clone(), en.revision, replied(tx))).await }), "Item restored."); }><span><Icon name="history"/></span>"Restore"</button> }).into_any()
-        } else {
-            view! {
-                {if is_folder {
-                    view! { <button class="quick-action" on:click=move |_| open_entry(e.get_value())><span><Icon name="folder"/></span>"Open"</button> }.into_any()
-                } else {
-                    view! { <button class="quick-action" on:click=move |_| set_preview(Some(e.get_value()))><span><Icon name="eye"/></span>"Preview"</button><a class="quick-action" href=format!("/api/v1/files/{}/content", entry.id)><span><Icon name="download"/></span>"Download"</a> }.into_any()
-                }}
-                {owner.get().then(|| view! { <button class="quick-action" aria-pressed=entry.favorite.to_string() aria-label=if entry.favorite { "Remove favorite" } else { "Add to favorites" } disabled=move || busy.get()
-                    on:click=move |_| { let en = e.get_value(); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.favorite_entry_then(en.id.clone(), !en.favorite, en.revision, replied(tx))).await }), ""); }><span><Icon name="star"/></span>"Favorite"</button> })}
-                {(owner.get() && !in_locked.get()).then(|| view! { <button class="quick-action" on:click=move |_| tab.set("sharing".into())><span><Icon name="share"/></span>"Share"</button> })}
-            }.into_any()
+        let (entry_id, is_folder, trashed) = details_key.get()?;
+        let overview = move || {
+            let entry = details.get()?.entry;
+            let e = StoredValue::new(entry.clone());
+            let preview_art = if thumbnail_ok(&entry) {
+                view! { <img src=format!("/api/v1/files/{}/thumbnail?size=m&v={}", entry.id, entry.revision) alt="" decoding="async"/> }.into_any()
+            } else {
+                view! { <FileTile kind=entry.kind.clone() name=entry.name.clone() media_type=entry.media_type.clone() large=true/> }.into_any()
+            };
+            let summary = view! { {file_type_label(&entry.kind, &entry.name, &entry.media_type)}{if is_folder { String::new() } else { format!(" · {}", format_bytes(entry.size)) }}" · "{relative(entry.modified_at)} };
+            let quick = if entry.trashed {
+                owner.get().then(|| view! { <button class="quick-action" disabled=move || busy.get() on:click=move |_| { let en = e.get_value(); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.restore_entry_then(en.id.clone(), en.revision, replied(tx))).await }), "Item restored."); }><span><Icon name="history"/></span>"Restore"</button> }).into_any()
+            } else {
+                view! {
+                    {if is_folder {
+                        view! { <button class="quick-action" on:click=move |_| open_entry(e.get_value())><span><Icon name="folder"/></span>"Open"</button> }.into_any()
+                    } else {
+                        view! { <button class="quick-action" on:click=move |_| set_preview(Some(e.get_value()))><span><Icon name="eye"/></span>"Preview"</button><a class="quick-action" href=format!("/api/v1/files/{}/content", entry.id)><span><Icon name="download"/></span>"Download"</a> }.into_any()
+                    }}
+                    {owner.get().then(|| view! { <button class="quick-action" aria-pressed=entry.favorite.to_string() aria-label=if entry.favorite { "Remove favorite" } else { "Add to favorites" } disabled=move || busy.get()
+                        on:click=move |_| { let en = e.get_value(); run(Box::pin(async move { let c = conn()?; reducer(|tx| c.reducers.favorite_entry_then(en.id.clone(), !en.favorite, en.revision, replied(tx))).await }), ""); }><span><Icon name="star"/></span>"Favorite"</button> })}
+                    {(owner.get() && !in_locked.get()).then(|| view! { <button class="quick-action" on:click=move |_| tab.set("sharing".into())><span><Icon name="share"/></span>"Share"</button> })}
+                }.into_any()
+            };
+            Some(view! {
+                <div class="details-preview">{preview_art}</div>
+                <h2>{entry.name.clone()}</h2>
+                <p class="muted details-summary">{summary}</p>
+                <div class="quick-actions">{quick}</div>
+            })
         };
         let tabs = ["details", if is_folder { "history" } else { "versions" }, "sharing"];
         let content = move || {
-            let d = d_sv.get_value();
+            // History follows the folder's revision itself; the other tabs show the row.
+            if shown_tab.get() == "history" {
+                return if trashed {
+                    view! { <p class="muted">"Restore this folder to see its history."</p> }.into_any()
+                } else {
+                    let revision = Signal::derive(move || details.with(|d| d.as_ref().map_or(0, |d| d.entry.revision as u64)));
+                    view! { <crate::history::FolderHistory folder_id=Signal::stored(entry_id.clone()) revision=revision session=session.get_value() notice=history_notice/> }.into_any()
+                };
+            }
+            let Some(d) = details.get() else { return ().into_any() };
             let entry = d.entry.clone();
+            let e = StoredValue::new(entry.clone());
             let location = std::iter::once("All files".to_owned()).chain(d.ancestors.iter().map(|a| a.name.clone())).collect::<Vec<_>>().join(" › ");
             let access = if owner.get() { "You own this item" } else if can_write.get() { "You can edit" } else { "You can view" };
             match shown_tab.get().as_str() {
@@ -1348,11 +1368,6 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                         <div class="property-card"><button class="property property-action" on:click=move |_| if let Some(i) = replacement_input.get_untracked() { i.click() }><Icon name="history"/><div><span>"Upload new version"</span><small>"Keeps the current content in Versions"</small></div></button></div>
                     })}
                 }.into_any(),
-                "history" => if entry.trashed {
-                    view! { <p class="muted">"Restore this folder to see its history."</p> }.into_any()
-                } else {
-                    view! { <crate::history::FolderHistory folder_id=Signal::stored(entry.id.clone()) revision=Signal::stored(entry.revision as u64) session=session.get_value() notice=history_notice/> }.into_any()
-                },
                 "versions" => {
                     if d.versions.is_empty() {
                         view! { <p class="muted">"Folders don’t have content versions."</p> }.into_any()
@@ -1409,10 +1424,7 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
         Some(view! {
             <aside class="details-panel" aria-label="File details">
                 <div class="details-heading"><span>{if is_folder { "Folder details" } else { "File details" }}</span><button class="icon-button" aria-label="Close details" on:click=move |_| { details.set(None); detail_sequence.update(|s| *s += 1); }><Icon name="close"/></button></div>
-                <div class="details-preview">{preview_art}</div>
-                <h2>{entry.name.clone()}</h2>
-                <p class="muted details-summary">{summary}</p>
-                <div class="quick-actions">{quick}</div>
+                {overview}
                 <div class="details-tabs" role="tablist" aria-label="File information">
                     {tabs.into_iter().map(|id| view! { <button role="tab" aria-selected=move || (shown_tab.get() == id).to_string() on:click=move |_| tab.set(id.into())>{format!("{}{}", id[..1].to_uppercase(), &id[1..])}</button> }).collect_view()}
                 </div>
@@ -1510,7 +1522,9 @@ pub fn Files(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoV
                 {move || sidebar.get().then(|| view! { <button class="nav-scrim" aria-label="Close navigation" on:click=move |_| sidebar.set(false)></button> })}
                 <aside id="files-navigation" class=move || if sidebar.get() { "sidebar is-open" } else { "sidebar " } aria-label="Files navigation">
                     <ActionMenu label="New" class="files-new-menu" align_start=true actions=move |_| {
-                        let off = !connected.get_untracked() || !writable_here.get_untracked();
+                        // Tracked: a menu opened while the connection is still starting enables its items
+                        // as soon as it is ready.
+                        let off = !connected.get() || !writable_here.get();
                         vec![
                             MenuAction::new("Folder", "folder").disabled(off).run(move || open_modal(Modal { kind: ModalKind::Folder, entry: None, entries: Vec::new() })),
                             MenuAction::new("Upload files", "upload").disabled(off).run(move || { sidebar.set(false); if let Some(i) = upload_input.get_untracked() { i.click() } }),

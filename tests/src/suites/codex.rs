@@ -1006,6 +1006,9 @@ async fn codex_browser_flow(base: &str, root: &Path, project_id: &str) -> Result
         steered_msg.wait_for().await?;
         ensure!(steered_msg.get_by_text(contains("Saved · not sent to a model")).count().await? == 0);
 
+        // The reply shows while the turn is still running, and Enter steers a running turn: a new
+        // task waits until the turn has ended (Stop gives way to Send).
+        page.get_by_role("button", "Stop").wait_for_state(State::Detached).await?;
         composer.fill("ASK_QUESTION").await?;
         composer.press("Enter").await?;
         let card = page.get_by_role("form", "Codex is asking");
@@ -1015,12 +1018,14 @@ async fn codex_browser_flow(base: &str, root: &Path, project_id: &str) -> Result
         page.locator(".agent-message-assistant").get_by_text("You chose Blue.").wait_for().await?;
         card.wait_for_state(State::Detached).await?;
 
+        page.get_by_role("button", "Stop").wait_for_state(State::Detached).await?;
         let plan_toggle = page.get_by_role("button", "Plan");
         plan_toggle.click().await?;
         ensure!(plan_toggle.get_attribute("aria-pressed").await?.as_deref() == Some("true"));
         composer.fill("PLAN_ONLY").await?;
         composer.press("Enter").await?;
         page.locator(".agent-message-assistant").get_by_text("Planned without editing.").wait_for().await?;
+        page.get_by_role("button", "Stop").wait_for_state(State::Detached).await?;
         plan_toggle.click().await?;
         ensure!(plan_toggle.get_attribute("aria-pressed").await?.as_deref() == Some("false"));
 

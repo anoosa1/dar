@@ -312,7 +312,11 @@ pub fn ActionMenu(
         <div class=format!("ui-menu {class}") node_ref=root data-side=move || side.get()>
             <button type="button" class="ui-menu-trigger" aria-label=move || label.get() aria-expanded=move || open.get().to_string() aria-haspopup="menu" aria-controls=id.clone() node_ref=trigger
                 on:click=move |_| toggle()
-                on:keydown=move |e| if e.key() == "ArrowDown" { e.prevent_default(); if !open.get_untracked() { toggle() } }>
+                on:keydown=move |e| {
+                    if e.key() == "ArrowDown" { e.prevent_default(); if !open.get_untracked() { toggle() } }
+                    // Focus stays on the trigger when every item is disabled.
+                    else if e.key() == "Escape" && open.get_untracked() { e.prevent_default(); e.stop_propagation(); close(); }
+                }>
                 {children()}
             </button>
             <Show when=move || open.get()>

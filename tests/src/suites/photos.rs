@@ -34,8 +34,16 @@ pub async fn photos_api_and_isolation(t: &Ctx) -> Result<()> {
         let trip = upload_raw(&session, &target_parent, "trip.jpg", "image/jpeg", &media.trip).await?;
         let clip = upload_raw(&session, &target_parent, "clip.mp4", "video/mp4", &media.clip).await?;
         let broken = upload_raw(&session, &target_parent, "broken.jpg", "image/jpeg", b"not really a jpeg").await?;
+        // The runtime's background scan (2 s after start, then every 30 s) can index an upload
+        // between the upload and its index call, which then rightly answers `indexed: false`
+        // (a job the scan has not stored yet is indexed again). Either way the upload is indexed
+        // once the call returns, which the detail shows.
         for id in [&trip, &clip, &broken] {
-            assert_eq!(photos_call(&session, &format!("/assets/{id}/index"), "POST", Some(&json!({}))).await?, json!({"indexed": true}));
+            let reply = photos_call(&session, &format!("/assets/{id}/index"), "POST", Some(&json!({}))).await?;
+            if reply != json!({"indexed": true}) {
+                assert_eq!(reply, json!({"indexed": false}));
+                photos_call(&session, &format!("/assets/{id}"), "GET", None).await?;
+            }
         }
         assert_eq!(photos_call(&session, &format!("/assets/{trip}/index"), "POST", Some(&json!({}))).await?, json!({"indexed": false}));
 

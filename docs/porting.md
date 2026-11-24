@@ -59,6 +59,32 @@ runtime. Nothing is exported or converted beforehand.
 
 Newest first. Each entry: what passes now on the Rust stack, what was added to the tests.
 
+### 2026-11-23 — the suites that failed under parallel load
+Each was a race that load made likely; the fixes are in the product unless noted.
+- Agent (`codex`, `claude`): `CancelToken::cancel` used `watch::Sender::send`, which drops the
+  value when nothing is waiting on it, so a stop sent while the run's checkpoint loop was between
+  two waits was lost: the loop never ended, `finish` never ran and the run stayed `running` with
+  its output saved. It uses `send_replace` now (a unit test covers it). A steer is recorded in the
+  run before it is delivered (the guidance can end the turn at once), once, and taken back if
+  delivery fails. The conversation holds a send made while its history reloads after a turn
+  instead of sending a stale revision; the Codex browser flow waits for Stop to go before the next
+  turn (Enter steers until then).
+- Git tracker: a tracker change reloads the repository list, which rebuilt the issue sheet and
+  the editing pane and lost the comment draft (Comment stayed disabled); both are keyed by the
+  repository's id now. The comment composer is its own region, rebuilt only when the issue's
+  state changes, and a value fetched after a change discards a load still in flight
+  (`LoadState::set`), which had put a closed issue back after Reopen.
+- Files: the details panel was rebuilt on every revision of the open row, so a restore changing
+  the folder disposed folder history before its reply arrived and the previous notice stayed. It
+  is rebuilt for another item only; history reloads on the revision. The New menu's items follow
+  the connection while it is open, and Escape on a menu trigger closes it (focus stays there when
+  every item is disabled).
+- Tests: `ui::signed_in` waits for the signed-in app and its live connection (an absent
+  "Connecting…" also matched the sign-in page); `ui::open_menu_for` closes a menu with its
+  trigger and waits for the item to enable; `photos` accepts an upload the background scan
+  indexed before its index call, once its detail shows it indexed; a page closed on purpose no
+  longer reports "the page went away".
+
 ### 2026-11-23 — Notes live preview on CodeMirror 6
 - The Notes editor's textarea is CodeMirror 6 (`crates/client/editor/notes-editor.js`, the
   maintainer-authorized `@codemirror/*`, `@lezer/markdown` and `style-mod`), bundled by
@@ -102,10 +128,9 @@ Newest first. Each entry: what passes now on the Rust stack, what was added to t
 - Found on the way: a contended `dar-oidc` provider lock could stall a Tokio worker while the
   holder waited on SpacetimeDB in `block_in_place` (fixed in `Provider::lock`), and a calendar
   subscription refresh requested during a pass was dropped (fixed in `maintenance.rs`).
-- Open: under parallel load a few browser suites still fail now and then and pass alone
-  (`browser`: Files' New → Folder stays disabled; `history-browser`: an earlier snapshot's
-  status message replaces "Folder restored…"; `git-tracker-browser`: Reopen does nothing;
-  `codex`, `claude`: a run misses its step in time). Each failure saves screenshots.
+- Under parallel load a few suites failed now and then and passed alone (`browser`,
+  `history-browser`, `git-tracker-browser`, `codex`, `claude`, `photos`); their causes were
+  fixed on 2026-11-23 (see that entry). Each failure saves screenshots.
 
 ### 2026-11-22 — Mail
 - New optional app at `/mail` (direction A with B's inline reply, `docs/spacetimedb/mail-mocks.html`;

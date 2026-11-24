@@ -143,8 +143,10 @@ impl CancelToken {
         token
     }
 
+    /// Stores the flag even when nothing awaits `cancelled` at the moment (`send` would drop it
+    /// without a receiver, and a loop between two waits would never stop).
     pub fn cancel(&self) {
-        let _ = self.tx.send(true);
+        self.tx.send_replace(true);
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -165,5 +167,19 @@ impl CancelToken {
             return;
         }
         let _ = rx.wait_for(|v| *v).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CancelToken;
+
+    #[test]
+    fn cancel_is_kept_without_a_waiter() {
+        let token = CancelToken::new();
+        let copy = token.clone();
+        token.cancel();
+        assert!(copy.is_cancelled());
+        assert!(copy.throw_if_cancelled().is_err());
     }
 }

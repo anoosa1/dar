@@ -675,11 +675,28 @@ pub fn copy(text: String, notify: Callback<String>, what: &'static str) {
     });
 }
 
-#[derive(Clone, Copy)]
 pub struct LoadState<T: Clone + Send + Sync + 'static> {
     pub value: RwSignal<Option<T>>,
     pub error: RwSignal<String>,
     pub retry: Callback<()>,
+    sequence: RwSignal<u64>,
+}
+
+impl<T: Clone + Send + Sync + 'static> Clone for LoadState<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: Clone + Send + Sync + 'static> Copy for LoadState<T> {}
+
+impl<T: Clone + Send + Sync + 'static> LoadState<T> {
+    /// Sets a value fetched outside the loader (after a change), discarding any load still in
+    /// flight: it started earlier, so it would overwrite the newer value with an older one.
+    pub fn set(&self, next: T) {
+        let _ = self.sequence.try_update(|n| *n += 1);
+        let _ = self.value.try_set(Some(next));
+    }
 }
 
 pub fn use_load<T>(url: Signal<Option<String>>, trigger: Signal<u64>) -> LoadState<T>
@@ -721,7 +738,7 @@ where
         });
     });
     let retry = Callback::new(move |_| attempt.update(|n| *n += 1));
-    LoadState { value, error, retry }
+    LoadState { value, error, retry, sequence }
 }
 
 pub fn focus_sheet(root: NodeRef<html::Div>) {

@@ -423,6 +423,9 @@ impl Page {
                     }
                 }
                 "Fetch.requestPaused" => self.paused(p.clone()),
+                // Closing the page (or its context) detaches it too, and that event can arrive before
+                // the session is unsubscribed: only a page that was not being closed went away.
+                "Inspector.detached" if self.inner.closed.load(Ordering::Relaxed) => {}
                 "Inspector.detached" | "Inspector.targetCrashed" => {
                     self.emit(&self.inner.errors, &format!("the page went away ({})", event.method));
                 }

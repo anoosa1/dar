@@ -403,7 +403,8 @@ async fn configuration(filename: &Path, name: &str) -> Result<Option<CodexConfig
 }
 
 type DeliverFn = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>;
-type SteerFn = Arc<dyn Fn(String) + Send + Sync>;
+/// Records (`true`) or forgets (`false`) a steering message in the run's document.
+type SteerFn = Arc<dyn Fn(String, bool) + Send + Sync>;
 
 struct PendingAnswer {
     id: String,
@@ -475,6 +476,24 @@ impl RunDocState {
             outputs: OrderedMap::default(),
             steps: OrderedMap::default(),
         }
+    }
+
+    /// Records a steering message in the run (once, the latest 50), or forgets it again when
+    /// its delivery failed (`keep` false).
+    fn steered(&mut self, msg_id: String, keep: bool) {
+        let list = self.data.steered.get_or_insert_with(Vec::new);
+        if !keep {
+            list.retain(|id| *id != msg_id);
+        } else if !list.contains(&msg_id) {
+            list.push(msg_id);
+            if list.len() > 50 {
+                let drop_n = list.len() - 50;
+                list.drain(..drop_n);
+            }
+        } else {
+            return;
+        }
+        self.dirty = true;
     }
 
     fn limit(&mut self, value: &str, max: usize) -> String {
@@ -2626,15 +2645,8 @@ impl AgentRuntime {
 
                 {
                     let st_steer = state.clone();
-                    *entry.steer_fn.lock().expect("steer_fn") = Some(Arc::new(move |msg_id| {
-                        let mut st = st_steer.lock().expect("state");
-                        let list = st.data.steered.get_or_insert_with(Vec::new);
-                        list.push(msg_id);
-                        if list.len() > 50 {
-                            let drop_n = list.len() - 50;
-                            list.drain(..drop_n);
-                        }
-                        st.dirty = true;
+                    *entry.steer_fn.lock().expect("steer_fn") = Some(Arc::new(move |msg_id, keep| {
+                        st_steer.lock().expect("state").steered(msg_id, keep);
                     }));
                     let c_deliver = claude.clone();
                     let status_deliver = status.clone();
@@ -3435,15 +3447,8 @@ impl AgentRuntime {
             {
                 *entry.turn.lock().expect("turn") = Some(turn_id.clone());
                 let st_steer = state.clone();
-                *entry.steer_fn.lock().expect("steer_fn") = Some(Arc::new(move |msg_id| {
-                    let mut st = st_steer.lock().expect("state");
-                    let list = st.data.steered.get_or_insert_with(Vec::new);
-                    list.push(msg_id);
-                    if list.len() > 50 {
-                        let drop_n = list.len() - 50;
-                        list.drain(..drop_n);
-                    }
-                    st.dirty = true;
+                *entry.steer_fn.lock().expect("steer_fn") = Some(Arc::new(move |msg_id, keep| {
+                    st_steer.lock().expect("state").steered(msg_id, keep);
                 }));
                 let srv_deliver = server.clone();
                 let tk_deliver = thread_key.clone();
@@ -3543,7 +3548,18 @@ impl AgentRuntime {
         let entry = entry.expect("entry");
         let already = entry.steered.lock().expect("steered").contains(msg_id);
         if !already {
-            deliver(content.to_owned()).await?;
+            // Recorded before delivery: the guidance can end the turn at once, and the run saves its
+            // document as the turn ends. A delivery that fails takes the record back.
+            let steer_fn = entry.steer_fn.lock().expect("steer_fn").clone();
+            if let Some(f) = &steer_fn {
+                f(msg_id.to_owned(), true);
+            }
+            if let Err(err) = deliver(content.to_owned()).await {
+                if let Some(f) = &steer_fn {
+                    f(msg_id.to_owned(), false);
+                }
+                return Err(err);
+            }
             entry
                 .steered
                 .lock()
@@ -3562,9 +3578,6 @@ impl AgentRuntime {
                 }),
             )
             .await?;
-        if let Some(steer_fn) = entry.steer_fn.lock().expect("steer_fn").clone() {
-            steer_fn(msg_id.to_owned());
-        }
         Ok(saved)
     }
 
