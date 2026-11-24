@@ -177,6 +177,13 @@ pub fn path(name: &str) -> &'static str {
         "minus" => "M5 12h14",
         "fitWidth" => "M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4",
         "spread" => "M2 4h9v16H2ZM13 4h9v16h-9Z",
+        "keyboard" => {
+            "M3 6h18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2ZM6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"
+        }
+        "qr" => {
+            "M3 3h6v6H3ZM15 3h6v6h-6ZM3 15h6v6H3ZM15 15h2v2h-2ZM19 15h2v2h-2ZM15 19h2v2h-2ZM19 19h2v2h-2Z"
+        }
+        "table" => "M3 5h18v14H3ZM3 10h18M9 5v14",
         _ => "",
     }
 }

@@ -5,17 +5,22 @@ Delivered November 6, 2026 (layout A, Focused workspace). UI rules are in the
 
 ## Features
 
-- **Contacts:** multiple address books; contacts with structured name,
-  organization, title, labelled emails/phones/URLs/addresses, birthday, notes,
-  groups and favorites; search, book/group filters, deep links, paging. vCard
-  3.0/4.0 import/export keeps unknown properties; malformed cards are reported per
-  item and duplicate UIDs conflict explicitly.
-- **Calendar:** multiple coloured calendars; day/week/month/agenda; visibility;
-  IANA timezone (Personal → Regional) and week start; timed, floating and all-day
-  events; location, description, attendees, status and alarms; recurrence with
-  RRULE/RDATE/EXDATE, overrides and cancelled instances, edited as one occurrence
-  or the whole series. Move and resize open a reviewable editor. Read/write
-  sharing, ICS import/export and in-app reminders.
+- **Contacts:** multiple address books; contacts with photo (`PHOTO`, served via `?photo=1`),
+  structured name, nickname, pronouns, organization, department, title, labelled emails/phones/URLs/
+  social profiles/addresses/related people, birthday (with optional omit-year), anniversary, notes,
+  groups and favorites; List/Table/Cards views, A–Z jump rail, quick filters, inline star, hover
+  multi-select with bulk group/move/export/delete, client-side Merge & fix duplicate cleanup,
+  vCard QR sharing, upcoming birthdays, deep links, single-key shortcuts and paging. vCard 3.0/4.0
+  and CSV import/export keep unknown properties; malformed cards are reported per item and duplicate
+  UIDs conflict explicitly.
+- **Calendar:** multiple coloured calendars; day/week/month/year/agenda; visibility,
+  solo focus and quick palette; IANA timezone (Personal → Regional), 12h/24h time format
+  and week start; timed, floating and all-day/multi-day spanning events; location links,
+  description, Contacts-assisted attendees, status and alarms; recurrence with visual
+  builder plus RRULE/RDATE/EXDATE, overrides and cancelled instances, edited as one
+  occurrence or the whole series. Floating Quick-Peek and Quick-Create popovers; direct
+  drag-move and bottom-edge resize with an Undo toast; single-key keyboard shortcuts.
+  Read/write sharing, ICS import/export and in-app reminders.
 - Organizer/attendee data is preserved, but no invitations are sent (no mail
   transport).
 - Subscriptions: a calendar can follow an iCalendar link (https://, http:// or

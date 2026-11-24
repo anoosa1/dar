@@ -23,7 +23,7 @@ pub fn CollectionTransfers(session: BrowserSession, app: &'static str) -> impl I
             "Address book",
             "address books",
             "vCard",
-            ".vcf,text/vcard",
+            ".vcf,.csv,text/vcard,text/csv",
         )
     } else {
         (
@@ -80,6 +80,7 @@ pub fn CollectionTransfers(session: BrowserSession, app: &'static str) -> impl I
                 if size > 2.0 * 1024.0 * 1024.0 {
                     return Err("Import exceeds 2 MiB.".to_owned());
                 }
+                let file_name = source.as_ref().map(|f| f.name().to_ascii_lowercase());
                 let value = match &source {
                     Some(f) => wasm_bindgen_futures::JsFuture::from(f.text())
                         .await
@@ -88,10 +89,19 @@ pub fn CollectionTransfers(session: BrowserSession, app: &'static str) -> impl I
                         .unwrap_or_default(),
                     None => pasted,
                 };
+                let is_csv = app == "contacts"
+                    && (file_name.as_deref().is_some_and(|n| n.ends_with(".csv"))
+                        || (!value.to_ascii_uppercase().contains("BEGIN:VCARD")
+                            && value.lines().next().is_some_and(|l| l.contains(','))));
+                let payload = if is_csv {
+                    json!({ "content": value, "format": "csv" })
+                } else {
+                    json!({ "content": value })
+                };
                 let result: Value = send(
                     &format!("{endpoint}/{}/import", c.id),
                     "POST",
-                    Some(json!({ "content": value })),
+                    Some(payload),
                     &csrf.get_value(),
                     None,
                 )
@@ -120,6 +130,7 @@ pub fn CollectionTransfers(session: BrowserSession, app: &'static str) -> impl I
                     <label>{noun}<Select aria_label=format!("{noun} for import or export") options=options value=selected on_change=Callback::new(move |_| results.set(None))/></label>
                     {move || collection.get().map(|c| view! { <a class="secondary-button" href=format!("{endpoint}/{}/export", c.id)>{format!("Export {format}")}</a> })}
                     <h4>{format!("Import {format}")}</h4>
+                    {(app == "contacts").then(|| view! { <p class="field-hint">"Supports vCard (.vcf) and Google / Outlook CSV (.csv)."</p> })}
                     <label>{format!("{format} file")}<input type="file" node_ref=file accept=accept disabled=move || busy.get() || read_only()/></label>
                     <label>"Or paste content"<textarea rows="6" prop:value=move || content.get() disabled=move || busy.get() || read_only() on:input=move |e| content.set(event_target_value(&e))></textarea></label>
                     <button type="button" class="primary-button" disabled=move || busy.get() || collection.with(Option::is_none) || read_only() on:click=move |_| import()>{move || if busy.get() { "Importing…".to_owned() } else { format!("Import {format}") }}</button>

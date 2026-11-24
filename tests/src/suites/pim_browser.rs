@@ -60,25 +60,10 @@ async fn cancelled_events(page: &Page, value: bool) -> Result<()> {
 
 async fn calendar_actions(page: &Page, name: &str) -> Result<()> {
     let action = page.get_by_role("button", format!("Actions for calendar {name}"));
-    let previous = page.get_by_role("button", "Previous calendars");
-    for _ in 0..100 {
-        if previous.count().await? == 0 || !previous.is_enabled().await? {
-            break;
-        }
-        previous.click().await?;
-    }
-    for _ in 0..100 {
-        if action.is_visible().await? {
-            action.click().await?;
-            return Ok(());
-        }
-        let next = page.get_by_role("button", "Next calendars");
-        if next.count().await? == 0 || !next.is_enabled().await? {
-            break;
-        }
-        next.click().await?;
-    }
-    bail!("Calendar action unavailable: {name}")
+    action.scroll_into_view_if_needed().await?;
+    action.wait_for().await?;
+    action.click().await?;
+    Ok(())
 }
 
 pub async fn contacts_and_calendar_journey(t: &Ctx) -> Result<()> {
@@ -134,10 +119,7 @@ pub async fn contacts_and_calendar_journey(t: &Ctx) -> Result<()> {
         .get_by_label("Email 1")
         .fill("amira@example.com")
         .await?;
-    editor
-        .get_by_label("Groups (one per line)")
-        .fill("Design team")
-        .await?;
+    editor.get_by_label("Add group").fill("Design team").await?;
     editor
         .get_by_label("Notes")
         .fill("A real contact, saved in SpacetimeDB.")
@@ -250,20 +232,12 @@ pub async fn contacts_and_calendar_journey(t: &Ctx) -> Result<()> {
             .await?,
         Some("true".to_owned())
     );
-    page.get_by_role("button", "Choose date").click().await?;
-    page.get_by_role("button", "Go to today").click().await?;
+    page.get_by_role("button", "Today").click().await?;
     let today = page
         .get_by_role("button", "Choose date")
         .get_attribute("data-date")
         .await?
         .context("today data-date")?;
-    assert_eq!(
-        page.get_by_role("button", "Choose date")
-            .text_content()
-            .await?
-            .trim(),
-        "Today"
-    );
     assert_eq!(
         page.locator(".sidebar")
             .get_by_role("button", "Today")
@@ -285,15 +259,7 @@ pub async fn contacts_and_calendar_journey(t: &Ctx) -> Result<()> {
             .await?,
         Some(tomorrow)
     );
-    assert_ne!(
-        page.get_by_role("button", "Choose date")
-            .text_content()
-            .await?
-            .trim(),
-        "Today"
-    );
-    page.get_by_role("button", "Choose date").click().await?;
-    page.get_by_role("button", "Go to today").click().await?;
+    page.get_by_role("button", "Today").click().await?;
     assert_eq!(
         page.get_by_role("button", "Choose date")
             .get_attribute("data-date")
@@ -318,12 +284,16 @@ pub async fn contacts_and_calendar_journey(t: &Ctx) -> Result<()> {
     .await?;
     page.reload().await?;
     page.locator(".calendar-month").wait_for().await?;
-    page.get_by_role("button", "Next calendars").click().await?;
-    assert!(
-        page.get_by_role("button", "Previous calendars")
-            .is_enabled()
-            .await?
+    assert_eq!(
+        page.get_by_role("button", "Next calendars").count().await?,
+        0
     );
+    page.get_by_role("button", "Sidebar page 9")
+        .scroll_into_view_if_needed()
+        .await?;
+    page.get_by_role("button", "Sidebar page 9")
+        .wait_for()
+        .await?;
 
     for (width, height) in [(1440, 950), (1000, 700), (390, 844)] {
         page.set_viewport_size(width, height).await?;
@@ -485,18 +455,8 @@ pub async fn contacts_and_calendar_journey(t: &Ctx) -> Result<()> {
         &page.get_by_role("button", "New event 2026-11-09 15:00"),
     )
     .await?;
-    editor.get_by_label("Starts").wait_for().await?;
-    assert_eq!(
-        editor.get_by_label("Starts").input_value().await?,
-        "2026-11-09"
-    );
-    assert_eq!(
-        editor.get_by_label("Start time").input_value().await?,
-        "15:00"
-    );
-    editor.get_by_role("button", "Save event").click().await?;
-    editor.wait_for_state(State::Hidden).await?;
-    page.get_by_role("button", regex(&format!("15:00.*{moved_pat}")))
+    page.get_by_role("button", "Undo").wait_for().await?;
+    page.get_by_role("button", regex(&format!("{moved_pat}.*15:00")))
         .wait_for()
         .await?;
 
@@ -508,20 +468,17 @@ pub async fn contacts_and_calendar_journey(t: &Ctx) -> Result<()> {
         &page.get_by_role("button", "New event 2026-11-09 18:00"),
     )
     .await?;
-    editor.get_by_label("Ends").wait_for().await?;
-    assert_eq!(
-        editor.get_by_label("Ends").input_value().await?,
-        "2026-11-09"
-    );
-    assert_eq!(
-        editor.get_by_label("End time").input_value().await?,
-        "18:00"
-    );
-    editor.get_by_role("button", "Save event").click().await?;
-    editor.wait_for_state(State::Hidden).await?;
+    page.get_by_role("button", regex(&format!("{moved_pat}.*15:00.*18:00")))
+        .wait_for()
+        .await?;
 
-    for view in ["day", "month", "agenda", "week"] {
+    for view in ["day", "month", "year", "agenda", "week"] {
         ui::calendar_view(&page, view).await?;
+        if view == "year" {
+            page.locator(".calendar-year").wait_for().await?;
+            assert_eq!(page.locator(".calendar-year-month").count().await?, 12);
+            continue;
+        }
         if view == "month" {
             page.locator(".calendar-month").wait_for().await?;
             assert_eq!(

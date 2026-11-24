@@ -90,17 +90,42 @@ pub fn recurrence_label(rule: &str, recurring: bool) -> String {
         Some("HOURLY") => "hour",
         _ => return "Custom schedule".into(),
     };
-    if parts
-        .iter()
-        .any(|(k, _)| !["FREQ", "INTERVAL", "COUNT", "UNTIL"].contains(&k.as_str()))
-    {
+    if parts.iter().any(|(k, _)| {
+        !["FREQ", "INTERVAL", "COUNT", "UNTIL", "BYDAY", "WKST"].contains(&k.as_str())
+    }) {
         return "Custom schedule".into();
     }
     let interval: u32 = get("INTERVAL").and_then(|v| v.parse().ok()).unwrap_or(1);
-    let base = if interval == 1 {
-        format!("Every {unit}")
+    let byday = get("BYDAY");
+    let base = if unit == "week" && interval == 1 && byday.as_deref() == Some("MO,TU,WE,TH,FR") {
+        "Every weekday".to_owned()
     } else {
-        format!("Every {interval} {unit}s")
+        let freq = if interval == 1 {
+            format!("Every {unit}")
+        } else {
+            format!("Every {interval} {unit}s")
+        };
+        if let Some(days) = byday {
+            let names: Vec<&str> = days
+                .split(',')
+                .filter_map(|d| match d.trim() {
+                    "MO" => Some("Mon"),
+                    "TU" => Some("Tue"),
+                    "WE" => Some("Wed"),
+                    "TH" => Some("Thu"),
+                    "FR" => Some("Fri"),
+                    "SA" => Some("Sat"),
+                    "SU" => Some("Sun"),
+                    _ => None,
+                })
+                .collect();
+            if names.is_empty() {
+                return "Custom schedule".into();
+            }
+            format!("{freq} on {}", names.join(", "))
+        } else {
+            freq
+        }
     };
     if let Some(count) = get("COUNT") {
         return format!("{base} · {count} occurrences");

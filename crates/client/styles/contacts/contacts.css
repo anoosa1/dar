@@ -1,0 +1,1215 @@
+/* Contacts redesign stylesheet (loaded last in cascade order).
+   Uses Twilight Afterglow/Nightfall CSS variables, strict CSP (no inline styles),
+   and avoids :has() on large containers. */
+
+/* ---------- Workspace & independent pane scroll ---------- */
+.pim-workspace.has-contacts-main>.sidebar{
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.contacts-sidebar-scroll{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  scrollbar-width:thin;
+  padding-right:2px;
+}
+.contacts-sidebar-footer{
+  flex:none;
+  margin-top:8px;
+  padding-top:8px;
+  border-top:1px solid var(--border);
+}
+@media(min-width:1151px){
+  .pim-shell.has-pim-details .pim-workspace.has-contacts-main{
+    grid-template-columns:240px minmax(0,1fr) 368px;
+  }
+  body.has-editing-pane .pim-shell.has-pim-details .pim-workspace.has-contacts-main{
+    grid-template-columns:240px minmax(0,1fr);
+  }
+}
+@media(max-width:1150px) and (min-width:801px){
+  .pim-shell.has-pim-details .pim-workspace.has-contacts-main{
+    grid-template-columns:200px minmax(0,1fr) 320px;
+  }
+  body.has-editing-pane .pim-shell.has-pim-details .pim-workspace.has-contacts-main{
+    grid-template-columns:200px minmax(0,1fr);
+  }
+}
+body.has-editing-pane .pim-workspace.has-contacts-main>.pim-details{
+  display:none;
+}
+.contacts-main>.contacts-list-wrap{
+  flex:1;
+  min-height:0;
+  display:flex;
+  overflow:hidden;
+}
+.contacts-list-wrap>.contact-list{
+  flex:1;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior-y:contain;
+  scrollbar-gutter:stable;
+}
+.contacts-main>.contacts-merge-list{
+  flex:1;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior-y:contain;
+  padding:4px 8px 20px;
+}
+.contacts-status{
+  padding:20px 14px;
+  color:var(--muted);
+  font-size:13px;
+}
+
+/* ---------- Sidebar: counts, badges, books, groups & birthdays ---------- */
+.contacts-nav-views,
+.contacts-books-list,
+.contacts-groups{
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+.contacts-nav-label{
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  text-align:left;
+}
+.contacts-nav-count{
+  margin-left:auto;
+  font-size:11px;
+  font-weight:600;
+  color:var(--muted);
+  font-variant-numeric:tabular-nums;
+  flex:none;
+}
+.sidebar .nav-item.active .contacts-nav-count{
+  color:inherit;
+  opacity:.82;
+}
+.contacts-nav-badge{
+  margin-left:auto;
+  min-width:20px;
+  height:20px;
+  padding:0 6px;
+  border-radius:10px;
+  display:inline-grid;
+  place-items:center;
+  background:var(--accent);
+  color:var(--on-accent);
+  font-size:11px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  flex:none;
+}
+.contacts-shared-tag{
+  font-size:10px;
+  font-weight:600;
+  padding:1px 6px;
+  border-radius:99px;
+  background:var(--hover);
+  color:var(--muted);
+  flex:none;
+}
+.contacts-group-row>.nav-item{
+  gap:8px;
+}
+.contacts-bday-card{
+  padding:10px 11px;
+  border:1px solid var(--sheet-border);
+  border-radius:14px;
+  background:var(--panel);
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.contacts-bday-head{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  font-size:11.5px;
+  font-weight:650;
+  color:var(--accent);
+}
+.contacts-bday-head .icon{
+  width:15px;
+  height:15px;
+}
+.contacts-bday-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  width:100%;
+  padding:4px 6px;
+  margin:0 -6px;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  color:var(--text);
+  font:inherit;
+  font-size:12px;
+  text-align:left;
+  cursor:pointer;
+}
+.contacts-bday-row:hover{
+  background:var(--hover);
+}
+.contacts-bday-name{
+  font-weight:550;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  min-width:0;
+}
+.contacts-bday-when{
+  font-size:11px;
+  color:var(--muted);
+  white-space:nowrap;
+  flex:none;
+  font-variant-numeric:tabular-nums;
+}
+
+/* ---------- Sheet header, view switcher, sort menu ---------- */
+.contacts-main>.contacts-heading{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex:none;
+  margin:0 0 6px;
+  padding:0 8px;
+  min-height:36px;
+}
+.contacts-count-pill{
+  display:inline-flex;
+  align-items:center;
+  height:22px;
+  padding:0 8px;
+  border-radius:11px;
+  background:var(--hover);
+  color:var(--muted);
+  font-size:11.5px;
+  font-weight:650;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+  flex:none;
+}
+.contacts-heading-spacer{
+  flex:1 1 auto;
+  min-width:4px;
+}
+.contacts-heading-controls{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:none;
+}
+.contacts-view-switch{
+  display:inline-flex;
+  align-items:center;
+  gap:2px;
+  padding:3px;
+  border:0;
+  border-radius:18px;
+  background:var(--hover);
+}
+.contacts-view-switch>button{
+  display:grid;
+  place-items:center;
+  min-width:30px;
+  min-height:28px;
+  padding:0 7px;
+  border:0;
+  border-radius:14px;
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+}
+.contacts-view-switch>button .icon{
+  width:15px;
+  height:15px;
+}
+.contacts-view-switch>button:hover{
+  color:var(--text);
+}
+.contacts-view-switch>button[aria-checked=true]{
+  background:var(--panel);
+  color:var(--text);
+  box-shadow:0 1px 2px var(--shadow);
+}
+.contacts-sort-menu>.ui-menu-trigger{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:32px;
+  padding:0 10px;
+  border-radius:16px;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:600;
+  white-space:nowrap;
+}
+.contacts-sort-menu>.ui-menu-trigger:hover{
+  background:var(--hover);
+  color:var(--text);
+}
+.contacts-sort-menu>.ui-menu-trigger .icon{
+  width:14px;
+  height:14px;
+}
+.contacts-heading-controls>.icon-button{
+  min-width:34px;
+  min-height:34px;
+  color:var(--muted);
+}
+
+/* ---------- Filter chips & tonal bulk selection bar ---------- */
+.contacts-filter-strip{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:none;
+  padding:2px 8px 8px;
+  overflow-x:auto;
+  scrollbar-width:none;
+}
+.contacts-filter-chip{
+  display:inline-flex;
+  align-items:center;
+  height:28px;
+  padding:0 11px;
+  border:1px solid var(--row-divider);
+  border-radius:14px;
+  background:transparent;
+  color:var(--muted);
+  font:inherit;
+  font-size:12px;
+  font-weight:550;
+  white-space:nowrap;
+  flex:none;
+  cursor:pointer;
+}
+.contacts-filter-chip:hover{
+  background:var(--hover);
+  color:var(--text);
+}
+.contacts-filter-chip.is-active{
+  border-color:transparent;
+  background:var(--tonal);
+  color:var(--on-tonal);
+  font-weight:600;
+}
+.contacts-selection-bar{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:none;
+  min-height:42px;
+  margin:0 6px 8px;
+  padding:4px 8px 4px 12px;
+  border-radius:21px;
+  background:var(--tonal);
+  color:var(--on-tonal);
+  font-size:12.5px;
+  flex-wrap:wrap;
+}
+.contacts-sel-count{
+  font-weight:650;
+  margin-right:auto;
+  font-variant-numeric:tabular-nums;
+}
+.contacts-sel-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  min-height:32px;
+  padding:0 10px;
+  border:0;
+  border-radius:16px;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  font-size:12.5px;
+  font-weight:600;
+  cursor:pointer;
+}
+.contacts-sel-btn:hover{
+  background:color-mix(in srgb,var(--on-tonal) 12%,transparent);
+}
+.contacts-sel-btn .icon{
+  width:15px;
+  height:15px;
+}
+.contacts-sel-btn.danger{
+  color:var(--danger);
+}
+.contacts-sel-close{
+  min-width:32px;
+  min-height:32px;
+  color:inherit;
+}
+
+/* ---------- Directory rows: hover checkbox, photo avatar, inline star, table ---------- */
+.contact-initials,
+.contact-portrait{
+  overflow:hidden;
+}
+.contact-avatar-img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  border-radius:50%;
+  display:block;
+}
+.contact-row-wrap{
+  position:relative;
+  display:flex;
+  align-items:center;
+  margin:1px 4px;
+  border-radius:16px;
+}
+.contact-row-wrap>.contact-row{
+  flex:1;
+  min-width:0;
+  width:100%;
+  min-height:56px;
+  margin:0;
+  padding:8px 44px 8px 12px;
+  border-radius:16px;
+  gap:13px;
+}
+.contact-row-wrap.is-checked>.contact-row:not(.selected){
+  background:color-mix(in srgb,var(--tonal) 55%,transparent);
+}
+.contact-row-text{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  flex:1;
+}
+.contact-row-check{
+  position:absolute;
+  left:12px;
+  top:50%;
+  transform:translateY(-50%);
+  z-index:2;
+  width:40px;
+  height:40px;
+  border:2px solid var(--border);
+  border-radius:50%;
+  background:var(--panel);
+  color:var(--on-accent);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .12s,background-color .12s,border-color .12s;
+}
+.contact-row-check .icon{
+  width:17px;
+  height:17px;
+}
+.contact-row-wrap:hover .contact-row-check,
+.contact-row-wrap:focus-within .contact-row-check,
+.contact-list.is-selecting .contact-row-check,
+.contact-row-check.is-checked{
+  opacity:1;
+  pointer-events:auto;
+}
+.contact-row-check:hover{
+  border-color:var(--accent);
+}
+.contact-row-check.is-checked{
+  border-color:var(--accent);
+  background:var(--accent);
+}
+.contact-row-star{
+  position:absolute;
+  right:8px;
+  top:50%;
+  transform:translateY(-50%);
+  z-index:2;
+  width:32px;
+  height:32px;
+  border:0;
+  border-radius:16px;
+  background:transparent;
+  color:var(--muted);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  opacity:0;
+  transition:opacity .12s,background-color .12s,color .12s;
+}
+.contact-row-star .icon{
+  width:16px;
+  height:16px;
+}
+.contact-row-wrap:hover .contact-row-star,
+.contact-row-wrap:focus-within .contact-row-star,
+.contact-row-star.is-fav{
+  opacity:1;
+}
+.contact-row-star:hover{
+  background:var(--hover);
+  color:var(--warning);
+}
+.contact-row-star.is-fav{
+  color:var(--warning);
+}
+.contact-row-star.is-fav .icon{
+  fill:var(--warning);
+}
+.contact-row-star.is-static{
+  pointer-events:none;
+}
+
+/* Table mode */
+.contacts-table-header{
+  display:grid;
+  grid-template-columns:minmax(180px,1.5fr) minmax(150px,1.2fr) minmax(120px,1fr) 64px;
+  align-items:center;
+  gap:12px;
+  flex:none;
+  padding:6px 40px 6px 20px;
+  border-bottom:1px solid var(--border);
+  font-size:11.5px;
+  font-weight:650;
+  color:var(--muted);
+}
+.contacts-table-col-end{
+  text-align:right;
+}
+.contact-list.is-table-mode .contact-row{
+  display:grid;
+  grid-template-columns:40px minmax(128px,1.5fr) minmax(150px,1.2fr) minmax(120px,1fr) 22px;
+  align-items:center;
+  gap:12px;
+}
+.contact-table-cell{
+  font-size:12.5px;
+  color:var(--muted);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  text-align:left;
+}
+.contact-list .contact-row.selected .contact-table-cell{
+  color:inherit;
+  opacity:.85;
+}
+.num{
+  font-variant-numeric:tabular-nums;
+}
+
+/* Cards view */
+.contacts-cards-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(196px,1fr));
+  gap:12px;
+  padding:8px 8px 24px;
+}
+.contacts-card{
+  position:relative;
+  border:1px solid var(--row-divider);
+  border-radius:16px;
+  background:var(--panel);
+  transition:border-color .12s,background-color .12s;
+}
+.contacts-card:hover{
+  border-color:var(--border);
+  background:var(--hover);
+}
+.contacts-card.is-selected{
+  border-color:transparent;
+  background:var(--tonal);
+  color:var(--on-tonal);
+}
+.contacts-card-main{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:5px;
+  width:100%;
+  padding:18px 14px 14px;
+  border:0;
+  border-radius:16px;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  text-align:center;
+  cursor:pointer;
+}
+.contacts-card-avatar{
+  width:56px!important;
+  height:56px!important;
+  font-size:19px!important;
+  margin-bottom:4px;
+}
+.contacts-card-main>strong{
+  font-size:13.5px;
+  font-weight:600;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.contacts-card-main>small{
+  font-size:12px;
+  color:var(--muted);
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  min-height:16px;
+}
+.contacts-card.is-selected .contacts-card-main>small{
+  color:inherit;
+  opacity:.82;
+}
+.contacts-card-meta{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  margin-top:4px;
+  font-size:11px;
+  color:var(--muted);
+}
+.contacts-card.is-selected .contacts-card-meta{
+  color:inherit;
+  opacity:.82;
+}
+.contacts-card-star{
+  position:absolute;
+  top:8px;
+  right:8px;
+  width:30px;
+  height:30px;
+  border:0;
+  border-radius:15px;
+  background:transparent;
+  color:var(--muted);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  opacity:0;
+}
+.contacts-card:hover .contacts-card-star,
+.contacts-card:focus-within .contacts-card-star,
+.contacts-card-star.is-fav{
+  opacity:1;
+}
+.contacts-card-star .icon{
+  width:15px;
+  height:15px;
+}
+.contacts-card-star.is-fav{
+  color:var(--warning);
+}
+.contacts-card-star.is-fav .icon{
+  fill:var(--warning);
+}
+
+/* A–Z quick jump rail */
+.contacts-az-rail{
+  flex:none;
+  width:22px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:1px;
+  padding:4px 2px;
+  user-select:none;
+}
+.contacts-az-btn{
+  width:18px;
+  height:16px;
+  padding:0;
+  border:0;
+  border-radius:5px;
+  background:transparent;
+  color:var(--muted);
+  font:inherit;
+  font-size:10px;
+  font-weight:700;
+  line-height:1;
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  opacity:.35;
+}
+.contacts-az-btn.has-items{
+  opacity:.85;
+  color:var(--text);
+}
+.contacts-az-btn.has-items:hover{
+  background:var(--tonal);
+  color:var(--on-tonal);
+  opacity:1;
+}
+.contacts-az-btn:disabled{
+  cursor:default;
+}
+
+/* ---------- Details inspector ---------- */
+.contacts-detail-back{
+  display:none;
+  align-items:center;
+  gap:4px;
+  margin-right:auto;
+  font-weight:600;
+}
+.contacts-detail-back .icon{
+  width:16px;
+  height:16px;
+}
+.pim-details .contact-portrait{
+  width:84px;
+  height:84px;
+  font-size:28px;
+}
+.pim-workspace.has-contacts-main .pim-detail-footer{
+  flex-wrap:nowrap;
+  gap:8px;
+}
+.pim-workspace.has-contacts-main .pim-detail-footer>span{
+  min-width:0;
+  flex:1 1 auto;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.pim-workspace.has-contacts-main .pim-detail-footer>.text-button{
+  flex:none;
+}
+.contacts-nick-line{
+  font-style:italic;
+  font-size:12.5px!important;
+}
+.contacts-prop{
+  align-items:center;
+}
+.contacts-prop-body{
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+  min-width:0;
+  flex:1;
+  overflow-wrap:anywhere;
+}
+.contacts-copy-btn{
+  flex:none;
+  min-width:30px;
+  min-height:30px;
+  color:var(--muted);
+  opacity:0;
+  transition:opacity .12s,color .12s;
+}
+.contacts-prop:hover .contacts-copy-btn,
+.contacts-prop:focus-within .contacts-copy-btn,
+.contacts-copy-btn.is-copied{
+  opacity:1;
+}
+.contacts-copy-btn .icon{
+  width:15px;
+  height:15px;
+}
+.contacts-copy-btn.is-copied{
+  color:var(--success);
+}
+.contacts-detail-groups{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  flex:1;
+  min-width:0;
+}
+.contacts-detail-chips{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:6px;
+}
+.contacts-chip{
+  display:inline-flex;
+  align-items:center;
+  max-width:100%;
+  border-radius:14px;
+  background:var(--tonal);
+  color:var(--on-tonal);
+  font-size:12px;
+  font-weight:600;
+  overflow:hidden;
+}
+.contacts-chip-label,
+.contacts-chip-text{
+  display:inline-flex;
+  align-items:center;
+  padding:4px 10px;
+  border:0;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  line-height:1.25;
+}
+.contacts-chip-label{
+  cursor:pointer;
+}
+.contacts-chip-label:hover{
+  background:color-mix(in srgb,var(--on-tonal) 10%,transparent);
+}
+.contacts-chip-remove{
+  display:inline-grid;
+  place-items:center;
+  width:24px;
+  height:24px;
+  margin-right:2px;
+  border:0;
+  border-radius:12px;
+  background:transparent;
+  color:inherit;
+  cursor:pointer;
+  opacity:.75;
+}
+.contacts-chip-remove:hover{
+  opacity:1;
+  background:color-mix(in srgb,var(--on-tonal) 14%,transparent);
+}
+.contacts-chip-remove .icon{
+  width:13px;
+  height:13px;
+}
+.contacts-chip-add{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  height:26px;
+  padding:0 10px;
+  border:1px dashed var(--border);
+  border-radius:13px;
+  background:transparent;
+  color:var(--muted);
+  font:inherit;
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+}
+.contacts-chip-add:hover{
+  border-color:var(--accent);
+  color:var(--accent);
+}
+.contacts-chip-add .icon{
+  width:13px;
+  height:13px;
+}
+.contacts-inline-group-picker{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.contacts-inline-group-row{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.contacts-inline-group-row>input{
+  flex:1;
+  min-width:0;
+}
+.contacts-group-suggestions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin-top:4px;
+}
+.contacts-suggest-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  height:26px;
+  padding:0 9px;
+  border:1px solid var(--border);
+  border-radius:13px;
+  background:var(--panel);
+  color:var(--text);
+  font:inherit;
+  font-size:11.5px;
+  font-weight:550;
+  cursor:pointer;
+}
+.contacts-suggest-pill:hover{
+  border-color:var(--accent);
+  background:var(--hover);
+}
+.contacts-suggest-pill .icon{
+  width:12px;
+  height:12px;
+  color:var(--muted);
+}
+.contacts-dar-link-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  padding:6px 12px 12px;
+}
+.contacts-app-link{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:32px;
+  padding:0 11px;
+  border:1px solid var(--row-divider);
+  border-radius:16px;
+  font-size:12px;
+  font-weight:600;
+  text-decoration:none;
+}
+.contacts-app-link:hover{
+  background:var(--hover);
+  border-color:var(--border);
+}
+.contacts-app-link .icon{
+  width:14px;
+  height:14px;
+}
+
+/* ---------- vCard QR modal ---------- */
+.contacts-qr-body{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:12px;
+  padding:8px 0 4px;
+}
+.contacts-qr-frame{
+  width:216px;
+  height:216px;
+  padding:14px;
+  border-radius:16px;
+  background:#ffffff;
+  border:1px solid var(--border);
+  box-shadow:0 4px 16px var(--shadow);
+}
+.contacts-qr-frame>svg{
+  width:100%;
+  height:100%;
+  display:block;
+  fill:#111111;
+}
+.contacts-qr-hint{
+  margin:0;
+  font-size:12.5px;
+  text-align:center;
+}
+
+/* ---------- Merge & fix view ---------- */
+.contacts-merge-all-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:34px;
+  padding:0 14px;
+  font-size:12.5px;
+}
+.contacts-merge-all-btn .icon{
+  width:15px;
+  height:15px;
+}
+.contacts-merge-card{
+  margin:0 0 12px;
+  border:1px solid var(--border);
+  border-radius:16px;
+  background:var(--panel);
+  overflow:hidden;
+}
+.contacts-merge-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:11px 16px;
+  border-bottom:1px solid var(--row-divider);
+  font-size:13px;
+}
+.contacts-merge-reason{
+  font-size:11.5px;
+  font-weight:600;
+  padding:2px 9px;
+  border-radius:10px;
+  background:var(--tonal);
+  color:var(--on-tonal);
+}
+.contacts-merge-pair{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr);
+  align-items:center;
+  gap:10px;
+  padding:14px 16px;
+}
+.contacts-merge-person{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  padding:10px 12px;
+  border:1px solid var(--row-divider);
+  border-radius:12px;
+  background:var(--surface-soft);
+  min-width:0;
+}
+.contacts-merge-who{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+}
+.contacts-merge-who>strong{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.contacts-merge-who>small{
+  margin-left:auto;
+  color:var(--muted);
+  font-size:11px;
+  white-space:nowrap;
+}
+.contacts-merge-line{
+  font-size:12.5px;
+  color:var(--muted);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.contacts-merge-line.is-diff{
+  color:var(--accent);
+  font-weight:600;
+}
+.contacts-merge-plus{
+  text-align:center;
+  font-size:16px;
+  font-weight:700;
+  color:var(--muted);
+}
+.contacts-merge-foot{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  padding:10px 16px;
+  border-top:1px solid var(--row-divider);
+}
+
+/* ---------- Contact editor upgrades ---------- */
+.contacts-editor-photo{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:12px;
+  margin-bottom:14px;
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:var(--surface-soft);
+}
+.contacts-editor-avatar{
+  width:56px!important;
+  height:56px!important;
+  font-size:19px!important;
+  flex:none;
+}
+.contacts-editor-photo-text{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  flex:1;
+  min-width:0;
+}
+.contacts-editor-photo-text>strong{
+  font-size:13px;
+  font-weight:600;
+}
+.contacts-editor-photo-text>small{
+  font-size:11.5px;
+  color:var(--muted);
+}
+.contacts-editor-photo-actions{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:none;
+}
+.contacts-photo-upload{
+  cursor:pointer;
+  margin:0;
+  display:inline-flex;
+  align-items:center;
+}
+.contacts-editor-groups{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.contacts-editor-group-input{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.contacts-editor-group-label{
+  flex:1;
+  min-width:0;
+  margin:0!important;
+}
+.contacts-bday-omit{
+  align-self:end;
+  min-height:38px;
+}
+.contacts-add-fields{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:8px;
+}
+.contacts-add-field-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  height:30px;
+  padding:0 11px;
+  border:1px dashed var(--border);
+  border-radius:15px;
+  background:transparent;
+  color:var(--muted);
+  font:inherit;
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+}
+.contacts-add-field-pill:hover{
+  border-color:var(--accent);
+  color:var(--accent);
+  background:var(--hover);
+}
+.contacts-add-field-pill .icon{
+  width:13px;
+  height:13px;
+}
+
+/* ---------- Toast ---------- */
+.contacts-toast{
+  position:fixed;
+  left:50%;
+  bottom:22px;
+  transform:translateX(-50%);
+  z-index:160;
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 16px;
+  border:1px solid var(--border);
+  border-radius:20px;
+  background:var(--raised);
+  color:var(--text);
+  font-size:13px;
+  font-weight:550;
+  box-shadow:0 8px 28px var(--shadow);
+}
+.contacts-toast .text-button{
+  min-height:28px;
+  padding:0 8px;
+  color:var(--accent);
+  font-weight:650;
+}
+
+/* ---------- Settings CardDAV sync box ---------- */
+.contacts-dav-box{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:12px 14px;
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:var(--surface-soft);
+}
+.contacts-dav-box .field-hint{
+  margin:0;
+}
+.contacts-dav-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.contacts-dav-url{
+  flex:1;
+  min-width:0;
+  padding:7px 10px;
+  border:1px solid var(--border);
+  border-radius:9px;
+  background:var(--panel);
+  color:var(--text);
+  font-size:12px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.contacts-dav-box>.text-button{
+  align-self:flex-start;
+  padding-left:0;
+}
+
+/* ---------- Phone (<=800px) ---------- */
+@media(max-width:800px){
+  .pim-workspace.has-contacts-main>.sidebar{
+    flex-direction:row;
+    overflow:auto hidden;
+  }
+  .sidebar :is(.contacts-sidebar-scroll,.contacts-books-list,.contacts-groups){
+    display:contents;
+  }
+  .sidebar .contacts-sidebar-footer{
+    display:none!important;
+  }
+  .contacts-az-rail,
+  .contacts-table-header,
+  .contacts-view-switch,
+  .contacts-sort-label{
+    display:none;
+  }
+  .contacts-list-wrap>.contact-list{
+    padding-bottom:88px;
+  }
+  .contacts-detail-back{
+    display:inline-flex;
+  }
+  .contacts-detail-label{
+    display:none;
+  }
+  .contacts-copy-btn{
+    opacity:1;
+  }
+  .contacts-merge-pair{
+    grid-template-columns:1fr;
+  }
+  .contacts-merge-plus{
+    display:none;
+  }
+  .contacts-toast{
+    bottom:calc(var(--bottom-bar-height) + 18px + env(safe-area-inset-bottom));
+  }
+}
+
+@media(prefers-reduced-motion:reduce){
+  .contact-row-check,
+  .contact-row-star,
+  .contacts-copy-btn,
+  .contacts-card{
+    transition:none;
+  }
+}

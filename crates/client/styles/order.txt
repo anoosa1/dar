@@ -29,3 +29,5 @@ frame.css
 settings-sheet.css
 apps.css
 pim/notes.css
+calendar/calendar.css
+contacts/contacts.css

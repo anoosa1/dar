@@ -177,23 +177,39 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   time as a subtitle without permanent checkboxes and leave clearance above the `+` button.
   The shared folder picker (`file-picker.tsx`) is a small browser: back, breadcrumb, filter, rows
   with type tiles (click selects, the chevron opens) and the destination below.
-- **Contacts:** letter-grouped list under the name sort, with hued avatars, title ·
-  organization and the address-book dot. Groups are sidebar rows. The card offers
-  Email, Call, Favorite and Edit; values are links. The editor uses sections and
-  opens prefix/middle/suffix/display name only when needed. vCard in settings.
-- **Calendar:** Month by default; Day/Week/Month/Agenda is a segmented control. A
-  sidebar mini month follows the anchor and highlights the visible range; one
-  date/Today popover beside the period arrows has Go to today. Visibility boxes
-  and events use the calendar color (dot for timed, tint for all-day). Week and
-  Day draw duration-sized blocks in lanes with a now line; Month has six bounded
-  rows with a link to overflowing days and hides times in narrow cells. Event
-  cards show a readable date line; forms split date and time and show inclusive
-  all-day end dates. Week start, cancelled events, tasks and ICS in settings; timezone
-  in Regional settings, with per-event timezone fields. The Calendars `+` menu has
-  New calendar and Subscribe by link (right pane: link, name, color, refresh);
-  subscribed calendars carry a link mark (an alert mark after a failed refresh),
-  Refresh now and Edit subscription, and their events are read-only. Dated tasks
-  show as check chips at their due time and open in Tasks.
+- **Contacts:** scrollable sidebar with smart views (`All contacts`, `Favorites`, `Ungrouped`,
+  `Merge & fix` with duplicate badge), address books with live counts and three-dot menus,
+  manageable groups (`+`, Rename, Remove), and an Upcoming birthdays footer card. The middle sheet
+  header pairs the title and count pill with a List / Table / Cards view switcher and inline sort
+  menu (First name, Last name, Organization); quick filter chips (`All`, `Has email`, `Has phone`,
+  `Birthdays`) switch to a tonal bulk selection bar (Group, Move, Export, Delete) when rows are
+  checked via hover-reveal avatar checkboxes. Rows show contact photos or hued initials, subtitle,
+  inline favorite star and address-book dot beside an A–Z quick-jump rail. The details inspector
+  offers photo portrait, Email/Call/Favorite/Edit/QR quick actions, one-click copy on fields,
+  wrapping interactive group chips with inline `+ Group`, Clone, vCard QR modal, cross-app links
+  (`In Dar`), Export and Delete. The editor adds photo upload/crop, address book move, typed label
+  selects, group chips, date-picker birthday (with omit-year toggle), and progressive `+ Add field`
+  pills (Nickname, Pronouns, Department, Anniversary, Social profile, Related person), plus single-key
+  shortcuts (`C`, `J`/`K`, `E`, `F`, `X`, `Escape`). vCard/CSV import/export, display format, default
+  view, birthdays toggle and CardDAV sync URL live in Contacts settings.
+- **Calendar:** Month by default; Day/Week/Month/Year/Agenda is a segmented control,
+  paired with a clickable period title (`DatePopover`), 1-click Today button, period arrows,
+  and single-key keyboard shortcuts (`C`, `T`, `D`/`W`/`M`/`Y`/`A`, `J`/`K`, `?`). A sidebar
+  mini month shows event-dot indicators and highlights the visible range above a scrollable
+  calendar list (My calendars + first-class Tasks toggle + Subscribed, with quick solo and
+  color actions) and an Up next / Reminders footer card. Events sort chronologically; all-day
+  and multi-day spans draw as continuous horizontal ribbons (overlaid in Month and pinned in a
+  dedicated sticky All-day band in Week/Day). Week and Day draw duration-sized blocks in lanes
+  with a live now-line pill and bottom-edge drag-to-resize; drag-move and resize save directly
+  with an Undo toast. Clicking an event opens a floating Quick-Peek popover (zero layout shift)
+  with clickable location links, Duplicate, Edit, Delete, and ICS export; clicking an empty grid
+  cell opens a Quick-Create popover with duration chips and "More options". Month overflow links
+  open an in-place day popover. The full Event editor supports moving events between calendars,
+  a visual recurrence builder (`RepeatField`), and Contacts-assisted attendee search. Week start,
+  12h/24h time format, cancelled events, tasks and ICS live in Calendar settings; timezone in
+  Regional settings. Subscribed calendars carry a link mark (or alert mark on failure) and are
+  read-only. Dated tasks render with clickable completion checks and open in Tasks. Phones use a
+  compact 2-row header with a 7-day dot strip and bottom-sheet popovers.
 - **Notes:** notes are Markdown files in a Files folder (`docs/notes` by default,
   set in Notes settings); its folders are the sidebar's notebooks. List rows show
   title, a plain-text excerpt, edit time and folder, with a row menu (favorite,

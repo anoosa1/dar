@@ -146,6 +146,10 @@ pub fn merge(
     );
     put("calendarShowTasks", flag("calendarShowTasks", true)?);
     put(
+        "calendarTimeFormat",
+        choice("calendarTimeFormat", &["24h", "12h"], "24h")?,
+    );
+    put(
         "appearance",
         choice("appearance", &["system", "latte", "mocha"], "system")?,
     );
@@ -153,8 +157,29 @@ pub fn merge(
     put("weekStart", week_start);
     put(
         "contactSort",
-        choice("contactSort", &["firstName", "lastName"], "firstName")?,
+        choice(
+            "contactSort",
+            &["firstName", "lastName", "organization"],
+            "firstName",
+        )?,
     );
+    put(
+        "contactNameOrder",
+        choice("contactNameOrder", &["firstLast", "lastFirst"], "firstLast")?,
+    );
+    put(
+        "contactView",
+        choice("contactView", &["list", "table", "cards"], "list")?,
+    );
+    put("contactShowBirthdays", flag("contactShowBirthdays", true)?);
+    let default_book = get("contactDefaultBook", json!(""));
+    let default_book_ok = default_book
+        .as_str()
+        .is_some_and(|v| v.is_empty() || crate::auth::is_uuid(v));
+    if !default_book_ok {
+        return Err(invalid("Invalid contactDefaultBook."));
+    }
+    put("contactDefaultBook", default_book);
     put("hiddenCalendars", get("hiddenCalendars", json!([])));
     put(
         "notesSort",

@@ -754,7 +754,13 @@ pub async fn handle(
                 &p.get("content").cloned().unwrap_or_default(),
                 2 * 1024 * 1024,
             )?;
-            let value = pim.import(&collection, &text).await?;
+            let import_text =
+                if kind == "contacts" && p.get("format").and_then(Value::as_str) == Some("csv") {
+                    contacts::csv_to_vcards(&text)?.concat()
+                } else {
+                    text
+                };
+            let value = pim.import(&collection, &import_text).await?;
             return Ok(respond(&pim, value, StatusCode::OK, None));
         }
         (Some("items"), _) => {}
@@ -765,6 +771,21 @@ pub async fn handle(
         let old = pim.read(id, href).await?;
         match method.clone() {
             Method::GET => {
+                if kind == "contacts" && q("photo") == "1" {
+                    let (mime, bytes) =
+                        contacts::extract_photo(old["content"].as_str().unwrap_or_default())
+                            .ok_or_else(AppError::not_found)?;
+                    return Ok((
+                        StatusCode::OK,
+                        [
+                            (header::CONTENT_TYPE, mime),
+                            (header::CACHE_CONTROL, "private, no-cache".to_owned()),
+                            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_owned()),
+                        ],
+                        bytes,
+                    )
+                        .into_response());
+                }
                 if q("export") == "1" {
                     return Ok(download(
                         old["content"].as_str().unwrap_or_default().to_owned(),

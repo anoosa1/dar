@@ -1,6 +1,8 @@
 //! The calendar date controls (`date-popover.tsx`): a popover month picker and the sidebar
 //! month, on civil dates with roving focus and arrow, Home, End and Page keys.
 
+use std::collections::HashMap;
+
 use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
@@ -74,6 +76,7 @@ fn MonthGrid(
     focused: RwSignal<String>,
     label: &'static str,
     #[prop(optional, into)] week: Option<Signal<Option<Vec<String>>>>,
+    #[prop(optional, into)] dots: Option<Signal<HashMap<String, Vec<String>>>>,
     on_move: Callback<String>,
     on_select: Callback<String>,
 ) -> impl IntoView {
@@ -105,16 +108,19 @@ fn MonthGrid(
             {move || {
                 let all = dates.get();
                 let range = week.and_then(|w| w.get());
+                let dot_map = dots.map(|d| d.get());
                 (0..6).map(|row| view! {
                     <div role="row">
                         {all[row * 7..row * 7 + 7].iter().map(|date| {
                             let d = date.clone();
                             let in_week = range.as_ref().is_some_and(|w| w.contains(&d));
+                            let day_dots = dot_map.as_ref().and_then(|m| m.get(&d)).cloned().unwrap_or_default();
                             let classes = [
                                 (date[..7] != month.get()[..7]).then_some("outside-month"),
                                 in_week.then_some("in-range"),
                                 (in_week && range.as_ref().and_then(|w| w.first()) == Some(&d)).then_some("range-start"),
                                 (in_week && range.as_ref().and_then(|w| w.last()) == Some(&d)).then_some("range-end"),
+                                (!day_dots.is_empty()).then_some("has-dots"),
                             ].into_iter().flatten().collect::<Vec<_>>().join(" ");
                             let (pick, focus) = (d.clone(), d.clone());
                             view! {
@@ -122,7 +128,14 @@ fn MonthGrid(
                                     aria-selected=(value.get() == d).to_string() aria-current=(today.get() == d).then_some("date") tabindex=if focused.get() == d { "0" } else { "-1" }
                                     class=(!classes.is_empty()).then_some(classes)
                                     on:click=move |_| { on_select.try_run(pick.clone()); } on:focus=move |_| focused.set(focus.clone())>
-                                    {d[8..].trim_start_matches('0').to_owned()}
+                                    <span class="mini-day-num">{d[8..].trim_start_matches('0').to_owned()}</span>
+                                    {(!day_dots.is_empty()).then(|| view! {
+                                        <span class="mini-day-dots" aria-hidden="true">
+                                            {day_dots.into_iter().take(3).map(|col| view! {
+                                                <svg viewBox="0 0 6 6"><circle cx="3" cy="3" r="2.5" fill=col></circle></svg>
+                                            }).collect_view()}
+                                        </span>
+                                    })}
                                 </button>
                             }
                         }).collect_view()}
@@ -152,6 +165,8 @@ pub fn DatePopover(
     #[prop(into)] value: Signal<String>,
     #[prop(into)] today: Signal<String>,
     #[prop(into)] week_start: Signal<u32>,
+    #[prop(optional, into)] title: Option<Signal<String>>,
+    #[prop(optional, into)] trigger_class: Option<&'static str>,
     on_change: Callback<String>,
 ) -> impl IntoView {
     let id = unique_id();
@@ -186,6 +201,9 @@ pub fn DatePopover(
         focused.set(date);
     });
     let label = move || {
+        if let Some(t) = title {
+            return t.get();
+        }
         let (v, t) = (value.get(), today.get());
         if v == t {
             return "Today".to_owned();
@@ -222,8 +240,9 @@ pub fn DatePopover(
         .filter(|y| (1..=9999).contains(y))
         .map(|y| (y.to_string(), y.to_string()))
         .collect();
+    let cls = trigger_class.unwrap_or("text-button calendar-anchor date-popover-trigger");
     view! {
-        <button node_ref=trigger type="button" class="text-button calendar-anchor date-popover-trigger" aria-label="Choose date" aria-haspopup="dialog" aria-expanded=move || open.get().to_string() aria-controls=id.clone() popovertarget=id.clone() data-date=move || value.get()>{label}<Icon name="chevron"/></button>
+        <button node_ref=trigger type="button" class=cls aria-label="Choose date" aria-haspopup="dialog" aria-expanded=move || open.get().to_string() aria-controls=id.clone() popovertarget=id.clone() data-date=move || value.get()>{label}<Icon name="chevron"/></button>
         <div id=id.clone() node_ref=panel popover="auto" role="dialog" aria-label="Choose calendar date" class="date-popover"
             on:toggle=move |e: web_sys::Event| {
                 let visible = js_sys::Reflect::get(&e, &"newState".into()).ok().and_then(|v| v.as_string()).as_deref() == Some("open");
@@ -253,6 +272,7 @@ pub fn MiniMonth(
     #[prop(into)] today: Signal<String>,
     #[prop(into)] week_start: Signal<u32>,
     #[prop(into)] range: Signal<Option<Vec<String>>>,
+    #[prop(optional, into)] dots: Option<Signal<HashMap<String, Vec<String>>>>,
     on_change: Callback<String>,
 ) -> impl IntoView {
     let month = RwSignal::new(format!("{}-01", &value.get_untracked()[..7]));
@@ -273,13 +293,14 @@ pub fn MiniMonth(
         month.set(next.clone());
         focused.set(next);
     };
+    let dots_sig = dots.unwrap_or_else(|| Signal::derive(HashMap::new));
     view! {
         <div class="mini-month" node_ref=root>
             <div class="mini-month-heading"><strong aria-live="polite">{move || format_date(&month.get(), &[("month", "long"), ("year", "numeric")])}</strong>
                 <button type="button" class="icon-button" aria-label="Previous month in sidebar" on:click=move |_| step(-1)><Icon name="back"/></button>
                 <button type="button" class="icon-button" aria-label="Next month in sidebar" on:click=move |_| step(1)><Icon name="chevron"/></button>
             </div>
-            <MonthGrid month=month value=value today=today week_start=week_start focused=focused label="Month overview" week=range on_move=move_to on_select=on_change/>
+            <MonthGrid month=month value=value today=today week_start=week_start focused=focused label="Month overview" week=range dots=dots_sig on_move=move_to on_select=on_change/>
         </div>
     }
 }

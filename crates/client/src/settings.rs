@@ -518,17 +518,82 @@ pub fn AppSettings(
             <SaveProblems saver=saver/>
             {move || match section.get() {
                 "Import and export" => view! { <crate::pim::transfers::CollectionTransfers session=session.get_value() app=app/> }.into_any(),
-                "Keyboard shortcuts" => view! {
-                    <dl class="ui-shortcuts"><dt>"Ctrl / Cmd K"</dt><dd>"Search all apps outside editors and dialogs"</dd><dt>"Tab / Shift Tab"</dt><dd>"Move between controls"</dd><dt>"Arrow keys"</dt><dd>"Move through menus and choices"</dd><dt>"Enter / Space"</dt><dd>"Activate the focused control"</dd><dt>"Escape"</dt><dd>"Close menus, then settings"</dd></dl>
-                }.into_any(),
+                "Keyboard shortcuts" => {
+                    if app == "calendar" {
+                        view! {
+                            <dl class="ui-shortcuts">
+                                <dt>"C"</dt><dd>"Create a new event"</dd>
+                                <dt>"T"</dt><dd>"Jump to today"</dd>
+                                <dt>"D / W / M / Y / A"</dt><dd>"Switch to Day, Week, Month, Year or Agenda view"</dd>
+                                <dt>"J / K"</dt><dd>"Next or previous period"</dd>
+                                <dt>"Ctrl / Cmd K"</dt><dd>"Search all apps outside editors and dialogs"</dd>
+                                <dt>"Escape"</dt><dd>"Close popovers, editors or settings"</dd>
+                            </dl>
+                        }.into_any()
+                    } else if app == "contacts" {
+                        view! {
+                            <dl class="ui-shortcuts">
+                                <dt>"C"</dt><dd>"Create a new contact"</dd>
+                                <dt>"J / K"</dt><dd>"Next or previous contact"</dd>
+                                <dt>"E"</dt><dd>"Edit the selected contact"</dd>
+                                <dt>"F"</dt><dd>"Toggle favorite on the selected contact"</dd>
+                                <dt>"X"</dt><dd>"Select or deselect the current contact"</dd>
+                                <dt>"Ctrl / Cmd K"</dt><dd>"Search all apps outside editors and dialogs"</dd>
+                                <dt>"Escape"</dt><dd>"Clear selection, close details or settings"</dd>
+                            </dl>
+                        }.into_any()
+                    } else {
+                        view! {
+                            <dl class="ui-shortcuts"><dt>"Ctrl / Cmd K"</dt><dd>"Search all apps outside editors and dialogs"</dd><dt>"Tab / Shift Tab"</dt><dd>"Move between controls"</dd><dt>"Arrow keys"</dt><dd>"Move through menus and choices"</dd><dt>"Enter / Space"</dt><dd>"Activate the focused control"</dd><dt>"Escape"</dt><dd>"Close menus, then settings"</dd></dl>
+                        }.into_any()
+                    }
+                }
                 _ if saver.preferences.with(Option::is_none) => view! { <p role="status">"Loading settings…"</p> }.into_any(),
-                _ if app == "contacts" => view! {
-                    <section class="settings-group" aria-label="Display"><h3>"Display"</h3>
-                        <SettingRow label="Sort contacts by" hint="Order of the contact list" state=saver.state("contactSort")>
-                            <Segmented label="Sort contacts by" value=text("contactSort", "firstName") options=vec![("firstName", "First name"), ("lastName", "Last name")] on_change=Callback::new(move |v: String| set("contactSort", v.clone().into(), format!("Contacts sorted by {} name", if v == "lastName" { "last" } else { "first" })))/>
-                        </SettingRow>
-                    </section>
-                }.into_any(),
+                _ if app == "contacts" => {
+                    let dav_url = crate::ui::window()
+                        .location()
+                        .origin()
+                        .map(|o| format!("{o}/dav/"))
+                        .unwrap_or_else(|_| "/dav/".to_owned());
+                    let dav_copied = RwSignal::new(false);
+                    let dav_copy_url = dav_url.clone();
+                    view! {
+                        <section class="settings-group" aria-label="Display"><h3>"Display"</h3>
+                            <SettingRow label="Sort contacts by" hint="Order of the contact list" state=saver.state("contactSort") stacked=true>
+                                <Segmented label="Sort contacts by" value=text("contactSort", "firstName") options=vec![("firstName", "First name"), ("lastName", "Last name"), ("organization", "Organization")] on_change=Callback::new(move |v: String| set("contactSort", v.clone().into(), match v.as_str() { "lastName" => "Contacts sorted by last name".into(), "organization" => "Contacts sorted by organization".into(), _ => "Contacts sorted by first name".into() }))/>
+                            </SettingRow>
+                            <SettingRow label="Display format" hint="How names appear in lists and headers" state=saver.state("contactNameOrder")>
+                                <Segmented label="Display format" value=text("contactNameOrder", "firstLast") options=vec![("firstLast", "First Last"), ("lastFirst", "Last, First")] on_change=Callback::new(move |v: String| set("contactNameOrder", v.clone().into(), if v == "lastFirst" { "Names shown as Last, First" } else { "Names shown as First Last" }.into()))/>
+                            </SettingRow>
+                            <SettingRow label="Default view" hint="Layout used when opening Contacts" state=saver.state("contactView") stacked=true>
+                                <Segmented label="Default view" value=text("contactView", "list") options=vec![("list", "List"), ("table", "Table"), ("cards", "Cards")] on_change=Callback::new(move |v: String| set("contactView", v.clone().into(), format!("Default view set to {}", match v.as_str() { "table" => "Table", "cards" => "Cards", _ => "List" })))/>
+                            </SettingRow>
+                            <SettingSwitch label="Show upcoming birthdays" hint="Display upcoming birthdays at the bottom of the sidebar" state=saver.state("contactShowBirthdays") checked=flag("contactShowBirthdays", true) on_change=Callback::new(move |v: bool| set("contactShowBirthdays", v.into(), if v { "Upcoming birthdays shown" } else { "Upcoming birthdays hidden" }.into()))/>
+                        </section>
+                        <section class="settings-group" aria-label="Sync"><h3>"CardDAV sync"</h3>
+                            <div class="contacts-dav-box">
+                                <p class="field-hint">"Use this server address with DAVx⁵, Apple Contacts or Thunderbird, together with an app password."</p>
+                                <div class="contacts-dav-row">
+                                    <code class="contacts-dav-url">{dav_url}</code>
+                                    <button type="button" class="secondary-button" on:click=move |_| {
+                                        let url = dav_copy_url.clone();
+                                        let cb = crate::ui::window().navigator().clipboard();
+                                        if !cb.is_undefined() && !cb.is_null() {
+                                            let p = cb.write_text(&url);
+                                            leptos::task::spawn_local(async move {
+                                                let _ = wasm_bindgen_futures::JsFuture::from(p).await;
+                                                dav_copied.try_set(true);
+                                                crate::sleep(1800).await;
+                                                dav_copied.try_set(false);
+                                            });
+                                        }
+                                    }>{move || if dav_copied.get() { "Copied" } else { "Copy URL" }}</button>
+                                </div>
+                                <a class="text-button" href="/settings?section=security">"Manage app passwords"</a>
+                            </div>
+                        </section>
+                    }.into_any()
+                }
                 _ => {
                     let zone = text("timezone", "UTC");
                     view! {
@@ -540,6 +605,9 @@ pub fn AppSettings(
                             <SettingSwitch label="Show tasks" hint="Dated tasks appear at their due time" state=saver.state("calendarShowTasks") checked=flag("calendarShowTasks", true) on_change=Callback::new(move |v: bool| set("calendarShowTasks", v.into(), if v { "Tasks shown" } else { "Tasks hidden" }.into()))/>
                         </section>
                         <section class="settings-group" aria-label="Time"><h3>"Time"</h3>
+                            <SettingRow label="Time format" hint="How hours appear on grids and event cards" state=saver.state("calendarTimeFormat")>
+                                <Segmented label="Time format" value=text("calendarTimeFormat", "24h") options=vec![("24h", "24-hour"), ("12h", "12-hour")] on_change=Callback::new(move |v: String| set("calendarTimeFormat", v.clone().into(), format!("Time format set to {}", if v == "12h" { "12-hour" } else { "24-hour" })))/>
+                            </SettingRow>
                             <SettingRow label="Timezone" hint=format!("{} · events with their own timezone keep it", zone.get()) state=Signal::derive(|| None)>
                                 <a class="secondary-button" href="/settings?section=regional">"Regional settings"</a>
                             </SettingRow>
