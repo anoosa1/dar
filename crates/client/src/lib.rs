@@ -30,6 +30,7 @@ pub mod outline;
 pub use dar_bindings as module_bindings;
 pub mod navigation;
 pub mod pim;
+pub mod rich_render;
 pub mod settings;
 pub mod shared;
 pub mod shell;

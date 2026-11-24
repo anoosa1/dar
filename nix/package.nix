@@ -15,6 +15,7 @@ let
     cp -r ${sdkSource} $out/sdk
     mkdir -p $out/crates/client
     cp -r ${../crates/client/editor} $out/crates/client/editor
+    cp -r ${../crates/client/render} $out/crates/client/render
   '';
 
   jsAssets = buildNpmPackage {
@@ -28,6 +29,7 @@ let
       runHook preBuild
       node sdk/build-bundle.mjs
       node crates/client/editor/build.mjs notes-editor/notes-editor.js
+      node crates/client/render/build.mjs rich-render
       runHook postBuild
     '';
     installPhase = ''
@@ -35,6 +37,8 @@ let
       mkdir -p $out/sdk
       cp -r sdk/dist $out/sdk/dist
       install -Dm644 notes-editor/notes-editor.js $out/notes-editor/notes-editor.js
+      install -Dm644 rich-render/katex.js $out/rich-render/katex.js
+      install -Dm644 rich-render/mermaid.js $out/rich-render/mermaid.js
       runHook postInstall
     '';
     meta.platforms = [ "x86_64-linux" "aarch64-linux" ];
@@ -103,10 +107,12 @@ let
       ${prepareWorkspace}
       # The bindings from the built module, then the release client with its dist.
       DAR_MODULE_WASM=${darModule}/dar_module.wasm DAR_SPACETIME_BIN=${runtime.spacetime}/bin/spacetime $XTASK bindings
-      DAR_SDK_DIST=${jsAssets}/sdk/dist DAR_NOTES_EDITOR=${jsAssets}/notes-editor/notes-editor.js $XTASK client --release
+      DAR_SDK_DIST=${jsAssets}/sdk/dist DAR_NOTES_EDITOR=${jsAssets}/notes-editor/notes-editor.js DAR_KATEX_RENDER=${jsAssets}/rich-render/katex.js DAR_MERMAID_RENDER=${jsAssets}/rich-render/mermaid.js $XTASK client --release
       test -f target/client-release/index.html
       test -f target/client-release/sdk.js
       test -f target/client-release/notes-editor.*.js
+      test -f target/client-release/katex-render.*.js
+      test -f target/client-release/mermaid-render.*.js
       test -f target/client-release/pdf-worker-*/worker.js
       test -f target/client-release/pdf-worker-*/dar_pdf_worker_bg.wasm
       runHook postBuild

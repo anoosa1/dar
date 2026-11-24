@@ -15,6 +15,7 @@ pub const SUITE: Suite = Suite {
         case!(daily_notes_templates_and_embeds, 120),
         case!(outliner_keys_and_query_blocks, 120),
         case!(hover_preview_block_link_and_folder_rename, 180),
+        case!(math_and_mermaid_in_reading_mode, 120),
     ],
 };
 
@@ -443,6 +444,101 @@ pub async fn hover_preview_block_link_and_folder_rename(t: &Ctx) -> Result<()> {
     assert!(content.contains(&format!("[[Work {tag}/Plan]]")), "{content}");
     assert!(content.contains(&format!("[p](Work%20{tag}/Plan.md)")), "{content}");
     assert!(content.contains(&format!("Anchor line {tag} ^{block_id}")), "{content}");
+
+    let failures = failures.lock().unwrap().clone();
+    assert!(failures.is_empty(), "page errors: {failures:?}");
+    Ok(())
+}
+
+pub async fn math_and_mermaid_in_reading_mode(t: &Ctx) -> Result<()> {
+    let base = t.fixture().await?.base.clone();
+    let admin = login(&base).await?;
+    let root = admin.get_json("/api/v1/notes/library").await?["rootId"].as_str().context("rootId")?.to_owned();
+    let tag = &uuid()[..6];
+    let title = format!("Math {tag}");
+    note(
+        &admin,
+        &root,
+        &format!("{title}.md"),
+        &format!(
+            "# {title}\n\nInline mass-energy $E = mc^2$ in prose.\n\n$$\n\\int_0^1 x^2 \\, dx = \\frac{{1}}{{3}}\n$$\n\n```mermaid\nflowchart LR\n    Start[Write note] --> Render[View diagram]\n```\n"
+        ),
+    )
+    .await?;
+
+    let browser = Browser::shared().await?;
+    let context = browser.new_context(ContextOptions::sized(1440, 950)).await?;
+    let page = context.new_page().await?;
+    let failures = Arc::new(Mutex::new(Vec::<String>::new()));
+    {
+        let sink = failures.clone();
+        page.on_page_error(move |msg| sink.lock().unwrap().push(msg.clone()));
+    }
+    {
+        let sink = failures.clone();
+        page.on_console(move |msg| {
+            if msg.kind == "error" && !(msg.text.contains("401") && msg.text.contains("Unauthorized")) {
+                sink.lock().unwrap().push(msg.text.clone());
+            }
+        });
+    }
+    page.goto(&format!("{base}/notes")).await?;
+    page.get_by_label("Username").fill("admin").await?;
+    page.get_by_label("Password").fill(PASSWORD).await?;
+    page.get_by_role("button", "Sign in").click().await?;
+    page.get_by_role("heading", "All notes").wait_for().await?;
+
+    page.locator(".workspace-row").filter_has_text(&title).locator(".workspace-row-content").click().await?;
+    let editor = page.get_by_role("region", format!("Editor for {title}.md"));
+    editor.wait_for().await?;
+    let source = ui::note_source(&editor).await?;
+    assert!(ui::note_text(&source).await?.contains("flowchart LR"));
+
+    editor.get_by_role("button", "Reading").click().await?;
+
+    // Inline and display math render as native MathML without inline styles.
+    let inline_math = editor.locator("span.math.is-rendered math");
+    inline_math.clone().timeout(Duration::from_secs(20)).wait_for().await?;
+    let inline_info = inline_math
+        .evaluate(
+            "el => ({ ns: el.namespaceURI, hasRow: Boolean(el.querySelector('mrow')), text: el.textContent || '' })",
+            Value::Null,
+        )
+        .await?;
+    assert_eq!(inline_info["ns"], "http://www.w3.org/1998/Math/MathML", "{inline_info}");
+    assert_eq!(inline_info["hasRow"], json!(true), "{inline_info}");
+    assert!(inline_info["text"].as_str().unwrap_or_default().contains("mc"), "{inline_info}");
+
+    let display_math = editor.locator("div.math.math-display.is-rendered math");
+    display_math.clone().timeout(Duration::from_secs(20)).wait_for().await?;
+    assert_eq!(display_math.get_attribute("display").await?.as_deref(), Some("block"));
+    let display_info = display_math
+        .evaluate(
+            "el => ({ ns: el.namespaceURI, hasFrac: Boolean(el.querySelector('mfrac')) })",
+            Value::Null,
+        )
+        .await?;
+    assert_eq!(display_info["ns"], "http://www.w3.org/1998/Math/MathML", "{display_info}");
+    assert_eq!(display_info["hasFrac"], json!(true), "{display_info}");
+
+    // Mermaid diagrams render an SVG inside a per-diagram shadow root with constructed stylesheets.
+    let diagram = editor.locator("figure.mermaid.is-rendered");
+    diagram.clone().timeout(Duration::from_secs(20)).wait_for().await?;
+    assert_eq!(diagram.get_attribute("role").await?.as_deref(), Some("img"));
+    let svg_info = diagram
+        .evaluate(
+            "el => { const root = el.shadowRoot; const svg = root && root.querySelector('svg'); if (!svg) return { hasSvg: false }; const box = svg.getBoundingClientRect(); return { hasSvg: true, width: box.width, height: box.height, inlineStyles: root.querySelectorAll('style').length, text: root.textContent || '' }; }",
+            Value::Null,
+        )
+        .await?;
+    assert_eq!(svg_info["hasSvg"], json!(true), "{svg_info}");
+    assert!(svg_info["width"].as_f64().unwrap_or(0.0) > 0.0, "{svg_info}");
+    assert!(svg_info["height"].as_f64().unwrap_or(0.0) > 0.0, "{svg_info}");
+    assert_eq!(svg_info["inlineStyles"], json!(0), "CSP forbids inline <style> elements: {svg_info}");
+    let svg_text = svg_info["text"].as_str().unwrap_or_default();
+    assert!(svg_text.contains("Write note") && svg_text.contains("View diagram"), "{svg_info}");
+
+    page.screenshot(t.screenshot("notes-math-mermaid.png"), true).await?;
 
     let failures = failures.lock().unwrap().clone();
     assert!(failures.is_empty(), "page errors: {failures:?}");

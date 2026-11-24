@@ -171,3 +171,18 @@ details.callout>summary{cursor:pointer}
 .note-live .cm-dar-task.is-done{background:var(--accent);border-color:var(--accent)}
 .note-live .cm-dar-task.is-done::after{content:"";position:absolute;left:3.5px;top:0;width:4px;height:8px;border:solid var(--on-accent);border-width:0 2px 2px 0;transform:rotate(45deg)}
 .note-live .cm-dar-done{color:var(--muted);text-decoration:line-through}
+
+/* Math (KaTeX MathML) and Mermaid diagrams in Markdown previews (shared by Notes, Files, Mail, Git, Agent). */
+.markdown-preview .math.is-rendered{font-family:inherit;color:inherit}
+.markdown-preview .math .math-source{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent)}
+.markdown-preview .math.is-error .math-source{color:var(--danger)}
+.markdown-preview .math-display{display:block;margin:12px 0;padding:8px 12px;overflow-x:auto;text-align:center}
+.markdown-preview .math-display .math-source{margin:0;text-align:left;background:var(--surface-soft);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.markdown-preview .math-display.is-error .math-source{border-color:var(--danger);background:var(--error-soft)}
+.markdown-preview .math math{font-size:1.05em}
+.markdown-preview .math-display math{font-size:1.15em}
+.markdown-preview figure.mermaid{margin:14px 0;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow-x:auto}
+.markdown-preview figure.mermaid.is-error{border-color:var(--danger);background:var(--error-soft)}
+.markdown-preview figure.mermaid .mermaid-source{margin:0;padding:0;border:0;background:transparent;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;color:var(--muted);white-space:pre-wrap}
+.markdown-preview figure.mermaid.is-error .mermaid-source{color:var(--danger)}
+.mermaid-scratch{position:fixed;left:-99999px;top:0;width:1200px;visibility:hidden;pointer-events:none;overflow:hidden}

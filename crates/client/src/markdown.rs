@@ -3,9 +3,11 @@
 //! tags, highlights and properties. Fixed elements only: source HTML stays text and remote
 //! images are not fetched.
 
+use std::cell::Cell;
 use std::ops::Range;
 
 use dar_notes::pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Parser, Tag};
+use leptos::html;
 use leptos::prelude::*;
 
 use crate::icons::Icon;
@@ -296,6 +298,8 @@ fn web_link(target: &str) -> bool {
 
 struct Render {
     links: NoteLinks,
+    has_math: Cell<bool>,
+    has_mermaid: Cell<bool>,
 }
 
 impl Render {
@@ -377,8 +381,16 @@ impl Render {
             Node::Text(t) => self.text(&t),
             Node::Code(t) => view! { <code>{t}</code> }.into_any(),
             Node::Html(t) => t.into_any(),
-            Node::Math(t, false) => view! { <code class="math">{t}</code> }.into_any(),
-            Node::Math(t, true) => view! { <pre class="math"><code>{t}</code></pre> }.into_any(),
+            Node::Math(t, false) => {
+                self.has_math.set(true);
+                let fallback = t.clone();
+                view! { <span class="math" data-tex=t><code class="math-source">{fallback}</code></span> }.into_any()
+            }
+            Node::Math(t, true) => {
+                self.has_math.set(true);
+                let fallback = t.clone();
+                view! { <div class="math math-display" data-tex=t data-display="true"><pre class="math-source"><code>{fallback}</code></pre></div> }.into_any()
+            }
             Node::Note(label) => view! { <sup class="footnote-ref">{label}</sup> }.into_any(),
             Node::Soft => " ".into_any(),
             Node::Hard => view! { <br/> }.into_any(),
@@ -419,6 +431,18 @@ impl Render {
                         && let Some(output) = run.try_run(plain(&children))
                     {
                         return self.query(output);
+                    }
+                    if language.eq_ignore_ascii_case("mermaid") {
+                        self.has_mermaid.set(true);
+                        let source = plain(&children);
+                        let fallback = source.clone();
+                        let label = if source.trim().is_empty() { "Mermaid diagram".to_owned() } else { source.trim().to_owned() };
+                        return view! {
+                            <figure class="mermaid" role="img" aria-label=label data-source=source>
+                                <pre class="mermaid-source"><code>{fallback}</code></pre>
+                            </figure>
+                        }
+                        .into_any();
                     }
                     let label = if language.is_empty() { "Code".to_owned() } else { format!("{language} code") };
                     view! { <pre><code aria-label=label>{plain(&children)}</code></pre> }.into_any()
@@ -636,10 +660,15 @@ fn properties(props: Vec<(String, dar_notes::Prop)>) -> impl IntoView {
 pub fn Markdown(#[prop(into)] source: String, #[prop(optional)] links: NoteLinks, #[prop(optional)] inline: bool) -> impl IntoView {
     let masked = dar_notes::mask_comments(&source).into_owned();
     let (props, body) = dar_notes::front_matter(&masked).unwrap_or_default();
-    let render = Render { links };
+    let render = Render { links, has_math: Cell::new(false), has_mermaid: Cell::new(false) };
     let nodes = render.nodes(tree(&masked[body..], body));
     let props = (!props.is_empty() && !inline).then(|| properties(props));
-    view! { <div class=if inline { "markdown-preview markdown-inline" } else { "markdown-preview" }>{props}{nodes}</div> }
+    let root = NodeRef::<html::Div>::new();
+    let (has_math, has_mermaid) = (render.has_math.get(), render.has_mermaid.get());
+    if has_math || has_mermaid {
+        crate::rich_render::hydrate(root, has_math, has_mermaid);
+    }
+    view! { <div node_ref=root class=if inline { "markdown-preview markdown-inline" } else { "markdown-preview" }>{props}{nodes}</div> }
 }
 
 #[cfg(test)]
@@ -670,5 +699,17 @@ mod tests {
         let Node::El(Tag::List(None), _, items) = &nodes[1] else { panic!() };
         let Node::El(Tag::Item, _, item) = &items[0] else { panic!() };
         assert!(matches!(item[0], Node::Task(false, 32)));
+    }
+
+    #[test]
+    fn tree_parses_math_and_mermaid() {
+        let nodes = tree("Inline $a+b$.\n\n$$x^2$$\n\n```mermaid\ngraph LR\nA-->B\n```\n", 0);
+        let Node::El(Tag::Paragraph, _, inline_p) = &nodes[0] else { panic!("{nodes:?}") };
+        assert!(inline_p.iter().any(|n| matches!(n, Node::Math(t, false) if t == "a+b")));
+        let Node::El(Tag::Paragraph, _, display_p) = &nodes[1] else { panic!("{nodes:?}") };
+        assert!(display_p.iter().any(|n| matches!(n, Node::Math(t, true) if t == "x^2")));
+        let Node::El(Tag::CodeBlock(CodeBlockKind::Fenced(lang)), _, body) = &nodes[2] else { panic!("{nodes:?}") };
+        assert_eq!(lang.as_ref(), "mermaid");
+        assert_eq!(plain(body), "graph LR\nA-->B\n");
     }
 }

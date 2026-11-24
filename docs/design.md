@@ -197,7 +197,8 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   Obsidian's live preview on CodeMirror: the lines being edited show their Markdown, the
   rest hide their markers and take the preview's look (heading sizes, emphasis, links and
   wikilinks that Ctrl/Cmd+click or Alt+Enter follows, tag chips, clickable checkboxes,
-  quotes and callouts with their rule, code panels); Reading is the rendered preview.
+  quotes and callouts with their rule, code panels); Reading is the rendered preview
+  (including LaTeX math as MathML and themed Mermaid diagrams, shared across Markdown previews).
   New notes take their first heading as the file name when closed. Linked writing follows Obsidian and
   Logseq without new chrome: `[[`/`#` suggestions in a top-layer list at the caret,
   Outline in the editor bar, properties above the preview, callouts, tag chips,

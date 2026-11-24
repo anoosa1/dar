@@ -38,9 +38,16 @@ the [design guide](../design.md).
 - Linked notes, in Obsidian's syntax so a vault opens elsewhere unchanged: `[[note]]`,
   `[[note#heading]]`, `[[note#^block]]`, `[[note|label]]`, `![[embed]]`, relative Markdown links
   (`[x](Other%20note.md)`), `#tags` (nested as `a/b`), YAML properties (`tags`, `aliases`),
-  `^block` ids, `> [!type]` callouts, `==highlights==`, `%%comments%%`, tables, footnotes and
-  task lists. Links resolve by file name (the linking note's folder first, then the shortest
-  path) or by path; the shared model is `crates/notes` (`dar-notes`).
+  `^block` ids, `> [!type]` callouts, `==highlights==`, `%%comments%%`, tables, footnotes,
+  task lists, `$…$`/`$$…$$` math and ```` ```mermaid ```` diagrams. Links resolve by file name
+  (the linking note's folder first, then the shortest path) or by path; the shared model is
+  `crates/notes` (`dar-notes`).
+- Math and diagrams: `$…$` inline math, `$$…$$` display math and ```` ```mermaid ```` fenced
+  blocks render in every Markdown preview (Notes Reading mode, embeds, references, Files and
+  Mail). KaTeX (MathML output) and Mermaid (`securityLevel: "strict"`, themed from Dar's
+  light/dark CSS variables inside a per-diagram shadow root with constructed stylesheets for
+  strict CSP) are bundled separately in `crates/client/render/` and loaded lazily only when a
+  preview contains math or a diagram; the source stays as the fallback while loading and on error.
 - Writing: `[[` suggests notes (title, file name or alias) and `#` suggests tags. The preview
   follows links, creates a missing note on click, filters by a tag and toggles checkboxes in
   the source; Outline jumps to a heading. Below each note: linked references (with the
