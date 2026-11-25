@@ -424,6 +424,12 @@ pub async fn handle_http(
             json!({ "id": id, "keepFiles": q("keepFiles") != "0" }),
         )
         .await?),
+        (Method::POST, ["mailboxes"]) => {
+            let p = input(body, headers, BODY_LIMIT, &["accountId", "name"]).await?;
+            let res = call("createMailbox", Value::Object(p)).await?;
+            mail.poke();
+            ok(res)
+        }
         (Method::POST, ["sync"]) => {
             let p = input(body, headers, BODY_LIMIT, &["id"]).await?;
             let one = p.get("id").and_then(Value::as_str).map(str::to_owned);

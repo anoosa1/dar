@@ -1,12 +1,13 @@
-//! Adding accounts and Mail settings: accounts, reading, and (for administrators) the mail
-//! providers people can add accounts with.
+//! Adding accounts and Mail settings: accounts, reading & layout, keyboard shortcuts, and
+//! (for administrators) the mail providers people can add accounts with.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde_json::{Value, json};
 
-use super::workspace::{MailState, Pane, View};
-use super::*;
+use super::model::{
+    Account, BASE, MailDensity, MailLayout, MailState, Pane, Provider, View, encode, initials, tone,
+};
 use crate::api;
 use crate::icons::Icon;
 use crate::settings::{Saver, Segmented, SettingRow, SettingsSheet};
@@ -84,7 +85,10 @@ pub(crate) fn AddAccountPane(state: MailState, account: Option<String>) -> impl 
                 name.get_untracked().trim().to_owned()
             };
             if p.auth == "oauth" {
-                let body = json!({ "providerId": p.id, "name": label, "address": addr, "displayName": display.get_untracked(), "accountId": account_id.get_value() });
+                let body = json!({
+                    "providerId": p.id, "name": label, "address": addr,
+                    "displayName": display.get_untracked(), "accountId": account_id.get_value()
+                });
                 match api::send::<Value>(&format!("{BASE}/oauth/start"), "POST", Some(body), &csrf)
                     .await
                 {
@@ -106,10 +110,28 @@ pub(crate) fn AddAccountPane(state: MailState, account: Option<String>) -> impl 
                 "password"
             };
             let result = match account_id.get_value() {
-                Some(id) => api::send::<Value>(&format!("{BASE}/accounts/{}", encode(&id)), "PATCH", Some(json!({ key: secret.get_untracked() })), &csrf).await,
-                None => api::send::<Value>(&format!("{BASE}/accounts"), "POST", Some(json!({
-                    "providerId": p.id, "name": label, "address": addr, "displayName": display.get_untracked(), "username": username.get_untracked(), key: secret.get_untracked(),
-                })), &csrf).await,
+                Some(id) => {
+                    api::send::<Value>(
+                        &format!("{BASE}/accounts/{}", encode(&id)),
+                        "PATCH",
+                        Some(json!({ key: secret.get_untracked() })),
+                        &csrf,
+                    )
+                    .await
+                }
+                None => {
+                    api::send::<Value>(
+                        &format!("{BASE}/accounts"),
+                        "POST",
+                        Some(json!({
+                            "providerId": p.id, "name": label, "address": addr,
+                            "displayName": display.get_untracked(),
+                            "username": username.get_untracked(), key: secret.get_untracked(),
+                        })),
+                        &csrf,
+                    )
+                    .await
+                }
             };
             match result {
                 Ok(_) => {
@@ -141,7 +163,15 @@ pub(crate) fn AddAccountPane(state: MailState, account: Option<String>) -> impl 
             <form class="mail-form" on:submit=submit>
                 <label>"Email address"
                     <input type="email" required autocomplete="email" autofocus=!renew readonly=renew prop:value=move || address.get()
-                        on:input=move |e| { let v = event_target_value(&e); if !chosen.get_untracked() && let Some(id) = providers.with_value(|p| provider_for(p, &v)) { provider.set(id); } address.set(v); }/>
+                        on:input=move |e| {
+                            let v = event_target_value(&e);
+                            if !chosen.get_untracked()
+                                && let Some(id) = providers.with_value(|p| provider_for(p, &v))
+                            {
+                                provider.set(id);
+                            }
+                            address.set(v);
+                        }/>
                 </label>
                 {(!renew).then(|| view! {
                     <fieldset class="mail-providers">
@@ -192,7 +222,7 @@ pub(crate) fn AddAccountPane(state: MailState, account: Option<String>) -> impl 
                 })}
                 {move || (!error.with(String::is_empty)).then(|| view! { <p role="alert" class="error">{error.get()}</p> })}
                 <div class="dialog-actions">
-                    <button type="button" class="text-button">"Cancel"</button>
+                    <button type="button" class="text-button" on:click=move |_| state.pane.set(None)>"Cancel"</button>
                     <button class="primary-button" disabled=move || busy.get() || current.with(Option::is_none)>
                         {move || match (busy.get(), current.get().map(|p| p.auth == "oauth").unwrap_or(false)) {
                             (true, _) => "Signing in\u{2026}".to_owned(),
@@ -219,7 +249,7 @@ fn AccountRow(state: MailState, account: Account, on_remove: Callback<Account>) 
     let id = StoredValue::new(account.id.clone());
     let a = StoredValue::new(account.clone());
     let status = match account.status.as_str() {
-        _ if !account.provider_available => view! { <span class="mail-state is-bad"><Icon name="alert"/>"Provider turned off"</span> }.into_any(),
+        _ if !account.provider_available => view! { <span class="mail-state is-bad"><Icon name="alert"/>"Provider off"</span> }.into_any(),
         "signIn" => view! { <span class="mail-state is-bad"><Icon name="alert"/>"Sign-in rejected"</span> }.into_any(),
         "error" => view! { <span class="mail-state is-bad" title=account.last_error.clone()><Icon name="alert"/>"Not syncing"</span> }.into_any(),
         "syncing" if account.synced_at == 0.0 => view! { <span class="mail-state">"Mirroring\u{2026}"</span> }.into_any(),
@@ -228,7 +258,12 @@ fn AccountRow(state: MailState, account: Account, on_remove: Callback<Account>) 
     let save = move |e: leptos::ev::SubmitEvent| {
         e.prevent_default();
         let csrf = state.csrf();
-        let body = json!({ "name": name.get_untracked(), "displayName": display.get_untracked(), "signature": signature.get_untracked(), "color": color.get_untracked() });
+        let body = json!({
+            "name": name.get_untracked(),
+            "displayName": display.get_untracked(),
+            "signature": signature.get_untracked(),
+            "color": color.get_untracked()
+        });
         spawn_local(async move {
             match api::send::<Value>(
                 &format!("{BASE}/accounts/{}", encode(&id.get_value())),
@@ -257,16 +292,21 @@ fn AccountRow(state: MailState, account: Account, on_remove: Callback<Account>) 
     view! {
         <div class="mail-account-setting">
             <div class="mail-account-line">
-                <span class=format!("mail-acct {}", tone(account.color)) aria-hidden="true">{initials(&account.name).chars().next().unwrap_or('?').to_string()}</span>
-                <span class="mail-account-text"><b>{account.name.clone()}</b><small>{format!("{} \u{00b7} {} \u{00b7} {}", account.address, account.provider_name, kind)}</small>
-                    {(!account.last_error.is_empty()).then(|| view! { <small class="mail-account-error">{account.last_error.clone()}</small> })}</span>
+                <span class=format!("mail-acct is-lg {}", tone(account.color)) aria-hidden="true">
+                    {initials(&account.name).chars().next().unwrap_or('?').to_string()}
+                </span>
+                <span class="mail-account-text">
+                    <b>{account.name.clone()}</b>
+                    <small>{format!("{} \u{00b7} {} \u{00b7} {}", account.address, account.provider_name, kind)}</small>
+                    {(!account.last_error.is_empty()).then(|| view! { <small class="mail-account-error">{account.last_error.clone()}</small> })}
+                </span>
                 {status}
             </div>
             <div class="mail-account-actions">
-                <button type="button" class="secondary-button" on:click=move |_| state.sync(Some(id.get_value()))><Icon name="refresh"/>"Sync now"</button>
+                <button type="button" class="secondary-button" on:click=move |_| state.sync(Some(id.get_value()))><Icon name="refresh"/>"Sync"</button>
                 <button type="button" class="secondary-button" aria-expanded=move || editing.get().to_string() on:click=move |_| editing.update(|v| *v = !*v)><Icon name="pencil"/>"Edit"</button>
                 <button type="button" class="secondary-button" on:click=move |_| state.pane.set(Some(Pane::AddAccount(Some(id.get_value()))))><Icon name="key"/>"Sign in again"</button>
-                <button type="button" class="text-button danger" on:click=move |_| { on_remove.try_run(a.get_value()); }>"Remove"</button>
+                <button type="button" class="text-button danger mail-remove-btn" on:click=move |_| { on_remove.try_run(a.get_value()); }>"Remove"</button>
             </div>
             <Show when=move || editing.get()>
                 <form class="mail-form mail-account-form" on:submit=save>
@@ -281,7 +321,10 @@ fn AccountRow(state: MailState, account: Account, on_remove: Callback<Account>) 
                     </label>
                     <label>"Signature"<textarea rows="3" maxlength="4000" prop:value=move || signature.get() on:input=move |e| signature.set(event_target_value(&e))></textarea></label>
                     {move || (!error.with(String::is_empty)).then(|| view! { <p role="alert" class="error">{error.get()}</p> })}
-                    <div class="dialog-actions"><button type="button" class="text-button" on:click=move |_| editing.set(false)>"Cancel"</button><button class="primary-button">"Save"</button></div>
+                    <div class="dialog-actions">
+                        <button type="button" class="text-button" on:click=move |_| editing.set(false)>"Cancel"</button>
+                        <button class="primary-button">"Save"</button>
+                    </div>
                 </form>
             </Show>
         </div>
@@ -293,7 +336,7 @@ pub(crate) fn MailSettings(state: MailState, section: &'static str) -> impl Into
     let administrator = state
         .overview
         .with_untracked(|o| o.as_ref().is_some_and(|o| o.administrator));
-    let mut sections = vec!["Accounts", "Reading"];
+    let mut sections = vec!["Accounts", "Reading", "Shortcuts"];
     if administrator {
         sections.push("Providers");
     }
@@ -355,12 +398,14 @@ pub(crate) fn MailSettings(state: MailState, section: &'static str) -> impl Into
                     let o = state.overview.get().unwrap_or_default();
                     view! {
                         <section class="settings-section">
-                            <h3>"Accounts"</h3>
+                            <h3>"Connected accounts"</h3>
                             {o.accounts.is_empty().then(|| view! { <p class="settings-hint">"No accounts yet."</p> })}
                             {o.accounts.into_iter().map(|a| view! { <AccountRow state=state account=a on_remove=Callback::new(move |a: Account| { keep.set(true); removing.set(Some(a)); })/> }).collect_view()}
-                            <button type="button" class="secondary-button" on:click=move |_| state.pane.set(Some(Pane::AddAccount(None)))><Icon name="plus"/>"Add account"</button>
+                            <div class="mail-settings-add">
+                                <button type="button" class="secondary-button" on:click=move |_| state.pane.set(Some(Pane::AddAccount(None)))><Icon name="plus"/>"Add account"</button>
+                            </div>
                         </section>
-                        <section class="settings-section">
+                        <section class="settings-section mail-settings-divider">
                             <h3>"Files mirror"</h3>
                             <SettingRow label="Mirror folder" hint="Every message is kept as its original .eml file, one folder per account and mailbox. Moving, deleting or adding .eml files there changes the mailbox on the server at the next sync." state=Signal::derive(|| None)>
                                 <code class="mail-folder-path">{o.mail_folder.clone()}</code>
@@ -371,7 +416,25 @@ pub(crate) fn MailSettings(state: MailState, section: &'static str) -> impl Into
                 }
                 "Reading" => view! {
                     <section class="settings-section">
-                        <h3>"Reading"</h3>
+                        <h3>"Reading & layout"</h3>
+                        <SettingRow label="Conversation grouping" hint="Collapse replies in the same thread into a single inbox row." state=saver.state("mailThreads")>
+                            <Segmented label="Conversation grouping" value=value("mailThreads", "on") options=vec![("on", "On"), ("off", "Off")]
+                                on_change=Callback::new(move |v: String| saver.change("mailThreads", json!(v), "Saved".into(), true))/>
+                        </SettingRow>
+                        <SettingRow label="Desktop layout" hint="Show the reading pane beside the message list, or full-width list until opened." state=saver.state("mailLayout")>
+                            <Segmented label="Desktop layout" value=value("mailLayout", "split") options=vec![("split", "Split"), ("list", "List")]
+                                on_change=Callback::new(move |v: String| {
+                                    state.layout.set(if v == "list" { MailLayout::List } else { MailLayout::Split });
+                                    saver.change("mailLayout", json!(v), "Saved".into(), true);
+                                })/>
+                        </SettingRow>
+                        <SettingRow label="List density" hint="Comfortable cards with snippets or compact single-line rows." state=saver.state("mailDensity")>
+                            <Segmented label="List density" value=value("mailDensity", "comfortable") options=vec![("comfortable", "Comfortable"), ("compact", "Compact")]
+                                on_change=Callback::new(move |v: String| {
+                                    state.density.set(if v == "compact" { MailDensity::Compact } else { MailDensity::Comfortable });
+                                    saver.change("mailDensity", json!(v), "Saved".into(), true);
+                                })/>
+                        </SettingRow>
                         <SettingRow label="Remote images" hint="Images from the web can tell senders you opened a message. When loaded, they come through Dar so your address stays private." state=saver.state("mailImages")>
                             <Segmented label="Remote images" value=value("mailImages", "block") options=vec![("block", "Block"), ("load", "Load")]
                                 on_change=Callback::new(move |v: String| saver.change("mailImages", json!(v), if v == "load" { "Remote images load".into() } else { "Remote images are blocked".into() }, true))/>
@@ -380,11 +443,52 @@ pub(crate) fn MailSettings(state: MailState, section: &'static str) -> impl Into
                             <Segmented label="Mark as read" value=value("mailMarkRead", "open") options=vec![("open", "When opened"), ("manual", "Manually")]
                                 on_change=Callback::new(move |v: String| saver.change("mailMarkRead", json!(v), "Saved".into(), true))/>
                         </SettingRow>
-                        <h3>"Keyboard"</h3>
+                    </section>
+                    {move || {
+                        let allowed = state.allowed_senders.get();
+                        (!allowed.is_empty()).then(|| view! {
+                            <section class="settings-section mail-settings-divider">
+                                <h3>"Trusted image senders"</h3>
+                                <ul class="mail-trusted-list">
+                                    {allowed.into_iter().map(|addr| {
+                                        let addr_rm = addr.clone();
+                                        view! {
+                                            <li>
+                                                <span>{addr}</span>
+                                                <button type="button" class="text-button" on:click=move |_| {
+                                                    let next: Vec<String> = state.allowed_senders.get_untracked().into_iter().filter(|x| x != &addr_rm).collect();
+                                                    saver.change("mailAllowedSenders", json!(next), "Sender removed".into(), true);
+                                                }>"Remove"</button>
+                                            </li>
+                                        }
+                                    }).collect_view()}
+                                </ul>
+                            </section>
+                        })
+                    }}
+                }.into_any(),
+                "Shortcuts" => view! {
+                    <section class="settings-section">
+                        <h3>"Navigation & triage"</h3>
                         <dl class="mail-keys">
-                            <dt><kbd>"c"</kbd></dt><dd>"Compose"</dd><dt><kbd>"j"</kbd>" / "<kbd>"k"</kbd></dt><dd>"Next / previous message"</dd>
-                            <dt><kbd>"r"</kbd>" "<kbd>"a"</kbd>" "<kbd>"f"</kbd></dt><dd>"Reply, reply all, forward"</dd><dt><kbd>"e"</kbd></dt><dd>"Archive"</dd>
-                            <dt><kbd>"#"</kbd></dt><dd>"Delete"</dd><dt><kbd>"s"</kbd>" "<kbd>"u"</kbd></dt><dd>"Flag, mark unread"</dd><dt><kbd>"Ctrl Enter"</kbd></dt><dd>"Send"</dd>
+                            <dt><kbd>"j"</kbd><kbd>"\u{2193}"</kbd></dt><dd>"Next conversation"</dd>
+                            <dt><kbd>"k"</kbd><kbd>"\u{2191}"</kbd></dt><dd>"Previous conversation"</dd>
+                            <dt><kbd>"x"</kbd></dt><dd>"Select / deselect row"</dd>
+                            <dt><kbd>"e"</kbd></dt><dd>"Archive"</dd>
+                            <dt><kbd>"#"</kbd></dt><dd>"Delete"</dd>
+                            <dt><kbd>"s"</kbd></dt><dd>"Flag / unflag"</dd>
+                            <dt><kbd>"u"</kbd></dt><dd>"Mark as unread"</dd>
+                        </dl>
+                    </section>
+                    <section class="settings-section mail-settings-divider">
+                        <h3>"Reading & writing"</h3>
+                        <dl class="mail-keys">
+                            <dt><kbd>"c"</kbd></dt><dd>"Compose"</dd>
+                            <dt><kbd>"r"</kbd><kbd>"a"</kbd><kbd>"f"</kbd></dt><dd>"Reply, reply all, forward"</dd>
+                            <dt><kbd>";"</kbd></dt><dd>"Expand / collapse all in thread"</dd>
+                            <dt><kbd>"Ctrl"</kbd><kbd>"\u{21b5}"</kbd></dt><dd>"Send"</dd>
+                            <dt><kbd>"?"</kbd></dt><dd>"Open shortcuts guide"</dd>
+                            <dt><kbd>"Esc"</kbd></dt><dd>"Close reader or dialog"</dd>
                         </dl>
                     </section>
                 }.into_any(),
@@ -539,7 +643,9 @@ fn Providers(state: MailState) -> impl IntoView {
                             }
                         }).collect_view().into_any()
                     })}
-                    <button type="button" class="secondary-button" on:click=move |_| editing.set(Some(None))><Icon name="plus"/>"Add provider"</button>
+                    <div class="mail-settings-add">
+                        <button type="button" class="secondary-button" on:click=move |_| editing.set(Some(None))><Icon name="plus"/>"Add provider"</button>
+                    </div>
                 </section>
             }.into_any(),
         }}
@@ -785,10 +891,10 @@ fn ProviderForm(
                 {field("Token URL", token, "url", "https://…/token")}
                 {field("Client ID", client, "text", "")}
                 <label>"Client secret"<small>{if has_secret { "Saved. Leave empty to keep it." } else { "Leave empty for public clients." }}</small>
-                    <input type="password" autocomplete="off" prop:value=move || secret.get() on:input=move |e| secret.set(event_target_value(&e))/></label>
-                {field("Scopes (space separated)", scopes, "text", "")}
-                <label>"Extra authorization parameters"<small>"One key=value per line, like access_type=offline."</small>
-                    <textarea rows="2" prop:value=move || params.get() on:input=move |e| params.set(event_target_value(&e))></textarea></label>
+                    <input type="password" autocomplete="off" prop:value=move || secret.get() on:input=move |e| secret.set(event_target_value(&e))/>
+                </label>
+                {field("Scopes (space separated)", scopes, "text", "https://mail.google.com/")}
+                <label>"Extra authorization parameters (one key=value per line)"<textarea rows="2" prop:value=move || params.get() on:input=move |e| params.set(event_target_value(&e))></textarea></label>
             })}
             {move || (!error.with(String::is_empty)).then(|| view! { <p role="alert" class="error">{error.get()}</p> })}
             <div class="dialog-actions">

@@ -283,24 +283,35 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   and share. Read rows fade in place instead of disappearing. Subscribe and Edit
   feed use the right editing pane; News settings is the settings sheet. Phones show
   views and folders as chips and the article full screen with Back. See [News](news.md).
-- **Mail:** selected direction [A](spacetimedb/mail-mocks.html) with B's inline reply (November 22).
-  Sidebar: Compose, unified views (All inboxes, Unread, Flagged, Drafts, Sent, All mail), then
-  each account (colour mark, protocol tag, warning mark, three-dot menu) with its mailboxes
-  nested as on the server. A day-grouped list (unread dot, sender avatar, sender with thread
-  count, attachment/flag/answered marks and time, subject, account dot in unified views and
-  snippet); checking rows turns the header into the tonal selection bar (archive, delete, read,
-  unread, flag, more). The conversation opens in the right sheet: account · mailbox, archive,
-  delete, mark unread, flag and a menu (reply, move, spam, Show in Files, download .eml); the
-  subject, earlier messages as one-line cards that expand, the newest open, remote images
-  blocked behind Show images, attachments as chips, then the inline reply (Reply / Reply all,
-  recipients line, text, open in the sheet, Send). Compose is a floating sheet at the bottom
-  right (From, chips for To/Cc/Bcc, Subject, text, attachments, the Notes formatting bar (plain text
-  until a format is used, then Markdown sent as HTML, with Write/Preview), Save draft, Discard, Send);
-  closing saves a draft; every send waits ten seconds with Undo. Add account and Sign in again
-  use the right editing pane (provider chosen by domain; OAuth goes to the provider's page);
-  Mail settings is the settings sheet (Accounts, Reading, and Providers for administrators).
-  Phones show mailboxes as chips and the conversation full screen with Back; compose fills the
-  screen. See [Mail](mail.md).
+- **Mail:** selected direction [A](spacetimedb/mail-mocks.html) with B's inline reply (November 22; refreshed November 24).
+  Scrollable sidebar: Compose, unified views (`All inboxes`, `Unread`, `Flagged`, `Drafts`, `Sent`,
+  `All mail`) with distinct icons and live counts, then collapsible accounts (colour mark,
+  protocol badge, warning mark, reactive collapsed unread badge, three-dot menu with `New folder`)
+  with nested server mailboxes, inline `+ New folder…`, and a live sync-status footer.
+  The middle sheet header pairs a `Select all ▾` menu (`All`/`None`/`Unread`/`Read`/`Flagged`),
+  title and count pill with a `Split / List` layout switch, a `Sort & density` menu (`Newest`,
+  `Oldest`, `Sender`, `Largest`; `Comfortable` / `Compact 1-line`), refresh, mark-all-read and `?`
+  shortcuts; a filter-chip strip (`All`, `Unread`, `Flagged`, `Has files` plus account pills in
+  unified views) swaps to the tonal selection bar when rows are checked (Shift-click range select
+  supported). Trash and Junk show an action banner (`Empty Trash` confirms permanent delete).
+  List rows collapse threads into one conversation row (toggleable in Reading settings), show
+  `To <recipient>` in Drafts/Sent, mailbox badges in unified views, and reveal a hover quick-triage
+  pill (Archive, Delete, Read/Unread, Flag).
+  Split view keeps the reading pane beside the list with a calm empty state; opening a thread shows
+  the account · mailbox crumb, triage actions, Expand/Collapse All (`;`), Print, More (including
+  `View raw source`, `Show in Files`, `Download .eml`), a `List-Unsubscribe` strip when present,
+  remote-image privacy bar (`Show images` + `Always allow` trusted sender), collapsible message cards
+  with per-message Info/Reply/More actions, expandable header details with Copy address, trimmed
+  plain-text quote toggle (`···`), attachment chips with image Preview modal + Download, and a
+  pinned inline reply dock at the bottom.
+  Compose is a floating bottom-right sheet with Minimize-to-draft-tray, Expand, aligned From with
+  account colour and automatic signature swap, To/Cc/Bcc chips with Contacts and recent-correspondent
+  autocomplete, drag-and-drop and `Attach from Files`, the Notes formatting bar (plain text until a
+  format is used, then Markdown sent as HTML with Write/Preview), Save draft, Discard and Send
+  (10-second Undo). Add account and Sign in again use the right editing pane; Mail settings uses the
+  settings sheet (`Accounts`, `Reading`, `Shortcuts`, and `Providers` for administrators).
+  Phones keep Dar's mobile chip strip, hide the empty split pane, open conversations full-bleed with
+  Back, and show compose full screen. See [Mail](mail.md).
 - **Photos:** selected [mock B](spacetimedb/photos-mock-b.html) over
   [mock A](spacetimedb/photos-mock-a.html) (November 13; refreshed November 24).
   Sidebar views (`Photos`, `All photos`, `Explore`, `Favorites`, `Albums`,

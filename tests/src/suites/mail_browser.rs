@@ -135,7 +135,7 @@ async fn mail_browser_journey(t: &Ctx) -> Result<()> {
     page.get_by_role("button", "Sign in").click().await?;
     page.get_by_role("link", "Mail").first().wait_for().await?;
 
-    // No accounts yet: the empty state offers Add account; the pane picks the provider by domain.
+    // No accounts yet: the empty state offers Add account; Cancel closes cleanly; the pane picks the provider by domain.
     page.get_by_role("heading", contains("Add your first mail account"))
         .wait_for()
         .await?;
@@ -144,6 +144,12 @@ async fn mail_browser_journey(t: &Ctx) -> Result<()> {
         .click()
         .await?;
     let pane = page.locator("[data-editor-pane]");
+    pane.get_by_role("button", "Cancel").click().await?;
+    pane.wait_for_state(State::Detached).await?;
+    page.get_by_role("button", "Add account")
+        .last()
+        .click()
+        .await?;
     pane.get_by_label("Email address")
         .fill("someone@gmail.com")
         .await?;
@@ -182,7 +188,7 @@ async fn mail_browser_journey(t: &Ctx) -> Result<()> {
         .await?;
     pane.wait_for_state(State::Detached).await?;
 
-    // The first pass mirrors the mailbox; the list follows.
+    // The first pass mirrors the mailbox; the list groups the 2-message Q4 thread into 1 row.
     let list = page.get_by_role("list", contains("All inboxes messages"));
     list.get_by_role("button", regex(r"Dinner on Friday\?"))
         .timeout(Duration::from_secs(40))
@@ -192,8 +198,24 @@ async fn mail_browser_journey(t: &Ctx) -> Result<()> {
         .first()
         .wait_for()
         .await?;
-    page.screenshot(t.screenshot("mail-desktop.png"), false)
-        .await?;
+    assert_eq!(
+        list.locator(".mail-message").count().await?,
+        2,
+        "conversation grouping should collapse Q4 venue shortlist replies into one row"
+    );
+
+    // Quick filter chips filter the conversation list client-side.
+    page.get_by_role("button", "Has files").click().await?;
+    assert_eq!(list.locator(".mail-message").count().await?, 1);
+    page.get_by_role("button", "All").first().click().await?;
+    assert_eq!(list.locator(".mail-message").count().await?, 2);
+
+    // `?` opens the keyboard shortcuts dialog and Escape closes it.
+    page.locator("body").press("?").await?;
+    let shortcuts = page.get_by_role("dialog", contains("Mail keyboard shortcuts"));
+    shortcuts.wait_for().await?;
+    page.locator("body").press("Escape").await?;
+    shortcuts.wait_for_state(State::Detached).await?;
 
     // Reader: the thread, blocked remote images, Show images, attachments.
     list.get_by_role("button", regex("Re: Q4 venue shortlist"))
@@ -213,6 +235,8 @@ async fn mail_browser_journey(t: &Ctx) -> Result<()> {
         .wait_for()
         .await?;
     assert_eq!(reader.locator(".mail-body img").count().await?, 0);
+    page.screenshot(t.screenshot("mail-desktop.png"), false)
+        .await?;
     reader
         .get_by_role("button", contains("Show images"))
         .click()
@@ -337,7 +361,12 @@ async fn mail_browser_journey(t: &Ctx) -> Result<()> {
         .first()
         .click()
         .await?;
-    page.get_by_role("list", contains("Drafts messages"))
+    let drafts_list = page.get_by_role("list", contains("Drafts messages"));
+    drafts_list
+        .get_by_text(contains("To maya@example.test"))
+        .wait_for()
+        .await?;
+    drafts_list
         .get_by_role("button", regex("Photos from the weekend"))
         .click()
         .await?;
@@ -511,6 +540,20 @@ async fn mail_browser_journey(t: &Ctx) -> Result<()> {
                 )
                 .await?;
             assert_eq!(overflow, json!([]), "{theme} {width} overflow");
+            if width == 1440 {
+                list.get_by_role("button", regex("Re: Q4 venue shortlist"))
+                    .click()
+                    .await?;
+                reader
+                    .get_by_role("heading", contains("Re: Q4 venue shortlist"))
+                    .wait_for()
+                    .await?;
+                page.screenshot(t.screenshot(&format!("mail-desktop-{theme}.png")), false)
+                    .await?;
+                page.get_by_role("button", contains("Close message"))
+                    .click()
+                    .await?;
+            }
             if width == 390 {
                 list.get_by_role("button", regex(r"Dinner on Friday\?"))
                     .click()

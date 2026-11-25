@@ -62,25 +62,32 @@ with a message and resumes when there is room.
 
 ## Reading and writing
 
-- **Reading:** threads by References/In-Reply-To across mailboxes; HTML is sanitized on the
-  server and again in the browser; remote images are blocked until Show images (or always,
-  per Reading settings) and then load through Dar (`/api/v1/mail/image`) so senders do not see
-  the reader's address; inline `cid:` images and attachments come from the `.eml`; attachments
-  always download, never render as active content.
-- **Actions:** read/unread, flag, archive, delete, move, spam, Show in Files, download `.eml`,
-  multi-select with the tonal bar, Undo for archive/delete/move.
-- **Writing:** plain text by default. Using the formatting bar (the Notes toolbar) makes the
-  message Markdown and adds Write/Preview; it is then sent as
-  `multipart/alternative`: the source as the text part and HTML that Dar renders from it
-  (headings, lists and task lists, quotes, code, bold, italic, http/https/mailto links; any HTML
-  typed is kept as text). A Markdown draft reopens as its source. Messages carry attachments (25 MB in total), To/Cc/Bcc chips (Bcc
-  stays in the envelope), reply/reply all/forward with quoting and References; drafts are
-  saved to the account's Drafts mailbox; every send waits ten seconds with Undo. SMTP accounts
-  append a copy to Sent unless the provider says the server does it (`saveSent`); JMAP submits
-  with the matching identity.
-- **Search and keys:** subjects and senders appear in the shared search. `c` compose, `j`/`k`
-  next/previous, `r`/`a`/`f` reply/reply all/forward, `e` archive, `#` delete, `s` flag,
-  `u` unread, Ctrl+Enter send, Escape closes.
+- **Reading:** Split or full-width List layout and Comfortable or Compact 1-line density, with
+  client-side conversation grouping (toggleable in Reading settings), quick filter chips
+  (`Unread`, `Flagged`, `Has files` and per-account scope in unified views) and 4-way sort
+  (`Newest`, `Oldest`, `Sender`, `Largest`). Threads group by References/In-Reply-To across
+  mailboxes; HTML is sanitized on the server and again in the browser; remote images are blocked
+  until Show images, Always allow (trusted sender list), or Load in Reading settings, and load
+  through Dar (`/api/v1/mail/image`) so senders do not see the reader's address; inline `cid:`
+  images and attachments come from the `.eml`; image attachments can preview in a dialog and all
+  attachments download safely. Plain-text quoted history folds behind `···`; mailing-list messages
+  surface a `List-Unsubscribe` bar; raw `.eml` source opens in a modal.
+- **Actions:** hover quick-triage (archive, delete, read/unread, flag), move, spam, new folder
+  creation (`POST /api/v1/mail/mailboxes`), Show in Files, download `.eml`, Print, Select-all menu
+  and Shift-click range selection with the tonal bulk bar, confirmation before permanently deleting
+  from Trash, and Undo for archive/delete/move.
+- **Writing:** floating bottom-right compose sheet that can minimize to a draft tray pill or expand;
+  pinned inline reply dock at the bottom of the reader. Plain text by default; using the Notes
+  formatting bar switches to Markdown with Write/Preview and sends `multipart/alternative` (source
+  text + rendered HTML). A Markdown draft reopens as its source. To/Cc/Bcc chips offer autocomplete
+  from Dar Contacts and recent correspondents; attachments support file picker, drag-and-drop, and
+  Attach from Files (25 MB total); switching `From` swaps the account signature; drafts save to the
+  account's Drafts mailbox; every send waits ten seconds with Undo. SMTP accounts append a copy to
+  Sent unless `saveSent` is false; JMAP submits with the matching identity.
+- **Search and keys:** subjects, senders, sender addresses and snippets appear in the shared
+  search. `j`/`k` (or `↓`/`↑`) next/previous, `x` select row, `c` compose, `r`/`a`/`f`
+  reply/reply all/forward, `e` archive, `#` delete, `s` flag, `u` unread, `;` expand/collapse all
+  in thread, `?` shortcuts guide, Ctrl+Enter send, Escape closes.
 
 ## Host configuration (NixOS)
 
@@ -121,5 +128,5 @@ no account uses them).
 
 No offline editing or end-to-end encryption (S/MIME, PGP), no rich-text (WYSIWYG) composing, no IMAP
 IDLE or JMAP push (mail arrives with the five-minute pass or Sync now), no rules or
-vacation replies, no Contacts autocomplete yet. Backups carry the `.eml` files (Files), not
+vacation replies. Backups carry the `.eml` files (Files), not
 the accounts; after a restore, add the accounts again (their new folders get a free name).

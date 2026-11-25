@@ -443,10 +443,11 @@ fn role_rank(role: &str) -> u8 {
 
 fn summary(ctx: &ReducerContext, m: &MailMessage) -> Value {
     json!({
-        "id": m.id, "accountId": m.account_id, "mailboxId": m.mailbox_id, "subject": m.subject, "fromName": m.from_name, "fromAddress": m.from_address,
+        "id": m.id, "accountId": m.account_id, "mailboxId": m.mailbox_id, "mailboxRole": mailbox_role(ctx, &m.mailbox_id),
+        "subject": m.subject, "fromName": m.from_name, "fromAddress": m.from_address,
         "recipients": serde_json::from_str::<Value>(&m.recipients).unwrap_or(json!({ "to": [], "cc": [] })), "date": m.date, "snippet": m.snippet,
         "seen": m.seen, "flagged": m.flagged, "answered": m.answered, "draft": m.draft, "attachments": m.attachments, "size": m.size,
-        "messageId": m.message_id, "fileId": m.file_id,
+        "messageId": m.message_id, "fileId": m.file_id, "threadKey": m.thread_key,
         "threadCount": if m.thread_key.is_empty() { 1 } else { ctx.db.mail_messages().thread_key().filter(&m.thread_key).count() },
     })
 }
@@ -901,6 +902,19 @@ pub fn mail_operation(
             remove_account(ctx, &a, keep);
             Ok(json!({ "removed": true }))
         }
+        "createMailbox" => {
+            keys(p, &["accountId", "name"])?;
+            let a = own_account(ctx, user_id, p.get("accountId"))?;
+            let name = name_of(&text(p.get("name"), 100, false)?)?;
+            let root = account_folder(ctx, &a)?;
+            let folder_id = child_folder(ctx, user_id, &root, &name)?;
+            ctx.db.mail_accounts().id().update(MailAccount {
+                next_sync: at,
+                due_key: due_key(at),
+                ..a
+            });
+            Ok(json!({ "ok": true, "folderId": folder_id, "name": name }))
+        }
         "syncNow" => {
             keys(p, &["id"])?;
             let list: Vec<MailAccount> = match p.get("id") {
@@ -1084,7 +1098,11 @@ pub fn mail_search(ctx: &ReducerContext, user_id: &str, s: &mut crate::global_se
         } else {
             m.from_name.clone()
         };
-        if s.matches(&m.subject) || s.matches(&from) {
+        if s.matches(&m.subject)
+            || s.matches(&from)
+            || s.matches(&m.from_address)
+            || s.matches(&m.snippet)
+        {
             let title = if m.subject.is_empty() {
                 "No subject".to_owned()
             } else {
