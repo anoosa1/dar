@@ -13,14 +13,15 @@ use serde_json::{Value, json};
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 
+use super::explore::{AlbumPickerDialog, AlbumsHub, ExploreView, FoldersView, album_date_span};
 use super::immich_settings::{ImmichProgressBar, ImmichSettings};
 use super::sharing::{LinkDialog, LinksList, SharePane};
 use super::{
     BASE, PhotoAlbum, PhotoAsset, PhotoDetail, PhotoDuplicateGroup, PhotoDuplicatePage,
     PhotoImmichProgress, PhotoMoved, PhotoOverview, PhotoPage, PhotoStack, PhotosNotice, Playback,
-    Transfer, content_url, css_escape, encode_uri_component, error_message, file_last_modified,
-    format_duration, format_number, noun, photo_folder_parts, put_upload_file,
-    request_animation_frame, thumb_url,
+    Transfer, content_url, css_escape, download_zip_archive, encode_uri_component, error_message,
+    file_last_modified, format_duration, format_number, noun, photo_folder_parts, put_upload_file,
+    request_animation_frame, save_edited_copy, thumb_url,
 };
 use crate::api::{self, BrowserSession, Req, RequestError, format_bytes};
 use crate::dates::{local_date, local_date_time, local_time};
@@ -34,13 +35,23 @@ use crate::ui::{ActionMenu, Dialog, MenuAction, document, listen, window};
 enum View {
     Folder,
     Library,
+    Explore,
     Favorites,
+    Albums,
     Shared,
     Videos,
+    Folders,
     Duplicates,
     Archive,
     Locked,
     Trash,
+    Recent,
+    Large,
+    Unassigned,
+    FolderId(String, String),
+    Camera(String),
+    Place(String, String),
+    Memory(i64, u32, u32),
     Album(String),
 }
 
@@ -49,13 +60,19 @@ impl View {
         match s {
             "folder" => Some(Self::Folder),
             "library" => Some(Self::Library),
+            "explore" => Some(Self::Explore),
             "favorites" => Some(Self::Favorites),
+            "albums" => Some(Self::Albums),
             "shared" => Some(Self::Shared),
             "videos" => Some(Self::Videos),
+            "folders" => Some(Self::Folders),
             "duplicates" => Some(Self::Duplicates),
             "archive" => Some(Self::Archive),
             "locked" => Some(Self::Locked),
             "trash" => Some(Self::Trash),
+            "recent" => Some(Self::Recent),
+            "large" => Some(Self::Large),
+            "unassigned" => Some(Self::Unassigned),
             _ => None,
         }
     }
@@ -64,13 +81,23 @@ impl View {
         match self {
             Self::Folder => "folder",
             Self::Library => "library",
+            Self::Explore => "explore",
             Self::Favorites => "favorites",
+            Self::Albums => "albums",
             Self::Shared => "shared",
             Self::Videos => "videos",
+            Self::Folders => "folders",
             Self::Duplicates => "duplicates",
             Self::Archive => "archive",
             Self::Locked => "locked",
             Self::Trash => "trash",
+            Self::Recent => "recent",
+            Self::Large => "large",
+            Self::Unassigned => "unassigned",
+            Self::FolderId(_, _) => "folderId",
+            Self::Camera(_) => "camera",
+            Self::Place(_, _) => "place",
+            Self::Memory(_, _, _) => "memory",
             Self::Album(_) => "album",
         }
     }
@@ -78,32 +105,80 @@ impl View {
     fn key(&self) -> String {
         match self {
             Self::Album(id) => format!("album:{id}"),
+            Self::FolderId(id, _) => format!("folderId:{id}"),
+            Self::Camera(name) => format!("camera:{name}"),
+            Self::Place(key, _) => format!("place:{key}"),
+            Self::Memory(y, m, d) => format!("memory:{y}-{m}-{d}"),
             _ => self.as_type_str().to_owned(),
         }
     }
 
-    fn label(&self) -> &'static str {
+    fn label(&self) -> String {
         match self {
-            Self::Folder => "Photos",
-            Self::Library => "All photos",
-            Self::Favorites => "Favorites",
-            Self::Shared => "Shared with me",
-            Self::Videos => "Videos",
-            Self::Duplicates => "Duplicates",
-            Self::Archive => "Archive",
-            Self::Locked => "Locked folder",
-            Self::Trash => "Trash",
-            Self::Album(_) => "Album",
+            Self::Folder => "Photos".to_owned(),
+            Self::Library => "All photos".to_owned(),
+            Self::Explore => "Explore".to_owned(),
+            Self::Favorites => "Favorites".to_owned(),
+            Self::Albums => "Albums".to_owned(),
+            Self::Shared => "Shared with me".to_owned(),
+            Self::Videos => "Videos".to_owned(),
+            Self::Folders => "Folders".to_owned(),
+            Self::Duplicates => "Duplicates".to_owned(),
+            Self::Archive => "Archive".to_owned(),
+            Self::Locked => "Locked folder".to_owned(),
+            Self::Trash => "Trash".to_owned(),
+            Self::Recent => "Recently added".to_owned(),
+            Self::Large => "Large files".to_owned(),
+            Self::Unassigned => "Not in any album".to_owned(),
+            Self::FolderId(_, path) => path.clone(),
+            Self::Camera(name) => name.clone(),
+            Self::Place(_, label) => format!("Place · {label}"),
+            Self::Memory(y, _, _) => format!("On this day in {y}"),
+            Self::Album(_) => "Album".to_owned(),
         }
+    }
+
+    fn is_sub_collection(&self) -> bool {
+        matches!(
+            self,
+            Self::Recent
+                | Self::Large
+                | Self::Unassigned
+                | Self::FolderId(_, _)
+                | Self::Camera(_)
+                | Self::Place(_, _)
+                | Self::Memory(_, _, _)
+        )
+    }
+
+    fn supports_filters(&self) -> bool {
+        matches!(
+            self,
+            Self::Folder
+                | Self::Library
+                | Self::Favorites
+                | Self::Videos
+                | Self::Album(_)
+                | Self::Recent
+                | Self::Large
+                | Self::Unassigned
+                | Self::FolderId(_, _)
+                | Self::Camera(_)
+                | Self::Place(_, _)
+                | Self::Memory(_, _, _)
+        )
     }
 }
 
-const MAIN_VIEWS: [(&str, &str, &str); 5] = [
+const MAIN_VIEWS: [(&str, &str, &str); 8] = [
     ("folder", "Photos", "image"),
     ("library", "All photos", "grid"),
+    ("explore", "Explore", "compass"),
     ("favorites", "Favorites", "star"),
+    ("albums", "Albums", "albums"),
     ("shared", "Shared with me", "share"),
     ("videos", "Videos", "video"),
+    ("folders", "Folders", "folder"),
 ];
 
 const MORE_VIEWS: [(&str, &str, &str); 4] = [
@@ -205,17 +280,44 @@ struct DeleteAssetsResponse {
 fn read_view() -> (View, Option<String>) {
     let search = window().location().search().unwrap_or_default();
     let params = web_sys::UrlSearchParams::new_with_str(&search).ok();
-    let album = params
-        .as_ref()
-        .and_then(|p| p.get("album"))
-        .filter(|s| !s.is_empty());
-    let view_param = params.as_ref().and_then(|p| p.get("view"));
-    let asset = params
-        .as_ref()
-        .and_then(|p| p.get("asset"))
-        .filter(|s| !s.is_empty());
+    let get = |k: &str| {
+        params
+            .as_ref()
+            .and_then(|p| p.get(k))
+            .filter(|s| !s.is_empty())
+    };
+    let album = get("album");
+    let view_param = get("view");
+    let asset = get("asset");
     let view = if let Some(id) = album {
         View::Album(id)
+    } else if view_param.as_deref() == Some("camera")
+        && let Some(cam) = get("camera")
+    {
+        View::Camera(cam)
+    } else if view_param.as_deref() == Some("place")
+        && let Some(place) = get("place")
+    {
+        let label = get("label").unwrap_or_else(|| place.clone());
+        View::Place(place, label)
+    } else if view_param.as_deref() == Some("folderId") {
+        let folder = get("folder").unwrap_or_default();
+        let label = get("label").unwrap_or_else(|| {
+            if folder.is_empty() {
+                "Files".to_owned()
+            } else {
+                "Folder".to_owned()
+            }
+        });
+        View::FolderId(folder, label)
+    } else if view_param.as_deref() == Some("memory")
+        && let (Some(y), Some(m), Some(d)) = (
+            get("year").and_then(|s| s.parse::<i64>().ok()),
+            get("month").and_then(|s| s.parse::<u32>().ok()),
+            get("day").and_then(|s| s.parse::<u32>().ok()),
+        )
+    {
+        View::Memory(y, m, d)
     } else if let Some(v) = view_param.as_deref().and_then(View::from_type_str) {
         v
     } else {
@@ -231,6 +333,26 @@ fn write_view(view: &View, asset: Option<&str>) {
     match view {
         View::Album(id) => params.set("album", id),
         View::Folder => {}
+        View::Camera(name) => {
+            params.set("view", "camera");
+            params.set("camera", name);
+        }
+        View::Place(key, label) => {
+            params.set("view", "place");
+            params.set("place", key);
+            params.set("label", label);
+        }
+        View::FolderId(id, label) => {
+            params.set("view", "folderId");
+            params.set("folder", id);
+            params.set("label", label);
+        }
+        View::Memory(y, m, d) => {
+            params.set("view", "memory");
+            params.set("year", &y.to_string());
+            params.set("month", &m.to_string());
+            params.set("day", &d.to_string());
+        }
         _ => params.set("view", view.as_type_str()),
     }
     if let Some(id) = asset
@@ -259,6 +381,45 @@ fn write_view(view: &View, asset: Option<&str>) {
 
 fn month_label(time: f64) -> String {
     local_date(time, &[("month", "long"), ("year", "numeric")])
+}
+
+fn day_label(time: f64) -> String {
+    local_date(
+        time,
+        &[
+            ("weekday", "short"),
+            ("month", "short"),
+            ("day", "numeric"),
+            ("year", "numeric"),
+        ],
+    )
+}
+
+fn scrubber_month_label(time: f64) -> String {
+    local_date(time, &[("month", "short"), ("year", "numeric")])
+}
+
+fn read_layout() -> &'static str {
+    match window()
+        .local_storage()
+        .ok()
+        .flatten()
+        .and_then(|s| s.get_item("dar:photos:layout").ok().flatten())
+        .as_deref()
+    {
+        Some("square") => "square",
+        _ => "justified",
+    }
+}
+
+fn read_memories_hidden() -> bool {
+    window()
+        .local_storage()
+        .ok()
+        .flatten()
+        .and_then(|s| s.get_item("dar:photos:hideMemories").ok().flatten())
+        .as_deref()
+        == Some("1")
 }
 
 fn has_owner(asset: &PhotoAsset) -> bool {
@@ -312,12 +473,29 @@ fn read_zoom() -> u32 {
         .unwrap_or(5)
 }
 
-fn query_assets_url(view: &View, after: &str) -> String {
+fn query_assets_url(view: &View, sort: &str, filter: &str, after: &str) -> String {
     let params = web_sys::UrlSearchParams::new().expect("UrlSearchParams");
     params.set("view", view.as_type_str());
     params.set("limit", "120");
-    if let View::Album(id) = view {
-        params.set("album", id);
+    match view {
+        View::Album(id) => params.set("album", id),
+        View::FolderId(id, _) => params.set("folder", id),
+        View::Camera(name) => params.set("camera", name),
+        View::Place(key, _) => params.set("place", key),
+        View::Memory(y, m, d) => {
+            params.set("year", &y.to_string());
+            params.set("month", &m.to_string());
+            params.set("day", &d.to_string());
+        }
+        _ => {}
+    }
+    if view.supports_filters() {
+        if !sort.is_empty() && sort != "newest" {
+            params.set("sort", sort);
+        }
+        if !filter.is_empty() && filter != "all" {
+            params.set("filter", filter);
+        }
     }
     if !after.is_empty() {
         params.set("cursor", after);
@@ -326,6 +504,25 @@ fn query_assets_url(view: &View, after: &str) -> String {
         "{BASE}/assets?{}",
         params.to_string().as_string().unwrap_or_default()
     )
+}
+
+fn to_datetime_local_value(ms: f64) -> String {
+    let d = js_sys::Date::new(&JsValue::from_f64(ms));
+    let y = d.get_full_year();
+    let m = d.get_month() + 1;
+    let day = d.get_date();
+    let h = d.get_hours();
+    let min = d.get_minutes();
+    format!("{y:04}-{m:02}-{day:02}T{h:02}:{min:02}")
+}
+
+fn parse_datetime_local_value(val: &str) -> Option<f64> {
+    let ms = js_sys::Date::parse(val);
+    if ms.is_finite() && ms >= 0.0 {
+        Some(ms)
+    } else {
+        None
+    }
 }
 
 /// Runs work that may need the Locked folder; a 423 asks for the password, then retries.
@@ -376,6 +573,15 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
     let open: RwSignal<Option<String>> = RwSignal::new(start_asset);
     let selected: RwSignal<HashSet<String>> = RwSignal::new(HashSet::new());
     let zoom = RwSignal::new(read_zoom());
+    let layout = RwSignal::new(read_layout());
+    let sort = RwSignal::new("newest");
+    let filter = RwSignal::new("all");
+    let hide_memories = RwSignal::new(read_memories_hidden());
+    let desktop_info = RwSignal::new(true);
+    let mobile_select = RwSignal::new(false);
+    let slideshow = RwSignal::new(false);
+    let slideshow_timer = RwSignal::new(0u32);
+    let picker_album: RwSignal<Option<PhotoAlbum>> = RwSignal::new(None);
     let notice: RwSignal<Option<PhotosNotice>> = RwSignal::new(None);
     let notice_seq = RwSignal::new(0u32);
     let album_dialog: RwSignal<Option<AlbumDialogState>> = RwSignal::new(None);
@@ -397,6 +603,7 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
     let generation = StoredValue::new(0u32);
     let shown_key = StoredValue::new(String::new());
     let return_focus: StoredValue<Option<String>> = StoredValue::new(None);
+    let last_selected: StoredValue<Option<String>> = StoredValue::new(None);
     let imported_seen = StoredValue::new(0u64);
     let import_running = StoredValue::new(false);
     let indexing_timer = RwSignal::new(0u32);
@@ -438,7 +645,7 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
         View::Album(_) => current_album
             .with(|a| a.as_ref().map(|a| a.name.clone()))
             .unwrap_or_else(|| "Album".to_owned()),
-        v => v.label().to_owned(),
+        v => v.label(),
     });
 
     let load_overview = move || {
@@ -458,25 +665,32 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
 
     let load_items = move || {
         let current_view = view.get_untracked();
+        let current_sort = sort.get_untracked();
+        let current_filter = filter.get_untracked();
         let is_locked_closed = locked_closed.get_untracked();
-        let vk = current_view.key();
+        let vk = format!("{}:{current_sort}:{current_filter}", current_view.key());
         let ticket = generation.get_value().wrapping_add(1);
         generation.set_value(ticket);
         state.try_set(ListState::Loading);
         selected.try_set(HashSet::new());
+        last_selected.set_value(None);
         // A different view never shows the previous view's photos; refreshes of the same view keep them while loading.
         if shown_key.get_value() != vk {
             shown_key.set_value(vk);
             items.try_set(Vec::new());
             cursor.try_set(String::new());
         }
-        if matches!(current_view, View::Duplicates | View::Shared) || is_locked_closed {
+        if matches!(
+            current_view,
+            View::Duplicates | View::Shared | View::Explore | View::Albums | View::Folders
+        ) || is_locked_closed
+        {
             items.try_set(Vec::new());
             cursor.try_set(String::new());
             state.try_set(ListState::Ready);
             return;
         }
-        let url = query_assets_url(&current_view, "");
+        let url = query_assets_url(&current_view, current_sort, current_filter, "");
         spawn_local(async move {
             match api::get::<PhotoPage>(&url).await {
                 Ok(page) => {
@@ -513,7 +727,12 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
             return;
         }
         let ticket = generation.get_value();
-        let url = query_assets_url(&view.get_untracked(), &after);
+        let url = query_assets_url(
+            &view.get_untracked(),
+            sort.get_untracked(),
+            filter.get_untracked(),
+            &after,
+        );
         spawn_local(async move {
             let Ok(page) = api::get::<PhotoPage>(&url).await else {
                 return;
@@ -540,10 +759,12 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
     // Initial load.
     load_overview();
 
-    // Reload items whenever view or locked state changes.
+    // Reload items whenever view, locked state, sort or filter changes.
     Effect::new(move |_| {
         let _ = view.get();
         let _ = locked_closed.get();
+        let _ = sort.get();
+        let _ = filter.get();
         load_items();
     });
 
@@ -554,15 +775,28 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
         write_view(&v, o.as_deref());
         if o.is_none() {
             info.set(false);
+            slideshow.set(false);
         }
         member.set(None);
     });
 
-    // Persist zoom preference.
+    // Persist zoom, layout and memories ribbon preferences.
     Effect::new(move |_| {
         let z = zoom.get();
         if let Some(storage) = window().local_storage().ok().flatten() {
             let _ = storage.set_item("dar:photos:zoom", &z.to_string());
+        }
+    });
+    Effect::new(move |_| {
+        let l = layout.get();
+        if let Some(storage) = window().local_storage().ok().flatten() {
+            let _ = storage.set_item("dar:photos:layout", l);
+        }
+    });
+    Effect::new(move |_| {
+        let h = hide_memories.get();
+        if let Some(storage) = window().local_storage().ok().flatten() {
+            let _ = storage.set_item("dar:photos:hideMemories", if h { "1" } else { "0" });
         }
     });
 
@@ -705,15 +939,125 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
             items.set(Vec::new());
             cursor.set(String::new());
             state.set(ListState::Loading);
+            sort.set("newest");
+            filter.set("all");
+            mobile_select.set(false);
+            last_selected.set_value(None);
         }
         view.set(next);
         open.set(None);
     };
 
-    let toggle_selected = move |id: String| {
+    let toggle_selected = move |id: String, shift: bool| {
+        if shift
+            && let Some(anchor) = last_selected.get_value()
+        {
+            let range_ids: Vec<String> = items.with_untracked(|list| {
+                let a = list.iter().position(|i| i.id == anchor);
+                let b = list.iter().position(|i| i.id == id);
+                match (a, b) {
+                    (Some(x), Some(y)) => {
+                        let (lo, hi) = if x <= y { (x, y) } else { (y, x) };
+                        list[lo..=hi].iter().map(|i| i.id.clone()).collect()
+                    }
+                    _ => Vec::new(),
+                }
+            });
+            if !range_ids.is_empty() {
+                selected.update(|set| {
+                    for rid in range_ids {
+                        set.insert(rid);
+                    }
+                });
+                last_selected.set_value(Some(id));
+                return;
+            }
+        }
         selected.update(|set| {
             if !set.remove(&id) {
-                set.insert(id);
+                set.insert(id.clone());
+            }
+        });
+        last_selected.set_value(Some(id));
+    };
+
+    let toggle_day_selected = move |day_ids: Vec<String>| {
+        selected.update(|set| {
+            let all_in = day_ids.iter().all(|id| set.contains(id));
+            if all_in {
+                for id in &day_ids {
+                    set.remove(id);
+                }
+            } else {
+                for id in day_ids {
+                    set.insert(id);
+                }
+            }
+        });
+    };
+
+    let download_zip = move |ids: Vec<String>, filename: String| {
+        if ids.is_empty() {
+            return;
+        }
+        let csrf_tok = csrf();
+        show_notice(PhotosNotice {
+            message: format!("Preparing ZIP for {}\u{2026}", noun(ids.len())),
+            undo: None,
+        });
+        spawn_local(async move {
+            if let Err(msg) = download_zip_archive(ids, &filename, &csrf_tok).await {
+                fail(msg);
+            }
+        });
+    };
+
+    let set_album_cover = move |album: PhotoAlbum, cover_id: String| {
+        let csrf_tok = csrf();
+        spawn_local(async move {
+            match api::send::<PhotoAlbum>(
+                &format!("{BASE}/albums/{}", album.id),
+                "PATCH",
+                Some(json!({ "coverId": cover_id, "revision": album.revision })),
+                &csrf_tok,
+            )
+            .await
+            {
+                Ok(_) => {
+                    load_overview();
+                    show_notice(PhotosNotice {
+                        message: "Album cover updated".to_owned(),
+                        undo: None,
+                    });
+                }
+                Err(cause) => fail(cause.message),
+            }
+        });
+    };
+
+    let save_album_description = move |album: PhotoAlbum, next_desc: String| {
+        let trimmed = next_desc.trim().to_owned();
+        if trimmed == album.description {
+            return;
+        }
+        let csrf_tok = csrf();
+        spawn_local(async move {
+            match api::send::<PhotoAlbum>(
+                &format!("{BASE}/albums/{}", album.id),
+                "PATCH",
+                Some(json!({ "description": trimmed, "revision": album.revision })),
+                &csrf_tok,
+            )
+            .await
+            {
+                Ok(_) => {
+                    load_overview();
+                    show_notice(PhotosNotice {
+                        message: "Album description saved".to_owned(),
+                        undo: None,
+                    });
+                }
+                Err(cause) => fail(cause.message),
             }
         });
     };
@@ -1474,9 +1818,39 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
     };
 
     let close_viewer = move || {
+        slideshow.set(false);
         return_focus.set_value(open.get_untracked());
         open.set(None);
     };
+
+    // Slideshow auto-advance (4 seconds per photo while playing).
+    Effect::new(move |_| {
+        let playing = slideshow.get() && has_viewer.get();
+        let _ = open.get();
+        if !playing {
+            return;
+        }
+        let ticket = slideshow_timer.get_untracked().wrapping_add(1);
+        slideshow_timer.set(ticket);
+        spawn_local(async move {
+            crate::sleep(4000).await;
+            if slideshow_timer.try_get_untracked() != Some(ticket)
+                || slideshow.try_get_untracked() != Some(true)
+            {
+                return;
+            }
+            let Some(idx) = current_index.try_get_untracked().flatten() else {
+                slideshow.try_set(false);
+                return;
+            };
+            let len = items.try_with_untracked(Vec::len).unwrap_or(0);
+            if idx + 1 < len {
+                step(1);
+            } else {
+                slideshow.try_set(false);
+            }
+        });
+    });
 
     // Keyboard navigation while the viewer is open.
     listen(&document(), "keydown", false, move |event| {
@@ -1519,6 +1893,14 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
             "Escape" => {
                 event.prevent_default();
                 close_viewer();
+            }
+            "i" | "I" => {
+                event.prevent_default();
+                desktop_info.update(|v| *v = !*v);
+            }
+            "s" | "S" => {
+                event.prevent_default();
+                slideshow.update(|v| *v = !*v);
             }
             "f" => {
                 if !in_trash && let Some(cur) = current_asset.get_untracked() {
@@ -1690,6 +2072,12 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
             }),
         ];
         if is_album {
+            if is_album_owner && let Some(album_now) = current_album.get_untracked() {
+                let id_cov = id.clone();
+                list.push(MenuAction::new("Set as album cover", "image").run(move || {
+                    set_album_cover(album_now.clone(), id_cov.clone());
+                }));
+            }
             let id_rem = id.clone();
             list.push(
                 MenuAction::new("Remove from album", "close")
@@ -1753,32 +2141,81 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
         if ZOOM_STEPS.contains(&z) { z } else { 5 }
     });
 
+    #[derive(Clone, PartialEq)]
+    struct DayHeading {
+        key: String,
+        label: String,
+        ids: Vec<String>,
+    }
+
     let grid_rows = Memo::new(move |_| {
         let in_trash = view.get() == View::Trash;
-        let mut last_month = String::new();
+        let is_largest = sort.get() == "largest" || view.get() == View::Large;
         items.with(|list| {
+            // Collect group IDs per heading first so each day header knows all its tile IDs.
+            let group_label_for = |item: &PhotoAsset| -> String {
+                if is_largest {
+                    return "Largest files".to_owned();
+                }
+                let ts = if in_trash {
+                    item.trashed_at.unwrap_or(item.taken_at)
+                } else {
+                    item.taken_at
+                };
+                if in_trash {
+                    format!("Deleted {}", month_label(ts))
+                } else {
+                    day_label(ts)
+                }
+            };
+            let mut group_ids: Vec<(String, Vec<String>)> = Vec::new();
+            for item in list {
+                let lbl = group_label_for(item);
+                if let Some(last) = group_ids.last_mut()
+                    && last.0 == lbl
+                {
+                    last.1.push(item.id.clone());
+                } else {
+                    group_ids.push((lbl, vec![item.id.clone()]));
+                }
+            }
+            let mut group_idx = 0usize;
+            let mut seen_in_group = 0usize;
             list.iter()
                 .map(|item| {
-                    let ts = if in_trash {
-                        item.trashed_at.unwrap_or(item.taken_at)
-                    } else {
-                        item.taken_at
-                    };
-                    let month = month_label(ts);
-                    let heading = if month != last_month {
-                        last_month = month.clone();
-                        Some(if in_trash {
-                            format!("Deleted {month}")
-                        } else {
-                            month
+                    let heading = if seen_in_group == 0 {
+                        let (lbl, ids) = &group_ids[group_idx];
+                        Some(DayHeading {
+                            key: format!("g-{group_idx}"),
+                            label: lbl.clone(),
+                            ids: ids.clone(),
                         })
                     } else {
                         None
                     };
+                    seen_in_group += 1;
+                    if seen_in_group >= group_ids[group_idx].1.len() {
+                        group_idx += 1;
+                        seen_in_group = 0;
+                    }
                     (heading, item.clone())
                 })
                 .collect::<Vec<_>>()
         })
+    });
+
+    let scrubber_ticks = Memo::new(move |_| {
+        let rows = grid_rows.get();
+        let mut ticks: Vec<(String, String)> = Vec::new();
+        for (heading, item) in rows {
+            if let Some(h) = heading {
+                let m = scrubber_month_label(item.taken_at);
+                if ticks.last().is_none_or(|(prev, _)| prev != &m) {
+                    ticks.push((m, h.key));
+                }
+            }
+        }
+        ticks
     });
 
     let has_immich =
@@ -1834,6 +2271,8 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
             node_ref=shell_ref
             class="app-shell pim-shell photos-shell"
             class:has-pim-details=move || has_viewer.get()
+            class:is-viewing=move || has_viewer.get()
+            class:is-inspector-hidden=move || has_viewer.get() && !desktop_info.get()
             class:is-info=move || has_viewer.get() && info.get()
         >
             <WorkspaceHeader
@@ -1945,6 +2384,17 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                             <span class="photos-spinner" aria-hidden="true"></span>"Finding photos in Files\u{2026}"
                         </p>
                     })}
+                    {move || overview.with(|o| {
+                        let o = o.as_ref()?;
+                        (o.total_bytes > 0.0).then(|| (o.total_bytes, o.counts.library))
+                    }).map(|(bytes, count)| view! {
+                        <div class="photos-storage-card" aria-label="Library storage">
+                            <span class="photos-storage-meta">
+                                <strong>{format_bytes(bytes)}</strong>
+                                <small>{format_number(count)}" items"</small>
+                            </span>
+                        </div>
+                    })}
                     <Show when=move || has_immich.get()>
                         <button
                             type="button"
@@ -1974,6 +2424,9 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                         enum MainPane {
                             Duplicates,
                             Shared,
+                            Albums,
+                            Explore,
+                            Folders,
                             Viewer,
                             Missing,
                             Grid,
@@ -1984,6 +2437,12 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                 MainPane::Duplicates
                             } else if cur_view == View::Shared {
                                 MainPane::Shared
+                            } else if cur_view == View::Albums {
+                                MainPane::Albums
+                            } else if cur_view == View::Explore {
+                                MainPane::Explore
+                            } else if cur_view == View::Folders {
+                                MainPane::Folders
                             } else if has_viewer.get() {
                                 MainPane::Viewer
                             } else if open.with(Option::is_some) && state.get() == ListState::Ready {
@@ -1994,6 +2453,38 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                         });
                         move || {
                             match main_pane.get() {
+                                MainPane::Albums => {
+                                    return view! {
+                                        <AlbumsHub
+                                            overview=overview.into()
+                                            on_open_album=Callback::new(move |id| choose(View::Album(id)))
+                                            on_new_album=Callback::new(move |_| {
+                                                album_dialog.set(Some(AlbumDialogState { album: None, ids: None }));
+                                            })
+                                            album_actions=Callback::new(move |a: PhotoAlbum| album_actions(a))
+                                        />
+                                    }.into_any();
+                                }
+                                MainPane::Explore => {
+                                    return view! {
+                                        <ExploreView
+                                            on_open_recent=Callback::new(move |_| choose(View::Recent))
+                                            on_open_large=Callback::new(move |_| choose(View::Large))
+                                            on_open_unassigned=Callback::new(move |_| choose(View::Unassigned))
+                                            on_open_folders=Callback::new(move |_| choose(View::Folders))
+                                            on_open_camera=Callback::new(move |cam| choose(View::Camera(cam)))
+                                            on_open_place=Callback::new(move |(key, lbl)| choose(View::Place(key, lbl)))
+                                            on_open_folder=Callback::new(move |(id, path)| choose(View::FolderId(id, path)))
+                                        />
+                                    }.into_any();
+                                }
+                                MainPane::Folders => {
+                                    return view! {
+                                        <FoldersView
+                                            on_open_folder=Callback::new(move |(id, path)| choose(View::FolderId(id, path)))
+                                        />
+                                    }.into_any();
+                                }
                                 MainPane::Duplicates => {
                                     let sess = session.get_value();
                                     return view! {
@@ -2112,6 +2603,20 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                                 });
                                             })
                                             on_info=Callback::new(move |_| open_info())
+                                            on_toggle_inspector=Callback::new(move |_| desktop_info.update(|v| *v = !*v))
+                                            inspector_open=desktop_info.into()
+                                            slideshow=slideshow
+                                            on_share_asset=Callback::new(move |id: String| link_for.set(Some(vec![id])))
+                                            album_menu=Callback::new(move |id: String| album_menu_actions(vec![id]))
+                                            on_edited=Callback::new(move |new_id: String| {
+                                                refresh();
+                                                open.set(Some(new_id));
+                                                show_notice(PhotosNotice {
+                                                    message: "Saved edited copy".to_owned(),
+                                                    undo: None,
+                                                });
+                                            })
+                                            on_error=Callback::new(move |msg: String| fail(msg))
                                             on_close=Callback::new(move |_| close_viewer())
                                             on_step=Callback::new(move |d| step(d))
                                             on_open=Callback::new(move |id| open.set(Some(id)))
@@ -2142,13 +2647,14 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                     .into_any()
                                 }
                                 MainPane::Grid => {
-                        // Grid header + grid view.
+                        // Grid header + filter bar + album hero + memories + day-grouped grid + scrubber.
                         view! {
                             {move || {
                                 let ids: Vec<String> = selected.with(|s| s.iter().cloned().collect());
-                                let in_trash = view.get() == View::Trash;
-                                let in_locked = view.get() == View::Locked;
-                                let is_album = matches!(view.get(), View::Album(_));
+                                let cur_view = view.get();
+                                let in_trash = cur_view == View::Trash;
+                                let in_locked = cur_view == View::Locked;
+                                let is_album = matches!(cur_view, View::Album(_));
                                 let is_album_owner = album_owner.get();
                                 if !ids.is_empty() {
                                     let count = ids.len();
@@ -2158,7 +2664,7 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                     let all_fav = items.with(|list| {
                                         ids.iter().all(|id| list.iter().find(|i| &i.id == id).is_some_and(|i| i.favorite))
                                     });
-                                    let is_archive = view.get() == View::Archive;
+                                    let is_archive = cur_view == View::Archive;
                                     let tools = if in_trash {
                                         let ids_res = ids.clone();
                                         let ids_del = ids;
@@ -2197,6 +2703,7 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                         let ids_fav = ids.clone();
                                         let ids_menu = ids.clone();
                                         let ids_rem = ids.clone();
+                                        let ids_zip = ids.clone();
                                         let ids_link = ids.clone();
                                         let ids_stack = ids.clone();
                                         let ids_arch = ids.clone();
@@ -2235,6 +2742,15 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                                     <Icon name="close"/>
                                                 </button>
                                             })}
+                                            <button
+                                                type="button"
+                                                class="icon-button"
+                                                aria-label="Download ZIP"
+                                                title="Download selected as ZIP"
+                                                on:click=move |_| download_zip(ids_zip.clone(), "dar-photos.zip".to_owned())
+                                            >
+                                                <Icon name="download"/>
+                                            </button>
                                             <button
                                                 type="button"
                                                 class="icon-button"
@@ -2290,7 +2806,10 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                                 type="button"
                                                 class="icon-button"
                                                 aria-label="Clear selection"
-                                                on:click=move |_| selected.set(HashSet::new())
+                                                on:click=move |_| {
+                                                    selected.set(HashSet::new());
+                                                    mobile_select.set(false);
+                                                }
                                             >
                                                 <Icon name="close"/>
                                             </button>
@@ -2300,15 +2819,40 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                         </div>
                                     }.into_any()
                                 } else {
-                                    let count_val = match view.get() {
-                                        View::Album(_) => current_album.with(|a| a.as_ref().map(|a| a.count)),
-                                        View::Locked | View::Duplicates => None,
-                                        v => overview.with(|o| o.as_ref().and_then(|o| o.counts.get(v.as_type_str()))),
+                                    let count_val = if filter.get() != "all" {
+                                        None
+                                    } else {
+                                        match &cur_view {
+                                            View::Album(_) => current_album.with(|a| a.as_ref().map(|a| a.count)),
+                                            View::Locked | View::Duplicates => None,
+                                            v => overview.with(|o| o.as_ref().and_then(|o| o.counts.get(v.as_type_str()))),
+                                        }
                                     };
                                     let shown_count = count_val.unwrap_or_else(|| items.with(Vec::len) as u64);
                                     let album_now = current_album.get();
+                                    let show_back = cur_view.is_sub_collection();
+                                    let back_target = match &cur_view {
+                                        View::FolderId(_, _) => View::Folders,
+                                        View::Memory(_, _, _) => View::Folder,
+                                        _ => View::Explore,
+                                    };
+                                    let back_label = match &cur_view {
+                                        View::FolderId(_, _) => "Back to Folders",
+                                        View::Memory(_, _, _) => "Back to Photos",
+                                        _ => "Back to Explore",
+                                    };
                                     view! {
                                         <div class="photos-list-heading">
+                                            {show_back.then(|| view! {
+                                                <button
+                                                    type="button"
+                                                    class="icon-button"
+                                                    aria-label=back_label
+                                                    on:click=move |_| choose(back_target.clone())
+                                                >
+                                                    <Icon name="back"/>
+                                                </button>
+                                            })}
                                             <h1>{move || title.get()}</h1>
                                             {(state.get() == ListState::Ready && !locked_closed.get()).then(|| view! {
                                                 <span class="photos-heading-count">{format_number(shown_count)}</span>
@@ -2343,6 +2887,40 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                                         <Icon name="lock"/>"Lock"
                                                     </button>
                                                 })}
+                                                {(!locked_closed.get() && !items.with(Vec::is_empty)).then(|| view! {
+                                                    <button
+                                                        type="button"
+                                                        class="text-button photos-mobile-select-btn"
+                                                        aria-pressed=move || mobile_select.get().to_string()
+                                                        on:click=move |_| mobile_select.update(|v| *v = !*v)
+                                                    >
+                                                        {move || if mobile_select.get() { "Done" } else { "Select" }}
+                                                    </button>
+                                                })}
+                                                <div class="photos-layout-toggle" role="group" aria-label="Grid layout">
+                                                    <button
+                                                        type="button"
+                                                        class="icon-button"
+                                                        class:is-active=move || layout.get() == "justified"
+                                                        aria-label="Justified layout"
+                                                        aria-pressed=move || (layout.get() == "justified").to_string()
+                                                        title="Justified aspect-ratio rows"
+                                                        on:click=move |_| layout.set("justified")
+                                                    >
+                                                        <Icon name="justified"/>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="icon-button"
+                                                        class:is-active=move || layout.get() == "square"
+                                                        aria-label="Square grid"
+                                                        aria-pressed=move || (layout.get() == "square").to_string()
+                                                        title="Square grid"
+                                                        on:click=move |_| layout.set("square")
+                                                    >
+                                                        <Icon name="grid"/>
+                                                    </button>
+                                                </div>
                                                 <label class="photos-zoom">
                                                     <Icon name="grid"/>
                                                     <span class="sr-only">"Columns"</span>
@@ -2365,15 +2943,6 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                                         }
                                                     />
                                                 </label>
-                                                {album_now.clone().filter(|_| is_album_owner).map(|a| view! {
-                                                    <button
-                                                        type="button"
-                                                        class="secondary-button photos-share-button"
-                                                        on:click=move |_| sharing.set(Some(a.clone()))
-                                                    >
-                                                        <Icon name="share"/>"Share"
-                                                    </button>
-                                                })}
                                                 {album_now.map(|a| {
                                                     let label = format!("Actions for {}", a.name);
                                                     view! {
@@ -2388,6 +2957,70 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                 }
                             }}
 
+                            {move || {
+                                let cur_view = view.get();
+                                if !cur_view.supports_filters() || locked_closed.get() || !selected.with(HashSet::is_empty) {
+                                    return None;
+                                }
+                                let is_album = matches!(cur_view, View::Album(_));
+                                let chips: Vec<(&'static str, &'static str)> = if cur_view == View::Videos {
+                                    vec![("all", "All"), ("favorites", "Starred")]
+                                } else if is_album {
+                                    vec![("all", "All"), ("images", "Stills"), ("videos", "Clips"), ("favorites", "Starred")]
+                                } else {
+                                    vec![
+                                        ("all", "All"),
+                                        ("images", "Stills"),
+                                        ("videos", "Clips"),
+                                        ("live", "Live"),
+                                        ("raw", "RAW"),
+                                        ("favorites", "Starred"),
+                                        ("unassigned", "Unfiled"),
+                                    ]
+                                };
+                                Some(view! {
+                                    <div class="photos-subbar" role="region" aria-label="Filter and sort">
+                                        <div class="photos-filter-chips" role="group" aria-label="Filter items">
+                                            {chips.into_iter().map(|(val, lbl)| {
+                                                view! {
+                                                    <button
+                                                        type="button"
+                                                        class="photos-filter-chip"
+                                                        class:is-active=move || filter.get() == val
+                                                        aria-pressed=move || (filter.get() == val).to_string()
+                                                        on:click=move |_| filter.set(val)
+                                                    >
+                                                        {lbl}
+                                                    </button>
+                                                }
+                                            }).collect_view()}
+                                        </div>
+                                        <div class="photos-sort-wrap">
+                                            <Icon name="sort"/>
+                                            <label class="sr-only" for="photos-grid-sort">"Sort photos"</label>
+                                            <select
+                                                id="photos-grid-sort"
+                                                class="photos-sort-select"
+                                                prop:value=move || sort.get()
+                                                on:change=move |e| {
+                                                    let v = event_target_value(&e);
+                                                    sort.set(match v.as_str() {
+                                                        "oldest" => "oldest",
+                                                        "largest" => "largest",
+                                                        _ => "newest",
+                                                    });
+                                                }
+                                            >
+                                                <option value="newest">"Newest first"</option>
+                                                <option value="oldest">"Oldest first"</option>
+                                                <option value="largest">"Largest first"</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                })
+                            }}
+
+                            <div class="photos-grid-frame">
                             <div
                                 node_ref=grid
                                 class="photos-grid-scroll"
@@ -2417,6 +3050,164 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                     upload_files(files);
                                 }
                             >
+                                {move || {
+                                    let a = current_album.get()?;
+                                    let can_add = a.role == "owner" || a.role == "editor";
+                                    let is_owner = a.role == "owner";
+                                    let span = album_date_span(&a);
+                                    let desc_draft = RwSignal::new(a.description.clone());
+                                    let a_desc = a.clone();
+                                    let a_add = a.clone();
+                                    let a_share = a.clone();
+                                    let a_zip_name = format!("{}.zip", a.name.replace('/', "-"));
+                                    let has_items = items.with(|l| !l.is_empty());
+                                    Some(view! {
+                                        <section class="photos-album-hero" aria-label="Album overview">
+                                            {(!a.cover_id.is_empty()).then(|| view! {
+                                                <img class="photos-album-hero-bg" src=thumb_url(&a.cover_id, "m") alt="" aria-hidden="true"/>
+                                            })}
+                                            <div class="photos-album-hero-scrim">
+                                                <div class="photos-album-hero-copy">
+                                                    <div class="photos-album-hero-meta">
+                                                        {(!span.is_empty()).then(|| view! { <span>{span}</span> })}
+                                                        <span>{format_number(a.count)}" item"{if a.count == 1 { "" } else { "s" }}</span>
+                                                        {(a.shared || a.owner.is_some()).then(|| view! {
+                                                            <span class="photos-album-hero-pill">
+                                                                <Icon name="share"/>
+                                                                {if let Some(o) = &a.owner {
+                                                                    format!("Shared by {}", o.name)
+                                                                } else if a.member_count > 0 {
+                                                                    format!("Shared with {}", a.member_count)
+                                                                } else {
+                                                                    "Shared".to_owned()
+                                                                }}
+                                                            </span>
+                                                        })}
+                                                    </div>
+                                                    {if is_owner {
+                                                        view! {
+                                                            <input
+                                                                type="text"
+                                                                class="photos-album-hero-desc-input"
+                                                                placeholder="Add a description for this album\u{2026}"
+                                                                aria-label="Album description"
+                                                                maxlength="2000"
+                                                                prop:value=move || desc_draft.get()
+                                                                on:input=move |e| desc_draft.set(event_target_value(&e))
+                                                                on:blur=move |_| save_album_description(a_desc.clone(), desc_draft.get_untracked())
+                                                            />
+                                                        }.into_any()
+                                                    } else if !a.description.is_empty() {
+                                                        view! { <p class="photos-album-hero-desc">{a.description.clone()}</p> }.into_any()
+                                                    } else {
+                                                        view! { <span></span> }.into_any()
+                                                    }}
+                                                </div>
+                                                <div class="photos-album-hero-actions">
+                                                    {can_add.then(|| view! {
+                                                        <button
+                                                            type="button"
+                                                            class="primary-button"
+                                                            on:click=move |_| picker_album.set(Some(a_add.clone()))
+                                                        >
+                                                            <Icon name="plus"/>"Add photos"
+                                                        </button>
+                                                    })}
+                                                    {has_items.then(|| view! {
+                                                        <button
+                                                            type="button"
+                                                            class="secondary-button"
+                                                            on:click=move |_| {
+                                                                if let Some(first) = items.with_untracked(|l| l.first().map(|x| x.id.clone())) {
+                                                                    open.set(Some(first));
+                                                                    slideshow.set(true);
+                                                                }
+                                                            }
+                                                        >
+                                                            <Icon name="play"/>"Slideshow"
+                                                        </button>
+                                                    })}
+                                                    {(has_items && is_owner).then(|| {
+                                                        let zip_name = a_zip_name.clone();
+                                                        view! {
+                                                            <button
+                                                                type="button"
+                                                                class="secondary-button"
+                                                                on:click=move |_| {
+                                                                    let ids: Vec<String> = items.with_untracked(|l| l.iter().filter(|x| !has_owner(x)).map(|x| x.id.clone()).collect());
+                                                                    download_zip(ids, zip_name.clone());
+                                                                }
+                                                            >
+                                                                <Icon name="download"/>"Download ZIP"
+                                                            </button>
+                                                        }
+                                                    })}
+                                                    {is_owner.then(|| view! {
+                                                        <button
+                                                            type="button"
+                                                            class="secondary-button"
+                                                            on:click=move |_| sharing.set(Some(a_share.clone()))
+                                                        >
+                                                            <Icon name="share"/>"Share"
+                                                        </button>
+                                                    })}
+                                                </div>
+                                            </div>
+                                        </section>
+                                    })
+                                }}
+
+                                {move || {
+                                    let cur_view = view.get();
+                                    if !matches!(cur_view, View::Folder | View::Library) || filter.get() != "all" {
+                                        return None;
+                                    }
+                                    let mems = overview.with(|o| o.as_ref().map(|o| o.memories.clone()).unwrap_or_default());
+                                    if mems.is_empty() {
+                                        return None;
+                                    }
+                                    let hidden = hide_memories.get();
+                                    Some(view! {
+                                        <section class="photos-memories" aria-label="On this day">
+                                            <div class="photos-memories-head">
+                                                <strong>"On this day"</strong>
+                                                <button
+                                                    type="button"
+                                                    class="text-button"
+                                                    on:click=move |_| hide_memories.update(|v| *v = !*v)
+                                                >
+                                                    {if hidden { "Show" } else { "Hide" }}
+                                                </button>
+                                            </div>
+                                            {(!hidden).then(|| view! {
+                                                <div class="photos-memories-strip">
+                                                    {mems.into_iter().map(|m| {
+                                                        let label = if m.years_ago == 1 {
+                                                            "1 year ago".to_owned()
+                                                        } else {
+                                                            format!("{} years ago", m.years_ago)
+                                                        };
+                                                        let sub = format!("{} \u{00b7} {} photo{}", m.year, format_number(m.count), if m.count == 1 { "" } else { "s" });
+                                                        view! {
+                                                            <button
+                                                                type="button"
+                                                                class="photos-memory-card"
+                                                                on:click=move |_| choose(View::Memory(m.year, m.month, m.day))
+                                                            >
+                                                                <img src=thumb_url(&m.cover_id, "s") alt="" loading="lazy"/>
+                                                                <span class="photos-memory-scrim">
+                                                                    <strong>{label}</strong>
+                                                                    <small>{sub}</small>
+                                                                </span>
+                                                            </button>
+                                                        }
+                                                    }).collect_view()}
+                                                </div>
+                                            })}
+                                        </section>
+                                    })
+                                }}
+
                                 {
                                     let has_grid_error = Memo::new(move |_| !overview_error.with(String::is_empty) || state.get() == ListState::Error);
                                     move || has_grid_error.get().then(|| view! {
@@ -2458,6 +3249,16 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                             <p class="photos-empty" role="status">"Loading photos\u{2026}"</p>
                                         })}
                                         {move || grid_ready_empty.get().then(|| {
+                                            if filter.get() != "all" {
+                                                return view! {
+                                                    <div class="photos-empty">
+                                                        <Icon name="image"/>
+                                                        <h2>"No matching photos"</h2>
+                                                        <p>"Try clearing the active filter to see everything in this view."</p>
+                                                        <button type="button" class="secondary-button" on:click=move |_| filter.set("all")>"Show all"</button>
+                                                    </div>
+                                                };
+                                            }
                                             let is_indexing = overview.with(|o| o.as_ref().is_some_and(|o| o.indexing));
                                             let upload_folder = overview
                                                 .with(|o| o.as_ref().map(|o| o.upload_folder.clone()).filter(|s| !s.is_empty()))
@@ -2502,16 +3303,29 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                                     <h2>"Nothing locked yet"</h2>
                                                     <p>"Select photos and choose Move to Locked folder. They move to Files \u{203a} Locked folder and disappear from the library, albums and search."</p>
                                                 }.into_any(),
-                                                _ => view! {
+                                                View::Large => view! {
+                                                    <h2>"No large files"</h2>
+                                                    <p>"Photos and videos over 5 MB appear here."</p>
+                                                }.into_any(),
+                                                View::Unassigned => view! {
+                                                    <h2>"Everything is in an album"</h2>
+                                                    <p>"Photos that are not in any album appear here."</p>
+                                                }.into_any(),
+                                                View::Album(_) => view! {
                                                     <h2>"This album is empty"</h2>
-                                                    <p>"Select photos in the library and choose Add to album."</p>
+                                                    <p>"Use Add photos above, or select photos in your library and choose Add to album."</p>
+                                                }.into_any(),
+                                                _ => view! {
+                                                    <h2>"No photos in this collection"</h2>
+                                                    <p>"Items matching this view appear here."</p>
                                                 }.into_any(),
                                             };
                                             view! { <div class="photos-empty">{body}</div> }
                                         })}
                                         <div
                                             class="photos-grid"
-                                            class:is-selecting=move || selected.with(|s| !s.is_empty() && items.with(|list| list.iter().any(|i| s.contains(&i.id))))
+                                            class:is-justified=move || layout.get() == "justified"
+                                            class:is-selecting=move || mobile_select.get() || selected.with(|s| !s.is_empty() && items.with(|list| list.iter().any(|i| s.contains(&i.id))))
                                             role="list"
                                             aria-label=move || {
                                                 if view.get() == View::Folder {
@@ -2524,15 +3338,40 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                         >
                                             <For
                                                 each=move || grid_rows.get()
-                                                key=|(heading, item)| (heading.clone(), item.id.clone(), item.revision, item.favorite, item.stack.clone())
+                                                key=|(heading, item)| (heading.as_ref().map(|h| h.key.clone()), item.id.clone(), item.revision, item.favorite, item.stack.clone())
                                                 children=move |(heading, item)| {
+                                                    let can_fav_tile = view.get_untracked() != View::Trash && !has_owner(&item);
                                                     view! {
-                                                        {heading.map(|h| view! { <h2 class="photos-month">{h}</h2> })}
+                                                        {heading.map(|h| {
+                                                            let ids_check = h.ids.clone();
+                                                            let ids_click = h.ids.clone();
+                                                            let day_count = h.ids.len();
+                                                            let btn_label = format!("Select all photos from {}", h.label);
+                                                            view! {
+                                                                <div class="photos-day-head" data-day=h.key>
+                                                                    <button
+                                                                        type="button"
+                                                                        class="photos-day-check"
+                                                                        class:is-all=move || selected.with(|s| !ids_check.is_empty() && ids_check.iter().all(|id| s.contains(id)))
+                                                                        aria-label=btn_label
+                                                                        on:click=move |_| toggle_day_selected(ids_click.clone())
+                                                                    >
+                                                                        <Icon name="check"/>
+                                                                    </button>
+                                                                    <h2 class="photos-month">{h.label}</h2>
+                                                                    <span class="photos-day-count">{day_count}</span>
+                                                                </div>
+                                                            }
+                                                        })}
                                                         <PhotoTile
                                                             item=item
                                                             selected=selected
+                                                            can_fav=can_fav_tile
                                                             on_open=Callback::new(move |id| open.set(Some(id)))
-                                                            on_toggle=Callback::new(move |id| toggle_selected(id))
+                                                            on_toggle=Callback::new(move |(id, shift)| toggle_selected(id, shift))
+                                                            on_favorite=Callback::new(move |(id, next_fav)| {
+                                                                update_assets(vec![id], Some(next_fav), None, None, false);
+                                                            })
                                                         />
                                                     }
                                                 }
@@ -2545,6 +3384,40 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                         })}
                                     }.into_any()
                                 }}
+                            </div>
+                            {move || {
+                                let ticks = scrubber_ticks.get();
+                                if ticks.len() < 2 || locked_closed.get() {
+                                    return None;
+                                }
+                                Some(view! {
+                                    <nav class="photos-scrubber" aria-label="Timeline jump">
+                                        {ticks.into_iter().map(|(label, day_key)| {
+                                            let tip = format!("Jump to {label}");
+                                            let title_str = label.clone();
+                                            view! {
+                                                <button
+                                                    type="button"
+                                                    class="photos-scrubber-tick"
+                                                    aria-label=tip
+                                                    title=title_str
+                                                    on:click=move |_| {
+                                                        let sel = format!("[data-day=\"{}\"]", css_escape(&day_key));
+                                                        if let Some(el) = grid.get_untracked().and_then(|g| g.query_selector(&sel).ok().flatten()) {
+                                                            let opts = web_sys::ScrollIntoViewOptions::new();
+                                                            opts.set_behavior(web_sys::ScrollBehavior::Smooth);
+                                                            opts.set_block(web_sys::ScrollLogicalPosition::Start);
+                                                            el.scroll_into_view_with_scroll_into_view_options(&opts);
+                                                        }
+                                                    }
+                                                >
+                                                    <span>{label}</span>
+                                                </button>
+                                            }
+                                        }).collect_view()}
+                                    </nav>
+                                })
+                            }}
                             </div>
                         }.into_any()
                                 }
@@ -2568,12 +3441,15 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                     id=Signal::from(detail_id)
                                     session=sess
                                     read_only=read_only
+                                    album_menu=Callback::new(move |id: String| album_menu_actions(vec![id]))
+                                    on_share=Callback::new(move |id: String| link_for.set(Some(vec![id])))
                                     on_back=Callback::new(move |_| close_info())
                                     on_changed=Callback::new(move |rev: u64| {
                                         if let Some(id) = shown_asset.with_untracked(|s| s.as_ref().map(|a| a.id.clone())) {
                                             patch_local(vec![id], AssetPatch { revision: Some(rev), ..Default::default() });
                                         }
                                     })
+                                    on_meta_changed=Callback::new(move |_| refresh())
                                     on_album=Callback::new(move |id: String| choose(View::Album(id)))
                                     on_error=Callback::new(move |msg: String| fail(msg))
                                 />
@@ -2582,6 +3458,30 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                     </aside>
                 </Show>
             </div>
+
+            {move || picker_album.get().map(|album| {
+                let sess = session.get_value();
+                let existing: HashSet<String> = items.with_untracked(|l| l.iter().map(|i| i.id.clone()).collect());
+                let name = album.name.clone();
+                view! {
+                    <AlbumPickerDialog
+                        album=album
+                        existing_ids=existing
+                        session=sess
+                        on_close=Callback::new(move |_| picker_album.set(None))
+                        on_added=Callback::new(move |added: u64| {
+                            picker_album.set(None);
+                            refresh();
+                            let msg = if added > 0 {
+                                format!("Added {added} to {name}")
+                            } else {
+                                format!("Already in {name}")
+                            };
+                            show_notice(PhotosNotice { message: msg, undo: None });
+                        })
+                    />
+                }
+            })}
 
             {move || (!transfers.with(Vec::is_empty)).then(|| view! {
                 <section class="transfer-panel photos-transfers" aria-label="Uploads">
@@ -2787,19 +3687,35 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
     }
 }
 
-/// One grid tile.
+/// One grid tile. Sets `--ar` via CSSOM so justified rows preserve natural photo aspect ratios
+/// without inline style attributes (CSP `style-src 'self'`).
 #[component]
 fn PhotoTile(
     item: PhotoAsset,
     selected: RwSignal<HashSet<String>>,
+    can_fav: bool,
     on_open: Callback<String>,
-    on_toggle: Callback<String>,
+    on_toggle: Callback<(String, bool)>,
+    on_favorite: Callback<(String, bool)>,
 ) -> impl IntoView {
+    let tile_ref = NodeRef::<html::Div>::new();
+    let ar = if item.width > 0.0 && item.height > 0.0 {
+        (item.width / item.height).clamp(0.6, 2.35)
+    } else {
+        1.333
+    };
+    Effect::new(move |_| {
+        if let Some(el) = tile_ref.get() {
+            let _ = web_sys::HtmlElement::style(&el).set_property("--ar", &format!("{ar:.4}"));
+        }
+    });
+
     let id = item.id.clone();
     let id_sel = item.id.clone();
     let id_check = item.id.clone();
     let id_click = item.id.clone();
     let id_toggle = item.id.clone();
+    let id_fav = item.id.clone();
 
     let kind_label = if item.kind == "video" {
         "Video"
@@ -2819,6 +3735,11 @@ fn PhotoTile(
     };
     let open_label = format!("{kind_label} {}, {taken}{fav_part}{stack_part}", item.name);
     let check_label = format!("Select {}", item.name);
+    let fav_btn_label = if item.favorite {
+        format!("Remove {} from Favorites", item.name)
+    } else {
+        format!("Add {} to Favorites", item.name)
+    };
     let is_video = item.kind == "video";
     let dur = if item.duration > 0.0 {
         format_duration(item.duration)
@@ -2831,9 +3752,11 @@ fn PhotoTile(
 
     view! {
         <div
+            node_ref=tile_ref
             role="listitem"
             data-asset=id
             class="photos-tile"
+            class:has-stack=stack_count.is_some()
             class:is-selected=move || selected.with(|s| s.contains(&id_sel))
         >
             <button
@@ -2843,7 +3766,7 @@ fn PhotoTile(
                 on:click=move |e: web_sys::MouseEvent| {
                     let selecting = selected.with_untracked(|s| !s.is_empty());
                     if selecting || e.shift_key() {
-                        { on_toggle.try_run(id_click.clone()); };
+                        { on_toggle.try_run((id_click.clone(), e.shift_key())); };
                     } else {
                         { on_open.try_run(id_click.clone()); };
                     }
@@ -2859,16 +3782,34 @@ fn PhotoTile(
                 {stack_count.map(|c| view! {
                     <span class="photos-badge photos-stack-badge"><Icon name="stack"/>{c}</span>
                 })}
-                {is_fav.then(|| view! {
+                {(!can_fav && is_fav).then(|| view! {
                     <span class="photos-fav"><Icon name="star"/></span>
                 })}
             </button>
+            {can_fav.then(|| view! {
+                <button
+                    type="button"
+                    class="photos-tile-fav"
+                    class:is-on=is_fav
+                    aria-label=fav_btn_label
+                    aria-pressed=is_fav.to_string()
+                    on:click=move |e: web_sys::MouseEvent| {
+                        e.stop_propagation();
+                        on_favorite.try_run((id_fav.clone(), !is_fav));
+                    }
+                >
+                    <Icon name="star"/>
+                </button>
+            })}
             <input
                 type="checkbox"
                 class="photos-check"
                 aria-label=check_label
                 prop:checked=move || selected.with(|s| s.contains(&id_check))
-                on:change=move |_| { on_toggle.try_run(id_toggle.clone()); }
+                on:click=move |e: web_sys::MouseEvent| {
+                    e.stop_propagation();
+                    on_toggle.try_run((id_toggle.clone(), e.shift_key()));
+                }
             />
         </div>
     }
@@ -2921,6 +3862,13 @@ fn Viewer(
     session: BrowserSession,
     trash: Signal<bool>,
     more: Callback<PhotoAsset, Vec<MenuAction>>,
+    album_menu: Callback<String, Vec<MenuAction>>,
+    inspector_open: Signal<bool>,
+    slideshow: RwSignal<bool>,
+    on_toggle_inspector: Callback<()>,
+    on_share_asset: Callback<String>,
+    on_edited: Callback<String>,
+    on_error: Callback<String>,
     on_member: Callback<Option<PhotoAsset>>,
     on_unstack: Callback<PhotoStack>,
     on_cover: Callback<PhotoStack>,
@@ -2932,14 +3880,86 @@ fn Viewer(
 ) -> impl IntoView {
     let heading = NodeRef::<html::H1>::new();
     let strip = NodeRef::<html::Div>::new();
+    let media_wrap = NodeRef::<html::Div>::new();
     let stack: RwSignal<Option<PhotoStack>> = RwSignal::new(None);
     let stack_seq = RwSignal::new(0u32);
+    let zoom_scale = RwSignal::new(1.0_f64);
+    let editing = RwSignal::new(false);
+    let rotation = RwSignal::new(0i32);
+    let filter_preset = RwSignal::new("none");
+    let saving_edit = RwSignal::new(false);
     let session = StoredValue::new(session);
+
+    let css_filter_for = |preset: &str| -> &'static str {
+        match preset {
+            "vivid" => "saturate(1.32) contrast(1.08)",
+            "warm" => "sepia(0.24) saturate(1.18) brightness(1.03)",
+            "mono" => "grayscale(1) contrast(1.12)",
+            _ => "none",
+        }
+    };
 
     // Focus heading when the viewer mounts.
     Effect::new(move |_| {
         if let Some(el) = heading.get() {
             let _ = el.focus();
+        }
+    });
+
+    // Reset zoom & quick edit state whenever the displayed photo changes.
+    Effect::new(move |_| {
+        let _ = shown.with(|s| s.id.clone());
+        zoom_scale.set(1.0);
+        editing.set(false);
+        rotation.set(0);
+        filter_preset.set("none");
+    });
+
+    // Apply zoom, rotation and quick-edit filter preview via CSSOM custom properties (CSP safe).
+    Effect::new(move |_| {
+        let z = zoom_scale.get();
+        let rot = rotation.get();
+        let filt = css_filter_for(filter_preset.get());
+        if let Some(el) = media_wrap.get() {
+            let st = web_sys::HtmlElement::style(&el);
+            let _ = st.set_property("--stage-zoom", &format!("{z:.2}"));
+            let _ = st.set_property("--stage-rot", &format!("{rot}deg"));
+            let _ = st.set_property("--stage-filter", filt);
+        }
+    });
+
+    // Zoom keyboard shortcuts (+, -, 0).
+    listen(&document(), "keydown", false, move |event| {
+        let event: web_sys::KeyboardEvent = event.unchecked_into();
+        if event.default_prevented() || event.ctrl_key() || event.meta_key() || event.alt_key() {
+            return;
+        }
+        let in_control = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            .and_then(|t| {
+                t.closest("input,textarea,select,[contenteditable=true],dialog,.ui-menu")
+                    .ok()
+                    .flatten()
+            })
+            .is_some();
+        if in_control {
+            return;
+        }
+        match event.key().as_str() {
+            "+" | "=" => {
+                event.prevent_default();
+                zoom_scale.update(|z| *z = (*z + 0.5).min(4.0));
+            }
+            "-" | "_" => {
+                event.prevent_default();
+                zoom_scale.update(|z| *z = (*z - 0.5).max(1.0));
+            }
+            "0" => {
+                event.prevent_default();
+                zoom_scale.set(1.0);
+            }
+            _ => {}
         }
     });
 
@@ -3014,6 +4034,38 @@ fn Viewer(
         actions
     };
 
+    let can_quick_edit = Memo::new(move |_| {
+        !trash.get()
+            && shown.with(|s| {
+                s.kind != "video" && !has_owner(s) && is_browser_decodable_image(&s.media_type)
+            })
+    });
+    let is_still = Memo::new(move |_| shown.with(|s| s.kind != "video"));
+
+    let save_edit = move |_| {
+        let current = shown.get_untracked();
+        let rot = rotation.get_untracked();
+        let filt = css_filter_for(filter_preset.get_untracked());
+        if rot == 0 && filt == "none" {
+            return;
+        }
+        saving_edit.set(true);
+        let csrf = session.with_value(|s| s.csrf_token.clone());
+        spawn_local(async move {
+            match save_edited_copy(&current, rot, filt, &csrf).await {
+                Ok(new_id) => {
+                    saving_edit.try_set(false);
+                    editing.try_set(false);
+                    on_edited.try_run(new_id);
+                }
+                Err(msg) => {
+                    saving_edit.try_set(false);
+                    on_error.try_run(msg);
+                }
+            }
+        });
+    };
+
     view! {
         <section
             class="photos-viewer"
@@ -3034,26 +4086,32 @@ fn Viewer(
                     {move || format!("{} of {}", index.get() + 1, items.with(Vec::len))}
                 </span>
                 <span class="photos-spacer"></span>
-                <button
-                    type="button"
-                    class="icon-button"
-                    aria-label="Previous"
-                    title="Previous (\u{2190})"
-                    disabled=move || index.get() == 0
-                    on:click=move |_| { on_step.try_run(-1); }
-                >
-                    <Icon name="back"/>
-                </button>
-                <button
-                    type="button"
-                    class="icon-button"
-                    aria-label="Next"
-                    title="Next (\u{2192})"
-                    disabled={move || index.get() + 1 >= items.with(Vec::len)}
-                    on:click=move |_| { on_step.try_run(1); }
-                >
-                    <Icon name="chevron"/>
-                </button>
+                <Show when={move || items.with(|l| l.len() > 1)}>
+                    <button
+                        type="button"
+                        class="icon-button"
+                        class:is-active=move || slideshow.get()
+                        aria-label=move || if slideshow.get() { "Pause slideshow" } else { "Start slideshow" }
+                        aria-pressed=move || slideshow.get().to_string()
+                        title="Slideshow (s)"
+                        on:click=move |_| slideshow.update(|v| *v = !*v)
+                    >
+                        <Icon name=Signal::derive(move || if slideshow.get() { "pause" } else { "play" })/>
+                    </button>
+                </Show>
+                <Show when=move || can_quick_edit.get()>
+                    <button
+                        type="button"
+                        class="icon-button"
+                        class:is-active=move || editing.get()
+                        aria-label="Quick edit"
+                        aria-pressed=move || editing.get().to_string()
+                        title="Rotate and filter"
+                        on:click=move |_| editing.update(|v| *v = !*v)
+                    >
+                        <Icon name="sliders"/>
+                    </button>
+                </Show>
                 <Show when=move || !trash.get()>
                     <button
                         type="button"
@@ -3066,7 +4124,46 @@ fn Viewer(
                     >
                         <Icon name="star"/>
                     </button>
+                    <button
+                        type="button"
+                        class="icon-button photos-viewer-desktop-btn"
+                        aria-label="Share link"
+                        title="Create shared link"
+                        on:click=move |_| {
+                            let id = shown.with_untracked(|s| s.id.clone());
+                            on_share_asset.try_run(id);
+                        }
+                    >
+                        <Icon name="share"/>
+                    </button>
+                    <ActionMenu
+                        label="Add photo to album"
+                        class="photos-viewer-desktop-btn"
+                        actions=move |_| album_menu.run(shown.with_untracked(|s| s.id.clone()))
+                    >
+                        <Icon name="plus"/>
+                    </ActionMenu>
                 </Show>
+                <a
+                    class="icon-button photos-viewer-desktop-btn"
+                    href=move || format!("{BASE}/assets/{}/original", shown.with(|s| s.id.clone()))
+                    download
+                    aria-label="Download original"
+                    title="Download original"
+                >
+                    <Icon name="download"/>
+                </a>
+                <button
+                    type="button"
+                    class="icon-button photos-inspector-toggle"
+                    class:is-active=move || inspector_open.get()
+                    aria-label="Toggle details"
+                    aria-pressed=move || inspector_open.get().to_string()
+                    title="Toggle details (i)"
+                    on:click=move |_| { on_toggle_inspector.try_run(()); }
+                >
+                    <Icon name="panel"/>
+                </button>
                 <button
                     type="button"
                     class="icon-button photos-info-toggle"
@@ -3079,32 +4176,156 @@ fn Viewer(
                     <Icon name="more"/>
                 </ActionMenu>
             </div>
-            <div class="photos-stage">
-                {move || {
-                    let _ = stage_key.get();
-                    let s = shown.get_untracked();
-                    if s.kind == "video" {
-                        let poster = thumb_url(&s.id, "m");
-                        view! {
-                            <VideoStage
-                                asset=s
-                                session=session.get_value()
-                                controls=true
-                                poster=poster
-                            />
-                        }.into_any()
-                    } else if let Some(motion) = s.live.clone().filter(|m| !m.is_empty()) {
-                        view! {
-                            <LiveStage
-                                asset=s
-                                motion=motion
-                                session=session.get_value()
-                            />
-                        }.into_any()
-                    } else {
-                        view! { <StageImage asset=s/> }.into_any()
+
+            <div
+                class="photos-stage"
+                class:is-zoomed={move || zoom_scale.get() > 1.01}
+                on:wheel=move |e: web_sys::WheelEvent| {
+                    if !is_still.get_untracked() {
+                        return;
                     }
-                }}
+                    if e.ctrl_key() || zoom_scale.get_untracked() > 1.01 {
+                        e.prevent_default();
+                        let delta = if e.delta_y() < 0.0 { 0.25 } else { -0.25 };
+                        zoom_scale.update(|z| *z = (*z + delta).clamp(1.0, 4.0));
+                    }
+                }
+            >
+                <Show when={move || index.get() > 0}>
+                    <button
+                        type="button"
+                        class="photos-stage-nav is-prev"
+                        aria-label="Previous"
+                        title="Previous (\u{2190})"
+                        on:click=move |_| { on_step.try_run(-1); }
+                    >
+                        <Icon name="back"/>
+                    </button>
+                </Show>
+                <div
+                    node_ref=media_wrap
+                    class="photos-stage-media"
+                    on:dblclick=move |_| {
+                        if is_still.get_untracked() {
+                            zoom_scale.update(|z| *z = if *z > 1.05 { 1.0 } else { 2.0 });
+                        }
+                    }
+                >
+                    {move || {
+                        let _ = stage_key.get();
+                        let s = shown.get_untracked();
+                        if s.kind == "video" {
+                            let poster = thumb_url(&s.id, "m");
+                            view! {
+                                <VideoStage
+                                    asset=s
+                                    session=session.get_value()
+                                    controls=true
+                                    poster=poster
+                                />
+                            }.into_any()
+                        } else if let Some(motion) = s.live.clone().filter(|m| !m.is_empty()) {
+                            view! {
+                                <LiveStage
+                                    asset=s
+                                    motion=motion
+                                    session=session.get_value()
+                                />
+                            }.into_any()
+                        } else {
+                            view! { <StageImage asset=s/> }.into_any()
+                        }
+                    }}
+                </div>
+                <Show when={move || index.get() + 1 < items.with(Vec::len)}>
+                    <button
+                        type="button"
+                        class="photos-stage-nav is-next"
+                        aria-label="Next"
+                        title="Next (\u{2192})"
+                        on:click=move |_| { on_step.try_run(1); }
+                    >
+                        <Icon name="chevron"/>
+                    </button>
+                </Show>
+                <Show when={move || is_still.get() && !editing.get()}>
+                    <div class="photos-zoom-pill" role="group" aria-label="Image zoom">
+                        <button
+                            type="button"
+                            class="icon-button"
+                            aria-label="Zoom out"
+                            disabled={move || zoom_scale.get() <= 1.01}
+                            on:click=move |_| zoom_scale.update(|z| *z = (*z - 0.5).max(1.0))
+                        >
+                            <Icon name="zoomOut"/>
+                        </button>
+                        <button
+                            type="button"
+                            class="photos-zoom-readout"
+                            aria-label="Reset zoom"
+                            on:click=move |_| zoom_scale.set(1.0)
+                        >
+                            {move || {
+                                let z = zoom_scale.get();
+                                if (z - 1.0).abs() < 0.05 { "Fit".to_owned() } else { format!("{}%", (z * 100.0).round() as i32) }
+                            }}
+                        </button>
+                        <button
+                            type="button"
+                            class="icon-button"
+                            aria-label="Zoom in"
+                            disabled={move || zoom_scale.get() >= 3.99}
+                            on:click=move |_| zoom_scale.update(|z| *z = (*z + 0.5).min(4.0))
+                        >
+                            <Icon name="zoomIn"/>
+                        </button>
+                    </div>
+                </Show>
+                <Show when=move || editing.get()>
+                    <div class="photos-edit-bar" role="region" aria-label="Quick edit">
+                        <button
+                            type="button"
+                            class="secondary-button"
+                            on:click=move |_| rotation.update(|r| *r = (*r + 90) % 360)
+                        >
+                            <Icon name="rotate"/>"Rotate 90\u{00b0}"
+                        </button>
+                        <div class="photos-edit-presets" role="group" aria-label="Filter preset">
+                            {[("none", "Original"), ("vivid", "Vivid"), ("warm", "Warm"), ("mono", "Mono")].into_iter().map(|(val, lbl)| {
+                                view! {
+                                    <button
+                                        type="button"
+                                        class="photos-filter-chip"
+                                        class:is-active=move || filter_preset.get() == val
+                                        aria-pressed=move || (filter_preset.get() == val).to_string()
+                                        on:click=move |_| filter_preset.set(val)
+                                    >
+                                        {lbl}
+                                    </button>
+                                }
+                            }).collect_view()}
+                        </div>
+                        <span class="photos-spacer"></span>
+                        <button
+                            type="button"
+                            class="text-button"
+                            on:click=move |_| {
+                                rotation.set(0);
+                                filter_preset.set("none");
+                            }
+                        >
+                            "Reset"
+                        </button>
+                        <button
+                            type="button"
+                            class="primary-button"
+                            disabled=move || saving_edit.get() || (rotation.get() == 0 && filter_preset.get() == "none")
+                            on:click=save_edit
+                        >
+                            {move || if saving_edit.get() { "Saving\u{2026}" } else { "Save copy" }}
+                        </button>
+                    </div>
+                </Show>
             </div>
             {move || stack.get().filter(|s| s.items.len() > 1).map(|st| {
                 let label = format!("Stack of {}", st.items.len());
@@ -3142,31 +4363,33 @@ fn Viewer(
                     </div>
                 }
             })}
-            <div class="photos-strip" node_ref=strip aria-label="Nearby photos">
-                {move || {
-                    let idx = index.get();
-                    let list = items.get();
-                    let start = idx.saturating_sub(12);
-                    let end = (idx + 13).min(list.len());
-                    let cur_id = asset.with(|a| a.id.clone());
-                    list[start..end].iter().cloned().map(|item| {
-                        let is_cur = item.id == cur_id;
-                        let id = item.id.clone();
-                        let label = item.name.clone();
-                        view! {
-                            <button
-                                type="button"
-                                class=if is_cur { "is-current" } else { "" }
-                                aria-label=label
-                                aria-current=is_cur.then_some("true")
-                                on:click=move |_| { on_open.try_run(id.clone()); }
-                            >
-                                <Thumb asset=item size="s"/>
-                            </button>
-                        }
-                    }).collect_view()
-                }}
-            </div>
+            <Show when={move || items.with(|l| l.len() > 1)}>
+                <div class="photos-strip" node_ref=strip aria-label="Nearby photos">
+                    {move || {
+                        let idx = index.get();
+                        let list = items.get();
+                        let start = idx.saturating_sub(12);
+                        let end = (idx + 13).min(list.len());
+                        let cur_id = asset.with(|a| a.id.clone());
+                        list[start..end].iter().cloned().map(|item| {
+                            let is_cur = item.id == cur_id;
+                            let id = item.id.clone();
+                            let label = item.name.clone();
+                            view! {
+                                <button
+                                    type="button"
+                                    class=if is_cur { "is-current" } else { "" }
+                                    aria-label=label
+                                    aria-current=is_cur.then_some("true")
+                                    on:click=move |_| { on_open.try_run(id.clone()); }
+                                >
+                                    <Thumb asset=item size="s"/>
+                                </button>
+                            }
+                        }).collect_view()
+                    }}
+                </div>
+            </Show>
         </section>
     }
 }
@@ -3433,8 +4656,11 @@ fn Details(
     id: Signal<String>,
     session: BrowserSession,
     read_only: Signal<bool>,
+    album_menu: Callback<String, Vec<MenuAction>>,
+    on_share: Callback<String>,
     on_back: Callback<()>,
     on_changed: Callback<u64>,
+    on_meta_changed: Callback<()>,
     on_album: Callback<String>,
     on_error: Callback<String>,
 ) -> impl IntoView {
@@ -3443,6 +4669,9 @@ fn Details(
     let description = RwSignal::new(String::new());
     let saving = RwSignal::new("");
     let conflict = RwSignal::new(false);
+    let editing_date = RwSignal::new(false);
+    let date_draft = RwSignal::new(String::new());
+    let saving_date = RwSignal::new(false);
     let seq = RwSignal::new(0u32);
     let session = StoredValue::new(session);
 
@@ -3460,6 +4689,7 @@ fn Details(
                     description.try_set(value.description.clone());
                     detail.try_set(Some(value));
                     conflict.try_set(false);
+                    editing_date.try_set(false);
                 }
                 Err(cause) if seq.try_get_untracked() == Some(ticket) => {
                     error.try_set(error_message(&cause.message));
@@ -3473,6 +4703,7 @@ fn Details(
         let _ = id.get();
         detail.set(None);
         saving.set("");
+        editing_date.set(false);
         load();
     });
 
@@ -3539,6 +4770,48 @@ fn Details(
         });
     };
 
+    let save_date = move |event: web_sys::SubmitEvent| {
+        event.prevent_default();
+        let Some(cur) = detail.get_untracked() else {
+            return;
+        };
+        let Some(ms) = parse_datetime_local_value(&date_draft.get_untracked()) else {
+            on_error.try_run("Enter a valid date and time.".to_owned());
+            return;
+        };
+        saving_date.set(true);
+        let asset_id = cur.asset.id.clone();
+        let rev = cur.asset.revision;
+        let csrf_tok = session.with_value(|s| s.csrf_token.clone());
+        spawn_local(async move {
+            match api::send::<PhotoAsset>(
+                &format!("{BASE}/assets/{asset_id}/meta"),
+                "PUT",
+                Some(json!({ "takenAt": ms, "revision": rev })),
+                &csrf_tok,
+            )
+            .await
+            {
+                Ok(updated) => {
+                    let new_rev = updated.revision;
+                    detail.try_update(|d| {
+                        if let Some(d) = d {
+                            d.asset = updated.clone();
+                        }
+                    });
+                    editing_date.try_set(false);
+                    saving_date.try_set(false);
+                    on_changed.try_run(new_rev);
+                    on_meta_changed.try_run(());
+                }
+                Err(cause) => {
+                    saving_date.try_set(false);
+                    on_error.try_run(cause.message);
+                }
+            }
+        });
+    };
+
     move || {
         if !error.get().is_empty() {
             return view! {
@@ -3577,44 +4850,33 @@ fn Details(
             String::new()
         };
 
-        let mut settings_parts = Vec::new();
+        let mut exif_pills = Vec::new();
         if let Some(fl) = e.focal_length
             && fl > 0.0
         {
-            settings_parts.push(format!("{} mm", fl.round() as i64));
+            exif_pills.push(format!("{} mm", fl.round() as i64));
         }
         if let Some(f) = e.f_number
             && f > 0.0
         {
-            settings_parts.push(format!("\u{0192}/{f}"));
+            exif_pills.push(format!("\u{0192}/{f}"));
         }
         if let Some(exp) = e.exposure
             && exp > 0.0
         {
             if exp < 1.0 {
-                settings_parts.push(format!("1/{} s", (1.0 / exp).round() as i64));
+                exif_pills.push(format!("1/{} s", (1.0 / exp).round() as i64));
             } else {
-                settings_parts.push(format!("{exp} s"));
+                exif_pills.push(format!("{exp} s"));
             }
         }
         if let Some(iso) = e.iso
             && iso > 0.0
         {
-            settings_parts.push(format!("ISO {iso}"));
+            exif_pills.push(format!("ISO {iso}"));
         }
-        let settings_str = settings_parts.join(" \u{00b7} ");
-
-        let mut lens_and_settings = Vec::new();
-        if let Some(lens) = &e.lens
-            && !lens.is_empty()
-        {
-            lens_and_settings.push(lens.clone());
-        }
-        if !settings_str.is_empty() {
-            lens_and_settings.push(settings_str.clone());
-        }
-        let camera_sub = lens_and_settings.join(" \u{00b7} ");
-        let show_camera = !camera.is_empty() || !camera_sub.is_empty();
+        let lens_name = e.lens.clone().unwrap_or_default();
+        let show_camera = !camera.is_empty() || !lens_name.is_empty() || !exif_pills.is_empty();
 
         let video_info = if d.asset.kind == "video" {
             let mut parts = Vec::new();
@@ -3641,8 +4903,9 @@ fn Details(
         let owner_opt = d.asset.owner.clone().filter(|s| !s.is_empty());
         let is_locked = d.locked;
         let trashed_at = d.asset.trashed_at.filter(|&t| t > 0.0);
+        let taken_ms = d.asset.taken_at;
         let taken_date = local_date(
-            d.asset.taken_at,
+            taken_ms,
             &[
                 ("weekday", "long"),
                 ("year", "numeric"),
@@ -3651,7 +4914,7 @@ fn Details(
             ],
         );
         let taken_time = local_time(
-            d.asset.taken_at,
+            taken_ms,
             &[
                 ("hour", "numeric"),
                 ("minute", "2-digit"),
@@ -3675,8 +4938,8 @@ fn Details(
             "image"
         };
         let is_live = has_live(&d.asset);
-        let location = match (d.latitude, d.longitude) {
-            (Some(lat), Some(lon)) => Some(format!("{lat:.5}, {lon:.5}")),
+        let coords = match (d.latitude, d.longitude) {
+            (Some(lat), Some(lon)) => Some((lat, lon, format!("{lat:.5}, {lon:.5}"))),
             _ => None,
         };
         let show_files_href = if is_locked {
@@ -3689,7 +4952,12 @@ fn Details(
             format!("/?folder={}&file={}", d.parent_id, d.asset.id)
         };
         let show_in_files = !read_only.get() && owner_opt.is_none();
+        let can_edit_meta = show_in_files;
         let original_href = format!("{BASE}/assets/{}/original", d.asset.id);
+        let dl_href = original_href.clone();
+        let asset_id_share = d.asset.id.clone();
+        let asset_id_album = d.asset.id.clone();
+        let asset_id_album2 = d.asset.id.clone();
         let albums = d.albums.clone();
 
         view! {
@@ -3706,6 +4974,33 @@ fn Details(
                     <h2>"Details"</h2>
                 </div>
                 <div class="photos-detail-body">
+                    <div class="photos-detail-actions" role="group" aria-label="Quick actions">
+                        <a class="photos-quick-btn" href=dl_href download>
+                            <Icon name="download"/><span>"Download"</span>
+                        </a>
+                        {can_edit_meta.then(|| view! {
+                            <button
+                                type="button"
+                                class="photos-quick-btn"
+                                on:click=move |_| { on_share.try_run(asset_id_share.clone()); }
+                            >
+                                <Icon name="share"/><span>"Share"</span>
+                            </button>
+                            <ActionMenu
+                                label="Add to album"
+                                class="photos-quick-menu"
+                                actions=move |_| album_menu.run(asset_id_album.clone())
+                            >
+                                <span class="photos-quick-btn-inner"><Icon name="plus"/><span>"Album"</span></span>
+                            </ActionMenu>
+                        })}
+                        {show_in_files.then(|| view! {
+                            <a class="photos-quick-btn" href=show_files_href.clone()>
+                                <Icon name="folder"/><span>"Files"</span>
+                            </a>
+                        })}
+                    </div>
+
                     {owner_opt.map(|owner| view! {
                         <p class="photos-detail-note">
                             <Icon name="share"/>"Shared by "{owner}". "
@@ -3757,7 +5052,43 @@ fn Details(
                     <ul class="photos-props">
                         <li>
                             <Icon name="calendar"/>
-                            <span><strong>{taken_date}</strong><small>{taken_time}</small></span>
+                            <span class="photos-prop-grow">
+                                <div class="photos-prop-row">
+                                    <strong>{taken_date}</strong>
+                                    {can_edit_meta.then(|| view! {
+                                        <button
+                                            type="button"
+                                            class="icon-button photos-prop-edit"
+                                            aria-label="Edit date and time"
+                                            title="Edit date and time"
+                                            on:click=move |_| {
+                                                date_draft.set(to_datetime_local_value(taken_ms));
+                                                editing_date.update(|v| *v = !*v);
+                                            }
+                                        >
+                                            <Icon name="pencil"/>
+                                        </button>
+                                    })}
+                                </div>
+                                <small>{taken_time}</small>
+                                {move || editing_date.get().then(|| view! {
+                                    <form class="photos-date-form" on:submit=save_date>
+                                        <label class="sr-only" for="photos-edit-date">"Capture date and time"</label>
+                                        <input
+                                            id="photos-edit-date"
+                                            type="datetime-local"
+                                            prop:value=move || date_draft.get()
+                                            on:input=move |e| date_draft.set(event_target_value(&e))
+                                        />
+                                        <div class="photos-date-actions">
+                                            <button type="button" class="text-button" on:click=move |_| editing_date.set(false)>"Cancel"</button>
+                                            <button type="submit" class="primary-button" disabled=move || saving_date.get()>
+                                                {move || if saving_date.get() { "Saving\u{2026}" } else { "Save" }}
+                                            </button>
+                                        </div>
+                                    </form>
+                                })}
+                            </span>
                         </li>
                         <li>
                             <Icon name=file_icon/>
@@ -3778,21 +5109,54 @@ fn Details(
                         })}
                         {show_camera.then(|| view! {
                             <li>
-                                <Icon name="image"/>
+                                <Icon name="camera"/>
                                 <span>
                                     <strong>{if camera.is_empty() { "Camera".to_owned() } else { camera }}</strong>
-                                    <small>{camera_sub}</small>
+                                    {(!lens_name.is_empty()).then(|| view! { <small>{lens_name}</small> })}
+                                    {(!exif_pills.is_empty()).then(|| view! {
+                                        <div class="photos-exif-pills">
+                                            {exif_pills.into_iter().map(|p| view! {
+                                                <span class="photos-exif-pill">{p}</span>
+                                            }).collect_view()}
+                                        </div>
+                                    })}
                                 </span>
                             </li>
                         })}
-                        {location.map(|loc| view! {
-                            <li>
-                                <Icon name="location"/>
-                                <span><strong>"Location"</strong><small>{loc}</small></span>
-                            </li>
-                        })}
                     </ul>
-                    <h3 class="photos-detail-section">"Albums"</h3>
+                    {coords.map(|(lat, lon, loc_str)| {
+                        let osm_url = format!("https://www.openstreetmap.org/?mlat={lat:.6}&mlon={lon:.6}#map=14/{lat:.6}/{lon:.6}");
+                        view! {
+                            <div class="photos-map-card" aria-label="Photo location">
+                                <div class="photos-map-canvas" aria-hidden="true">
+                                    <span class="photos-map-pin"><Icon name="location"/></span>
+                                </div>
+                                <div class="photos-map-foot">
+                                    <span><strong>"Location"</strong><small>{loc_str}</small></span>
+                                    <a
+                                        class="text-button"
+                                        href=osm_url
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        "Map"
+                                        <Icon name="external"/>
+                                    </a>
+                                </div>
+                            </div>
+                        }
+                    })}
+                    <div class="photos-detail-section-row">
+                        <h3 class="photos-detail-section">"Albums"</h3>
+                        {can_edit_meta.then(|| view! {
+                            <ActionMenu
+                                label="Add to album"
+                                actions=move |_| album_menu.run(asset_id_album2.clone())
+                            >
+                                <Icon name="plus"/>
+                            </ActionMenu>
+                        })}
+                    </div>
                     {if !albums.is_empty() {
                         view! {
                             <div class="photos-chips">
@@ -3950,6 +5314,64 @@ fn DuplicatesView(
         });
     };
 
+    let resolve_all = move |_| {
+        let all = groups.with_untracked(|g| g.clone().unwrap_or_default());
+        if all.is_empty() {
+            return;
+        }
+        busy.set("all".to_owned());
+        let csrf_tok = session.with_value(|s| s.csrf_token.clone());
+        spawn_local(async move {
+            let mut total_trashed = Vec::new();
+            for group in all {
+                let Some(first) = group.items.first() else {
+                    continue;
+                };
+                if let Ok(res) = api::send::<TrashedResponse>(
+                    &format!("{BASE}/duplicates/resolve"),
+                    "POST",
+                    Some(json!({ "key": group.key, "keep": [first.asset.id] })),
+                    &csrf_tok,
+                )
+                .await
+                {
+                    total_trashed.extend(res.trashed);
+                    groups.try_update(|g| {
+                        if let Some(list) = g {
+                            list.retain(|x| x.key != group.key);
+                        }
+                    });
+                }
+            }
+            busy.try_set(String::new());
+            on_changed.try_run(());
+            if !total_trashed.is_empty() {
+                let n = total_trashed.len();
+                on_notice.try_run(PhotosNotice {
+                    message: format!("Moved {n} duplicate{} to the trash", if n == 1 { "" } else { "s" }),
+                    undo: Some(Arc::new(move || {
+                        let trashed = total_trashed.clone();
+                        let csrf_tok = session.with_value(|s| s.csrf_token.clone());
+                        spawn_local(async move {
+                            if api::send::<Value>(
+                                &format!("{BASE}/assets/restore"),
+                                "POST",
+                                Some(json!({ "ids": trashed })),
+                                &csrf_tok,
+                            )
+                            .await
+                            .is_ok()
+                            {
+                                on_changed.run(());
+                                load(String::new());
+                            }
+                        });
+                    })),
+                });
+            }
+        });
+    };
+
     let dismiss = move |group: PhotoDuplicateGroup| {
         busy.set(group.key.clone());
         let csrf_tok = session.with_value(|s| s.csrf_token.clone());
@@ -4002,18 +5424,43 @@ fn DuplicatesView(
         });
     };
 
+    let reclaimable_bytes = Memo::new(move |_| {
+        groups.with(|g| {
+            let Some(list) = g else {
+                return 0.0;
+            };
+            list.iter()
+                .map(|grp| grp.items.iter().skip(1).map(|i| i.asset.size).sum::<f64>())
+                .sum::<f64>()
+        })
+    });
+
     view! {
         <div class="photos-list-heading">
             <h1>"Duplicates"</h1>
             {move || groups.with(|g| g.as_ref().map(Vec::len)).map(|len| {
                 let has_cursor = !cursor.get().is_empty();
                 let label = if len == 1 && !has_cursor { "group" } else { "groups" };
+                let save = reclaimable_bytes.get();
                 view! {
                     <span class="photos-heading-count">
                         {len}{if has_cursor { "+" } else { "" }}" "{label}
+                        {(save > 0.0).then(|| format!(" \u{00b7} Save {}", format_bytes(save)))}
                     </span>
                 }
             })}
+            <div class="photos-tools">
+                {move || groups.with(|g| g.as_ref().is_some_and(|l| l.len() >= 2)).then(|| view! {
+                    <button
+                        type="button"
+                        class="primary-button photos-head-cta"
+                        disabled=move || !busy.get().is_empty()
+                        on:click=resolve_all
+                    >
+                        {move || if busy.get() == "all" { "Cleaning\u{2026}" } else { "Keep best in all groups" }}
+                    </button>
+                })}
+            </div>
         </div>
         <div class="photos-grid-scroll photos-duplicates">
             {move || (!error.get().is_empty()).then(|| view! {
@@ -4083,7 +5530,7 @@ fn DuplicatesView(
                                 </button>
                             </div>
                             <ul class="photos-dup-items">
-                                {group.items.into_iter().map(|item| {
+                                {group.items.into_iter().enumerate().map(|(idx, item)| {
                                     let gkey_cls = group.key.clone();
                                     let gkey_chk = group.key.clone();
                                     let gkey_tog = group.key.clone();
@@ -4104,6 +5551,7 @@ fn DuplicatesView(
                                         if item.asset.favorite { " \u{00b7} Favorite" } else { "" }
                                     );
                                     let name = item.asset.name.clone();
+                                    let is_best = idx == 0;
                                     view! {
                                         <li class=move || if keep.with(|m| m.get(&gkey_cls).is_some_and(|l| l.contains(&id_cls))) { "is-kept" } else { "" }>
                                             <label>
@@ -4117,6 +5565,7 @@ fn DuplicatesView(
                                                     />
                                                     "Keep"
                                                 </span>
+                                                {is_best.then(|| view! { <span class="photos-dup-best">"Best copy"</span> })}
                                             </label>
                                             <strong>{name}</strong>
                                             <small>{dims}{size_str}</small>
@@ -4617,9 +6066,12 @@ fn PhotosSettings(
                 }
                 "Keyboard shortcuts" => view! {
                     <dl class="ui-shortcuts">
-                        <dt>"Shift click"</dt><dd>"Select a photo"</dd>
+                        <dt>"Shift click"</dt><dd>"Select a range of photos"</dd>
                         <dt>"\u{2190} / \u{2192}"</dt><dd>"Previous or next photo"</dd>
                         <dt>"f"</dt><dd>"Favorite or unfavorite"</dd>
+                        <dt>"i"</dt><dd>"Show or hide photo details"</dd>
+                        <dt>"s"</dt><dd>"Start or pause slideshow"</dd>
+                        <dt>"+ / - / 0"</dt><dd>"Zoom in, zoom out, or reset zoom"</dd>
                         <dt>"Delete"</dt><dd>"Move the open photo to the trash"</dd>
                         <dt>"Escape"</dt><dd>"Close the photo"</dd>
                         <dt>"Ctrl / Cmd K"</dt><dd>"Search all apps"</dd>

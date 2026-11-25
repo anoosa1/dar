@@ -175,6 +175,18 @@ pub async fn photos_journey(t: &Ctx) -> Result<()> {
             page.wait_for_function("() => [...document.querySelectorAll('.photos-open img')].some(img => img.complete && img.naturalWidth > 0)").await?;
             page.screenshot(t.screenshot("photos-library.png"), false).await?;
 
+            // Layout toggle (justified by default -> square -> justified), Explore, Folders and Albums hub.
+            assert_eq!(page.evaluate("() => document.querySelector('.photos-grid')?.classList.contains('is-justified')").await?, json!(true));
+            page.get_by_role("button", "Square grid").click().await?;
+            assert_eq!(page.evaluate("() => document.querySelector('.photos-grid')?.classList.contains('is-justified')").await?, json!(false));
+            page.get_by_role("button", "Justified layout").click().await?;
+            assert_eq!(page.evaluate("() => document.querySelector('.photos-grid')?.classList.contains('is-justified')").await?, json!(true));
+
+            views.get_by_role("button", regex("^Explore")).click().await?;
+            page.get_by_role("heading", "Explore").wait_for().await?;
+            page.get_by_role("region", "Quick collections").wait_for().await?;
+            page.screenshot(t.screenshot("photos-explore.png"), false).await?;
+
             // All photos is every picture in Files, at ?view=library; Photos (the Photos folder) is the default.
             views.get_by_role("button", regex("^All photos")).click().await?;
             page.get_by_role("heading", "All photos").wait_for().await?;
@@ -184,12 +196,20 @@ pub async fn photos_journey(t: &Ctx) -> Result<()> {
             grid.wait_for().await?;
             assert_eq!(url::Url::parse(&page.url())?.query(), None);
 
-            // Viewer in the middle sheet with details on the right; favorite, keyboard navigation and focus return.
+            // Viewer in the middle sheet (auto-folding sidebar) with toggleable details, zoom and focus return.
             newest.click().await?;
             let viewer = page.get_by_role("region", "Viewer for plain.png");
             viewer.wait_for().await?;
             let details = page.get_by_role("complementary", "Photo details");
             details.get_by_text(contains("320 \u{00d7} 200")).wait_for().await?;
+            viewer.get_by_role("button", "Zoom in").click().await?;
+            viewer.get_by_text("150%").wait_for().await?;
+            viewer.get_by_role("button", "Reset zoom").click().await?;
+            viewer.get_by_text("Fit").wait_for().await?;
+            viewer.get_by_role("button", "Toggle details").click().await?;
+            assert!(!details.is_visible().await?);
+            viewer.get_by_role("button", "Toggle details").click().await?;
+            details.wait_for().await?;
             viewer.get_by_role("button", "Add to Favorites").click().await?;
             viewer.get_by_role("button", "Remove from Favorites").wait_for().await?;
             details.get_by_placeholder("Add a description\u{2026}").fill("Test card").await?;
@@ -206,7 +226,7 @@ pub async fn photos_journey(t: &Ctx) -> Result<()> {
             photos_view.click().await?;
             grid.wait_for().await?;
 
-            // Select, then create an album from the selection.
+            // Select, then create an album from the selection and verify Albums hub + Album Hero.
             page.get_by_label("Select clip.mp4").check().await?;
             let selection = page.get_by_role("toolbar", "Selection");
             selection.get_by_text("1 selected").wait_for().await?;
@@ -215,8 +235,13 @@ pub async fn photos_journey(t: &Ctx) -> Result<()> {
             let dialog = page.get_by_role("dialog", "New album");
             dialog.get_by_label("Name").fill("Road trip").await?;
             dialog.get_by_role("button", "Create album").click().await?;
+            views.get_by_role("button", regex("^Albums")).click().await?;
+            page.get_by_role("heading", "Albums").level(1).wait_for().await?;
+            page.screenshot(t.screenshot("photos-albums-hub.png"), false).await?;
             page.get_by_role("navigation", "Albums").get_by_role("button", regex("^Road trip")).click().await?;
             page.get_by_role("heading", "Road trip").wait_for().await?;
+            page.get_by_role("region", "Album overview").wait_for().await?;
+            page.screenshot(t.screenshot("photos-album-hero.png"), false).await?;
             page.get_by_role("list", "Road trip photos").get_by_role("button", regex("^Video clip\\.mp4")).wait_for().await?;
             assert_eq!(page.get_by_role("list", "Road trip photos").get_by_role("listitem", ()).count().await?, 1);
 

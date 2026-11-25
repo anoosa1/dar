@@ -63,6 +63,9 @@ fn friendly_message(operation: &str, code: &str) -> Option<&'static str> {
         ("describe", "conflict") => {
             Some("This description changed elsewhere. Reload it and try again.")
         }
+        ("editMeta", "conflict") => {
+            Some("This photo changed elsewhere. Reload it and try again.")
+        }
         ("uploadTarget", "conflict") | ("unlock", "conflict") => Some(
             "A file is in the way of the Photos folder (or a year or month inside it). Rename it in Files or choose another folder in Photos settings.",
         ),
@@ -296,6 +299,10 @@ pub async fn handle_http(
         return ok(value);
     }
 
+    if route == "/explore" && *method == Method::GET {
+        return ok(call_photos(runtime, session_id, "explore", json!({})).await?);
+    }
+
     if route == "/assets" && *method == Method::GET {
         let limit: i64 = match query.get("limit") {
             None => 120,
@@ -307,8 +314,16 @@ pub async fn handle_http(
             "view".into(),
             json!(query.get("view").map(String::as_str).unwrap_or("library")),
         );
-        if let Some(album) = query.get("album").filter(|a| !a.is_empty()) {
-            payload.insert("album".into(), json!(album));
+        for key in ["album", "folder", "camera", "place", "sort", "filter"] {
+            if let Some(val) = query.get(key).filter(|v| !v.is_empty()) {
+                payload.insert(key.into(), json!(val));
+            }
+        }
+        for key in ["year", "month", "day"] {
+            if let Some(val) = query.get(key).filter(|v| !v.is_empty()) {
+                let n = val.trim().parse::<i64>().map_err(|_| AppError::invalid())?;
+                payload.insert(key.into(), json!(n));
+            }
         }
         payload.insert(
             "cursor".into(),
@@ -664,6 +679,16 @@ pub async fn handle_http(
             let mut map = input_object(body, headers, &["description", "revision"]).await?;
             map.insert("id".into(), json!(id));
             return ok(call_photos(runtime, session_id, "describe", Value::Object(map)).await?);
+        }
+        if action == Some("meta") && *method == Method::PUT {
+            let mut map = input_object(
+                body,
+                headers,
+                &["takenAt", "latitude", "longitude", "revision"],
+            )
+            .await?;
+            map.insert("id".into(), json!(id));
+            return ok(call_photos(runtime, session_id, "editMeta", Value::Object(map)).await?);
         }
         if action == Some("index") && *method == Method::POST {
             let res = call_photos(runtime, session_id, "indexJob", json!({ "id": id })).await?;

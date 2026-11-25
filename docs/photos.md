@@ -43,16 +43,30 @@ in phases.
   fall back to the original and others show a placeholder.
 - **Library:** Photos (the default: the Photos folder, `pics` unless changed, not archived),
   All photos (every picture and video in Files, not archived; search results open here),
-  Favorites, Shared with me and Videos, then albums, then
-  Duplicates, Archive, Locked folder and Trash; newest first, with a zoom slider
-  (3–12 columns). Select with the tile checkbox or Shift click; the tonal bar offers
-  favorite, add to album, remove from album, stack, archive, Move to Locked folder
-  and Move to trash, all with Undo. Archived photos stay in albums and Files.
-- **Viewer and details:** preview or video player with a filmstrip, ←/→, `f`,
-  Delete (to the trash) and Escape; details show date, file, codecs, camera,
-  location, albums, an editable description (revision-checked, merged with
-  favorite/archive changes) and Show in Files. Phones show the photo full screen
-  with an Info button for details.
+  Explore (zero-ML Places from EXIF GPS, Cameras, Recently added, Not in any album, Large
+  files and Files folders), Favorites, Albums (filterable/sortable 4:3 cover hub), Shared
+  with me, Videos and Folders, then album shortcuts, then Duplicates, Archive, Locked folder
+  and Trash, plus a library storage summary. The timeline defaults to justified aspect-ratio
+  rows (switchable to a square grid) with a density/column slider (3–12), day-level headers
+  with Select-all-day, lightweight filter chips and sort, a collapsible "On this day"
+  memories ribbon, hover favorite stars, and a right-edge month/year jump scrubber. Select
+  with the tile checkbox, day circle or Shift-click range; the tonal bar offers favorite,
+  add/remove album, Download ZIP (via Files archive), shared link, stack, archive, Move to
+  Locked folder and Move to trash, with Undo. Archived photos stay in albums and Files.
+- **Viewer and details:** opening a photo folds away the sidebar into a darkroom stage
+  with floating edge arrows, interactive zoom (`+`/`-`/`0`, double-click, wheel), Slideshow
+  (`s`), Quick Edit (rotate 90° and filter presets saved as a new copy in Files), a
+  collapsible right Inspector (`i`), and a filmstrip (hidden when viewing a single item);
+  keyboard shortcuts cover ←/→, `f`, `i`, `s`, `+`/`-`/`0`, Delete and Escape. Details
+  show a quick-action strip, editable description and capture date/time (revision-checked),
+  file and codec facts, camera with EXIF pills, a styled location mini-map card with an
+  OpenStreetMap link (no tile fetches), album chips with inline `+ Add`, and Show in Files.
+  Phones keep Dar's shared mobile app bar and top search bar, hide tile checkboxes behind a
+  `Select` button, and open the viewer and Info details below the top bar with Back.
+- **Albums:** create (optionally from a selection), browse in the Albums hub, rename, edit
+  description inline in the editorial cover hero, pick photos directly with `+ Add photos`,
+  set any album photo as the cover, start a slideshow, download as ZIP, share or delete
+  (photos stay). Limits: 500 albums, 50,000 items.
 - **Videos:** MP4 with H.264/VP9/AV1 and WebM play as is; other H.264 files (MOV,
   MKV, AVI) are remuxed into MP4; HEVC, MPEG-4 Part 2 and others are transcoded to
   H.264/AAC (at most 1920 px) the first time someone opens them, one at a time, with
@@ -146,8 +160,6 @@ in phases.
   reached as `http://localhost:2283`, or `http://[::1]:2283` when Immich listens on
   IPv6 only; a machine often cannot reach its own Tailscale address, and cannot at all
   with Tailscale in userspace networking). Disconnecting keeps imported photos.
-- **Albums:** create (optionally from a selection), rename, delete (photos stay),
-  add and remove; the first photo is the cover. Limits: 500 albums, 50,000 items.
 - **Search:** file names, descriptions, camera models and album names appear in the
   spotlight search with thumbnails (never locked or trashed photos).
 - **Backups** (format v8 and later) include Photos metadata, stacks, album members and links

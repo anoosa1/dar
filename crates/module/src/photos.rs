@@ -31,7 +31,7 @@ const LIVE_MAX_SECONDS: f64 = 4.0;
 const RAW: [&str; 8] = ["dng", "cr2", "cr3", "nef", "arw", "orf", "rw2", "raf"];
 const STILL: [&str; 4] = ["heic", "heif", "jpg", "jpeg"];
 const MOTION: [&str; 2] = ["mov", "mp4"];
-pub const READ_OPERATIONS: [&str; 7] = [
+pub const READ_OPERATIONS: [&str; 8] = [
     "overview",
     "page",
     "detail",
@@ -39,6 +39,7 @@ pub const READ_OPERATIONS: [&str; 7] = [
     "duplicates",
     "stackDetail",
     "albumSharing",
+    "explore",
 ];
 
 /// File changes Photos makes through Files' own checks, acting for the browser session.
@@ -525,6 +526,64 @@ fn album_rows(
     rows
 }
 
+fn utc_ymd(ms: f64) -> (i64, u32, u32) {
+    crate::civil_from_days((ms / 86_400_000.0).floor() as i64)
+}
+
+fn place_key(lat: f64, lon: f64) -> String {
+    let rlat = (lat / 0.15).round() * 0.15;
+    let rlon = (lon / 0.15).round() * 0.15;
+    format!("{rlat:.2},{rlon:.2}")
+}
+
+fn camera_name(asset: &PhotoAsset) -> Option<String> {
+    let exif = exif_of(asset);
+    let make = exif
+        .get("make")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    let model = exif
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    if model.is_empty() && make.is_empty() {
+        return None;
+    }
+    if model.is_empty() {
+        return Some(make.to_owned());
+    }
+    if make.is_empty()
+        || model
+            .to_ascii_lowercase()
+            .starts_with(&make.to_ascii_lowercase())
+    {
+        Some(model.to_owned())
+    } else {
+        Some(format!("{make} {model}"))
+    }
+}
+
+fn is_raw_file(name: &str) -> bool {
+    RAW.contains(&name_parts(name).1.as_str())
+}
+
+fn album_file_ids(ctx: &ReducerContext, user_id: &str) -> HashSet<String> {
+    let mut set = HashSet::new();
+    for album in ctx.db.photo_albums().owner_id().filter(user_id) {
+        for item in ctx
+            .db
+            .photo_album_items()
+            .album_id()
+            .filter(album.id.as_str())
+        {
+            set.insert(item.file_id);
+        }
+    }
+    set
+}
+
 fn expose_album(ctx: &ReducerContext, r: &Reader, album: &PhotoAlbum, user_id: &str) -> Value {
     let members = album_rows(ctx, r, album);
     let cover =
@@ -536,6 +595,24 @@ fn expose_album(ctx: &ReducerContext, r: &Reader, album: &PhotoAlbum, user_id: &
                 .map(|m| m.0.file_id.clone())
                 .unwrap_or_default()
         };
+    let mut min_taken = 0.0_f64;
+    let mut max_taken = 0.0_f64;
+    for (asset, _) in &members {
+        if asset.taken_at > 0.0 {
+            if min_taken == 0.0 || asset.taken_at < min_taken {
+                min_taken = asset.taken_at;
+            }
+            if asset.taken_at > max_taken {
+                max_taken = asset.taken_at;
+            }
+        }
+    }
+    let member_count = ctx
+        .db
+        .photo_album_members()
+        .album_id()
+        .filter(album.id.as_str())
+        .count();
     let mine = album.owner_id == user_id;
     let role = if mine {
         "owner"
@@ -550,19 +627,13 @@ fn expose_album(ctx: &ReducerContext, r: &Reader, album: &PhotoAlbum, user_id: &
     } else {
         "viewer"
     };
-    let mut v = json!({ "id": album.id, "name": album.name, "description": album.description, "count": members.len(), "coverId": cover, "updatedAt": album.updated_at, "revision": album.revision, "role": role });
+    let mut v = json!({ "id": album.id, "name": album.name, "description": album.description, "count": members.len(), "coverId": cover, "updatedAt": album.updated_at, "revision": album.revision, "role": role, "minTakenAt": min_taken, "maxTakenAt": max_taken, "memberCount": member_count });
     let o = v.as_object_mut().expect("album");
     if !mine {
         o.insert("owner".into(), json!({ "id": album.owner_id, "name": ctx.db.accounts().id().find(album.owner_id.clone()).map(|a| a.display_name).unwrap_or_else(|| "Someone".into()) }));
     }
     let shared = mine
-        && (ctx
-            .db
-            .photo_album_members()
-            .album_id()
-            .filter(album.id.as_str())
-            .next()
-            .is_some()
+        && (member_count > 0
             || ctx
                 .db
                 .photo_links()
@@ -1030,6 +1101,9 @@ pub fn photos_operation(
                 }
             };
             let in_folder = within(ctx, (files.upload_folder_id)());
+            let (today_y, today_m, today_d) = utc_ymd(at);
+            let mut total_bytes = 0.0_f64;
+            let mut memories_map: HashMap<i64, (usize, f64, String)> = HashMap::new();
             for (scanned, row) in ctx.db.photo_assets().owner_id().filter(user_id).enumerate() {
                 if scanned >= 200000 {
                     break;
@@ -1042,10 +1116,24 @@ pub fn photos_operation(
                 {
                     continue;
                 }
+                total_bytes += entry.size.max(0.0);
                 if !row.archived {
                     bump("library");
                     if in_folder(&entry) {
                         bump("folder");
+                    }
+                    if row.taken_at > 0.0 {
+                        let (y, m, d) = utc_ymd(row.taken_at);
+                        if m == today_m && d == today_d && y < today_y {
+                            let slot = memories_map
+                                .entry(y)
+                                .or_insert((0, -1.0, row.file_id.clone()));
+                            slot.0 += 1;
+                            if row.taken_at > slot.1 {
+                                slot.1 = row.taken_at;
+                                slot.2 = row.file_id.clone();
+                            }
+                        }
                     }
                 }
                 if row.favorite {
@@ -1093,6 +1181,25 @@ pub fn photos_operation(
                 .collect();
             c.insert("duplicates".into(), json!(duplicates));
             c.insert("shared".into(), json!(shared.len()));
+            let mut mem_years: Vec<(i64, usize, String)> = memories_map
+                .into_iter()
+                .map(|(y, (count, _, cover))| (y, count, cover))
+                .collect();
+            mem_years.sort_by(|a, b| b.0.cmp(&a.0));
+            let memories: Vec<Value> = mem_years
+                .into_iter()
+                .take(6)
+                .map(|(year, count, cover_id)| {
+                    json!({
+                        "year": year,
+                        "month": today_m,
+                        "day": today_d,
+                        "yearsAgo": today_y - year,
+                        "count": count,
+                        "coverId": cover_id,
+                    })
+                })
+                .collect();
             let indexing = ctx
                 .db
                 .photo_state()
@@ -1102,11 +1209,142 @@ pub fn photos_operation(
                 != Some("idle".into());
             Ok(
                 json!({ "albums": own.iter().map(|a| expose_album(ctx, &r, a, user_id)).collect::<Vec<_>>(), "sharedAlbums": shared.iter().map(|a| expose_album(ctx, &r, a, user_id)).collect::<Vec<_>>(),
-                "counts": c, "indexing": indexing, "uploadFolder": (files.upload_folder)() }),
+                "counts": c, "indexing": indexing, "uploadFolder": (files.upload_folder)(), "totalBytes": total_bytes, "memories": memories }),
             )
         }
+        "explore" => {
+            keys(p, &[])?;
+            let in_album = album_file_ids(ctx, user_id);
+            let mut places: HashMap<String, (f64, f64, usize, f64, String)> = HashMap::new();
+            let mut cameras: HashMap<String, (usize, f64, String)> = HashMap::new();
+            let mut folders: HashMap<String, (String, usize, f64, String)> = HashMap::new();
+            let mut total_bytes = 0.0_f64;
+            let mut unassigned_count = 0usize;
+            let mut large_count = 0usize;
+            for (scanned, row) in ctx.db.photo_assets().owner_id().filter(user_id).enumerate() {
+                if scanned >= 50000 {
+                    break;
+                }
+                let Some(entry) = r.file_of(&row) else {
+                    continue;
+                };
+                if row.archived
+                    || r.state_of(&entry) != State::Library
+                    || !r.shown(&row, &entry, State::Library, true)
+                {
+                    continue;
+                }
+                total_bytes += entry.size.max(0.0);
+                if !in_album.contains(&row.file_id) {
+                    unassigned_count += 1;
+                }
+                if entry.size >= 5_000_000.0 {
+                    large_count += 1;
+                }
+                if row.has_location {
+                    let key = place_key(row.latitude, row.longitude);
+                    let slot = places.entry(key).or_insert((
+                        0.0,
+                        0.0,
+                        0,
+                        -1.0,
+                        row.file_id.clone(),
+                    ));
+                    slot.0 += row.latitude;
+                    slot.1 += row.longitude;
+                    slot.2 += 1;
+                    if row.taken_at > slot.3 {
+                        slot.3 = row.taken_at;
+                        slot.4 = row.file_id.clone();
+                    }
+                }
+                if let Some(cam) = camera_name(&row) {
+                    let slot = cameras
+                        .entry(cam)
+                        .or_insert((0, -1.0, row.file_id.clone()));
+                    slot.0 += 1;
+                    if row.taken_at > slot.1 {
+                        slot.1 = row.taken_at;
+                        slot.2 = row.file_id.clone();
+                    }
+                }
+                let folder_id = entry.parent_id.clone();
+                let slot = folders.entry(folder_id).or_insert_with(|| {
+                    let path = r.folder_path(&entry);
+                    (path, 0, -1.0, row.file_id.clone())
+                });
+                slot.1 += 1;
+                if row.taken_at > slot.2 {
+                    slot.2 = row.taken_at;
+                    slot.3 = row.file_id.clone();
+                }
+            }
+            let mut places_vec: Vec<(String, f64, f64, usize, String)> = places
+                .into_iter()
+                .map(|(k, (slat, slon, count, _, cover))| {
+                    (k, slat / count as f64, slon / count as f64, count, cover)
+                })
+                .collect();
+            places_vec.sort_by(|a, b| b.3.cmp(&a.3).then_with(|| a.0.cmp(&b.0)));
+            let places_json: Vec<Value> = places_vec
+                .into_iter()
+                .take(24)
+                .map(|(key, lat, lon, count, cover_id)| {
+                    json!({ "key": key, "latitude": lat, "longitude": lon, "count": count, "coverId": cover_id })
+                })
+                .collect();
+
+            let mut cameras_vec: Vec<(String, usize, String)> = cameras
+                .into_iter()
+                .map(|(name, (count, _, cover))| (name, count, cover))
+                .collect();
+            cameras_vec.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| crate::locale_compare(&a.0, &b.0)));
+            let cameras_json: Vec<Value> = cameras_vec
+                .into_iter()
+                .take(16)
+                .map(|(name, count, cover_id)| {
+                    json!({ "name": name, "count": count, "coverId": cover_id })
+                })
+                .collect();
+
+            let mut folders_vec: Vec<(String, String, usize, String)> = folders
+                .into_iter()
+                .map(|(id, (path, count, _, cover))| (id, path, count, cover))
+                .collect();
+            folders_vec.sort_by(|a, b| {
+                b.2.cmp(&a.2)
+                    .then_with(|| crate::locale_compare(&a.1, &b.1))
+            });
+            let folders_json: Vec<Value> = folders_vec
+                .into_iter()
+                .take(80)
+                .map(|(id, path, count, cover_id)| {
+                    let name = if path.is_empty() {
+                        "Files root".to_owned()
+                    } else {
+                        path.rsplit('/').next().unwrap_or(&path).to_owned()
+                    };
+                    json!({ "id": id, "path": if path.is_empty() { "Files".to_owned() } else { path }, "name": name, "count": count, "coverId": cover_id })
+                })
+                .collect();
+
+            Ok(json!({
+                "places": places_json,
+                "cameras": cameras_json,
+                "folders": folders_json,
+                "totalBytes": total_bytes,
+                "unassignedCount": unassigned_count,
+                "largeCount": large_count,
+            }))
+        }
         "page" => {
-            keys(p, &["view", "album", "cursor", "limit"])?;
+            keys(
+                p,
+                &[
+                    "view", "album", "cursor", "limit", "folder", "camera", "place", "year",
+                    "month", "day", "sort", "filter",
+                ],
+            )?;
             let view = text(p.get("view"), 20, false)?;
             if ![
                 "library",
@@ -1117,8 +1355,33 @@ pub fn photos_operation(
                 "album",
                 "trash",
                 "locked",
+                "recent",
+                "large",
+                "unassigned",
+                "folderId",
+                "camera",
+                "place",
+                "memory",
             ]
             .contains(&view.as_str())
+            {
+                return fail("invalidInput");
+            }
+            let sort = match p.get("sort") {
+                None => String::new(),
+                Some(Value::String(s)) if s.is_empty() => String::new(),
+                v => text(v, 20, false)?,
+            };
+            if !["", "newest", "oldest", "largest"].contains(&sort.as_str()) {
+                return fail("invalidInput");
+            }
+            let filter = match p.get("filter") {
+                None => String::new(),
+                Some(Value::String(s)) if s.is_empty() => String::new(),
+                v => text(v, 20, false)?,
+            };
+            if !["", "all", "images", "videos", "live", "raw", "favorites", "unassigned"]
+                .contains(&filter.as_str())
             {
                 return fail("invalidInput");
             }
@@ -1129,7 +1392,21 @@ pub fn photos_operation(
                 v => text(v, 300, false)?,
             };
             let mut items: Vec<Value> = Vec::new();
-            if view == "album" || view == "trash" {
+            let custom_sort_or_filter =
+                (!sort.is_empty() && sort != "newest") || (!filter.is_empty() && filter != "all");
+            let offset_view = matches!(
+                view.as_str(),
+                "album"
+                    | "trash"
+                    | "recent"
+                    | "large"
+                    | "unassigned"
+                    | "folderId"
+                    | "camera"
+                    | "place"
+                    | "memory"
+            );
+            if offset_view || custom_sort_or_filter {
                 let offset = if cursor.is_empty() {
                     0
                 } else {
@@ -1139,20 +1416,143 @@ pub fn photos_operation(
                         200000.0,
                     )? as usize
                 };
-                let all: Vec<(PhotoAsset, FileEntry)> = if view == "album" {
-                    let mut rows = album_rows(ctx, &r, &album(p.get("album"), "view")?);
-                    rows.sort_by(|x, y| newest(&x.0, &y.0));
-                    rows
+                let state = if view == "locked" {
+                    State::Locked
                 } else {
-                    // Files keeps trashed items until they are deleted; Photos lists the media among them, newest deletion first.
-                    let mut rows = trash_rows();
-                    rows.sort_by(|x, y| {
-                        y.1.modified_at
-                            .total_cmp(&x.1.modified_at)
-                            .then_with(|| newest(&x.0, &y.0))
-                    });
+                    State::Library
+                };
+                if state == State::Locked && !files.unlocked {
+                    return fail("lockedFolder");
+                }
+                let in_album = if view == "unassigned" || filter == "unassigned" {
+                    Some(album_file_ids(ctx, user_id))
+                } else {
+                    None
+                };
+                let mut all: Vec<(PhotoAsset, FileEntry)> = if view == "album" {
+                    album_rows(ctx, &r, &album(p.get("album"), "view")?)
+                } else if view == "trash" {
+                    trash_rows()
+                } else {
+                    let in_folder: Box<dyn Fn(&FileEntry) -> bool> = if view == "folder" {
+                        Box::new(within(ctx, (files.upload_folder_id)()))
+                    } else {
+                        Box::new(|_: &FileEntry| true)
+                    };
+                    let folder_target = match p.get("folder") {
+                        None => String::new(),
+                        Some(Value::String(s)) => s.clone(),
+                        _ => return fail("invalidInput"),
+                    };
+                    let camera_target = match p.get("camera") {
+                        None => String::new(),
+                        v => text(v, 200, true)?,
+                    };
+                    let place_target = match p.get("place") {
+                        None => String::new(),
+                        v => text(v, 100, true)?,
+                    };
+                    let mem_y = p.get("year").and_then(Value::as_i64);
+                    let mem_m = p.get("month").and_then(Value::as_u64).map(|v| v as u32);
+                    let mem_d = p.get("day").and_then(Value::as_u64).map(|v| v as u32);
+                    let mut rows = Vec::new();
+                    let range = owner_range(user_id, None);
+                    for (scanned, row) in ctx
+                        .db
+                        .photo_assets()
+                        .time_key()
+                        .filter(crate::bounds(&range))
+                        .enumerate()
+                    {
+                        if scanned >= 20000 {
+                            break;
+                        }
+                        let Some(entry) = r.file_of(&row) else {
+                            continue;
+                        };
+                        if r.state_of(&entry) != state
+                            || !r.shown(&row, &entry, state, true)
+                            || !in_folder(&entry)
+                        {
+                            continue;
+                        }
+                        let matches_view = match view.as_str() {
+                            "recent" => !row.archived,
+                            "large" => !row.archived && entry.size >= 5_000_000.0,
+                            "unassigned" => {
+                                !row.archived
+                                    && in_album
+                                        .as_ref()
+                                        .is_some_and(|s| !s.contains(&row.file_id))
+                            }
+                            "folderId" => !row.archived && entry.parent_id == folder_target,
+                            "camera" => {
+                                !row.archived
+                                    && !camera_target.is_empty()
+                                    && camera_name(&row).as_deref() == Some(camera_target.as_str())
+                            }
+                            "place" => {
+                                !row.archived
+                                    && !place_target.is_empty()
+                                    && row.has_location
+                                    && place_key(row.latitude, row.longitude) == place_target
+                            }
+                            "memory" => {
+                                if row.archived || row.taken_at <= 0.0 {
+                                    false
+                                } else {
+                                    let (y, m, d) = utc_ymd(row.taken_at);
+                                    mem_y.is_none_or(|ty| y == ty)
+                                        && mem_m.is_none_or(|tm| m == tm)
+                                        && mem_d.is_none_or(|td| d == td)
+                                }
+                            }
+                            _ => in_view(&view, &row),
+                        };
+                        if matches_view {
+                            rows.push((row, entry));
+                        }
+                    }
                     rows
                 };
+                if !filter.is_empty() && filter != "all" {
+                    all.retain(|(row, entry)| match filter.as_str() {
+                        "images" => row.kind != "video",
+                        "videos" => row.kind == "video",
+                        "live" => row.kind != "video" && r.live_partner(row, entry).is_some(),
+                        "raw" => is_raw_file(&entry.name),
+                        "favorites" => row.favorite,
+                        "unassigned" => in_album
+                            .as_ref()
+                            .is_some_and(|s| !s.contains(&row.file_id)),
+                        _ => true,
+                    });
+                }
+                match (view.as_str(), sort.as_str()) {
+                    (_, "oldest") => all.sort_by(|x, y| newest(&y.0, &x.0)),
+                    (_, "largest") | ("large", "") | ("large", "newest") => {
+                        all.sort_by(|x, y| {
+                            y.1.size
+                                .total_cmp(&x.1.size)
+                                .then_with(|| newest(&x.0, &y.0))
+                        });
+                    }
+                    ("recent", _) => {
+                        all.sort_by(|x, y| {
+                            y.1.modified_at
+                                .total_cmp(&x.1.modified_at)
+                                .then_with(|| newest(&x.0, &y.0))
+                        });
+                    }
+                    ("trash", _) => {
+                        all.sort_by(|x, y| {
+                            y.1.modified_at
+                                .total_cmp(&x.1.modified_at)
+                                .then_with(|| newest(&x.0, &y.0))
+                        });
+                    }
+                    _ => all.sort_by(|x, y| newest(&x.0, &y.0)),
+                }
                 for (asset, entry) in all.iter().skip(offset).take(limit) {
                     items.push(r.expose(asset, entry, None));
                 }
@@ -1363,6 +1763,63 @@ pub fn photos_operation(
             };
             let next = update_asset(ctx, next, false);
             Ok(r.expose(&next, &f.entry, Some(f.state)))
+        }
+        "editMeta" => {
+            keys(p, &["id", "revision", "takenAt", "latitude", "longitude"])?;
+            let f = find(p.get("id"), &library, false)?;
+            if int(p.get("revision"), 0.0, 4_294_967_295.0)? != f.row.revision as f64 {
+                return fail("conflict");
+            }
+            let mut next = f.row.clone();
+            let mut changed = false;
+            if let Some(v) = p.get("takenAt") {
+                let taken_at = num(Some(v), 0.0, 9e15 - 1.0)?;
+                next.taken_at = taken_at;
+                next.time_key = photo_time_key(&next.owner_id, taken_at, &next.file_id);
+                changed = true;
+            }
+            if p.contains_key("latitude") || p.contains_key("longitude") {
+                match (p.get("latitude"), p.get("longitude")) {
+                    (Some(Value::Null), Some(Value::Null)) => {
+                        next.has_location = false;
+                        next.latitude = 0.0;
+                        next.longitude = 0.0;
+                        changed = true;
+                    }
+                    (lat @ Some(_), lon @ Some(_)) => {
+                        next.latitude = num(lat, -90.0, 90.0)?;
+                        next.longitude = num(lon, -180.0, 180.0)?;
+                        next.has_location = true;
+                        changed = true;
+                    }
+                    _ => return fail("invalidInput"),
+                }
+            }
+            if !changed {
+                return fail("invalidInput");
+            }
+            next.revision = f.row.revision + 1;
+            let next = update_asset(ctx, next, false);
+            let mut v = r.expose(&next, &f.entry, Some(f.state));
+            if let Some(o) = v.as_object_mut() {
+                o.insert(
+                    "latitude".into(),
+                    if next.has_location {
+                        json!(next.latitude)
+                    } else {
+                        Value::Null
+                    },
+                );
+                o.insert(
+                    "longitude".into(),
+                    if next.has_location {
+                        json!(next.longitude)
+                    } else {
+                        Value::Null
+                    },
+                );
+            }
+            Ok(v)
         }
         "trash" => {
             // Locked items cannot be trashed (Files deletes them permanently instead).

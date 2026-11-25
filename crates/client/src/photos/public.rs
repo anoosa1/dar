@@ -431,7 +431,7 @@ pub fn PublicPhotos() -> impl IntoView {
                                     </div>
                                 })}
                                 <div
-                                    class="photos-grid"
+                                    class="photos-grid is-justified"
                                     role="list"
                                     aria-label=move || share.with(|s| format!("{} photos", s.as_ref().map(|s| s.title.as_str()).unwrap_or_default()))
                                     data-columns="5"
@@ -451,9 +451,21 @@ pub fn PublicPhotos() -> impl IntoView {
                                             let is_video = item.kind == "video";
                                             let dur = if item.duration > 0.0 { format_duration_short(item.duration) } else { String::new() };
                                             let is_live = item.live.as_deref().is_some_and(|l| !l.is_empty());
+                                            let ar = if item.width > 0.0 && item.height > 0.0 {
+                                                (item.width / item.height).clamp(0.6, 2.35)
+                                            } else {
+                                                1.333
+                                            };
+                                            let tile_ref = NodeRef::<html::Div>::new();
+                                            Effect::new(move |_| {
+                                                if let Some(el) = tile_ref.get() {
+                                                    let _ = web_sys::HtmlElement::style(&el)
+                                                        .set_property("--ar", &format!("{ar:.4}"));
+                                                }
+                                            });
                                             view! {
-                                                {heading.map(|h| view! { <h2 class="photos-month">{h}</h2> })}
-                                                <div role="listitem" data-asset=id class="photos-tile">
+                                                {heading.map(|h| view! { <div class="photos-day-head"><h2 class="photos-month">{h}</h2></div> })}
+                                                <div node_ref=tile_ref role="listitem" data-asset=id class="photos-tile">
                                                     <button
                                                         type="button"
                                                         class="photos-open"

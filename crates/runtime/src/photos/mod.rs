@@ -33,6 +33,7 @@ pub(crate) const PHOTOS_READ_OPERATIONS: &[&str] = &[
     "duplicates",
     "stackDetail",
     "albumSharing",
+    "explore",
 ];
 
 /// Dar's built-in OIDC client for the Immich mobile app (`shared/photos.ts`).

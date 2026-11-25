@@ -302,23 +302,36 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   Phones show mailboxes as chips and the conversation full screen with Back; compose fills the
   screen. See [Mail](mail.md).
 - **Photos:** selected [mock B](spacetimedb/photos-mock-b.html) over
-  [mock A](spacetimedb/photos-mock-a.html) (November 13). Sidebar views (Library,
-  Favorites, Videos, Archive) then albums as collections with three-dot menus; the
-  sheet header has the title, count and a zoom slider for the square, month-grouped
-  grid, and turns into a tonal selection bar. A photo opens in the middle sheet with
-  a filmstrip; details sit in the right sheet (phones: Info opens them full screen
-  with Back). A "More" group lists Duplicates, Archive, Locked folder and Trash.
-  Live Photos and stacks are one tile with a badge; the viewer plays the motion and
-  shows stack members under the photo. Duplicates are cards of copies with Keep
-  checkboxes. A locked view shows the shared password form in place of the grid.
-  Shared with me lists albums others share as cover cards; your shared albums carry
-  a share mark. Share (album header) opens the right editing pane: people with Can
-  view/Can add, then links with copy, expiry, password and switches that save as
-  you go. Shared-link visitors get the Photos grid and viewer in a minimal frame
-  (brand bar, no app rail). Photos settings has an Immich tab: the mobile app's server
-  URL and sign-in, signed-in devices, and the Immich server connection with status and
-  Sync now. People/Places/Explore tabs arrive with later phases.
-  See [Photos](photos.md).
+  [mock A](spacetimedb/photos-mock-a.html) (November 13; refreshed November 24).
+  Sidebar views (`Photos`, `All photos`, `Explore`, `Favorites`, `Albums`,
+  `Shared with me`, `Videos`, `Folders`), then albums with cover thumbnails and
+  three-dot menus, a `More` utility group (`Duplicates`, `Archive`, `Locked
+  folder`, `Trash`), and a library storage footer card. The sheet header pairs
+  title and count with a Justified / Square layout switch and a density/column
+  slider (`3–12`), over a filter-chip (`All`, `Stills`, `Clips`, `Live`, `RAW`,
+  `Starred`, `Unfiled`) and sort (`Newest`, `Oldest`, `Largest`) sub-bar. The
+  timeline groups by day with a hover Select-all-day circle, Shift-click range
+  selection, 1-click tile favorite star, collapsible `On this day` memories
+  ribbon, and a right-edge month/year jump scrubber; selection turns the header
+  into a tonal bar with Download ZIP, favorite, add/remove album, shared link,
+  stack, archive, Locked folder and trash. `Albums` opens a filterable/sortable
+  4:3 cover hub; opening an album displays an editorial cover hero with date
+  span, inline editable description, `+ Add photos` picker, Slideshow, Share and
+  Download ZIP. `Explore` surfaces zero-ML Places (EXIF GPS clusters), Cameras,
+  Quick collections (`Recently added`, `Not in any album`, `Large files`) and
+  Files folders. Opening a photo folds away the sidebar (like Books) into a
+  darkroom viewer stage with floating edge Prev/Next arrows, interactive zoom
+  (`-`/`Fit`/`+`, wheel, double-click), Slideshow (`s`), Quick Edit (rotate 90°
+  and filter presets saved as a new copy in Files), collapsible Inspector (`i`),
+  and a filmstrip hidden for single-item sets. Details offer a 4-action quick
+  strip, editable description, inline editable capture date/time, monospace EXIF
+  pills, a styled location mini-map card with OpenStreetMap link, album chips
+  with inline `+ Add`, and Show in Files. Live Photos and stacks are one tile
+  with badges; Duplicates highlight the `Best copy`, show reclaimable bytes and
+  offer `Keep best in all groups`. Phones keep Dar's shared mobile app bar, top
+  search pill, view chips and `+` FAB untouched, hide tile checkboxes behind a
+  header `Select` toggle, and open the viewer and details below the top bar with
+  `Back`. See [Photos](photos.md).
 - **Books:** selected [mock A](spacetimedb/books-mocks.html) over B (November 16). Sidebar
   views (Home, Reading, Want to read, All books, Finished), then libraries (top folders of the
   Books folder). Home has Continue reading cards and Recently added / Want to read shelves;
