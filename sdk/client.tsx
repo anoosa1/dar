@@ -24,9 +24,9 @@ export function AppWorkspace({host,query,onQuery,sidebar,children,details,search
   const nav=useMobileNavigation(),panel=useRef<HTMLElement>(null),origin=useRef<HTMLElement|null>(null),wasOpen=useRef(false);
   useEffect(()=>{if(details&&!wasOpen.current&&matchMedia("(max-width:800px)").matches)(panel.current?.querySelector<HTMLElement>("button")??panel.current)?.focus();if(!details&&wasOpen.current)origin.current?.focus();wasOpen.current=!!details;},[!!details]);
   return <div className={`app-shell extension-shell ${details?"has-extension-details":""}`}>
-    <WorkspaceHeader app={`app:${host.id}`} session={host.session} onSignedOut={()=>location.assign("/")} query={query} onQuery={onQuery} searchLabel={searchLabel} onNavigation={()=>nav.setOpen(!nav.open)} navigationOpen={nav.open} navigationId={nav.id} onSettings={onSettings}/>
-    <div className="extension-workspace">{nav.open&&<button className="nav-scrim" aria-label="Close navigation" onClick={()=>nav.setOpen(false)}/>}
-      <aside id={nav.id} ref={nav.ref} className={`sidebar ${nav.open?"is-open":""}`} onClick={event=>{if((event.target as HTMLElement).closest("button"))nav.setOpen(false);}}>{sidebar}</aside>
+    <WorkspaceHeader app={`app:${host.id}`} session={host.session} onSignedOut={()=>location.assign("/")} query={query} onQuery={onQuery} searchLabel={searchLabel} onNavigation={sidebar?()=>nav.setOpen(!nav.open):undefined} navigationOpen={nav.open} navigationId={nav.id} onSettings={onSettings}/>
+    <div className="extension-workspace">{nav.open&&<button className="mobile-nav-scrim" aria-label="Close navigation" onClick={()=>nav.setOpen(false)}/>}
+      {sidebar&&<aside id={nav.id} ref={nav.ref} className={`sidebar ${nav.open?"is-open":""}`} onClick={event=>{if((event.target as HTMLElement).closest("button"))nav.setOpen(false);}}>{sidebar}</aside>}
       <main tabIndex={-1} onClickCapture={event=>{origin.current=(event.target as HTMLElement).closest<HTMLElement>("button")??origin.current;}}>{children}</main>
       {details&&<aside ref={panel} tabIndex={-1} className="extension-details" aria-label="Day details">{details}</aside>}
     </div>

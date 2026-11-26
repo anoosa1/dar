@@ -240,9 +240,18 @@ pub async fn handle_http(
                     "after".into(),
                     json!(query.get("after").map(String::as_str).unwrap_or("0")),
                 );
+                if let Some(tab) = query.get("tabId") {
+                    m.insert("tabId".into(), json!(tab));
+                }
                 m
             }
-            "close" => Map::new(),
+            "close" => {
+                let mut m = Map::new();
+                if let Some(tab) = query.get("tabId") {
+                    m.insert("tabId".into(), json!(tab));
+                }
+                m
+            }
             _ => body_object(body, MAX_JSON_BODY, headers).await?,
         };
         let value = agent
@@ -424,6 +433,44 @@ pub async fn handle_http(
             return Err(AppError::invalid());
         }
         let value = agent.files(session_id, user_id, thread_id, q).await?;
+        return Ok(json_response(&value, StatusCode::OK));
+    }
+
+    if let ["", "threads", thread_id, "file"] = segments.as_slice()
+        && is_hex_id(thread_id)
+        && *method == Method::GET
+    {
+        let rel = query
+            .get("path")
+            .map(String::as_str)
+            .ok_or_else(AppError::invalid)?;
+        let value = agent
+            .read_file(session_id, user_id, thread_id, rel)
+            .await?;
+        return Ok(json_response(&value, StatusCode::OK));
+    }
+
+    if let ["", "threads", thread_id, "revert"] = segments.as_slice()
+        && is_hex_id(thread_id)
+        && *method == Method::POST
+    {
+        let input = body_object(body, MAX_JSON_BODY, headers).await?;
+        if input.keys().any(|k| k != "path" && k != "all") {
+            return Err(AppError::invalid());
+        }
+        let rel = if input.get("all").and_then(Value::as_bool) == Some(true) {
+            None
+        } else {
+            Some(
+                input
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .ok_or_else(AppError::invalid)?,
+            )
+        };
+        let value = agent
+            .revert_file(session_id, user_id, thread_id, rel)
+            .await?;
         return Ok(json_response(&value, StatusCode::OK));
     }
 

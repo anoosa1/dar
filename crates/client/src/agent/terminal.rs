@@ -414,13 +414,34 @@ struct LinePart {
     cursor: bool,
 }
 
+/// A single terminal tab tracked by `MultiTerminalDrawer`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerminalTab {
+    pub id: String,
+    pub label: String,
+    pub command: Option<String>,
+}
+
+/// Request to launch a command (such as a Project Script) in a dedicated terminal tab.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScriptLaunch {
+    pub seq: u64,
+    pub name: String,
+    pub command: String,
+}
+
 /// Interactive shell for a thread's working copy, sandboxed on the server like agent commands.
 #[component]
 pub fn ThreadTerminal(
     #[prop(into)] thread_id: Signal<String>,
     session: BrowserSession,
     #[prop(into)] visible: Signal<bool>,
+    #[prop(optional, into)] tab_id: Option<Signal<String>>,
+    #[prop(optional)] initial_command: Option<String>,
+    #[prop(optional)] on_send_to_composer: Option<Callback<String>>,
 ) -> impl IntoView {
+    let tab_sig = tab_id.unwrap_or_else(|| Signal::derive(|| "main".to_owned()));
+    let initial_cmd_sv = StoredValue::new(initial_command);
     let screen = StoredValue::new_local(RefCell::new(Screen::new()));
     let redraw = RwSignal::new(0u64);
     let state = RwSignal::new(TerminalState::Idle);
@@ -434,12 +455,17 @@ pub fn ThreadTerminal(
     let flushing = StoredValue::new_local(RefCell::new(false));
     let decoder = StoredValue::new_local(RefCell::new(Utf8Stream::default()));
     let csrf = StoredValue::new(session.csrf_token);
+    let auto_started = StoredValue::new_local(RefCell::new(false));
 
     let url = move || {
         format!(
             "/api/v1/agent/threads/{}/terminal",
             thread_id.get_untracked()
         )
+    };
+    let current_tab = move || {
+        let t = tab_sig.get_untracked();
+        if t.is_empty() { "main".to_owned() } else { t }
     };
 
     let size = move || -> (u32, u32) {
@@ -479,7 +505,9 @@ pub fn ThreadTerminal(
     // Reset when thread changes.
     Effect::new(move |_| {
         let _ = thread_id.get();
+        let _ = tab_sig.get();
         abort_loop();
+        auto_started.with_value(|v| *v.borrow_mut() = false);
         state.set(TerminalState::Idle);
         error.set(String::new());
         screen.with_value(|s| *s.borrow_mut() = Screen::new());
@@ -524,7 +552,8 @@ pub fn ThreadTerminal(
                     let (rows, cols) = size();
                     screen.with_value(|s| s.borrow_mut().rows = rows as usize);
                     let target = format!("{}/resize", url());
-                    let body = serde_json::json!({ "rows": rows, "cols": cols }).to_string();
+                    let tab = current_tab();
+                    let body = serde_json::json!({ "tabId": tab, "rows": rows, "cols": cols }).to_string();
                     let token = csrf.get_value();
                     let _ = api::request::<serde_json::Value>(
                         &target,
@@ -550,12 +579,12 @@ pub fn ThreadTerminal(
         });
     });
 
-    let start_read = move |controller: web_sys::AbortController, endpoint: String| {
+    let start_read = move |controller: web_sys::AbortController, endpoint: String, tab: String| {
         spawn_local(async move {
             let signal = controller.signal();
             while !signal.aborted() {
                 let after = offset.with_value(|o| *o.borrow());
-                let poll_url = format!("{endpoint}?after={after}");
+                let poll_url = format!("{endpoint}?after={after}&tabId={tab}");
                 match api::request::<TerminalPoll>(
                     &poll_url,
                     Req {
@@ -600,7 +629,9 @@ pub fn ThreadTerminal(
 
     let open_terminal = move || {
         let endpoint = url();
+        let tab = current_tab();
         let (rows, cols) = size();
+        let cmd = initial_cmd_sv.get_value();
         state.set(TerminalState::Opening);
         error.set(String::new());
         screen.with_value(|s| {
@@ -613,7 +644,11 @@ pub fn ThreadTerminal(
         redraw.update(|n| *n += 1);
         let token = csrf.get_value();
         spawn_local(async move {
-            let body = serde_json::json!({ "rows": rows, "cols": cols }).to_string();
+            let mut payload = serde_json::json!({ "tabId": tab, "rows": rows, "cols": cols });
+            if let Some(c) = cmd.filter(|s| !s.trim().is_empty()) {
+                payload["command"] = serde_json::Value::String(c);
+            }
+            let body = payload.to_string();
             match api::request::<TerminalStart>(
                 &endpoint,
                 Req {
@@ -631,7 +666,7 @@ pub fn ThreadTerminal(
                     abort_loop();
                     let controller = web_sys::AbortController::new().expect("AbortController");
                     loop_abort.with_value(|cell| *cell.borrow_mut() = Some(controller.clone()));
-                    start_read(controller, endpoint);
+                    start_read(controller, endpoint, tab);
                     // Focus screen on next animation frame.
                     let promise = js_sys::Promise::new(&mut |resolve, _| {
                         let _ = window().request_animation_frame(&resolve);
@@ -653,6 +688,18 @@ pub fn ThreadTerminal(
         });
     };
 
+    // Auto-start script tabs once visible.
+    Effect::new(move |_| {
+        if visible.get()
+            && initial_cmd_sv.with_value(|c| c.as_deref().is_some_and(|s| !s.trim().is_empty()))
+            && state.get_untracked() == TerminalState::Idle
+            && !auto_started.with_value(|v| *v.borrow())
+        {
+            auto_started.with_value(|v| *v.borrow_mut() = true);
+            open_terminal();
+        }
+    });
+
     let flush = move || {
         let already = flushing.with_value(|f| {
             let mut f = f.borrow_mut();
@@ -667,6 +714,7 @@ pub fn ThreadTerminal(
             return;
         }
         let endpoint = format!("{}/input", url());
+        let tab = current_tab();
         let token = csrf.get_value();
         spawn_local(async move {
             loop {
@@ -674,7 +722,7 @@ pub fn ThreadTerminal(
                 if data.is_empty() {
                     break;
                 }
-                let body = serde_json::json!({ "data": data }).to_string();
+                let body = serde_json::json!({ "tabId": tab, "data": data }).to_string();
                 if let Err(e) = api::request::<serde_json::Value>(
                     &endpoint,
                     Req {
@@ -762,7 +810,7 @@ pub fn ThreadTerminal(
 
     let end_session = move |_| {
         abort_loop();
-        let endpoint = url();
+        let endpoint = format!("{}?tabId={}", url(), current_tab());
         let token = csrf.get_value();
         spawn_local(async move {
             let _ = api::request::<serde_json::Value>(
@@ -776,6 +824,30 @@ pub fn ThreadTerminal(
             .await;
             state.try_set(TerminalState::Closed);
         });
+    };
+
+    let capture_for_composer = move || -> String {
+        let selected = window()
+            .get_selection()
+            .ok()
+            .flatten()
+            .and_then(|s| s.to_string().as_string())
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        if let Some(sel) = selected {
+            return sel;
+        }
+        screen.with_value(|s| {
+            let s = s.borrow();
+            let lines: Vec<String> = s
+                .lines
+                .iter()
+                .map(|l| l.iter().map(|c| c.ch).collect::<String>().trim_end().to_owned())
+                .filter(|l| !l.is_empty())
+                .collect();
+            let start = lines.len().saturating_sub(24);
+            lines[start..].join("\n")
+        })
     };
 
     let show_screen = Memo::new(move |_| {
@@ -855,6 +927,14 @@ pub fn ThreadTerminal(
                                 _ => "Session ended",
                             }}</span>
                             {move || { let err = error.get(); (!err.is_empty()).then(|| view! { <span role="alert" class="error">{err}</span> }) }}
+                            {on_send_to_composer.map(|cb| view! {
+                                <button type="button" class="text-button" title="Attach selected text or recent terminal output to composer" on:click=move |_| {
+                                    let text = capture_for_composer();
+                                    if !text.is_empty() {
+                                        cb.try_run(text);
+                                    }
+                                }>"Send to composer"</button>
+                            })}
                             {move || match state.get() {
                                 TerminalState::Open => view! { <button type="button" class="text-button" on:click=end_session>"End session"</button> }.into_any(),
                                 TerminalState::Closed => view! { <button type="button" class="text-button" on:click=move |_| open_terminal()>"Restart"</button> }.into_any(),
@@ -864,6 +944,204 @@ pub fn ThreadTerminal(
                     }.into_any()
                 }
             }}
+        </div>
+    }
+}
+
+/// Multi-tab & split-pane terminal host inside the Agent terminal drawer.
+#[component]
+pub fn MultiTerminalDrawer(
+    #[prop(into)] thread_id: Signal<String>,
+    session: BrowserSession,
+    #[prop(into)] visible: Signal<bool>,
+    #[prop(into)] script_launch: Signal<Option<ScriptLaunch>>,
+    on_send_to_composer: Callback<String>,
+) -> impl IntoView {
+    let tabs = RwSignal::new(vec![TerminalTab {
+        id: "main".into(),
+        label: "Shell 1".into(),
+        command: None,
+    }]);
+    let active_tab = RwSignal::new("main".to_owned());
+    let split = RwSignal::new(false);
+    let next_num = RwSignal::new(2usize);
+    let last_launch_seq = StoredValue::new_local(RefCell::new(0u64));
+    let session_sv = StoredValue::new(session);
+
+    // Reset tabs when switching threads.
+    Effect::new(move |_| {
+        let _ = thread_id.get();
+        tabs.set(vec![TerminalTab {
+            id: "main".into(),
+            label: "Shell 1".into(),
+            command: None,
+        }]);
+        active_tab.set("main".into());
+        split.set(false);
+        next_num.set(2);
+    });
+
+    // Launch project script in a dedicated terminal tab when requested.
+    Effect::new(move |_| {
+        let Some(req) = script_launch.get() else { return };
+        let is_new = last_launch_seq.with_value(|cell| {
+            let mut prev = cell.borrow_mut();
+            if *prev == req.seq {
+                false
+            } else {
+                *prev = req.seq;
+                true
+            }
+        });
+        if !is_new {
+            return;
+        }
+        let n = next_num.get_untracked();
+        next_num.set(n + 1);
+        let id = format!("script-{n}");
+        let id_act = id.clone();
+        tabs.update(|list| {
+            if list.len() < 8 {
+                list.push(TerminalTab {
+                    id,
+                    label: req.name,
+                    command: Some(req.command),
+                });
+            }
+        });
+        active_tab.set(id_act);
+    });
+
+    let add_tab = move |_| {
+        let n = next_num.get_untracked();
+        if tabs.with_untracked(Vec::len) >= 8 {
+            return;
+        }
+        next_num.set(n + 1);
+        let id = format!("shell-{n}");
+        let id_act = id.clone();
+        tabs.update(|list| {
+            list.push(TerminalTab {
+                id,
+                label: format!("Shell {n}"),
+                command: None,
+            });
+        });
+        active_tab.set(id_act);
+    };
+
+    let close_tab = move |id: String| {
+        let csrf = session_sv.get_value().csrf_token;
+        let tid = thread_id.get_untracked();
+        let id_del = id.clone();
+        spawn_local(async move {
+            let _ = api::request::<serde_json::Value>(
+                &format!("/api/v1/agent/threads/{tid}/terminal?tabId={id_del}"),
+                Req {
+                    method: "DELETE",
+                    csrf: Some(&csrf),
+                    ..Default::default()
+                },
+            )
+            .await;
+        });
+        tabs.update(|list| {
+            if list.len() > 1 {
+                list.retain(|t| t.id != id);
+            }
+        });
+        if active_tab.get_untracked() == id
+            && let Some(first) = tabs.with_untracked(|l| l.first().map(|t| t.id.clone()))
+        {
+            active_tab.set(first);
+        }
+    };
+
+    view! {
+        <div class="agent-multiterm">
+            <div class="agent-multiterm-bar">
+                <div class="agent-multiterm-tabs" role="tablist" aria-label="Terminal tabs">
+                    {move || {
+                        let list = tabs.get();
+                        let cur = active_tab.get();
+                        let can_close = list.len() > 1;
+                        list.into_iter().map(|tab| {
+                            let is_active = tab.id == cur;
+                            let id_sel = tab.id.clone();
+                            let id_cls = tab.id.clone();
+                            let is_script = tab.command.is_some();
+                            view! {
+                                <div class=if is_active { "agent-multiterm-tab is-active" } else { "agent-multiterm-tab" }>
+                                    <button type="button" role="tab" aria-selected=is_active.to_string() on:click=move |_| active_tab.set(id_sel.clone())>
+                                        <Icon name=if is_script { "play" } else { "terminal" }/>
+                                        <span>{tab.label}</span>
+                                    </button>
+                                    {can_close.then(|| view! {
+                                        <button type="button" class="agent-multiterm-close" aria-label="Close terminal tab" on:click=move |_| close_tab(id_cls.clone())>
+                                            <Icon name="close"/>
+                                        </button>
+                                    })}
+                                </div>
+                            }
+                        }).collect_view()
+                    }}
+                </div>
+                <div class="agent-multiterm-actions">
+                    <button type="button" class="icon-button" aria-label="New terminal tab" title="New terminal tab"
+                        disabled=move || tabs.with(|l| l.len() >= 8)
+                        on:click=add_tab>
+                        <Icon name="plus"/>
+                    </button>
+                    <button type="button" class="icon-button" aria-label="Split terminal" title="Split terminal pane"
+                        aria-pressed=move || split.get().to_string()
+                        disabled=move || tabs.with(|l| l.len() < 2)
+                        on:click=move |_| split.update(|v| *v = !*v)>
+                        <Icon name="split"/>
+                    </button>
+                </div>
+            </div>
+            <div class=move || if split.get() && tabs.with(|l| l.len() >= 2) { "agent-multiterm-panes is-split" } else { "agent-multiterm-panes" }>
+                <For
+                    each=move || tabs.get()
+                    key=|t| t.id.clone()
+                    let:tab
+                >
+                    {
+                        let tid_for_vis = tab.id.clone();
+                        let tid_sig = Signal::derive({
+                            let id = tab.id.clone();
+                            move || id.clone()
+                        });
+                        let is_shown = Memo::new(move |_| {
+                            let cur = active_tab.get();
+                            if tid_for_vis == cur {
+                                return true;
+                            }
+                            if split.get() {
+                                let list = tabs.get();
+                                if let Some(pos) = list.iter().position(|t| t.id == cur) {
+                                    let second = if pos + 1 < list.len() { pos + 1 } else { 0 };
+                                    return list.get(second).is_some_and(|t| t.id == tid_for_vis);
+                                }
+                            }
+                            false
+                        });
+                        let pane_vis = Signal::derive(move || visible.get() && is_shown.get());
+                        view! {
+                            <div class="agent-multiterm-pane" hidden=move || !is_shown.get()>
+                                <ThreadTerminal
+                                    thread_id=thread_id
+                                    session=session_sv.get_value()
+                                    visible=pane_vis
+                                    tab_id=tid_sig
+                                    initial_command=tab.command.clone().unwrap_or_default()
+                                    on_send_to_composer=on_send_to_composer
+                                />
+                            </div>
+                        }
+                    }
+                </For>
+            </div>
         </div>
     }
 }

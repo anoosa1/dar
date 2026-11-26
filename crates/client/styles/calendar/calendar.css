@@ -1251,14 +1251,6 @@ button.calendar-day-heading:hover{background:var(--hover)}
 .calendar-mobile-strip{display:none}
 
 @media(max-width:800px){
-  .pim-workspace.has-calendar-main>.sidebar{
-    flex-direction:row;
-    align-items:center;
-    overflow-x:auto;
-    overflow-y:hidden;
-  }
-  .sidebar :is(.calendar-sidebar-scroll,.calendar-sidebar-footer,.calendar-list,.calendar-up-next){display:contents}
-  .sidebar .calendar-up-next-main{display:none}
   .calendar-main>.calendar-heading{
     flex-direction:column;
     align-items:stretch;

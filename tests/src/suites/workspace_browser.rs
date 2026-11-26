@@ -378,14 +378,16 @@ pub async fn notes_and_tasks_journey(t: &Ctx) -> Result<()> {
     )
     .await?;
 
-    // Phones show task views and lists as a horizontal chip strip instead of a drawer.
+    // Phones slide task views and lists out of the hamburger navigation drawer.
+    page.get_by_role("button", "Open navigation").click().await?;
     assert_eq!(
         page.locator(".sidebar")
             .evaluate("el => getComputedStyle(el).flexDirection", Value::Null)
             .await?,
-        json!("row")
+        json!("column")
     );
     page.get_by_role("button", "Today").wait_for().await?;
+    page.keyboard().press("Escape").await?;
 
     ui::item_action(&page, &task_title, "Delete task").await?;
     dialog.get_by_role("button", "Delete task").click().await?;

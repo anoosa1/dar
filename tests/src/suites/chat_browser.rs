@@ -46,7 +46,7 @@ pub async fn chat_browser_journey(t: &Ctx) -> Result<()> {
     page.get_by_label("Username").fill("admin").await?;
     page.get_by_label("Password").fill(PASSWORD).await?;
     page.get_by_role("button", "Sign in").click().await?;
-    page.get_by_role("link", "Chat").first().wait_for().await?;
+    page.locator("header.topbar").wait_for().await?;
     page.get_by_role("heading", contains("No accounts linked"))
         .wait_for()
         .await?;

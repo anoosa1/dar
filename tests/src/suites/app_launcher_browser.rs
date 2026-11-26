@@ -90,59 +90,38 @@ pub async fn app_launcher_and_installed_apps(t: &Ctx) -> Result<()> {
             page.evaluate_with("(value) => { document.documentElement.dataset.theme = value; }", json!(theme)).await?;
             for (width, height) in [(1440u32, 950u32), (390, 568)] {
                 page.set_viewport_size(width, height).await?;
-                let rail = page.get_by_role("navigation", "Applications");
-                let links = rail.locator(".app-rail-item").filter_visible(true);
-                rail.wait_for().await?;
-                let boxes = links
-                    .evaluate_all("items => items.map(item => { const r = item.getBoundingClientRect(); return { x: r.x, y: r.y, bottom: r.bottom }; })", Value::Null)
-                    .await?;
-                let arr = boxes.as_array().context("boxes")?;
                 if width == 390 {
-                    assert!(arr.len() <= 4, "{boxes}");
-                    let y0 = arr[0]["y"].as_f64().unwrap();
-                    for i in 0..arr.len() {
-                        assert!(arr[i]["bottom"].as_f64().unwrap() <= height as f64);
-                        if i > 0 {
-                            assert!(arr[i]["x"].as_f64().unwrap() > arr[i - 1]["x"].as_f64().unwrap());
-                            assert!((arr[i]["y"].as_f64().unwrap() - y0).abs() < 1.0);
-                        }
-                    }
-                } else {
-                    for name in ["Files", "Contacts", "Calendar", "Notes", "Tasks", ext_name.as_str(), "Settings"] {
-                        rail.get_by_role("link", name).wait_for().await?;
-                    }
-                    let x0 = arr[0]["x"].as_f64().unwrap();
-                    for i in 1..arr.len() {
-                        assert!(arr[i]["y"].as_f64().unwrap() > arr[i - 1]["y"].as_f64().unwrap());
-                        assert!((arr[i]["x"].as_f64().unwrap() - x0).abs() < 1.0);
-                    }
-                }
-                assert_eq!(rail.get_by_role("link", "Settings").filter_visible(true).count().await?, if width == 390 { 0 } else { 1 });
-
-                if width == 390 {
-                    let opener = page.get_by_role("button", "More apps");
+                    // Phone: no bottom app bar; User avatar opens the full-screen Account & Apps Hub.
+                    assert_eq!(page.locator("nav.app-rail").count().await?, 0);
+                    let opener = page.get_by_role("button", "Open account menu");
                     opener.click().await?;
-                    let menu = page.get_by_role("menu", "More apps");
-                    menu.wait_for().await?;
-                    let box_ = menu.bounding_box().await?.context("more apps menu box")?;
-                    assert!(
-                        box_.x >= 12.0
-                            && box_.x + box_.width <= width as f64 - 12.0
-                            && box_.y >= 0.0
-                            && box_.y + box_.height <= height as f64 - 12.0,
-                        "{box_:?}"
-                    );
-                    menu.get_by_role("menuitem", "Settings").wait_for().await?;
-                    page.keyboard().press("End").await?;
-                    assert_eq!(menu.get_by_role("menuitem", "Manage apps").evaluate("el => el === document.activeElement", Value::Null).await?, json!(true));
+                    let hub = page.get_by_role("dialog", "Apps and account");
+                    hub.wait_for().await?;
+                    for name in ["Files", "Contacts", "Calendar", "Notes", "Tasks", ext_name.as_str()] {
+                        hub.get_by_role("link", name).wait_for().await?;
+                    }
+                    hub.get_by_role("link", "Manage apps").wait_for().await?;
+                    assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
+                    page.screenshot(t.screenshot(&format!("app-launcher-{theme}-{width}.png")), false).await?;
                     page.keyboard().press("Escape").await?;
-                    assert_eq!(opener.evaluate("el => el === document.activeElement", Value::Null).await?, json!(true));
+                    hub.wait_for_state(State::Detached).await?;
+                } else {
+                    // Desktop: no permanent rail; 9-dot All apps button opens Direction A popover with "Apps" heading.
+                    assert_eq!(page.locator("nav.app-rail").count().await?, 0);
+                    let opener = page.get_by_role("button", "All apps");
                     opener.click().await?;
-                    menu.wait_for().await?;
+                    let dialog = page.get_by_role("dialog", "All apps");
+                    dialog.wait_for().await?;
+                    for name in ["Files", "Contacts", "Calendar", "Notes", "Tasks", ext_name.as_str()] {
+                        dialog.get_by_role("link", name).wait_for().await?;
+                    }
+                    dialog.get_by_role("link", "Customize").wait_for().await?;
+                    dialog.get_by_role("link", "Manage apps").wait_for().await?;
+                    assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
+                    page.screenshot(t.screenshot(&format!("app-launcher-{theme}-{width}.png")), false).await?;
+                    page.keyboard().press("Escape").await?;
+                    dialog.wait_for_state(State::Detached).await?;
                 }
-                assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
-                page.screenshot(t.screenshot(&format!("app-launcher-{theme}-{width}.png")), false).await?;
-                page.keyboard().press("Escape").await?;
             }
         }
 
@@ -156,11 +135,13 @@ pub async fn app_launcher_and_installed_apps(t: &Ctx) -> Result<()> {
 
         page.reload().await?;
         page.get_by_role("button", "Enable Notes").wait_for().await?;
-        let rail = page.get_by_role("navigation", "Applications");
-        rail.get_by_role("link", "Files").wait_for().await?;
+        page.get_by_role("button", "All apps").click().await?;
+        let apps_dialog = page.get_by_role("dialog", "All apps");
+        apps_dialog.get_by_role("link", "Files").wait_for().await?;
         for name in ["Notes", "Tasks", ext_name.as_str()] {
-            rail.get_by_role("link", name).wait_for_state(State::Detached).await?;
+            apps_dialog.get_by_role("link", name).wait_for_state(State::Detached).await?;
         }
+        page.keyboard().press("Escape").await?;
 
         for route in ["/api/v1/notes/notebooks", "/api/v1/tasks/items", data_url.as_str()] {
             assert_eq!(admin.get(route).await?.status, 404, "{route}");
@@ -190,15 +171,15 @@ pub async fn app_launcher_and_installed_apps(t: &Ctx) -> Result<()> {
             user_ctx.add_cookies(vec![Cookie::for_url(cookie_name, cookie_val, &base)]).await?;
             let user_page = user_ctx.new_page().await?;
             user_page.goto(&base).await?;
+            user_page.get_by_role("button", "Open account menu").click().await?;
+            let user_hub = user_page.get_by_role("dialog", "Apps and account");
+            user_hub.wait_for().await?;
             assert_eq!(
-                user_page.get_by_role("navigation", "Applications").get_by_role("link", "Files").get_attribute("aria-current").await?.as_deref(),
+                user_hub.get_by_role("link", "Files").get_attribute("aria-current").await?.as_deref(),
                 Some("page")
             );
-            user_page.get_by_role("button", "More apps").click().await?;
-            let user_menu = user_page.get_by_role("menu", "More apps");
-            user_menu.wait_for().await?;
-            user_menu.get_by_role("menuitem", "Settings").wait_for().await?;
-            assert_eq!(user_menu.get_by_role("menuitem", "Manage apps").count().await?, 0);
+            user_hub.get_by_role("link", "Settings").wait_for().await?;
+            assert_eq!(user_hub.get_by_role("link", "Manage apps").count().await?, 0);
             Ok::<(), Error>(())
         }
         .await;

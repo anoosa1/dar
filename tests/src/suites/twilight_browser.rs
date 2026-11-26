@@ -70,9 +70,14 @@ async fn navigate(page: &Page, base: &str, path: &str, ready: Locator) -> Result
 }
 
 async fn open_settings(page: &Page, app: &str) -> Result<()> {
-    page.get_by_role("button", format!("{app} settings"))
-        .click()
-        .await?;
+    let btn = page.get_by_role("button", format!("{app} settings"));
+    if !btn.is_visible().await? {
+        let nav = page.get_by_role("button", "Open navigation");
+        if nav.is_visible().await? {
+            nav.click().await?;
+        }
+    }
+    btn.click().await?;
     page.get_by_role("dialog", format!("{app} settings"))
         .wait_for()
         .await
@@ -258,7 +263,7 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
                 page.get_by_label("Username").fill("admin").await?;
                 page.get_by_label("Password").fill(PASSWORD).await?;
                 page.get_by_role("button", "Sign in").click().await?;
-                page.get_by_role("navigation", "Applications").wait_for().await?;
+                page.locator("header.topbar").wait_for().await?;
 
                 navigate(&page, &base, "/settings?section=appearance", page.get_by_role("radio", "Follow system")).await?;
                 let choice = page.get_by_role(
@@ -301,7 +306,7 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
                 );
                 assert_eq!(
                     page.locator(".topbar").evaluate("el => el.getBoundingClientRect().top", Value::Null).await?.as_f64().unwrap_or(-1.0),
-                    if width > 800 { 0.0 } else { 8.0 }
+                    0.0
                 );
                 if width > 800 {
                     assert_eq!(page.locator(".sidebar").evaluate("el => el.getBoundingClientRect().top", Value::Null).await?.as_f64().unwrap_or(-1.0), 56.0);
@@ -310,11 +315,13 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
                 page.locator(".files-main").evaluate("el => { el.scrollTop = 0; }", Value::Null).await?;
 
                 if width < 801 {
-                    page.get_by_role("button", "More apps").click().await?;
+                    page.get_by_role("button", "Open navigation").click().await?;
                     capture(&page, &output, theme, width, "launcher", &mut manifest, &mut failures).await?;
                     page.keyboard().press("Escape").await?;
                 } else {
+                    page.get_by_role("button", "All apps").click().await?;
                     capture(&page, &output, theme, width, "launcher", &mut manifest, &mut failures).await?;
+                    page.keyboard().press("Escape").await?;
                 }
 
                 page.get_by_role("button", "Open account menu").click().await?;
@@ -356,6 +363,9 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
                 capture(&page, &output, theme, width, "files-settings", &mut manifest, &mut failures).await?;
                 close_settings(&page).await?;
 
+                if width < 801 {
+                    page.get_by_role("button", "Open navigation").click().await?;
+                }
                 page.get_by_role("button", "New").click().await?;
                 capture(&page, &output, theme, width, "files-new-menu", &mut manifest, &mut failures).await?;
                 page.get_by_role("menuitem", "Folder").click().await?;
@@ -387,6 +397,9 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
                 open_settings(&page, "Contacts").await?;
                 capture(&page, &output, theme, width, "contacts-settings", &mut manifest, &mut failures).await?;
                 close_settings(&page).await?;
+                if width < 801 {
+                    page.get_by_role("button", "Open navigation").click().await?;
+                }
                 page.get_by_role("button", "New address book").click().await?;
                 page.get_by_label("Name").wait_for().await?;
                 capture(&page, &output, theme, width, "new-address-book", &mut manifest, &mut failures).await?;
@@ -401,6 +414,9 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
                 open_settings(&page, "Calendar").await?;
                 capture(&page, &output, theme, width, "calendar-settings", &mut manifest, &mut failures).await?;
                 close_settings(&page).await?;
+                if width < 801 {
+                    page.get_by_role("button", "Open navigation").click().await?;
+                }
                 page.get_by_role("button", "New event").click().await?;
                 page.get_by_label("Title").wait_for().await?;
                 capture(&page, &output, theme, width, "new-event", &mut manifest, &mut failures).await?;
@@ -423,6 +439,9 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
                 open_settings(&page, "Tasks").await?;
                 capture(&page, &output, theme, width, "tasks-settings", &mut manifest, &mut failures).await?;
                 close_settings(&page).await?;
+                if width < 801 {
+                    page.get_by_role("button", "Open navigation").click().await?;
+                }
                 page.get_by_role("button", "New task").click().await?;
                 page.get_by_label("Title").wait_for().await?;
                 capture(&page, &output, theme, width, "new-task", &mut manifest, &mut failures).await?;
@@ -432,7 +451,10 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
                     ("notes", "folder", long_notebook_name.as_str(), "Move to deleted files", "Move to deleted files", "Move folder to deleted files?"),
                     ("tasks", "task list", long_task_list_name.as_str(), "Delete task list", "Delete task list", "Delete task list?"),
                 ] {
-                    navigate(&page, &base, &format!("/{path_seg}"), page.get_by_role("navigation", "Applications")).await?;
+                    navigate(&page, &base, &format!("/{path_seg}"), page.locator("header.topbar")).await?;
+                    if width < 801 {
+                        page.get_by_role("button", "Open navigation").click().await?;
+                    }
                     page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))").await?;
                     let target_action = page.get_by_role("button", format!("Actions for {noun} {long_name}"));
                     for _ in 0..100 {

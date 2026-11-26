@@ -217,7 +217,7 @@ pub fn SettingsOverview(
                                 Some(SaveState::Saved) => " \u{00b7} Saved",
                                 _ => "",
                             };
-                            format!("{name}{suffix}")
+                            format!("{name}{suffix} \u{00b7} Theme & app menu")
                         }}
                     </p>
                     <div class="settings-overview-themes" role="radiogroup" aria-label="Color theme">

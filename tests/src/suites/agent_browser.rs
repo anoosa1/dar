@@ -46,7 +46,8 @@ async fn agent_browser_flow(ctx: &Ctx) -> Result<()> {
 
     let result: Result<()> = async {
         sign_in_at(&page, &base, "admin", PASSWORD).await?;
-        page.get_by_role("navigation", "Applications").get_by_role("link", "Agent").click().await?;
+        page.get_by_role("button", "All apps").click().await?;
+        page.get_by_role("dialog", "All apps").get_by_role("link", "Agent").click().await?;
         page.get_by_role("heading", "Agent").first().wait_for().await?;
 
         let marker = format!("browser-project-{}", &uuid()[..6]);
@@ -173,12 +174,11 @@ async fn agent_browser_flow(ctx: &Ctx) -> Result<()> {
                     }
                     page.get_by_role("button", "Back to threads").click().await?;
                     page.locator(".agent-sidebar").wait_for_state(State::Visible).await?;
-                    page.get_by_role("navigation", "Applications").wait_for().await?;
+                    page.locator("header.topbar").wait_for().await?;
                     ensure!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await? == json!(false));
 
                     page.locator(".agent-thread-select[aria-current=page]").click().await?;
                     page.locator(".agent-conversation").wait_for_state(State::Visible).await?;
-                    page.get_by_role("navigation", "Applications").wait_for_state(State::Hidden).await?;
 
                     let labels_fit = page
                         .locator(".agent-mobile-views")
@@ -234,7 +234,7 @@ async fn agent_browser_flow(ctx: &Ctx) -> Result<()> {
         page.get_by_role("button", "Close command output").click().await?;
 
         page.get_by_role("button", "Hide threads").click().await?;
-        page.get_by_role("navigation", "Applications").wait_for().await?;
+        page.locator("header.topbar").wait_for().await?;
         page.locator(".agent-sidebar").wait_for_state(State::Hidden).await?;
         page.get_by_role("button", "Show threads").click().await?;
 
@@ -435,6 +435,24 @@ async fn agent_browser_flow(ctx: &Ctx) -> Result<()> {
         let still_exists = threads_after["items"].as_array().is_some_and(|items| items.iter().any(|row| row["id"] == scroll_id));
         ensure!(!still_exists, "deleted thread still listed");
         page.keyboard().press("Escape").await?;
+
+        // Verify T3-parity workspace pages (Usage, Automations) and multi-surface right panel tabs.
+        page.get_by_role("navigation", "Workspace pages").get_by_role("button", "Usage").click().await?;
+        page.get_by_role("heading", "Usage & limits").wait_for().await?;
+        page.get_by_role("navigation", "Workspace pages").get_by_role("button", "Automations").click().await?;
+        page.get_by_role("heading", "Automations").wait_for().await?;
+        page.get_by_role("navigation", "Workspace pages").get_by_role("button", "Threads").click().await?;
+        page.locator(".agent-thread-select").first().click().await?;
+
+        page.get_by_role("button", "Show changes").click().await?;
+        let surface_tabs = page.get_by_role("tablist", "Workspace surfaces");
+        surface_tabs.get_by_role("tab", "Files").click().await?;
+        page.get_by_label("Filter workspace files").wait_for().await?;
+        surface_tabs.get_by_role("tab", "Side chat").click().await?;
+        page.get_by_label("Side note").wait_for().await?;
+        surface_tabs.get_by_role("tab", "Preview").click().await?;
+        page.get_by_label("Preview file").wait_for().await?;
+        page.get_by_role("button", "Close changes").click().await?;
 
         let page_errors = errors.lock().unwrap().clone();
         ensure!(page_errors.is_empty(), "unexpected page errors: {page_errors:?}");

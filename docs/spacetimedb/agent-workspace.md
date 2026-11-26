@@ -8,36 +8,50 @@ run protocol and limits are in [Codex](../codex.md) and [Claude Code](../claude-
 
 ## Features
 
-- **Projects:** a credential-free Git URL or an authorized Files folder (picked
-  with the shared Files picker), named from the source. Never a host path.
-- **Threads:** New thread opens a draft with a project control; the thread is
+- **Projects & Scratch:** a credential-free Git URL, an authorized Files folder (picked
+  with the shared Files picker), or an instant `"Scratch"` workspace (*Start without a
+  project*), named from the source. Never a host path.
+- **Threads & Sidebar:** New thread opens a draft with a project control; the thread is
   created on save or run and titled from the first message. Pin, rename (menu,
   double-click, F2), settle/restore, snooze with a Woke badge, archive, delete,
   fork from any message, copy link, Markdown copy/export and read-only sharing
-  with other Dar accounts. Working, Snoozed and Settled shelves; unread markers
-  and optional completion notifications per browser.
+  with other Dar accounts. Filter pills (`All`, `Working`, `Unread`, `Pinned`),
+  Working/Snoozed/Settled shelves, unread markers, optional completion notifications,
+  and a bottom **Utility Dock** (`Threads`, `Usage`, `PRs`, `Automations`).
 - **Composer:** Enter sends (configurable), Shift+Enter adds a line, save-only in
-  the menu, model and reasoning choice, plan mode, image attachments, `/` commands,
-  `@` file mentions, prompt history, steering a running turn, one queued follow-up
-  and a context meter. Codex questions appear as an answer card.
-- **Conversation:** safe Markdown replies, a typed work log with command output,
-  find in thread, scroll restoration, jump to latest and a timeline minimap.
-- **Review and output:** changed-files card and a review panel with per-file
-  diffs (collapse, wrap, copy, download), Codex code review and compaction, a
-  read-only output drawer and a sandboxed terminal, Git status/branch/commit,
-  usage limits and token counts. Text edits to Files are applied only after review;
-  when the Files folder keeps [history](folder-history.md), Commit to branch stores every
-  added, changed and deleted file on `agent/<thread>` and Merge into folder applies
-  them together as one commit.
+  the menu, two-tab provider Model & Reasoning picker with starred models, plan mode
+  (with a Proposed Plan action card + *Implement plan*), image attachments, inline
+  **context chips** (from Files, Split Diff line comments, Side Chat, PRs, or Terminal
+  output), **Prompt Stash**, `/` commands, `@` file mentions, prompt history,
+  configurable follow-up behavior (multi-item **Queue** tray or immediate **Steer**),
+  auto-clearing transient notices, and a context meter. Blocking questions render as
+  horizontal selectable option cards with numeric key hints.
+- **Conversation:** safe Markdown replies, a typed work log with clickable changed files
+  and command output, find in thread, scroll restoration, jump to latest and a timeline minimap.
+- **Multi-Surface Right Panel & Multi-Tab Terminal:**
+  - Tabbed right panel with `Changes` (**Unified / Split** diff viewer, inline line review
+    comments attached to composer, **Revert file** to baseline, collapse, wrap, copy, download,
+    and Files History branch commit/merge), `Files` (working-copy browser + code/Markdown/image
+    viewer), `Side chat` (parallel scratchpad), `PRs & Issues` (live Dar Git integration),
+    and `Preview` (strictly sandboxed HTML/SVG/Markdown preview).
+  - **Project Scripts** saved per project in the Details card and launched directly into
+    dedicated tabs inside the **Multi-Tab & Split-Pane** sandboxed terminal drawer
+    (with *Send to composer* output capture alongside read-only Agent output).
+- **Top-level Workspace Pages & Settings:**
+  - `Usage & limits` (styled Twilight rate-limit bars, provider connection cards, 7-day
+    activity chart, model starring), `Pull requests & issues` (Dar Git hub), and
+    `Automations` (saved reusable prompt schedules with one-click *Run now*).
+  - Searchable categorized **Agent settings** modal on desktop and native full-width
+    **Hub → Section drill-down** on phones.
 - **Keys:** Ctrl/Cmd+P palette, Ctrl/Cmd+Shift+O new thread, Ctrl/Cmd+B sidebar,
   Ctrl/Cmd+F find. Ctrl/Cmd+K is the shared cross-app search.
 
 ## Deliberate differences from T3
 
-Dar is multi-user and server-side, so approvals and access-mode switching are not
-offered (every escalation is declined), workspaces have no network, and Git push,
-pull requests, scheduled tasks, device pairing and secrets are not provided.
-Full-screen terminal programs degrade to text.
+Dar is multi-user and server-side, so approvals, access-mode switching, remote T3 Connect
+sync, device pairing and host-level secrets are not offered (every escalation is declined),
+workspaces have no network, and remote Git push is disabled. Full-screen terminal programs
+degrade to text.
 
 ## Data and safety
 

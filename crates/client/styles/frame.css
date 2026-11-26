@@ -1,67 +1,504 @@
-/* Unified look B, selected November 11 (docs/spacetimedb/unified-look-mock-b.html).
-   Every app shares a persistent app rail, a top bar with the centered cross-app
-   search, and content in floating sheets on the soft background. Phones turn the
-   rail into a bottom navigation bar, sidebar navigation into chips and details
-   into full-screen panels. Imported last so it supersedes earlier frame rules. */
-:root{--rail-width:72px;--topbar-height:56px;--sheet-gap:8px;--sheet-radius:16px;--bottom-bar-height:72px;--sheet-border:color-mix(in srgb,var(--border) 55%,var(--surface-soft));--content-heading-size:20px}
+/* Dar Full-Canvas Frame (Direction A, selected November 25):
+   Desktop removes the left app rail so every app fills 100% width beneath a single top bar
+   ([Dar Logo] [All Apps] [App Title] — centered search — [App Settings] [User]).
+   Mobile removes the bottom app bar and top chip bubbles: a separated 3-part top bar
+   ([Hamburger] [Search] [User]) opens a slide-over app drawer on the left and a full-screen
+   Apps + Account hub on the right. Imported late in cascade order so it supersedes legacy layout rules. */
+:root{
+  --rail-width:0px;
+  --topbar-height:56px;
+  --sheet-gap:8px;
+  --sheet-radius:16px;
+  --bottom-bar-height:0px;
+  --sheet-border:color-mix(in srgb,var(--border) 55%,var(--surface-soft));
+  --content-heading-size:20px;
+  --popover-bg:color-mix(in srgb,var(--raised) 95%,transparent);
+  --popover-border:color-mix(in srgb,var(--border) 78%,transparent);
+}
 
-/* Frame: rail spans the left edge; the top bar and workspace fill the rest. */
-:is(.app-shell,.identity-settings,.identity-consent-page){display:grid;grid-template-columns:var(--rail-width) minmax(0,1fr);grid-template-rows:var(--topbar-height) minmax(0,1fr);height:100dvh;min-height:0;overflow:hidden;background:var(--surface-soft);color:var(--text)}
-:is(.app-shell,.identity-settings,.identity-consent-page)>*{grid-column:2;grid-row:2;min-width:0;min-height:0}
-:is(.app-shell,.identity-settings,.identity-consent-page)>.app-rail{grid-column:1;grid-row:1/-1}
-:is(.app-shell,.identity-settings,.identity-consent-page)>.topbar{grid-column:2;grid-row:1}
-:is(.app-shell,.identity-consent-page)>:is(.startup-state,.identity-consent){margin:0 var(--sheet-gap) var(--sheet-gap) 0;background:var(--panel);border:1px solid var(--sheet-border);border-radius:var(--sheet-radius);overflow-y:auto}
+/* Frame: full-width single column under the persistent top bar. */
+:is(.app-shell,.identity-settings,.identity-consent-page){
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:var(--topbar-height) minmax(0,1fr);
+  height:100dvh;
+  min-height:0;
+  overflow:hidden;
+  background:var(--surface-soft);
+  color:var(--text);
+}
+:is(.app-shell,.identity-settings,.identity-consent-page)>*{grid-column:1;grid-row:2;min-width:0;min-height:0}
+:is(.app-shell,.identity-settings,.identity-consent-page)>.topbar{grid-column:1;grid-row:1}
+:is(.app-shell,.identity-consent-page)>:is(.startup-state,.identity-consent){
+  margin:0 var(--sheet-gap) var(--sheet-gap);
+  background:var(--panel);
+  border:1px solid var(--sheet-border);
+  border-radius:var(--sheet-radius);
+  overflow-y:auto;
+}
 
-/* App rail. */
-.app-rail{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 0 12px;min-height:0;overflow:hidden auto;scrollbar-width:none;position:relative;z-index:101}
-.app-rail-brand{display:grid;place-items:center;flex:none;width:36px;height:36px;margin:0 0 14px;border-radius:11px;background:var(--accent);color:var(--on-accent);font-size:16px;font-weight:750;text-decoration:none}
-.app-rail-apps{display:flex;flex-direction:column;align-items:center;gap:2px}
-:is(.app-rail-item,.app-rail-more>.ui-menu-trigger){display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;min-height:0;padding:2px 0 6px;border-radius:12px;background:transparent;color:var(--muted);font-size:11px;font-weight:550;line-height:1.3;text-decoration:none}
-.app-rail-more>.ui-menu-trigger:hover{background:transparent}
-.app-rail-icon{display:grid;place-items:center;width:52px;height:30px;border-radius:15px;transition:background-color .15s}
-.app-rail-icon .icon{width:19px;height:19px}
-:is(.app-rail-item,.app-rail-more>.ui-menu-trigger):hover .app-rail-icon{background:var(--hover)}
-:is(.app-rail-item[aria-current=page],.app-rail-more.is-current>.ui-menu-trigger){color:var(--text)}
-:is(.app-rail-item[aria-current=page],.app-rail-more.is-current>.ui-menu-trigger) .app-rail-icon{background:var(--tonal);color:var(--on-tonal)}
-:is(.app-rail-item,.app-rail-more>.ui-menu-trigger,.app-rail-brand):focus-visible{outline:none}
-:is(.app-rail-item,.app-rail-more>.ui-menu-trigger):focus-visible .app-rail-icon,.app-rail-brand:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.app-rail-label{max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.app-rail-more{display:none}
-.app-rail-end{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:auto;padding-top:12px}
-.app-rail-settings{padding:0}
-.rail-account .avatar{width:32px;height:32px;min-width:32px;font-size:11px}
-.rail-account>.ui-menu>.ui-menu-panel{position:fixed;left:calc(var(--rail-width) + 4px);right:auto;top:auto;bottom:12px}
-.topbar-account{display:none}
-
-/* Top bar. */
-.topbar{display:flex;align-items:center;gap:8px;height:var(--topbar-height);min-height:0;padding:0 12px 0 4px;background:transparent;border:0;position:relative;top:auto;z-index:100}
-.topbar-title{flex:none;width:226px;padding-left:12px;overflow:hidden;color:var(--text);font-size:18px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;text-overflow:ellipsis}
-.topbar .global-search-wrap{flex:0 1 600px;width:auto;margin:0 auto}
-.topbar .global-search{height:40px;border:1px solid var(--sheet-border);border-radius:20px;background:var(--panel);padding:0 8px 0 14px}
+/* Persistent top bar. */
+.app-frame>.topbar{position:fixed;top:0;left:0;right:0}
+.topbar{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  height:var(--topbar-height);
+  min-height:0;
+  padding:0 12px;
+  background:transparent;
+  border:0;
+  position:relative;
+  top:auto;
+  z-index:100;
+}
+.mobile-nav-trigger{display:none}
+.topbar-start{display:flex;align-items:center;gap:6px;flex:none;min-width:0}
+.topbar-brand{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  text-decoration:none;
+  border-radius:10px;
+}
+.topbar-brand:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.topbar-brand-mark{
+  display:grid;
+  place-items:center;
+  width:30px;
+  height:30px;
+  border-radius:9px;
+  background:var(--accent);
+  color:var(--on-accent);
+  font-size:14px;
+  font-weight:760;
+}
+.topbar-apps-wrap{display:inline-flex;align-items:center}
+.topbar-apps-trigger{
+  width:34px;
+  min-width:34px;
+  height:34px;
+  min-height:34px;
+  border-radius:9px;
+  color:var(--muted);
+}
+.topbar-apps-trigger:hover,.topbar-apps-trigger[aria-expanded=true]{background:var(--hover);color:var(--text)}
+.topbar-apps-trigger .icon{width:18px;height:18px}
+.topbar-title{
+  flex:none;
+  max-width:220px;
+  padding-left:4px;
+  overflow:hidden;
+  color:var(--text);
+  font-size:16px;
+  font-weight:620;
+  letter-spacing:-.015em;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+.topbar .global-search-wrap{flex:0 1 560px;width:auto;margin:0 auto}
+.topbar .global-search{
+  height:38px;
+  border:1px solid var(--sheet-border);
+  border-radius:19px;
+  background:var(--panel);
+  padding:0 8px 0 14px;
+}
 .topbar .global-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
-.topbar .global-search>.icon{width:18px}
-.topbar-tools{display:flex;flex:none;align-items:center;justify-content:flex-end;gap:2px;min-width:40px}
-.topbar-tools .icon-button{min-width:40px;min-height:40px;color:var(--muted)}
+.topbar .global-search>.icon{width:17px}
+.topbar-end{display:flex;flex:none;align-items:center;gap:6px}
+.topbar-tools{display:flex;flex:none;align-items:center;justify-content:flex-end;gap:2px}
+.topbar-tools .icon-button{min-width:36px;width:36px;min-height:36px;height:36px;border-radius:10px;color:var(--muted)}
 .topbar-tools .icon-button:hover{background:var(--hover);color:var(--text)}
-.topbar-tools .icon{width:20px;height:20px}
+.topbar-tools .icon{width:19px;height:19px}
+.topbar-account{display:inline-flex;align-items:center}
+.user-avatar-trigger{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  cursor:pointer;
+}
+.user-avatar-trigger .avatar{
+  width:34px;
+  height:34px;
+  min-width:34px;
+  font-size:12px;
+  transition:box-shadow .14s ease;
+}
+.user-avatar-trigger:hover .avatar,
+.user-avatar-trigger[aria-expanded=true] .avatar,
+.user-avatar-trigger:focus-visible .avatar{
+  box-shadow:0 0 0 2px var(--accent);
+}
+.user-avatar-trigger:focus-visible{outline:none}
 
-/* The signed-in frame stays mounted between apps (shell.rs AppFrame): fixed over the cells
-   each app shell leaves for it. */
-.app-frame>.app-rail{position:fixed;left:0;top:0;bottom:0;width:var(--rail-width)}
-.app-frame>.topbar{position:fixed;top:0;left:var(--rail-width);right:0}
+/* Shared frosted Twilight popover surface (All Apps, User Menu, dropdowns). */
+.dar-popover-surface{
+  position:fixed;
+  inset:auto;
+  top:var(--float-top,auto);
+  left:var(--float-left,auto);
+  margin:0;
+  z-index:130;
+  background:var(--popover-bg);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  border:1px solid var(--popover-border);
+  border-radius:15px;
+  color:var(--text);
+  box-shadow:0 16px 40px var(--shadow),0 2px 8px color-mix(in srgb,var(--shadow) 60%,transparent);
+  animation:ui-menu-in .14s ease-out;
+}
 
-/* Workspaces: transparent sidebar beside floating sheets. */
-:is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout){gap:var(--sheet-gap);height:100%;min-height:0;padding:0 var(--sheet-gap) var(--sheet-gap) 0;overflow:hidden;background:transparent}
+/* Direction A — All Apps Popover (compact 2-column horizontal rows, tinted icon badges). */
+.apps-menu-popover{
+  width:min(340px,calc(100vw - 24px));
+  max-height:min(520px,calc(100dvh - 80px));
+  overflow-y:auto;
+  padding:10px 10px 8px;
+}
+.apps-groups{display:flex;flex-direction:column;gap:10px}
+.apps-group-heading{
+  margin:0 0 5px;
+  padding:0 6px;
+  font-size:11px;
+  font-weight:560;
+  color:var(--muted);
+}
+.apps-group-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:2px 6px;
+}
+.apps-menu-row{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-width:0;
+  padding:6px 7px;
+  border-radius:10px;
+  color:var(--text);
+  text-decoration:none;
+  font-size:13px;
+  font-weight:510;
+  transition:background .1s ease;
+}
+.apps-menu-row:hover{background:var(--hover)}
+.apps-menu-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.apps-menu-row.is-current{background:var(--tonal);color:var(--on-tonal);font-weight:600}
+.apps-menu-label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.apps-menu-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none}
+.apps-menu-badge{
+  display:grid;
+  place-items:center;
+  flex:none;
+  width:26px;
+  height:26px;
+  border-radius:8px;
+}
+.apps-menu-badge .icon{width:14px;height:14px}
+.apps-menu-footer{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin-top:8px;
+  padding:8px 6px 2px;
+  border-top:1px solid var(--sheet-border);
+  font-size:11px;
+  color:var(--muted);
+}
+.apps-menu-footer-links{display:flex;align-items:center;gap:10px}
+.apps-menu-footer a{color:var(--accent);text-decoration:none;font-weight:550}
+.apps-menu-footer a:hover{text-decoration:underline}
+
+/* Twilight-harmonized soft app icon tints (Afterglow light & Nightfall dark). */
+.app-tint-files{background:light-dark(#fae6ea,rgba(242,162,169,.18));color:light-dark(#9c3d59,#f2a2a9)}
+.app-tint-photos{background:light-dark(#f7e4f0,rgba(216,137,175,.2));color:light-dark(#993b71,#eb9fc4)}
+.app-tint-books{background:light-dark(#faede1,rgba(255,196,147,.18));color:light-dark(#8c4d18,#ffc493)}
+.app-tint-notes{background:light-dark(#ede6fa,rgba(188,165,240,.2));color:light-dark(#543b8c,#cbb7f7)}
+.app-tint-mail{background:light-dark(#e5effc,rgba(156,196,248,.19));color:light-dark(#2b5899,#a8c7fa)}
+.app-tint-chat{background:light-dark(#e2f2e9,rgba(178,222,196,.18));color:light-dark(#236144,#b2dec4)}
+.app-tint-contacts{background:light-dark(#f9eae4,rgba(240,180,156,.18));color:light-dark(#8f472d,#f4bda6)}
+.app-tint-calendar{background:light-dark(#fbe6ec,rgba(255,178,198,.18));color:light-dark(#9e2d4d,#ffb2c6)}
+.app-tint-tasks{background:light-dark(#e1f2ef,rgba(162,218,206,.18));color:light-dark(#1f6359,#a5e0d4)}
+.app-tint-news{background:light-dark(#f8efdc,rgba(235,198,132,.18));color:light-dark(#7d5717,#edd095)}
+.app-tint-agent{background:light-dark(#e8e0f8,rgba(140,114,214,.28));color:light-dark(#4d348a,#ddd1ff)}
+.app-tint-git{background:light-dark(#f1e6f7,rgba(206,162,218,.19));color:light-dark(#733982,#dfb7ea)}
+.app-tint-other{background:var(--hover);color:var(--accent)}
+
+/* Upgraded Desktop User Menu Popover. */
+.user-menu-popover{
+  width:264px;
+  max-width:calc(100vw - 24px);
+  padding:6px;
+}
+.user-menu-head{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 8px 10px;
+  border-bottom:1px solid var(--sheet-border);
+}
+.user-menu-head .avatar{width:36px;height:36px;min-width:36px;font-size:12px}
+.user-menu-meta{flex:1;min-width:0}
+.user-menu-meta strong,.user-menu-meta small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user-menu-meta strong{font-size:13px;font-weight:620;color:var(--text)}
+.user-menu-meta small{font-size:11px;color:var(--muted);margin-top:1px}
+.user-role-pill{
+  font-size:10px;
+  font-weight:600;
+  padding:2px 8px;
+  border-radius:999px;
+  background:var(--hover);
+  color:var(--accent);
+  border:1px solid var(--sheet-border);
+  flex:none;
+}
+.user-menu-theme{
+  padding:8px 6px 10px;
+  border-bottom:1px solid var(--sheet-border);
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.user-menu-section-label{font-size:11px;color:var(--muted);padding-left:2px}
+.user-theme-switch{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:2px;
+  padding:2px;
+  border-radius:10px;
+  background:var(--surface-soft);
+  border:1px solid var(--sheet-border);
+}
+.user-theme-switch button{
+  min-height:28px;
+  padding:4px 6px;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  color:var(--muted);
+  font:520 11.5px/1 inherit;
+  cursor:pointer;
+}
+.user-theme-switch button:hover{color:var(--text)}
+.user-theme-switch button.is-active{
+  background:var(--raised);
+  color:var(--text);
+  font-weight:600;
+  box-shadow:0 1px 3px var(--shadow);
+}
+.user-menu-list{display:flex;flex-direction:column;padding-top:4px}
+.user-menu-list .ui-menu-item{min-height:34px;padding:7px 9px;gap:10px;border-radius:9px;font-size:13px;color:var(--text)}
+.user-menu-list .ui-menu-item>.icon{width:16px;height:16px;color:var(--muted);flex:none}
+.user-menu-list .ui-menu-item.danger,.user-menu-list .ui-menu-item.danger>.icon{color:var(--danger)}
+.user-menu-list hr{border:0;border-top:1px solid var(--sheet-border);margin:5px 6px}
+.user-menu-list .ui-menu-section{font-size:11px;font-weight:560;color:var(--muted);padding:4px 9px 2px}
+
+/* Full-screen Mobile User & Apps Hub (apps top, grounded account sheet bottom). */
+.mobile-user-hub{
+  position:fixed;
+  inset:0;
+  z-index:160;
+  display:flex;
+  flex-direction:column;
+  background:var(--surface-soft);
+  color:var(--text);
+}
+.mobile-user-hub-head{
+  height:54px;
+  flex:none;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 14px;
+  border-bottom:1px solid var(--sheet-border);
+}
+.mobile-user-hub-brand{
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  color:var(--text);
+  text-decoration:none;
+  font-size:15px;
+  font-weight:650;
+}
+.mobile-user-hub-close{
+  width:34px;
+  min-width:34px;
+  height:34px;
+  min-height:34px;
+  border-radius:50%;
+  border:1px solid var(--sheet-border);
+  background:var(--panel);
+}
+.mobile-user-hub-apps{
+  flex:1;
+  min-height:0;
+  overflow-y:auto;
+  padding:12px 14px 16px;
+}
+.mobile-user-hub-account{
+  flex:none;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:12px 16px calc(14px + env(safe-area-inset-bottom));
+  background:var(--panel);
+  border-top:1px solid var(--sheet-border);
+  border-radius:22px 22px 0 0;
+  box-shadow:0 -8px 28px var(--shadow);
+}
+.mobile-user-hub-account .user-menu-head{padding:2px 0 8px;border-bottom:0}
+.mobile-user-hub-actions{display:flex;flex-direction:column;gap:2px}
+.mobile-hub-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  min-height:42px;
+  padding:8px 8px;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:var(--text);
+  font:inherit;
+  font-size:14px;
+  text-decoration:none;
+  text-align:left;
+  cursor:pointer;
+}
+.mobile-hub-row:hover{background:var(--hover)}
+.mobile-hub-row .icon:first-child{width:17px;height:17px;color:var(--muted);flex:none}
+.mobile-hub-row span{flex:1}
+.mobile-hub-row .icon:last-child{width:14px;height:14px;color:var(--muted)}
+.mobile-hub-row.danger,.mobile-hub-row.danger .icon:first-child{color:var(--danger)}
+
+/* Personalization → App menu organizer (identity/appearance.rs). */
+.launcher-organizer{
+  margin-top:28px;
+  padding-top:24px;
+  border-top:1px solid var(--sheet-border);
+  max-width:640px;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+.launcher-organizer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.launcher-organizer-head h2{margin:0;font-size:17px;font-weight:620}
+.launcher-categories-box{
+  padding:14px;
+  border:1px solid var(--sheet-border);
+  border-radius:14px;
+  background:var(--surface-soft);
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.launcher-categories-box h3{margin:0;font-size:13px;font-weight:600;color:var(--muted)}
+.launcher-cat-form{display:flex;gap:8px;flex-wrap:wrap}
+.launcher-cat-form input{flex:1;min-width:180px}
+.launcher-cat-chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.launcher-cat-chips li{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:4px 6px 4px 10px;
+  border-radius:999px;
+  background:var(--raised);
+  border:1px solid var(--sheet-border);
+  font-size:12px;
+}
+.launcher-cat-chips small{color:var(--muted);font-variant-numeric:tabular-nums}
+.launcher-cat-chips .icon-button{width:22px;min-width:22px;height:22px;min-height:22px;padding:3px}
+.launcher-app-list{
+  list-style:none;
+  margin:0;
+  padding:0;
+  border:1px solid var(--sheet-border);
+  border-radius:14px;
+  background:var(--raised);
+  overflow:hidden;
+}
+.launcher-app-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 10px;
+  border-bottom:1px solid var(--sheet-border);
+}
+.launcher-app-row:last-child{border-bottom:0}
+.launcher-app-name{flex:1;min-width:0;font-size:13px;font-weight:560}
+.launcher-cat-select{
+  min-height:32px;
+  padding:4px 8px;
+  border-radius:8px;
+  border:1px solid var(--control-border);
+  background:var(--panel);
+  color:var(--text);
+  font:inherit;
+  font-size:12px;
+}
+.launcher-order-btns{display:flex;align-items:center;gap:2px}
+.launcher-order-btns .icon-button{width:28px;min-width:28px;height:28px;min-height:28px;padding:5px}
+
+/* Workspaces: transparent sidebar beside floating sheets across the full width. */
+:is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout){
+  gap:var(--sheet-gap);
+  height:100%;
+  min-height:0;
+  padding:0 var(--sheet-gap) var(--sheet-gap) var(--sheet-gap);
+  overflow:hidden;
+  background:transparent;
+}
 .pim-workspace,.pim-workspace:is(.has-calendar-main,.has-contacts-main,.has-workspace-list){height:100%;min-height:0}
-:is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout)>.sidebar{position:relative;top:auto;height:100%;min-height:0;padding:2px 4px 4px;overflow-y:auto;background:transparent;border:0;box-shadow:none}
-:is(.workspace>.files-main,.pim-workspace>.pim-main,.extension-workspace>main,.ui-settings-layout>.identity-main,.details-panel,.pim-details,.extension-details){height:100%;min-height:0;background:var(--panel);border:1px solid var(--sheet-border);border-radius:var(--sheet-radius)}
+:is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout)>.sidebar{
+  position:relative;
+  top:auto;
+  height:100%;
+  min-height:0;
+  padding:2px 4px 4px;
+  overflow-y:auto;
+  background:transparent;
+  border:0;
+  box-shadow:none;
+}
+:is(.workspace>.files-main,.pim-workspace>.pim-main,.extension-workspace>main,.ui-settings-layout>.identity-main,.details-panel,.pim-details,.extension-details){
+  height:100%;
+  min-height:0;
+  background:var(--panel);
+  border:1px solid var(--sheet-border);
+  border-radius:var(--sheet-radius);
+}
 :is(.workspace>.files-main,.pim-workspace>.pim-main:not(.calendar-main,.contacts-main),.extension-workspace>main,.ui-settings-layout>.identity-main){overflow-y:auto;scrollbar-gutter:stable}
 :is(.details-panel,.pim-details,.extension-details){position:relative;top:auto}
 .pim-workspace>.pim-details{overflow-y:auto}
 .ui-settings-layout>.identity-main{padding:28px}
 
 /* Sidebar contents: tonal create button, pill rows, quiet headings. */
-.sidebar>.new-button,.sidebar .ui-new,.files-new-menu>.ui-menu-trigger{display:inline-flex;align-items:center;align-self:flex-start;gap:10px;width:auto;height:48px;min-height:48px;margin:2px 0 14px 2px;padding:0 20px 0 16px!important;border:0;border-radius:16px!important;background:var(--tonal);color:var(--on-tonal);font-size:14px!important;font-weight:600;box-shadow:0 1px 3px #0000001f,0 2px 6px #00000014}
+.sidebar>.new-button,.sidebar .ui-new,.files-new-menu>.ui-menu-trigger{
+  display:inline-flex;
+  align-items:center;
+  align-self:flex-start;
+  gap:10px;
+  width:auto;
+  height:48px;
+  min-height:48px;
+  margin:2px 0 14px 2px;
+  padding:0 20px 0 16px!important;
+  border:0;
+  border-radius:16px!important;
+  background:var(--tonal);
+  color:var(--on-tonal);
+  font-size:14px!important;
+  font-weight:600;
+  box-shadow:0 1px 3px #0000001f,0 2px 6px #00000014;
+}
 .sidebar .ui-new:hover,.files-new-menu>.ui-menu-trigger:hover,.files-new-menu>.ui-menu-trigger[aria-expanded=true]{background:color-mix(in srgb,var(--tonal) 86%,var(--on-tonal))}
 .sidebar .ui-new .icon,.files-new-menu>.ui-menu-trigger>.icon:first-child{width:20px;height:20px}
 .files-new-menu{display:inline-flex;align-self:flex-start;margin:0}
@@ -71,7 +508,7 @@
 :is(.sidebar .nav-item,.ui-settings-nav nav button):hover{background:var(--hover);color:var(--text)}
 :is(.sidebar .nav-item,.ui-settings-nav nav button):is(.active,[aria-current=page],[aria-pressed=true]){background:var(--tonal);color:var(--on-tonal);font-weight:600}
 .ui-settings-nav nav button{min-height:36px;border-radius:18px}
-/* The top bar gear replaces the sidebar settings entry; phones show the entry as the last chip. */
+/* Top bar gear handles app settings on desktop; phones reach it inside the hamburger drawer. */
 .app-shell>.topbar.has-settings~* .sidebar .ui-app-settings-entry{display:none}
 body.has-app-settings .sidebar .ui-app-settings-entry{display:none}
 :is(.sidebar .nav-item,.ui-settings-nav nav button):is(.active,[aria-current=page],[aria-pressed=true]):hover{background:color-mix(in srgb,var(--tonal) 88%,var(--on-tonal))}
@@ -88,111 +525,251 @@ body.has-app-settings .sidebar .ui-app-settings-entry{display:none}
 .editing-pane{top:var(--topbar-height);right:var(--sheet-gap);bottom:var(--sheet-gap);overflow:hidden;border:1px solid var(--sheet-border);border-radius:var(--sheet-radius);box-shadow:0 8px 28px var(--shadow)}
 body.has-agent-shell>.editing-pane{top:var(--topbar-height)}
 body.has-editing-pane :is(.workspace,.pim-workspace){padding-right:calc(420px + 2 * var(--sheet-gap))}
-.file-text-editor{top:var(--topbar-height);left:calc(var(--rail-width) + 230px + var(--sheet-gap));right:var(--sheet-gap);bottom:var(--sheet-gap);overflow:hidden;border:1px solid var(--sheet-border);border-radius:var(--sheet-radius)}
-@media(max-width:1150px) and (min-width:801px){.file-text-editor{left:calc(var(--rail-width) + 195px + var(--sheet-gap))}.topbar-title{width:191px}}
+.file-text-editor{top:var(--topbar-height);left:calc(230px + 2 * var(--sheet-gap));right:var(--sheet-gap);bottom:var(--sheet-gap);overflow:hidden;border:1px solid var(--sheet-border);border-radius:var(--sheet-radius)}
+@media(max-width:1150px) and (min-width:801px){.file-text-editor{left:calc(195px + 2 * var(--sheet-gap))}}
 @media(max-width:1000px) and (min-width:801px){body.has-editing-pane :is(.workspace,.pim-workspace){padding-right:calc(390px + 2 * var(--sheet-gap))}}
-/* Agent keeps its sheets beside the editing pane or settings sheet instead of under it. */
 @media(min-width:1001px){body.has-editing-pane .agent-shell>.agent-layout{padding-right:calc(420px + 2 * var(--sheet-gap))}}
 @media(max-width:1000px) and (min-width:801px){body.has-editing-pane .agent-shell>.agent-layout{padding-right:calc(390px + 2 * var(--sheet-gap))}}
-@media(max-width:900px) and (min-width:801px){.file-text-editor{left:calc(var(--rail-width) + 180px + var(--sheet-gap))}.topbar-title{width:176px}.details-panel{position:fixed;top:var(--topbar-height);right:var(--sheet-gap);bottom:var(--sheet-gap);height:auto;z-index:22;box-shadow:0 8px 28px var(--shadow)}}
+@media(max-width:900px) and (min-width:801px){.file-text-editor{left:calc(180px + 2 * var(--sheet-gap))}.details-panel{position:fixed;top:var(--topbar-height);right:var(--sheet-gap);bottom:var(--sheet-gap);height:auto;z-index:22;box-shadow:0 8px 28px var(--shadow)}}
 
-/* Phones: search bar on top, chips for navigation, bottom app bar, full-screen details. */
+/* Mobile scrim for slide-over drawer. */
+.mobile-nav-scrim{
+  display:none;
+  position:fixed;
+  inset:0;
+  z-index:135;
+  border:0;
+  padding:0;
+  background:var(--scrim);
+  backdrop-filter:blur(3px);
+  cursor:pointer;
+}
+
+/* Phones (<=800px): separated [Hamburger] [Search] [User] top bar, NO bottom app bar,
+   NO bubble chips — sidebars slide out as clean navigation drawers from the hamburger button. */
 @media(max-width:800px){
-  :is(.app-shell,.identity-settings,.identity-consent-page){grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);padding-bottom:calc(var(--bottom-bar-height) + env(safe-area-inset-bottom))}
+  :root{--topbar-height:58px}
+  :is(.app-shell,.identity-settings,.identity-consent-page){
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:var(--topbar-height) minmax(0,1fr);
+    padding-bottom:0;
+  }
   :is(.app-shell,.identity-settings,.identity-consent-page)>*{grid-column:1;grid-row:2}
   :is(.app-shell,.identity-settings,.identity-consent-page)>.topbar{grid-column:1;grid-row:1}
-  :is(.app-shell,.identity-consent-page)>:is(.startup-state,.identity-consent){margin:0 var(--sheet-gap);border-radius:var(--sheet-radius) var(--sheet-radius) 0 0;border-bottom:0}
-  :is(.app-shell,.identity-settings,.identity-consent-page,.app-frame)>.app-rail{position:fixed;left:0;right:0;top:auto;width:auto;bottom:0;height:calc(var(--bottom-bar-height) + env(safe-area-inset-bottom));flex-direction:row;padding:8px 4px calc(10px + env(safe-area-inset-bottom));overflow:visible;border-top:1px solid var(--sheet-border);background:var(--surface-soft);z-index:110}
-  .app-rail-brand,.app-rail-end,.app-rail-overflow{display:none}
-  .app-rail-apps{flex-direction:row;justify-content:space-around;width:100%}
-  .app-rail-more{display:flex;flex:1}
-  :is(.app-rail-item,.app-rail-more>.ui-menu-trigger){flex:1;width:auto;min-width:0;gap:4px;padding:0}
-  .app-rail-more>.ui-menu-trigger{width:100%}
-  .app-rail-icon{width:56px;height:30px}
-  .app-rail-icon .icon{width:20px;height:20px}
-  .app-rail-label{max-width:100%}
-  .app-rail-more>.ui-menu-panel,.app-rail-more[data-side=up]>.ui-menu-panel{position:fixed;left:12px;right:12px;top:auto;bottom:calc(var(--bottom-bar-height) + 8px);width:auto;max-width:none;max-height:calc(100dvh - var(--bottom-bar-height) - 80px)}
-  .topbar{height:auto;margin:8px 12px 4px;padding:0 4px 0 0;gap:4px;border-radius:24px;background:var(--hover)}
-  .topbar-title,.topbar-tools{display:none}
-  .topbar .global-search-wrap{flex:1;margin:0}
-  .topbar .global-search,.topbar .global-search:focus-within{height:48px;padding:0 4px 0 14px;border:0;background:transparent;box-shadow:none}
-  .topbar .global-search input{min-height:44px;font-size:16px}
-  .topbar-account{display:block}
+  :is(.app-shell,.identity-consent-page)>:is(.startup-state,.identity-consent){margin:0 var(--sheet-gap) var(--sheet-gap);border-radius:var(--sheet-radius)}
+
+  /* Separated 3-piece top bar: [☰] [Search pill] [User avatar]. */
+  .topbar{
+    display:flex;
+    align-items:center;
+    height:var(--topbar-height);
+    min-height:var(--topbar-height);
+    margin:0;
+    padding:8px 10px;
+    gap:8px;
+    background:var(--surface-soft);
+    border-radius:0;
+    z-index:130;
+  }
+  .topbar-start{display:none}
+  .mobile-nav-trigger{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:40px;
+    min-width:40px;
+    height:40px;
+    min-height:40px;
+    border-radius:12px;
+    border:1px solid var(--sheet-border);
+    background:var(--panel);
+    color:var(--text);
+  }
+  .mobile-nav-trigger:hover{background:var(--hover)}
+  .mobile-nav-trigger .icon{width:20px;height:20px}
+  .topbar .global-search-wrap{flex:1;min-width:0;margin:0}
+  .topbar .global-search,.topbar .global-search:focus-within{
+    height:40px;
+    padding:0 12px;
+    border:1px solid var(--sheet-border);
+    border-radius:20px;
+    background:var(--panel);
+    box-shadow:none;
+  }
+  .topbar .global-search input{min-height:38px;font-size:15px}
+  .topbar-end{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+  .topbar-tools{display:inline-flex;align-items:center;gap:2px}
+  .topbar-tools .icon-button{width:36px;min-width:36px;height:36px;min-height:36px;border-radius:12px;border:1px solid var(--sheet-border);background:var(--panel)}
+  .topbar-account{display:inline-flex}
+  .topbar-account .avatar{width:38px;height:38px;min-width:38px;font-size:13px}
   .app-frame>.topbar{position:fixed;top:0;left:0;right:0}
-  body.has-app-frame :is(.app-shell,.identity-settings){grid-template-rows:60px minmax(0,1fr)}
-  .topbar-account .avatar{width:36px;height:36px;min-width:36px;font-size:11px}
-  .topbar-account>.ui-menu>.ui-menu-panel{position:fixed;top:64px;right:12px;left:auto}
-  .global-search-results{position:fixed;top:64px;left:12px;right:12px;max-height:calc(100dvh - 64px - var(--bottom-bar-height) - 16px)}
+  body.has-app-frame :is(.app-shell,.identity-settings){grid-template-rows:var(--topbar-height) minmax(0,1fr)}
+  .global-search-results{position:fixed;top:calc(var(--topbar-height) + 4px);left:10px;right:10px;max-height:calc(100dvh - var(--topbar-height) - 20px)}
 
-  /* Workspace: chip strip above one content sheet. */
-  :is(.workspace,.pim-workspace,.pim-shell.has-pim-details .pim-workspace,.extension-workspace,.ui-settings-layout){display:flex!important;flex-direction:column;gap:0;padding:0}
-  :is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout)>.sidebar,.ui-settings-layout>.ui-settings-nav{display:flex!important;flex:none;flex-direction:row;align-items:center;gap:8px;position:static!important;width:auto!important;height:auto!important;min-height:0;margin:0;padding:4px 12px 10px!important;overflow:auto hidden;transform:none!important;box-shadow:none!important;background:transparent;color:var(--muted);font-size:12px;font-weight:550;white-space:nowrap;scrollbar-width:none;z-index:auto}
-  .sidebar :is(nav,.contacts-books,.calendar-list,.workspace-collections,.pim-sidebar-heading,.sidebar-heading){display:contents}
-  .sidebar :is(.pim-sidebar-heading,.sidebar-heading,nav>h2){padding-left:4px}
-  .ui-settings-nav nav>h2{display:block;flex:none;margin:0 0 0 6px;color:var(--muted);font-size:12px}
-  .sidebar :is(.nav-item,.ui-app-settings-entry),.ui-settings-nav nav button{display:inline-flex;flex:none;align-items:center;gap:6px;width:auto;height:36px;min-height:36px;margin:0;padding:0 14px;border:1px solid var(--sheet-border);border-radius:8px;background:transparent;color:var(--text);font-size:13px;font-weight:500;white-space:nowrap}
-  .sidebar .ui-app-settings-entry,.app-shell>.topbar.has-settings~* .sidebar .ui-app-settings-entry,body.has-app-settings .sidebar .ui-app-settings-entry{display:inline-flex;margin:0!important}
-  .sidebar :is(.nav-item,.ui-app-settings-entry) .icon,.ui-settings-nav nav button .icon{width:16px;height:16px}
-  :is(.sidebar .nav-item,.ui-settings-nav nav button):is(.active,[aria-current=page],[aria-pressed=true]){border-color:transparent;background:var(--tonal);color:var(--on-tonal)}
-  .sidebar :is(.contacts-book-row,.calendar-nav-row){display:inline-flex;flex:none;align-items:center;gap:2px}
-  .sidebar :is(.contacts-book-row,.calendar-nav-row) .ui-menu-trigger{min-width:32px;min-height:36px;padding:6px}
-  .sidebar :is(.pim-sidebar-heading,.sidebar-heading) :is(.icon-button,.text-button){min-width:36px;min-height:36px;border:1px dashed var(--sheet-border);border-radius:8px}
-  .sidebar :is(.storage,.contacts-book-pages,.calendar-list-pages,.sidebar-footer){display:none!important}
-  .sidebar>.new-button,.sidebar>.files-new-menu{position:fixed;right:16px;bottom:calc(var(--bottom-bar-height) + 16px + env(safe-area-inset-bottom));z-index:105;margin:0}
-  .sidebar>.new-button,.files-new-menu>.ui-menu-trigger{justify-content:center;width:56px;height:56px;min-height:56px;margin:0;padding:0!important;font-size:0!important;box-shadow:0 3px 8px #0003}
-  .sidebar>.new-button .icon,.files-new-menu>.ui-menu-trigger>.icon:first-child{width:24px;height:24px}
-  .files-new-menu>.ui-menu-trigger>:not(.icon:first-child){display:none}
-  .files-new-menu>.ui-menu-panel,.files-new-menu[data-side=up]>.ui-menu-panel{position:fixed;left:auto;right:16px;top:auto;bottom:calc(var(--bottom-bar-height) + 80px);width:240px}
-  :is(.workspace>.files-main,.pim-workspace>.pim-main,.extension-workspace>main,.ui-settings-layout>.identity-main){flex:1;height:auto;min-height:0;margin:0 var(--sheet-gap);padding-bottom:88px;border-bottom:0;border-radius:var(--sheet-radius) var(--sheet-radius) 0 0}
+  /* Slide-over hamburger drawer replaces the old horizontal bubble strip across ALL apps! */
+  .mobile-nav-scrim{display:block}
+  :is(.workspace,.pim-workspace,.pim-shell.has-pim-details .pim-workspace,.extension-workspace,.ui-settings-layout){
+    display:flex!important;
+    flex-direction:column;
+    gap:0;
+    padding:0;
+  }
+  :is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout)>.sidebar,
+  .ui-settings-layout>.ui-settings-nav{
+    display:flex!important;
+    flex-direction:column;
+    align-items:stretch;
+    gap:4px;
+    position:fixed!important;
+    top:0;
+    bottom:0;
+    left:0;
+    width:min(304px,84vw)!important;
+    height:100dvh!important;
+    margin:0;
+    padding:16px 12px calc(20px + env(safe-area-inset-bottom))!important;
+    overflow-y:auto;
+    overflow-x:hidden;
+    white-space:normal;
+    background:var(--panel)!important;
+    border-right:1px solid var(--sheet-border);
+    box-shadow:14px 0 40px var(--shadow)!important;
+    transform:translateX(-108%)!important;
+    visibility:hidden;
+    transition:none;
+    z-index:138!important;
+    pointer-events:none;
+  }
+  body.mobile-nav-open :is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout)>.sidebar,
+  body.mobile-nav-open .ui-settings-layout>.ui-settings-nav{
+    transform:translateX(0)!important;
+    visibility:visible;
+    transition:transform .2s cubic-bezier(.22,1,.36,1);
+    pointer-events:auto;
+  }
+  .sidebar .ui-app-settings-entry,
+  .app-shell>.topbar.has-settings~* .sidebar .ui-app-settings-entry,
+  body.has-app-settings .sidebar .ui-app-settings-entry{
+    display:none!important;
+  }
+  /* Keep create FAB cleanly anchored at bottom-right (no bottom bar to clear). */
+  .sidebar>.new-button,.sidebar>.files-new-menu{
+    position:static;
+    margin:0 0 10px!important;
+    width:100%;
+    justify-content:center;
+  }
+  .sidebar>.new-button,.files-new-menu>.ui-menu-trigger{
+    width:100%;
+    justify-content:center;
+  }
+  :is(.workspace>.files-main,.pim-workspace>.pim-main,.extension-workspace>main,.ui-settings-layout>.identity-main){
+    flex:1;
+    height:auto;
+    min-height:0;
+    margin:0 var(--sheet-gap) var(--sheet-gap);
+    padding-bottom:calc(24px + env(safe-area-inset-bottom));
+    border-radius:var(--sheet-radius);
+  }
   .pim-workspace>.pim-main:is(.calendar-main,.contacts-main){padding-bottom:var(--pane-padding)}
-  .ui-settings-layout>.identity-main{padding:var(--pane-padding) var(--pane-padding) 88px}
+  .ui-settings-layout>.identity-main{padding:var(--pane-padding) var(--pane-padding) 28px}
 
-  /* Details and editors fill the screen below the search bar, covering the bottom bar;
-     the search bar and its results stay above them. */
-  .topbar{z-index:130}
+  /* Details and editors fill the screen below the top bar. */
   :is(.details-panel,.pim-details,.extension-details){position:fixed!important;inset:var(--topbar-height) 0 0;width:auto!important;height:auto!important;min-height:0!important;margin:0;border:0;border-radius:0;z-index:120;overflow-y:auto}
-  .editing-pane{inset:var(--topbar-height) 0 0;width:auto;border:0;border-radius:0;z-index:125}
-  .file-text-editor{inset:var(--topbar-height) 0 0;border:0;border-radius:0;z-index:124}
-  .transfer-panel{bottom:calc(var(--bottom-bar-height) + 12px);z-index:106}
-  /* Menus and choices from the content stay above the bottom bar. */
-  .ui-menu-panel,.ui-select-options{z-index:115}
-  .ui-file-actions>.ui-menu-panel,.ui-file-actions[data-side=up]>.ui-menu-panel{bottom:calc(var(--bottom-bar-height) + 8px + env(safe-area-inset-bottom));max-height:calc(100dvh - var(--bottom-bar-height) - 80px)}
+  .editing-pane{inset:var(--topbar-height) 0 0;width:auto;border:0;border-radius:0;z-index:142}
+  .file-text-editor{inset:var(--topbar-height) 0 0;border:0;border-radius:0;z-index:142}
+  .transfer-panel{bottom:calc(14px + env(safe-area-inset-bottom));z-index:106}
+  .ui-menu-panel,.ui-select-options{z-index:150}
+  .ui-file-actions>.ui-menu-panel,.ui-file-actions[data-side=up]>.ui-menu-panel{bottom:calc(12px + env(safe-area-inset-bottom));max-height:calc(100dvh - 80px)}
 }
-@media(prefers-reduced-motion:reduce){.app-rail-icon{transition:none}}
+@media(prefers-reduced-motion:reduce){
+  .dar-popover-surface,
+  :is(.workspace,.pim-workspace,.extension-workspace,.ui-settings-layout)>.sidebar,
+  .ui-settings-layout>.ui-settings-nav{transition:none!important;animation:none!important}
+}
 
-/* Agent: same rail, top bar and sheets; threads stay in the transparent sidebar. */
-.agent-shell .agent-layout{gap:var(--sheet-gap);padding:0 var(--sheet-gap) var(--sheet-gap) 0;background:transparent}
+/* Agent: full-width workspace sheets under the shared top bar. */
+.agent-shell .agent-layout{gap:var(--sheet-gap);padding:0 var(--sheet-gap) var(--sheet-gap);background:transparent}
 .agent-shell .agent-sidebar{padding:2px 4px 4px;background:transparent;border-right:0}
 .agent-shell :is(.agent-center,.agent-review){overflow:hidden;background:var(--panel);border:1px solid var(--sheet-border);border-radius:var(--sheet-radius)}
-.agent-sidebar>.agent-new-thread{display:inline-flex;align-items:center;align-self:flex-start;gap:10px;width:auto;height:48px;min-height:48px;margin:2px 0 14px 2px;padding:0 20px 0 16px!important;border:0;border-radius:16px!important;background:var(--tonal);color:var(--on-tonal);font-size:14px!important;font-weight:600;box-shadow:0 1px 3px #0000001f,0 2px 6px #00000014}
-.agent-sidebar>.agent-new-thread:hover{background:color-mix(in srgb,var(--tonal) 86%,var(--on-tonal))}
-.agent-sidebar>.agent-new-thread .icon{width:20px;height:20px}
-.agent-mobile-back{display:none}
-/* Agent settings uses the top-bar gear; phones show the sidebar entry below the threads. */
-.agent-sidebar>.ui-app-settings-entry{display:none}
-.agent-mobile-views .agent-mobile-back{flex:none;min-width:44px;padding:8px;border-bottom:0}
-/* Phones keep only four app slots; the rest are under More. */
-.app-rail .app-rail-overflow{display:flex}
-@media(max-width:800px){
-  .app-rail .app-rail-overflow{display:none}
-  /* The thread list is the Agent's home screen; a thread opens full screen with Back and view tabs. */
-  .agent-shell{grid-template-rows:auto auto minmax(0,1fr)}
-  .agent-shell>.agent-mobile-views{grid-row:2}
-  .agent-shell>.agent-layout{grid-row:3;padding:0;gap:0}
-  .agent-shell.agent-view-threads>.agent-mobile-views{display:none}
-  .agent-shell:not(.agent-view-threads){grid-template-rows:0 auto minmax(0,1fr);padding-bottom:0}
-  .agent-shell:not(.agent-view-threads)>:is(.topbar,.app-rail){display:none}
-  body.agent-outside-threads .app-frame>:is(.topbar,.app-rail){display:none}
-  body.has-app-frame .agent-shell{grid-template-rows:60px auto minmax(0,1fr)}
-  body.has-app-frame .agent-shell:not(.agent-view-threads){grid-template-rows:0 auto minmax(0,1fr)}
-  .agent-shell .agent-mobile-views{align-items:center;gap:2px;padding:0 4px;border-bottom:1px solid var(--sheet-border);background:var(--panel)}
-  .agent-mobile-back{display:inline-flex;flex:none;min-width:44px;min-height:44px}
-  .agent-shell .agent-view-threads .agent-sidebar,.agent-shell.agent-view-threads .agent-sidebar{margin:0 var(--sheet-gap);padding:12px 12px 88px;background:var(--panel);border:1px solid var(--sheet-border);border-bottom:0;border-radius:var(--sheet-radius) var(--sheet-radius) 0 0}
-  .agent-sidebar>.agent-new-thread{position:fixed;right:16px;bottom:calc(var(--bottom-bar-height) + 16px + env(safe-area-inset-bottom));z-index:105;justify-content:center;width:56px;height:56px;margin:0;padding:0!important;font-size:0!important;box-shadow:0 3px 8px #0003}
-  .agent-sidebar>.agent-new-thread .icon{width:24px;height:24px}
-  .agent-shell :is(.agent-center,.agent-review){border:0;border-radius:0}
-  .agent-sidebar>.ui-app-settings-entry{display:flex;flex:none;margin-top:8px!important;border-radius:18px}
+.agent-sidebar>.agent-new-thread{
+  display:inline-flex;
+  align-items:center;
+  align-self:flex-start;
+  gap:10px;
+  width:auto;
+  height:44px;
+  min-height:44px;
+  margin:2px 0 10px 2px;
+  padding:0 18px 0 14px!important;
+  border:0;
+  border-radius:14px!important;
+  background:var(--tonal);
+  color:var(--on-tonal);
+  font-size:13.5px!important;
+  font-weight:600;
+  box-shadow:0 1px 3px #0000001f,0 2px 6px #00000014;
 }
+.agent-sidebar>.agent-new-thread:hover{background:color-mix(in srgb,var(--tonal) 86%,var(--on-tonal))}
+.agent-sidebar>.agent-new-thread .icon{width:18px;height:18px}
+.agent-mobile-back{display:none}
+.agent-sidebar>.ui-app-settings-entry{display:none}
+@media(max-width:800px){
+  /* Agent mobile: hamburger opens the threads/projects/utility slide-over drawer; view tabs sit cleanly in row 2 above row 3 layout. */
+  .agent-shell{grid-template-rows:var(--topbar-height) auto minmax(0,1fr)}
+  body.has-app-frame .agent-shell{grid-template-rows:var(--topbar-height) auto minmax(0,1fr)}
+  .agent-shell>.agent-mobile-views{grid-row:2;z-index:5}
+  .agent-shell>.agent-layout{grid-row:3;padding:0 var(--sheet-gap) var(--sheet-gap);gap:0;display:flex;flex-direction:column}
+  .agent-shell .agent-sidebar{
+    display:flex!important;
+    flex-direction:column;
+    position:fixed!important;
+    top:0;
+    bottom:0;
+    left:0;
+    width:min(308px,86vw)!important;
+    height:100dvh!important;
+    margin:0;
+    padding:14px 12px calc(16px + env(safe-area-inset-bottom))!important;
+    background:var(--panel)!important;
+    border-right:1px solid var(--sheet-border);
+    box-shadow:14px 0 40px var(--shadow)!important;
+    transform:translateX(-108%)!important;
+    visibility:hidden;
+    transition:none;
+    z-index:138!important;
+    pointer-events:none;
+  }
+  body.mobile-nav-open .agent-shell .agent-sidebar,
+  .agent-shell.agent-view-threads .agent-sidebar{
+    transform:translateX(0)!important;
+    visibility:visible;
+    transition:transform .2s cubic-bezier(.22,1,.36,1);
+    pointer-events:auto;
+  }
+  .agent-mobile-back{display:inline-flex}
+  .agent-shell.agent-view-threads .agent-sidebar{
+    position:relative!important;
+    width:100%!important;
+    height:100%!important;
+    box-shadow:none!important;
+    border-right:0;
+    z-index:1!important;
+  }
+  .agent-sidebar>.agent-new-thread{
+    position:static;
+    width:100%;
+    height:42px;
+    min-height:42px;
+    margin:0 0 10px!important;
+    padding:0 16px!important;
+    font-size:13.5px!important;
+    justify-content:center;
+    box-shadow:none;
+  }
+  .agent-shell :is(.agent-center,.agent-review){border-radius:var(--sheet-radius);border:1px solid var(--sheet-border)}
+}
+
 /* Contact rows use the same tonal pill selection as every list. */
 .contact-list .contact-row{border-bottom:0;border-radius:14px;margin:1px 0}
 .contact-list .contact-row.selected{background:var(--tonal);color:var(--on-tonal);box-shadow:none}

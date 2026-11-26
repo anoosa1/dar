@@ -437,14 +437,6 @@ body.has-editing-pane .mail-shell .pim-details.mail-details{display:none}
   .mail-shell .pim-workspace,
   .mail-shell.has-mail-split .pim-workspace,
   .mail-shell.has-pim-details .pim-workspace{display:flex;flex-direction:column}
-  .mail-sidebar .mail-account-row,
-  .mail-sidebar .mail-footer,
-  .mail-sidebar .mail-container,
-  .mail-sidebar .mail-new-folder-row,
-  .mail-sidebar .mail-new-folder-form{display:none!important}
-  .mail-sidebar-scroll{display:contents}
-  .mail-sidebar .mail-mailbox{display:contents}
-  .mail-mailbox>.nav-item{padding-left:14px}
   /* Hide empty split pane on phones; show full-bleed reader only when a message is opened. */
   .mail-shell .mail-details.is-empty{display:none!important}
   .mail-shell.has-pim-details .pim-workspace{padding:0;gap:0}

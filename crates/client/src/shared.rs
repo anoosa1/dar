@@ -107,6 +107,26 @@ pub struct InstalledApps {
     pub items: Vec<InstalledApp>,
 }
 
+/// A user-defined category inside the App launcher (`appLauncher.categories`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppLauncherCategory {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub apps: Vec<String>,
+}
+
+/// User customization of app order and optional categories (`appLauncher` preference).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppLauncherPrefs {
+    #[serde(default)]
+    pub order: Vec<String>,
+    #[serde(default)]
+    pub categories: Vec<AppLauncherCategory>,
+}
+
 /// The account's preferences. Only the fields this port uses are typed; the rest are kept
 /// so a save never drops them.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -115,6 +135,8 @@ pub struct Preferences {
     pub revision: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_launcher: Option<AppLauncherPrefs>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub files_view: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

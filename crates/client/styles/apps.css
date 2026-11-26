@@ -25,9 +25,9 @@
 .ui-account-heading small{margin-top:2px}
 /* Every dropdown shares the menu surface and 34px rows: action menus, selects,
    search results, the date picker and the Agent model and suggestion lists. */
-:is(.ui-menu-panel,.ui-select-options,.global-search-results,.date-popover,.agent-model-popover,.agent-suggestions){border:1px solid var(--border);border-radius:14px;background:var(--raised);color:var(--text);box-shadow:0 10px 32px var(--shadow),0 2px 6px color-mix(in srgb,var(--shadow) 60%,transparent)}
+:is(.ui-menu-panel,.ui-select-options,.global-search-results,.date-popover,.agent-model-popover,.agent-suggestions){border:1px solid color-mix(in srgb,var(--border) 78%,transparent);border-radius:15px;background:color-mix(in srgb,var(--raised) 95%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);color:var(--text);box-shadow:0 16px 40px var(--shadow),0 2px 8px color-mix(in srgb,var(--shadow) 60%,transparent)}
 :is(.ui-menu-panel,.ui-select-options,.global-search-results,.agent-model-popover,.agent-suggestions){padding:6px}
-:is(.ui-select-options button,.agent-model-popover li,.agent-suggestions [role=option]){min-height:34px;padding:7px 10px;gap:12px;border-radius:9px;font-size:13px}
+:is(.ui-select-options button,.agent-model-popover li,.agent-suggestions [role=option]){min-height:34px;padding:7px 10px;gap:12px;border-radius:10px;font-size:13px}
 .ui-select-options button:focus{background:var(--hover)}
 .ui-select-options button[aria-selected=true]{background:transparent;color:var(--text)}
 .ui-select-options button[aria-selected=true]:is(:hover,:focus){background:var(--hover)}

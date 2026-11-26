@@ -26,6 +26,7 @@ const paths = {
   copy: "M9 8h12v13H9ZM15 5V2H3v13h3",
   download: "M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4",
   grid: "M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z",
+  apps: "M5 5h.01M12 5h.01M19 5h.01M5 12h.01M12 12h.01M19 12h.01M5 19h.01M12 19h.01M19 19h.01",
   list: "M8 5h13M8 12h13M8 19h13M3 5h.01M3 12h.01M3 19h.01",
   chevron: "m9 5 7 7-7 7", back: "m14 5-7 7 7 7",
   check: "m5 12 4 4L19 6", clock: "M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",

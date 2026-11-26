@@ -417,8 +417,7 @@ label.photos-link-row{justify-content:space-between}
   .photos-shell .pim-workspace,.photos-shell.has-pim-details .pim-workspace,.photos-shell.is-viewing .pim-workspace{display:flex}
   .photos-shell.is-viewing .photos-sidebar{display:none!important}
   .photos-shell.is-viewing .photos-main{position:fixed;inset:var(--topbar-height,56px) 0 0;z-index:124;border:0;border-radius:0;background:var(--panel)}
-  .photos-sidebar .photos-heading,.photos-sidebar .photos-indexing,.photos-sidebar .photos-storage-card,.photos-sidebar .photos-sync-entry,.photos-row .photos-row-menu,.photos-album-cover,.photos-zoom,.photos-layout-toggle,.photos-scrubber,.photos-inspector-toggle,.photos-viewer-desktop-btn{display:none!important}
-  .photos-sidebar .photos-albums{display:contents}.photos-sidebar .photos-row{display:contents}
+  .photos-row .photos-row-menu,.photos-zoom,.photos-layout-toggle,.photos-scrubber,.photos-inspector-toggle,.photos-viewer-desktop-btn{display:none!important}
   .photos-mobile-select-btn{display:inline-flex}
   .photos-list-heading{padding:6px 10px 4px 12px;min-height:44px}
   .photos-subbar{padding:2px 10px 8px 12px}

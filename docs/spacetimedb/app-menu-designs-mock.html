@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar App Menu &amp; Mobile Hub — Two New Designs</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans, 'Inter', system-ui, -apple-system, sans-serif);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.bar-group { display: flex; flex-wrap: wrap; gap: 4px; }
+.tab-btn {
+  appearance: none;
+  border: 1px solid var(--border, #554252);
+  background: transparent;
+  color: var(--muted-foreground, #cfb4ca);
+  font: 520 11.5px/1 var(--font-sans, system-ui, sans-serif);
+  padding: 6px 10px;
+  border-radius: var(--radius, 8px);
+  cursor: pointer;
+}
+.tab-btn:hover { color: var(--foreground, #faeaf3); background: var(--secondary, rgba(255,255,255,.06)); }
+.tab-btn.active {
+  background: var(--primary, #f2a2a9);
+  color: var(--primary-foreground, #26111f);
+  border-color: transparent;
+}
+
+/* Twilight Theme Scope */
+.stage {
+  --bg: #26111f;
+  --panel: #301c2b;
+  --raised: #3a2436;
+  --glass: rgba(46, 27, 42, 0.94);
+  --hover: rgba(250, 234, 243, 0.08);
+  --line: rgba(200, 173, 195, 0.16);
+  --line-strong: rgba(200, 173, 195, 0.28);
+  --text: #faeaf3;
+  --muted: #c8adc3;
+  --dim: #9a7d96;
+  --accent: #f2a2a9;
+  --on-accent: #26111f;
+  --tonal: #4d3c73;
+  --on-tonal: #f3eafd;
+  --danger: #ffb2c6;
+  --shadow: 0 18px 42px rgba(9, 2, 9, 0.62), 0 2px 10px rgba(9, 2, 9, 0.36);
+
+  /* Soft semantic app tints (Twilight-harmonized, never garish) */
+  --tint-files-bg: rgba(242, 162, 169, 0.16); --tint-files-fg: #f2a2a9;
+  --tint-photos-bg: rgba(216, 137, 175, 0.18); --tint-photos-fg: #eb9fc4;
+  --tint-books-bg: rgba(255, 196, 147, 0.16); --tint-books-fg: #ffc493;
+  --tint-notes-bg: rgba(188, 165, 240, 0.18); --tint-notes-fg: #cbb7f7;
+  --tint-mail-bg: rgba(156, 196, 248, 0.17); --tint-mail-fg: #a8c7fa;
+  --tint-chat-bg: rgba(178, 222, 196, 0.16); --tint-chat-fg: #b2dec4;
+  --tint-contacts-bg: rgba(240, 180, 156, 0.16); --tint-contacts-fg: #f4bda6;
+  --tint-cal-bg: rgba(255, 178, 198, 0.16); --tint-cal-fg: #ffb2c6;
+  --tint-tasks-bg: rgba(162, 218, 206, 0.16); --tint-tasks-fg: #a5e0d4;
+  --tint-news-bg: rgba(235, 198, 132, 0.16); --tint-news-fg: #edd095;
+  --tint-agent-bg: rgba(140, 114, 214, 0.28); --tint-agent-fg: #ddd1ff;
+  --tint-git-bg: rgba(206, 162, 218, 0.17); --tint-git-fg: #dfb7ea;
+
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  user-select: none;
+}
+
+.stage[data-theme="light"] {
+  --bg: #fbf4f6;
+  --panel: #fffafb;
+  --raised: #ffffff;
+  --glass: rgba(255, 252, 253, 0.96);
+  --hover: rgba(53, 33, 56, 0.06);
+  --line: rgba(115, 57, 111, 0.13);
+  --line-strong: rgba(115, 57, 111, 0.24);
+  --text: #352138;
+  --muted: #6e546d;
+  --dim: #8c708b;
+  --accent: #73396f;
+  --on-accent: #fff7fc;
+  --tonal: #ede3f5;
+  --on-tonal: #4d3c73;
+  --danger: #a32745;
+  --shadow: 0 16px 36px rgba(38, 17, 31, 0.14), 0 2px 8px rgba(38, 17, 31, 0.07);
+
+  --tint-files-bg: #fae6ea; --tint-files-fg: #9c3d59;
+  --tint-photos-bg: #f7e4f0; --tint-photos-fg: #993b71;
+  --tint-books-bg: #faede1; --tint-books-fg: #8c4d18;
+  --tint-notes-bg: #ede6fa; --tint-notes-fg: #543b8c;
+  --tint-mail-bg: #e5effc; --tint-mail-fg: #2b5899;
+  --tint-chat-bg: #e2f2e9; --tint-chat-fg: #236144;
+  --tint-contacts-bg: #f9eae4; --tint-contacts-fg: #8f472d;
+  --tint-cal-bg: #fbe6ec; --tint-cal-fg: #9e2d4d;
+  --tint-tasks-bg: #e1f2ef; --tint-tasks-fg: #1f6359;
+  --tint-news-bg: #f8efdc; --tint-news-fg: #7d5717;
+  --tint-agent-bg: #e8e0f8; --tint-agent-fg: #4d348a;
+  --tint-git-bg: #f1e6f7; --tint-git-fg: #733982;
+}
+
+/* Split comparison grid */
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line);
+}
+@media (max-width: 680px) {
+  .compare-grid { grid-template-columns: 1fr; }
+}
+
+.col {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.col-caption {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.col-caption strong { font-size: 12.5px; font-weight: 630; color: var(--text); }
+.col-caption span { font-size: 11px; color: var(--muted); }
+
+/* ================= DESKTOP CANVASES ================= */
+.desk-preview {
+  position: relative;
+  height: 455px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.topbar {
+  height: 46px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.dar-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 760;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+}
+/* Clean icon-only 9-dot switcher between Logo and App Title (no clunky "Apps" text box!) */
+.launcher-trigger {
+  appearance: none;
+  border: 0;
+  background: var(--hover);
+  color: var(--text);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+.launcher-trigger svg { width: 15px; height: 15px; }
+.app-name {
+  font-size: 14px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  margin-left: 2px;
+}
+.search-ghost {
+  flex: 1;
+  max-width: 170px;
+  margin: 0 auto;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+.top-right { display: flex; align-items: center; gap: 5px; }
+.top-gear {
+  width: 26px; height: 26px; border-radius: 7px; color: var(--muted);
+  display: grid; place-items: center;
+}
+.top-gear svg { width: 14px; height: 14px; }
+.top-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--tonal); color: var(--on-tonal);
+  font-size: 10px; font-weight: 650; display: grid; place-items: center;
+}
+
+.desk-backdrop {
+  flex: 1;
+  margin: 0 10px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  opacity: 0.48;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ghost-line { height: 9px; border-radius: 4px; background: var(--hover); }
+
+/* Popover shared shell */
+.popover {
+  position: absolute;
+  top: 44px;
+  left: 12px;
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--line-strong);
+  border-radius: 15px;
+  box-shadow: var(--shadow);
+  z-index: 10;
+  overflow: hidden;
+}
+
+/* ---- DESIGN A (Desktop): Compact Categorized 2-Column Row List ---- */
+.pop-a {
+  width: 326px;
+  padding: 10px 10px 8px;
+}
+.pop-a-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.pop-a-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.pop-a-group + .pop-a-group {
+  margin-top: 8px;
+}
+.pop-a-heading {
+  font-size: 10.5px;
+  font-weight: 560;
+  color: var(--dim);
+  padding: 0 6px 4px;
+}
+.app-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 9px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 510;
+  transition: background .1s;
+}
+.app-row:hover { background: var(--hover); }
+.app-row.active {
+  background: var(--tonal);
+  color: var(--on-tonal);
+  font-weight: 600;
+}
+.app-row .dot-check {
+  margin-left: auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ico-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.ico-badge svg { width: 13.5px; height: 13.5px; }
+
+.pop-footer {
+  margin-top: 8px;
+  padding: 7px 6px 1px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+}
+.pop-footer a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 540;
+  cursor: pointer;
+}
+
+/* ---- DESIGN B (Desktop): Borderless Tinted Squircle Dock (4x3) ---- */
+.pop-b {
+  width: 312px;
+  padding: 10px 10px 8px;
+}
+.sq-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px 2px;
+}
+.sq-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 2px;
+  border-radius: 11px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 510;
+  transition: background .12s, color .12s, transform .1s;
+}
+.sq-item:hover { background: var(--hover); color: var(--text); }
+.sq-item.active { color: var(--text); font-weight: 620; }
+.sq-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+.sq-icon svg { width: 18px; height: 18px; }
+.sq-item.active .sq-icon {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Tints */
+.t-files { background: var(--tint-files-bg); color: var(--tint-files-fg); }
+.t-photos { background: var(--tint-photos-bg); color: var(--tint-photos-fg); }
+.t-books { background: var(--tint-books-bg); color: var(--tint-books-fg); }
+.t-notes { background: var(--tint-notes-bg); color: var(--tint-notes-fg); }
+.t-mail { background: var(--tint-mail-bg); color: var(--tint-mail-fg); }
+.t-chat { background: var(--tint-chat-bg); color: var(--tint-chat-fg); }
+.t-contacts { background: var(--tint-contacts-bg); color: var(--tint-contacts-fg); }
+.t-cal { background: var(--tint-cal-bg); color: var(--tint-cal-fg); }
+.t-tasks { background: var(--tint-tasks-bg); color: var(--tint-tasks-fg); }
+.t-news { background: var(--tint-news-bg); color: var(--tint-news-fg); }
+.t-agent { background: var(--tint-agent-bg); color: var(--tint-agent-fg); }
+.t-git { background: var(--tint-git-bg); color: var(--tint-git-fg); }
+
+/* ================= MOBILE USER & APPS FULL-SCREEN HUB ================= */
+.mob-preview {
+  padding: 16px 12px;
+  display: flex;
+  justify-content: center;
+  background: color-mix(in srgb, var(--panel) 35%, var(--bg));
+}
+.phone-shell {
+  width: 320px;
+  max-width: 100%;
+  height: 576px;
+  border-radius: 26px;
+  border: 2px solid var(--line-strong);
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ph-head {
+  height: 46px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+}
+.ph-head-left { display: flex; align-items: center; gap: 8px; font-weight: 640; font-size: 13.5px; }
+.ph-close {
+  width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--panel); color: var(--muted); display: grid; place-items: center;
+  cursor: pointer; font-size: 15px;
+}
+
+.ph-top-apps {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Mobile Design A: Grouped compact 2-col rows inside the top half */
+.ph-a-group-label {
+  font-size: 10.5px;
+  font-weight: 560;
+  color: var(--dim);
+  padding: 0 4px;
+}
+.ph-a-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 6px;
+}
+.ph-a-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 520;
+  color: var(--text);
+  cursor: pointer;
+}
+.ph-a-row:hover { background: var(--hover); }
+.ph-a-row.active { background: var(--tonal); color: var(--on-tonal); font-weight: 600; }
+
+/* Mobile Design B: Borderless 4x3 Tinted Squircles */
+.ph-b-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 4px;
+}
+.ph-b-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 510;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ph-b-tile.active { color: var(--text); font-weight: 620; }
+.ph-b-tile .sq-icon { width: 44px; height: 44px; border-radius: 14px; }
+.ph-b-tile .sq-icon svg { width: 20px; height: 20px; }
+.ph-b-tile.active .sq-icon { box-shadow: 0 0 0 2px var(--accent); }
+
+/* Grounded Bottom Account Sheet (Zero empty chasm!) */
+.ph-account-sheet {
+  flex: none;
+  background: var(--panel);
+  border-top: 1px solid var(--line-strong);
+  border-radius: 20px 20px 0 0;
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ph-prof {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ph-av {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--tonal); color: var(--on-tonal);
+  font-weight: 680; font-size: 12px; display: grid; place-items: center; flex: none;
+}
+.ph-prof-text { flex: 1; min-width: 0; }
+.ph-prof-text b { display: block; font-size: 12.5px; font-weight: 620; }
+.ph-prof-text small { display: block; font-size: 11px; color: var(--muted); }
+.ph-role {
+  font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px;
+  background: var(--hover); color: var(--accent); border: 1px solid var(--line);
+}
+
+.seg {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 2px;
+  gap: 2px;
+}
+.seg button {
+  flex: 1; appearance: none; border: 0; background: transparent;
+  color: var(--muted); font: 520 11px/1 inherit; padding: 6px 4px;
+  border-radius: 7px; cursor: pointer;
+}
+.seg button.active { background: var(--raised); color: var(--text); }
+
+.ph-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ph-act-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+.ph-act-row:hover { background: var(--hover); }
+.ph-act-row svg { width: 15px; height: 15px; color: var(--muted); flex: none; }
+.ph-act-row .chev { margin-left: auto; color: var(--dim); }
+.ph-act-row.danger { color: var(--danger); }
+.ph-act-row.danger svg { color: var(--danger); }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="root">
+  <div class="bar">
+    <div class="bar-group" id="modeBar">
+      <button class="tab-btn active" data-mode="desktop">Desktop Switcher (A vs B)</button>
+      <button class="tab-btn" data-mode="mobile">Mobile User &amp; Apps (A vs B)</button>
+    </div>
+    <div class="bar-group">
+      <button class="tab-btn" id="themeBtn">Light</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage" data-theme="dark">
+    <!-- DESKTOP COMPARISON -->
+    <div class="compare-grid" id="desktopCompare">
+      <!-- Option A -->
+      <div class="col">
+        <div class="col-caption">
+          <strong>A · Categorized 2-Column List</strong>
+          <span>Fast scan, tinted icon badges, zero boxy tiles</span>
+        </div>
+        <div class="desk-preview">
+          <div class="topbar">
+            <div class="dar-mark">D</div>
+            <button class="launcher-trigger" aria-label="All apps">
+              <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
+            </button>
+            <span class="app-name">Agent</span>
+            <div class="search-ghost"><span>⌕</span><span>Search…</span></div>
+            <div class="top-right">
+              <div class="top-gear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+              <div class="top-avatar">LH</div>
+            </div>
+          </div>
+          <div class="desk-backdrop">
+            <div class="ghost-line" style="width:40%"></div>
+            <div class="ghost-line" style="width:72%"></div>
+            <div class="ghost-line" style="width:55%"></div>
+          </div>
+
+          <div class="popover pop-a">
+            <div class="pop-a-cols">
+              <div>
+                <div class="pop-a-group">
+                  <div class="pop-a-heading">Library</div>
+                  <div class="app-row"><span class="ico-badge t-files"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span>Files</span></div>
+                  <div class="app-row"><span class="ico-badge t-photos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-4 4-2-2-5 5"/></svg></span><span>Photos</span></div>
+                  <div class="app-row"><span class="ico-badge t-books"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span>Books</span></div>
+                  <div class="app-row"><span class="ico-badge t-notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M8 13h8M8 17h5"/></svg></span><span>Notes</span></div>
+                </div>
+                <div class="pop-a-group">
+                  <div class="pop-a-heading">Code</div>
+                  <div class="app-row active"><span class="ico-badge t-agent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg></span><span>Agent</span><span class="dot-check"></span></div>
+                  <div class="app-row"><span class="ico-badge t-git"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg></span><span>Git</span></div>
+                </div>
+              </div>
+              <div>
+                <div class="pop-a-group">
+                  <div class="pop-a-heading">People &amp; Day</div>
+                  <div class="app-row"><span class="ico-badge t-mail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg></span><span>Mail</span></div>
+                  <div class="app-row"><span class="ico-badge t-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span>Chat</span></div>
+                  <div class="app-row"><span class="ico-badge t-contacts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg></span><span>Contacts</span></div>
+                  <div class="app-row"><span class="ico-badge t-cal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span><span>Calendar</span></div>
+                  <div class="app-row"><span class="ico-badge t-tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><span>Tasks</span></div>
+                  <div class="app-row"><span class="ico-badge t-news"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></span><span>News</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="pop-footer">
+              <span>Jump with Ctrl K</span>
+              <a>Manage apps ›</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Option B -->
+      <div class="col">
+        <div class="col-caption">
+          <strong>B · Borderless Tinted Squircles</strong>
+          <span>4×3 tactile dock, distinct Twilight colors, no cards</span>
+        </div>
+        <div class="desk-preview">
+          <div class="topbar">
+            <div class="dar-mark">D</div>
+            <button class="launcher-trigger" aria-label="All apps">
+              <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
+            </button>
+            <span class="app-name">Agent</span>
+            <div class="search-ghost"><span>⌕</span><span>Search…</span></div>
+            <div class="top-right">
+              <div class="top-gear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+              <div class="top-avatar">LH</div>
+            </div>
+          </div>
+          <div class="desk-backdrop">
+            <div class="ghost-line" style="width:40%"></div>
+            <div class="ghost-line" style="width:72%"></div>
+            <div class="ghost-line" style="width:55%"></div>
+          </div>
+
+          <div class="popover pop-b">
+            <div class="sq-grid">
+              <div class="sq-item"><div class="sq-icon t-files"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div><span>Files</span></div>
+              <div class="sq-item"><div class="sq-icon t-photos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-4 4-2-2-5 5"/></svg></div><span>Photos</span></div>
+              <div class="sq-item"><div class="sq-icon t-books"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><span>Books</span></div>
+              <div class="sq-item"><div class="sq-icon t-notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M8 13h8M8 17h5"/></svg></div><span>Notes</span></div>
+              <div class="sq-item"><div class="sq-icon t-mail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg></div><span>Mail</span></div>
+              <div class="sq-item"><div class="sq-icon t-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><span>Chat</span></div>
+              <div class="sq-item"><div class="sq-icon t-contacts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg></div><span>Contacts</span></div>
+              <div class="sq-item"><div class="sq-icon t-cal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div><span>Calendar</span></div>
+              <div class="sq-item"><div class="sq-icon t-tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><span>Tasks</span></div>
+              <div class="sq-item"><div class="sq-icon t-news"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></div><span>News</span></div>
+              <div class="sq-item active"><div class="sq-icon t-agent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg></div><span>Agent</span></div>
+              <div class="sq-item"><div class="sq-icon t-git"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg></div><span>Git</span></div>
+            </div>
+            <div class="pop-footer">
+              <span>Jump with Ctrl K</span>
+              <a>Manage apps ›</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MOBILE FULL-SCREEN USER & APPS COMPARISON -->
+    <div class="compare-grid hidden" id="mobileCompare">
+      <!-- Mobile Option A -->
+      <div class="col">
+        <div class="col-caption">
+          <strong>A · Grouped 2-Col List + Account Sheet</strong>
+          <span>Zero dead space, clear domains</span>
+        </div>
+        <div class="mob-preview">
+          <div class="phone-shell">
+            <div class="ph-head">
+              <div class="ph-head-left"><div class="dar-mark" style="width:24px;height:24px;font-size:11px">D</div><span>Dar</span></div>
+              <div class="ph-close">×</div>
+            </div>
+            <div class="ph-top-apps">
+              <div class="ph-a-group-label">Library &amp; Code</div>
+              <div class="ph-a-grid">
+                <div class="ph-a-row"><span class="ico-badge t-files"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span>Files</span></div>
+                <div class="ph-a-row"><span class="ico-badge t-photos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-4 4-2-2-5 5"/></svg></span><span>Photos</span></div>
+                <div class="ph-a-row"><span class="ico-badge t-books"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span>Books</span></div>
+                <div class="ph-a-row"><span class="ico-badge t-notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></span><span>Notes</span></div>
+                <div class="ph-a-row active"><span class="ico-badge t-agent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg></span><span>Agent</span></div>
+                <div class="ph-a-row"><span class="ico-badge t-git"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg></span><span>Git</span></div>
+              </div>
+              <div class="ph-a-group-label" style="margin-top:4px">People &amp; Day</div>
+              <div class="ph-a-grid">
+                <div class="ph-a-row"><span class="ico-badge t-mail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg></span><span>Mail</span></div>
+                <div class="ph-a-row"><span class="ico-badge t-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span>Chat</span></div>
+                <div class="ph-a-row"><span class="ico-badge t-contacts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg></span><span>Contacts</span></div>
+                <div class="ph-a-row"><span class="ico-badge t-cal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span><span>Calendar</span></div>
+                <div class="ph-a-row"><span class="ico-badge t-tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 11 3 3L22 4"/></svg></span><span>Tasks</span></div>
+                <div class="ph-a-row"><span class="ico-badge t-news"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/></svg></span><span>News</span></div>
+              </div>
+            </div>
+            <div class="ph-account-sheet">
+              <div class="ph-prof">
+                <div class="ph-av">LH</div>
+                <div class="ph-prof-text"><b>Layla Haddad</b><small>@layla · dar.local</small></div>
+                <span class="ph-role">Admin</span>
+              </div>
+              <div class="seg"><button>Afterglow</button><button class="active">Nightfall</button><button>System</button></div>
+              <div class="ph-actions">
+                <div class="ph-act-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Dar settings</span><span class="chev">›</span></div>
+                <div class="ph-act-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Manage apps</span><span class="chev">›</span></div>
+                <div class="ph-act-row danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile Option B -->
+      <div class="col">
+        <div class="col-caption">
+          <strong>B · Borderless Squircles + Account Sheet</strong>
+          <span>Native launcher feel, anchored bottom sheet</span>
+        </div>
+        <div class="mob-preview">
+          <div class="phone-shell">
+            <div class="ph-head">
+              <div class="ph-head-left"><div class="dar-mark" style="width:24px;height:24px;font-size:11px">D</div><span>Dar</span></div>
+              <div class="ph-close">×</div>
+            </div>
+            <div class="ph-top-apps">
+              <div class="ph-b-grid">
+                <div class="ph-b-tile"><div class="sq-icon t-files"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div><span>Files</span></div>
+                <div class="ph-b-tile"><div class="sq-icon t-photos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-4 4-2-2-5 5"/></svg></div><span>Photos</span></div>
+                <div class="ph-b-tile"><div class="sq-icon t-books"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><span>Books</span></div>
+                <div class="ph-b-tile"><div class="sq-icon t-notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M8 13h8M8 17h5"/></svg></div><span>Notes</span></div>
+                <div class="ph-b-tile"><div class="sq-icon t-mail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg></div><span>Mail</span></div>
+                <div class="ph-b-tile"><div class="sq-icon t-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><span>Chat</span></div>
+                <div class="ph-b-tile"><div class="sq-icon t-contacts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg></div><span>Contacts</span></div>
+                <div class="ph-b-tile"><div class="sq-icon t-cal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div><span>Calendar</span></div>
+                <div class="ph-b-tile"><div class="sq-icon t-tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><span>Tasks</span></div>
+                <div class="ph-b-tile"><div class="sq-icon t-news"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></div><span>News</span></div>
+                <div class="ph-b-tile active"><div class="sq-icon t-agent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg></div><span>Agent</span></div>
+                <div class="ph-b-tile"><div class="sq-icon t-git"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg></div><span>Git</span></div>
+              </div>
+            </div>
+            <div class="ph-account-sheet">
+              <div class="ph-prof">
+                <div class="ph-av">LH</div>
+                <div class="ph-prof-text"><b>Layla Haddad</b><small>@layla · dar.local</small></div>
+                <span class="ph-role">Admin</span>
+              </div>
+              <div class="seg"><button>Afterglow</button><button class="active">Nightfall</button><button>System</button></div>
+              <div class="ph-actions">
+                <div class="ph-act-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Dar settings</span><span class="chev">›</span></div>
+                <div class="ph-act-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Manage apps</span><span class="chev">›</span></div>
+                <div class="ph-act-row danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const desk = document.getElementById('desktopCompare');
+  const mob = document.getElementById('mobileCompare');
+  document.querySelectorAll('#modeBar .tab-btn').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#modeBar .tab-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    const isMob = b.dataset.mode === 'mobile';
+    desk.classList.toggle('hidden', isMob);
+    mob.classList.toggle('hidden', !isMob);
+  }));
+  document.getElementById('themeBtn').addEventListener('click', (e) => {
+    const next = stage.dataset.theme === 'dark' ? 'light' : 'dark';
+    stage.dataset.theme = next;
+    e.currentTarget.textContent = next === 'dark' ? 'Light' : 'Dark';
+    document.querySelectorAll('.seg').forEach(seg => {
+      const btns = seg.querySelectorAll('button');
+      btns[0].classList.toggle('active', next === 'light');
+      btns[1].classList.toggle('active', next === 'dark');
+    });
+  });
+})();
+</script>
+</body>
+</html>

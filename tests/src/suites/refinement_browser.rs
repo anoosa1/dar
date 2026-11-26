@@ -237,7 +237,8 @@ pub async fn refinement_journey(t: &Ctx) -> Result<()> {
 
         switch_app(&page, "tasks").await?;
         assert_eq!(page.get_by_label("Filter by category").count().await?, 0);
-        page.get_by_role("navigation", "Applications").get_by_role("link", "Prayer Times").click().await?;
+        page.get_by_role("button", "All apps").click().await?;
+        page.get_by_role("dialog", "All apps").get_by_role("link", "Prayer Times").click().await?;
         page.get_by_role("button", "Prayer Times settings").click().await?;
         let settings = page.get_by_role("dialog", "Prayer Times settings");
         settings.wait_for().await?;

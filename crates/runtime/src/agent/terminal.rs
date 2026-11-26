@@ -22,6 +22,19 @@ use crate::error::{AppError, Result};
 
 const CAP: usize = 512 * 1024;
 const IDLE_SECS: u64 = 15 * 60;
+const MAX_TABS_PER_THREAD: usize = 8;
+
+pub fn valid_tab_id(tab: &str) -> Result<&str> {
+    if tab.is_empty()
+        || tab.len() > 32
+        || !tab
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(AppError::invalid());
+    }
+    Ok(tab)
+}
 
 struct BufferState {
     chunks: VecDeque<(usize, Vec<u8>)>,
@@ -125,20 +138,45 @@ impl Terminals {
         config: &CodexConfig,
         user_id: &str,
         thread_id: &str,
+        tab_id: &str,
         rows: Option<f64>,
         cols: Option<f64>,
+        command: Option<&str>,
     ) -> Result<Value> {
-        let key = format!("{user_id}/{thread_id}");
+        let tab = valid_tab_id(tab_id)?;
+        if let Some(cmd) = command
+            && (cmd.trim().is_empty() || cmd.contains('\0') || utf16_len(cmd) > 2000)
+        {
+            return Err(AppError::invalid());
+        }
+        let prefix = format!("{user_id}/{thread_id}/");
+        let key = format!("{prefix}{tab}");
         if let Some(existing) = self.sessions.lock().expect("terminals").get(&key).cloned() {
             let (exited, start, end) = {
                 let st = existing.state.lock().expect("terminal state");
                 (st.exited, st.start, st.end)
             };
-            if !exited {
+            if !exited && command.is_none() {
                 self.touch(&key, &existing);
-                return Ok(json!({ "start": start, "end": end }));
+                return Ok(json!({ "tabId": tab, "start": start, "end": end }));
             }
             self.close_key(&key);
+        }
+        {
+            let count = self
+                .sessions
+                .lock()
+                .expect("terminals")
+                .keys()
+                .filter(|k| k.starts_with(&prefix))
+                .count();
+            if count >= MAX_TABS_PER_THREAD {
+                return Err(AppError::with(
+                    "quotaExceeded",
+                    409,
+                    "At most 8 terminal tabs can be open in one thread.",
+                ));
+            }
         }
 
         let workspace = self
@@ -221,6 +259,10 @@ impl Terminals {
         let clamped_rows = clamp_size(rows, 4, 200);
         let clamped_cols = clamp_size(cols, 20, 400);
         let ws_str = workspace.to_string_lossy().into_owned();
+        let exec_cmd: Vec<String> = match command {
+            Some(cmd) => vec!["/bin/sh".into(), "-lc".into(), cmd.to_owned()],
+            None => vec!["/bin/sh".into(), "-i".into()],
+        };
         let exec_server = server.clone();
         let exec_state = state.clone();
         let exec_notify = notify.clone();
@@ -229,7 +271,7 @@ impl Terminals {
                 .request(
                     "command/exec",
                     json!({
-                        "command": ["/bin/sh", "-i"],
+                        "command": exec_cmd,
                         "processId": process_id,
                         "tty": true,
                         "disableTimeout": true,
@@ -251,14 +293,17 @@ impl Terminals {
             exec_notify.notify_waiters();
         });
 
-        Ok(json!({ "start": 0, "end": 0 }))
+        Ok(json!({ "tabId": tab, "start": 0, "end": 0 }))
     }
 
     /// Returns bytes after `after`, waiting up to 15 seconds for new output.
-    pub async fn read(&self, user_id: &str, thread_id: &str, after: usize) -> Value {
-        let key = format!("{user_id}/{thread_id}");
-        let Some(session) = self.sessions.lock().expect("terminals").get(&key).cloned() else {
+    pub async fn read(&self, user_id: &str, thread_id: &str, tab_id: &str, after: usize) -> Value {
+        let Ok(tab) = valid_tab_id(tab_id) else {
             return json!({ "open": false, "start": 0, "end": 0, "data": "", "exited": true });
+        };
+        let key = format!("{user_id}/{thread_id}/{tab}");
+        let Some(session) = self.sessions.lock().expect("terminals").get(&key).cloned() else {
+            return json!({ "open": false, "tabId": tab, "start": 0, "end": 0, "data": "", "exited": true });
         };
         self.touch(&key, &session);
 
@@ -289,6 +334,7 @@ impl Terminals {
 
         let mut value = json!({
             "open": true,
+            "tabId": tab,
             "start": start,
             "end": end,
             "data": B64.encode(&bytes),
@@ -300,8 +346,15 @@ impl Terminals {
         value
     }
 
-    pub async fn write(&self, user_id: &str, thread_id: &str, data: &str) -> Result<Value> {
-        let key = format!("{user_id}/{thread_id}");
+    pub async fn write(
+        &self,
+        user_id: &str,
+        thread_id: &str,
+        tab_id: &str,
+        data: &str,
+    ) -> Result<Value> {
+        let tab = valid_tab_id(tab_id)?;
+        let key = format!("{user_id}/{thread_id}/{tab}");
         let session = self.sessions.lock().expect("terminals").get(&key).cloned();
         let Some(session) = session else {
             return Err(AppError::with(
@@ -338,10 +391,14 @@ impl Terminals {
         &self,
         user_id: &str,
         thread_id: &str,
+        tab_id: &str,
         rows: Option<f64>,
         cols: Option<f64>,
     ) -> Value {
-        let key = format!("{user_id}/{thread_id}");
+        let Ok(tab) = valid_tab_id(tab_id) else {
+            return json!({ "ok": false });
+        };
+        let key = format!("{user_id}/{thread_id}/{tab}");
         let session = self.sessions.lock().expect("terminals").get(&key).cloned();
         let Some(session) = session else {
             return json!({ "ok": false });
@@ -365,8 +422,28 @@ impl Terminals {
         json!({ "ok": true })
     }
 
-    pub fn close(&self, user_id: &str, thread_id: &str) -> Value {
-        self.close_key(&format!("{user_id}/{thread_id}"));
+    pub fn close(&self, user_id: &str, thread_id: &str, tab_id: Option<&str>) -> Value {
+        match tab_id {
+            Some(tab) => {
+                if let Ok(clean) = valid_tab_id(tab) {
+                    self.close_key(&format!("{user_id}/{thread_id}/{clean}"));
+                }
+            }
+            None => {
+                let prefix = format!("{user_id}/{thread_id}/");
+                let keys: Vec<String> = self
+                    .sessions
+                    .lock()
+                    .expect("terminals")
+                    .keys()
+                    .filter(|k| k.starts_with(&prefix))
+                    .cloned()
+                    .collect();
+                for k in keys {
+                    self.close_key(&k);
+                }
+            }
+        }
         json!({ "ok": true })
     }
 

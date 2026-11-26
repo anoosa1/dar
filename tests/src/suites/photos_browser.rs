@@ -162,7 +162,12 @@ pub async fn photos_journey(t: &Ctx) -> Result<()> {
             let grid = page.get_by_role("list", "Photos");
             grid.get_by_role("listitem", ()).nth(1).wait_for().await?;
             assert_eq!(grid.get_by_role("listitem", ()).count().await?, 2);
-            assert_eq!(page.get_by_role("link", "Photos").first().get_attribute("aria-current").await?, Some("page".into()));
+            page.get_by_role("button", "All apps").click().await?;
+            let apps_menu = page.get_by_role("dialog", "All apps");
+            apps_menu.wait_for().await?;
+            assert_eq!(apps_menu.get_by_role("link", "Photos").first().get_attribute("aria-current").await?, Some("page".into()));
+            page.keyboard().press("Escape").await?;
+            apps_menu.wait_for_state(State::Detached).await?;
 
             // Upload from the create button: the photo lands in Files › Photos and appears at the top.
             page.get_by_label("Upload photos and videos")

@@ -3257,7 +3257,7 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                                         <p>"Try clearing the active filter to see everything in this view."</p>
                                                         <button type="button" class="secondary-button" on:click=move |_| filter.set("all")>"Show all"</button>
                                                     </div>
-                                                };
+                                                }.into_any();
                                             }
                                             let is_indexing = overview.with(|o| o.as_ref().is_some_and(|o| o.indexing));
                                             let upload_folder = overview
@@ -3320,7 +3320,7 @@ pub fn PhotosWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> 
                                                     <p>"Items matching this view appear here."</p>
                                                 }.into_any(),
                                             };
-                                            view! { <div class="photos-empty">{body}</div> }
+                                            view! { <div class="photos-empty">{body}</div> }.into_any()
                                         })}
                                         <div
                                             class="photos-grid"

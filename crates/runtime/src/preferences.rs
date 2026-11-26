@@ -371,6 +371,166 @@ pub fn merge(
         choice("agentGrouping", &["recent", "project"], "recent")?,
     );
     put("agentSnoozed", snoozed);
+    put(
+        "agentFollowUpMode",
+        choice("agentFollowUpMode", &["queue", "steer"], "steer")?,
+    );
+    put("agentAutoSettle", flag("agentAutoSettle", false)?);
+    put(
+        "agentDiffView",
+        choice("agentDiffView", &["unified", "split"], "unified")?,
+    );
+
+    let app_launcher = get("appLauncher", json!({ "order": [], "categories": [] }));
+    let launcher_obj = app_launcher
+        .as_object()
+        .ok_or_else(|| invalid("Invalid appLauncher."))?;
+    let launcher_order = launcher_obj
+        .get("order")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let order_ok = launcher_order.as_array().is_some_and(|list| {
+        list.len() <= 64
+            && list
+                .iter()
+                .all(|v| v.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 80))
+    });
+    if !order_ok {
+        return Err(invalid("Invalid appLauncher order."));
+    }
+    let launcher_cats = launcher_obj
+        .get("categories")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let cats_ok = launcher_cats.as_array().is_some_and(|list| {
+        list.len() <= 24
+            && list.iter().all(|c| {
+                c.as_object().is_some_and(|o| {
+                    o.get("id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| !s.is_empty() && s.len() <= 64)
+                        && o.get("name")
+                            .and_then(Value::as_str)
+                            .is_some_and(|s| !s.trim().is_empty() && s.len() <= 48)
+                        && o.get("apps").and_then(Value::as_array).is_some_and(|apps| {
+                            apps.len() <= 64
+                                && apps.iter().all(|a| {
+                                    a.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 80)
+                                })
+                        })
+                })
+            })
+    });
+    if !cats_ok {
+        return Err(invalid("Invalid appLauncher categories."));
+    }
+    put(
+        "appLauncher",
+        json!({ "order": launcher_order, "categories": launcher_cats }),
+    );
+
+    let starred = get("agentStarredModels", json!([]));
+    let starred_ok = starred.as_array().is_some_and(|list| {
+        list.len() <= 32
+            && list
+                .iter()
+                .all(|v| v.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 120))
+    });
+    if !starred_ok {
+        return Err(invalid("Invalid agentStarredModels."));
+    }
+    put("agentStarredModels", starred);
+
+    let stash = get("agentPromptStash", json!([]));
+    let stash_ok = stash.as_array().is_some_and(|list| {
+        list.len() <= 16
+            && list.iter().all(|item| {
+                item.as_object().is_some_and(|o| {
+                    o.get("id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| !s.is_empty() && s.len() <= 64)
+                        && o.get("text")
+                            .and_then(Value::as_str)
+                            .is_some_and(|s| !s.trim().is_empty() && s.len() <= 1000)
+                        && whole(o.get("createdAt").unwrap_or(&Value::Null)).is_some_and(|t| t >= 0)
+                })
+            })
+    });
+    if !stash_ok {
+        return Err(invalid("Invalid agentPromptStash."));
+    }
+    put("agentPromptStash", stash);
+
+    let scripts = get("agentProjectScripts", json!({}));
+    let scripts_ok = scripts.as_object().is_some_and(|map| {
+        map.len() <= 32
+            && map.iter().all(|(k, v)| {
+                !k.is_empty()
+                    && k.len() <= 80
+                    && v.as_array().is_some_and(|arr| {
+                        arr.len() <= 8
+                            && arr.iter().all(|s| {
+                                s.as_object().is_some_and(|o| {
+                                    o.get("id")
+                                        .and_then(Value::as_str)
+                                        .is_some_and(|v| !v.is_empty() && v.len() <= 64)
+                                        && o.get("name")
+                                            .and_then(Value::as_str)
+                                            .is_some_and(|v| !v.trim().is_empty() && v.len() <= 60)
+                                        && o.get("command")
+                                            .and_then(Value::as_str)
+                                            .is_some_and(|v| !v.trim().is_empty() && v.len() <= 300)
+                                })
+                            })
+                    })
+            })
+    });
+    if !scripts_ok {
+        return Err(invalid("Invalid agentProjectScripts."));
+    }
+    put("agentProjectScripts", scripts);
+
+    let schedules = get("agentSchedules", json!([]));
+    let schedules_ok = schedules.as_array().is_some_and(|list| {
+        list.len() <= 16
+            && list.iter().all(|item| {
+                item.as_object().is_some_and(|o| {
+                    o.get("id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| !s.is_empty() && s.len() <= 64)
+                        && o.get("title")
+                            .and_then(Value::as_str)
+                            .is_some_and(|s| !s.trim().is_empty() && s.len() <= 100)
+                        && o.get("projectId")
+                            .and_then(Value::as_str)
+                            .is_some_and(|s| s.len() <= 80)
+                        && o.get("prompt")
+                            .and_then(Value::as_str)
+                            .is_some_and(|s| !s.trim().is_empty() && s.len() <= 500)
+                        && o.get("cadence")
+                            .and_then(Value::as_str)
+                            .is_some_and(|s| !s.trim().is_empty() && s.len() <= 64)
+                        && o.get("enabled").is_some_and(Value::is_boolean)
+                })
+            })
+    });
+    if !schedules_ok {
+        return Err(invalid("Invalid agentSchedules."));
+    }
+    put("agentSchedules", schedules);
+
+    let details_hidden = get("agentDetailsHidden", json!([]));
+    let details_ok = details_hidden.as_array().is_some_and(|list| {
+        list.len() <= 16
+            && list
+                .iter()
+                .all(|v| v.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 40))
+    });
+    if !details_ok {
+        return Err(invalid("Invalid agentDetailsHidden."));
+    }
+    put("agentDetailsHidden", details_hidden);
+
     Ok(out)
 }
 
@@ -436,6 +596,45 @@ mod tests {
         let bad_default_list: Map<String, Value> =
             serde_json::from_value(json!({ "tasksDefaultList": "not-a-uuid" })).unwrap();
         assert!(merge(&empty, &bad_default_list).is_err());
+    }
+
+    #[test]
+    fn validates_app_launcher_and_agent_t3_preferences() {
+        let empty = Map::new();
+        let body: Map<String, Value> = serde_json::from_value(json!({
+            "appLauncher": {
+                "order": ["agent", "files", "mail"],
+                "categories": [
+                    { "id": "work", "name": "Work", "apps": ["agent", "git"] },
+                    { "id": "personal", "name": "Personal", "apps": ["mail", "photos"] }
+                ]
+            },
+            "agentFollowUpMode": "steer",
+            "agentAutoSettle": true,
+            "agentDiffView": "split",
+            "agentStarredModels": ["gpt-5.4", "claude/claude-sonnet-4-6"],
+            "agentPromptStash": [{ "id": "s1", "text": "Review the diff", "createdAt": 1700000000000.0 }],
+            "agentDetailsHidden": ["pr", "scripts"]
+        }))
+        .unwrap();
+        let merged = merge(&empty, &body).unwrap();
+        assert_eq!(merged["appLauncher"]["order"][0], "agent");
+        assert_eq!(merged["appLauncher"]["categories"][0]["name"], "Work");
+        assert_eq!(merged["agentFollowUpMode"], "steer");
+        assert_eq!(merged["agentAutoSettle"], true);
+        assert_eq!(merged["agentDiffView"], "split");
+        assert_eq!(merged["agentStarredModels"][0], "gpt-5.4");
+        assert_eq!(merged["agentPromptStash"][0]["id"], "s1");
+
+        let bad_diff: Map<String, Value> =
+            serde_json::from_value(json!({ "agentDiffView": "inline-only" })).unwrap();
+        assert!(merge(&empty, &bad_diff).is_err());
+
+        let bad_launcher: Map<String, Value> = serde_json::from_value(json!({
+            "appLauncher": { "order": "not-an-array" }
+        }))
+        .unwrap();
+        assert!(merge(&empty, &bad_launcher).is_err());
     }
 }
 

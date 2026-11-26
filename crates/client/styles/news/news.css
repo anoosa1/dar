@@ -111,8 +111,6 @@ body.has-editing-pane .news-shell .pim-details.news-details{display:none}
 }
 @media(max-width:800px){
   .news-shell .pim-workspace,.news-shell.has-pim-details .pim-workspace{display:flex}
-  .news-sidebar .news-feed-row,.news-sidebar .news-footer,.news-sidebar .news-heading,.news-folder-row .news-toggle,.news-row .news-row-menu{display:none!important}
-  .news-sidebar .news-folder-row{display:contents}
   .news-shell.has-pim-details .news-main{display:none}
   .news-shell .pim-details.news-details{padding:0}
   .news-back{display:inline-flex}.news-reader-tools .news-close{display:none}

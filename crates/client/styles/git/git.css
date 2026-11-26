@@ -271,8 +271,6 @@ body:is(.has-editing-pane,.has-settings-sheet) .git-shell .pim-details.git-detai
 }
 @media(max-width:800px){
   .git-shell .pim-workspace,.git-shell.has-pim-details .pim-workspace{display:flex}
-  .git-sidebar .git-heading,.git-sidebar .git-key-card{display:none!important}
-  .git-sidebar .git-repo-nav{display:contents}
   .git-scroll{padding:0 12px 96px}
   .git-overview-grid{grid-template-columns:1fr}
   .git-shell.has-pim-details .git-main{display:none}

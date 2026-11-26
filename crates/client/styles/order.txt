@@ -19,6 +19,7 @@ control-theme.css
 diff.css
 history.css
 agent/workspace.css
+agent/t3-parity.css
 news/news.css
 chat/chat.css
 photos/photos.css

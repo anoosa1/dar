@@ -179,10 +179,7 @@ pub async fn files_journey(t: &Ctx) -> Result<()> {
     let sink = phone_failures.clone();
     phone.on_page_error(move |message| sink.lock().unwrap().push(message.clone()));
     phone.goto(&base).await?;
-    phone
-        .get_by_role("navigation", "Applications")
-        .wait_for()
-        .await?;
+    phone.locator("header.topbar").wait_for().await?;
     ui::signed_in(&phone).await?;
     phone.get_by_role("button", &folder).click().await?;
     phone

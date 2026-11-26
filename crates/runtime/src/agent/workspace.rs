@@ -109,7 +109,7 @@ async fn directory(value: &Path) -> Result<()> {
     Ok(())
 }
 
-fn safe_path(relative: &str) -> Result<&str> {
+pub fn safe_path(relative: &str) -> Result<&str> {
     if relative.is_empty() || utf16_len(relative) > 2048 {
         return Err(AppError::new("unsafeWorkspace", 409));
     }
@@ -841,4 +841,187 @@ pub async fn branch_changes(
         });
     }
     Ok(result)
+}
+
+const MAX_READ_FILE_BYTES: u64 = 512 * 1024;
+
+async fn check_no_symlink_components(work: &Path, relative: &str) -> Result<PathBuf> {
+    let clean = safe_path(relative)?;
+    let mut cur = work.to_path_buf();
+    let root_meta = tokio::fs::symlink_metadata(&cur)
+        .await
+        .map_err(|_| AppError::new("workspaceUnavailable", 409))?;
+    if !root_meta.is_dir() || root_meta.file_type().is_symlink() {
+        return Err(AppError::new("unsafeWorkspace", 409));
+    }
+    for part in clean.split('/') {
+        cur.push(part);
+        if let Ok(meta) = tokio::fs::symlink_metadata(&cur).await
+            && meta.file_type().is_symlink()
+        {
+            return Err(AppError::with(
+                "unsafeWorkspace",
+                409,
+                "Symbolic links are not permitted in agent workspaces.",
+            ));
+        }
+    }
+    Ok(cur)
+}
+
+/// Safely read a single working-copy file (no symlinks, bounded size) for the Files/Preview surfaces.
+pub async fn read_workspace_file(
+    root: &Path,
+    user_id: &str,
+    thread_id: &str,
+    rel_path: &str,
+) -> Result<Option<Value>> {
+    let clean = safe_path(rel_path)?;
+    let work = root
+        .join("agent-workspaces")
+        .join(user_id)
+        .join(thread_id)
+        .join("work");
+    if tokio::fs::symlink_metadata(&work).await.is_err() {
+        return Ok(None);
+    }
+    let full = check_no_symlink_components(&work, clean).await?;
+    let mut file = match tokio::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NOFOLLOW)
+        .open(&full)
+        .await
+    {
+        Ok(f) => f,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(AppError::not_found());
+        }
+        Err(_) => return Err(AppError::new("unsafeWorkspace", 409)),
+    };
+    let meta = file
+        .metadata()
+        .await
+        .map_err(|_| AppError::new("unsafeWorkspace", 409))?;
+    if !meta.is_file() {
+        return Err(AppError::invalid());
+    }
+    let size = meta.len();
+    let to_read = size.min(MAX_READ_FILE_BYTES) as usize;
+    let mut buf = vec![0u8; to_read];
+    let mut off = 0;
+    while off < to_read {
+        let n = file
+            .read(&mut buf[off..])
+            .await
+            .map_err(|_| AppError::internal())?;
+        if n == 0 {
+            break;
+        }
+        off += n;
+    }
+    buf.truncate(off);
+    let truncated = size > MAX_READ_FILE_BYTES;
+    let media_type = media_type_of(clean, Some(&buf));
+    match std::str::from_utf8(&buf) {
+        Ok(text) => Ok(Some(json!({
+            "path": clean,
+            "mediaType": media_type,
+            "size": size,
+            "binary": false,
+            "truncated": truncated,
+            "content": text,
+        }))),
+        Err(_) => {
+            let preview_data = if media_type.starts_with("image/") && !truncated {
+                Some(format!("data:{media_type};base64,{}", B64.encode(&buf)))
+            } else {
+                None
+            };
+            Ok(Some(json!({
+                "path": clean,
+                "mediaType": media_type,
+                "size": size,
+                "binary": true,
+                "truncated": truncated,
+                "content": preview_data.unwrap_or_default(),
+            })))
+        }
+    }
+}
+
+/// Revert one working-copy file (or all files when `rel_path` is None) back to `baseline.json`.
+pub async fn revert_workspace_file(
+    root: &Path,
+    user_id: &str,
+    thread_id: &str,
+    rel_path: Option<&str>,
+) -> Result<Value> {
+    let thread_dir = root.join("agent-workspaces").join(user_id).join(thread_id);
+    let work = thread_dir.join("work");
+    let baseline = match read_baseline_nofollow(&thread_dir.join("baseline.json")).await {
+        Ok(b) => b,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(AppError::with(
+                "workspaceUnavailable",
+                409,
+                "No workspace baseline exists yet for this thread.",
+            ));
+        }
+        Err(_) => return Err(AppError::new("unsafeWorkspace", 409)),
+    };
+    let mut base_map: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for row in &baseline.files {
+        if let Ok(bytes) = B64.decode(&row.content) {
+            base_map.insert(row.path.clone(), bytes);
+        }
+    }
+    let targets: Vec<String> = match rel_path {
+        Some(p) => vec![safe_path(p)?.to_owned()],
+        None => {
+            let current = scan(&work).await?;
+            let mut names = BTreeSet::new();
+            for k in base_map.keys() {
+                names.insert(k.clone());
+            }
+            for k in current.keys() {
+                names.insert(k.clone());
+            }
+            names
+                .into_iter()
+                .filter(|k| base_map.get(k) != current.get(k))
+                .collect()
+        }
+    };
+
+    let mut reverted = Vec::new();
+    for rel in targets {
+        let full = check_no_symlink_components(&work, &rel).await?;
+        if let Some(orig) = base_map.get(&rel) {
+            if let Some(parent) = full.parent() {
+                directory(parent).await?;
+            }
+            let mut out = tokio::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .custom_flags(O_NOFOLLOW)
+                .mode(0o600)
+                .open(&full)
+                .await
+                .map_err(|_| AppError::new("unsafeWorkspace", 409))?;
+            out.write_all(orig)
+                .await
+                .map_err(|_| AppError::internal())?;
+            reverted.push(rel);
+        } else if tokio::fs::symlink_metadata(&full)
+            .await
+            .is_ok_and(|m| m.is_file() && !m.file_type().is_symlink())
+        {
+            tokio::fs::remove_file(&full)
+                .await
+                .map_err(|_| AppError::internal())?;
+            reverted.push(rel);
+        }
+    }
+    Ok(json!({ "ok": true, "reverted": reverted }))
 }

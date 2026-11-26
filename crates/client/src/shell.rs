@@ -12,8 +12,8 @@ use crate::api::{self, BrowserSession, Req};
 use crate::files::types::FileTile;
 use crate::icons::Icon;
 use crate::navigation::navigate;
-use crate::shared::context;
-use crate::ui::{ActionMenu, MenuAction, document, listen, unique_id, window};
+use crate::shared::{AppLauncherPrefs, context, save_preferences};
+use crate::ui::{document, listen, unique_id, use_floating, window};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppEntry {
@@ -37,6 +37,24 @@ const APPS: [(&str, &str, &str, &str); 12] = [
     ("agent", "Agent", "agent", "/agent"),
     ("git", "Git", "branch", "/git"),
 ];
+
+pub fn app_tint_class(id: &str) -> &'static str {
+    match id {
+        "files" => "app-tint-files",
+        "photos" => "app-tint-photos",
+        "books" => "app-tint-books",
+        "contacts" => "app-tint-contacts",
+        "calendar" => "app-tint-calendar",
+        "notes" => "app-tint-notes",
+        "tasks" => "app-tint-tasks",
+        "mail" => "app-tint-mail",
+        "news" => "app-tint-news",
+        "chat" => "app-tint-chat",
+        "agent" => "app-tint-agent",
+        "git" => "app-tint-git",
+        _ => "app-tint-other",
+    }
+}
 
 /// Built-in apps the administrator has not disabled, followed by enabled installed apps.
 pub fn app_list() -> Vec<AppEntry> {
@@ -66,6 +84,58 @@ pub fn app_list() -> Vec<AppEntry> {
         .collect()
 }
 
+/// Orders `list` according to `prefs.order` and groups into user categories,
+/// or a single `"Apps"` group when no custom categories are defined.
+pub fn grouped_apps(
+    list: &[AppEntry],
+    prefs: Option<&AppLauncherPrefs>,
+) -> Vec<(String, Vec<AppEntry>)> {
+    let mut ordered: Vec<AppEntry> = Vec::with_capacity(list.len());
+    if let Some(p) = prefs {
+        for id in &p.order {
+            if let Some(item) = list.iter().find(|a| &a.id == id)
+                && !ordered.iter().any(|o| o.id == item.id)
+            {
+                ordered.push(item.clone());
+            }
+        }
+    }
+    for item in list {
+        if !ordered.iter().any(|o| o.id == item.id) {
+            ordered.push(item.clone());
+        }
+    }
+    let Some(p) = prefs.filter(|p| !p.categories.is_empty()) else {
+        return vec![("Apps".into(), ordered)];
+    };
+    let mut groups: Vec<(String, Vec<AppEntry>)> = Vec::new();
+    let mut placed: Vec<String> = Vec::new();
+    for cat in &p.categories {
+        let mut items: Vec<AppEntry> = Vec::new();
+        for app in &ordered {
+            if cat.apps.iter().any(|id| id == &app.id) && !placed.iter().any(|id| id == &app.id) {
+                placed.push(app.id.clone());
+                items.push(app.clone());
+            }
+        }
+        if !items.is_empty() {
+            groups.push((cat.name.clone(), items));
+        }
+    }
+    let remaining: Vec<AppEntry> = ordered
+        .into_iter()
+        .filter(|app| !placed.iter().any(|id| id == &app.id))
+        .collect();
+    if !remaining.is_empty() {
+        let heading = if groups.is_empty() { "Apps" } else { "Other" };
+        groups.push((heading.into(), remaining));
+    }
+    if groups.is_empty() {
+        groups.push(("Apps".into(), Vec::new()));
+    }
+    groups
+}
+
 pub fn app_label(id: &str, list: &[AppEntry]) -> String {
     if id == "settings" {
         return "Settings".into();
@@ -77,8 +147,13 @@ pub fn app_label(id: &str, list: &[AppEntry]) -> String {
         .unwrap_or_else(|| "App".into())
 }
 
-/// Phones show this many apps in the bottom bar; the rest are under More.
-const PHONE_SLOTS: usize = 4;
+fn is_mobile_viewport() -> bool {
+    window()
+        .inner_width()
+        .ok()
+        .and_then(|v| v.as_f64())
+        .is_some_and(|w| w <= 800.0)
+}
 
 #[component]
 pub fn Avatar(#[prop(into)] name: String) -> impl IntoView {
@@ -93,152 +168,436 @@ pub fn Avatar(#[prop(into)] name: String) -> impl IntoView {
     view! { <span class="avatar" aria-hidden="true">{initials}</span> }
 }
 
-/// The persistent app rail; on phones a bottom bar with four apps and a More menu.
+/// Renders the Direction-A 2-column compact app rows (with optional user categories or `"Apps"`).
 #[component]
-pub fn AppRail(
+fn AppGroupsList(
     #[prop(into)] active: Signal<String>,
-    administrator: bool,
-    account: ChildrenFn,
+    on_pick: Callback<()>,
 ) -> impl IntoView {
-    let rail = move || {
+    let groups = Memo::new(move |_| {
         let list = app_list();
-        let active = active.get();
-        let active_index = list.iter().position(|a| a.id == active);
-        let on_phone: Vec<bool> = (0..list.len())
-            .map(|i| {
-                i < PHONE_SLOTS - usize::from(active_index.is_some_and(|a| a >= PHONE_SLOTS))
-                    || Some(i) == active_index
-            })
-            .collect();
-        let overflow: Vec<AppEntry> = list
-            .iter()
-            .zip(&on_phone)
-            .filter(|(_, p)| !**p)
-            .map(|(a, _)| a.clone())
-            .collect();
-        let more_active = active == "settings";
-        let mut more: Vec<MenuAction> = overflow
-            .iter()
-            .map(|a| {
-                MenuAction::new(a.label.clone(), a.icon)
-                    .href(a.href.clone())
-                    .current(a.id == active)
-            })
-            .collect();
-        let mut settings = MenuAction::new("Settings", "settings")
-            .href("/settings")
-            .current(active == "settings");
-        settings.separator = !overflow.is_empty();
-        more.push(settings);
-        if administrator {
-            more.push(
-                MenuAction::new("Manage apps", "grid").href("/settings?section=installedApps"),
-            );
-        }
-        let items = list.into_iter().zip(on_phone).map(|(app, phone)| {
-            let current = (app.id == active).then_some("page");
-            view! {
-                <a href=app.href class=if phone { "app-rail-item" } else { "app-rail-item app-rail-overflow" } aria-current=current>
-                    <span class="app-rail-icon"><Icon name=app.icon/></span><span class="app-rail-label">{app.label}</span>
-                </a>
-            }
-        }).collect_view();
-        let more = StoredValue::new(more);
-        view! {
-            {items}
-            <ActionMenu label="More apps" class=if more_active { "app-rail-more is-current" } else { "app-rail-more" } actions=move |_| more.get_value()>
-                <span class="app-rail-icon"><Icon name="grid"/></span><span class="app-rail-label">"More"</span>
-            </ActionMenu>
-        }
-    };
+        let prefs = context()
+            .preferences
+            .value
+            .with(|p| p.as_ref().and_then(|p| p.app_launcher.clone()));
+        grouped_apps(&list, prefs.as_ref())
+    });
     view! {
-        <nav class="app-rail" aria-label="Applications">
-            <a href="/" class="app-rail-brand" aria-label="Dar home"><span aria-hidden="true">"D"</span></a>
-            <div class="app-rail-apps">{rail}</div>
-            <div class="app-rail-end">
-                <a href="/settings" class="app-rail-item app-rail-settings" aria-label="Settings" title="Settings" aria-current=move || (active.get() == "settings").then_some("page")><span class="app-rail-icon"><Icon name="settings"/></span></a>
-                {account()}
-            </div>
-        </nav>
+        <div class="apps-groups">
+            {move || {
+                let current = active.get();
+                groups
+                    .get()
+                    .into_iter()
+                    .map(|(heading, items)| {
+                        let heading_aria = heading.clone();
+                        view! {
+                            <section class="apps-group" aria-label=heading_aria>
+                                <h3 class="apps-group-heading">{heading}</h3>
+                                <div class="apps-group-grid">
+                                    {items
+                                        .into_iter()
+                                        .map(|app| {
+                                            let is_current = app.id == current;
+                                            let tint = app_tint_class(&app.id);
+                                            let href = app.href.clone();
+                                            view! {
+                                                <a
+                                                    href=href
+                                                    class=if is_current { "apps-menu-row is-current" } else { "apps-menu-row" }
+                                                    aria-current=is_current.then_some("page")
+                                                    on:click=move |_| { on_pick.try_run(()); }
+                                                >
+                                                    <span class=format!("apps-menu-badge {tint}") aria-hidden="true">
+                                                        <Icon name=app.icon/>
+                                                    </span>
+                                                    <span class="apps-menu-label">{app.label}</span>
+                                                    {is_current.then(|| view! { <span class="apps-menu-dot" aria-hidden="true"></span> })}
+                                                </a>
+                                            }
+                                        })
+                                        .collect_view()}
+                                </div>
+                            </section>
+                        }
+                    })
+                    .collect_view()
+            }}
+        </div>
     }
 }
 
-/// The same account actions are available from the rail and the phone top bar.
+/// Desktop All Apps switcher trigger (between the Dar logo and app title) and its compact 2-column popover.
+#[component]
+fn AllAppsSwitcher(
+    #[prop(into)] active: Signal<String>,
+    administrator: bool,
+) -> impl IntoView {
+    let open = RwSignal::new(false);
+    let trigger = NodeRef::<html::Button>::new();
+    let panel = NodeRef::<html::Div>::new();
+    let id = unique_id();
+    use_floating(open.into(), trigger, panel, false, 6.0);
+
+    listen(&document(), "pointerdown", true, move |event| {
+        if !open.get_untracked() {
+            return;
+        }
+        let target = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Node>().ok());
+        let inside_trigger = trigger
+            .get_untracked()
+            .is_some_and(|el| target.as_ref().is_some_and(|n| el.contains(Some(n))));
+        let inside_panel = panel
+            .get_untracked()
+            .is_some_and(|el| target.as_ref().is_some_and(|n| el.contains(Some(n))));
+        if !inside_trigger && !inside_panel {
+            open.set(false);
+        }
+    });
+    listen(&document(), "keydown", false, move |event| {
+        if !open.get_untracked() {
+            return;
+        }
+        let e: web_sys::KeyboardEvent = event.unchecked_into();
+        if e.key() == "Escape" {
+            e.prevent_default();
+            open.set(false);
+            if let Some(btn) = trigger.get_untracked() {
+                let _ = btn.focus();
+            }
+        }
+    });
+
+    let close = Callback::new(move |_| open.set(false));
+    let id_sv = StoredValue::new(id);
+
+    view! {
+        <div class="topbar-apps-wrap">
+            <button
+                type="button"
+                node_ref=trigger
+                class="icon-button topbar-apps-trigger"
+                aria-label="All apps"
+                title="All apps"
+                aria-haspopup="dialog"
+                aria-controls=move || id_sv.get_value()
+                aria-expanded=move || open.get().to_string()
+                on:click=move |_| open.update(|v| *v = !*v)
+            >
+                <Icon name="apps"/>
+            </button>
+            <Show when=move || open.get()>
+                <Portal>
+                    <div
+                        node_ref=panel
+                        id=id_sv.get_value()
+                        role="dialog"
+                        aria-label="All apps"
+                        class="apps-menu-popover dar-popover-surface"
+                    >
+                        <AppGroupsList active=active on_pick=close/>
+                        <div class="apps-menu-footer">
+                            <span class="apps-menu-hint">"Jump with Ctrl K"</span>
+                            <div class="apps-menu-footer-links">
+                                <a href="/settings?section=appearance" on:click=move |_| open.set(false)>"Customize"</a>
+                                {administrator.then(|| view! {
+                                    <a href="/settings?section=installedApps" on:click=move |_| open.set(false)>"Manage apps"</a>
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </Portal>
+            </Show>
+        </div>
+    }
+}
+
+/// Inline Afterglow / Nightfall / System switcher used inside both the desktop User Menu and mobile User Hub.
+#[component]
+fn InlineThemeSwitch(session: BrowserSession) -> impl IntoView {
+    let session = StoredValue::new(session);
+    let busy = RwSignal::new(false);
+    let current = Memo::new(move |_| {
+        context()
+            .preferences
+            .value
+            .with(|p| {
+                p.as_ref()
+                    .and_then(|p| p.appearance.clone())
+                    .unwrap_or_else(|| "system".into())
+            })
+    });
+    let pick = move |theme: &'static str| {
+        if busy.get_untracked() {
+            return;
+        }
+        let session = session.get_value();
+        busy.set(true);
+        spawn_local(async move {
+            let shared = context().preferences;
+            let rev = shared
+                .value
+                .with_untracked(|p| p.as_ref().map(|p| p.revision).unwrap_or(0));
+            let res = save_preferences(serde_json::json!({ "appearance": theme }), rev, &session).await;
+            if let Ok(updated) = res {
+                shared.value.set(Some(updated));
+            } else if let Ok(fresh) = api::get::<crate::shared::Preferences>(crate::shared::PREFERENCES).await
+                && let Ok(updated) = save_preferences(serde_json::json!({ "appearance": theme }), fresh.revision, &session).await
+            {
+                shared.value.set(Some(updated));
+            }
+            let _ = busy.try_set(false);
+        });
+    };
+    view! {
+        <div class="user-theme-switch" role="radiogroup" aria-label="Appearance">
+            {[("latte", "Afterglow"), ("mocha", "Nightfall"), ("system", "System")]
+                .into_iter()
+                .map(|(val, label)| {
+                    view! {
+                        <button
+                            type="button"
+                            role="radio"
+                            aria-checked=move || (current.get() == val).to_string()
+                            class=move || if current.get() == val { "is-active" } else { "" }
+                            disabled=move || busy.get()
+                            on:click=move |_| pick(val)
+                        >
+                            {label}
+                        </button>
+                    }
+                })
+                .collect_view()}
+        </div>
+    }
+}
+
+/// Account trigger: opens the upgraded User Menu popover on desktop, and the full-screen
+/// User & Apps Hub (apps grid on top, account options on bottom) on phones.
 #[component]
 pub fn WorkspaceAccount(
     session: BrowserSession,
+    #[prop(into)] active: Signal<String>,
     on_signed_out: Callback<()>,
     #[prop(into)] class: String,
 ) -> impl IntoView {
+    let open_desktop = RwSignal::new(false);
+    let open_mobile = RwSignal::new(false);
     let error = RwSignal::new(String::new());
+    let trigger = NodeRef::<html::Button>::new();
+    let panel = NodeRef::<html::Div>::new();
+    let menu_id = unique_id();
+    use_floating(open_desktop.into(), trigger, panel, true, 6.0);
+
     let user = session.user.clone();
     let csrf = StoredValue::new(session.csrf_token.clone());
+    let session_sv = StoredValue::new(session.clone());
     let administrator = user.administrator;
-    let actions = move |_| {
-        let mut list = vec![
-            MenuAction::new("Settings", "settings").href("/settings"),
-            MenuAction::new("Account security", "lock").href("/settings?section=security"),
-        ];
-        if administrator {
-            list.push(
-                MenuAction::new("Directory", "shield")
-                    .href("/settings?section=directory")
-                    .section("Administration"),
-            );
-            list.push(
-                MenuAction::new("Manage apps", "grid").href("/settings?section=installedApps"),
-            );
+    let display_name = StoredValue::new(user.display_name.clone());
+    let username = StoredValue::new(user.username.clone());
+
+    listen(&document(), "pointerdown", true, move |event| {
+        if !open_desktop.get_untracked() {
+            return;
         }
-        list.push(
-            MenuAction::new("Sign out", "logout")
-                .separator()
-                .run(move || {
-                    spawn_local(async move {
-                        match api::request::<serde_json::Value>(
-                            "/api/v1/auth/logout",
-                            Req {
-                                method: "POST",
-                                csrf: Some(&csrf.get_value()),
-                                ..Default::default()
-                            },
-                        )
-                        .await
-                        {
-                            Ok(_) => {
-                                on_signed_out.try_run(());
-                            }
-                            Err(e) => error.set(e.message),
-                        }
-                    });
-                }),
-        );
-        list
-    };
-    let (name, username) = (user.display_name.clone(), user.username.clone());
-    let heading: ChildrenFn = std::sync::Arc::new(move || {
-        let (name, username) = (name.clone(), username.clone());
-        view! { <Avatar name=name.clone()/><span><strong>{name}</strong><small>"@"{username}</small></span> }.into_any()
+        let target = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Node>().ok());
+        let inside_trigger = trigger
+            .get_untracked()
+            .is_some_and(|el| target.as_ref().is_some_and(|n| el.contains(Some(n))));
+        let inside_panel = panel
+            .get_untracked()
+            .is_some_and(|el| target.as_ref().is_some_and(|n| el.contains(Some(n))));
+        if !inside_trigger && !inside_panel {
+            open_desktop.set(false);
+        }
     });
+    listen(&document(), "keydown", false, move |event| {
+        let e: web_sys::KeyboardEvent = event.unchecked_into();
+        if e.key() == "Escape" {
+            if open_desktop.get_untracked() {
+                e.prevent_default();
+                open_desktop.set(false);
+                if let Some(btn) = trigger.get_untracked() {
+                    let _ = btn.focus();
+                }
+            } else if open_mobile.get_untracked() {
+                e.prevent_default();
+                open_mobile.set(false);
+                if let Some(btn) = trigger.get_untracked() {
+                    let _ = btn.focus();
+                }
+            }
+        }
+    });
+
+    let sign_out = move || {
+        open_desktop.set(false);
+        open_mobile.set(false);
+        let token = csrf.get_value();
+        spawn_local(async move {
+            match api::request::<serde_json::Value>(
+                "/api/v1/auth/logout",
+                Req {
+                    method: "POST",
+                    csrf: Some(&token),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(_) => {
+                    on_signed_out.try_run(());
+                }
+                Err(e) => error.set(e.message),
+            }
+        });
+    };
+
+    let close_mobile = Callback::new(move |_| open_mobile.set(false));
+    let menu_id_sv = StoredValue::new(menu_id);
+
     view! {
         <div class=format!("account-area {class}")>
-            <ActionMenu label="Open account menu" class="ui-account" heading=heading actions=actions>
-                <Avatar name=user.display_name.clone()/><span class="sr-only">{user.display_name.clone()}</span>
-            </ActionMenu>
+            <button
+                type="button"
+                node_ref=trigger
+                class="user-avatar-trigger"
+                aria-label="Open account menu"
+                aria-haspopup="menu"
+                aria-controls=move || menu_id_sv.get_value()
+                aria-expanded=move || (open_desktop.get() || open_mobile.get()).to_string()
+                on:click=move |_| {
+                    if is_mobile_viewport() {
+                        if let Some(body) = document().body() {
+                            let _ = body.class_list().remove_1("mobile-nav-open");
+                        }
+                        open_desktop.set(false);
+                        open_mobile.update(|v| *v = !*v);
+                    } else {
+                        open_mobile.set(false);
+                        open_desktop.update(|v| *v = !*v);
+                    }
+                }
+            >
+                <Avatar name=display_name.get_value()/>
+                <span class="sr-only">{display_name.get_value()}</span>
+            </button>
+
+            <Show when=move || open_desktop.get()>
+                <Portal>
+                    <div
+                        node_ref=panel
+                        id=menu_id_sv.get_value()
+                        role="menu"
+                        aria-label="Open account menu"
+                        class="user-menu-popover dar-popover-surface"
+                    >
+                        <div class="user-menu-head">
+                            <Avatar name=display_name.get_value()/>
+                            <div class="user-menu-meta">
+                                <strong>{display_name.get_value()}</strong>
+                                <small>"@"{username.get_value()}</small>
+                            </div>
+                            {administrator.then(|| view! { <span class="user-role-pill">"Admin"</span> })}
+                        </div>
+                        <div class="user-menu-theme">
+                            <span class="user-menu-section-label">"Appearance"</span>
+                            <InlineThemeSwitch session=session_sv.get_value()/>
+                        </div>
+                        <div class="user-menu-list">
+                            <a href="/settings" role="menuitem" class="ui-menu-item" on:click=move |_| open_desktop.set(false)>
+                                <Icon name="settings"/><span>"Settings"</span>
+                            </a>
+                            <a href="/settings?section=appearance" role="menuitem" class="ui-menu-item" on:click=move |_| open_desktop.set(false)>
+                                <Icon name="palette"/><span>"Personalization"</span>
+                            </a>
+                            <a href="/settings?section=security" role="menuitem" class="ui-menu-item" on:click=move |_| open_desktop.set(false)>
+                                <Icon name="lock"/><span>"Account security"</span>
+                            </a>
+                            {administrator.then(|| view! {
+                                <hr/>
+                                <span class="ui-menu-section">"Administration"</span>
+                                <a href="/settings?section=directory" role="menuitem" class="ui-menu-item" on:click=move |_| open_desktop.set(false)>
+                                    <Icon name="shield"/><span>"Directory"</span>
+                                </a>
+                                <a href="/settings?section=installedApps" role="menuitem" class="ui-menu-item" on:click=move |_| open_desktop.set(false)>
+                                    <Icon name="grid"/><span>"Manage apps"</span>
+                                </a>
+                            })}
+                            <hr/>
+                            <button type="button" role="menuitem" class="ui-menu-item danger" on:click=move |_| sign_out()>
+                                <Icon name="logout"/><span>"Sign out"</span>
+                            </button>
+                        </div>
+                    </div>
+                </Portal>
+            </Show>
+
+            <Show when=move || open_mobile.get()>
+                <Portal>
+                    <div class="mobile-user-hub" role="dialog" aria-modal="true" aria-label="Apps and account">
+                        <header class="mobile-user-hub-head">
+                            <a href="/" class="mobile-user-hub-brand" on:click=move |_| open_mobile.set(false)>
+                                <span class="topbar-brand-mark" aria-hidden="true">"D"</span>
+                                <span>"Dar"</span>
+                            </a>
+                            <button type="button" class="icon-button mobile-user-hub-close" aria-label="Close account menu" on:click=move |_| open_mobile.set(false)>
+                                <Icon name="close"/>
+                            </button>
+                        </header>
+                        <div class="mobile-user-hub-apps">
+                            <AppGroupsList active=active on_pick=close_mobile/>
+                        </div>
+                        <div class="mobile-user-hub-account">
+                            <div class="user-menu-head">
+                                <Avatar name=display_name.get_value()/>
+                                <div class="user-menu-meta">
+                                    <strong>{display_name.get_value()}</strong>
+                                    <small>"@"{username.get_value()}</small>
+                                </div>
+                                {administrator.then(|| view! { <span class="user-role-pill">"Admin"</span> })}
+                            </div>
+                            <InlineThemeSwitch session=session_sv.get_value()/>
+                            <div class="mobile-user-hub-actions">
+                                <a href="/settings" class="mobile-hub-row" on:click=move |_| open_mobile.set(false)>
+                                    <Icon name="settings"/><span>"Settings"</span><Icon name="chevron"/>
+                                </a>
+                                <a href="/settings?section=appearance" class="mobile-hub-row" on:click=move |_| open_mobile.set(false)>
+                                    <Icon name="palette"/><span>"Personalization"</span><Icon name="chevron"/>
+                                </a>
+                                {administrator.then(|| view! {
+                                    <a href="/settings?section=installedApps" class="mobile-hub-row" on:click=move |_| open_mobile.set(false)>
+                                        <Icon name="grid"/><span>"Manage apps"</span><Icon name="chevron"/>
+                                    </a>
+                                })}
+                                <button type="button" class="mobile-hub-row danger" on:click=move |_| sign_out()>
+                                    <Icon name="logout"/><span>"Sign out"</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </Portal>
+            </Show>
+
             {move || (!error.get().is_empty()).then(|| view! { <p role="alert" class="error">{error.get()}</p> })}
         </div>
     }
 }
 
-/// The signed-in frame's state: which app is showing and its settings button. Apps announce
-/// themselves through `WorkspaceHeader`; the rail and top bar stay mounted between apps.
+/// The signed-in frame's state: which app is showing, its settings button, and mobile drawer state.
 #[derive(Clone, Copy)]
 pub struct Frame {
     app: RwSignal<String>,
     /// The settings button of the app that registered last, with its registration number.
     settings: RwSignal<(u64, Option<Callback<()>>)>,
     sequence: StoredValue<u64>,
-    /// An installed app built with the SDK draws its own rail and top bar.
+    /// An installed app built with the SDK draws its own chrome.
     own_chrome: RwSignal<bool>,
+    mobile_nav_open: RwSignal<bool>,
 }
 
 impl Frame {
@@ -248,12 +607,23 @@ impl Frame {
             settings: RwSignal::new((0, None)),
             sequence: StoredValue::new(0),
             own_chrome: RwSignal::new(false),
+            mobile_nav_open: RwSignal::new(false),
         };
         provide_context(frame);
         frame
     }
 
-    /// While `showing` is true the page draws its own rail and top bar, and the frame steps aside.
+    /// Closes the shared mobile slide-over hamburger drawer if open.
+    pub fn close_mobile_nav() {
+        if let Some(frame) = use_context::<Frame>() {
+            let _ = frame.mobile_nav_open.try_set(false);
+        }
+        if let Some(body) = document().body() {
+            let _ = body.class_list().remove_1("mobile-nav-open");
+        }
+    }
+
+    /// While `showing` is true the page draws its own chrome, and the frame steps aside.
     pub fn own_chrome(showing: Signal<bool>) {
         let Some(frame) = use_context::<Frame>() else {
             return;
@@ -265,8 +635,113 @@ impl Frame {
     }
 }
 
-/// The persistent app rail and top bar for signed-in pages. Only the app's own content
-/// changes when moving between apps, so search, the rail and the account menu stay put.
+/// Shared top bar rendered once by `AppFrame` (or standalone by `WorkspaceHeader` outside `AppFrame`).
+#[component]
+fn TopBar(
+    #[prop(into)] active: Signal<String>,
+    #[prop(into)] label: Signal<String>,
+    #[prop(into)] has_settings: Signal<bool>,
+    on_settings: Callback<()>,
+    session: BrowserSession,
+    on_signed_out: Callback<()>,
+    mobile_nav_open: RwSignal<bool>,
+) -> impl IntoView {
+    Effect::new(move |_| {
+        if let Some(body) = document().body() {
+            let _ = body
+                .class_list()
+                .toggle_with_force("mobile-nav-open", mobile_nav_open.get());
+        }
+    });
+    on_cleanup(|| {
+        if let Some(body) = document().body() {
+            let _ = body.class_list().remove_1("mobile-nav-open");
+        }
+    });
+    // Close mobile drawer when a sidebar nav item is clicked or Escape is pressed.
+    listen(&document(), "click", false, move |event| {
+        if !mobile_nav_open.get_untracked() {
+            return;
+        }
+        if let Some(el) = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            && el
+                .closest(".sidebar .nav-item, .sidebar nav button:not(.ui-menu-trigger), .sidebar .new-button, .sidebar .ui-new, .sidebar .pim-sidebar-heading button, .sidebar .ui-app-settings-entry, .ui-settings-nav button, .agent-sidebar .agent-thread-select, .agent-sidebar .agent-new-thread, .agent-sidebar .agent-util-btn, [role='menuitem']")
+                .ok()
+                .flatten()
+                .is_some()
+        {
+            mobile_nav_open.set(false);
+        }
+    });
+    listen(&document(), "keydown", false, move |event| {
+        if !mobile_nav_open.get_untracked() {
+            return;
+        }
+        let e: web_sys::KeyboardEvent = event.unchecked_into();
+        if e.key() == "Escape" {
+            mobile_nav_open.set(false);
+        }
+    });
+    listen(&window(), "popstate", false, move |_| {
+        mobile_nav_open.set(false);
+    });
+
+    let administrator = session.user.administrator;
+    view! {
+        <header class=move || if has_settings.get() { "topbar has-settings" } else { "topbar" }>
+            <button
+                type="button"
+                class="icon-button mobile-nav-trigger"
+                aria-label="Open navigation"
+                aria-expanded=move || mobile_nav_open.get().to_string()
+                on:click=move |_| mobile_nav_open.update(|v| *v = !*v)
+            >
+                <Icon name="menu"/>
+            </button>
+
+            <div class="topbar-start">
+                <a href="/" class="topbar-brand" aria-label="Dar home">
+                    <span class="topbar-brand-mark" aria-hidden="true">"D"</span>
+                </a>
+                <AllAppsSwitcher active=active administrator=administrator/>
+                <span class="topbar-title">{move || label.get()}</span>
+            </div>
+
+            <GlobalSearch account=session.user.id.clone()/>
+
+            <div class="topbar-end">
+                <div class="topbar-tools">
+                    {move || has_settings.get().then(|| view! {
+                        <button
+                            type="button"
+                            class="icon-button"
+                            aria-label=move || format!("{} settings", label.get())
+                            title=move || format!("{} settings", label.get())
+                            on:click=move |_| { on_settings.try_run(()); }
+                        >
+                            <Icon name="settings"/>
+                        </button>
+                    })}
+                </div>
+                <WorkspaceAccount session=session.clone() active=active on_signed_out=on_signed_out class="topbar-account"/>
+            </div>
+        </header>
+        <Show when=move || mobile_nav_open.get()>
+            <Portal>
+                <button
+                    type="button"
+                    class="mobile-nav-scrim"
+                    aria-label="Close navigation"
+                    on:click=move |_| mobile_nav_open.set(false)
+                />
+            </Portal>
+        </Show>
+    }
+}
+
+/// The persistent top bar for signed-in pages. Every app fills the full viewport width beneath it.
 #[component]
 pub fn AppFrame(
     frame: Frame,
@@ -297,39 +772,37 @@ pub fn AppFrame(
         if let Some(body) = document().body() {
             let _ = body
                 .class_list()
-                .remove_2("has-app-frame", "has-app-settings");
+                .remove_3("has-app-frame", "has-app-settings", "mobile-nav-open");
         }
     });
     let session = StoredValue::new(session);
-    // Not rendered at all while an installed app shows the SDK's own rail and top bar.
     move || {
         shown.get().then(|| {
             let session = session.get_value();
-            let rail_session = session.clone();
-            let account: ChildrenFn = std::sync::Arc::new(move || view! { <WorkspaceAccount session=rail_session.clone() on_signed_out=on_signed_out class="rail-account"/> }.into_any());
+            let on_settings = Callback::new(move |()| {
+                if let Some(open) = frame.settings.get_untracked().1 {
+                    open.try_run(());
+                }
+            });
             view! {
                 <div class="app-frame">
-                    <AppRail active=Signal::derive(move || frame.app.get()) administrator=session.user.administrator account=account/>
-                    <header class=move || if has_settings.get() { "topbar has-settings" } else { "topbar" }>
-                        <span class="topbar-title">{move || label.get()}</span>
-                        <GlobalSearch account=session.user.id.clone()/>
-                        <div class="topbar-tools">
-                            {move || has_settings.get().then(|| view! {
-                                <button type="button" class="icon-button" aria-label=move || format!("{} settings", label.get()) title=move || format!("{} settings", label.get())
-                                    on:click=move |_| { if let Some(open) = frame.settings.get_untracked().1 { open.try_run(()); } }><Icon name="settings"/></button>
-                            })}
-                        </div>
-                        <WorkspaceAccount session=session.clone() on_signed_out=on_signed_out class="topbar-account"/>
-                    </header>
+                    <TopBar
+                        active=Signal::derive(move || frame.app.get())
+                        label=Signal::derive(move || label.get())
+                        has_settings=Signal::derive(move || has_settings.get())
+                        on_settings=on_settings
+                        session=session
+                        on_signed_out=on_signed_out
+                        mobile_nav_open=frame.mobile_nav_open
+                    />
                 </div>
             }
         })
     }
 }
 
-/// The app rail and the top bar with the app title, search and app-level tools. Under the
-/// signed-in frame it only tells the frame which app is showing; elsewhere (identity
-/// interactions) it renders them itself.
+/// Registers the current app and its settings callback with `AppFrame` (or renders a standalone
+/// `TopBar` when used outside `AppFrame`).
 #[component]
 pub fn WorkspaceHeader(
     #[prop(into)] app: String,
@@ -342,7 +815,7 @@ pub fn WorkspaceHeader(
         frame.sequence.set_value(id);
         frame.app.set(app);
         frame.settings.set((id, on_settings));
-        // The next app replaces this registration; leaving without one clears the button.
+        frame.mobile_nav_open.set(false);
         on_cleanup(move || {
             if frame
                 .settings
@@ -354,27 +827,25 @@ pub fn WorkspaceHeader(
         });
         return ().into_any();
     }
-    let label = {
-        let app = app.clone();
-        move || app_label(&app, &app_list())
-    };
-    let label = Memo::new(move |_| label());
-    let (rail_session, top_session) = (session.clone(), session.clone());
-    let account: ChildrenFn = std::sync::Arc::new(move || {
-        view! { <WorkspaceAccount session=rail_session.clone() on_signed_out=on_signed_out class="rail-account"/> }.into_any()
+    let app_sig = Signal::stored(app.clone());
+    let label = Memo::new(move |_| app_label(&app_sig.get(), &app_list()));
+    let has_settings = Signal::stored(on_settings.is_some());
+    let mobile_nav_open = RwSignal::new(false);
+    let settings_cb = Callback::new(move |()| {
+        if let Some(open) = on_settings {
+            open.try_run(());
+        }
     });
     view! {
-        <AppRail active=Signal::stored(app) administrator=session.user.administrator account=account/>
-        <header class=if on_settings.is_some() { "topbar has-settings" } else { "topbar" }>
-            <span class="topbar-title">{move || label.get()}</span>
-            <GlobalSearch account=session.user.id.clone()/>
-            <div class="topbar-tools">
-                {on_settings.map(|open| view! {
-                    <button type="button" class="icon-button" aria-label=move || format!("{} settings", label.get()) title=move || format!("{} settings", label.get()) on:click=move |_| open.run(())><Icon name="settings"/></button>
-                })}
-            </div>
-            <WorkspaceAccount session=top_session on_signed_out=on_signed_out class="topbar-account"/>
-        </header>
+        <TopBar
+            active=app_sig
+            label=Signal::derive(move || label.get())
+            has_settings=has_settings
+            on_settings=settings_cb
+            session=session
+            on_signed_out=on_signed_out
+            mobile_nav_open=mobile_nav_open
+        />
     }
     .into_any()
 }

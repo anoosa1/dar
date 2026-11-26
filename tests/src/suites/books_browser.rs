@@ -119,7 +119,8 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     page.get_by_label("Username").fill(&username).await?;
     page.get_by_label("Password").fill(PASSWORD).await?;
     page.get_by_role("button", "Sign in").click().await?;
-    page.get_by_role("navigation", "Applications")
+    page.get_by_role("button", "All apps").click().await?;
+    page.get_by_role("dialog", "All apps")
         .get_by_role("link", "Books")
         .click()
         .await?;
@@ -561,10 +562,7 @@ pub async fn books_journey(t: &Ctx) -> Result<()> {
     mobile.get_by_label("Username").fill(&username).await?;
     mobile.get_by_label("Password").fill(PASSWORD).await?;
     mobile.get_by_role("button", "Sign in").click().await?;
-    mobile
-        .get_by_role("navigation", "Applications")
-        .wait_for()
-        .await?;
+    mobile.locator("header.topbar").wait_for().await?;
     mobile.goto(&format!("{base}/books")).await?;
     if let Err(error) = mobile
         .get_by_role("heading", "Continue reading")

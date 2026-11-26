@@ -133,7 +133,7 @@ async fn mail_browser_journey(t: &Ctx) -> Result<()> {
     page.get_by_label("Username").fill("admin").await?;
     page.get_by_label("Password").fill(PASSWORD).await?;
     page.get_by_role("button", "Sign in").click().await?;
-    page.get_by_role("link", "Mail").first().wait_for().await?;
+    page.locator("header.topbar").wait_for().await?;
 
     // No accounts yet: the empty state offers Add account; Cancel closes cleanly; the pane picks the provider by domain.
     page.get_by_role("heading", contains("Add your first mail account"))

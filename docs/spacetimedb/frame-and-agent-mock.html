@@ -1,0 +1,1734 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar Full-Canvas Frame &amp; Agent Redesign Mockup</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans, 'Inter', system-ui, -apple-system, sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mock-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.mock-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.mock-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.mock-btn {
+  appearance: none;
+  border: 1px solid var(--border, #554252);
+  background: transparent;
+  color: var(--muted-foreground, #cfb4ca);
+  font: 500 11.5px/1 var(--font-sans, system-ui, sans-serif);
+  padding: 6px 9px;
+  border-radius: var(--radius, 8px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.mock-btn:hover { color: var(--foreground, #faeaf3); background: var(--secondary, rgba(255,255,255,.06)); }
+.mock-btn.active {
+  background: var(--primary, #f2a2a9);
+  color: var(--primary-foreground, #26111f);
+  border-color: transparent;
+}
+
+/* Dar Twilight Stage */
+.dar-stage {
+  --t-bg: #26111f;
+  --t-panel: #301c2b;
+  --t-raised: #3a2536;
+  --t-popover: rgba(52, 32, 48, 0.94);
+  --t-hover: #462e42;
+  --t-border: rgba(186, 150, 178, 0.20);
+  --t-border-strong: rgba(186, 150, 178, 0.34);
+  --t-text: #faeaf3;
+  --t-muted: #c8adc3;
+  --t-dim: #9c7e97;
+  --t-accent: #f2a2a9;
+  --t-on-accent: #26111f;
+  --t-tonal: #4d3c73;
+  --t-on-tonal: #f3eafd;
+  --t-success: #b2dec4;
+  --t-success-bg: rgba(178, 222, 196, 0.13);
+  --t-danger: #ffb2c6;
+  --t-danger-bg: rgba(255, 178, 198, 0.13);
+  --t-warning: #ffc493;
+  --t-warning-bg: rgba(255, 196, 147, 0.14);
+  --t-blue: #a8c7fa;
+  --t-blue-bg: rgba(168, 199, 250, 0.14);
+  --t-shadow: 0 14px 36px rgba(10, 3, 10, 0.58), 0 2px 8px rgba(10, 3, 10, 0.36);
+  --t-mono: var(--font-mono, 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
+
+  position: relative;
+  width: 100%;
+  height: 640px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--t-border-strong);
+  background: var(--t-bg);
+  color: var(--t-text);
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  user-select: none;
+}
+
+.dar-stage[data-theme="light"] {
+  --t-bg: #fbf4f6;
+  --t-panel: #fffafb;
+  --t-raised: #ffffff;
+  --t-popover: rgba(255, 252, 253, 0.96);
+  --t-hover: #f3e7ee;
+  --t-border: rgba(115, 57, 111, 0.15);
+  --t-border-strong: rgba(115, 57, 111, 0.28);
+  --t-text: #352138;
+  --t-muted: #6e546d;
+  --t-dim: #8f748e;
+  --t-accent: #73396f;
+  --t-on-accent: #fff7fc;
+  --t-tonal: #ede3f5;
+  --t-on-tonal: #4d3c73;
+  --t-success: #246044;
+  --t-success-bg: rgba(36, 96, 68, 0.10);
+  --t-danger: #a32745;
+  --t-danger-bg: rgba(163, 39, 69, 0.10);
+  --t-warning: #8a4b12;
+  --t-warning-bg: rgba(138, 75, 18, 0.10);
+  --t-blue: #2d5aa0;
+  --t-blue-bg: rgba(45, 90, 160, 0.10);
+  --t-shadow: 0 14px 32px rgba(38, 17, 31, 0.16), 0 2px 8px rgba(38, 17, 31, 0.08);
+}
+
+.dar-stage * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--t-border-strong) transparent;
+}
+.dar-stage *::-webkit-scrollbar { width: 6px; height: 6px; }
+.dar-stage *::-webkit-scrollbar-track { background: transparent; }
+.dar-stage *::-webkit-scrollbar-thumb { background: var(--t-border-strong); border-radius: 999px; }
+
+.dar-stage.is-phone {
+  width: 375px;
+  max-width: 100%;
+  height: 690px;
+  margin: 0 auto;
+  border-radius: 26px;
+  border-width: 2px;
+  box-shadow: var(--t-shadow);
+}
+
+/* ================= DESKTOP TOP BAR (Full Width, NO Left App Rail!) ================= */
+.desktop-topbar {
+  height: 48px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--t-bg);
+  position: relative;
+  z-index: 20;
+}
+.brand-cluster {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.dar-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--t-accent);
+  color: var(--t-on-accent);
+  font-weight: 760;
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.all-apps-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--t-muted);
+  height: 28px;
+  padding: 0 7px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 540 11.5px/1 inherit;
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.all-apps-btn:hover, .all-apps-btn.open {
+  background: var(--t-hover);
+  color: var(--t-text);
+  border-color: var(--t-border);
+}
+.all-apps-btn svg { width: 14px; height: 14px; }
+.brand-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--t-border-strong);
+  margin: 0 2px;
+}
+.topbar-app-title {
+  font-size: 14px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  color: var(--t-text);
+  padding-left: 2px;
+}
+
+.global-search-pill {
+  flex: 1;
+  max-width: 360px;
+  margin: 0 auto;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--t-border);
+  background: var(--t-panel);
+  color: var(--t-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.global-search-pill:hover { border-color: var(--t-border-strong); color: var(--t-text); }
+.global-search-pill kbd {
+  margin-left: auto;
+  font: 500 9.5px/1 var(--t-mono);
+  padding: 2px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--t-border);
+  color: var(--t-dim);
+}
+
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.icon-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--t-muted);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+  padding: 0;
+  transition: background .12s, color .12s;
+}
+.icon-btn:hover { background: var(--t-hover); color: var(--t-text); }
+.icon-btn.active { background: var(--t-tonal); color: var(--t-on-tonal); }
+.icon-btn svg { width: 15px; height: 15px; }
+
+.user-avatar-btn {
+  appearance: none;
+  border: 1px solid var(--t-border);
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font: 650 11px/1 inherit;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+  transition: transform .1s, box-shadow .12s;
+}
+.user-avatar-btn:hover, .user-avatar-btn.open {
+  box-shadow: 0 0 0 2px var(--t-accent);
+}
+
+/* ================= REFINED DROPDOWNS & USER MENU (BOTH) ================= */
+.dar-popover {
+  position: absolute;
+  background: var(--t-popover);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--t-border-strong);
+  border-radius: 15px;
+  box-shadow: var(--t-shadow);
+  z-index: 40;
+  overflow: hidden;
+}
+
+/* All Apps Switcher Popover (Desktop) */
+.apps-popover {
+  top: 46px;
+  left: 10px;
+  width: 256px;
+  padding: 6px;
+}
+.pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 5px;
+  font-size: 10.5px;
+  font-weight: 560;
+  color: var(--t-dim);
+}
+.apps-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+}
+.app-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 3px;
+  border-radius: 9px;
+  color: var(--t-muted);
+  font-size: 10.5px;
+  font-weight: 520;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background .12s, color .12s;
+}
+.app-tile:hover { background: var(--t-hover); color: var(--t-text); }
+.app-tile.current {
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  font-weight: 600;
+}
+.app-tile-ico {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--t-bg) 70%, transparent);
+  display: grid;
+  place-items: center;
+}
+.app-tile.current .app-tile-ico {
+  background: color-mix(in srgb, var(--t-on-tonal) 15%, transparent);
+}
+.app-tile svg { width: 14px; height: 14px; }
+.pop-foot {
+  margin-top: 5px;
+  padding: 5px 4px 2px;
+  border-top: 1px solid var(--t-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--t-muted);
+}
+
+/* Improved User Menu Popover (Desktop) */
+.user-popover {
+  top: 46px;
+  right: 10px;
+  width: 248px;
+  padding: 6px;
+}
+.user-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 10px;
+  border-bottom: 1px solid var(--t-border);
+  margin-bottom: 4px;
+}
+.user-card-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  font-weight: 680;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.user-card-meta { min-width: 0; flex: 1; }
+.user-card-meta b { display: block; font-size: 12.5px; font-weight: 620; color: var(--t-text); }
+.user-card-meta small { display: block; font-size: 11px; color: var(--t-muted); }
+.role-pill {
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--t-hover);
+  color: var(--t-accent);
+  border: 1px solid var(--t-border);
+}
+
+.theme-seg-row {
+  padding: 6px 6px 8px;
+  border-bottom: 1px solid var(--t-border);
+  margin-bottom: 4px;
+}
+.theme-seg-label {
+  font-size: 10.5px;
+  color: var(--t-dim);
+  margin-bottom: 5px;
+  padding-left: 2px;
+}
+.seg {
+  display: flex;
+  background: var(--t-bg);
+  border: 1px solid var(--t-border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.seg button {
+  flex: 1;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--t-muted);
+  font: 520 11px/1 inherit;
+  padding: 5px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.seg button.active {
+  background: var(--t-raised);
+  color: var(--t-text);
+  box-shadow: 0 1px 3px rgba(0,0,0,.18);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  font-size: 12px;
+  color: var(--t-text);
+  cursor: pointer;
+}
+.menu-item:hover { background: var(--t-hover); }
+.menu-item svg { width: 14px; height: 14px; color: var(--t-muted); flex: none; }
+.menu-item .m-hint { margin-left: auto; font: 500 10px/1 var(--t-mono); color: var(--t-dim); }
+.menu-sep { height: 1px; background: var(--t-border); margin: 4px 6px; }
+.menu-item.danger { color: var(--t-danger); }
+.menu-item.danger svg { color: var(--t-danger); }
+
+/* ================= FULL-WIDTH AGENT WORKSPACE ================= */
+.agent-shell {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 186px minmax(0, 1fr);
+  gap: 8px;
+  padding: 0 8px 8px 8px;
+}
+@container (min-width: 960px) {
+  .agent-shell { grid-template-columns: 232px minmax(0, 1fr); }
+}
+
+.agent-nav {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 6px;
+  padding: 2px 2px 0;
+}
+.create-btn {
+  height: 38px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  font: 600 12.5px/1 inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  cursor: pointer;
+  width: fit-content;
+}
+.create-btn:hover { filter: brightness(1.08); }
+.create-btn svg { width: 14px; height: 14px; }
+
+.nav-controls { display: flex; align-items: center; gap: 2px; }
+.nav-search {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  color: var(--t-muted);
+  font-size: 11.5px;
+}
+.nav-search:hover { background: var(--t-hover); color: var(--t-text); }
+.nav-search svg { width: 13px; height: 13px; flex: none; }
+
+.nav-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav-section-label {
+  font-size: 10.5px;
+  font-weight: 550;
+  color: var(--t-dim);
+  padding: 6px 8px 2px;
+}
+.thread-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--t-muted);
+}
+.thread-row:hover { background: var(--t-hover); color: var(--t-text); }
+.thread-row.active { background: color-mix(in srgb, var(--t-tonal) 55%, var(--t-panel)); color: var(--t-text); }
+.thread-row-top { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--t-dim); }
+.proj-mark {
+  width: 14px; height: 14px; border-radius: 4px;
+  font-size: 8px; font-weight: 760; display: inline-grid; place-items: center; flex: none;
+  color: #26111f; background: var(--t-accent);
+}
+.proj-mark.m-blue { background: var(--t-blue); }
+.proj-mark.m-green { background: var(--t-success); }
+.proj-mark.m-warn { background: var(--t-warning); }
+.thread-age { margin-left: auto; font-variant-numeric: tabular-nums; }
+.thread-row-title {
+  font-size: 12px; font-weight: 530; color: var(--t-text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.thread-row-sub { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--t-dim); }
+.thread-branch { font-family: var(--t-mono); font-size: 9.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prov-dot { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 9.5px; color: var(--t-muted); }
+.prov-dot i { width: 6px; height: 6px; border-radius: 50%; background: var(--t-accent); display: inline-block; }
+.prov-dot.claude i { background: var(--t-warning); }
+.prov-dot.working i { background: var(--t-success); }
+.unread-pip { width: 6px; height: 6px; border-radius: 50%; background: var(--t-accent); flex: none; }
+
+.nav-shelves { border-top: 1px solid var(--t-border); padding-top: 4px; display: flex; flex-direction: column; gap: 1px; }
+.shelf-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 8px; border-radius: 7px; font-size: 11px; color: var(--t-muted); cursor: pointer;
+}
+.shelf-row:hover { background: var(--t-hover); color: var(--t-text); }
+.shelf-pulse { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--t-accent); margin-right: 6px; }
+
+.nav-utility-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 4px 2px; border-top: 1px solid var(--t-border);
+}
+.util-btn {
+  appearance: none; border: 0; background: transparent; color: var(--t-muted);
+  width: 28px; height: 28px; border-radius: 7px; display: inline-grid; place-items: center;
+  cursor: pointer; position: relative;
+}
+.util-btn:hover { background: var(--t-hover); color: var(--t-text); }
+.util-btn.active { background: var(--t-tonal); color: var(--t-on-tonal); }
+.util-btn svg { width: 14px; height: 14px; }
+.util-badge { position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--t-accent); }
+
+/* Sheets */
+.workspace-area { min-width: 0; min-height: 0; display: flex; gap: 8px; }
+.sheet {
+  background: var(--t-panel);
+  border: 1px solid var(--t-border);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+.center-sheet { flex: 1; }
+.right-panel-sheet { width: 47%; min-width: 270px; max-width: 520px; flex: none; }
+
+.thread-header {
+  height: 42px; flex: none;
+  display: flex; align-items: center; gap: 6px; padding: 0 10px 0 12px;
+  border-bottom: 1px solid var(--t-border);
+}
+.crumb { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; font-size: 12px; }
+.crumb-proj { display: inline-flex; align-items: center; gap: 5px; color: var(--t-muted); white-space: nowrap; }
+.crumb-title { font-weight: 600; color: var(--t-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.header-tools { display: flex; align-items: center; gap: 2px; flex: none; }
+
+.conv-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.conv-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 18px 12px; display: flex; flex-direction: column; gap: 10px; }
+@container (min-width: 960px) { .conv-scroll { padding: 18px 28px 14px; } }
+.conv-col { max-width: 650px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.has-floating-card .conv-col { padding-right: 174px; }
+@container (min-width: 960px) { .has-floating-card .conv-col { padding-right: 208px; } }
+
+/* Floating Details Card */
+.floating-details {
+  position: absolute; top: 10px; right: 12px; width: 168px;
+  background: var(--t-popover); backdrop-filter: blur(12px);
+  border: 1px solid var(--t-border-strong); border-radius: 13px; box-shadow: var(--t-shadow);
+  z-index: 8; overflow: hidden; font-size: 10.5px;
+}
+@container (min-width: 960px) { .floating-details { width: 196px; font-size: 11px; } }
+.fd-group { padding: 4px 0; border-bottom: 1px solid var(--t-border); }
+.fd-group:last-child { border-bottom: 0; }
+.fd-row { display: flex; align-items: center; gap: 7px; padding: 5px 10px; color: var(--t-text); cursor: pointer; }
+.fd-row:hover { background: var(--t-hover); }
+.fd-row svg { width: 13px; height: 13px; color: var(--t-muted); flex: none; }
+.fd-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fd-val { color: var(--t-muted); font-size: 10px; }
+.stat-add { color: var(--t-success); font-family: var(--t-mono); font-size: 10.5px; }
+.stat-del { color: var(--t-danger); font-family: var(--t-mono); font-size: 10.5px; }
+
+.user-bubble {
+  align-self: flex-end; max-width: 86%;
+  background: var(--t-raised); border: 1px solid var(--t-border);
+  border-radius: 14px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5;
+}
+.inline-chip {
+  display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 5px;
+  font: 500 10.5px/1.4 var(--t-mono); background: var(--t-hover); color: var(--t-accent);
+  border: 1px solid var(--t-border);
+}
+.inline-chip.skill { background: var(--t-warning-bg); color: var(--t-warning); border-color: transparent; }
+
+.work-log { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--t-muted); }
+.work-steps { display: flex; flex-direction: column; gap: 3px; padding-left: 12px; border-left: 1px solid var(--t-border); margin-left: 4px; font-size: 11px; }
+.work-step { display: flex; align-items: baseline; gap: 6px; }
+.work-step code { font-family: var(--t-mono); font-size: 10.5px; color: var(--t-text); }
+
+.plan-card {
+  border: 1px solid color-mix(in srgb, var(--t-blue) 38%, var(--t-border));
+  background: color-mix(in srgb, var(--t-blue-bg) 55%, var(--t-raised));
+  border-radius: 12px; overflow: hidden;
+}
+.plan-card-head { display: flex; align-items: center; gap: 7px; padding: 7px 11px; border-bottom: 1px solid var(--t-border); font-size: 11.5px; font-weight: 600; }
+.plan-card-body { padding: 8px 11px; font-size: 11.5px; color: var(--t-muted); display: flex; flex-direction: column; gap: 4px; }
+.plan-card-body div { display: flex; align-items: baseline; gap: 6px; line-height: 1.45; }
+.plan-card-body code { font-family: var(--t-mono); font-size: 10.5px; color: var(--t-text); }
+
+.changed-card { border: 1px solid var(--t-border); border-radius: 11px; background: var(--t-raised); overflow: hidden; }
+.changed-head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--t-border); font-size: 11.5px; }
+.changed-tree { padding: 4px 0; font: 11px/1.6 var(--t-mono); }
+.changed-row { display: flex; align-items: center; gap: 6px; padding: 2px 10px; cursor: pointer; }
+.changed-row:hover { background: var(--t-hover); }
+.changed-row.indent { padding-left: 24px; }
+.changed-row .stats { margin-left: auto; display: flex; gap: 5px; }
+
+.btn-xs {
+  appearance: none; border: 1px solid var(--t-border); background: var(--t-panel); color: var(--t-text);
+  font: 500 10.5px/1 inherit; padding: 5px 9px; border-radius: 7px; cursor: pointer; white-space: nowrap;
+}
+.btn-xs:hover { background: var(--t-hover); }
+.btn-xs.primary { background: var(--t-accent); color: var(--t-on-accent); border-color: transparent; font-weight: 600; }
+
+/* Composer */
+.composer-dock { flex: none; padding: 0 14px 12px; position: relative; }
+@container (min-width: 960px) { .composer-dock { padding: 0 28px 14px; } }
+.composer-wrap { max-width: 650px; margin: 0 auto; display: flex; flex-direction: column; }
+.queue-tray {
+  margin: 0 10px -1px; border: 1px solid var(--t-border); border-bottom: 0;
+  border-radius: 11px 11px 0 0; background: var(--t-bg); padding: 5px 10px;
+  display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--t-muted);
+}
+.queue-tray strong { color: var(--t-text); font-weight: 560; white-space: nowrap; }
+.queue-tray .q-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.composer-box {
+  background: var(--t-raised); border: 1px solid var(--t-border-strong);
+  border-radius: 15px; padding: 9px 11px 7px;
+  box-shadow: 0 6px 20px rgba(10, 4, 10, 0.22);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.composer-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ctx-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px;
+  background: var(--t-panel); border: 1px solid var(--t-border); font: 500 10.5px/1.3 var(--t-mono); color: var(--t-text);
+}
+.ctx-chip.term { color: var(--t-success); }
+.ctx-chip.comment { color: var(--t-warning); font-family: inherit; }
+.composer-input { font-size: 12.5px; color: var(--t-muted); min-height: 22px; }
+.composer-bar { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.c-pill {
+  appearance: none; border: 0; background: transparent; color: var(--t-muted);
+  font: 500 11.5px/1 inherit; padding: 5px 8px; border-radius: 8px;
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap;
+}
+.c-pill:hover { background: var(--t-hover); color: var(--t-text); }
+.c-pill.plan-on { background: var(--t-blue-bg); color: var(--t-blue); }
+.c-spacer { flex: 1; }
+.send-btn {
+  width: 28px; height: 28px; border-radius: 50%; border: 0;
+  background: var(--t-accent); color: var(--t-on-accent);
+  display: inline-grid; place-items: center; cursor: pointer; flex: none;
+}
+.send-btn svg { width: 14px; height: 14px; }
+
+/* Right Panel Diff Surface */
+.rp-tabbar {
+  height: 42px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px;
+  border-bottom: 1px solid var(--t-border); background: color-mix(in srgb, var(--t-bg) 45%, var(--t-panel));
+}
+.rp-tab {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px;
+  border-radius: 8px; font-size: 11.5px; color: var(--t-muted); cursor: pointer; white-space: nowrap;
+}
+.rp-tab.active { background: var(--t-raised); color: var(--t-text); font-weight: 560; border: 1px solid var(--t-border); }
+.diff-toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--t-border); font-size: 11px; }
+.diff-split-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 112px minmax(0, 1fr); }
+.diff-tree { border-right: 1px solid var(--t-border); padding: 6px 4px; font: 10.5px/1.6 var(--t-mono); overflow: auto; }
+.dt-row { padding: 3px 6px; border-radius: 5px; color: var(--t-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dt-row.active { background: var(--t-hover); color: var(--t-text); }
+.diff-code { overflow: auto; font: 11px/1.65 var(--t-mono); }
+.diff-line { display: grid; grid-template-columns: 26px 14px minmax(0, 1fr); padding: 0 8px; white-space: pre; }
+.diff-line.del { background: var(--t-danger-bg); color: var(--t-danger); }
+.diff-line.add { background: var(--t-success-bg); color: var(--t-success); }
+.diff-ln { color: var(--t-dim); font-size: 10px; }
+.diff-comment-box {
+  margin: 6px 10px; padding: 8px 10px; border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--t-accent) 45%, var(--t-border));
+  background: var(--t-raised); font-family: inherit; font-size: 11px;
+}
+.diff-apply-bar {
+  margin-top: auto; padding: 8px 10px; border-top: 1px solid var(--t-border); background: var(--t-bg);
+  display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--t-muted);
+}
+
+/* Desktop & Mobile Settings */
+.settings-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr); }
+.settings-nav {
+  border-right: 1px solid var(--t-border); padding: 10px 8px;
+  display: flex; flex-direction: column; gap: 2px; overflow: auto;
+  background: color-mix(in srgb, var(--t-bg) 50%, var(--t-panel));
+}
+.snav-search { border: 1px solid var(--t-border); background: var(--t-panel); color: var(--t-text); border-radius: 8px; padding: 6px 8px; font-size: 11px; margin-bottom: 6px; }
+.snav-item { padding: 6px 9px; border-radius: 8px; font-size: 11.5px; color: var(--t-muted); cursor: pointer; }
+.snav-item:hover { background: var(--t-hover); color: var(--t-text); }
+.snav-item.active { background: var(--t-tonal); color: var(--t-on-tonal); font-weight: 560; }
+.settings-main { padding: 14px 18px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.s-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 13px; border: 1px solid var(--t-border); border-radius: 12px; background: var(--t-raised);
+}
+.s-row b { display: block; font-size: 12.5px; font-weight: 580; }
+.s-row small { display: block; font-size: 11px; color: var(--t-muted); }
+.switch-pill { width: 34px; height: 19px; border-radius: 999px; background: var(--t-accent); position: relative; flex: none; }
+.switch-pill::after { content: ""; position: absolute; top: 2px; right: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--t-on-accent); }
+
+/* ================= MOBILE FRAME (NO bottom bar, NO chip bubbles, SEPARATED top bar!) ================= */
+.mobile-topbar {
+  display: none;
+  height: 54px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--t-bg);
+}
+.is-phone .desktop-topbar { display: none !important; }
+.is-phone .mobile-topbar { display: flex; }
+.is-phone .agent-shell { grid-template-columns: 1fr; padding: 0 8px 8px; gap: 0; }
+.is-phone .agent-nav, .is-phone .floating-details, .is-phone .right-panel-sheet, .is-phone #toggleSplitBtn { display: none !important; }
+.is-phone .has-floating-card .conv-col { padding-right: 0; }
+.is-phone .thread-header { height: 38px; padding: 0 10px; }
+.is-phone .composer-dock { padding: 6px 10px 10px; }
+.is-phone .c-pill { padding: 4px 6px; font-size: 11px; }
+
+.mob-circle-btn {
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid var(--t-border);
+  background: var(--t-panel);
+  color: var(--t-text);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.mob-circle-btn:hover { background: var(--t-hover); }
+.mob-circle-btn svg { width: 17px; height: 17px; }
+
+.mob-search-pill {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--t-border);
+  background: var(--t-panel);
+  color: var(--t-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.mob-user-btn {
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--t-border-strong);
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  font: 660 12px/1 inherit;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+
+/* Mobile Slide-Over Hamburger Drawer (replaces bubbles!) */
+.drawer-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 3, 10, 0.54);
+  backdrop-filter: blur(4px);
+  z-index: 45;
+  display: flex;
+}
+.drawer-panel {
+  width: 286px;
+  max-width: 84%;
+  height: 100%;
+  background: var(--t-panel);
+  border-right: 1px solid var(--t-border-strong);
+  box-shadow: var(--t-shadow);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--t-border);
+}
+.drawer-head strong { font-size: 14px; font-weight: 650; }
+.drawer-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--t-border);
+}
+.drawer-pill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--t-muted);
+  cursor: pointer;
+}
+.drawer-pill:hover { background: var(--t-hover); color: var(--t-text); }
+.drawer-pill.active { background: var(--t-tonal); color: var(--t-on-tonal); font-weight: 580; }
+.drawer-pill svg { width: 15px; height: 15px; flex: none; }
+.drawer-pill .d-count { margin-left: auto; font-size: 11px; color: var(--t-dim); font-variant-numeric: tabular-nums; }
+
+/* Mobile Full-Screen User + App Grid Page (replaces bottom app bar!) */
+.mobile-user-page {
+  position: absolute;
+  inset: 0;
+  background: var(--t-bg);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mup-header {
+  height: 54px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--t-border);
+}
+.mup-brand { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 14px; }
+.mup-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mup-section-title {
+  font-size: 11px;
+  font-weight: 560;
+  color: var(--t-dim);
+  padding: 0 2px 4px;
+}
+.mup-apps-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+.mup-app-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 2px;
+  border-radius: 10px;
+  background: var(--t-panel);
+  border: 1px solid var(--t-border);
+  color: var(--t-muted);
+  font-size: 10.5px;
+  font-weight: 530;
+  cursor: pointer;
+}
+.mup-app-tile:hover { background: var(--t-hover); color: var(--t-text); }
+.mup-app-tile.current {
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  border-color: transparent;
+  font-weight: 620;
+}
+.mup-app-tile svg { width: 16px; height: 16px; }
+
+.mup-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--t-border);
+}
+.mup-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: var(--t-panel);
+  border: 1px solid var(--t-border);
+}
+.mup-options-card {
+  border-radius: 14px;
+  background: var(--t-panel);
+  border: 1px solid var(--t-border);
+  overflow: hidden;
+}
+.mup-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--t-border);
+  font-size: 12.5px;
+  color: var(--t-text);
+  cursor: pointer;
+}
+.mup-opt:last-child { border-bottom: 0; }
+.mup-opt:hover { background: var(--t-hover); }
+.mup-opt svg { width: 16px; height: 16px; color: var(--t-muted); }
+.mup-opt.danger { color: var(--t-danger); }
+.mup-opt.danger svg { color: var(--t-danger); }
+
+/* Mobile Settings Hub & Drill-Down (clean, spacious, zero cramped 2-col!) */
+.phone-settings-hub { display: none; flex-direction: column; gap: 12px; padding: 12px 14px 20px; overflow-y: auto; flex: 1; min-height: 0; }
+.is-phone .phone-settings-hub.is-active { display: flex; }
+.is-phone .settings-grid.hub-open { display: none; }
+.is-phone .settings-grid { display: flex; flex-direction: column; }
+.is-phone .settings-nav { display: none; }
+.is-phone .settings-main { padding: 12px 14px 20px; }
+.is-phone .s-row { flex-direction: column; align-items: stretch; gap: 8px; }
+.is-phone .s-row.inline-switch { flex-direction: row; align-items: center; }
+
+.ps-group-title { font-size: 11px; font-weight: 560; color: var(--t-dim); padding: 0 4px 4px; }
+.ps-card { border: 1px solid var(--t-border); border-radius: 14px; background: var(--t-raised); overflow: hidden; }
+.ps-item {
+  display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+  border-bottom: 1px solid var(--t-border); cursor: pointer;
+}
+.ps-item:last-child { border-bottom: 0; }
+.ps-item:hover { background: var(--t-hover); }
+.ps-ico {
+  width: 30px; height: 30px; border-radius: 9px; background: var(--t-bg); color: var(--t-accent);
+  display: grid; place-items: center; flex: none;
+}
+.ps-ico svg { width: 15px; height: 15px; }
+.ps-meta { flex: 1; min-width: 0; }
+.ps-meta b { display: block; font-size: 12.5px; font-weight: 580; color: var(--t-text); }
+.ps-meta small { display: block; font-size: 11px; color: var(--t-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ps-chev { color: var(--t-dim); font-size: 15px; }
+
+.phone-surface-tabs {
+  display: none;
+  border-bottom: 1px solid var(--t-border);
+  padding: 0 6px;
+}
+.is-phone .phone-surface-tabs { display: flex; }
+.pst-btn {
+  flex: 1; text-align: center; padding: 8px 4px; font-size: 11.5px; font-weight: 550;
+  color: var(--t-muted); border-bottom: 2px solid transparent; cursor: pointer;
+}
+.pst-btn.active { color: var(--t-accent); border-bottom-color: var(--t-accent); }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock-root">
+  <!-- Interactive Mockup Controls -->
+  <div class="mock-toolbar" role="toolbar" aria-label="Mockup view controls">
+    <div class="mock-group" id="modeTabs">
+      <button class="mock-btn active" data-preset="desktop-clean">Desktop (Full-Canvas)</button>
+      <button class="mock-btn" data-preset="desktop-apps">All Apps Menu</button>
+      <button class="mock-btn" data-preset="desktop-user">User Menu</button>
+      <button class="mock-btn" data-preset="desktop-split">Split Diff</button>
+      <button class="mock-btn" data-preset="mobile-thread">Mobile App</button>
+      <button class="mock-btn" data-preset="mobile-drawer">Mobile Hamburger</button>
+      <button class="mock-btn" data-preset="mobile-user">Mobile User &amp; Apps</button>
+      <button class="mock-btn" data-preset="mobile-settings">Mobile Settings</button>
+    </div>
+    <div class="mock-group">
+      <button class="mock-btn" id="btnTheme">Light</button>
+    </div>
+  </div>
+
+  <!-- Dar Application Stage -->
+  <div class="dar-stage" id="stage" data-theme="dark">
+
+    <!-- DESKTOP TOP BAR (Full Width, NO Left Rail: [Logo] [All Apps] | [Title] ... [Search] ... [Settings] [User]) -->
+    <header class="desktop-topbar">
+      <div class="brand-cluster">
+        <div class="dar-logo" id="logoBtn" title="Dar">D</div>
+        <button class="all-apps-btn" id="allAppsBtn" aria-expanded="false" title="Switch app">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          <span>Apps</span>
+        </button>
+        <span class="brand-sep"></span>
+        <span class="topbar-app-title">Agent</span>
+      </div>
+
+      <div class="global-search-pill">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <span>Search all apps…</span>
+        <kbd>Ctrl K</kbd>
+      </div>
+
+      <div class="topbar-end">
+        <button class="icon-btn" id="deskSettingsBtn" title="Agent settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="user-avatar-btn" id="deskUserBtn" title="Account &amp; Dar settings">LH</button>
+      </div>
+    </header>
+
+    <!-- MOBILE SEPARATED TOP BAR: [☰]   [🔍 Search all apps...]   [(LH)] — NO bottom app bar, NO chip bubbles! -->
+    <header class="mobile-topbar">
+      <button class="mob-circle-btn" id="mobHamburgerBtn" aria-label="Open menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="mob-search-pill">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <span>Search all apps…</span>
+      </div>
+      <button class="mob-user-btn" id="mobUserBtn" aria-label="Apps and account">LH</button>
+    </header>
+
+    <!-- DESKTOP ALL APPS POPOVER -->
+    <div class="dar-popover apps-popover hidden" id="appsPopover" role="dialog" aria-label="All apps">
+      <div class="pop-head">
+        <span>Switch app</span>
+        <span style="font-family:var(--t-mono);font-size:10px">Ctrl K</span>
+      </div>
+      <div class="apps-grid">
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div><span>Files</span></div>
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-4 4-2-2-5 5"/></svg></div><span>Photos</span></div>
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><span>Books</span></div>
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg></div><span>Contacts</span></div>
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div><span>Calendar</span></div>
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M8 13h8M8 17h5"/></svg></div><span>Notes</span></div>
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><span>Tasks</span></div>
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg></div><span>Mail</span></div>
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></div><span>News</span></div>
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><span>Chat</span></div>
+        <div class="app-tile current"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg></div><span>Agent</span></div>
+        <div class="app-tile"><div class="app-tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg></div><span>Git</span></div>
+      </div>
+      <div class="pop-foot">
+        <span>12 enabled apps</span>
+        <span style="color:var(--t-accent);cursor:pointer">Manage apps ›</span>
+      </div>
+    </div>
+
+    <!-- IMPROVED DESKTOP USER MENU POPOVER -->
+    <div class="dar-popover user-popover hidden" id="userPopover" role="dialog" aria-label="Account menu">
+      <div class="user-card-head">
+        <div class="user-card-avatar">LH</div>
+        <div class="user-card-meta">
+          <b>Layla Haddad</b>
+          <small>@layla · dar.local</small>
+        </div>
+        <span class="role-pill">Admin</span>
+      </div>
+
+      <div class="theme-seg-row">
+        <div class="theme-seg-label">Appearance</div>
+        <div class="seg" id="userThemeSeg">
+          <button data-set-theme="light">Afterglow</button>
+          <button class="active" data-set-theme="dark">Nightfall</button>
+          <button data-set-theme="dark">System</button>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Dar settings</span>
+        <span class="m-hint">⌘,</span>
+      </div>
+      <div class="menu-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        <span>Manage apps</span>
+      </div>
+      <div class="menu-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span>Security &amp; app passwords</span>
+      </div>
+      <div class="menu-sep"></div>
+      <div class="menu-item danger">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        <span>Sign out</span>
+      </div>
+    </div>
+
+    <!-- FULL-WIDTH AGENT WORKSPACE (occupies 100% of screen width!) -->
+    <div class="agent-shell">
+      <!-- Agent Sidebar (Desktop only; moves into Hamburger Drawer on Mobile) -->
+      <aside class="agent-nav">
+        <button class="create-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          New thread
+        </button>
+
+        <div class="nav-controls">
+          <div class="nav-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <span>Filter…</span>
+          </div>
+          <button class="icon-btn" style="width:26px;height:26px" title="Filter">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+          </button>
+          <button class="icon-btn" style="width:26px;height:26px" title="Add project">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 10v6M9 13h6"/><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </button>
+        </div>
+
+        <div class="nav-scroll">
+          <div class="nav-section-label">Pinned</div>
+          <div class="thread-row active" data-open-panel="conv">
+            <div class="thread-row-top"><span class="proj-mark">T</span><span>trail-maps</span><span class="thread-age">4m</span></div>
+            <div class="thread-row-title">Offline topo tile cache</div>
+            <div class="thread-row-sub"><span class="thread-branch">agent/tile-cache</span><span class="prov-dot"><i></i>Codex</span></div>
+          </div>
+
+          <div class="nav-section-label">Recent</div>
+          <div class="thread-row" data-open-panel="split">
+            <div class="thread-row-top"><span class="proj-mark m-blue">D</span><span>dar</span><span class="unread-pip"></span><span class="thread-age">24m</span></div>
+            <div class="thread-row-title">Mail inline reply dock</div>
+            <div class="thread-row-sub"><span class="thread-branch">rust</span><span class="prov-dot claude"><i></i>Claude</span></div>
+          </div>
+          <div class="thread-row" data-open-panel="conv">
+            <div class="thread-row-top"><span class="proj-mark m-green">W</span><span>website</span><span class="thread-age">1h</span></div>
+            <div class="thread-row-title">Pricing table copy audit</div>
+            <div class="thread-row-sub"><span class="thread-branch">main</span><span class="prov-dot working"><i></i>Needs input</span></div>
+          </div>
+          <div class="thread-row" data-open-panel="conv">
+            <div class="thread-row-top"><span class="proj-mark m-warn">S</span><span>No project</span><span class="thread-age">3h</span></div>
+            <div class="thread-row-title">Compare SQLite vs STDB</div>
+            <div class="thread-row-sub"><span class="thread-branch">scratch</span><span class="prov-dot claude"><i></i>Claude</span></div>
+          </div>
+        </div>
+
+        <div class="nav-shelves">
+          <div class="shelf-row"><span><span class="shelf-pulse"></span>Working</span><span>1</span></div>
+          <div class="shelf-row"><span>› Snoozed</span><span>2</span></div>
+          <div class="shelf-row"><span>› Settled</span><span>18</span></div>
+        </div>
+
+        <div class="nav-utility-bar">
+          <button class="util-btn" title="PRs &amp; Issues"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/></svg><span class="util-badge"></span></button>
+          <button class="util-btn" title="Automations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></button>
+          <button class="util-btn" title="Usage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></button>
+          <button class="util-btn" id="navSettingsBtn" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+        </div>
+      </aside>
+
+      <!-- Main Sheets -->
+      <div class="workspace-area">
+        <section class="sheet center-sheet">
+
+          <!-- Conversation Panel -->
+          <div id="convPanel" style="display:flex;flex-direction:column;flex:1;min-height:0">
+            <div class="thread-header">
+              <div class="crumb">
+                <span class="crumb-proj"><span class="proj-mark">T</span>trail-maps</span>
+                <span style="color:var(--t-dim)">/</span>
+                <span class="crumb-title">Offline topo tile cache</span>
+              </div>
+              <div class="header-tools">
+                <button class="icon-btn" style="width:26px;height:26px" id="toggleSplitBtn" title="Toggle right surface panel">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Mobile Thread Surface Switcher (inside thread sheet, NOT top bubbles!) -->
+            <div class="phone-surface-tabs">
+              <div class="pst-btn active">Chat</div>
+              <div class="pst-btn">Details</div>
+              <div class="pst-btn">Diff (3)</div>
+              <div class="pst-btn">Files</div>
+              <div class="pst-btn">Term</div>
+            </div>
+
+            <div class="conv-stage has-floating-card" id="convStage">
+              <!-- Calm 2-group Floating Details Card -->
+              <aside class="floating-details" id="floatingDetails">
+                <div class="fd-group">
+                  <div class="fd-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="fd-label">Working copy</span><span class="fd-val">⌄</span></div>
+                  <div class="fd-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg><span class="fd-label">Open in Files</span><span class="fd-val">›</span></div>
+                  <div class="fd-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="6 4 20 12 6 20 6 4"/></svg><span class="fd-label">Run: test-tiles</span><span class="fd-val">⌄</span></div>
+                </div>
+                <div class="fd-group">
+                  <div class="fd-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg><span class="fd-label" style="font-family:var(--t-mono);font-size:10px">agent/tile-cache</span><span class="fd-val">⌄</span></div>
+                  <div class="fd-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/></svg><span class="fd-label">PR #14 · Ready</span><span class="fd-val" style="color:var(--t-success)">●</span></div>
+                  <div class="fd-row" id="fdOpenDiff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M12 11v6M9 14h6"/></svg><span class="fd-label">Changes</span><span class="stat-add">+48</span><span class="stat-del">-12</span></div>
+                </div>
+              </aside>
+
+              <div class="conv-scroll">
+                <div class="conv-col">
+                  <div class="user-bubble">
+                    Cache offline topo tiles in <span class="inline-chip">@src/cache.rs</span> with LRU eviction and run <span class="inline-chip skill">$verify-tiles</span>.
+                  </div>
+
+                  <div class="work-log">
+                    <div>⌄ Worked for 14s · 5 steps</div>
+                    <div class="work-steps">
+                      <div class="work-step"><span>⌕</span><span>Read <code>src/cache.rs</code> and <code>src/tile_index.rs</code></span></div>
+                      <div class="work-step"><span>✎</span><span>Edited <code>src/cache.rs</code> (+39 −9)</span></div>
+                      <div class="work-step"><span>⌘</span><span>Ran <code>cargo test tile_cache</code> — 12 passed</span></div>
+                    </div>
+                  </div>
+
+                  <div class="plan-card">
+                    <div class="plan-card-head">
+                      <span>Proposed plan · LRU tile eviction</span>
+                      <span style="margin-left:auto;font-weight:400;color:var(--t-muted);font-size:10.5px">3 steps</span>
+                    </div>
+                    <div class="plan-card-body">
+                      <div><span style="color:var(--t-success)">✓</span><span>Add bounded 256 MiB index in <code>src/cache.rs</code></span></div>
+                      <div><span style="color:var(--t-success)">✓</span><span>Persist hit timestamps on tile reads</span></div>
+                      <div><span style="color:var(--t-success)">✓</span><span>Add eviction &amp; corruption recovery tests</span></div>
+                    </div>
+                  </div>
+
+                  <div class="changed-card">
+                    <div class="changed-head">
+                      <strong>3 changed files</strong>
+                      <span class="stat-add">+48</span>
+                      <span class="stat-del">-12</span>
+                      <button class="btn-xs" style="margin-left:auto" id="cardOpenDiff">Open diff</button>
+                    </div>
+                    <div class="changed-tree">
+                      <div class="changed-row"><span>⌄</span><span>src/</span><span class="stats"><span class="stat-add">+44</span><span class="stat-del">-10</span></span></div>
+                      <div class="changed-row indent"><span>M</span><span>cache.rs</span><span class="stats"><span class="stat-add">+39</span><span class="stat-del">-9</span></span></div>
+                      <div class="changed-row indent"><span>M</span><span>tile_index.rs</span><span class="stats"><span class="stat-add">+5</span><span class="stat-del">-1</span></span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="composer-dock">
+                <div class="composer-wrap">
+                  <div class="queue-tray">
+                    <strong>Queued (1)</strong>
+                    <span class="q-text">Add offline map export to Files folder</span>
+                    <button class="btn-xs" style="padding:3px 7px">Steer</button>
+                  </div>
+                  <div class="composer-box">
+                    <div class="composer-chips">
+                      <span class="ctx-chip">@src/cache.rs ×</span>
+                      <span class="ctx-chip term">&gt;_ term:12-18 ×</span>
+                      <span class="ctx-chip comment">💬 cache.rs:56 ×</span>
+                    </div>
+                    <div class="composer-input">Ask anything. @ files, $ skills, / commands</div>
+                    <div class="composer-bar">
+                      <button class="icon-btn" style="width:26px;height:26px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.6 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.9l8.5-8.5"/></svg></button>
+                      <button class="c-pill plan-on">Plan</button>
+                      <button class="c-pill">Stash · 2</button>
+                      <div class="c-spacer"></div>
+                      <button class="c-pill"><span style="color:var(--t-accent)">✦</span> GPT-5.4 · High ⌄</button>
+                      <button class="send-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings Panel (Desktop 2-col, Mobile clean Drill-Down Hub!) -->
+          <div id="settingsPanel" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+            <div class="thread-header">
+              <button class="icon-btn" id="settingsBackBtn" style="width:26px;height:26px" title="Back">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+              </button>
+              <div class="crumb"><span class="crumb-title" id="settingsTitle">Agent settings</span></div>
+            </div>
+
+            <!-- Mobile Settings Hub (replaces cramped 2-col on phones!) -->
+            <div class="phone-settings-hub is-active" id="phoneSettingsHub">
+              <div class="mob-search-pill" style="flex:none;height:34px;font-size:12px">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <span>Search Agent settings…</span>
+              </div>
+              <div>
+                <div class="ps-group-title">Agents</div>
+                <div class="ps-card">
+                  <div class="ps-item" data-drill="Providers &amp; models">
+                    <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg></div>
+                    <div class="ps-meta"><b>Providers &amp; models</b><small>Codex Pro · Claude Max · 4 active</small></div>
+                    <span class="ps-chev">›</span>
+                  </div>
+                  <div class="ps-item" data-drill="Chat &amp; composer">
+                    <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+                    <div class="ps-meta"><b>Chat &amp; composer</b><small>Enter sends · Queue while running</small></div>
+                    <span class="ps-chev">›</span>
+                  </div>
+                  <div class="ps-item" data-drill="Threads &amp; snooze">
+                    <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+                    <div class="ps-meta"><b>Threads &amp; snooze</b><small>Auto-settle merged · 3 presets</small></div>
+                    <span class="ps-chev">›</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div class="ps-group-title">Code &amp; automations</div>
+                <div class="ps-card">
+                  <div class="ps-item" data-drill="Diffs &amp; review">
+                    <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M12 11v6M9 14h6"/></svg></div>
+                    <div class="ps-meta"><b>Diffs &amp; review</b><small>Unified view · Inline comments</small></div>
+                    <span class="ps-chev">›</span>
+                  </div>
+                  <div class="ps-item" data-drill="Projects &amp; scripts">
+                    <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+                    <div class="ps-meta"><b>Projects &amp; scripts</b><small>3 projects · 2 saved scripts</small></div>
+                    <span class="ps-chev">›</span>
+                  </div>
+                  <div class="ps-item" data-drill="Scheduled tasks">
+                    <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+                    <div class="ps-meta"><b>Scheduled tasks</b><small>1 active schedule</small></div>
+                    <span class="ps-chev">›</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div class="ps-group-title">More</div>
+                <div class="ps-card">
+                  <div class="ps-item" data-drill="Archived threads">
+                    <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/></svg></div>
+                    <div class="ps-meta"><b>Archived threads</b><small>4 archived</small></div>
+                    <span class="ps-chev">›</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Settings Section Detail (2-col on Desktop, full-width drilled view on Mobile) -->
+            <div class="settings-grid hub-open" id="settingsGrid">
+              <nav class="settings-nav">
+                <input class="snav-search" placeholder="Search settings…" readonly>
+                <div class="snav-item active">Providers &amp; models</div>
+                <div class="snav-item">Chat &amp; composer</div>
+                <div class="snav-item">Diffs &amp; review</div>
+                <div class="snav-item">Threads &amp; snooze</div>
+                <div class="snav-item">Projects &amp; scripts</div>
+                <div class="snav-item">Scheduled tasks</div>
+                <div class="snav-item">Keybindings</div>
+                <div class="snav-item">Archived threads</div>
+              </nav>
+              <div class="settings-main">
+                <div class="s-row">
+                  <div><b>Codex CLI</b><small>Connected · Pro plan · 4 models active</small></div>
+                  <button class="btn-xs">Refresh</button>
+                </div>
+                <div class="s-row">
+                  <div><b>Claude Code CLI</b><small>Connected · Max plan · Bubblewrap sandbox active</small></div>
+                  <button class="btn-xs">Refresh</button>
+                </div>
+                <div class="s-row">
+                  <div><b>Follow-up while running</b><small>Default action when pressing Enter during a turn</small></div>
+                  <div class="seg" style="width:136px"><button class="active">Queue</button><button>Steer</button></div>
+                </div>
+                <div class="s-row inline-switch">
+                  <div><b>Auto-settle merged threads</b><small>Move threads to Settled when their branch merges</small></div>
+                  <span class="switch-pill"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right Multi-Surface Panel -->
+        <aside class="sheet right-panel-sheet hidden" id="rightPanel">
+          <div class="rp-tabbar">
+            <div class="rp-tab active">Diff</div>
+            <div class="rp-tab">Files</div>
+            <div class="rp-tab">Side chat</div>
+            <div class="rp-tab">+</div>
+            <div style="flex:1"></div>
+            <button class="icon-btn" id="closeSplitBtn" style="width:24px;height:24px">×</button>
+          </div>
+          <div class="diff-toolbar">
+            <strong>Working copy ⌄</strong>
+            <span class="stat-add">+48</span><span class="stat-del">-12</span>
+            <div style="flex:1"></div>
+            <div class="seg" style="width:112px"><button class="active">Unified</button><button>Split</button></div>
+          </div>
+          <div class="diff-split-grid">
+            <div class="diff-tree">
+              <div class="dt-row active">src/cache.rs</div>
+              <div class="dt-row">src/tile_index.rs</div>
+              <div class="dt-row">README.md</div>
+            </div>
+            <div class="diff-code">
+              <div class="diff-line"><span class="diff-ln">55</span><span> </span><span>pub fn insert(&amp;mut self, key: TileKey) {</span></div>
+              <div class="diff-line del"><span class="diff-ln">56</span><span>-</span><span>    self.map.insert(key, now());</span></div>
+              <div class="diff-line add"><span class="diff-ln">56</span><span>+</span><span>    self.evict_until(self.max_bytes);</span></div>
+              <div class="diff-line add"><span class="diff-ln">57</span><span>+</span><span>    self.lru.put(key, now());</span></div>
+              <div class="diff-comment-box">
+                <div style="color:var(--t-muted);margin-bottom:4px">Comment on line 56</div>
+                <div>Skip pinned tiles during eviction so offline routes stay intact.</div>
+                <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px">
+                  <button class="btn-xs">Cancel</button>
+                  <button class="btn-xs primary">Attach to composer</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="diff-apply-bar">
+            <span>Branch <code>agent/tile-cache</code></span>
+            <div style="display:flex;gap:6px">
+              <button class="btn-xs">Commit</button>
+              <button class="btn-xs primary">Merge to Files</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- MOBILE HAMBURGER SLIDE-OVER DRAWER (replaces the old bubble chips under search!) -->
+    <div class="drawer-scrim hidden" id="mobileDrawer">
+      <div class="drawer-panel">
+        <div class="drawer-head">
+          <strong>Agent</strong>
+          <button class="icon-btn" id="closeDrawerBtn" style="width:28px;height:28px">×</button>
+        </div>
+
+        <button class="create-btn" style="width:100%;justify-content:center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          New thread
+        </button>
+
+        <div class="drawer-nav-list">
+          <div class="drawer-pill active" data-drawer-go="conv">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>All threads</span>
+            <span class="d-count">4</span>
+          </div>
+          <div class="drawer-pill" data-drawer-go="conv">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/></svg>
+            <span>Pull requests &amp; issues</span>
+            <span class="d-count">2</span>
+          </div>
+          <div class="drawer-pill" data-drawer-go="conv">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            <span>Automations</span>
+            <span class="d-count">1</span>
+          </div>
+          <div class="drawer-pill" data-drawer-go="conv">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+            <span>Usage &amp; limits</span>
+          </div>
+          <div class="drawer-pill" data-drawer-go="settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>Agent settings</span>
+          </div>
+        </div>
+
+        <div class="nav-scroll">
+          <div class="nav-section-label">Recent threads</div>
+          <div class="thread-row active" data-drawer-go="conv">
+            <div class="thread-row-top"><span class="proj-mark">T</span><span>trail-maps</span><span class="thread-age">4m</span></div>
+            <div class="thread-row-title">Offline topo tile cache</div>
+            <div class="thread-row-sub"><span class="thread-branch">agent/tile-cache</span><span class="prov-dot"><i></i>Codex</span></div>
+          </div>
+          <div class="thread-row" data-drawer-go="conv">
+            <div class="thread-row-top"><span class="proj-mark m-blue">D</span><span>dar</span><span class="unread-pip"></span><span class="thread-age">24m</span></div>
+            <div class="thread-row-title">Mail inline reply dock</div>
+            <div class="thread-row-sub"><span class="thread-branch">rust</span><span class="prov-dot claude"><i></i>Claude</span></div>
+          </div>
+          <div class="thread-row" data-drawer-go="conv">
+            <div class="thread-row-top"><span class="proj-mark m-green">W</span><span>website</span><span class="thread-age">1h</span></div>
+            <div class="thread-row-title">Pricing table copy audit</div>
+            <div class="thread-row-sub"><span class="thread-branch">main</span><span class="prov-dot working"><i></i>Needs input</span></div>
+          </div>
+        </div>
+
+        <div class="nav-shelves">
+          <div class="shelf-row"><span><span class="shelf-pulse"></span>Working</span><span>1</span></div>
+          <div class="shelf-row"><span>› Snoozed</span><span>2</span></div>
+          <div class="shelf-row"><span>› Settled</span><span>18</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MOBILE FULL-SCREEN USER & APPS PAGE (Grid of apps on TOP, User options on BOTTOM!) -->
+    <div class="mobile-user-page hidden" id="mobileUserPage">
+      <div class="mup-header">
+        <div class="mup-brand">
+          <div class="dar-logo" style="width:26px;height:26px;font-size:12px">D</div>
+          <span>Dar</span>
+        </div>
+        <button class="mob-circle-btn" id="closeMobileUserBtn" style="width:32px;height:32px" aria-label="Close">×</button>
+      </div>
+
+      <div class="mup-body">
+        <!-- TOP: Grid of all apps -->
+        <div>
+          <div class="mup-section-title">Apps</div>
+          <div class="mup-apps-grid">
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Files</span></div>
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-4 4-2-2-5 5"/></svg><span>Photos</span></div>
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Books</span></div>
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg><span>Contacts</span></div>
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span>Calendar</span></div>
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M8 13h8M8 17h5"/></svg><span>Notes</span></div>
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span>Tasks</span></div>
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg><span>Mail</span></div>
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg><span>News</span></div>
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Chat</span></div>
+            <div class="mup-app-tile current" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg><span>Agent</span></div>
+            <div class="mup-app-tile" data-close-mup><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg><span>Git</span></div>
+          </div>
+        </div>
+
+        <!-- BOTTOM: User Profile + Account Options -->
+        <div class="mup-bottom">
+          <div class="mup-profile-card">
+            <div class="user-card-avatar">LH</div>
+            <div class="user-card-meta">
+              <b>Layla Haddad</b>
+              <small>@layla · dar.local</small>
+            </div>
+            <span class="role-pill">Admin</span>
+          </div>
+
+          <div class="seg" id="mobThemeSeg">
+            <button data-set-theme="light">Afterglow</button>
+            <button class="active" data-set-theme="dark">Nightfall</button>
+            <button data-set-theme="dark">System</button>
+          </div>
+
+          <div class="mup-options-card">
+            <div class="mup-opt">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>Dar settings</span>
+              <span class="ps-chev" style="margin-left:auto">›</span>
+            </div>
+            <div class="mup-opt">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+              <span>Manage apps</span>
+              <span class="ps-chev" style="margin-left:auto">›</span>
+            </div>
+            <div class="mup-opt danger">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+              <span>Sign out</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const appsPopover = document.getElementById('appsPopover');
+  const userPopover = document.getElementById('userPopover');
+  const allAppsBtn = document.getElementById('allAppsBtn');
+  const deskUserBtn = document.getElementById('deskUserBtn');
+  const mobileDrawer = document.getElementById('mobileDrawer');
+  const mobileUserPage = document.getElementById('mobileUserPage');
+  const convPanel = document.getElementById('convPanel');
+  const settingsPanel = document.getElementById('settingsPanel');
+  const rightPanel = document.getElementById('rightPanel');
+  const floatingDetails = document.getElementById('floatingDetails');
+  const convStage = document.getElementById('convStage');
+  const phoneSettingsHub = document.getElementById('phoneSettingsHub');
+  const settingsGrid = document.getElementById('settingsGrid');
+  const settingsTitle = document.getElementById('settingsTitle');
+
+  function closePopovers() {
+    appsPopover.classList.add('hidden');
+    userPopover.classList.add('hidden');
+    allAppsBtn.classList.remove('open');
+    deskUserBtn.classList.remove('open');
+    mobileDrawer.classList.add('hidden');
+    mobileUserPage.classList.add('hidden');
+  }
+
+  function setSplit(open) {
+    rightPanel.classList.toggle('hidden', !open);
+    floatingDetails.classList.toggle('hidden', open);
+    convStage.classList.toggle('has-floating-card', !open);
+  }
+
+  function showSettings(drilledTitle = null) {
+    convPanel.classList.add('hidden');
+    settingsPanel.classList.remove('hidden');
+    rightPanel.classList.add('hidden');
+    if (drilledTitle) {
+      phoneSettingsHub.classList.remove('is-active');
+      settingsGrid.classList.remove('hub-open');
+      settingsTitle.textContent = drilledTitle;
+    } else {
+      phoneSettingsHub.classList.add('is-active');
+      settingsGrid.classList.add('hub-open');
+      settingsTitle.textContent = 'Agent settings';
+    }
+  }
+
+  function showConv() {
+    settingsPanel.classList.add('hidden');
+    convPanel.classList.remove('hidden');
+  }
+
+  function applyPreset(preset) {
+    document.querySelectorAll('#modeTabs .mock-btn').forEach(b => b.classList.toggle('active', b.dataset.preset === preset));
+    closePopovers();
+    const isMobile = preset.startsWith('mobile-');
+    stage.classList.toggle('is-phone', isMobile);
+    showConv();
+    setSplit(false);
+
+    if (preset === 'desktop-apps') {
+      appsPopover.classList.remove('hidden');
+      allAppsBtn.classList.add('open');
+    } else if (preset === 'desktop-user') {
+      userPopover.classList.remove('hidden');
+      deskUserBtn.classList.add('open');
+    } else if (preset === 'desktop-split') {
+      setSplit(true);
+    } else if (preset === 'mobile-drawer') {
+      mobileDrawer.classList.remove('hidden');
+    } else if (preset === 'mobile-user') {
+      mobileUserPage.classList.remove('hidden');
+    } else if (preset === 'mobile-settings') {
+      showSettings(null);
+    }
+  }
+
+  document.querySelectorAll('#modeTabs .mock-btn').forEach(b => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
+
+  allAppsBtn.addEventListener('click', () => {
+    const open = appsPopover.classList.toggle('hidden') === false;
+    allAppsBtn.classList.toggle('open', open);
+    if (open) { userPopover.classList.add('hidden'); deskUserBtn.classList.remove('open'); }
+  });
+  deskUserBtn.addEventListener('click', () => {
+    const open = userPopover.classList.toggle('hidden') === false;
+    deskUserBtn.classList.toggle('open', open);
+    if (open) { appsPopover.classList.add('hidden'); allAppsBtn.classList.remove('open'); }
+  });
+  document.getElementById('deskSettingsBtn').addEventListener('click', () => { closePopovers(); showSettings(null); });
+  document.getElementById('navSettingsBtn').addEventListener('click', () => { closePopovers(); showSettings(null); });
+  document.getElementById('toggleSplitBtn').addEventListener('click', () => setSplit(rightPanel.classList.contains('hidden')));
+  document.getElementById('fdOpenDiff').addEventListener('click', () => setSplit(true));
+  document.getElementById('cardOpenDiff').addEventListener('click', () => setSplit(true));
+  document.getElementById('closeSplitBtn').addEventListener('click', () => setSplit(false));
+
+  document.getElementById('mobHamburgerBtn').addEventListener('click', () => mobileDrawer.classList.remove('hidden'));
+  document.getElementById('closeDrawerBtn').addEventListener('click', () => mobileDrawer.classList.add('hidden'));
+  mobileDrawer.addEventListener('click', (e) => { if (e.target === mobileDrawer) mobileDrawer.classList.add('hidden'); });
+
+  document.getElementById('mobUserBtn').addEventListener('click', () => mobileUserPage.classList.remove('hidden'));
+  document.getElementById('closeMobileUserBtn').addEventListener('click', () => mobileUserPage.classList.add('hidden'));
+  document.querySelectorAll('[data-close-mup]').forEach(el => el.addEventListener('click', () => mobileUserPage.classList.add('hidden')));
+
+  document.querySelectorAll('[data-drawer-go]').forEach(el => el.addEventListener('click', () => {
+    mobileDrawer.classList.add('hidden');
+    if (el.dataset.drawerGo === 'settings') showSettings(null);
+    else showConv();
+  }));
+
+  document.querySelectorAll('[data-drill]').forEach(el => el.addEventListener('click', () => showSettings(el.dataset.drill)));
+  document.getElementById('settingsBackBtn').addEventListener('click', () => {
+    if (stage.classList.contains('is-phone') && !phoneSettingsHub.classList.contains('is-active')) {
+      showSettings(null);
+    } else {
+      showConv();
+    }
+  });
+
+  function setTheme(t) {
+    stage.dataset.theme = t;
+    document.getElementById('btnTheme').textContent = t === 'dark' ? 'Light' : 'Dark';
+    document.querySelectorAll('[data-set-theme]').forEach(b => b.classList.toggle('active', b.dataset.setTheme === t && b.textContent !== 'System'));
+  }
+  document.getElementById('btnTheme').addEventListener('click', () => setTheme(stage.dataset.theme === 'dark' ? 'light' : 'dark'));
+  document.querySelectorAll('[data-set-theme]').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.setTheme)));
+})();
+</script>
+</body>
+</html>

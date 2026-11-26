@@ -14,7 +14,16 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 
-use crate::agent::terminal::ThreadTerminal;
+use crate::agent::pages::{
+    AgentPage, AgentSettingsModal, AutomationsPage, PageLimitWindow, PageLimits, PageModelInfo,
+    PageProjectInfo, PageProviderInfo, PageThreadInfo, PullRequestsPage, UsagePage,
+};
+use crate::agent::surfaces::{
+    AgentScheduleEntry, ContextChip, FilesSurface, PreviewSurface, ProjectScript,
+    ProjectScriptsCard, PromptStashEntry, PullRequestsSurface, SideChatSurface, SplitDiffView,
+    SurfaceKind, scripts_patch,
+};
+use crate::agent::terminal::{MultiTerminalDrawer, ScriptLaunch};
 use crate::api::{self, BrowserSession, Req, RequestError};
 use crate::dates::{local_date_time, local_time};
 use crate::files::types::FileTile;
@@ -24,7 +33,7 @@ use crate::history::history_failure;
 use crate::icons::Icon;
 use crate::markdown::Markdown;
 use crate::random_uuid;
-use crate::settings::{AppSettingsButton, Notice, SettingsSheet};
+use crate::settings::{AppSettingsButton, Notice};
 use crate::shared::{self, Preferences};
 use crate::shell::WorkspaceHeader;
 use crate::ui::{
@@ -992,6 +1001,61 @@ fn pref_notify(prefs: &Option<Preferences>) -> bool {
         .unwrap_or(false)
 }
 
+fn pref_follow_up_mode(prefs: &Option<Preferences>) -> &'static str {
+    match prefs
+        .as_ref()
+        .and_then(|p| p.rest.get("agentFollowUpMode"))
+        .and_then(Value::as_str)
+    {
+        Some("queue") => "queue",
+        _ => "steer",
+    }
+}
+
+fn pref_auto_settle(prefs: &Option<Preferences>) -> bool {
+    prefs
+        .as_ref()
+        .and_then(|p| p.rest.get("agentAutoSettle"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn pref_diff_view(prefs: &Option<Preferences>) -> &'static str {
+    match prefs
+        .as_ref()
+        .and_then(|p| p.rest.get("agentDiffView"))
+        .and_then(Value::as_str)
+    {
+        Some("split") => "split",
+        _ => "unified",
+    }
+}
+
+fn pref_prompt_stash(prefs: &Option<Preferences>) -> Vec<PromptStashEntry> {
+    prefs
+        .as_ref()
+        .and_then(|p| p.rest.get("agentPromptStash"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
+}
+
+fn pref_project_scripts_map(prefs: &Option<Preferences>) -> serde_json::Map<String, Value> {
+    prefs
+        .as_ref()
+        .and_then(|p| p.rest.get("agentProjectScripts"))
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn pref_schedules(prefs: &Option<Preferences>) -> Vec<AgentScheduleEntry> {
+    prefs
+        .as_ref()
+        .and_then(|p| p.rest.get("agentSchedules"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
+}
+
 #[derive(Clone)]
 struct SlashCommand {
     name: String,
@@ -1452,9 +1516,12 @@ fn ModelPicker(
     #[prop(into)] effort: Signal<String>,
     on_effort: Callback<String>,
     #[prop(into)] disabled: Signal<bool>,
+    #[prop(optional, into)] starred: Option<Signal<Vec<String>>>,
+    #[prop(optional)] on_toggle_star: Option<Callback<String>>,
 ) -> impl IntoView {
     let open = RwSignal::new(false);
     let query = RwSignal::new(String::new());
+    let provider_tab = RwSignal::new("all");
     let active = RwSignal::new(0usize);
     let root = NodeRef::<html::Div>::new();
     let trigger = NodeRef::<html::Button>::new();
@@ -1466,16 +1533,27 @@ fn ModelPicker(
 
     let shown = Memo::new(move |_| {
         let needle = query.get().trim().to_lowercase();
+        let tab = provider_tab.get();
+        let star_list = starred.map(|s| s.get()).unwrap_or_default();
         models.with(|all| {
-            all.iter()
+            let mut filtered: Vec<AgentModel> = all
+                .iter()
                 .filter(|m| {
-                    let prov = provider_display_name(m.provider.as_deref().unwrap_or("codex"));
+                    let prov_id = m.provider.as_deref().unwrap_or("codex");
+                    if tab != "all" && prov_id != tab {
+                        return false;
+                    }
+                    let prov = provider_display_name(prov_id);
                     format!("{} {} {prov}", m.name, m.id)
                         .to_lowercase()
                         .contains(&needle)
                 })
                 .cloned()
-                .collect::<Vec<_>>()
+                .collect();
+            if !star_list.is_empty() {
+                filtered.sort_by_key(|m| if star_list.contains(&m.id) { 0u8 } else { 1u8 });
+            }
+            filtered
         })
     });
 
@@ -1644,8 +1722,17 @@ fn ModelPicker(
                 let activedesc = items.get(cur_active).map(|_| format!("agent-model-{cur_active}"));
                 let efforts = selected.with(|s| s.as_ref().and_then(|m| m.efforts.clone()).unwrap_or_default());
                 let cur_effort = effort.get();
+                let star_list = starred.map(|s| s.get()).unwrap_or_default();
                 view! {
                     <div node_ref=popover class="agent-model-popover" role="dialog" aria-label="Model and reasoning" on:keydown=on_keydown>
+                        {is_grouped.then(|| view! {
+                            <div class="agent-model-tabs" role="tablist" aria-label="Providers">
+                                {[("all", "All"), ("codex", "Codex"), ("claude", "Claude Code")].into_iter().map(|(k, lbl)| view! {
+                                    <button type="button" role="tab" aria-selected=move || (provider_tab.get() == k).to_string()
+                                        on:click=move |_| { provider_tab.set(k); active.set(0); }>{lbl}</button>
+                                }).collect_view()}
+                            </div>
+                        })}
                         {many.then(|| view! {
                             <input node_ref=search type="search" aria-label="Search models" placeholder="Search models" prop:value=move || query.get()
                                 on:input=move |e| { query.set(event_target_value(&e)); active.set(0); }/>
@@ -1653,16 +1740,28 @@ fn ModelPicker(
                         <ul node_ref=list role="listbox" aria-label="Models" tabindex="-1" aria-activedescendant=activedesc>
                             {items.iter().enumerate().map(|(index, model)| {
                                 let prev_prov = index.checked_sub(1).and_then(|i| items.get(i)).and_then(|m| m.provider.as_deref());
-                                let show_group = is_grouped && model.provider.as_deref() != prev_prov;
+                                let show_group = is_grouped && provider_tab.get() == "all" && model.provider.as_deref() != prev_prov;
                                 let group_name = provider_display_name(model.provider.as_deref().unwrap_or("codex"));
                                 let is_sel = model.id == current_val;
                                 let is_act = index == cur_active;
+                                let is_starred = star_list.contains(&model.id);
                                 let id_choose = model.id.clone();
+                                let id_star = model.id.clone();
                                 view! {
                                     {show_group.then(|| view! { <li class="agent-model-group" role="presentation">{group_name}</li> })}
                                     <li id=format!("agent-model-{index}") role="option" aria-selected=is_sel.to_string() data-active=is_act.then_some("true")
                                         on:pointerenter=move |_| active.set(index)
                                         on:click=move |_| choose(id_choose.clone())>
+                                        {on_toggle_star.map(|cb| view! {
+                                            <button type="button" class=if is_starred { "agent-model-star is-on" } else { "agent-model-star" }
+                                                aria-label=if is_starred { "Unstar model" } else { "Star model" }
+                                                on:click=move |e| {
+                                                    e.stop_propagation();
+                                                    cb.try_run(id_star.clone());
+                                                }>
+                                                <Icon name="star"/>
+                                            </button>
+                                        })}
                                         <span>{model.name.clone()}</span>
                                         {model.is_default.then(|| view! { <small>"Default"</small> })}
                                         {is_sel.then(|| view! { <Icon name="check"/> })}
@@ -1893,7 +1992,11 @@ fn StepEntry(step: AgentStep) -> impl IntoView {
 }
 
 #[component]
-fn WorkLog(#[prop(into)] run: Signal<AgentRun>, on_review: Callback<()>) -> impl IntoView {
+fn WorkLog(
+    #[prop(into)] run: Signal<AgentRun>,
+    on_review: Callback<()>,
+    #[prop(optional)] on_open_file: Option<Callback<String>>,
+) -> impl IntoView {
     let running = Memo::new(move |_| run.with(|r| active_agent_run(&r.status)));
     let now = use_now(running.into(), 1000);
     let open = RwSignal::new(running.get_untracked());
@@ -1981,10 +2084,17 @@ fn WorkLog(#[prop(into)] run: Signal<AgentRun>, on_review: Callback<()>) -> impl
                                             "added" => "plus",
                                             _ => "file",
                                         };
+                                        let path_open = change.path.clone();
                                         view! {
                                             <li>
                                                 <Icon name=icon/>
-                                                <span title=change.path.clone()>{change.path.clone()}</span>
+                                                <button type="button" class="agent-changed-file-link" title=change.path.clone() on:click=move |_| {
+                                                    if let Some(cb) = on_open_file {
+                                                        cb.try_run(path_open.clone());
+                                                    } else {
+                                                        on_review.try_run(());
+                                                    }
+                                                }>{change.path.clone()}</button>
                                                 <DiffStat added=a removed=rem/>
                                             </li>
                                         }
@@ -2478,17 +2588,20 @@ fn QuestionCard(#[prop(into)] run: Signal<AgentRun>, session: BrowserSession) ->
                                     {(!q.header.is_empty()).then(|| view! { <small>{q.header}</small> })}
                                     <span>{q.question}</span>
                                 </legend>
-                                {q.options.into_iter().map(|opt| {
+                                {q.options.into_iter().enumerate().map(|(opt_idx, opt)| {
                                     let qid_chk = qid.clone();
+                                    let qid_chk_cls = qid.clone();
                                     let qid_chg = qid.clone();
                                     let lbl_chk = opt.label.clone();
+                                    let lbl_chk_cls = opt.label.clone();
                                     let lbl_chg = opt.label.clone();
                                     view! {
-                                        <label>
-                                            <input type="radio" name=format!("q-{qid}")
+                                        <label class=move || if answers.with(|m| m.get(&qid_chk_cls).is_some_and(|v| v == &lbl_chk_cls)) { "agent-q-option is-selected" } else { "agent-q-option" }>
+                                            <input type="radio" class="agent-q-radio" name=format!("q-{qid}")
                                                 prop:checked=move || answers.with(|m| m.get(&qid_chk).is_some_and(|v| v == &lbl_chk))
                                                 on:change=move |_| { answers.update(|m| { m.insert(qid_chg.clone(), lbl_chg.clone()); }); }/>
-                                            <span>
+                                            <span class="agent-q-key" aria-hidden="true">{opt_idx + 1}</span>
+                                            <span class="agent-q-copy">
                                                 <strong>{opt.label}</strong>
                                                 {(!opt.description.is_empty()).then(|| view! { <small>{opt.description}</small> })}
                                             </span>
@@ -2496,12 +2609,12 @@ fn QuestionCard(#[prop(into)] run: Signal<AgentRun>, session: BrowserSession) ->
                                     }
                                 }).collect_view()}
                                 {show_other.then(|| view! {
-                                    <label class="agent-question-other">
+                                    <label class="agent-q-option agent-question-other">
                                         {has_options.then(|| {
                                             let name = format!("q-{qid_other_radio}");
                                             let qid_r_chg = qid_other_radio.clone();
                                             view! {
-                                                <input type="radio" name=name
+                                                <input type="radio" class="agent-q-radio" name=name
                                                     prop:checked=move || answers.with(|m| m.get(&qid_other_chk).is_some_and(|v| v == "\u{0000}other"))
                                                     on:change=move |_| { answers.update(|m| { m.insert(qid_r_chg.clone(), "\u{0000}other".into()); }); }/>
                                             }
@@ -3130,6 +3243,14 @@ fn Conversation(
     auto_start: Option<bool>,
     on_started: Callback<()>,
     #[prop(into)] send_key: Signal<&'static str>,
+    #[prop(into)] follow_up_mode: Signal<&'static str>,
+    #[prop(into)] starred_models: Signal<Vec<String>>,
+    on_toggle_star: Callback<String>,
+    context_chips: RwSignal<Vec<ContextChip>>,
+    #[prop(into)] stash: Signal<Vec<PromptStashEntry>>,
+    on_update_stash: Callback<Vec<PromptStashEntry>>,
+    on_open_file: Callback<String>,
+    incoming_draft: RwSignal<Option<String>>,
     commands: Callback<SlashControls, Vec<SlashCommand>>,
     initial_files: Option<Vec<SendWrapper<web_sys::File>>>,
     on_forked: Callback<AgentThread>,
@@ -3196,12 +3317,51 @@ fn Conversation(
         }
     });
 
-    let queued =
-        RwSignal::new(storage_get(session_storage(), &format!("{key}.queued")).unwrap_or_default());
+    let queued: RwSignal<Vec<String>> = RwSignal::new(
+        storage_get(session_storage(), &format!("{key}.queued"))
+            .map(|raw| {
+                serde_json::from_str::<Vec<String>>(&raw)
+                    .unwrap_or_else(|_| if raw.is_empty() { Vec::new() } else { vec![raw] })
+            })
+            .unwrap_or_default(),
+    );
+    let stash_open = RwSignal::new(false);
     let plan = RwSignal::new(
         storage_get(session_storage(), &format!("{key}.mode")).as_deref() == Some("plan"),
     );
     let images = PicturesState::new(Some(thread_id.clone()), session.csrf_token.clone());
+
+    // Consume external composer fills (e.g. Side Chat "Use in composer").
+    Effect::new(move |_| {
+        if let Some(text) = incoming_draft.get() {
+            if !text.is_empty() {
+                draft.set(text);
+                if let Some(el) = composer.get_untracked() {
+                    let _ = el.focus();
+                }
+            }
+            incoming_draft.set(None);
+        }
+    });
+
+    // Auto-clear transient status notices so stale "Task sent to Codex." never lingers permanently.
+    Effect::new(move |_| {
+        let msg = notice.get();
+        let transient = msg.starts_with("Task sent to ")
+            || msg == "Sent to the running turn."
+            || msg == "Queued. It is sent when the agent finishes."
+            || msg == "Copied to clipboard."
+            || msg == "Prompt stashed.";
+        if transient {
+            let expected = msg.clone();
+            spawn_local(async move {
+                crate::sleep(3500).await;
+                if notice.try_get_untracked().as_deref() == Some(expected.as_str()) {
+                    notice.try_set(String::new());
+                }
+            });
+        }
+    });
 
     Effect::new(move |_| {
         let p = plan.get();
@@ -3234,7 +3394,9 @@ fn Conversation(
         let q = queued.get();
         let k = format!("{}.queued", key_sv.get_value());
         if !q.is_empty() {
-            let _ = storage_set(session_storage(), &k, &q);
+            if let Ok(raw) = serde_json::to_string(&q) {
+                let _ = storage_set(session_storage(), &k, &raw);
+            }
         } else {
             storage_remove(session_storage(), &k);
         }
@@ -3493,8 +3655,27 @@ fn Conversation(
         move |(execute, text_opt, special): (bool, Option<String>, Option<&'static str>)| {
             let cur_draft = draft.get_untracked();
             let requested = text_opt.clone();
-            let text = text_opt.unwrap_or_else(|| cur_draft.clone());
-            let from_queue = text != cur_draft && special.is_none();
+            let from_queue = text_opt.is_some() && special.is_none();
+            let chips = if !from_queue && special.is_none() {
+                context_chips.get_untracked()
+            } else {
+                Vec::new()
+            };
+            let raw_text = text_opt.unwrap_or_else(|| cur_draft.clone());
+            let text = if chips.is_empty() {
+                raw_text
+            } else {
+                let prefix = chips
+                    .iter()
+                    .map(|c| c.content.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                if raw_text.trim().is_empty() {
+                    prefix
+                } else {
+                    format!("{prefix}\n\n{raw_text}")
+                }
+            };
             let Some(cur_hist) = history.get_untracked() else {
                 return;
             };
@@ -3503,7 +3684,23 @@ fn Conversation(
             }
             if running.get_untracked() {
                 if execute && !from_queue {
-                    steer(text);
+                    if follow_up_mode.get_untracked() == "queue" {
+                        queued.update(|list| {
+                            if list.len() < 8 {
+                                list.push(text.clone());
+                            }
+                        });
+                        draft.set(String::new());
+                        context_chips.set(Vec::new());
+                        let k = key_sv.get_value();
+                        draft_cache.with_value(|c| {
+                            c.borrow_mut().insert(k, String::new());
+                        });
+                        notice.set("Queued. It is sent when the agent finishes.".into());
+                    } else {
+                        context_chips.set(Vec::new());
+                        steer(text);
+                    }
                 }
                 return;
             }
@@ -3620,9 +3817,14 @@ fn Conversation(
                             pending.with_value(|c| *c.borrow_mut() = None);
                             if !from_queue && special.is_none() {
                                 images.clear();
+                                context_chips.try_set(Vec::new());
                             }
                             if from_queue {
-                                queued.try_set(String::new());
+                                queued.try_update(|list| {
+                                    if !list.is_empty() {
+                                        list.remove(0);
+                                    }
+                                });
                             } else if special.is_none() {
                                 draft.try_set(String::new());
                                 draft_cache.with_value(|c| {
@@ -3764,7 +3966,7 @@ fn Conversation(
 
     // Auto-send queued follow-up when previous run completes.
     Effect::new(move |_| {
-        let q = queued.get();
+        let next_item = queued.with(|list| list.first().cloned());
         let is_running = running.get();
         let is_busy = busy.get();
         let connected = provider.with(|p| p.as_ref().is_some_and(|p| p.connected));
@@ -3773,7 +3975,7 @@ fn Conversation(
                 .and_then(|h| h.runs.first())
                 .map(|r| (r.id.clone(), r.status == "completed"))
         });
-        if !q.is_empty()
+        if let Some(q) = next_item
             && !is_running
             && !is_busy
             && connected
@@ -3822,11 +4024,11 @@ fn Conversation(
         if text.trim().is_empty() {
             return;
         }
-        if !queued.with_untracked(String::is_empty) {
-            error.set("One follow-up is already queued. Edit or remove it first.".into());
+        if queued.with_untracked(Vec::len) >= 8 {
+            error.set("At most 8 follow-ups can be queued at once.".into());
             return;
         }
-        queued.set(text);
+        queued.update(|list| list.push(text));
         draft.set(String::new());
         let k = key_sv.get_value();
         draft_cache.with_value(|c| {
@@ -4250,7 +4452,7 @@ fn Conversation(
                                         </article>
                                         {if row.run_matches_msg {
                                             let r_sig = Signal::from(Memo::new(move |last| run.get().or_else(|| last.cloned()).expect("run present")));
-                                            view! { <WorkLog run=r_sig on_review=on_review/> }.into_any()
+                                            view! { <WorkLog run=r_sig on_review=on_review on_open_file=on_open_file/> }.into_any()
                                         } else {
                                             row.earlier_runs.into_iter().map(|s| view! { <EarlierRun summary=s/> }).collect_view().into_any()
                                         }}
@@ -4294,6 +4496,32 @@ fn Conversation(
                             })
                         }
                     }
+                    {move || {
+                        let cur_run = run.get()?;
+                        let is_plan_done = cur_run.status == "completed"
+                            && cur_run.document.mode.as_deref() == Some("plan")
+                            && !running.get();
+                        let connected = provider.with(|p| p.as_ref().is_some_and(|p| p.connected));
+                        let plan_copy = cur_run.document.output.clone();
+                        is_plan_done.then(|| view! {
+                            <div class="agent-proposed-plan">
+                                <div class="agent-proposed-plan-copy">
+                                    <Icon name="list"/>
+                                    <div>
+                                        <strong>"Proposed plan ready"</strong>
+                                        <span>"Switch out of Plan mode to implement these steps in the working copy."</span>
+                                    </div>
+                                </div>
+                                <div class="agent-proposed-plan-actions">
+                                    <button type="button" class="secondary-button" on:click=move |_| copy_text(plan_copy.clone())>"Copy plan"</button>
+                                    <button type="button" class="primary-button" disabled=!connected || busy.get() on:click=move |_| {
+                                        plan.set(false);
+                                        save_action.run((true, Some("Implement the proposed plan.".into()), None));
+                                    }>"Implement plan"</button>
+                                </div>
+                            </div>
+                        })
+                    }}
                 </div>
             </div>
             <Minimap viewport=viewport content=content version=minimap_version/>
@@ -4331,32 +4559,132 @@ fn Conversation(
             {move || { let e = storage_error.get(); (!e.is_empty()).then(|| view! { <p role="alert" class="error">{e}</p> }) }}
             {move || { let e = copy_error.get(); (!e.is_empty()).then(|| view! { <p role="alert" class="error">{e}</p> }) }}
             {move || {
-                let q = queued.get();
-                (!q.is_empty()).then(|| {
+                let list = queued.get();
+                (!list.is_empty()).then(|| {
                     let is_running = running.get();
                     let latest_completed = history.with(|h| h.as_ref().and_then(|h| h.runs.first()).is_some_and(|r| r.status == "completed"));
-                    let q_send = q.clone();
-                    let q_edit = q.clone();
+                    let total = list.len();
                     view! {
-                        <div class="agent-queued" role="status">
-                            <Icon name="clock"/>
-                            <span><strong>"Queued follow-up"</strong><span>{q}</span></span>
-                            {(!is_running && !latest_completed).then(|| view! {
-                                <button type="button" class="text-button" disabled=move || busy.get() || !provider.with(|p| p.as_ref().is_some_and(|p| p.connected))
-                                    on:click=move |_| save_action.run((true, Some(q_send.clone()), None))>"Send now"</button>
-                            })}
-                            <button type="button" class="text-button" on:click=move |_| {
-                                if draft.with_untracked(|d| d.trim().is_empty()) {
-                                    draft.set(q_edit.clone());
+                        <div class="agent-queued-stack" role="status" aria-label="Queued follow-ups">
+                            {list.into_iter().enumerate().map(|(idx, q)| {
+                                let q_send = q.clone();
+                                let q_steer = q.clone();
+                                let q_edit = q.clone();
+                                view! {
+                                    <div class="agent-queued">
+                                        <Icon name="clock"/>
+                                        <span>
+                                            <strong>{if total == 1 { "Queued follow-up".to_owned() } else { format!("Queued #{}/{}", idx + 1, total) }}</strong>
+                                            <span>{q}</span>
+                                        </span>
+                                        {is_running.then(|| view! {
+                                            <button type="button" class="text-button" disabled=move || busy.get()
+                                                on:click=move |_| {
+                                                    queued.update(|l| { if idx < l.len() { l.remove(idx); } });
+                                                    steer(q_steer.clone());
+                                                }>"Steer now"</button>
+                                        })}
+                                        {(!is_running && !latest_completed && idx == 0).then(|| view! {
+                                            <button type="button" class="text-button" disabled=move || busy.get() || !provider.with(|p| p.as_ref().is_some_and(|p| p.connected))
+                                                on:click=move |_| save_action.run((true, Some(q_send.clone()), None))>"Send now"</button>
+                                        })}
+                                        <button type="button" class="text-button" on:click=move |_| {
+                                            if draft.with_untracked(|d| d.trim().is_empty()) {
+                                                draft.set(q_edit.clone());
+                                            }
+                                            queued.update(|l| { if idx < l.len() { l.remove(idx); } });
+                                            if let Some(el) = composer.get_untracked() { let _ = el.focus(); }
+                                        }>"Edit"</button>
+                                        <button type="button" class="icon-button" aria-label="Remove queued follow-up" on:click=move |_| {
+                                            queued.update(|l| { if idx < l.len() { l.remove(idx); } });
+                                        }><Icon name="close"/></button>
+                                    </div>
                                 }
-                                queued.set(String::new());
-                                if let Some(el) = composer.get_untracked() { let _ = el.focus(); }
-                            }>"Edit"</button>
-                            <button type="button" class="icon-button" aria-label="Remove queued follow-up" on:click=move |_| queued.set(String::new())><Icon name="close"/></button>
+                            }).collect_view()}
                         </div>
                     }
                 })
             }}
+            {move || {
+                let chips = context_chips.get();
+                (!chips.is_empty()).then(|| view! {
+                    <div class="agent-context-chips" aria-label="Attached context">
+                        {chips.into_iter().map(|chip| {
+                            let cid = chip.id.clone();
+                            let icon = match chip.kind {
+                                "diff" => "diff",
+                                "terminal" => "terminal",
+                                "pr" => "git",
+                                "quote" => "chat",
+                                _ => "file",
+                            };
+                            view! {
+                                <span class="agent-context-chip" title=chip.content>
+                                    <Icon name=icon/>
+                                    <span>{chip.label}</span>
+                                    <button type="button" aria-label="Remove context" on:click=move |_| context_chips.update(|l| l.retain(|c| c.id != cid))><Icon name="close"/></button>
+                                </span>
+                            }
+                        }).collect_view()}
+                    </div>
+                })
+            }}
+            {move || stash_open.get().then(|| {
+                let entries = stash.get();
+                let stash_full = entries.len() >= 16;
+                view! {
+                    <div class="agent-stash-popover" role="region" aria-label="Prompt stash">
+                        <div class="agent-stash-head">
+                            <strong>"Prompt stash"</strong>
+                            <button type="button" class="text-button" disabled=move || draft.with(|d| d.trim().is_empty()) || stash_full
+                                on:click=move |_| {
+                                    let text = draft.get_untracked().trim().to_owned();
+                                    if text.is_empty() {
+                                        return;
+                                    }
+                                    let clipped: String = text.chars().take(950).collect();
+                                    let mut next = stash.get_untracked();
+                                    next.insert(0, PromptStashEntry {
+                                        id: random_uuid(),
+                                        text: clipped,
+                                        created_at: js_sys::Date::now(),
+                                    });
+                                    next.truncate(16);
+                                    on_update_stash.try_run(next);
+                                    draft.set(String::new());
+                                    notice.set("Prompt stashed.".into());
+                                }>"Stash current draft"</button>
+                            <button type="button" class="icon-button" aria-label="Close stash" on:click=move |_| stash_open.set(false)><Icon name="close"/></button>
+                        </div>
+                        {if entries.is_empty() {
+                            view! { <p class="muted small">"Save drafts here to reuse or return to them later."</p> }.into_any()
+                        } else {
+                            view! {
+                                <ul class="agent-stash-list">
+                                    {entries.into_iter().map(|entry| {
+                                        let txt_use = entry.text.clone();
+                                        let id_del = entry.id.clone();
+                                        view! {
+                                            <li>
+                                                <button type="button" class="agent-stash-use" on:click=move |_| {
+                                                    draft.set(txt_use.clone());
+                                                    stash_open.set(false);
+                                                    if let Some(el) = composer.get_untracked() { let _ = el.focus(); }
+                                                }>{entry.text}</button>
+                                                <button type="button" class="icon-button" aria-label="Delete stashed prompt" on:click=move |_| {
+                                                    let mut next = stash.get_untracked();
+                                                    next.retain(|e| e.id != id_del);
+                                                    on_update_stash.try_run(next);
+                                                }><Icon name="trash"/></button>
+                                            </li>
+                                        }
+                                    }).collect_view()}
+                                </ul>
+                            }.into_any()
+                        }}
+                    </div>
+                }
+            })}
             <div class=move || if plan.get() { "agent-composer is-plan" } else { "agent-composer" }
                 on:dragover=move |e| {
                     if data_transfer_has_image(&e) {
@@ -4419,6 +4747,8 @@ fn Conversation(
                                     effort=effort
                                     on_effort=Callback::new(move |v| effort_raw.set(v))
                                     disabled=busy
+                                    starred=starred_models
+                                    on_toggle_star=on_toggle_star
                                 />
                             }.into_any()
                         } else {
@@ -4428,8 +4758,11 @@ fn Conversation(
                         }
                     }}
                     {move || provider.with(|p| p.as_ref().is_some_and(|p| p.connected)).then(|| view! {
-                        <button type="button" class="agent-plan-toggle" aria-pressed=move || plan.get().to_string() title="Plan mode: Codex plans and asks before changing files" on:click=move |_| plan.update(|v| *v = !*v)>
+                        <button type="button" class="agent-plan-toggle" aria-pressed=move || plan.get().to_string() title="Plan mode: plans and asks before changing files" on:click=move |_| plan.update(|v| *v = !*v)>
                             <Icon name="list"/>"Plan"
+                        </button>
+                        <button type="button" class="icon-button agent-stash-btn" aria-label="Prompt stash" title="Prompt stash" aria-expanded=move || stash_open.get().to_string() on:click=move |_| stash_open.update(|v| *v = !*v)>
+                            <Icon name="stash"/>
                         </button>
                         <ActionMenu label="Message actions" actions=Callback::new(move |_| {
                             let dis = busy.get_untracked() || running.get_untracked() || history.with_untracked(Option::is_none) || draft.with_untracked(|d| d.trim().is_empty());
@@ -4441,7 +4774,7 @@ fn Conversation(
                         window_size=Signal::derive(move || run.with(|r| r.as_ref().and_then(|r| r.document.context_window)))
                     />
                     {move || (running.get() && provider.with(|p| p.as_ref().is_some_and(|p| p.connected))).then(|| view! {
-                        <button type="button" class="agent-queue-button" disabled=move || busy.get() || draft.with(|d| d.trim().is_empty()) || !queued.with(String::is_empty) on:click=move |_| queue_follow_up()>"Queue"</button>
+                        <button type="button" class="agent-queue-button" disabled=move || busy.get() || draft.with(|d| d.trim().is_empty()) || queued.with(|l| l.len() >= 8) on:click=move |_| queue_follow_up()>"Queue"</button>
                         <button class="agent-send" aria-label="Steer the running turn" title=move || format!("Send into the running turn ({})", if send_key.get() == "enter" { "Enter" } else { "Ctrl Enter" }) disabled=move || busy.get() || draft.with(|d| d.trim().is_empty())><Icon name="send"/></button>
                     })}
                     {move || if running.get() {
@@ -4457,7 +4790,7 @@ fn Conversation(
                             <button class="agent-send"
                                 aria-label=move || if busy.get() { "Saving\u{2026}".into() } else if connected { format!("Run with {prov}") } else { "Save message".into() }
                                 title=if connected { format!("Run with {prov} ({key_hint})") } else { "Save message".into() }
-                                disabled=move || busy.get() || history.with(Option::is_none) || draft.with(|d| d.trim().is_empty()) || (connected && model.with(String::is_empty))>
+                                disabled=move || busy.get() || history.with(Option::is_none) || (draft.with(|d| d.trim().is_empty()) && context_chips.with(Vec::is_empty)) || (connected && model.with(String::is_empty))>
                                 <Icon name="send"/>
                             </button>
                         }.into_any()
@@ -4481,8 +4814,12 @@ fn DraftComposer(
     #[prop(into)] checking_provider: Signal<bool>,
     draft_cache: StoredValue<RefCell<HashMap<String, String>>, LocalStorage>,
     on_choose_project: Callback<()>,
+    on_start_scratch: Callback<()>,
     on_created: Callback<(AgentThread, bool, Vec<SendWrapper<web_sys::File>>)>,
     #[prop(into)] send_key: Signal<&'static str>,
+    #[prop(into)] starred_models: Signal<Vec<String>>,
+    on_toggle_star: Callback<String>,
+    prefill_prompt: RwSignal<Option<String>>,
     commands: Callback<SlashControls, Vec<SlashCommand>>,
 ) -> impl IntoView {
     let key = format!("dar.agent.draft.{}.new", session.user.id);
@@ -4491,6 +4828,7 @@ fn DraftComposer(
     let csrf = StoredValue::new(session.csrf_token.clone());
     let project_id = StoredValue::new(project.id.clone());
     let project_name = StoredValue::new(project.name.clone());
+    let is_scratch = project.source_type == "scratch";
 
     let draft = RwSignal::new(storage_get(session_storage(), &key).unwrap_or_default());
     let (model, effort_raw, effort) = use_model_choice(provider, key.clone());
@@ -4498,6 +4836,15 @@ fn DraftComposer(
     let error = RwSignal::new(String::new());
     let images = PicturesState::new(None, session.csrf_token.clone());
     let plan = RwSignal::new(false);
+
+    Effect::new(move |_| {
+        if let Some(p) = prefill_prompt.get() {
+            if !p.is_empty() {
+                draft.set(p);
+            }
+            prefill_prompt.set(None);
+        }
+    });
 
     let pending: StoredValue<RefCell<Option<(String, String)>>, LocalStorage> =
         StoredValue::new_local(RefCell::new(None));
@@ -4673,6 +5020,11 @@ fn DraftComposer(
                     </button>
                     "?"
                 </h2>
+                {(!is_scratch).then(|| view! {
+                    <p class="agent-hero-scratch">
+                        <button type="button" class="text-button" on:click=move |_| { on_start_scratch.try_run(()); }>"or start without a project"</button>
+                    </p>
+                })}
             </div>
             <form class="agent-composer-area" on:submit=move |e| {
                 e.prevent_default();
@@ -4732,6 +5084,8 @@ fn DraftComposer(
                                         effort=effort
                                         on_effort=Callback::new(move |v| effort_raw.set(v))
                                         disabled=busy
+                                        starred=starred_models
+                                        on_toggle_star=on_toggle_star
                                     />
                                 }.into_any()
                             } else {
@@ -4960,13 +5314,19 @@ struct UploadReservation {
 fn ChangeReview(
     #[prop(into)] run: Signal<Option<AgentRun>>,
     session: BrowserSession,
+    #[prop(into)] default_diff_view: Signal<&'static str>,
+    on_attach_chip: Callback<ContextChip>,
+    on_reverted: Callback<()>,
 ) -> impl IntoView {
     let busy = RwSignal::new(String::new());
+    let reverting = RwSignal::new(String::new());
+    let reverted: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
     let error = RwSignal::new(String::new());
     let applied: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
     let download = RwSignal::new(String::new());
     let branch_state = RwSignal::new(BranchState::default());
     let wrap = RwSignal::new(false);
+    let diff_mode = RwSignal::new(default_diff_view.get_untracked());
     let collapsed: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
     let notice = RwSignal::new(String::new());
     let csrf = StoredValue::new(session.csrf_token.clone());
@@ -4974,6 +5334,10 @@ fn ChangeReview(
     let controller =
         StoredValue::new_local(web_sys::AbortController::new().expect("AbortController"));
     on_cleanup(move || controller.with_value(|c| c.abort()));
+
+    Effect::new(move |_| {
+        diff_mode.set(default_diff_view.get());
+    });
 
     let thread_id = Memo::new(move |_| run.with(|r| r.as_ref().map(|r| r.thread_id.clone())));
     Effect::new(move |_| {
@@ -5130,6 +5494,48 @@ fn ChangeReview(
         });
     };
 
+    let revert_path = move |path: String| {
+        let Some(tid) = thread_id.get_untracked() else {
+            return;
+        };
+        reverting.set(path.clone());
+        error.set(String::new());
+        let token = csrf.get_value();
+        let signal = controller.with_value(|c| c.signal());
+        let body = json!({ "path": path }).to_string();
+        spawn_local(async move {
+            match api::request::<Value>(
+                &format!("{BASE}/threads/{tid}/revert"),
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(_) if !signal.aborted() => {
+                    reverted.try_update(|list| {
+                        if !list.contains(&path) {
+                            list.push(path.clone());
+                        }
+                    });
+                    notice.try_set(format!("Reverted {path} in working copy."));
+                    on_reverted.try_run(());
+                }
+                Err(e) if !signal.aborted() => {
+                    error.try_set(failure(&e));
+                }
+                _ => {}
+            }
+            if !signal.aborted() {
+                reverting.try_set(String::new());
+            }
+        });
+    };
+
     view! {
         {move || {
             let list = patches.get();
@@ -5156,6 +5562,10 @@ fn ChangeReview(
                         <DiffStat added=total_added removed=total_removed/>
                         <span>"\u{00b7} Latest run"</span>
                     </span>
+                    <div class="agent-diff-mode-toggle" role="radiogroup" aria-label="Diff view">
+                        <button type="button" role="radio" aria-checked=move || (diff_mode.get() == "unified").to_string() on:click=move |_| diff_mode.set("unified")>"Unified"</button>
+                        <button type="button" role="radio" aria-checked=move || (diff_mode.get() == "split").to_string() on:click=move |_| diff_mode.set("split")>"Split"</button>
+                    </div>
                     <button class="icon-button" aria-label="Wrap lines" title="Wrap lines" aria-pressed=move || wrap.get().to_string() on:click=move |_| wrap.update(|v| *v = !*v)><Icon name="menu"/></button>
                     <button class="icon-button" aria-label=if all_collapsed { "Expand diff" } else { "Collapse diff" } title=if all_collapsed { "Expand all" } else { "Collapse all" }
                         on:click=move |_| {
@@ -5198,9 +5608,29 @@ fn ChangeReview(
                                 </button>
                                 <span class=format!("agent-change-kind is-{}", change.kind)>{kind_label}</span>
                                 <DiffStat added=added removed=removed/>
+                                {(!reverted.with(|l| l.contains(&path))).then(|| {
+                                    let path_rev = path.clone();
+                                    let is_rev_busy = reverting.with(|b| b == &path);
+                                    view! {
+                                        <button type="button" class="icon-button" aria-label=format!("Revert {path}") title="Revert working copy file to baseline" disabled=is_rev_busy
+                                            on:click=move |_| revert_path(path_rev.clone())>
+                                            <Icon name="undo"/>
+                                        </button>
+                                    }
+                                })}
                                 <button class="icon-button" aria-label=format!("Copy diff for {path}") title="Copy diff" on:click=move |_| copy_diff(patch_copy.clone())><Icon name="copy"/></button>
                             </header>
-                            {open.then(|| view! { <Diff source=patch.clone() wrap=wrap/> })}
+                            {open.then(|| {
+                                let p_split = path.clone();
+                                let patch_inner = patch.clone();
+                                move || {
+                                    if diff_mode.get() == "split" {
+                                        view! { <SplitDiffView path=p_split.clone() patch=patch_inner.clone() wrap=wrap on_comment=on_attach_chip/> }.into_any()
+                                    } else {
+                                        view! { <Diff source=patch_inner.clone() wrap=wrap/> }.into_any()
+                                    }
+                                }
+                            })}
                             {can_apply.then(|| {
                                 let is_applied = applied.with(|a| a.contains(&path_btn));
                                 let cur_busy = busy.get();
@@ -5953,19 +6383,16 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     } else {
         View::Conversation
     });
-    // Phones hide the shared rail and top bar outside the thread list (frame.css).
-    Effect::new(move |_| {
-        if let Some(body) = document().body() {
-            let _ = body
-                .class_list()
-                .toggle_with_force("agent-outside-threads", view.get() != View::Threads);
-        }
-    });
-    on_cleanup(|| {
-        if let Some(body) = document().body() {
-            let _ = body.class_list().remove_1("agent-outside-threads");
-        }
-    });
+    let active_page = RwSignal::new(AgentPage::Workspace);
+    let active_surface = RwSignal::new(SurfaceKind::Diff);
+    let surface_file: RwSignal<Option<String>> = RwSignal::new(None);
+    let preview_file: RwSignal<Option<String>> = RwSignal::new(None);
+    let sidebar_filter = RwSignal::new("all"); // "all" | "working" | "unread" | "pinned"
+    let context_chips: RwSignal<Vec<ContextChip>> = RwSignal::new(Vec::new());
+    let incoming_draft: RwSignal<Option<String>> = RwSignal::new(None);
+    let prefill_draft: RwSignal<Option<String>> = RwSignal::new(None);
+    let script_launch: RwSignal<Option<ScriptLaunch>> = RwSignal::new(None);
+    let script_seq = RwSignal::new(0u64);
     let editor: RwSignal<Option<&'static str>> = RwSignal::new(None);
     let settings = RwSignal::new(false);
     let settings_section: RwSignal<&'static str> = RwSignal::new("General");
@@ -6568,7 +6995,105 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     let send_key = Signal::derive(move || prefs_shared.value.with(pref_send_key));
     let grouping = Signal::derive(move || prefs_shared.value.with(pref_grouping));
     let notify_enabled = Signal::derive(move || prefs_shared.value.with(pref_notify));
+    let follow_up_mode = Signal::derive(move || prefs_shared.value.with(pref_follow_up_mode));
+    let auto_settle = Signal::derive(move || prefs_shared.value.with(pref_auto_settle));
+    let diff_view = Signal::derive(move || prefs_shared.value.with(pref_diff_view));
+    let starred_models = Signal::derive(move || {
+        prefs_shared
+            .value
+            .with(|p| pref_string_vec(p, "agentStarredModels"))
+    });
+    let prompt_stash = Signal::derive(move || prefs_shared.value.with(pref_prompt_stash));
+    let project_scripts_map =
+        Signal::derive(move || prefs_shared.value.with(pref_project_scripts_map));
+    let schedules = Signal::derive(move || prefs_shared.value.with(pref_schedules));
     let settled_prefs = Memo::new(move |_| prefs_shared.value.with(pref_settled));
+
+    let toggle_star_model = Callback::new(move |model_id: String| {
+        let mut next = starred_models.get_untracked();
+        if next.contains(&model_id) {
+            next.retain(|id| id != &model_id);
+        } else {
+            next.insert(0, model_id);
+            next.truncate(32);
+        }
+        let mut map = serde_json::Map::new();
+        map.insert("agentStarredModels".into(), json!(next));
+        update_preferences.run(map);
+    });
+
+    let update_stash = Callback::new(move |entries: Vec<PromptStashEntry>| {
+        let mut map = serde_json::Map::new();
+        map.insert("agentPromptStash".into(), json!(entries));
+        update_preferences.run(map);
+    });
+
+    let update_schedules = Callback::new(move |entries: Vec<AgentScheduleEntry>| {
+        let mut map = serde_json::Map::new();
+        map.insert("agentSchedules".into(), json!(entries));
+        update_preferences.run(map);
+    });
+
+    let attach_chip = Callback::new(move |chip: ContextChip| {
+        context_chips.update(|list| {
+            if list.len() < 8 {
+                list.push(chip);
+            }
+        });
+    });
+
+    let start_scratch = Callback::new(move |()| {
+        if let Some(existing) = projects.with_untracked(|list| {
+            list.as_ref()
+                .and_then(|v| v.iter().find(|p| p.source_type == "scratch").cloned())
+        }) {
+            project_id.set(existing.id);
+            thread_id.set(String::new());
+            active_page.set(AgentPage::Workspace);
+            view.set(View::Conversation);
+            return;
+        }
+        let token = csrf_sv.get_value();
+        let signal = lifetime.with_value(|c| c.signal());
+        let body = json!({
+            "id": random_uuid(),
+            "name": "Scratch",
+            "sourceType": "scratch",
+            "sourceRef": "scratch",
+        })
+        .to_string();
+        spawn_local(async move {
+            match api::request::<AgentProject>(
+                &format!("{BASE}/projects"),
+                Req {
+                    method: "POST",
+                    body: Some(body),
+                    csrf: Some(&token),
+                    signal: Some(signal.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            {
+                Ok(row) if !signal.aborted() => {
+                    let pid = row.id.clone();
+                    projects.try_update(|cur| {
+                        let mut next = cur.take().unwrap_or_default();
+                        next.push(row);
+                        *cur = Some(next);
+                    });
+                    project_id.try_set(pid);
+                    thread_id.try_set(String::new());
+                    active_page.try_set(AgentPage::Workspace);
+                    view.try_set(View::Conversation);
+                }
+                Err(e) if !signal.aborted() => {
+                    create_error.try_set(failure(&e));
+                }
+                _ => {}
+            }
+        });
+    });
 
     let snoozed_until = move |row_id: &str| -> Option<f64> {
         snoozed.with(|list| list.iter().find(|s| s.id == row_id).map(|s| s.until))
@@ -6648,10 +7173,10 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
         }
     });
 
-    // Fetch provider usage limits when settings or details are open.
+    // Fetch provider usage limits when settings, details, or Usage page are open.
     Effect::new(move |_| {
         let connected = provider.with(|p| p.as_ref().is_some_and(|p| p.connected));
-        let open = settings.get() || details.get();
+        let open = settings.get() || details.get() || active_page.get() == AgentPage::Usage;
         let _ep = history_epoch.get();
         if !connected || !open {
             return;
@@ -7123,6 +7648,20 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
     });
 
     let open_review = Callback::new(move |()| {
+        active_surface.set(SurfaceKind::Diff);
+        review.set(true);
+        view.set(View::Changes);
+    });
+
+    let open_surface = Callback::new(move |kind: SurfaceKind| {
+        active_surface.set(kind);
+        review.set(true);
+        view.set(View::Changes);
+    });
+
+    let open_file_in_surface = Callback::new(move |path: String| {
+        surface_file.set(Some(path));
+        active_surface.set(SurfaceKind::Files);
         review.set(true);
         view.set(View::Changes);
     });
@@ -7270,6 +7809,36 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                 hint: "Open the changes panel".into(),
                 argument: None,
                 run: Callback::new(move |_| open_review.run(())),
+            },
+            SlashCommand {
+                name: "files".into(),
+                hint: "Browse workspace files".into(),
+                argument: None,
+                run: Callback::new(move |_| open_surface.run(SurfaceKind::Files)),
+            },
+            SlashCommand {
+                name: "preview".into(),
+                hint: "Preview HTML, SVG, or Markdown workspace files".into(),
+                argument: None,
+                run: Callback::new(move |_| open_surface.run(SurfaceKind::Preview)),
+            },
+            SlashCommand {
+                name: "prs".into(),
+                hint: "Open Dar Git pull requests & issues".into(),
+                argument: None,
+                run: Callback::new(move |_| open_surface.run(SurfaceKind::PullRequests)),
+            },
+            SlashCommand {
+                name: "usage".into(),
+                hint: "Open usage & limits page".into(),
+                argument: None,
+                run: Callback::new(move |_| active_page.set(AgentPage::Usage)),
+            },
+            SlashCommand {
+                name: "automations".into(),
+                hint: "Open automations & scheduled prompts".into(),
+                argument: None,
+                run: Callback::new(move |_| active_page.set(AgentPage::Automations)),
             },
             SlashCommand {
                 name: "terminal".into(),
@@ -7455,6 +8024,7 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                                     thread_id.set(id_sel.clone());
                                     project_id.set(pid_sel.clone());
                                     find_open.set(false);
+                                    active_page.set(AgentPage::Workspace);
                                     view.set(View::Conversation);
                                 }
                                 on:dblclick=move |_| start_rename.run(row_dbl.clone())
@@ -7613,6 +8183,16 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                                 on:keydown=move |e| if e.key() == "Escape" { e.prevent_default(); query.set(String::new()); }/>
                         </label>
                     </div>
+                    <div class="agent-sidebar-filters" role="group" aria-label="Filter thread list">
+                        {[("all", "All"), ("working", "Working"), ("unread", "Unread"), ("pinned", "Pinned")].into_iter().map(|(k, lbl)| view! {
+                            <button type="button"
+                                class=move || if sidebar_filter.get() == k { "agent-filter-pill is-active" } else { "agent-filter-pill" }
+                                aria-pressed=move || (sidebar_filter.get() == k).to_string()
+                                on:click=move |_| sidebar_filter.set(k)>
+                                {lbl}
+                            </button>
+                        }).collect_view()}
+                    </div>
                     {move || {
                         let e = error.get();
                         (!e.is_empty()).then(|| view! { <div role="alert"><p>{e}</p><button class="text-button" on:click=move |_| reload.update(|n| *n += 1)>"Retry projects"</button></div> })
@@ -7636,11 +8216,21 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                             let cur_arch = archived.get();
                             let cur_pin = pinned.get();
 
+                            let sf = sidebar_filter.get();
                             let filtered: Vec<AgentThread> = all_threads
                                 .iter()
                                 .filter(|row| {
                                     let pname = proj_list.iter().find(|p| p.id == row.project_id).map(|p| p.name.as_str()).unwrap_or("");
-                                    format!("{} {pname}", row.title).to_lowercase().contains(&needle)
+                                    let text_ok = format!("{} {pname}", row.title).to_lowercase().contains(&needle);
+                                    if !text_ok {
+                                        return false;
+                                    }
+                                    match sf {
+                                        "working" => is_working(row),
+                                        "unread" => unread(row),
+                                        "pinned" => cur_pin.contains(&row.id),
+                                        _ => true,
+                                    }
                                 })
                                 .cloned()
                                 .collect();
@@ -7706,6 +8296,28 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                             }.into_any()
                         }}
                     </div>
+                    <nav class="agent-utility-dock" aria-label="Workspace pages">
+                        <button type="button" class=move || if active_page.get() == AgentPage::Workspace { "agent-dock-btn is-active" } else { "agent-dock-btn" }
+                            aria-current=move || (active_page.get() == AgentPage::Workspace).then_some("page")
+                            on:click=move |_| { active_page.set(AgentPage::Workspace); view.set(View::Conversation); }>
+                            <Icon name="chat"/><span>"Threads"</span>
+                        </button>
+                        <button type="button" class=move || if active_page.get() == AgentPage::Usage { "agent-dock-btn is-active" } else { "agent-dock-btn" }
+                            aria-current=move || (active_page.get() == AgentPage::Usage).then_some("page")
+                            on:click=move |_| { active_page.set(AgentPage::Usage); view.set(View::Conversation); }>
+                            <Icon name="chart"/><span>"Usage"</span>
+                        </button>
+                        <button type="button" class=move || if active_page.get() == AgentPage::PullRequests { "agent-dock-btn is-active" } else { "agent-dock-btn" }
+                            aria-current=move || (active_page.get() == AgentPage::PullRequests).then_some("page")
+                            on:click=move |_| { active_page.set(AgentPage::PullRequests); view.set(View::Conversation); }>
+                            <Icon name="git"/><span>"PRs"</span>
+                        </button>
+                        <button type="button" class=move || if active_page.get() == AgentPage::Automations { "agent-dock-btn is-active" } else { "agent-dock-btn" }
+                            aria-current=move || (active_page.get() == AgentPage::Automations).then_some("page")
+                            on:click=move |_| { active_page.set(AgentPage::Automations); view.set(View::Conversation); }>
+                            <Icon name="clock"/><span>"Automations"</span>
+                        </button>
+                    </nav>
                     <AppSettingsButton app="agent" on_click=Callback::new(move |_| settings.set(true))/>
                     <Resizer label="Resize threads" side="right" value=sidebar_width min=208.0 max=420.0 on_change=Callback::new(move |v| sidebar_width.set(v))/>
                 </aside>
@@ -7765,6 +8377,16 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                                     ]
                                 })><Icon name="more"/></ActionMenu>
                                 <div class="agent-panel-controls">
+                                    <ActionMenu label="Open surface" actions=Callback::new(move |_| {
+                                        vec![
+                                            MenuAction::new("Changes (Diff)", "diff").run(move || open_surface.run(SurfaceKind::Diff)),
+                                            MenuAction::new("Workspace files", "folder").run(move || open_surface.run(SurfaceKind::Files)),
+                                            MenuAction::new("Side chat", "chat").run(move || open_surface.run(SurfaceKind::SideChat)),
+                                            MenuAction::new("PRs & Issues", "git").run(move || open_surface.run(SurfaceKind::PullRequests)),
+                                            MenuAction::new("Workspace preview", "globe").run(move || open_surface.run(SurfaceKind::Preview)),
+                                            MenuAction::new("Interactive terminal", "terminal").run(move || { drawer_tab.set("shell"); terminal.set(true); }),
+                                        ]
+                                    })><Icon name="grid"/></ActionMenu>
                                     <button class="icon-button agent-desktop-toggle" aria-label="Toggle thread details" aria-expanded=move || details.get().to_string() on:click=move |_| details.update(|v| *v = !*v)><Icon name="info"/></button>
                                     <button class="icon-button agent-desktop-toggle" aria-label="Toggle command output" aria-expanded=move || terminal.get().to_string() on:click=move |_| terminal.update(|v| *v = !*v)><Icon name="list"/></button>
                                     <button class="icon-button agent-desktop-toggle" aria-label=move || if review.get() { "Hide changes" } else { "Show changes" } aria-expanded=move || review.get().to_string() on:click=move |_| if review.get_untracked() { close_review.run(()); } else { open_review.run(()); }><Icon name="file"/></button>
@@ -7776,7 +8398,137 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                     {move || { let e = layout_error.get(); (!e.is_empty()).then(|| view! { <p role="alert" class="error">{e}</p> }) }}
                     <div class="agent-stage">
                         <div class="agent-chat">
-                            {move || match chat_slot.get() {
+                            {move || match active_page.get() {
+                                AgentPage::Usage => {
+                                    let provs_sig = Signal::derive(move || {
+                                        provider.with(|p| {
+                                            p.as_ref()
+                                                .and_then(|p| p.providers.as_ref())
+                                                .map(|list| {
+                                                    list.iter()
+                                                        .map(|i| PageProviderInfo {
+                                                            id: i.id.clone(),
+                                                            name: i.name.clone(),
+                                                            configured: i.configured,
+                                                            connected: i.connected,
+                                                            message: i.message.clone(),
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                })
+                                                .unwrap_or_else(|| vec![PageProviderInfo {
+                                                    id: "codex".into(),
+                                                    name: "Codex".into(),
+                                                    configured: p.as_ref().is_some_and(|x| x.configured),
+                                                    connected: p.as_ref().is_some_and(|x| x.connected),
+                                                    message: p.as_ref().map(|x| x.message.clone()).unwrap_or_default(),
+                                                }])
+                                        })
+                                    });
+                                    let models_sig = Signal::derive(move || {
+                                        provider.with(|p| {
+                                            p.as_ref()
+                                                .map(|p| {
+                                                    p.models
+                                                        .iter()
+                                                        .map(|m| PageModelInfo {
+                                                            id: m.id.clone(),
+                                                            name: m.name.clone(),
+                                                            provider: provider_display_name(m.provider.as_deref().unwrap_or("codex")).to_owned(),
+                                                            is_default: m.is_default,
+                                                            efforts: m.efforts.clone().unwrap_or_default(),
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                })
+                                                .unwrap_or_default()
+                                        })
+                                    });
+                                    let lims_sig = Signal::derive(move || {
+                                        limits.with(|opt| {
+                                            opt.as_ref().map(|l| PageLimits {
+                                                available: l.available,
+                                                plan: l.plan.clone(),
+                                                windows: l.windows.iter().map(|w| PageLimitWindow {
+                                                    label: w.label.clone(),
+                                                    used_percent: w.used_percent,
+                                                    resets_at: w.resets_at,
+                                                }).collect(),
+                                                message: l.message.clone(),
+                                            })
+                                        })
+                                    });
+                                    let threads_sig = Signal::derive(move || {
+                                        threads.with(|t| {
+                                            t.as_ref()
+                                                .map(|list| list.iter().map(|r| PageThreadInfo {
+                                                    id: r.id.clone(),
+                                                    project_id: r.project_id.clone(),
+                                                    title: r.title.clone(),
+                                                    modified_at: r.modified_at,
+                                                }).collect::<Vec<_>>())
+                                                .unwrap_or_default()
+                                        })
+                                    });
+                                    view! {
+                                        <UsagePage
+                                            providers=provs_sig
+                                            models=models_sig
+                                            limits=lims_sig
+                                            threads=threads_sig
+                                            starred_models=starred_models
+                                            checking=checking_provider
+                                            is_admin=is_admin
+                                            on_refresh=Callback::new(move |_| provider_epoch.update(|n| *n += 1))
+                                            on_connect=connect_provider
+                                            on_toggle_star=toggle_star_model
+                                            on_back=Callback::new(move |_| active_page.set(AgentPage::Workspace))
+                                        />
+                                    }.into_any()
+                                }
+                                AgentPage::PullRequests => view! {
+                                    <PullRequestsPage
+                                        on_start_thread_prompt=Callback::new(move |prompt: String| {
+                                            prefill_draft.set(Some(prompt));
+                                            active_page.set(AgentPage::Workspace);
+                                            choose_new_thread.run(());
+                                        })
+                                        on_back=Callback::new(move |_| active_page.set(AgentPage::Workspace))
+                                    />
+                                }.into_any(),
+                                AgentPage::Automations => {
+                                    let projs_sig = Signal::derive(move || {
+                                        projects.with(|p| {
+                                            p.as_ref()
+                                                .map(|list| list.iter().map(|i| PageProjectInfo {
+                                                    id: i.id.clone(),
+                                                    name: i.name.clone(),
+                                                    source_type: i.source_type.clone(),
+                                                }).collect::<Vec<_>>())
+                                                .unwrap_or_default()
+                                        })
+                                    });
+                                    view! {
+                                        <AutomationsPage
+                                            schedules=schedules
+                                            projects=projs_sig
+                                            on_save=update_schedules
+                                            on_run_now=Callback::new(move |(pid, prompt): (String, String)| {
+                                                prefill_draft.set(Some(prompt));
+                                                active_page.set(AgentPage::Workspace);
+                                                if !pid.is_empty() {
+                                                    project_id.set(pid);
+                                                    thread_id.set(String::new());
+                                                    view.set(View::Conversation);
+                                                } else if projects.with_untracked(|p| p.as_ref().is_none_or(Vec::is_empty)) {
+                                                    start_scratch.run(());
+                                                } else {
+                                                    choose_new_thread.run(());
+                                                }
+                                            })
+                                            on_back=Callback::new(move |_| active_page.set(AgentPage::Workspace))
+                                        />
+                                    }.into_any()
+                                }
+                                AgentPage::Workspace => match chat_slot.get() {
                                 ChatSlot::Shared(_) => {
                                     let initial = shared_item.get_untracked().expect("shared_item present for ChatSlot::Shared");
                                     let sig = Signal::derive(move || shared_item.get().unwrap_or_else(|| initial.clone()));
@@ -7813,6 +8565,14 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                                                 start_files.with_value(|m| { m.borrow_mut().remove(&tid_clear); });
                                             })
                                             send_key=send_key
+                                            follow_up_mode=follow_up_mode
+                                            starred_models=starred_models
+                                            on_toggle_star=toggle_star_model
+                                            context_chips=context_chips
+                                            stash=prompt_stash
+                                            on_update_stash=update_stash
+                                            on_open_file=open_file_in_surface
+                                            incoming_draft=incoming_draft
                                             commands=slash_commands
                                             initial_files=init_files
                                             on_forked=Callback::new(move |row: AgentThread| {
@@ -7844,8 +8604,12 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                                             checking_provider=checking_provider
                                             draft_cache=draft_cache
                                             on_choose_project=Callback::new(move |_| editor.set(Some("thread")))
+                                            on_start_scratch=start_scratch
                                             on_created=started
                                             send_key=send_key
+                                            starred_models=starred_models
+                                            on_toggle_star=toggle_star_model
+                                            prefill_prompt=prefill_draft
                                             commands=slash_commands
                                         />
                                     }.into_any()
@@ -7857,12 +8621,16 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                                         } else {
                                             view! {
                                                 <h2>"Add a project to start"</h2>
-                                                <p>"Work in a Git repository or a folder in Dar Files. The agent uses an isolated copy."</p>
-                                                <button class="primary-button" on:click=move |_| editor.set(Some("project"))><Icon name="plus"/>"Add project"</button>
+                                                <p>"Work in a Git repository, a folder in Dar Files, or an instant scratch workspace."</p>
+                                                <div class="agent-empty-actions">
+                                                    <button class="primary-button" on:click=move |_| editor.set(Some("project"))><Icon name="plus"/>"Add project"</button>
+                                                    <button type="button" class="secondary-button" on:click=move |_| start_scratch.run(())>"Start without a project"</button>
+                                                </div>
                                             }.into_any()
                                         }}
                                     </div>
                                 }.into_any(),
+                                },
                             }}
                         </div>
                         {move || has_thread.get().then(|| {
@@ -7892,6 +8660,39 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                                             }
                                         }}
                                         <div class="agent-workspace-label"><Icon name="lock"/>"Isolated working copy"</div>
+                                        <ProjectScriptsCard
+                                            project_id=Signal::derive(move || project.with(|p| p.as_ref().map(|p| p.id.clone()).unwrap_or_default()))
+                                            scripts=Signal::derive(move || {
+                                                let pid = project.with(|p| p.as_ref().map(|p| p.id.clone()).unwrap_or_default());
+                                                project_scripts_map.with(|m| {
+                                                    m.get(&pid)
+                                                        .and_then(|v| serde_json::from_value::<Vec<ProjectScript>>(v.clone()).ok())
+                                                        .unwrap_or_default()
+                                                })
+                                            })
+                                            on_save_scripts=Callback::new(move |next: Vec<ProjectScript>| {
+                                                let pid = project.with_untracked(|p| p.as_ref().map(|p| p.id.clone()).unwrap_or_default());
+                                                if pid.is_empty() {
+                                                    return;
+                                                }
+                                                let patch = scripts_patch(project_scripts_map.get_untracked(), &pid, next);
+                                                update_preferences.run(patch);
+                                            })
+                                            on_run_script=Callback::new(move |script: ProjectScript| {
+                                                let next_seq = script_seq.get_untracked() + 1;
+                                                script_seq.set(next_seq);
+                                                script_launch.set(Some(ScriptLaunch {
+                                                    seq: next_seq,
+                                                    name: script.name,
+                                                    command: script.command,
+                                                }));
+                                                drawer_tab.set("shell");
+                                                terminal.set(true);
+                                                if is_narrow() {
+                                                    view.set(View::Terminal);
+                                                }
+                                            })
+                                        />
                                         <GitCard thread_id=tid_git session=session_sv.get_value() epoch=history_epoch/>
                                         <button on:click=move |_| open_review.run(())>
                                             <Icon name="file"/>"Changes"
@@ -7970,7 +8771,20 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                             let vis_sig = Signal::derive(move || terminal.get() && drawer_tab.get() == "shell");
                             view! {
                                 <div class="agent-drawer-panel" hidden=move || drawer_tab.get() != "shell">
-                                    <ThreadTerminal thread_id=tid_sig session=session_sv.get_value() visible=vis_sig/>
+                                    <MultiTerminalDrawer
+                                        thread_id=tid_sig
+                                        session=session_sv.get_value()
+                                        visible=vis_sig
+                                        script_launch=script_launch
+                                        on_send_to_composer=Callback::new(move |text: String| {
+                                            attach_chip.run(ContextChip {
+                                                id: random_uuid(),
+                                                label: "Terminal output".into(),
+                                                kind: "terminal",
+                                                content: format!("Terminal output:\n```\n{text}\n```"),
+                                            });
+                                        })
+                                    />
                                 </div>
                             }
                         })}
@@ -8029,14 +8843,65 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                 <aside class="agent-review" data-agent-panel="changes" tabindex="-1" aria-label="Changes">
                     <Resizer label="Resize changes" side="left" value=review_width min=340.0 max=1200.0 on_change=Callback::new(move |v| review_width.set(v))/>
                     <header class="agent-review-heading">
-                        <h2>"Changes"</h2>
+                        <div class="agent-surface-tabs" role="tablist" aria-label="Workspace surfaces">
+                            {SurfaceKind::all().into_iter().map(|surf| {
+                                view! {
+                                    <button type="button" role="tab"
+                                        class=move || if active_surface.get() == surf { "agent-surface-tab is-active" } else { "agent-surface-tab" }
+                                        aria-selected=move || (active_surface.get() == surf).to_string()
+                                        on:click=move |_| active_surface.set(surf)>
+                                        <Icon name=surf.icon()/>
+                                        <span>{surf.label()}</span>
+                                    </button>
+                                }
+                            }).collect_view()}
+                        </div>
                         <button class="icon-button agent-desktop-toggle" aria-label=move || if maximized.get() { "Restore review size" } else { "Maximize review" } on:click=move |_| maximized.update(|v| *v = !*v)><Icon name="grid"/></button>
                         <button class="icon-button" aria-label="Close changes" on:click=move |_| close_review.run(())><Icon name="close"/></button>
                     </header>
                     <div class="agent-review-content">
-                        {move || {
-                            review_run_id.track();
-                            view! { <ChangeReview run=run session=session_sv.get_value()/> }
+                        {move || match active_surface.get() {
+                            SurfaceKind::Diff => {
+                                review_run_id.track();
+                                view! {
+                                    <ChangeReview
+                                        run=run
+                                        session=session_sv.get_value()
+                                        default_diff_view=diff_view
+                                        on_attach_chip=attach_chip
+                                        on_reverted=Callback::new(move |_| history_epoch.update(|n| *n += 1))
+                                    />
+                                }.into_any()
+                            }
+                            SurfaceKind::Files => view! {
+                                <FilesSurface
+                                    thread_id=Signal::derive(move || thread_id.get())
+                                    initial_file=surface_file
+                                    on_attach_chip=attach_chip
+                                    on_open_preview=Callback::new(move |path: String| {
+                                        preview_file.set(Some(path));
+                                        active_surface.set(SurfaceKind::Preview);
+                                    })
+                                />
+                            }.into_any(),
+                            SurfaceKind::SideChat => view! {
+                                <SideChatSurface
+                                    thread_id=Signal::derive(move || thread_id.get())
+                                    on_attach_chip=attach_chip
+                                    on_send_prompt=Callback::new(move |text: String| {
+                                        incoming_draft.set(Some(text));
+                                    })
+                                />
+                            }.into_any(),
+                            SurfaceKind::PullRequests => view! {
+                                <PullRequestsSurface on_attach_chip=attach_chip/>
+                            }.into_any(),
+                            SurfaceKind::Preview => view! {
+                                <PreviewSurface
+                                    thread_id=Signal::derive(move || thread_id.get())
+                                    target_file=preview_file
+                                />
+                            }.into_any(),
                         }}
                     </div>
                 </aside>
@@ -8083,240 +8948,149 @@ pub fn AgentWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> i
                 }
             })}
 
-            {move || settings.get().then(|| view! {
-                <SettingsSheet
-                    title="Agent settings"
-                    icon="agent"
-                    sections=vec!["General", "Chat", "Sidebar", "Archived threads", "Keyboard shortcuts"]
-                    section=settings_section
-                    on_close=Callback::new(move |_| settings.set(false))
-                    notice=settings_notice
-                    footer="Chat and sidebar choices save to your account as you make them."
-                >
-                    <div class="agent-settings-sheet">
-                        {move || match settings_section.get() {
-                            "General" => {
-                                let cur_prov = provider.get();
-                                let checking = checking_provider.get();
-                                let prov_list: Vec<AgentProviderStatus> = cur_prov
-                                    .as_ref()
-                                    .and_then(|p| p.providers.clone())
-                                    .unwrap_or_else(|| vec![AgentProviderStatus {
-                                        id: "codex".into(),
-                                        name: "Codex".into(),
-                                        configured: cur_prov.as_ref().is_some_and(|p| p.configured),
-                                        connected: cur_prov.as_ref().is_some_and(|p| p.connected),
-                                        message: cur_prov.as_ref().map(|p| p.message.clone()).unwrap_or_default(),
-                                    }]);
-                                let connected = cur_prov.as_ref().is_some_and(|p| p.connected);
-                                let models = cur_prov.as_ref().map(|p| p.models.clone()).unwrap_or_default();
-                                let multi_provider = cur_prov.as_ref().and_then(|p| p.providers.as_ref()).is_some_and(|v| v.len() > 1);
-                                let cur_limits = limits.get();
-                                view! {
-                                    {prov_list.into_iter().map(|item| {
-                                        let id_connect = item.id.clone();
-                                        let name_lbl = item.name.clone();
-                                        view! {
-                                            <section class="agent-settings-provider" aria-label=format!("{} connection", item.name)>
-                                                <h3>{format!("{} connection", item.name)}</h3>
-                                                <p role="status">{if checking { format!("Checking {}\u{2026}", item.name) } else if item.message.is_empty() { "Connection could not be checked.".into() } else { item.message }}</p>
-                                                {(is_admin && !item.configured).then(|| view! {
-                                                    <div class="agent-connection-actions">
-                                                        <button class="primary-button" disabled=checking on:click=move |_| connect_provider.run(id_connect.clone())>{format!("Connect server {name_lbl}")}</button>
-                                                    </div>
-                                                })}
-                                            </section>
-                                        }
-                                    }).collect_view()}
-                                    {(cur_prov.is_none() && !checking).then(|| view! { <p role="status">"Connection could not be checked."</p> })}
-                                    {move || { let e = connection_error.get(); (!e.is_empty()).then(|| view! { <p class="error" role="alert">{e}</p> }) }}
-                                    <div class="agent-connection-actions">
-                                        <button class="secondary-button" disabled=checking on:click=move |_| provider_epoch.update(|n| *n += 1)>
-                                            {if checking { "Checking\u{2026}" } else { "Refresh connection" }}
-                                        </button>
-                                    </div>
-                                    {connected.then(|| view! {
-                                        <h3>"Usage limits"</h3>
-                                        {match cur_limits {
-                                            None => view! { <p role="status" class="muted small">"Checking usage\u{2026}"</p> }.into_any(),
-                                            Some(ref l) if !l.available => view! { <p class="muted small">{l.message.clone().unwrap_or_else(|| "Usage limits are unavailable.".into())}</p> }.into_any(),
-                                            Some(l) => view! {
-                                                <ul class="agent-limits">
-                                                    {l.windows.into_iter().map(|w| view! {
-                                                        <li>
-                                                            <span>{w.label.clone()}</span>
-                                                            <meter min="0" max="100" value=w.used_percent.to_string() aria-label=format!("{} used", w.label)/>
-                                                            <strong>{format!("{}%", w.used_percent.round() as i64)}</strong>
-                                                            <small>{w.resets_at.map(|ts| format!("Resets {}", local_date_time(ts, &[("weekday", "short"), ("hour", "numeric"), ("minute", "2-digit")]))).unwrap_or_default()}</small>
-                                                        </li>
-                                                    }).collect_view()}
-                                                    {l.plan.map(|plan| view! { <li class="muted small">{format!("Plan: {plan}")}</li> })}
-                                                </ul>
-                                            }.into_any(),
-                                        }}
-                                        <h3>"Models"</h3>
-                                        <ul class="agent-settings-models">
-                                            {models.into_iter().map(|m| {
-                                                let prefix = if multi_provider {
-                                                    format!("{} \u{00b7} ", provider_display_name(m.provider.as_deref().unwrap_or("codex")))
-                                                } else {
-                                                    String::new()
-                                                };
-                                                let eff_text = match m.efforts {
-                                                    Some(ref list) if !list.is_empty() => format!("Reasoning: {}", list.iter().map(|e| effort_label(e)).collect::<Vec<_>>().join(", ")),
-                                                    _ => "No reasoning levels declared".into(),
-                                                };
-                                                view! {
-                                                    <li>
-                                                        <strong>{m.name}</strong>
-                                                        {m.is_default.then(|| view! { <small>"Default"</small> })}
-                                                        <span>{format!("{prefix}{eff_text}")}</span>
-                                                    </li>
-                                                }
-                                            }).collect_view()}
-                                        </ul>
-                                    })}
-                                    <p class="muted small">"Runs send the conversation and selected project contents to the chosen agent. Commands have no network access; publishing is disabled."</p>
-                                    <p class="muted small">"Uses the Codex ChatGPT login or the Claude Code login available to the Linux account running Dar, through each vendor's own CLI, so Claude runs count as ordinary Claude Code usage on that subscription. Connect links a login to your Dar account. Login tokens stay on the server."</p>
-                                    <p class="muted small">"Claude Code runs commands only inside its sandbox (bubblewrap and socat on the server); without it, Claude reads and edits files but cannot run commands. Claude Code compacts its context automatically."</p>
-                                    <p class="muted small">"Dar account ID: "<code class="agent-settings-account">{user_id_sv.get_value()}</code></p>
-                                }.into_any()
+            {move || settings.get().then(|| {
+                let provs_sig = Signal::derive(move || {
+                    provider.with(|p| {
+                        p.as_ref()
+                            .and_then(|p| p.providers.as_ref())
+                            .map(|list| {
+                                list.iter()
+                                    .map(|i| PageProviderInfo {
+                                        id: i.id.clone(),
+                                        name: i.name.clone(),
+                                        configured: i.configured,
+                                        connected: i.connected,
+                                        message: i.message.clone(),
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_else(|| vec![PageProviderInfo {
+                                id: "codex".into(),
+                                name: "Codex".into(),
+                                configured: p.as_ref().is_some_and(|x| x.configured),
+                                connected: p.as_ref().is_some_and(|x| x.connected),
+                                message: p.as_ref().map(|x| x.message.clone()).unwrap_or_default(),
+                            }])
+                    })
+                });
+                let models_sig = Signal::derive(move || {
+                    provider.with(|p| {
+                        p.as_ref()
+                            .map(|p| {
+                                p.models
+                                    .iter()
+                                    .map(|m| PageModelInfo {
+                                        id: m.id.clone(),
+                                        name: m.name.clone(),
+                                        provider: provider_display_name(m.provider.as_deref().unwrap_or("codex")).to_owned(),
+                                        is_default: m.is_default,
+                                        efforts: m.efforts.clone().unwrap_or_default(),
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default()
+                    })
+                });
+                let lims_sig = Signal::derive(move || {
+                    limits.with(|opt| {
+                        opt.as_ref().map(|l| PageLimits {
+                            available: l.available,
+                            plan: l.plan.clone(),
+                            windows: l.windows.iter().map(|w| PageLimitWindow {
+                                label: w.label.clone(),
+                                used_percent: w.used_percent,
+                                resets_at: w.resets_at,
+                            }).collect(),
+                            message: l.message.clone(),
+                        })
+                    })
+                });
+                let archived_sig = Signal::derive(move || {
+                    let arch_ids = archived.get();
+                    let proj_list = projects.get().unwrap_or_default();
+                    threads
+                        .get()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|r| arch_ids.contains(&r.id))
+                        .map(|r| {
+                            let pname = proj_list
+                                .iter()
+                                .find(|p| p.id == r.project_id)
+                                .map(|p| p.name.clone())
+                                .unwrap_or_else(|| "Project".into());
+                            (
+                                PageThreadInfo {
+                                    id: r.id,
+                                    project_id: r.project_id,
+                                    title: r.title,
+                                    modified_at: r.modified_at,
+                                },
+                                pname,
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                });
+                view! {
+                    <AgentSettingsModal
+                        section=settings_section
+                        notice=Signal::from(settings_notice)
+                        providers=provs_sig
+                        models=models_sig
+                        limits=lims_sig
+                        checking_provider=checking_provider
+                        connection_error=connection_error
+                        send_key=send_key
+                        follow_up_mode=follow_up_mode
+                        auto_settle=auto_settle
+                        diff_view=diff_view
+                        grouping=grouping
+                        notify_enabled=notify_enabled
+                        permission=permission
+                        prefs_loaded=prefs_loaded
+                        archived_threads=archived_sig
+                        is_admin=is_admin
+                        user_id=user_id_sv.get_value()
+                        on_close=Callback::new(move |_| settings.set(false))
+                        on_refresh_provider=Callback::new(move |_| provider_epoch.update(|n| *n += 1))
+                        on_connect_provider=connect_provider
+                        on_update_prefs=update_preferences
+                        on_request_notify=Callback::new(move |enabled: bool| {
+                            if enabled && notification_permission() == "default" {
+                                spawn_local(async move {
+                                    let res = request_notification_permission().await;
+                                    permission.try_set(res.clone());
+                                    if res == "granted" {
+                                        let mut map = serde_json::Map::new();
+                                        map.insert("agentNotify".into(), Value::Bool(true));
+                                        update_preferences.run(map);
+                                    }
+                                });
+                            } else {
+                                let mut map = serde_json::Map::new();
+                                map.insert("agentNotify".into(), Value::Bool(enabled));
+                                update_preferences.run(map);
                             }
-                            "Chat" => {
-                                let sk = send_key.get();
-                                let loaded = prefs_loaded.get();
-                                let notif = notify_enabled.get();
-                                let perm = permission.get();
-                                view! {
-                                    <h3>"Sending"</h3>
-                                    <div class="agent-settings-choice" role="radiogroup" aria-label="Send messages with">
-                                        {[
-                                            ("enter", "Enter sends, Shift Enter adds a line"),
-                                            ("modEnter", "Ctrl / Cmd Enter sends, Enter adds a line"),
-                                        ].into_iter().map(|(val, label)| view! {
-                                            <label>
-                                                <input type="radio" name="agent-send-key" prop:checked=sk == val disabled=!loaded on:change=move |_| {
-                                                    let mut map = serde_json::Map::new();
-                                                    map.insert("agentSendKey".into(), Value::String(val.into()));
-                                                    update_preferences.run(map);
-                                                }/>
-                                                {label}
-                                            </label>
-                                        }).collect_view()}
-                                    </div>
-                                    <h3>"Notifications"</h3>
-                                    <label class="agent-settings-toggle">
-                                        <input type="checkbox" prop:checked=notif disabled=!loaded || perm == "unsupported" on:change=move |e| {
-                                            let enabled = event_target_checked(&e);
-                                            if enabled && notification_permission() == "default" {
-                                                spawn_local(async move {
-                                                    let res = request_notification_permission().await;
-                                                    permission.try_set(res.clone());
-                                                    if res == "granted" {
-                                                        let mut map = serde_json::Map::new();
-                                                        map.insert("agentNotify".into(), Value::Bool(true));
-                                                        update_preferences.run(map);
-                                                    }
-                                                });
-                                            } else {
-                                                let mut map = serde_json::Map::new();
-                                                map.insert("agentNotify".into(), Value::Bool(enabled));
-                                                update_preferences.run(map);
-                                            }
-                                        }/>
-                                        "Notify me when Codex finishes in a background thread"
-                                    </label>
-                                    {(perm == "denied").then(|| view! { <p class="muted small">"Notifications are blocked for this site in the browser."</p> })}
-                                    {(perm == "unsupported").then(|| view! { <p class="muted small">"This browser does not support notifications."</p> })}
-                                    <p class="muted small">"Drafts, queued follow-ups and the selected model and reasoning level are kept in this browser tab."</p>
-                                }.into_any()
+                        })
+                        on_unarchive=toggle_archive
+                        on_delete_archived=Callback::new(move |tid: String| {
+                            if let Some(row) = threads.with_untracked(|t| t.as_ref().and_then(|l| l.iter().find(|x| x.id == tid).cloned())) {
+                                delete_error.set(String::new());
+                                deleting.set(Some(row));
                             }
-                            "Sidebar" => {
-                                let grp = grouping.get();
-                                let loaded = prefs_loaded.get();
-                                view! {
-                                    <h3>"Thread list"</h3>
-                                    <div class="agent-settings-choice" role="radiogroup" aria-label="Thread list">
-                                        {[
-                                            ("recent", "Recent first"),
-                                            ("project", "Grouped by project"),
-                                        ].into_iter().map(|(val, label)| view! {
-                                            <label>
-                                                <input type="radio" name="agent-grouping" prop:checked=grp == val disabled=!loaded on:change=move |_| {
-                                                    let mut map = serde_json::Map::new();
-                                                    map.insert("agentGrouping".into(), Value::String(val.into()));
-                                                    update_preferences.run(map);
-                                                }/>
-                                                {label}
-                                            </label>
-                                        }).collect_view()}
-                                    </div>
-                                    <p class="muted small">"Pinned threads stay at the top. Panel visibility and widths are remembered in this browser; double-click a resize handle to reset it."</p>
-                                }.into_any()
-                            }
-                            "Archived threads" => {
-                                let arch_ids = archived.get();
-                                let proj_list = projects.get().unwrap_or_default();
-                                let rows: Vec<AgentThread> = threads
-                                    .get()
-                                    .unwrap_or_default()
-                                    .into_iter()
-                                    .filter(|r| arch_ids.contains(&r.id))
-                                    .collect();
-                                view! {
-                                    <h3>"Archived threads"</h3>
-                                    {if rows.is_empty() {
-                                        view! { <p class="muted">"No archived threads."</p> }.into_any()
-                                    } else {
-                                        view! {
-                                            <ul class="agent-archived">
-                                                {rows.into_iter().map(|row| {
-                                                    let pname = proj_list.iter().find(|p| p.id == row.project_id).map(|p| p.name.clone()).unwrap_or_else(|| "Project".into());
-                                                    let id_unarch = row.id.clone();
-                                                    let row_del = row.clone();
-                                                    view! {
-                                                        <li>
-                                                            <ProjectMark name=pname/>
-                                                            <span>{row.title}</span>
-                                                            <button class="text-button" on:click=move |_| toggle_archive.run(id_unarch.clone())>"Unarchive"</button>
-                                                            <button class="text-button danger" on:click=move |_| { delete_error.set(String::new()); deleting.set(Some(row_del.clone())); }>"Delete"</button>
-                                                        </li>
-                                                    }
-                                                }).collect_view()}
-                                            </ul>
-                                        }.into_any()
-                                    }}
-                                }.into_any()
-                            }
-                            _ => {
-                                let sk = send_key.get();
-                                view! {
-                                    <h3>"Keyboard shortcuts"</h3>
-                                    <dl class="ui-shortcuts">
-                                        <dt>"Ctrl / Cmd K"</dt><dd>"Search all apps"</dd>
-                                        <dt>"Ctrl / Cmd P"</dt><dd>"Command palette: actions, threads and projects"</dd>
-                                        <dt>"Ctrl / Cmd Shift O"</dt><dd>"New thread"</dd>
-                                        <dt>"Ctrl / Cmd B"</dt><dd>"Show or hide threads"</dd>
-                                        <dt>"Ctrl / Cmd F"</dt><dd>"Find in loaded thread messages"</dd>
-                                        <dt>{if sk == "enter" { "Enter" } else { "Ctrl / Cmd Enter" }}</dt><dd>"Run with the selected agent when connected; while running, queue a follow-up"</dd>
-                                        <dt>{if sk == "enter" { "Shift Enter" } else { "Enter" }}</dt><dd>"Insert a new line"</dd>
-                                        <dt>"/"</dt><dd>"Commands at the start of a message"</dd>
-                                        <dt>"@"</dt><dd>"Mention a workspace file"</dd>
-                                        <dt>"Up / Down"</dt><dd>"Previous prompts in an empty composer"</dd>
-                                        <dt>"F2 / double-click"</dt><dd>"Rename the focused thread"</dd>
-                                        <dt>"Escape"</dt><dd>"Close menus; return from a phone panel"</dd>
-                                    </dl>
-                                }.into_any()
-                            }
-                        }}
-                    </div>
-                </SettingsSheet>
+                        })
+                    />
+                }
             })}
 
             {move || palette.get().then(|| {
                 let mut items = vec![
                     PaletteItem { group: "Actions", label: "New thread".into(), detail: Some("Ctrl Shift O".into()), mark: None, icon: Some("plus"), run: Callback::new(move |_| choose_new_thread.run(())) },
+                    PaletteItem { group: "Actions", label: "Start without a project".into(), detail: Some("Scratch".into()), mark: None, icon: Some("chat"), run: Callback::new(move |_| start_scratch.run(())) },
                     PaletteItem { group: "Actions", label: "Add project".into(), detail: None, mark: None, icon: Some("folder"), run: Callback::new(move |_| editor.set(Some("project"))) },
+                    PaletteItem { group: "Pages", label: "Usage & limits".into(), detail: None, mark: None, icon: Some("chart"), run: Callback::new(move |_| active_page.set(AgentPage::Usage)) },
+                    PaletteItem { group: "Pages", label: "Pull requests & issues".into(), detail: None, mark: None, icon: Some("git"), run: Callback::new(move |_| active_page.set(AgentPage::PullRequests)) },
+                    PaletteItem { group: "Pages", label: "Automations".into(), detail: None, mark: None, icon: Some("clock"), run: Callback::new(move |_| active_page.set(AgentPage::Automations)) },
                 ];
                 if let Some(t) = thread.get_untracked() {
                     let t_ren = t.clone();

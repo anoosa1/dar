@@ -32,7 +32,7 @@ pub async fn choose(control: &Locator, choice: Choice<'_>) -> Result<()> {
     }
 }
 
-/// Switches app from the app rail (desktop) or the More menu (phones), and waits for it.
+/// Switches app from the All apps popover (desktop) or the full-screen Account & Apps Hub (phones), and waits for it.
 pub async fn switch_app(page: &Page, id: &str) -> Result<()> {
     let name = match id {
         "files" => "Files",
@@ -40,17 +40,26 @@ pub async fn switch_app(page: &Page, id: &str) -> Result<()> {
         "calendar" => "Calendar",
         "notes" => "Notes",
         "tasks" => "Tasks",
+        "agent" => "Agent",
+        "books" => "Books",
+        "chat" => "Chat",
+        "git" => "Git",
+        "mail" => "Mail",
+        "news" => "News",
+        "photos" => "Photos",
         other => other,
     };
-    let link = page
-        .get_by_role("navigation", "Applications")
-        .get_by_role("link", name);
-    if link.is_visible().await? {
-        link.click().await?;
+    let all_apps = page.get_by_role("button", "All apps");
+    if all_apps.is_visible().await? {
+        all_apps.click().await?;
+        page.get_by_role("dialog", "All apps")
+            .get_by_role("link", name)
+            .click()
+            .await?;
     } else {
-        page.get_by_role("button", "More apps").click().await?;
-        page.get_by_role("menu", "More apps")
-            .get_by_role("menuitem", name)
+        page.get_by_role("button", "Open account menu").click().await?;
+        page.get_by_role("dialog", "Apps and account")
+            .get_by_role("link", name)
             .click()
             .await?;
     }
@@ -158,7 +167,7 @@ pub async fn sign_in(page: &Page, base: &str, username: &str, password: &str) ->
 /// back. (Only checking that "Connecting…" is absent passes on the sign-in page itself, before
 /// the sign-in request has returned.)
 pub async fn signed_in(page: &Page) -> Result<()> {
-    page.wait_for_function("() => !!document.querySelector('nav.app-rail') && !document.querySelector('.auth-page, .startup-state, .connection-state')").await?;
+    page.wait_for_function("() => !!document.querySelector('header.topbar') && !document.querySelector('.auth-page, .startup-state, .connection-state')").await?;
     Ok(())
 }
 

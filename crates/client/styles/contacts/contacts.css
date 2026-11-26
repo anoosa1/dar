@@ -1166,16 +1166,6 @@ body.has-editing-pane .pim-workspace.has-contacts-main>.pim-details{
 
 /* ---------- Phone (<=800px) ---------- */
 @media(max-width:800px){
-  .pim-workspace.has-contacts-main>.sidebar{
-    flex-direction:row;
-    overflow:auto hidden;
-  }
-  .sidebar :is(.contacts-sidebar-scroll,.contacts-books-list,.contacts-groups){
-    display:contents;
-  }
-  .sidebar .contacts-sidebar-footer{
-    display:none!important;
-  }
   .contacts-az-rail,
   .contacts-table-header,
   .contacts-view-switch,

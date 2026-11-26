@@ -1,0 +1,3060 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar Agent — Full T3 Parity Redesign Mockup</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans, 'Inter', system-ui, -apple-system, sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Outer controls bar blends seamlessly with host thread */
+.mock-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.mock-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mock-tabs, .mock-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.mock-btn {
+  appearance: none;
+  border: 1px solid var(--border, #554252);
+  background: transparent;
+  color: var(--muted-foreground, #cfb4ca);
+  font: 500 11.5px/1 var(--font-sans, system-ui, sans-serif);
+  padding: 6px 10px;
+  border-radius: var(--radius, 8px);
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+  white-space: nowrap;
+}
+.mock-btn:hover {
+  color: var(--foreground, #faeaf3);
+  background: var(--secondary, rgba(255,255,255,.06));
+}
+.mock-btn.active {
+  background: var(--primary, #f2a2a9);
+  color: var(--primary-foreground, #26111f);
+  border-color: transparent;
+}
+
+/* Dar Twilight Theme Tokens scoped to the app frame */
+.dar-stage {
+  --t-bg: #26111f;
+  --t-panel: #301c2b;
+  --t-raised: #3a2536;
+  --t-hover: #432c40;
+  --t-border: rgba(182, 146, 174, 0.22);
+  --t-border-strong: rgba(182, 146, 174, 0.36);
+  --t-text: #faeaf3;
+  --t-muted: #c8adc3;
+  --t-dim: #9c7e97;
+  --t-accent: #f2a2a9;
+  --t-on-accent: #26111f;
+  --t-tonal: #4d3c73;
+  --t-on-tonal: #f3eafd;
+  --t-success: #b2dec4;
+  --t-success-bg: rgba(178, 222, 196, 0.12);
+  --t-danger: #ffb2c6;
+  --t-danger-bg: rgba(255, 178, 198, 0.13);
+  --t-warning: #ffc493;
+  --t-warning-bg: rgba(255, 196, 147, 0.14);
+  --t-blue: #a8c7fa;
+  --t-blue-bg: rgba(168, 199, 250, 0.14);
+  --t-rose: #d889af;
+  --t-shadow: 0 12px 32px rgba(14, 5, 13, 0.55), 0 2px 6px rgba(14, 5, 13, 0.35);
+  --t-mono: var(--font-mono, 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
+
+  position: relative;
+  width: 100%;
+  height: 640px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--t-border-strong);
+  background: var(--t-bg);
+  color: var(--t-text);
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  user-select: none;
+}
+
+.dar-stage[data-theme="light"] {
+  --t-bg: #fbf4f6;
+  --t-panel: #fffafb;
+  --t-raised: #ffffff;
+  --t-hover: #f3e7ee;
+  --t-border: rgba(115, 57, 111, 0.16);
+  --t-border-strong: rgba(115, 57, 111, 0.28);
+  --t-text: #352138;
+  --t-muted: #6e546d;
+  --t-dim: #8f748e;
+  --t-accent: #73396f;
+  --t-on-accent: #fff7fc;
+  --t-tonal: #ede3f5;
+  --t-on-tonal: #4d3c73;
+  --t-success: #246044;
+  --t-success-bg: rgba(36, 96, 68, 0.10);
+  --t-danger: #a32745;
+  --t-danger-bg: rgba(163, 39, 69, 0.10);
+  --t-warning: #8a4b12;
+  --t-warning-bg: rgba(138, 75, 18, 0.10);
+  --t-blue: #2d5aa0;
+  --t-blue-bg: rgba(45, 90, 160, 0.10);
+  --t-rose: #a94a76;
+  --t-shadow: 0 12px 28px rgba(38, 17, 31, 0.14), 0 2px 6px rgba(38, 17, 31, 0.08);
+}
+
+.dar-stage.is-phone {
+  width: 375px;
+  max-width: 100%;
+  height: 700px;
+  margin: 0 auto;
+  border-radius: 26px;
+  border-width: 2px;
+  box-shadow: var(--t-shadow);
+}
+
+.dar-stage * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--t-border-strong) transparent;
+}
+.dar-stage *::-webkit-scrollbar { width: 6px; height: 6px; }
+.dar-stage *::-webkit-scrollbar-track { background: transparent; }
+.dar-stage *::-webkit-scrollbar-thumb {
+  background: var(--t-border-strong);
+  border-radius: 999px;
+}
+
+/* Shared Dar Top Frame */
+.dar-frame {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+}
+@container (min-width: 980px) {
+  .dar-frame { grid-template-columns: 64px minmax(0, 1fr); }
+}
+
+.dar-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 4px;
+  gap: 6px;
+  background: var(--t-bg);
+}
+.dar-brand {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--t-accent);
+  color: var(--t-on-accent);
+  font-weight: 750;
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+}
+.rail-item {
+  width: 42px;
+  padding: 5px 2px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: var(--t-muted);
+  font-size: 9px;
+  cursor: pointer;
+}
+.rail-item:hover { background: var(--t-hover); color: var(--t-text); }
+.rail-item.active {
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  font-weight: 600;
+}
+.rail-item svg { width: 15px; height: 15px; stroke-width: 1.8; }
+.rail-spacer { flex: 1; }
+.rail-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  font-size: 10px;
+  font-weight: 650;
+  display: grid;
+  place-items: center;
+}
+
+.dar-body {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-right: 8px;
+  padding-bottom: 8px;
+}
+
+.dar-topbar {
+  height: 44px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+}
+.dar-app-title {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  width: 162px;
+  flex: none;
+}
+@container (min-width: 980px) {
+  .dar-app-title { width: 228px; }
+}
+.dar-global-search {
+  flex: 1;
+  max-width: 340px;
+  margin: 0 auto;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--t-border);
+  background: var(--t-panel);
+  color: var(--t-muted);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.dar-global-search:hover { border-color: var(--t-border-strong); color: var(--t-text); }
+.dar-global-search kbd {
+  margin-left: auto;
+  font: 500 9.5px/1 var(--t-mono);
+  padding: 2px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--t-border);
+  color: var(--t-dim);
+}
+.dar-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Agent Workspace Grid inside Dar */
+.agent-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 162px minmax(0, 1fr);
+  gap: 8px;
+}
+@container (min-width: 980px) {
+  .agent-grid { grid-template-columns: 228px minmax(0, 1fr); }
+}
+
+/* Sidebar (transparent over Dar canvas, matching Unified Look B) */
+.agent-nav {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.create-btn {
+  height: 38px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  font: 600 12.5px/1 inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  cursor: pointer;
+  width: fit-content;
+}
+.create-btn:hover { filter: brightness(1.08); }
+.create-btn svg { width: 14px; height: 14px; }
+
+.nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.nav-search {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  color: var(--t-muted);
+  font-size: 11.5px;
+  cursor: text;
+}
+.nav-search:hover { background: var(--t-hover); color: var(--t-text); }
+.nav-search svg { width: 13px; height: 13px; flex: none; }
+
+.icon-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--t-muted);
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+  padding: 0;
+}
+.icon-btn:hover { background: var(--t-hover); color: var(--t-text); }
+.icon-btn.active { background: var(--t-tonal); color: var(--t-on-tonal); }
+.icon-btn svg { width: 14px; height: 14px; }
+
+.nav-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 2px;
+}
+
+.nav-section-label {
+  font-size: 10.5px;
+  font-weight: 550;
+  color: var(--t-dim);
+  padding: 6px 8px 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.thread-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  cursor: pointer;
+  color: var(--t-muted);
+  transition: background .1s;
+}
+.thread-row:hover { background: var(--t-hover); color: var(--t-text); }
+.thread-row.active { background: color-mix(in srgb, var(--t-tonal) 55%, var(--t-panel)); color: var(--t-text); }
+
+.thread-row-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--t-dim);
+}
+.proj-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 750;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: #26111f;
+  background: var(--t-accent);
+}
+.proj-mark.m-blue { background: var(--t-blue); }
+.proj-mark.m-green { background: var(--t-success); }
+.proj-mark.m-warn { background: var(--t-warning); }
+
+.thread-age { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 10px; }
+.thread-row-title {
+  font-size: 12px;
+  font-weight: 520;
+  color: var(--t-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thread-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--t-dim);
+}
+.thread-branch {
+  font-family: var(--t-mono);
+  font-size: 9.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prov-dot {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  color: var(--t-muted);
+}
+.prov-dot i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--t-accent);
+}
+.prov-dot.claude i { background: var(--t-warning); }
+.prov-dot.working i { background: var(--t-success); box-shadow: 0 0 0 2px var(--t-success-bg); }
+.unread-pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--t-accent);
+  flex: none;
+}
+
+.nav-shelves {
+  border-top: 1px solid var(--t-border);
+  padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.shelf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 11px;
+  color: var(--t-muted);
+  cursor: pointer;
+}
+.shelf-row:hover { background: var(--t-hover); color: var(--t-text); }
+.shelf-row span:last-child { font-variant-numeric: tabular-nums; color: var(--t-dim); }
+.shelf-pulse {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--t-accent);
+  margin-right: 6px;
+}
+
+/* Sidebar bottom utility bar (T3 parity: PRs, Issues, Automations, Usage, Settings) */
+.nav-utility-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 4px 2px;
+  border-top: 1px solid var(--t-border);
+}
+.util-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--t-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  position: relative;
+}
+.util-btn:hover { background: var(--t-hover); color: var(--t-text); }
+.util-btn.active { background: var(--t-tonal); color: var(--t-on-tonal); }
+.util-btn svg { width: 14px; height: 14px; }
+.util-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--t-accent);
+}
+
+/* Main Floating Workspace Sheet(s) */
+.workspace-area {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.sheet {
+  background: var(--t-panel);
+  border: 1px solid var(--t-border);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.center-sheet {
+  flex: 1;
+}
+
+.right-panel-sheet {
+  width: 48%;
+  min-width: 270px;
+  max-width: 520px;
+  flex: none;
+}
+
+/* Thread Header Bar */
+.thread-header {
+  height: 42px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid var(--t-border);
+}
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  font-size: 12px;
+}
+.crumb-proj {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--t-muted);
+  white-space: nowrap;
+}
+.crumb-sep { color: var(--t-dim); }
+.crumb-title {
+  font-weight: 600;
+  color: var(--t-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 6px;
+}
+.crumb-title:hover { background: var(--t-hover); }
+.header-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+/* Conversation Stage */
+.conv-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.conv-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+@container (min-width: 980px) {
+  .conv-scroll { padding: 18px 28px 14px; }
+}
+
+/* Floating Details Card (T3 Signature: calm 2-group floating card when right panel is closed) */
+.floating-details {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 196px;
+  background: color-mix(in srgb, var(--t-raised) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--t-border-strong);
+  border-radius: 13px;
+  box-shadow: var(--t-shadow);
+  z-index: 8;
+  overflow: hidden;
+  font-size: 11px;
+}
+@container (max-width: 780px) {
+  .floating-details { width: 162px; font-size: 10.5px; }
+}
+.fd-group {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--t-border);
+}
+.fd-group:last-child { border-bottom: 0; }
+.fd-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  color: var(--t-text);
+  cursor: pointer;
+}
+.fd-row:hover { background: var(--t-hover); }
+.fd-row svg { width: 13px; height: 13px; color: var(--t-muted); flex: none; }
+.fd-row .fd-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fd-row .fd-val {
+  color: var(--t-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fd-row.muted { color: var(--t-muted); }
+.stat-add { color: var(--t-success); font-family: var(--t-mono); font-size: 10.5px; }
+.stat-del { color: var(--t-danger); font-family: var(--t-mono); font-size: 10.5px; }
+
+/* Conversation Content with clearance when details card is floating */
+.conv-col {
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.has-floating-card .conv-col {
+  padding-right: 170px;
+}
+@container (min-width: 980px) {
+  .has-floating-card .conv-col { padding-right: 208px; }
+}
+
+.user-bubble {
+  align-self: flex-end;
+  max-width: 86%;
+  background: var(--t-raised);
+  border: 1px solid var(--t-border);
+  border-radius: 14px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.inline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font: 500 11px/1.4 var(--t-mono);
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  vertical-align: baseline;
+  cursor: pointer;
+}
+.inline-chip.skill {
+  background: var(--t-warning-bg);
+  color: var(--t-warning);
+}
+.inline-chip.file {
+  background: var(--t-hover);
+  color: var(--t-accent);
+  border: 1px solid var(--t-border);
+}
+
+/* Work log */
+.work-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--t-muted);
+}
+.work-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--t-muted);
+  font-variant-numeric: tabular-nums;
+}
+.work-toggle:hover { color: var(--t-text); }
+.work-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 12px;
+  border-left: 1px solid var(--t-border);
+  margin-left: 4px;
+  font-size: 11px;
+}
+.work-step { display: flex; align-items: center; gap: 6px; }
+.work-step code { font-family: var(--t-mono); font-size: 10.5px; color: var(--t-text); }
+
+/* Proposed Plan Card (T3 parity) */
+.plan-card {
+  border: 1px solid color-mix(in srgb, var(--t-blue) 38%, var(--t-border));
+  background: color-mix(in srgb, var(--t-blue-bg) 55%, var(--t-raised));
+  border-radius: 12px;
+  overflow: hidden;
+}
+.plan-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--t-border);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.plan-card-body {
+  padding: 8px 11px;
+  font-size: 11.5px;
+  color: var(--t-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plan-card-body div { display: flex; align-items: baseline; gap: 6px; line-height: 1.45; }
+.plan-card-body div span:last-child { min-width: 0; }
+.plan-card-body code { font-family: var(--t-mono); font-size: 10.5px; color: var(--t-text); }
+.plan-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--t-border);
+  background: color-mix(in srgb, var(--t-panel) 60%, transparent);
+}
+
+/* Changed Files Tree Card (T3 parity) */
+.changed-card {
+  border: 1px solid var(--t-border);
+  border-radius: 11px;
+  background: var(--t-raised);
+  overflow: hidden;
+}
+.changed-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--t-border);
+  font-size: 11.5px;
+}
+.changed-head strong { font-weight: 600; }
+.changed-action {
+  margin-left: auto;
+  appearance: none;
+  border: 1px solid var(--t-border);
+  background: var(--t-panel);
+  color: var(--t-text);
+  font: 500 11px/1 inherit;
+  padding: 4px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.changed-action:hover { background: var(--t-hover); }
+.changed-tree {
+  padding: 4px 0;
+  font: 11px/1.6 var(--t-mono);
+}
+.changed-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.changed-row:hover { background: var(--t-hover); }
+.changed-row.indent { padding-left: 24px; }
+.changed-row .stats { margin-left: auto; display: flex; gap: 5px; }
+
+/* Assistant prose + citation + checkpoint */
+.assistant-prose {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--t-text);
+}
+.assistant-prose p { margin: 0 0 8px; }
+.assistant-prose p:last-child { margin-bottom: 0; }
+.turn-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--t-dim);
+  margin-top: 2px;
+}
+.turn-footer span { cursor: pointer; }
+.turn-footer span:hover { color: var(--t-text); }
+
+/* Subagent lineage pill */
+.subagent-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--t-border);
+  background: var(--t-bg);
+  font-size: 11px;
+  color: var(--t-muted);
+  cursor: pointer;
+}
+.subagent-bar:hover { border-color: var(--t-border-strong); color: var(--t-text); }
+.subagent-bar strong { color: var(--t-text); font-weight: 550; }
+.subagent-bar .pill-open { margin-left: auto; color: var(--t-accent); font-weight: 550; }
+
+/* Fixed Question Card (clean horizontal radio cards, zero overlapping pink dots!) */
+.q-card {
+  border: 1px solid color-mix(in srgb, var(--t-accent) 45%, var(--t-border));
+  border-radius: 13px;
+  background: var(--t-raised);
+  padding: 12px 13px;
+  box-shadow: var(--t-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.q-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--t-accent);
+}
+.q-card-prompt {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--t-text);
+}
+.q-options {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.q-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--t-border);
+  background: var(--t-panel);
+  cursor: pointer;
+}
+.q-opt:hover { background: var(--t-hover); }
+.q-opt.selected {
+  border-color: var(--t-accent);
+  background: color-mix(in srgb, var(--t-accent) 12%, var(--t-panel));
+}
+.q-radio {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1.5px solid var(--t-muted);
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.q-opt.selected .q-radio {
+  border-color: var(--t-accent);
+}
+.q-opt.selected .q-radio::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--t-accent);
+}
+.q-opt-text { flex: 1; min-width: 0; }
+.q-opt-text b { display: block; font-size: 12px; font-weight: 580; color: var(--t-text); }
+.q-opt-text small { display: block; font-size: 11px; color: var(--t-muted); }
+.q-key {
+  font: 500 10px/1 var(--t-mono);
+  color: var(--t-dim);
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--t-border);
+}
+
+/* Composer Dock (T3 parity: Multi-Queue stack + Stash + Rich Chips + 2-Col Model Picker + Voice) */
+.composer-dock {
+  flex: none;
+  padding: 0 14px 12px;
+  position: relative;
+}
+@container (min-width: 980px) {
+  .composer-dock { padding: 0 28px 14px; }
+}
+.composer-wrap {
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.queue-tray {
+  margin: 0 10px -1px;
+  border: 1px solid var(--t-border);
+  border-bottom: 0;
+  border-radius: 11px 11px 0 0;
+  background: var(--t-bg);
+  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--t-muted);
+}
+.queue-tray strong { color: var(--t-text); font-weight: 550; white-space: nowrap; }
+.queue-tray .q-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue-pill {
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--t-border);
+  background: var(--t-panel);
+  color: var(--t-text);
+  font-size: 10px;
+  cursor: pointer;
+}
+.queue-pill:hover { background: var(--t-hover); }
+
+.composer-box {
+  background: var(--t-raised);
+  border: 1px solid var(--t-border-strong);
+  border-radius: 15px;
+  padding: 10px 11px 7px;
+  box-shadow: 0 6px 20px rgba(10, 4, 10, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.composer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.ctx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--t-panel);
+  border: 1px solid var(--t-border);
+  font: 500 10.5px/1.3 var(--t-mono);
+  color: var(--t-text);
+}
+.ctx-chip.term { color: var(--t-success); }
+.ctx-chip.comment { color: var(--t-warning); font-family: inherit; }
+
+.composer-input {
+  font-size: 12.5px;
+  color: var(--t-muted);
+  min-height: 24px;
+  line-height: 1.45;
+}
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.c-pill {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--t-muted);
+  font: 500 11.5px/1 inherit;
+  padding: 5px 8px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 0;
+}
+.c-pill:hover, .c-pill.active { background: var(--t-hover); color: var(--t-text); }
+.c-pill.plan-on { background: var(--t-blue-bg); color: var(--t-blue); }
+.c-spacer { flex: 1; }
+.ctx-ring {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--t-dim);
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+}
+.send-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--t-accent);
+  color: var(--t-on-accent);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.send-btn:hover { filter: brightness(1.06); }
+.send-btn svg { width: 14px; height: 14px; }
+
+/* Two-Column T3 Model & Effort Picker Popover */
+.model-popover {
+  position: absolute;
+  bottom: 56px;
+  right: 26px;
+  width: min(410px, calc(100% - 24px));
+  background: var(--t-raised);
+  border: 1px solid var(--t-border-strong);
+  border-radius: 14px;
+  box-shadow: var(--t-shadow);
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 132px;
+  overflow: hidden;
+}
+.mp-rail {
+  border-right: 1px solid var(--t-border);
+  background: var(--t-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  gap: 6px;
+}
+.mp-rail-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--t-muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+.mp-rail-btn.active { background: var(--t-tonal); color: var(--t-on-tonal); }
+.mp-models {
+  border-right: 1px solid var(--t-border);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mp-search {
+  border: 0;
+  border-bottom: 1px solid var(--t-accent);
+  background: transparent;
+  color: var(--t-text);
+  font-size: 11.5px;
+  padding: 4px 2px 6px;
+  margin-bottom: 4px;
+  outline: 0;
+}
+.mp-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 7px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.mp-item:hover { background: var(--t-hover); }
+.mp-item.selected { background: var(--t-hover); font-weight: 600; }
+.mp-item .check { margin-left: auto; color: var(--t-accent); }
+.mp-effort {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mp-effort-head {
+  font-size: 10.5px;
+  color: var(--t-dim);
+  padding: 4px 6px;
+  display: flex;
+  justify-content: space-between;
+}
+.mp-eff-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 7px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  cursor: pointer;
+  color: var(--t-muted);
+}
+.mp-eff-opt:hover { background: var(--t-hover); color: var(--t-text); }
+.mp-eff-opt.selected { color: var(--t-text); font-weight: 600; background: var(--t-hover); }
+.mp-footer {
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--t-border);
+  font-size: 10.5px;
+  color: var(--t-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px 2px;
+}
+
+/* Right Multi-Surface Panel */
+.rp-tabbar {
+  height: 42px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--t-border);
+  background: color-mix(in srgb, var(--t-bg) 45%, var(--t-panel));
+  overflow-x: auto;
+}
+.rp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--t-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rp-tab:hover { background: var(--t-hover); color: var(--t-text); }
+.rp-tab.active {
+  background: var(--t-raised);
+  color: var(--t-text);
+  font-weight: 560;
+  border: 1px solid var(--t-border);
+}
+.rp-tab svg { width: 12.5px; height: 12.5px; }
+.rp-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Diff Surface */
+.diff-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--t-border);
+  font-size: 11px;
+}
+.seg {
+  display: inline-flex;
+  background: var(--t-bg);
+  border: 1px solid var(--t-border);
+  border-radius: 7px;
+  padding: 2px;
+}
+.seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--t-muted);
+  font: 500 10.5px/1 inherit;
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.seg button.active { background: var(--t-raised); color: var(--t-text); }
+
+.diff-split-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+}
+.diff-tree {
+  border-right: 1px solid var(--t-border);
+  padding: 6px 4px;
+  font: 10.5px/1.6 var(--t-mono);
+  overflow: auto;
+}
+.dt-row {
+  padding: 3px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--t-muted);
+}
+.dt-row.active { background: var(--t-hover); color: var(--t-text); }
+.diff-code {
+  overflow: auto;
+  font: 11px/1.65 var(--t-mono);
+}
+.diff-file-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  background: var(--t-bg);
+  border-bottom: 1px solid var(--t-border);
+  font-size: 11px;
+}
+.diff-line {
+  display: grid;
+  grid-template-columns: 28px 14px minmax(0, 1fr);
+  padding: 0 8px;
+  white-space: pre;
+}
+.diff-line.del { background: var(--t-danger-bg); color: var(--t-danger); }
+.diff-line.add { background: var(--t-success-bg); color: var(--t-success); }
+.diff-ln { color: var(--t-dim); font-size: 10px; user-select: none; }
+.diff-comment-box {
+  margin: 6px 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--t-accent) 45%, var(--t-border));
+  background: var(--t-raised);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 11px;
+}
+.diff-comment-box .dc-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+.btn-xs {
+  appearance: none;
+  border: 1px solid var(--t-border);
+  background: var(--t-panel);
+  color: var(--t-text);
+  font: 500 10.5px/1 inherit;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-xs.primary {
+  background: var(--t-accent);
+  color: var(--t-on-accent);
+  border-color: transparent;
+}
+.diff-apply-bar {
+  margin-top: auto;
+  padding: 8px 10px;
+  border-top: 1px solid var(--t-border);
+  background: var(--t-bg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--t-muted);
+}
+
+/* Open a Surface Launcher (exact T3 parity) */
+.surface-launcher {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  gap: 10px;
+}
+.surface-launcher h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.surface-list {
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.surface-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--t-text);
+  cursor: pointer;
+}
+.surface-item:hover { background: var(--t-hover); }
+.surface-item svg { width: 14px; height: 14px; color: var(--t-muted); }
+.surface-item kbd {
+  margin-left: auto;
+  font: 500 10px/1 var(--t-mono);
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--t-border);
+  color: var(--t-dim);
+}
+
+/* Bottom Multi-Tab Split Terminal Drawer */
+.term-drawer {
+  height: 148px;
+  flex: none;
+  border-top: 1px solid var(--t-border);
+  background: var(--t-bg);
+  display: flex;
+  flex-direction: column;
+}
+.term-bar {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--t-border);
+}
+.term-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font: 500 10.5px/1 var(--t-mono);
+  color: var(--t-muted);
+  cursor: pointer;
+}
+.term-tab.active { background: var(--t-raised); color: var(--t-text); }
+.term-panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.term-pane {
+  padding: 7px 10px;
+  font: 10.5px/1.55 var(--t-mono);
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-right: 1px solid var(--t-border);
+}
+.term-pane:last-child { border-right: 0; }
+.t-prompt { color: var(--t-accent); }
+.t-ok { color: var(--t-success); }
+.t-dim { color: var(--t-dim); }
+
+/* Draft Hero View */
+.draft-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  gap: 14px;
+}
+.draft-view h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+.draft-sub {
+  font-size: 12px;
+  color: var(--t-muted);
+  margin-top: -8px;
+  cursor: pointer;
+}
+.draft-sub:hover { color: var(--t-text); text-decoration: underline; }
+.draft-strip {
+  max-width: 640px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 0;
+  font-size: 11px;
+  color: var(--t-muted);
+}
+.draft-strip-group { display: flex; align-items: center; gap: 10px; }
+.draft-strip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.draft-strip-btn:hover { background: var(--t-hover); color: var(--t-text); }
+
+/* Utility Pages (Usage, PRs & Issues, Automations, Searchable Settings) */
+.page-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.page-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.kpi-card {
+  background: var(--t-raised);
+  border: 1px solid var(--t-border);
+  border-radius: 12px;
+  padding: 11px 12px;
+}
+.kpi-card small { display: block; color: var(--t-muted); font-size: 11px; }
+.kpi-card strong {
+  display: block;
+  font-size: 18px;
+  font-weight: 650;
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.meter-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--t-bg);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--t-accent);
+}
+.meter-fill.ok { background: var(--t-success); }
+.meter-fill.warn { background: var(--t-warning); }
+
+.chart-bars {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  align-items: end;
+  gap: 8px;
+  height: 96px;
+  padding: 12px;
+  background: var(--t-raised);
+  border: 1px solid var(--t-border);
+  border-radius: 12px;
+}
+.bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
+}
+.bar-stack {
+  width: 100%;
+  max-width: 28px;
+  border-radius: 5px 5px 2px 2px;
+  background: var(--t-accent);
+}
+.bar-col small { font-size: 10px; color: var(--t-dim); }
+
+/* Searchable Settings Layout */
+.settings-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 164px minmax(0, 1fr);
+}
+.settings-nav {
+  border-right: 1px solid var(--t-border);
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  background: color-mix(in srgb, var(--t-bg) 50%, var(--t-panel));
+}
+.snav-search {
+  border: 1px solid var(--t-border);
+  background: var(--t-panel);
+  color: var(--t-text);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+.snav-item {
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  color: var(--t-muted);
+  cursor: pointer;
+}
+.snav-item:hover { background: var(--t-hover); color: var(--t-text); }
+.snav-item.active { background: var(--t-tonal); color: var(--t-on-tonal); font-weight: 560; }
+.settings-main {
+  padding: 14px 18px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.s-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--t-border);
+  border-radius: 11px;
+  background: var(--t-raised);
+}
+.s-row b { display: block; font-size: 12px; font-weight: 580; }
+.s-row small { display: block; font-size: 11px; color: var(--t-muted); }
+.switch-pill {
+  width: 34px;
+  height: 19px;
+  border-radius: 999px;
+  background: var(--t-accent);
+  position: relative;
+  flex: none;
+}
+.switch-pill::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--t-on-accent);
+}
+
+/* Command Palette Overlay */
+.palette-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(14, 5, 13, 0.56);
+  backdrop-filter: blur(4px);
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 56px;
+}
+.palette-card {
+  width: min(460px, calc(100% - 28px));
+  background: var(--t-raised);
+  border: 1px solid var(--t-border-strong);
+  border-radius: 14px;
+  box-shadow: var(--t-shadow);
+  overflow: hidden;
+}
+.palette-input {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--t-border);
+  font-size: 13px;
+  color: var(--t-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.palette-list { padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.palette-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.palette-row.active, .palette-row:hover { background: var(--t-hover); }
+.palette-row kbd {
+  font: 500 10px/1 var(--t-mono);
+  color: var(--t-dim);
+}
+
+/* Phone Responsive Mode */
+.is-phone .dar-frame { grid-template-columns: 1fr; }
+.is-phone .dar-rail, .is-phone .dar-topbar, .is-phone .agent-nav, .is-phone .floating-details, .is-phone .right-panel-sheet, .is-phone .thread-header { display: none !important; }
+.is-phone .dar-body { padding: 0; }
+.is-phone .agent-grid { grid-template-columns: 1fr; gap: 0; }
+.is-phone .center-sheet { border-radius: 0; border: 0; }
+.is-phone .has-floating-card .conv-col { padding-right: 0; }
+
+.phone-chrome-top {
+  display: none;
+  flex-direction: column;
+  background: var(--t-panel);
+  border-bottom: 1px solid var(--t-border);
+  flex: none;
+}
+.is-phone .phone-chrome-top { display: flex; }
+.phone-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px;
+}
+.phone-search-pill {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--t-border);
+  background: var(--t-bg);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--t-muted);
+}
+.phone-tabs {
+  display: flex;
+  padding: 0 6px;
+}
+.phone-tab {
+  flex: 1;
+  text-align: center;
+  padding: 8px 4px;
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--t-muted);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.phone-tab.active { color: var(--t-accent); border-bottom-color: var(--t-accent); }
+
+/* Phone Settings Drill-Down (replaces desktop 2-col grid on phones) */
+.phone-subbar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--t-border);
+  background: var(--t-panel);
+  flex: none;
+}
+.phone-subbar strong {
+  font-size: 14px;
+  font-weight: 620;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.is-phone .phone-subbar { display: flex; }
+.is-phone .settings-grid {
+  display: flex;
+  flex-direction: column;
+}
+.is-phone .settings-nav {
+  display: none;
+}
+.is-phone .settings-main {
+  padding: 12px 14px 20px;
+  gap: 10px;
+}
+.is-phone .s-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.is-phone .s-row.inline-switch {
+  flex-direction: row;
+  align-items: center;
+}
+.phone-settings-hub {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 24px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.is-phone .phone-settings-hub.is-active { display: flex; }
+.is-phone .settings-grid.hub-open { display: none; }
+
+.ps-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ps-group-title {
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--t-dim);
+  padding: 0 4px 2px;
+}
+.ps-card {
+  border: 1px solid var(--t-border);
+  border-radius: 13px;
+  background: var(--t-raised);
+  overflow: hidden;
+}
+.ps-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--t-border);
+  cursor: pointer;
+}
+.ps-item:last-child { border-bottom: 0; }
+.ps-item:hover { background: var(--t-hover); }
+.ps-ico {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--t-bg);
+  color: var(--t-accent);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.ps-ico svg { width: 14px; height: 14px; }
+.ps-meta { flex: 1; min-width: 0; }
+.ps-meta b { display: block; font-size: 12.5px; font-weight: 560; color: var(--t-text); }
+.ps-meta small { display: block; font-size: 11px; color: var(--t-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ps-chev { color: var(--t-dim); font-size: 14px; }
+
+/* Phone Home (Threads List inside Dar's unchanged shared mobile frame) */
+.phone-home {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--t-bg);
+  position: relative;
+}
+.is-phone.phone-on-home .phone-home { display: flex; }
+.is-phone.phone-on-home .agent-grid,
+.is-phone.phone-on-home .phone-chrome-top { display: none !important; }
+.phone-home-top {
+  padding: 10px 12px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.phone-chip-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.phone-chip {
+  flex: none;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--t-border);
+  background: var(--t-panel);
+  color: var(--t-muted);
+  font-size: 11.5px;
+  font-weight: 540;
+  cursor: pointer;
+}
+.phone-chip.active {
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  border-color: transparent;
+}
+.phone-home-sheet {
+  flex: 1;
+  min-height: 0;
+  margin: 0 8px;
+  background: var(--t-panel);
+  border: 1px solid var(--t-border);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  padding: 10px 10px 68px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.phone-fab {
+  position: absolute;
+  right: 16px;
+  bottom: 74px;
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
+  border: 0;
+  background: var(--t-tonal);
+  color: var(--t-on-tonal);
+  box-shadow: var(--t-shadow);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 6;
+}
+
+/* Dar's real shared bottom bar: ONLY shown on Agent's Threads home (hidden inside full-screen threads/settings, matching frame.css) */
+.phone-bottom-nav {
+  display: none;
+  height: 60px;
+  border-top: 1px solid var(--t-border);
+  background: var(--t-bg);
+  align-items: center;
+  justify-content: space-around;
+  padding: 4px 6px;
+  flex: none;
+}
+.is-phone.phone-on-home .phone-bottom-nav { display: flex; }
+.pnav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--t-muted);
+}
+.pnav-pill {
+  width: 44px;
+  height: 26px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+}
+.pnav-pill svg { width: 16px; height: 16px; }
+.pnav-item.active { color: var(--t-text); font-weight: 600; }
+.pnav-item.active .pnav-pill { background: var(--t-tonal); color: var(--t-on-tonal); }
+
+.is-phone .composer-dock { padding: 6px 10px 10px; }
+.is-phone .composer-bar { gap: 3px; }
+.is-phone .c-pill { padding: 4px 6px; font-size: 11px; }
+.is-phone .ctx-ring { display: none; }
+.is-phone .kpi-grid { grid-template-columns: 1fr; }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock-root">
+  <!-- Interactive Mockup Switcher -->
+  <div class="mock-toolbar" role="toolbar" aria-label="Mockup view controls">
+    <div class="mock-tabs" id="viewTabs">
+      <button class="mock-btn active" data-view="thread">Active Thread</button>
+      <button class="mock-btn" data-view="split">Multi-Surface Panel</button>
+      <button class="mock-btn" data-view="draft">New Thread</button>
+      <button class="mock-btn" data-view="question">Question Card</button>
+      <button class="mock-btn" data-view="usage">Usage</button>
+      <button class="mock-btn" data-view="prs">PRs &amp; Issues</button>
+      <button class="mock-btn" data-view="automations">Automations</button>
+      <button class="mock-btn" data-view="settings">Settings</button>
+    </div>
+    <div class="mock-toggles">
+      <button class="mock-btn" id="btnModel">Model Picker</button>
+      <button class="mock-btn" id="btnTerm">Terminal</button>
+      <button class="mock-btn" id="btnPalette">Ctrl+P</button>
+      <button class="mock-btn" id="btnPhone">Phone</button>
+      <button class="mock-btn" id="btnTheme">Light</button>
+    </div>
+  </div>
+
+  <!-- Dar Application Frame -->
+  <div class="dar-stage" id="stage" data-theme="dark">
+    <div class="dar-frame">
+      <!-- Dar Shared App Rail -->
+      <aside class="dar-rail" aria-label="Dar apps">
+        <div class="dar-brand">D</div>
+        <div class="rail-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span>Files</span>
+        </div>
+        <div class="rail-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg>
+          <span>Notes</span>
+        </div>
+        <div class="rail-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>
+          <span>Mail</span>
+        </div>
+        <div class="rail-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Chat</span>
+        </div>
+        <div class="rail-item active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>
+          <span>Agent</span>
+        </div>
+        <div class="rail-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg>
+          <span>Git</span>
+        </div>
+        <div class="rail-spacer"></div>
+        <div class="rail-avatar">LH</div>
+      </aside>
+
+      <!-- Main Dar Column -->
+      <div class="dar-body">
+        <!-- Phone Chrome (inside full-screen thread) -->
+        <div class="phone-chrome-top" id="phoneThreadChrome">
+          <div class="phone-bar">
+            <button class="icon-btn" id="phoneBackHome" aria-label="Back to threads">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div class="phone-search-pill">
+              <span class="proj-mark">T</span>
+              <span style="color:var(--t-text);font-weight:580;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Offline topo tile cache</span>
+            </div>
+            <button class="icon-btn" data-nav-view="settings" title="Settings">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9"/></svg>
+            </button>
+          </div>
+          <div class="phone-tabs">
+            <div class="phone-tab active">Chat</div>
+            <div class="phone-tab">Details</div>
+            <div class="phone-tab">Diff (3)</div>
+            <div class="phone-tab">Files</div>
+            <div class="phone-tab">Term</div>
+          </div>
+        </div>
+
+        <!-- Phone Home (Threads List inside Dar's unchanged shared frame) -->
+        <div class="phone-home" id="phoneHome">
+          <div class="phone-home-top">
+            <div class="phone-search-pill">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <span>Search all apps…</span>
+              <div class="rail-avatar" style="margin-left:auto;width:24px;height:24px;font-size:9.5px">LH</div>
+            </div>
+            <div class="phone-chip-strip">
+              <button class="phone-chip active">Threads</button>
+              <button class="phone-chip" data-phone-open="prs">PRs &amp; Issues</button>
+              <button class="phone-chip" data-phone-open="automations">Automations</button>
+              <button class="phone-chip" data-phone-open="usage">Usage</button>
+              <button class="phone-chip" data-phone-open="settings">Settings</button>
+            </div>
+          </div>
+          <div class="phone-home-sheet">
+            <div class="nav-section-label"><span>Pinned</span></div>
+            <div class="thread-row active" data-phone-open="thread">
+              <div class="thread-row-top"><span class="proj-mark">T</span><span>trail-maps</span><span class="thread-age">4m</span></div>
+              <div class="thread-row-title">Offline topo tile cache</div>
+              <div class="thread-row-sub"><span class="thread-branch">agent/tile-cache</span><span class="prov-dot"><i></i>Codex</span></div>
+            </div>
+            <div class="nav-section-label"><span>Recent</span></div>
+            <div class="thread-row" data-phone-open="thread">
+              <div class="thread-row-top"><span class="proj-mark m-blue">D</span><span>dar</span><span class="unread-pip"></span><span class="thread-age">24m</span></div>
+              <div class="thread-row-title">Mail inline reply dock</div>
+              <div class="thread-row-sub"><span class="thread-branch">rust</span><span class="prov-dot claude"><i></i>Claude</span></div>
+            </div>
+            <div class="thread-row" data-phone-open="question">
+              <div class="thread-row-top"><span class="proj-mark m-green">W</span><span>website</span><span class="thread-age">1h</span></div>
+              <div class="thread-row-title">Pricing table copy audit</div>
+              <div class="thread-row-sub"><span class="thread-branch">main</span><span class="prov-dot working"><i></i>Needs input</span></div>
+            </div>
+            <div class="nav-shelves" style="margin-top:auto">
+              <div class="shelf-row"><span><span class="shelf-pulse"></span>Working</span><span>1</span></div>
+              <div class="shelf-row"><span>› Snoozed</span><span>2</span></div>
+              <div class="shelf-row"><span>› Settled</span><span>18</span></div>
+            </div>
+          </div>
+          <button class="phone-fab" data-phone-open="draft" title="New thread">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+
+        <!-- Desktop Top Bar -->
+        <header class="dar-topbar">
+          <div class="dar-app-title">Agent</div>
+          <div class="dar-global-search" id="triggerPaletteFromSearch">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <span>Search all apps…</span>
+            <kbd>Ctrl K</kbd>
+          </div>
+          <div class="dar-topbar-right">
+            <button class="icon-btn" data-nav-view="settings" title="Agent settings">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- Agent Workspace -->
+        <div class="agent-grid">
+          <!-- Left Sidebar -->
+          <aside class="agent-nav">
+            <button class="create-btn" data-nav-view="draft">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              New thread
+            </button>
+
+            <div class="nav-controls">
+              <div class="nav-search" title="Filter threads">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <span>Filter…</span>
+              </div>
+              <button class="icon-btn" title="Filter by project or provider">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+              </button>
+              <button class="icon-btn" title="Add project">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 10v6M9 13h6"/><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              </button>
+            </div>
+
+            <div class="nav-scroll">
+              <div class="nav-section-label"><span>Pinned</span></div>
+              <div class="thread-row active" data-nav-view="thread">
+                <div class="thread-row-top">
+                  <span class="proj-mark">T</span>
+                  <span>trail-maps</span>
+                  <span class="thread-age">4m</span>
+                </div>
+                <div class="thread-row-title">Offline topo tile cache</div>
+                <div class="thread-row-sub">
+                  <span class="thread-branch">agent/tile-cache</span>
+                  <span class="prov-dot"><i></i>Codex</span>
+                </div>
+              </div>
+
+              <div class="nav-section-label"><span>Recent</span></div>
+              <div class="thread-row" data-nav-view="split">
+                <div class="thread-row-top">
+                  <span class="proj-mark m-blue">D</span>
+                  <span>dar</span>
+                  <span class="unread-pip"></span>
+                  <span class="thread-age">24m</span>
+                </div>
+                <div class="thread-row-title">Mail inline reply dock</div>
+                <div class="thread-row-sub">
+                  <span class="thread-branch">rust</span>
+                  <span class="prov-dot claude"><i></i>Claude</span>
+                </div>
+              </div>
+
+              <div class="thread-row" data-nav-view="question">
+                <div class="thread-row-top">
+                  <span class="proj-mark m-green">W</span>
+                  <span>website</span>
+                  <span class="thread-age">1h</span>
+                </div>
+                <div class="thread-row-title">Pricing table copy audit</div>
+                <div class="thread-row-sub">
+                  <span class="thread-branch">main</span>
+                  <span class="prov-dot working"><i></i>Needs input</span>
+                </div>
+              </div>
+
+              <div class="thread-row" data-nav-view="thread">
+                <div class="thread-row-top">
+                  <span class="proj-mark m-warn">S</span>
+                  <span>No project</span>
+                  <span class="thread-age">3h</span>
+                </div>
+                <div class="thread-row-title">Compare SQLite vs STDB</div>
+                <div class="thread-row-sub">
+                  <span class="thread-branch">scratch</span>
+                  <span class="prov-dot claude"><i></i>Claude</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Shelves -->
+            <div class="nav-shelves">
+              <div class="shelf-row"><span><span class="shelf-pulse"></span>Working</span><span>1</span></div>
+              <div class="shelf-row"><span>› Snoozed</span><span>2</span></div>
+              <div class="shelf-row"><span>› Settled</span><span>18</span></div>
+            </div>
+
+            <!-- T3 Utility Dock (no remote/cloud items) -->
+            <div class="nav-utility-bar">
+              <button class="util-btn" data-nav-view="prs" title="Pull requests &amp; issues">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/></svg>
+                <span class="util-badge"></span>
+              </button>
+              <button class="util-btn" data-nav-view="automations" title="Scheduled tasks &amp; workflows">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              </button>
+              <button class="util-btn" data-nav-view="usage" title="Usage &amp; limits">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+              </button>
+              <button class="util-btn" data-nav-view="settings" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9"/></svg>
+              </button>
+            </div>
+          </aside>
+
+          <!-- Workspace Sheets -->
+          <div class="workspace-area">
+            <!-- Center Sheet -->
+            <section class="sheet center-sheet" id="centerSheet">
+
+              <!-- VIEW 1 & 2 & 4: Active Thread / Split / Question -->
+              <div id="panelConversation" style="display:flex;flex-direction:column;flex:1;min-height:0">
+                <div class="thread-header">
+                  <div class="crumb">
+                    <span class="crumb-proj"><span class="proj-mark">T</span>trail-maps</span>
+                    <span class="crumb-sep">/</span>
+                    <span class="crumb-title" title="Double-click to rename, click for thread actions">Offline topo tile cache</span>
+                  </div>
+                  <div class="header-tools">
+                    <button class="icon-btn" id="hdrToggleDetails" title="Thread details">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>
+                    </button>
+                    <button class="icon-btn" id="hdrToggleTerm" title="Toggle terminal drawer">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m4 17 6-6-6-6M12 19h8"/></svg>
+                    </button>
+                    <button class="icon-btn" id="hdrToggleRight" title="Toggle right surfaces panel">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="conv-stage has-floating-card" id="convStage">
+                  <!-- Floating 2-Group Details Card (visible when Right Panel is closed) -->
+                  <aside class="floating-details" id="floatingDetails" aria-label="Thread details">
+                    <div class="fd-group">
+                      <div class="fd-row">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                        <span class="fd-label">Working copy</span>
+                        <span class="fd-val">⌄</span>
+                      </div>
+                      <div class="fd-row">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                        <span class="fd-label">Open in Files</span>
+                        <span class="fd-val">›</span>
+                      </div>
+                      <div class="fd-row" id="fdRunScript">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                        <span class="fd-label">Run: test-tiles</span>
+                        <span class="fd-val">⌄</span>
+                      </div>
+                    </div>
+                    <div class="fd-group">
+                      <div class="fd-row">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg>
+                        <span class="fd-label" style="font-family:var(--t-mono);font-size:10.5px">agent/tile-cache</span>
+                        <span class="fd-val">⌄</span>
+                      </div>
+                      <div class="fd-row" data-open-rp="pr">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/></svg>
+                        <span class="fd-label">PR #14 · Ready</span>
+                        <span class="fd-val" style="color:var(--t-success)">●</span>
+                      </div>
+                      <div class="fd-row" data-open-rp="diff">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M12 11v6M9 14h6"/></svg>
+                        <span class="fd-label">Changes</span>
+                        <span class="stat-add">+48</span>
+                        <span class="stat-del">-12</span>
+                      </div>
+                    </div>
+                  </aside>
+
+                  <!-- Timeline -->
+                  <div class="conv-scroll">
+                    <div class="conv-col">
+                      <div class="user-bubble">
+                        Cache offline topo tiles in <span class="inline-chip file">@src/cache.rs</span> with LRU eviction and run <span class="inline-chip skill">$verify-tiles</span>.
+                      </div>
+
+                      <!-- Collapsible Work Log -->
+                      <div class="work-log">
+                        <div class="work-toggle">
+                          <span>⌄ Worked for 14s · 5 steps</span>
+                        </div>
+                        <div class="work-steps">
+                          <div class="work-step"><span>⌕</span><span>Read <code>src/cache.rs</code> and <code>src/tile_index.rs</code></span></div>
+                          <div class="work-step"><span>✎</span><span>Edited <code>src/cache.rs</code> (+39 −9)</span></div>
+                          <div class="work-step"><span>⌘</span><span>Ran <code>cargo test tile_cache</code> — 12 passed</span></div>
+                        </div>
+                      </div>
+
+                      <!-- Proposed Plan Card (collapsible / implementable) -->
+                      <div class="plan-card" id="planCard">
+                        <div class="plan-card-head">
+                          <span>Proposed plan · LRU tile eviction</span>
+                          <span style="margin-left:auto;font-weight:400;color:var(--t-muted);font-size:10.5px">3 steps</span>
+                        </div>
+                        <div class="plan-card-body">
+                          <div><span style="color:var(--t-success)">✓</span><span>Add bounded 256 MiB index in <code>src/cache.rs</code></span></div>
+                          <div><span style="color:var(--t-success)">✓</span><span>Persist hit timestamps on tile reads</span></div>
+                          <div><span style="color:var(--t-success)">✓</span><span>Add eviction &amp; corruption recovery tests</span></div>
+                        </div>
+                      </div>
+
+                      <!-- Changed Files Tree Card -->
+                      <div class="changed-card">
+                        <div class="changed-head">
+                          <strong>3 changed files</strong>
+                          <span class="stat-add">+48</span>
+                          <span class="stat-del">-12</span>
+                          <button class="changed-action" data-open-rp="diff">Open diff</button>
+                        </div>
+                        <div class="changed-tree">
+                          <div class="changed-row"><span>⌄</span><span>src/</span><span class="stats"><span class="stat-add">+44</span><span class="stat-del">-10</span></span></div>
+                          <div class="changed-row indent" data-open-rp="diff"><span>M</span><span>cache.rs</span><span class="stats"><span class="stat-add">+39</span><span class="stat-del">-9</span></span></div>
+                          <div class="changed-row indent" data-open-rp="files"><span>M</span><span>tile_index.rs</span><span class="stats"><span class="stat-add">+5</span><span class="stat-del">-1</span></span></div>
+                          <div class="changed-row" data-open-rp="diff"><span>M</span><span>README.md</span><span class="stats"><span class="stat-add">+4</span><span class="stat-del">-2</span></span></div>
+                        </div>
+                      </div>
+
+                      <!-- Assistant Message with clickable File Citation -->
+                      <div class="assistant-prose">
+                        <p>Added bounded LRU eviction in <span class="inline-chip file" data-open-rp="files">src/cache.rs:42</span> and verified all 12 cache tests pass. Corrupt headers now trigger an atomic rebuild without dropping pinned regions.</p>
+                        <div class="turn-footer">
+                          <span>Copy</span>
+                          <span>·</span>
+                          <span>Fork</span>
+                          <span>·</span>
+                          <span>Revert checkpoint</span>
+                          <span>·</span>
+                          <span data-open-rp="sidechat">Ask in side chat</span>
+                        </div>
+                      </div>
+
+                      <!-- Subagent Lineage Pill -->
+                      <div class="subagent-bar" data-open-rp="sidechat">
+                        <span>↳ Subagent</span>
+                        <strong>Tile benchmark verifier</strong>
+                        <span>· finished in 6s</span>
+                        <span class="pill-open">Inspect ›</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Composer Dock -->
+                  <div class="composer-dock">
+                    <div class="composer-wrap">
+                      <!-- Redesigned Question Card docked right above composer (T3 parity) -->
+                      <div class="q-card hidden" id="questionCard" style="margin-bottom:8px">
+                        <div class="q-card-head">
+                          <span>Codex needs your input · 1 of 1</span>
+                          <span style="color:var(--t-muted);font-weight:450">Cache policy</span>
+                        </div>
+                        <div class="q-card-prompt">When disk space drops below 500 MiB, how should pinned hiking regions behave?</div>
+                        <div class="q-options">
+                          <div class="q-opt selected">
+                            <span class="q-radio"></span>
+                            <div class="q-opt-text">
+                              <b>Keep pinned regions, warn in UI</b>
+                              <small>Evict unpinned tiles first and surface a storage notice.</small>
+                            </div>
+                            <kbd class="q-key">1</kbd>
+                          </div>
+                          <div class="q-opt">
+                            <span class="q-radio"></span>
+                            <div class="q-opt-text">
+                              <b>Evict oldest pinned region automatically</b>
+                              <small>Guarantees the 256 MiB ceiling without user action.</small>
+                            </div>
+                            <kbd class="q-key">2</kbd>
+                          </div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
+                          <input type="text" placeholder="Or type a custom instruction…" style="flex:1;min-width:0;border:1px solid var(--t-border);background:var(--t-panel);color:var(--t-text);border-radius:8px;padding:6px 9px;font-size:11.5px;outline:0">
+                          <button class="btn-xs primary" style="padding:7px 12px;font-size:11.5px">Send answer</button>
+                        </div>
+                      </div>
+
+                      <!-- Multi-item Queue Tray -->
+                      <div class="queue-tray" id="queueTray">
+                        <strong>Queued (1)</strong>
+                        <span class="q-text">Add offline map export to Files folder</span>
+                        <button class="queue-pill">Steer</button>
+                        <button class="queue-pill">Edit</button>
+                      </div>
+
+                      <div class="composer-box">
+                        <!-- Attached Context Chips (Files, Terminal Selection, Inline Diff Comment) -->
+                        <div class="composer-chips">
+                          <span class="ctx-chip">@src/cache.rs ×</span>
+                          <span class="ctx-chip term">&gt;_ term:12-18 ×</span>
+                          <span class="ctx-chip comment">💬 cache.rs:58 ×</span>
+                        </div>
+
+                        <div class="composer-input">Ask anything. @ files, $ skills, / commands</div>
+
+                        <div class="composer-bar">
+                          <button class="icon-btn" title="Attach image or file">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.6 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.9l8.5-8.5"/></svg>
+                          </button>
+                          <button class="c-pill plan-on" title="Plan mode">Plan</button>
+                          <button class="c-pill" title="Prompt stash (2 saved)">Stash · 2</button>
+                          <div class="c-spacer"></div>
+                          <span class="ctx-ring" title="Context window usage">◔ 34%</span>
+                          <button class="c-pill" id="composerModelBtn" title="Choose model &amp; thinking effort">
+                            <span style="color:var(--t-accent)">✦</span>
+                            <span>GPT-5.4 · High ⌄</span>
+                          </button>
+                          <button class="icon-btn" title="Voice dictation">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>
+                          </button>
+                          <button class="send-btn" title="Send">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Two-Column Model & Effort Picker Popover -->
+                    <div class="model-popover hidden" id="modelPopover" role="dialog" aria-label="Model picker">
+                      <div class="mp-rail">
+                        <button class="mp-rail-btn active" title="Starred">★</button>
+                        <button class="mp-rail-btn" title="Codex">◎</button>
+                        <button class="mp-rail-btn" title="Claude Code">✳</button>
+                      </div>
+                      <div class="mp-models">
+                        <input class="mp-search" placeholder="Search models…" readonly>
+                        <div class="mp-item selected">
+                          <span style="color:var(--t-accent)">◎</span>
+                          <span>GPT-5.4 Codex</span>
+                          <span class="check">✓</span>
+                        </div>
+                        <div class="mp-item">
+                          <span style="color:var(--t-warning)">✳</span>
+                          <span>Claude Opus 4.5</span>
+                        </div>
+                        <div class="mp-item">
+                          <span style="color:var(--t-warning)">✳</span>
+                          <span>Claude Sonnet 4.5</span>
+                        </div>
+                        <div class="mp-item">
+                          <span style="color:var(--t-accent)">◎</span>
+                          <span>GPT-5.3 Codex Mini</span>
+                        </div>
+                        <div class="mp-footer">
+                          <span>Compare models</span>
+                          <span style="color:var(--t-dim)">Off</span>
+                        </div>
+                      </div>
+                      <div class="mp-effort">
+                        <div class="mp-effort-head"><span>Thinking</span><span>5.4</span></div>
+                        <div class="mp-eff-opt"><span>Low</span></div>
+                        <div class="mp-eff-opt"><span>Medium</span></div>
+                        <div class="mp-eff-opt selected"><span>High</span><span>✓</span></div>
+                        <div class="mp-eff-opt"><span>Extra</span></div>
+                        <div class="mp-footer">
+                          <span>Sandbox</span>
+                          <span style="color:var(--t-success)">Isolated</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Bottom Multi-Tab Split Terminal Drawer -->
+                <div class="term-drawer hidden" id="termDrawer">
+                  <div class="term-bar">
+                    <span class="term-tab active">&gt;_ shell 1</span>
+                    <span class="term-tab">▶ test-tiles</span>
+                    <button class="icon-btn" style="width:22px;height:22px" title="New terminal tab">+</button>
+                    <div style="flex:1"></div>
+                    <button class="btn-xs" title="Attach selection to composer">Send to chat</button>
+                    <button class="icon-btn" style="width:22px;height:22px" title="Split terminal">◫</button>
+                    <button class="icon-btn" style="width:22px;height:22px" id="closeTermBtn" title="Close">×</button>
+                  </div>
+                  <div class="term-panes">
+                    <div class="term-pane">
+                      <div><span class="t-prompt">trail-maps</span> <span class="t-dim">(agent/tile-cache)</span> $ cargo test</div>
+                      <div class="t-ok">test cache::tests::lru_evicts_oldest ... ok</div>
+                      <div class="t-ok">test cache::tests::corrupt_header_recovers ... ok</div>
+                      <div class="t-dim">test result: ok. 12 passed; 0 failed</div>
+                    </div>
+                    <div class="term-pane">
+                      <div><span class="t-prompt">script:test-tiles</span> $ ./scripts/verify.sh</div>
+                      <div>Checked 4,096 tiles (184 MiB / 256 MiB)</div>
+                      <div class="t-ok">✓ All checksums valid</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- VIEW 3: New Thread Draft -->
+              <div id="panelDraft" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+                <div class="thread-header">
+                  <div class="crumb">
+                    <span class="crumb-proj"><span class="proj-mark">T</span>trail-maps</span>
+                    <span class="crumb-sep">/</span>
+                    <span class="crumb-title">New thread</span>
+                  </div>
+                </div>
+                <div class="draft-view">
+                  <h2>What should we build in <span style="border-bottom:1px dotted var(--t-muted)">trail-maps ⌄</span>?</h2>
+                  <div class="draft-sub">or start without a project</div>
+                  <div class="composer-wrap" style="width:100%">
+                    <div class="composer-box">
+                      <div class="composer-input" style="min-height:40px">Ask anything. @ files, $ skills, / commands</div>
+                      <div class="composer-bar">
+                        <button class="icon-btn" title="Attach">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.6 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.9l8.5-8.5"/></svg>
+                        </button>
+                        <button class="c-pill">Plan</button>
+                        <div class="c-spacer"></div>
+                        <button class="c-pill"><span style="color:var(--t-warning)">✳</span> Claude Opus 4.5 · Medium ⌄</button>
+                        <button class="icon-btn" title="Voice">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>
+                        </button>
+                        <button class="send-btn">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="draft-strip">
+                      <div class="draft-strip-group">
+                        <span class="draft-strip-btn">▣ Isolated working copy ⌄</span>
+                        <span class="draft-strip-btn">⑂ New worktree</span>
+                      </div>
+                      <div class="draft-strip-group">
+                        <span class="draft-strip-btn" style="font-family:var(--t-mono)">main ⌄</span>
+                        <span class="draft-strip-btn">🛡 Sandboxed</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- VIEW 5: Usage & Limits -->
+              <div id="panelUsage" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+                <div class="thread-header">
+                  <div class="crumb"><span class="crumb-title">Usage &amp; limits</span></div>
+                  <div class="seg"><button class="active">7 days</button><button>30 days</button></div>
+                </div>
+                <div class="page-body">
+                  <div class="kpi-grid">
+                    <div class="kpi-card">
+                      <small>Codex · 5 hour window</small>
+                      <strong>42%</strong>
+                      <div class="meter-bar"><div class="meter-fill" style="width:42%"></div></div>
+                    </div>
+                    <div class="kpi-card">
+                      <small>Claude Code · 5 hour</small>
+                      <strong>28%</strong>
+                      <div class="meter-bar"><div class="meter-fill ok" style="width:28%"></div></div>
+                    </div>
+                    <div class="kpi-card">
+                      <small>Weekly tokens (both)</small>
+                      <strong>4.8M</strong>
+                      <div class="meter-bar"><div class="meter-fill warn" style="width:64%"></div></div>
+                    </div>
+                  </div>
+                  <div class="chart-bars" aria-label="Daily token usage">
+                    <div class="bar-col"><div class="bar-stack" style="height:32%"></div><small>Thu</small></div>
+                    <div class="bar-col"><div class="bar-stack" style="height:56%"></div><small>Fri</small></div>
+                    <div class="bar-col"><div class="bar-stack" style="height:44%"></div><small>Sat</small></div>
+                    <div class="bar-col"><div class="bar-stack" style="height:78%"></div><small>Sun</small></div>
+                    <div class="bar-col"><div class="bar-stack" style="height:62%"></div><small>Mon</small></div>
+                    <div class="bar-col"><div class="bar-stack" style="height:90%"></div><small>Tue</small></div>
+                    <div class="bar-col"><div class="bar-stack" style="height:50%"></div><small>Today</small></div>
+                  </div>
+                  <div class="s-row">
+                    <div><b>GPT-5.4 Codex</b><small>18 threads · 2.9M input · 410K output</small></div>
+                    <span class="stat-add">Pro plan</span>
+                  </div>
+                  <div class="s-row">
+                    <div><b>Claude Opus 4.5</b><small>11 threads · 1.2M input · 290K output</small></div>
+                    <span style="color:var(--t-warning);font-size:11px">Max plan</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- VIEW 6: PRs & Issues (integrated with Dar Git) -->
+              <div id="panelPrs" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+                <div class="thread-header">
+                  <div class="crumb"><span class="crumb-title">Pull requests &amp; issues</span></div>
+                  <div class="seg"><button class="active">Pull requests (2)</button><button>Issues (4)</button></div>
+                </div>
+                <div class="page-body">
+                  <div class="s-row">
+                    <div>
+                      <b>#14 Offline topo tile LRU cache</b>
+                      <small>trail-maps · agent/tile-cache → main · Linked to 1 thread</small>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span class="stat-add">+48</span><span class="stat-del">-12</span>
+                      <button class="btn-xs primary" data-nav-view="split">Review</button>
+                    </div>
+                  </div>
+                  <div class="s-row">
+                    <div>
+                      <b>#12 Mail inline reply dock &amp; shortcuts</b>
+                      <small>dar · rust → main · Review guide ready</small>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span class="stat-add">+312</span><span class="stat-del">-84</span>
+                      <button class="btn-xs">Open thread</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- VIEW 7: Automations (Scheduled Tasks & Workflows) -->
+              <div id="panelAutomations" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+                <div class="thread-header">
+                  <div class="crumb"><span class="crumb-title">Automations</span></div>
+                  <button class="btn-xs primary">+ New schedule</button>
+                </div>
+                <div class="page-body">
+                  <div class="s-row">
+                    <div>
+                      <b>Nightly test &amp; dependency audit</b>
+                      <small>dar · Daily at 02:00 · Next run in 4h · Codex High</small>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <button class="btn-xs">Run now</button>
+                      <span class="switch-pill"></span>
+                    </div>
+                  </div>
+                  <div class="s-row">
+                    <div>
+                      <b>Workflow: PR review tour</b>
+                      <small>trail-maps · 3-stage pipeline (diff → tests → guide)</small>
+                    </div>
+                    <button class="btn-xs">Open workflow</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- VIEW 8: Full Searchable Settings (Desktop 2-col, Phone Hub -> Section drill-down) -->
+              <div id="panelSettings" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+                <div class="thread-header">
+                  <div class="crumb"><span class="crumb-title">Agent settings</span></div>
+                  <button class="btn-xs" data-nav-view="thread">Back to thread</button>
+                </div>
+                <div class="phone-subbar" id="phoneSettingsBar">
+                  <button class="icon-btn" id="phoneSettingsBack" aria-label="Back">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+                  </button>
+                  <strong id="phoneSettingsTitle">Agent settings</strong>
+                </div>
+
+                <!-- Phone Settings Hub (clean native drill-down list with live summaries) -->
+                <div class="phone-settings-hub is-active" id="phoneSettingsHub">
+                  <div class="phone-search-pill" style="flex:none">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    <span>Search settings…</span>
+                  </div>
+                  <div class="ps-group">
+                    <div class="ps-group-title">Agents</div>
+                    <div class="ps-card">
+                      <div class="ps-item" data-ps-open="Providers &amp; models">
+                        <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg></div>
+                        <div class="ps-meta"><b>Providers &amp; models</b><small>Codex Pro · Claude Max · 4 active</small></div>
+                        <span class="ps-chev">›</span>
+                      </div>
+                      <div class="ps-item" data-ps-open="Chat &amp; composer">
+                        <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+                        <div class="ps-meta"><b>Chat &amp; composer</b><small>Enter sends · Queue while running</small></div>
+                        <span class="ps-chev">›</span>
+                      </div>
+                      <div class="ps-item" data-ps-open="Threads &amp; snooze">
+                        <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+                        <div class="ps-meta"><b>Threads &amp; snooze</b><small>Auto-settle merged · 3 presets</small></div>
+                        <span class="ps-chev">›</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="ps-group">
+                    <div class="ps-group-title">Code &amp; automations</div>
+                    <div class="ps-card">
+                      <div class="ps-item" data-ps-open="Diffs &amp; review">
+                        <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M12 11v6M9 14h6"/></svg></div>
+                        <div class="ps-meta"><b>Diffs &amp; review</b><small>Unified view · Inline comments</small></div>
+                        <span class="ps-chev">›</span>
+                      </div>
+                      <div class="ps-item" data-ps-open="Projects &amp; scripts">
+                        <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+                        <div class="ps-meta"><b>Projects &amp; scripts</b><small>3 projects · 2 saved scripts</small></div>
+                        <span class="ps-chev">›</span>
+                      </div>
+                      <div class="ps-item" data-ps-open="Worktrees &amp; Git">
+                        <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6a3 3 0 0 0 3 3h6"/></svg></div>
+                        <div class="ps-meta"><b>Worktrees &amp; Git</b><small>Branch prefix agent/ · Auto-clean</small></div>
+                        <span class="ps-chev">›</span>
+                      </div>
+                      <div class="ps-item" data-ps-open="Scheduled tasks">
+                        <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+                        <div class="ps-meta"><b>Scheduled tasks</b><small>1 active schedule</small></div>
+                        <span class="ps-chev">›</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="ps-group">
+                    <div class="ps-group-title">More</div>
+                    <div class="ps-card">
+                      <div class="ps-item" data-ps-open="Archived threads">
+                        <div class="ps-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/></svg></div>
+                        <div class="ps-meta"><b>Archived threads</b><small>4 archived</small></div>
+                        <span class="ps-chev">›</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-grid hub-open" id="settingsGrid">
+                  <nav class="settings-nav">
+                    <input class="snav-search" placeholder="Search settings…" readonly>
+                    <div class="snav-item active">Providers &amp; models</div>
+                    <div class="snav-item">Chat &amp; composer</div>
+                    <div class="snav-item">Diffs &amp; review</div>
+                    <div class="snav-item">Threads &amp; snooze</div>
+                    <div class="snav-item">Projects &amp; scripts</div>
+                    <div class="snav-item">Worktrees &amp; Git</div>
+                    <div class="snav-item">Scheduled tasks</div>
+                    <div class="snav-item">Keybindings</div>
+                    <div class="snav-item">Archived threads</div>
+                  </nav>
+                  <div class="settings-main">
+                    <div class="s-row">
+                      <div><b>Codex CLI</b><small>Connected · Pro plan · 4 models active</small></div>
+                      <button class="btn-xs">Refresh connection</button>
+                    </div>
+                    <div class="s-row">
+                      <div><b>Claude Code CLI</b><small>Connected · Max plan · Bubblewrap sandbox active</small></div>
+                      <button class="btn-xs">Refresh connection</button>
+                    </div>
+                    <div class="s-row">
+                      <div><b>Follow-up while running</b><small>Default action when pressing Enter during a turn</small></div>
+                      <div class="seg"><button class="active">Queue</button><button>Steer</button></div>
+                    </div>
+                    <div class="s-row inline-switch">
+                      <div><b>Auto-settle merged threads</b><small>Move threads to Settled when their branch merges</small></div>
+                      <span class="switch-pill"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Multi-Surface Right Panel (hidden in calm default view, open in Split view!) -->
+            <aside class="sheet right-panel-sheet hidden" id="rightPanel" aria-label="Workspace surfaces">
+              <div class="rp-tabbar">
+                <div class="rp-tab active" data-rp-tab="diff">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M12 11v6M9 14h6"/></svg>
+                  <span>Diff</span>
+                </div>
+                <div class="rp-tab" data-rp-tab="files">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                  <span>Files</span>
+                </div>
+                <div class="rp-tab" data-rp-tab="sidechat">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <span>Side chat</span>
+                </div>
+                <div class="rp-tab" data-rp-tab="launcher" title="Open a surface">
+                  <span>+</span>
+                </div>
+                <div style="flex:1"></div>
+                <button class="icon-btn" id="closeRightPanel" title="Close panel">×</button>
+              </div>
+
+              <!-- Surface: Diff (with tree, Unified/Split, inline line comment, Apply/Merge) -->
+              <div class="rp-body" data-rp-pane="diff">
+                <div class="diff-toolbar">
+                  <span style="font-weight:600">Working copy ⌄</span>
+                  <span class="stat-add">+48</span>
+                  <span class="stat-del">-12</span>
+                  <div style="flex:1"></div>
+                  <div class="seg">
+                    <button class="active">Unified</button>
+                    <button>Split</button>
+                  </div>
+                </div>
+                <div class="diff-split-grid">
+                  <div class="diff-tree">
+                    <div class="dt-row active">src/cache.rs</div>
+                    <div class="dt-row">src/tile_index.rs</div>
+                    <div class="dt-row">README.md</div>
+                  </div>
+                  <div class="diff-code">
+                    <div class="diff-file-bar">
+                      <span>src/cache.rs</span>
+                      <span style="color:var(--t-muted)">Revert</span>
+                    </div>
+                    <div class="diff-line"><span class="diff-ln">55</span><span> </span><span>pub fn insert(&amp;mut self, key: TileKey) {</span></div>
+                    <div class="diff-line del"><span class="diff-ln">56</span><span>-</span><span>    self.map.insert(key, now());</span></div>
+                    <div class="diff-line add"><span class="diff-ln">56</span><span>+</span><span>    self.evict_until(self.max_bytes);</span></div>
+                    <div class="diff-line add"><span class="diff-ln">57</span><span>+</span><span>    self.lru.put(key, now());</span></div>
+                    <div class="diff-line"><span class="diff-ln">58</span><span> </span><span>}</span></div>
+                    <div class="diff-comment-box">
+                      <div style="color:var(--t-muted);margin-bottom:4px">Comment on line 56</div>
+                      <div>Skip pinned tiles during eviction so offline routes stay intact.</div>
+                      <div class="dc-foot">
+                        <button class="btn-xs">Cancel</button>
+                        <button class="btn-xs primary">Attach to composer</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="diff-apply-bar">
+                  <span>Branch <code>agent/tile-cache</code></span>
+                  <div style="display:flex;gap:6px">
+                    <button class="btn-xs">Commit</button>
+                    <button class="btn-xs primary">Merge to Files</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Surface: Files Browser & Preview -->
+              <div class="rp-body hidden" data-rp-pane="files">
+                <div class="diff-toolbar">
+                  <span style="font-family:var(--t-mono)">trail-maps / src / cache.rs</span>
+                  <div style="flex:1"></div>
+                  <button class="btn-xs">Open in Files</button>
+                </div>
+                <div class="diff-split-grid">
+                  <div class="diff-tree">
+                    <div class="dt-row">README.md</div>
+                    <div class="dt-row">Cargo.toml</div>
+                    <div class="dt-row active">src/cache.rs</div>
+                    <div class="dt-row">src/tile_index.rs</div>
+                    <div class="dt-row">scripts/verify.sh</div>
+                  </div>
+                  <div class="diff-code" style="padding:8px">
+                    <div class="diff-line"><span class="diff-ln">41</span><span></span><span>/// Bounded LRU tile cache (256 MiB).</span></div>
+                    <div class="diff-line"><span class="diff-ln">42</span><span></span><span>pub struct TileCache {</span></div>
+                    <div class="diff-line"><span class="diff-ln">43</span><span></span><span>    max_bytes: u64,</span></div>
+                    <div class="diff-line"><span class="diff-ln">44</span><span></span><span>    pinned: HashSet&lt;RegionId&gt;,</span></div>
+                    <div class="diff-line"><span class="diff-ln">45</span><span></span><span>    lru: LruCache&lt;TileKey, TileEntry&gt;,</span></div>
+                    <div class="diff-line"><span class="diff-ln">46</span><span></span><span>}</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Surface: Side Chat -->
+              <div class="rp-body hidden" data-rp-pane="sidechat">
+                <div class="diff-toolbar">
+                  <span>Side chat · grounded in thread</span>
+                  <div style="flex:1"></div>
+                  <button class="btn-xs">Open in main</button>
+                </div>
+                <div style="padding:12px;display:flex;flex-direction:column;gap:10px;flex:1;overflow:auto">
+                  <div class="user-bubble" style="font-size:11.5px">Does LruCache allocate on every tile hit?</div>
+                  <div class="assistant-prose" style="font-size:11.5px">No — <code>get()</code> relinks nodes in place in O(1) without heap allocation.</div>
+                </div>
+                <div style="padding:8px 10px;border-top:1px solid var(--t-border)">
+                  <div style="border:1px solid var(--t-border);border-radius:10px;padding:7px 10px;font-size:11.5px;color:var(--t-muted);background:var(--t-raised)">Ask a quick side question…</div>
+                </div>
+              </div>
+
+              <!-- Surface: Open a Surface Launcher -->
+              <div class="rp-body hidden" data-rp-pane="launcher">
+                <div class="surface-launcher">
+                  <h4>Open a surface</h4>
+                  <div class="surface-list">
+                    <div class="surface-item" data-rp-pick="files"><span>▣</span><span>Files</span><kbd>F</kbd></div>
+                    <div class="surface-item" data-rp-pick="diff"><span>±</span><span>Diff</span><kbd>D</kbd></div>
+                    <div class="surface-item" id="pickTerminalSurface"><span>&gt;_</span><span>Terminal</span><kbd>T</kbd></div>
+                    <div class="surface-item" data-rp-pick="sidechat"><span>◌</span><span>Side chat</span><kbd>S</kbd></div>
+                    <div class="surface-item" data-nav-view="prs"><span>⑂</span><span>Pull request</span><kbd>P</kbd></div>
+                    <div class="surface-item" data-nav-view="prs"><span>◎</span><span>Linked items</span><kbd>L</kbd></div>
+                    <div class="surface-item"><span>⌘</span><span>Preview</span><kbd>B</kbd></div>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <!-- Dar's Unchanged Shared Mobile Bottom Bar (shown only on Agent Home, hidden inside full-screen threads/settings) -->
+        <nav class="phone-bottom-nav" aria-label="Dar shared bottom bar">
+          <div class="pnav-item">
+            <div class="pnav-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+            <span>Files</span>
+          </div>
+          <div class="pnav-item">
+            <div class="pnav-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg></div>
+            <span>Notes</span>
+          </div>
+          <div class="pnav-item">
+            <div class="pnav-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg></div>
+            <span>Mail</span>
+          </div>
+          <div class="pnav-item active">
+            <div class="pnav-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg></div>
+            <span>Agent</span>
+          </div>
+          <div class="pnav-item">
+            <div class="pnav-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></div>
+            <span>More</span>
+          </div>
+        </nav>
+      </div>
+    </div>
+
+    <!-- Command Palette Overlay -->
+    <div class="palette-backdrop hidden" id="paletteOverlay">
+      <div class="palette-card" role="dialog" aria-label="Command palette">
+        <div class="palette-input">
+          <span>⌕</span>
+          <span>Search commands, projects, threads, surfaces…</span>
+        </div>
+        <div class="palette-list">
+          <div class="palette-row active"><span>New thread in trail-maps</span><kbd>Ctrl+Shift+N</kbd></div>
+          <div class="palette-row"><span>New thread without a project</span><kbd>Ctrl+Alt+N</kbd></div>
+          <div class="palette-row"><span>Open Diff surface</span><kbd>D</kbd></div>
+          <div class="palette-row"><span>Open Files surface</span><kbd>F</kbd></div>
+          <div class="palette-row"><span>Start Side chat</span><kbd>S</kbd></div>
+          <div class="palette-row"><span>Find in current thread</span><kbd>Ctrl+F</kbd></div>
+          <div class="palette-row"><span>Regenerate thread title</span><kbd></kbd></div>
+          <div class="palette-row"><span>Link pull request or issue</span><kbd></kbd></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const convStage = document.getElementById('convStage');
+  const floatingDetails = document.getElementById('floatingDetails');
+  const rightPanel = document.getElementById('rightPanel');
+  const questionCard = document.getElementById('questionCard');
+  const planCard = document.getElementById('planCard');
+  const modelPopover = document.getElementById('modelPopover');
+  const termDrawer = document.getElementById('termDrawer');
+  const paletteOverlay = document.getElementById('paletteOverlay');
+
+  const panels = {
+    conversation: document.getElementById('panelConversation'),
+    draft: document.getElementById('panelDraft'),
+    usage: document.getElementById('panelUsage'),
+    prs: document.getElementById('panelPrs'),
+    automations: document.getElementById('panelAutomations'),
+    settings: document.getElementById('panelSettings'),
+  };
+
+  function showRightTab(name) {
+    rightPanel.classList.remove('hidden');
+    floatingDetails.classList.add('hidden');
+    convStage.classList.remove('has-floating-card');
+    document.querySelectorAll('[data-rp-tab]').forEach(t => t.classList.toggle('active', t.dataset.rpTab === name));
+    document.querySelectorAll('[data-rp-pane]').forEach(p => p.classList.toggle('hidden', p.dataset.rpPane !== name));
+  }
+
+  function closeRight() {
+    rightPanel.classList.add('hidden');
+    floatingDetails.classList.remove('hidden');
+    convStage.classList.add('has-floating-card');
+  }
+
+  const phoneThreadChrome = document.getElementById('phoneThreadChrome');
+  const phoneSettingsHub = document.getElementById('phoneSettingsHub');
+  const settingsGrid = document.getElementById('settingsGrid');
+  const phoneSettingsTitle = document.getElementById('phoneSettingsTitle');
+
+  function showPhoneSettingsHub() {
+    phoneSettingsHub.classList.add('is-active');
+    settingsGrid.classList.add('hub-open');
+    phoneSettingsTitle.textContent = 'Agent settings';
+  }
+
+  function openPhoneSettingsSection(title) {
+    phoneSettingsHub.classList.remove('is-active');
+    settingsGrid.classList.remove('hub-open');
+    phoneSettingsTitle.textContent = title;
+  }
+
+  function setView(view) {
+    stage.classList.remove('phone-on-home');
+    document.querySelectorAll('#viewTabs .mock-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+    Object.values(panels).forEach(p => p.classList.add('hidden'));
+    modelPopover.classList.add('hidden');
+    document.getElementById('btnModel').classList.remove('active');
+
+    const isConv = view === 'thread' || view === 'split' || view === 'question';
+    phoneThreadChrome.classList.toggle('hidden', !isConv);
+
+    if (isConv) {
+      panels.conversation.classList.remove('hidden');
+      const isQ = view === 'question';
+      questionCard.classList.toggle('hidden', !isQ);
+      document.getElementById('queueTray').classList.toggle('hidden', isQ);
+      planCard.classList.toggle('hidden', isQ);
+      if (view === 'split') showRightTab('diff');
+      else closeRight();
+    } else if (panels[view]) {
+      panels[view].classList.remove('hidden');
+      rightPanel.classList.add('hidden');
+      if (view === 'settings') showPhoneSettingsHub();
+    }
+    document.querySelectorAll('.util-btn').forEach(u => u.classList.toggle('active', u.dataset.navView === view));
+  }
+
+  document.querySelectorAll('#viewTabs .mock-btn').forEach(b => {
+    b.addEventListener('click', () => setView(b.dataset.view));
+  });
+  document.querySelectorAll('[data-nav-view]').forEach(el => {
+    el.addEventListener('click', () => setView(el.dataset.navView));
+  });
+  document.querySelectorAll('[data-open-rp]').forEach(el => {
+    el.addEventListener('click', () => {
+      setView('split');
+      showRightTab(el.dataset.openRp);
+    });
+  });
+  document.querySelectorAll('[data-rp-tab]').forEach(t => {
+    t.addEventListener('click', () => showRightTab(t.dataset.rpTab));
+  });
+  document.querySelectorAll('[data-rp-pick]').forEach(t => {
+    t.addEventListener('click', () => showRightTab(t.dataset.rpPick));
+  });
+
+  document.getElementById('closeRightPanel').addEventListener('click', () => {
+    closeRight();
+    document.querySelectorAll('#viewTabs .mock-btn').forEach(b => b.classList.toggle('active', b.dataset.view === 'thread'));
+  });
+  document.getElementById('hdrToggleRight').addEventListener('click', () => {
+    if (rightPanel.classList.contains('hidden')) showRightTab('launcher');
+    else closeRight();
+  });
+  document.getElementById('hdrToggleDetails').addEventListener('click', () => {
+    if (!rightPanel.classList.contains('hidden')) closeRight();
+    else {
+      floatingDetails.classList.toggle('hidden');
+      convStage.classList.toggle('has-floating-card', !floatingDetails.classList.contains('hidden'));
+    }
+  });
+
+  const toggleModel = () => {
+    if (panels.conversation.classList.contains('hidden')) setView('thread');
+    const open = modelPopover.classList.toggle('hidden') === false;
+    document.getElementById('btnModel').classList.toggle('active', open);
+  };
+  document.getElementById('btnModel').addEventListener('click', toggleModel);
+  document.getElementById('composerModelBtn').addEventListener('click', toggleModel);
+
+  const toggleTerm = () => {
+    if (panels.conversation.classList.contains('hidden')) setView('thread');
+    const open = termDrawer.classList.toggle('hidden') === false;
+    document.getElementById('btnTerm').classList.toggle('active', open);
+  };
+  document.getElementById('btnTerm').addEventListener('click', toggleTerm);
+  document.getElementById('hdrToggleTerm').addEventListener('click', toggleTerm);
+  document.getElementById('fdRunScript').addEventListener('click', toggleTerm);
+  document.getElementById('closeTermBtn').addEventListener('click', toggleTerm);
+  document.getElementById('pickTerminalSurface').addEventListener('click', toggleTerm);
+
+  const togglePalette = () => {
+    const open = paletteOverlay.classList.toggle('hidden') === false;
+    document.getElementById('btnPalette').classList.toggle('active', open);
+  };
+  document.getElementById('btnPalette').addEventListener('click', togglePalette);
+  document.getElementById('triggerPaletteFromSearch').addEventListener('click', togglePalette);
+  paletteOverlay.addEventListener('click', (e) => { if (e.target === paletteOverlay) togglePalette(); });
+
+  document.getElementById('btnPhone').addEventListener('click', (e) => {
+    const phone = stage.classList.toggle('is-phone');
+    e.currentTarget.classList.toggle('active', phone);
+    if (phone) {
+      stage.classList.add('phone-on-home');
+    } else {
+      stage.classList.remove('phone-on-home');
+    }
+  });
+
+  document.getElementById('phoneBackHome').addEventListener('click', () => {
+    stage.classList.add('phone-on-home');
+  });
+
+  document.querySelectorAll('[data-phone-open]').forEach(el => {
+    el.addEventListener('click', () => setView(el.dataset.phoneOpen));
+  });
+
+  document.querySelectorAll('[data-ps-open]').forEach(el => {
+    el.addEventListener('click', () => openPhoneSettingsSection(el.dataset.psOpen));
+  });
+
+  document.getElementById('phoneSettingsBack').addEventListener('click', () => {
+    if (!phoneSettingsHub.classList.contains('is-active')) {
+      showPhoneSettingsHub();
+    } else {
+      stage.classList.add('phone-on-home');
+    }
+  });
+
+  document.getElementById('btnTheme').addEventListener('click', (e) => {
+    const next = stage.dataset.theme === 'dark' ? 'light' : 'dark';
+    stage.dataset.theme = next;
+    e.currentTarget.textContent = next === 'dark' ? 'Light' : 'Dark';
+  });
+
+  // Interactive question card option selection
+  document.querySelectorAll('.q-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      document.querySelectorAll('.q-opt').forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+    });
+  });
+})();
+</script>
+</body>
+</html>

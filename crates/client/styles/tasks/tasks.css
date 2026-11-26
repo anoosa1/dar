@@ -1472,22 +1472,6 @@ body.has-editing-pane .pim-workspace.has-tasks-main>.pim-details{
   }
 }
 @media(max-width:800px){
-  .pim-workspace.has-tasks-main>.sidebar{
-    flex-direction:row;
-    overflow:auto hidden;
-  }
-  .sidebar :is(.tasks-sidebar-scroll,.tasks-nav-views,.tasks-lists-nav,.tasks-sidebar-footer){
-    display:contents;
-  }
-  .sidebar :is(.tasks-pace-card,.tasks-sidebar-tags,.tasks-tags-heading,.tasks-shared-tag){
-    display:none!important;
-  }
-  .sidebar .tasks-list-row{
-    display:inline-flex;
-    flex:none;
-    align-items:center;
-    gap:2px;
-  }
   .sidebar .tasks-list-actions>.ui-menu-trigger{
     opacity:1;
     min-width:32px;

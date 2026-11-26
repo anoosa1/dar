@@ -24,10 +24,9 @@
   .app-shell.pim-shell.has-pim-details.has-note-editor .pim-workspace{grid-template-columns:230px minmax(180px,240px) minmax(0,1fr)}
 }
 @media(max-width:800px){
-  .app-shell.pim-shell .pim-workspace.has-workspace-list{height:calc(100dvh - 116px);min-height:0}
+  .app-shell.pim-shell .pim-workspace.has-workspace-list{height:calc(100dvh - var(--topbar-height));min-height:0}
   .app-shell.pim-shell.has-pim-details.has-note-editor .pim-workspace{display:block}
   .pim-workspace.has-workspace-list>.pim-details{min-height:0}
-  .pim-workspace.has-workspace-list>.sidebar.is-open{position:fixed;top:116px;height:calc(100dvh - 116px)}
 }
 /* Selected compact-document writer: fixed tools, quiet title and a bounded page. */
 .workspace-note-editor{height:100%;min-height:0;padding:var(--pane-padding) var(--pane-padding) 12px;gap:0}
@@ -56,7 +55,7 @@
 .notes-folders-empty{padding:4px 12px}
 .notes-notice{display:flex;align-items:center;gap:8px;justify-content:space-between}
 .notes-legacy{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px;padding:14px;border:1px solid var(--sheet-border,var(--border));border-radius:12px;background:var(--tonal);color:var(--on-tonal);font-size:13px}.notes-legacy p{flex:1 1 100%;margin:0}.notes-legacy .text-button{color:inherit}
-@media(max-width:800px){.notes-folder-row .ui-menu-trigger{opacity:1}.notes-folders{flex-direction:row;overflow:visible}.notes-folder-row[class*=depth-]{padding-left:0}}
+@media(max-width:800px){.notes-folder-row .ui-menu-trigger{opacity:1}}
 .pim-details.has-note-editor .document-editor .note-source{font:15px/1.75 Inter,ui-sans-serif,system-ui,sans-serif}
 /* Two notes side by side or an open canvas: the list column narrows so the canvas/panes keep a readable width. */
 @media(min-width:1100px){.app-shell.pim-shell.has-pim-details.has-note-editor.has-note-split .pim-workspace,body.has-note-canvas .app-shell.pim-shell.has-pim-details.has-note-editor .pim-workspace{grid-template-columns:230px minmax(160px,220px) minmax(0,1fr)}}

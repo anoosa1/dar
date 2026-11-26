@@ -343,7 +343,8 @@ pub async fn shared_ui_journey(t: &Ctx) -> Result<()> {
         page.screenshot(t.screenshot("shared-settings-overview.png"), true).await?;
         page.get_by_role("navigation", "Personal settings").wait_for().await?;
         assert_eq!(page.get_by_role("navigation", "Administration settings").count().await?, 0);
-        page.get_by_role("navigation", "Applications").get_by_role("link", "Files").wait_for().await?;
+        page.get_by_role("button", "All apps").click().await?;
+        page.get_by_role("dialog", "All apps").get_by_role("link", "Files").wait_for().await?;
         assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
         page.keyboard().press("Escape").await?;
         page.get_by_role("button", "Edit profile").click().await?;
@@ -354,6 +355,7 @@ pub async fn shared_ui_journey(t: &Ctx) -> Result<()> {
         page.screenshot(t.screenshot("shared-personal-settings-desktop.png"), true).await?;
 
         page.set_viewport_size(390, 844).await?;
+        page.get_by_role("button", "Open navigation").click().await?;
         page.get_by_role("button", "Security").click().await?;
         page.get_by_role("heading", "Account security").wait_for().await?;
         assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
@@ -394,14 +396,16 @@ pub async fn shared_ui_journey(t: &Ctx) -> Result<()> {
                 )
                 .await?;
             assert_ne!(frame["background"], frame["shell"]);
-            assert_eq!(frame["surface"], json!("rgba(0, 0, 0, 0)"));
+            if width > 800 {
+                assert_eq!(frame["surface"], json!("rgba(0, 0, 0, 0)"));
+            }
             assert_eq!(frame["overflow"], json!(false));
             assert!(frame["doc"].as_f64().unwrap_or(9999.0) <= height as f64 + 1.0);
             assert!(frame["box"]["bottom"].as_f64().unwrap_or(9999.0) <= height as f64 + 1.0);
             page.get_by_role("button", "Save changes").scroll_into_view_if_needed().await?;
             assert_eq!(
                 page.locator(".topbar").evaluate("el => el.getBoundingClientRect().top", Value::Null).await?.as_f64().unwrap_or(-1.0),
-                if width > 800 { 0.0 } else { 8.0 }
+                0.0
             );
             if width > 800 {
                 let nav = page.locator(".ui-settings-nav").bounding_box().await?.context("settings nav box")?;
@@ -427,13 +431,15 @@ pub async fn shared_ui_journey(t: &Ctx) -> Result<()> {
         }
 
         page.get_by_role("button", "Open account menu").click().await?;
-        page.get_by_role("menuitem", "Settings").click().await?;
+        page.get_by_role("dialog", "Apps and account").get_by_role("link", "Settings").click().await?;
+        page.get_by_role("button", "Open navigation").click().await?;
         page.get_by_role("button", "Security").click().await?;
         page.get_by_role("heading", "Account security").wait_for().await?;
         assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));
 
         page.get_by_role("button", "Open account menu").click().await?;
-        page.get_by_role("menuitem", "Settings").click().await?;
+        page.get_by_role("dialog", "Apps and account").get_by_role("link", "Settings").click().await?;
+        page.get_by_role("button", "Open navigation").click().await?;
         page.get_by_role("button", "Appearance").click().await?;
         page.get_by_role("radio", "Light — Twilight Afterglow").check().await?;
         page.wait_for_function("() => document.documentElement.dataset.theme === 'latte'").await?;
@@ -445,6 +451,7 @@ pub async fn shared_ui_journey(t: &Ctx) -> Result<()> {
         page.wait_for_function("() => document.documentElement.dataset.theme === 'latte'").await?;
         page.screenshot(t.screenshot("appearance-latte-phone.png"), true).await?;
 
+        page.get_by_role("button", "Open navigation").click().await?;
         page.get_by_role("button", "Regional settings").click().await?;
         choose(&page.get_by_role("combobox", "Timezone"), Choice::Label("Asia/Tokyo")).await?;
         page.get_by_text("Regional settings saved").wait_for().await?;
@@ -456,6 +463,7 @@ pub async fn shared_ui_journey(t: &Ctx) -> Result<()> {
             .await?
             .expect(201)?;
         switch_app(&page, "calendar").await?;
+        page.get_by_role("button", "Open navigation").click().await?;
         page.get_by_role("button", "New event").click().await?;
         let new_event = page.get_by_role("complementary", "New event");
         new_event.get_by_label("Timezone").wait_for().await?;

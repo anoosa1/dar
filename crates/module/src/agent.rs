@@ -710,6 +710,11 @@ pub fn agent_operation(
                         return fail("notFound");
                     }
                 }
+                "scratch" => {
+                    if source_ref != "scratch" {
+                        return fail("invalidInput");
+                    }
+                }
                 _ => return fail("invalidInput"),
             }
             let created = AgentProject {
@@ -1451,6 +1456,11 @@ pub fn restore_agent(ctx: &ReducerContext, value: Option<&Value>) -> Res<()> {
                 }
             }
             "files" => crate::opaque_id(&r.source_ref)?,
+            "scratch" => {
+                if r.source_ref != "scratch" {
+                    return fail("invalidInput");
+                }
+            }
             _ => return fail("invalidInput"),
         }
         ctx.db.agent_projects().insert(r);

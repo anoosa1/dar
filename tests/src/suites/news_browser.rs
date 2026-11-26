@@ -89,7 +89,7 @@ pub async fn news_browser_journey(t: &Ctx) -> Result<()> {
     page.get_by_label("Username").fill("admin").await?;
     page.get_by_label("Password").fill(PASSWORD).await?;
     page.get_by_role("button", "Sign in").click().await?;
-    page.get_by_role("link", "News").first().wait_for().await?;
+    page.locator("header.topbar").wait_for().await?;
     page.get_by_role("heading", "Unread").wait_for().await?;
     page.get_by_role("heading", "All caught up")
         .wait_for()
@@ -244,6 +244,9 @@ pub async fn news_browser_journey(t: &Ctx) -> Result<()> {
         .await?;
         for width in [1440u32, 390u32] {
             page.set_viewport_size(width, 844).await?;
+            if width == 390 {
+                page.get_by_role("button", "Open navigation").click().await?;
+            }
             page.get_by_role("button", contains("All articles"))
                 .click()
                 .await?;

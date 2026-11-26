@@ -5,29 +5,22 @@ work. The same interaction must behave the same way everywhere; reuse the shared
 implementation instead of writing an app-specific version. Newer explicit
 maintainer decisions win; update this guide when they change.
 
-## Frame (unified look B, November 11)
+## Frame (Full-canvas frame & Direction A app menu)
 
-Selected from [mock B](spacetimedb/unified-look-mock-b.html) over
-[mock A](spacetimedb/unified-look-mock-a.html). Built from `crates/client/styles/frame.css`,
-`AppRail` (`apps.tsx`) and `WorkspaceHeader` (`shell.tsx`).
+Built from `crates/client/styles/frame.css` and `WorkspaceHeader` / `AllAppsSwitcher` / `WorkspaceAccount` (`shell.rs`). Every app occupies the full viewport width with no permanent left app rail or mobile bottom bar.
 
-- **App rail** (72px, left): Dar mark, each enabled app as an icon pill with its
-  label (tonal when current), then Settings and the account menu at the bottom.
-  Administrators reach Manage apps from the account menu.
-- **Top bar** (56px): app title over the sidebar, centered cross-app search,
-  and the app's settings gear on the right.
-- **Sheets:** content and details sit in floating sheets (16px radius, soft
-  border, 8px gutter) on the soft background. The sidebar is transparent.
-- **Create:** one tonal 48px button (16px radius) at the top of every sidebar.
-  Files uses it as a New menu (Folder, File → Text/Markdown); the menu aligns with
-  the button and is at least as wide.
-- **Selection:** tonal pill for navigation and list rows; hover stays neutral.
-  Sidebar rows are 36px.
-- **Phones (≤800px):** the rail becomes a bottom bar with four apps and More (the
-  current app always keeps a slot). Search is a full-width pill with the avatar.
-  Sidebar views and collections become a horizontal chip strip, app settings is
-  the last chip, and create is a floating button above the bar. Details and
-  editors fill the screen below the search bar with their own close/Back control.
+- **Top bar (desktop, 56px):** left cluster has `[Dar mark] [9-dot All apps button] [App title]`; centered cross-app search pill (`Ctrl K`); right cluster has `[App settings gear] [User profile avatar]`.
+- **All apps popover (Direction A):** opens from the 9-dot button as a frosted elevated surface (`backdrop-filter: blur(18px)`), showing compact 2-column horizontal app rows with soft Twilight-harmonized tinted icon badges and a subtle active pill + indicator dot. Defaults to a single **"Apps"** heading with no default categories; users can reorder apps and create custom categories in **Dar Settings → Appearance** (`appLauncher` preference). Footer includes `Jump with Ctrl K`, `Customize`, and `Manage apps` (admins).
+- **User menu (desktop):** opens from the top-right avatar as a frosted popover with profile header, inline `Afterglow / Nightfall / System` theme switcher, Dar settings, Appearance/Personalization, Security, Manage apps (admins), and Sign out.
+- **Sheets:** content and details sit in floating sheets (16px radius, soft border, 8px gutter) on the soft background. The sidebar is transparent.
+- **Create:** one tonal 48px button (16px radius) at the top of every sidebar. Files uses it as a New menu (Folder, File → Text/Markdown); the menu aligns with the button and is at least as wide.
+- **Selection:** tonal pill for navigation and list rows; hover stays neutral. Sidebar rows are 36px.
+- **Phones (≤800px):**
+  - No bottom app bar (`--bottom-bar-height: 0px`) and no horizontal bubble strip below search.
+  - Separated 3-piece top bar (58px): `[☰ Navigation drawer]` `[Search all apps…]` `[User avatar]`.
+  - Tapping `☰` slides out the current app's navigation sidebar (views, folders, collections, and app settings) over a blurred scrim.
+  - Tapping the User avatar opens the full-screen **User & Apps Hub**: Direction A 2-column tinted app rows on top (honoring `"Apps"` or user-defined categories), and a grounded rounded Account Sheet at the bottom (profile, inline theme switch, Settings, Personalization, Manage apps for admins, Sign out).
+  - Details and editors fill the screen below the top bar with their own close/Back control.
 
 ## Theme and controls
 

@@ -87,7 +87,8 @@ pub async fn prayer_times_journey(t: &Ctx) -> Result<()> {
         page.get_by_label("Username").fill("admin").await?;
         page.get_by_label("Password").fill(PASSWORD).await?;
         page.get_by_role("button", "Sign in").click().await?;
-        page.get_by_role("navigation", "Applications").get_by_role("link", "Prayer Times").click().await?;
+        page.get_by_role("button", "All apps").click().await?;
+        page.get_by_role("dialog", "All apps").get_by_role("link", "Prayer Times").click().await?;
 
         // Setup uses the settings sheet: nothing saves until the location and method are complete.
         let session = page.request().get(&format!("{base}/api/v1/auth/session")).await?.json()?;
@@ -155,11 +156,11 @@ pub async fn prayer_times_journey(t: &Ctx) -> Result<()> {
             assert_eq!(page.evaluate("() => document.documentElement.scrollHeight > innerHeight").await?, json!(false));
             details.get_by_role("button", "Edit prayer settings").scroll_into_view_if_needed().await?;
             let top = page.locator(".topbar").evaluate("(el) => el.getBoundingClientRect().top", Value::Null).await?;
-            assert_eq!(top, json!(if width > 800 { 0 } else { 8 }));
+            assert_eq!(top, json!(0));
             page.screenshot(t.screenshot(&format!("prayer-times-{width}.png")), true).await?;
         }
 
-        // Phones show settings as a bottom sheet below the search bar. Like other phone panes, it keeps the 8px page scrollbar gutter.
+        // Phones show settings as a full sheet below the top bar.
         details.get_by_role("button", "Edit prayer settings").click().await?;
         editor = page.get_by_role("dialog", "Prayer Times settings");
         editor.wait_for().await?;
@@ -167,7 +168,7 @@ pub async fn prayer_times_journey(t: &Ctx) -> Result<()> {
         let sheet = editor.bounding_box().await?.context("settings sheet bounding box")?;
         let usable = page.evaluate("() => document.documentElement.clientWidth").await?.as_f64().context("clientWidth")?;
         ensure!(
-            sheet.x <= 1.0 && sheet.x + sheet.width >= usable - 9.0 && sheet.y >= 90.0 && sheet.y + sheet.height <= 569.0,
+            sheet.x <= 1.0 && sheet.x + sheet.width >= usable - 9.0 && sheet.y >= 56.0 && sheet.y + sheet.height <= 569.0,
             "unexpected sheet geometry: {sheet:?}, usable={usable}"
         );
         assert_eq!(page.evaluate("() => document.documentElement.scrollWidth > innerWidth").await?, json!(false));

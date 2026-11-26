@@ -17,7 +17,7 @@ use futures_util::StreamExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{oneshot, watch};
 
 use crate::agent::app_server::{
@@ -35,8 +35,8 @@ use crate::agent::discovery::{codex_search_directories, find_codex_executable};
 use crate::agent::terminal::Terminals;
 use crate::agent::workspace::{Source, branch_changes, git, prepare_workspace, scan};
 use crate::agent::{
-    CancelToken, HISTORY_READ_OPERATIONS, active_agent_run, agent_provider_name, agent_provider_of,
-    home_dir, slice_utf16, tail_utf16, utf16_len,
+    CancelToken, HISTORY_READ_OPERATIONS, O_NOFOLLOW, active_agent_run, agent_provider_name,
+    agent_provider_of, home_dir, slice_utf16, tail_utf16, utf16_len,
 };
 use crate::auth::{is_uuid, uuid};
 use crate::blobs::Blobs;
@@ -4107,6 +4107,15 @@ impl AgentRuntime {
             .await?;
         let rows = p.get("rows").and_then(Value::as_f64);
         let cols = p.get("cols").and_then(Value::as_f64);
+        let tab_id = p
+            .get("tabId")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("main");
+        let command = p
+            .get("command")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty());
         match action {
             "open" => {
                 let codex = self.codex_connection(user_id).await;
@@ -4122,7 +4131,7 @@ impl AgentRuntime {
                 };
                 assert_no_codex_rules(config).await?;
                 self.terminals
-                    .open(config, user_id, thread_id, rows, cols)
+                    .open(config, user_id, thread_id, tab_id, rows, cols, command)
                     .await
             }
             "read" => {
@@ -4141,17 +4150,20 @@ impl AgentRuntime {
                     }
                     _ => return Err(AppError::invalid()),
                 };
-                Ok(self.terminals.read(user_id, thread_id, after).await)
+                Ok(self.terminals.read(user_id, thread_id, tab_id, after).await)
             }
             "input" => {
                 let data = p
                     .get("data")
                     .and_then(Value::as_str)
                     .ok_or_else(AppError::invalid)?;
-                self.terminals.write(user_id, thread_id, data).await
+                self.terminals.write(user_id, thread_id, tab_id, data).await
             }
-            "resize" => Ok(self.terminals.resize(user_id, thread_id, rows, cols).await),
-            "close" => Ok(self.terminals.close(user_id, thread_id)),
+            "resize" => Ok(self
+                .terminals
+                .resize(user_id, thread_id, tab_id, rows, cols)
+                .await),
+            "close" => Ok(self.terminals.close(user_id, thread_id, Some(tab_id))),
             _ => Err(AppError::not_found()),
         }
     }
@@ -4165,7 +4177,7 @@ impl AgentRuntime {
         let result = self
             .operation(session_id, "deleteThread", json!({ "threadId": thread_id }))
             .await?;
-        let _ = self.terminals.close(user_id, thread_id);
+        let _ = self.terminals.close(user_id, thread_id, None);
         let dir = self
             .root
             .join("agent-workspaces")
@@ -4302,6 +4314,129 @@ impl AgentRuntime {
         });
         let items: Vec<String> = scored.into_iter().take(50).map(|(p, _)| p).collect();
         Ok(json!({ "source": source_kind, "items": items }))
+    }
+
+    pub async fn read_file(
+        &self,
+        session_id: &str,
+        user_id: &str,
+        thread_id: &str,
+        rel_path: &str,
+    ) -> Result<Value> {
+        let clean = crate::agent::workspace::safe_path(rel_path)?;
+        let history: AgentHistoryRow = serde_json::from_value(
+            self.operation(session_id, "history", json!({ "threadId": thread_id }))
+                .await?,
+        )
+        .map_err(|_| AppError::internal())?;
+        if let Some(val) =
+            crate::agent::workspace::read_workspace_file(&self.root, user_id, thread_id, clean)
+                .await?
+        {
+            return Ok(val);
+        }
+        // Fallback for Files projects before the first turn materializes `work/`.
+        let project: Source = serde_json::from_value(
+            self.operation(
+                session_id,
+                "source",
+                json!({ "projectId": history.thread.project_id }),
+            )
+            .await?,
+        )
+        .map_err(|_| AppError::not_found())?;
+        let Some(row) = project.files.into_iter().find(|f| f.path == clean) else {
+            return Err(AppError::not_found());
+        };
+        let entry: crate::blobs::BlobFile = serde_json::from_value(
+            self.db
+                .read("service_download", json!([session_id, row.id, ""]))
+                .await?,
+        )
+        .map_err(|_| AppError::new("contentUnavailable", 503))?;
+        if !crate::blobs::is_blob_id(&entry.blob_id) {
+            return Err(AppError::new("invalidBlobId", 400));
+        }
+        let blob = self.root.join("blobs").join(&entry.blob_id);
+        let mut input = tokio::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(O_NOFOLLOW)
+            .open(&blob)
+            .await
+            .map_err(|_| AppError::new("contentUnavailable", 503))?;
+        let limit: usize = 512 * 1024;
+        let mut buf = vec![0u8; (row.size as usize).min(limit)];
+        let mut off = 0;
+        while off < buf.len() {
+            let n = input
+                .read(&mut buf[off..])
+                .await
+                .map_err(|_| AppError::internal())?;
+            if n == 0 {
+                break;
+            }
+            off += n;
+        }
+        buf.truncate(off);
+        let truncated = row.size > limit as u64;
+        let media_type = crate::agent::workspace::media_type_of(clean, Some(&buf));
+        match std::str::from_utf8(&buf) {
+            Ok(text) => Ok(json!({
+                "path": clean,
+                "mediaType": media_type,
+                "size": row.size,
+                "binary": false,
+                "truncated": truncated,
+                "content": text,
+            })),
+            Err(_) => {
+                let preview = if media_type.starts_with("image/") && !truncated {
+                    format!("data:{media_type};base64,{}", B64.encode(&buf))
+                } else {
+                    String::new()
+                };
+                Ok(json!({
+                    "path": clean,
+                    "mediaType": media_type,
+                    "size": row.size,
+                    "binary": true,
+                    "truncated": truncated,
+                    "content": preview,
+                }))
+            }
+        }
+    }
+
+    pub async fn revert_file(
+        &self,
+        session_id: &str,
+        user_id: &str,
+        thread_id: &str,
+        rel_path: Option<&str>,
+    ) -> Result<Value> {
+        let history = self
+            .operation(session_id, "history", json!({ "threadId": thread_id }))
+            .await?;
+        let has_active = history
+            .get("runs")
+            .and_then(Value::as_array)
+            .is_some_and(|runs| {
+                runs.iter().any(|r| {
+                    matches!(
+                        r.get("status").and_then(Value::as_str),
+                        Some("queued" | "running" | "cancelling")
+                    )
+                })
+            });
+        if has_active {
+            return Err(AppError::with(
+                "conflict",
+                409,
+                "Wait for the active run to finish before reverting files.",
+            ));
+        }
+        crate::agent::workspace::revert_workspace_file(&self.root, user_id, thread_id, rel_path)
+            .await
     }
 
     pub async fn cancel(&self, session_id: &str, id: &str) -> Result<Value> {

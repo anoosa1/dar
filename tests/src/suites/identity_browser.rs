@@ -530,6 +530,7 @@ pub async fn identity_browser_journey(t: &Ctx) -> Result<()> {
         );
 
         page.set_viewport_size(390, 844).await?;
+        page.get_by_role("button", "Open navigation").click().await?;
         page.get_by_role("button", "Applications").click().await?;
         ui::open_search(&page).await?.fill(&name).await?;
         page.screenshot(t.screenshot("identity-settings-phone.png"), true)

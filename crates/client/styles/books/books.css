@@ -199,8 +199,6 @@ body:is(.has-editing-pane,.has-settings-sheet) .books-shell .pim-details.books-d
 }
 @media(max-width:800px){
   .books-shell .pim-workspace,.books-shell.has-pim-details .pim-workspace{display:flex}
-  .books-sidebar .books-heading,.books-sidebar .books-indexing,.books-sidebar .books-hint{display:none!important}
-  .books-sidebar .books-libraries{display:contents}
   .books-scroll{padding:0 12px 96px}
   .books-shelf{grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-flow:row}
   .books-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
