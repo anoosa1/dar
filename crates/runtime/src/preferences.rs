@@ -352,6 +352,22 @@ pub fn merge(
         )?,
     );
     put(
+        "booksCatalogView",
+        choice("booksCatalogView", &["grid", "list", "series"], "grid")?,
+    );
+    put(
+        "booksColumns",
+        choice("booksColumns", &["auto", "1", "2"], "auto")?,
+    );
+    put(
+        "booksComicLayout",
+        choice("booksComicLayout", &["single", "spread", "strip"], "single")?,
+    );
+    put(
+        "booksPdfTint",
+        choice("booksPdfTint", &["paper", "sepia", "night"], "paper")?,
+    );
+    put(
         "photosUploadFolder",
         folder(
             "photosUploadFolder",
@@ -717,6 +733,39 @@ mod tests {
             json!({ "gitCommitsView": "tree" }),
             json!({ "gitWrapLines": "yes" }),
             json!({ "gitShowAbout": 1 }),
+        ] {
+            let map: Map<String, Value> = serde_json::from_value(bad).unwrap();
+            assert!(merge(&empty, &map).is_err());
+        }
+    }
+
+    #[test]
+    fn validates_books_redesign_preferences() {
+        let empty = Map::new();
+        let body: Map<String, Value> = serde_json::from_value(json!({
+            "booksCatalogView": "series",
+            "booksColumns": "1",
+            "booksComicLayout": "spread",
+            "booksPdfTint": "night"
+        }))
+        .unwrap();
+        let merged = merge(&empty, &body).unwrap();
+        assert_eq!(merged["booksCatalogView"], "series");
+        assert_eq!(merged["booksColumns"], "1");
+        assert_eq!(merged["booksComicLayout"], "spread");
+        assert_eq!(merged["booksPdfTint"], "night");
+
+        let defaults = merge(&empty, &Map::new()).unwrap();
+        assert_eq!(defaults["booksCatalogView"], "grid");
+        assert_eq!(defaults["booksColumns"], "auto");
+        assert_eq!(defaults["booksComicLayout"], "single");
+        assert_eq!(defaults["booksPdfTint"], "paper");
+
+        for bad in [
+            json!({ "booksCatalogView": "cards" }),
+            json!({ "booksColumns": "3" }),
+            json!({ "booksComicLayout": "grid" }),
+            json!({ "booksPdfTint": "dark" }),
         ] {
             let map: Map<String, Value> = serde_json::from_value(bad).unwrap();
             assert!(merge(&empty, &map).is_err());

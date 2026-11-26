@@ -259,6 +259,217 @@ fn find_note<'a>(
     (folder, note)
 }
 
+/// A parsed highlight with its quote excerpt, zero-based page index, and page rectangles.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SavedHighlight {
+    pub id: String,
+    pub page: usize,
+    pub quote: String,
+    pub rects: Vec<PdfRect>,
+}
+
+/// All saved highlights for a book alongside the backing Notes file ID (when present).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BookHighlightsNote {
+    pub note_id: Option<String>,
+    pub note_name: String,
+    pub highlights: Vec<SavedHighlight>,
+}
+
+/// Summary of one highlight note in `Notes › Highlights/`, for the Books Highlights view.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HighlightNoteSummary {
+    pub note_id: String,
+    pub note_name: String,
+    pub book_id: String,
+    pub book_title: String,
+    pub highlights: Vec<SavedHighlight>,
+}
+
+/// Parses quote blocks and reference definitions from a highlight note for `book_id` (or any
+/// book when `book_id` is empty).
+pub fn parse_detailed(note: &str, book_id: &str) -> Vec<SavedHighlight> {
+    use std::collections::HashMap;
+    let mut quotes: HashMap<String, (String, usize)> = HashMap::new();
+    let mut current_lines: Vec<String> = Vec::new();
+    for raw_line in note.lines() {
+        let line = raw_line.trim();
+        if let Some(quoted) = line.strip_prefix("> ") {
+            if let Some(attr) = quoted.strip_prefix("\u{2014} ") {
+                if let Some(pos) = attr.rfind("^hl-") {
+                    let id = attr[pos + 1..].trim().to_owned();
+                    let page = attr
+                        .split("page=")
+                        .nth(1)
+                        .and_then(|rest| {
+                            let digits: String =
+                                rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                            digits.parse::<usize>().ok()
+                        })
+                        .and_then(|p| p.checked_sub(1))
+                        .unwrap_or(0);
+                    let quote = current_lines.join(" ").trim().to_owned();
+                    if !id.is_empty() {
+                        quotes.insert(id, (quote, page));
+                    }
+                }
+                current_lines.clear();
+            } else {
+                current_lines.push(quoted.replace('\\', ""));
+            }
+        } else if line.is_empty() {
+            current_lines.clear();
+        }
+    }
+
+    let mut found = Vec::new();
+    for line in note.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix('[') else {
+            continue;
+        };
+        let Some((id, rest)) = rest.split_once("]:") else {
+            continue;
+        };
+        if !id.starts_with("hl-") {
+            continue;
+        }
+        let mut parts = rest.trim().splitn(2, ' ');
+        let url = parts.next().unwrap_or_default();
+        let title = parts.next().unwrap_or_default().trim();
+        let query = url.split_once('?').map_or("", |(_, q)| q);
+        if !book_id.is_empty()
+            && !query
+                .split('&')
+                .any(|pair| pair == format!("book={book_id}"))
+        {
+            continue;
+        }
+        let Some(boxes) = title
+            .strip_prefix('"')
+            .and_then(|t| t.strip_suffix('"'))
+            .and_then(|t| t.strip_prefix(MARKER))
+        else {
+            continue;
+        };
+        let rects: Vec<PdfRect> = boxes
+            .split_whitespace()
+            .filter_map(|token| {
+                let (page, numbers) = token.split_once(':')?;
+                let page = page.parse::<usize>().ok()?.checked_sub(1)?;
+                let n: Vec<f64> = numbers
+                    .split(',')
+                    .filter_map(|v| v.parse::<f64>().ok())
+                    .collect();
+                let [x, y, width, height] = n[..] else {
+                    return None;
+                };
+                let valid = [x, y, width, height]
+                    .iter()
+                    .all(|v| v.is_finite() && (0.0..=1.0).contains(v));
+                valid.then_some(PdfRect {
+                    page,
+                    x,
+                    y,
+                    width,
+                    height,
+                })
+            })
+            .collect();
+        if !rects.is_empty() {
+            let (quote, fallback_page) = quotes
+                .remove(id)
+                .unwrap_or_else(|| (String::new(), rects[0].page));
+            let page = rects.first().map_or(fallback_page, |r| r.page);
+            found.push(SavedHighlight {
+                id: id.to_owned(),
+                page,
+                quote,
+                rects,
+            });
+        }
+    }
+    found
+}
+
+/// The saved highlights of a book with their quote excerpts and Notes link.
+pub async fn load_detailed(book_id: &str, title: &str) -> BookHighlightsNote {
+    let name = note_name(title);
+    let Ok(index) = notes_index().await else {
+        return BookHighlightsNote {
+            note_id: None,
+            note_name: name,
+            highlights: Vec::new(),
+        };
+    };
+    let (_, note) = find_note(&index, title);
+    let Some(note) = note else {
+        return BookHighlightsNote {
+            note_id: None,
+            note_name: name,
+            highlights: Vec::new(),
+        };
+    };
+    let highlights = match read_text(&note.id).await {
+        Ok(text) => parse_detailed(&text, book_id),
+        Err(_) => Vec::new(),
+    };
+    BookHighlightsNote {
+        note_id: Some(note.id.clone()),
+        note_name: note.name.clone(),
+        highlights,
+    }
+}
+
+/// Every highlight note in `Notes › Highlights/` for the Books Highlights view.
+pub async fn load_all_summary() -> Vec<HighlightNoteSummary> {
+    let Ok(index) = notes_index().await else {
+        return Vec::new();
+    };
+    let Some(folder) = index
+        .folders
+        .iter()
+        .find(|f| f.parent_id == index.root_id && f.name.eq_ignore_ascii_case(FOLDER))
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for note in index.notes.iter().filter(|n| n.parent_id == folder.id) {
+        let Ok(text) = read_text(&note.id).await else {
+            continue;
+        };
+        let book_id = text
+            .lines()
+            .find_map(|line| {
+                let q = line.split_once("/books?")?.1;
+                let id = q.split('&').find_map(|pair| pair.strip_prefix("book="))?;
+                let clean: String = id
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+                    .collect();
+                (!clean.is_empty()).then_some(clean)
+            })
+            .unwrap_or_default();
+        let highlights = parse_detailed(&text, &book_id);
+        if highlights.is_empty() {
+            continue;
+        }
+        let book_title = note
+            .name
+            .strip_suffix(".md")
+            .unwrap_or(&note.name)
+            .to_owned();
+        out.push(HighlightNoteSummary {
+            note_id: note.id.clone(),
+            note_name: note.name.clone(),
+            book_id,
+            book_title,
+            highlights,
+        });
+    }
+    out
+}
+
 /// The saved highlights of a book, from its note (none when there is no note yet).
 pub async fn load(book_id: &str, title: &str) -> Vec<PdfHighlight> {
     let Ok(index) = notes_index().await else {

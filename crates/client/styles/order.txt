@@ -22,7 +22,6 @@ agent/workspace.css
 agent/t3-parity.css
 chat/chat.css
 photos/photos.css
-books/books.css
 frame.css
 settings-sheet.css
 apps.css
@@ -33,3 +32,4 @@ tasks/tasks.css
 mail/mail.css
 news/news.css
 git/git.css
+books/books.css

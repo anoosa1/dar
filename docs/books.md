@@ -4,10 +4,15 @@ Optional built-in app at `/books` (administrators can turn it off in Administrat
 Apps; data is kept). Layout follows [mock A](spacetimedb/books-mocks.html) (November 16,
 2026): a Kavita-style library with books read inside the shared frame.
 
-## Maintainer decisions (November 16, 2026)
+## Maintainer decisions (November 16 & November 26, 2026)
 
-- **Layout:** mock A (home shelves, details in the right sheet, the reader in the middle
-  sheet with contents and bookmarks on the right).
+- **Layout:** [mock A](spacetimedb/books-mocks.html) refreshed in the
+  [Books redesign](spacetimedb/books-redesign-mock.html) (November 26, 2026): Now Reading
+  spotlight + horizontal scrolling shelves on Home, `Covers / List / Series` catalog switcher with
+  format/status filters and bulk actions, `Highlights` browser and Details bridge into Notes,
+  focus reading mode (`Z`), EPUB 1-page/2-page column toggle, PDF zoom `%` / `Fit page` / paper
+  tint (`Paper`, `Sepia`, `Night`), and Comic `Single / Spread / Strip` + inline `RTL / LTR`
+  controls.
 - **PDF:** pure-Rust `hayro` (`crates/pdf`), compiled to WebAssembly in a dedicated Web
   Worker (`crates/pdf-worker`, replacing `pdf.js`). Files' PDF preview uses the same
   viewer, since browsers' own viewers do not run in Dar's sandboxed previews.

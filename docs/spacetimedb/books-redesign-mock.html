@@ -1,0 +1,1933 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar Books — Redesign Mockup</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans, 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--foreground, #faeaf3);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mock-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+/* Mockup switcher bar */
+.mock-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.mock-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.mock-btn {
+  appearance: none;
+  border: 1px solid var(--border, rgba(186,150,178,.28));
+  background: var(--secondary, rgba(115,57,111,.10));
+  color: var(--muted-foreground, #b89eb4);
+  font: 540 10.5px/1 inherit;
+  padding: 5px 7.5px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.mock-btn:hover { color: var(--foreground, #faeaf3); background: rgba(115,57,111,.18); }
+.mock-btn.active {
+  background: #73396f;
+  color: #fff7fc;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+/* Dar Twilight Stage (Nightfall default, Afterglow light) */
+.stage {
+  --bg: #26111f;
+  --panel: #301c2b;
+  --raised: #3a2536;
+  --popover: rgba(54, 33, 50, 0.96);
+  --hover: #412b3f;
+  --border: rgba(186, 150, 178, 0.22);
+  --border-strong: rgba(186, 150, 178, 0.36);
+  --row-div: rgba(186, 150, 178, 0.13);
+  --text: #faeaf3;
+  --muted: #cfb4ca;
+  --dim: #9c7e97;
+  --accent: #f2a2a9;
+  --on-accent: #26111f;
+  --tonal: #4d3c73;
+  --on-tonal: #f3eafd;
+  --rose: #d889af;
+  --success: #b2dec4;
+  --success-soft: #284136;
+  --warning: #ffc493;
+  --warning-soft: #4b3429;
+  --danger: #ffb2c6;
+  --error-soft: #4e2436;
+  --shadow: 0 14px 36px rgba(10, 3, 10, 0.48), 0 2px 8px rgba(10, 3, 10, 0.28);
+  --serif: 'Iowan Old Style', 'Charter', 'Literata', Georgia, serif;
+  --sans: var(--font-sans, 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif);
+  --mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+
+  position: relative;
+  width: 100%;
+  height: 616px;
+  border-radius: var(--radius, 14px);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  display: grid;
+  grid-template-rows: 46px minmax(0, 1fr);
+  box-shadow: var(--shadow);
+  color-scheme: dark;
+}
+.stage[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fbf4f6;
+  --panel: #fffafb;
+  --raised: #ffffff;
+  --popover: rgba(255, 252, 253, 0.97);
+  --hover: #f3e7ee;
+  --border: rgba(115, 57, 111, 0.17);
+  --border-strong: rgba(115, 57, 111, 0.30);
+  --row-div: rgba(115, 57, 111, 0.10);
+  --text: #352138;
+  --muted: #6e546d;
+  --dim: #8b708a;
+  --accent: #73396f;
+  --on-accent: #fff7fc;
+  --tonal: #ede3f5;
+  --on-tonal: #4d3c73;
+  --rose: #a94a76;
+  --success: #246144;
+  --success-soft: #e3f0e9;
+  --warning: #8a4f16;
+  --warning-soft: #fbe9d8;
+  --danger: #a32745;
+  --error-soft: #fbe9ee;
+  --shadow: 0 12px 32px rgba(38, 17, 31, 0.12), 0 2px 6px rgba(38, 17, 31, 0.06);
+}
+.stage[data-focus="true"] {
+  grid-template-rows: 0px minmax(0, 1fr);
+}
+.stage[data-focus="true"] .topbar {
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+svg.ic {
+  width: 14px; height: 14px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.num { font-variant-numeric: tabular-nums; }
+.serif { font-family: var(--serif); }
+
+/* Shared Dar Full-Canvas Topbar */
+.topbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 10px; min-width: 0;
+  transition: opacity .15s;
+}
+.tb-start { display: flex; align-items: center; gap: 6px; flex: none; }
+.dar-mark {
+  display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 8px;
+  background: var(--accent); color: var(--on-accent);
+  font-size: 13px; font-weight: 760;
+}
+.tb-title { font-size: 14.5px; font-weight: 630; letter-spacing: -.015em; }
+.tb-search {
+  flex: 0 1 300px; margin: 0 auto; min-width: 0;
+  height: 32px; padding: 0 7px 0 11px;
+  border-radius: 16px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--muted);
+  display: flex; align-items: center; gap: 7px; font-size: 11.5px;
+}
+.tb-search span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-search kbd {
+  margin-left: auto; font: 550 9.5px/15px var(--mono);
+  padding: 0 5px; border-radius: 4px; border: 1px solid var(--border);
+  color: var(--muted); flex: none;
+}
+.tb-end { display: flex; align-items: center; gap: 4px; flex: none; }
+.ib {
+  display: inline-grid; place-items: center;
+  width: 28px; height: 28px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted); cursor: pointer; flex: none;
+  transition: background .1s, color .1s;
+}
+.ib:hover { background: var(--hover); color: var(--text); }
+.ib.on { background: var(--tonal); color: var(--on-tonal); }
+.ib.accent-on { color: var(--accent); }
+.ib.accent-on svg { fill: currentColor; }
+.avatar {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  display: inline-grid; place-items: center;
+  background: var(--tonal); color: var(--on-tonal);
+  font-size: 10.5px; font-weight: 680;
+}
+
+/* Workspace layout */
+.workspace {
+  display: grid;
+  grid-template-columns: 152px minmax(0, 1fr);
+  gap: 8px;
+  padding: 0 8px 8px;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+.workspace.with-details {
+  grid-template-columns: 152px minmax(0, 1fr) 226px;
+}
+.workspace.reader-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+.workspace.reader-mode .sidebar { display: none; }
+.stage[data-focus="true"] .workspace { padding-top: 8px; }
+
+/* Sidebar */
+.sidebar {
+  display: flex; flex-direction: column; min-height: 0;
+  padding: 2px 0 0 2px; overflow: hidden;
+}
+.create-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  align-self: flex-start; height: 38px; padding: 0 14px 0 11px;
+  margin: 0 0 8px 2px; border: 0; border-radius: 13px;
+  background: var(--tonal); color: var(--on-tonal);
+  font: 600 12px/1 inherit; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,.16);
+}
+.create-btn:hover { filter: brightness(1.07); }
+.side-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.nav-list { display: flex; flex-direction: column; gap: 1px; }
+.nav-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; height: 30px; padding: 0 9px;
+  border: 0; border-radius: 15px;
+  background: transparent; color: var(--text);
+  font: 500 11.8px/1 inherit; text-align: left; cursor: pointer;
+}
+.nav-item:hover { background: var(--hover); }
+.nav-item.active { background: var(--tonal); color: var(--on-tonal); font-weight: 600; }
+.nav-item svg.ic { color: var(--muted); width: 13px; height: 13px; }
+.nav-item.active svg.ic { color: var(--on-tonal); }
+.nav-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-cnt {
+  margin-left: auto; font-size: 10.5px; font-weight: 550;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.nav-item.active .nav-cnt { color: var(--on-tonal); }
+.side-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 10px 4px 3px 9px;
+  font-size: 10.8px; font-weight: 600; color: var(--muted);
+}
+
+/* Quiet Library Pulse footer card (replaces dead sidebar space) */
+.side-pulse {
+  flex: none; margin-top: 6px; padding: 9px 10px;
+  border-radius: 12px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.pulse-top {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 11px; color: var(--muted);
+}
+.pulse-top strong { color: var(--text); font-weight: 600; font-size: 11.2px; }
+.pulse-bar {
+  display: flex; gap: 2px; height: 5px; border-radius: 3px; overflow: hidden;
+  background: var(--hover);
+}
+.pulse-bar .seg-read { background: var(--accent); width: 42%; border-radius: 3px; }
+.pulse-bar .seg-done { background: var(--success); width: 25%; border-radius: 3px; }
+.pulse-bar .seg-want { background: var(--tonal); width: 17%; border-radius: 3px; }
+.pulse-legend {
+  display: flex; gap: 8px; flex-wrap: wrap; font-size: 10px; color: var(--dim);
+}
+.pulse-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.pulse-legend i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+
+/* Floating Sheets */
+.sheet {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  border-radius: 14px; border: 1px solid var(--border);
+  background: var(--panel); overflow: hidden; position: relative;
+}
+.sheet-head {
+  display: flex; align-items: center; gap: 6px;
+  min-height: 46px; padding: 6px 10px 6px 14px; flex: none;
+  border-bottom: 1px solid var(--row-div);
+}
+.sheet-head.borderless { border-bottom: 0; padding-bottom: 2px; }
+.sheet-head h1 {
+  margin: 0; font-size: 16px; font-weight: 620; letter-spacing: -.015em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.head-cnt {
+  font-size: 11px; font-weight: 560; color: var(--muted);
+  padding: 1px 7px; border-radius: 999px; background: var(--hover);
+}
+.head-tools { margin-left: auto; display: flex; align-items: center; gap: 5px; flex: none; }
+
+/* Segmented control (clean single row, no wrapping) */
+.seg {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px; border-radius: 9px; background: var(--hover);
+  border: 1px solid var(--row-div);
+}
+.seg button {
+  appearance: none; border: 0; background: transparent; color: var(--muted);
+  font: 540 11px/1 inherit; padding: 5px 8px; border-radius: 7px;
+  cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;
+}
+.seg button:hover { color: var(--text); }
+.seg button.active {
+  background: var(--raised); color: var(--text); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,.22);
+}
+
+.sort-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 9px; border-radius: 8px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text); font: 520 11px/1 inherit; cursor: pointer;
+}
+.sort-pill:hover { background: var(--hover); }
+
+/* Subbar: Filter chips or bulk selection bar */
+.subbar {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 14px 8px; border-bottom: 1px solid var(--row-div);
+  flex: none; overflow-x: auto; scrollbar-width: none;
+}
+.chip {
+  appearance: none; border: 1px solid var(--border); background: transparent;
+  color: var(--muted); font: 530 11px/1 inherit;
+  height: 25px; padding: 0 9px; border-radius: 999px; cursor: pointer;
+  white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;
+}
+.chip:hover { background: var(--hover); color: var(--text); }
+.chip.active { background: var(--tonal); color: var(--on-tonal); border-color: transparent; font-weight: 600; }
+.bulk-bar {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 4px 8px; border-radius: 10px;
+  background: var(--tonal); color: var(--on-tonal); font-size: 11.5px;
+}
+.bulk-bar strong { font-weight: 620; margin-right: 4px; }
+.bulk-act {
+  appearance: none; border: 0; background: color-mix(in srgb, var(--on-tonal) 12%, transparent);
+  color: var(--on-tonal); font: 550 11px/1 inherit; padding: 5px 8px;
+  border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+}
+.bulk-act:hover { background: color-mix(in srgb, var(--on-tonal) 20%, transparent); }
+
+.scroll {
+  flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin;
+  padding: 10px 14px 16px;
+}
+
+/* Tactile Book Covers (art + literary typographic covers) */
+.cover {
+  position: relative; aspect-ratio: 2/3; width: 100%;
+  border-radius: 3px 6px 6px 3px; overflow: hidden;
+  box-shadow: 0 2px 5px rgba(0,0,0,.32), 0 6px 14px rgba(0,0,0,.22);
+  display: flex; flex-direction: column; justify-content: space-between;
+  user-select: none; flex: none;
+}
+/* Physical spine groove */
+.cover::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 7%; z-index: 2;
+  background: linear-gradient(90deg, rgba(0,0,0,.38), rgba(255,255,255,.16) 45%, rgba(0,0,0,.18) 70%, transparent);
+  pointer-events: none;
+}
+/* Subtle top paper sheen */
+.cover::after {
+  content: ""; position: absolute; inset: 0; z-index: 1;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 0 0 1px rgba(0,0,0,.2);
+  border-radius: inherit; pointer-events: none;
+}
+.cover-art {
+  position: relative; z-index: 0; width: 100%; height: 100%;
+  padding: 10px 9px 11px 12px; display: flex; flex-direction: column; justify-content: space-between;
+  color: #f8f2ea;
+}
+.cover.has-badge .cover-art { padding-top: 21px; }
+.cover.sm.has-badge .cover-art { padding-top: 19px; }
+.cover-art.c-navy { background: linear-gradient(155deg, #274372 0%, #15223d 100%); }
+.cover-art.c-teal { background: linear-gradient(155deg, #235c54 0%, #10322e 100%); }
+.cover-art.c-oxblood { background: linear-gradient(155deg, #7f2f3d 0%, #441620 100%); }
+.cover-art.c-slate { background: linear-gradient(155deg, #4b5568 0%, #242a36 100%); }
+.cover-art.c-forest { background: linear-gradient(155deg, #2a5d42 0%, #153122 100%); }
+.cover-art.c-plum { background: linear-gradient(155deg, #623c69 0%, #2d1834 100%); }
+.cover-art.c-paper { background: linear-gradient(160deg, #faf7f2 0%, #ebe5db 100%); color: #241b20; }
+.cover-art.c-manga { background: linear-gradient(155deg, #262e4d 0%, #151726 100%); }
+
+/* Illustrated geometric motif on art covers */
+.cover-motif {
+  position: absolute; inset: 10% 12% 24% 16%;
+  border: 1px solid rgba(255,255,255,.22); border-radius: 2px;
+  display: grid; place-items: center; pointer-events: none;
+}
+.cover-orb {
+  width: 44%; aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, rgba(242,162,169,.9), rgba(178,92,118,.75));
+}
+.cover-orb.gold { background: radial-gradient(circle at 35% 35%, #f5dca4, #c69244); }
+.cover-orb.mint { background: radial-gradient(circle at 35% 35%, #c2ebd4, #599c7a); }
+.cover-rule { height: 1px; background: rgba(255,255,255,.26); margin: 4px 0; }
+.cover-title {
+  position: relative; z-index: 2; font-family: var(--serif);
+  font-size: 11px; font-weight: 600; line-height: 1.18;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cover-author {
+  position: relative; z-index: 2; font-size: 8.5px; opacity: .82;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cover.sm .cover-title { font-size: 9px; -webkit-line-clamp: 3; }
+.cover.sm .cover-author { display: none; }
+.cover.lg .cover-title { font-size: 13px; }
+.cover.lg .cover-author { font-size: 9.5px; }
+
+.cov-badge {
+  position: absolute; right: 5px; top: 5px; z-index: 4;
+  font: 620 8px/14px var(--sans); padding: 0 4.5px; border-radius: 4px;
+  background: rgba(18, 9, 16, 0.78); color: #faeaf3;
+  backdrop-filter: blur(4px);
+}
+.cov-badge.drm {
+  background: var(--error-soft); color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.cov-prog {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3.5px; z-index: 4;
+  background: rgba(0,0,0,.45);
+}
+.cov-prog i { display: block; height: 100%; background: var(--accent); }
+.cov-done {
+  position: absolute; right: 5px; bottom: 6px; z-index: 4;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: var(--success); color: var(--on-accent);
+  display: grid; place-items: center;
+}
+.cov-done svg { width: 10px; height: 10px; stroke-width: 2.8; }
+
+/* Home: Now Reading Spotlight Hero (the signature element!) */
+.now-reading {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: linear-gradient(125deg, color-mix(in srgb, var(--tonal) 32%, var(--raised)) 0%, var(--raised) 65%);
+  align-items: center;
+}
+.nr-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nr-meta-top {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 10.3px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.nr-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.nr-title {
+  margin: 0; font-family: var(--serif); font-size: 15px; font-weight: 600;
+  line-height: 1.2; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.nr-sub {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.nr-prog-row {
+  display: flex; align-items: center; gap: 8px; margin-top: 5px;
+}
+.nr-track {
+  flex: 1; height: 4.5px; border-radius: 99px; background: var(--hover); overflow: hidden;
+}
+.nr-track i { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+.nr-pct { font-size: 10.3px; color: var(--muted); white-space: nowrap; }
+.nr-actions { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.btn-primary {
+  appearance: none; border: 0; border-radius: 999px;
+  background: var(--accent); color: var(--on-accent);
+  font: 600 11.2px/1 inherit; height: 28px; padding: 0 11px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+  white-space: nowrap;
+}
+.btn-primary:hover { filter: brightness(1.06); }
+.btn-ghost {
+  appearance: none; border: 1px solid var(--border); border-radius: 999px;
+  background: transparent; color: var(--text);
+  font: 540 10.8px/1 inherit; height: 26px; padding: 0 9px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap;
+}
+.btn-ghost:hover { background: var(--hover); }
+
+/* Compact "Also reading" horizontal queue */
+.also-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px; margin-top: 8px;
+}
+.also-card {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px; border-radius: 11px;
+  border: 1px solid var(--border); background: var(--raised);
+  cursor: pointer; text-align: left; color: inherit; min-width: 0;
+}
+.also-card:hover { border-color: var(--border-strong); background: var(--hover); }
+.also-card .cover { width: 32px; }
+.also-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.also-info strong { font-size: 11.3px; font-weight: 580; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.also-info small { font-size: 10px; color: var(--muted); }
+.mini-bar { height: 3px; border-radius: 2px; background: var(--hover); overflow: hidden; margin-top: 2px; }
+.mini-bar i { display: block; height: 100%; background: var(--accent); }
+
+/* Horizontal Shelf (true single-row carousel, never wraps into a giant wall!) */
+.shelf-head {
+  display: flex; align-items: center; gap: 8px; margin: 14px 0 7px;
+}
+.shelf-head h2 { margin: 0; font-size: 12.8px; font-weight: 610; }
+.shelf-head small { font-size: 11px; color: var(--dim); }
+.shelf-head .shelf-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.txt-btn {
+  appearance: none; border: 0; background: none; color: var(--accent);
+  font: 550 11px/1 inherit; padding: 4px 6px; border-radius: 6px; cursor: pointer;
+}
+.txt-btn:hover { background: var(--hover); }
+
+.shelf-row {
+  display: flex; gap: 9px; overflow-x: auto; padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.book-tile {
+  flex: none; width: 92px;
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 5px; border-radius: 10px; border: 0;
+  background: transparent; color: inherit; text-align: left; cursor: pointer;
+  position: relative;
+}
+.book-tile:hover { background: var(--hover); }
+.book-tile.selected { background: var(--tonal); color: var(--on-tonal); }
+.book-tile strong {
+  font-size: 11.2px; font-weight: 560; line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.book-tile small {
+  font-size: 10px; color: var(--muted); margin-top: -3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.book-tile.selected small { color: color-mix(in srgb, var(--on-tonal) 78%, transparent); }
+
+/* Catalog Grid, List, and Series Stacks */
+.cat-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+.cat-grid .book-tile { width: 100%; }
+.tile-check {
+  position: absolute; left: 9px; top: 9px; z-index: 5;
+  width: 16px; height: 16px; border-radius: 5px;
+  border: 1.5px solid rgba(255,255,255,.75); background: rgba(20,10,18,.55);
+  display: grid; place-items: center; opacity: 0; transition: opacity .1s;
+}
+.book-tile:hover .tile-check, .book-tile.checked .tile-check { opacity: 1; }
+.book-tile.checked .tile-check { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+/* Compact Table List view */
+.list-table { display: flex; flex-direction: column; gap: 2px; }
+.list-head, .list-row {
+  display: grid;
+  grid-template-columns: 20px 26px minmax(0, 1.4fr) minmax(0, 0.9fr) 48px 74px;
+  align-items: center; gap: 8px; padding: 0 8px;
+}
+.list-head {
+  height: 26px; font-size: 10.5px; color: var(--dim);
+  border-bottom: 1px solid var(--row-div); margin-bottom: 3px;
+}
+.list-row {
+  height: 44px; border-radius: 9px; cursor: pointer;
+}
+.list-row:hover { background: var(--hover); }
+.list-row.selected { background: var(--tonal); color: var(--on-tonal); }
+.list-row .cover { width: 24px; border-radius: 2px 4px 4px 2px; }
+.list-row .l-title { font-size: 12px; font-weight: 560; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-row .l-sub { font-size: 10.2px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-row.selected .l-sub { color: color-mix(in srgb, var(--on-tonal) 78%, transparent); }
+.fmt-tag {
+  font-size: 9.5px; font-weight: 600; padding: 2px 5px; border-radius: 5px;
+  background: var(--hover); color: var(--muted); text-align: center;
+}
+
+/* Series Stacks view */
+.series-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  gap: 12px;
+}
+.series-card {
+  padding: 12px; border-radius: 13px; border: 1px solid var(--border);
+  background: var(--raised); display: flex; flex-direction: column; gap: 10px;
+  cursor: pointer; text-align: left; color: inherit;
+}
+.series-card:hover { border-color: var(--accent); }
+.stack-fan {
+  position: relative; height: 104px; width: 100%; display: flex; align-items: flex-end; justify-content: center;
+}
+.stack-fan .cover { position: absolute; width: 62px; bottom: 0; }
+.stack-fan .s-back2 { transform: translateX(22px) rotate(6deg) scale(.92); opacity: .78; z-index: 1; }
+.stack-fan .s-back1 { transform: translateX(-22px) rotate(-6deg) scale(.94); opacity: .88; z-index: 2; }
+.stack-fan .s-front { z-index: 3; }
+.series-meta strong { display: block; font-family: var(--serif); font-size: 13.5px; font-weight: 600; }
+.series-meta small { display: block; font-size: 10.8px; color: var(--muted); margin-top: 1px; }
+
+/* Right Details Inspector (Fixes ALL 4 caught bugs!) */
+.details-head {
+  display: flex; align-items: center; gap: 4px;
+  min-height: 46px; padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--row-div); flex: none;
+}
+.details-head h2 { margin: 0; font-size: 13.5px; font-weight: 600; flex: 1; text-align: left; }
+.details-body {
+  flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin;
+  padding: 12px; display: flex; flex-direction: column; gap: 12px;
+}
+.det-hero { display: flex; gap: 11px; align-items: flex-start; }
+.det-hero .cover { width: 68px; }
+.det-hero-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.det-hero-info h3 {
+  margin: 0; font-family: var(--serif); font-size: 14.5px; font-weight: 600; line-height: 1.22;
+}
+.det-author-link {
+  appearance: none; border: 0; background: none; padding: 0; color: var(--muted);
+  font: inherit; font-size: 11.3px; text-align: left; cursor: pointer;
+}
+.det-author-link:hover { color: var(--accent); text-decoration: underline; }
+.det-series-link {
+  font-size: 10.8px; color: var(--accent); font-weight: 540;
+}
+/* Clean single-line progress (no "48% · 48% through" duplication!) */
+.det-prog { margin-top: 4px; display: flex; flex-direction: column; gap: 3px; }
+.det-prog-meta {
+  display: flex; justify-content: space-between; font-size: 10.2px; color: var(--muted);
+}
+
+/* Single-row Quick Actions — NEVER wraps a lonely button onto line 2! */
+.det-actions {
+  display: flex; align-items: center; gap: 6px;
+}
+.det-actions .btn-primary {
+  flex: 1; justify-content: center; height: 32px; font-size: 11.5px; padding: 0 10px;
+}
+.det-act-ic {
+  width: 32px; height: 32px; border-radius: 50%; border: 0;
+  background: var(--hover); color: var(--text);
+  display: inline-grid; place-items: center; cursor: pointer; flex: none;
+}
+.det-act-ic:hover { filter: brightness(1.1); }
+.det-act-ic.is-on { background: var(--tonal); color: var(--on-tonal); }
+.det-act-ic.is-on svg { fill: currentColor; }
+
+/* Smooth fade-clamped description (no sliced text!) */
+.det-desc {
+  position: relative; font-size: 11.4px; line-height: 1.55; color: var(--muted);
+}
+.det-desc.clamped p {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  margin: 0;
+}
+.det-desc p { margin: 0; }
+.det-more-btn {
+  appearance: none; border: 0; background: none; color: var(--accent);
+  font: 550 10.8px/1 inherit; padding: 3px 0 0; cursor: pointer;
+}
+
+/* Series strip in details */
+.det-sec-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10.8px; font-weight: 600; color: var(--muted); margin-bottom: 6px;
+}
+.series-strip { display: flex; gap: 7px; }
+.series-strip .mini-vol {
+  width: 40px; padding: 0; border: 0; background: none; cursor: pointer;
+  border-radius: 4px; position: relative;
+}
+.series-strip .mini-vol.cur { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Highlights bridge card to Dar Notes */
+.hl-bridge {
+  padding: 9px 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--raised);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.hl-quote {
+  font-family: var(--serif); font-size: 11.2px; line-height: 1.45; color: var(--text);
+  padding-left: 8px; border-left: 2px solid var(--warning); margin: 0;
+}
+.hl-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10.3px; color: var(--muted);
+}
+
+/* Facts card */
+.facts-card {
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--raised); overflow: hidden; font-size: 11px;
+}
+.fact-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 9px; border-bottom: 1px solid var(--row-div); color: var(--muted);
+}
+.fact-row:last-child { border-bottom: 0; }
+.fact-row strong { color: var(--text); font-weight: 540; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fact-row span, .fact-row a { margin-left: auto; white-space: nowrap; color: var(--muted); }
+.fact-row a { color: var(--accent); text-decoration: none; font-weight: 540; }
+
+.tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.tag-pill {
+  appearance: none; border: 0; height: 22px; padding: 0 8px; border-radius: 999px;
+  background: var(--hover); color: var(--muted); font: 520 10.5px/1 inherit; cursor: pointer;
+}
+.tag-pill:hover { background: var(--tonal); color: var(--on-tonal); }
+
+/* ==================== READER VIEWS ==================== */
+.reader-bar {
+  display: flex; align-items: center; gap: 6px;
+  height: 44px; padding: 0 8px; flex: none;
+  border-bottom: 1px solid var(--row-div);
+}
+.reader-crumb {
+  display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1;
+}
+.reader-crumb h1 {
+  margin: 0; font-size: 13.5px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.reader-crumb span {
+  font-size: 11.2px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.reader-body {
+  flex: 1; min-height: 0; display: flex; position: relative; overflow: hidden;
+}
+.reader-stage {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  position: relative; overflow: hidden;
+}
+
+/* EPUB reading themes */
+.reader-stage.rt-dar { background: var(--panel); color: var(--text); }
+.reader-stage.rt-paper { background: #ffffff; color: #1f1a17; }
+.reader-stage.rt-sepia { background: #f5edd9; color: #463526; }
+.reader-stage.rt-night { background: #141112; color: #d8cfc4; }
+
+.epub-spread {
+  flex: 1; min-height: 0; display: grid;
+  grid-template-columns: 1fr 1fr; gap: 30px;
+  padding: 24px 44px 18px; overflow: hidden; position: relative;
+}
+.epub-spread.single {
+  grid-template-columns: minmax(0, 420px);
+  justify-content: center;
+}
+.epub-col {
+  font-family: var(--serif); font-size: 12.5px; line-height: 1.68;
+}
+.epub-col h2 {
+  margin: 0 0 10px; font-size: 18px; line-height: 1.25; font-weight: 600;
+}
+.epub-col p { margin: 0 0 10px; }
+.epub-gutter {
+  position: absolute; top: 20px; bottom: 20px; left: 50%; width: 1px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.epub-spread.single .epub-gutter { display: none; }
+
+/* Subtle desktop page-turn edge arrows */
+.page-edge {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 28px; height: 48px; border-radius: 999px; border: 0;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  color: color-mix(in srgb, currentColor 65%, transparent);
+  display: grid; place-items: center; cursor: pointer;
+}
+.page-edge:hover { background: color-mix(in srgb, currentColor 16%, transparent); color: currentColor; }
+.page-edge.prev { left: 8px; }
+.page-edge.next { right: 8px; }
+
+/* Reader Right Drawer (3 tabs: Contents | Marks | Highlights) */
+.reader-drawer {
+  width: 226px; flex: none; border-left: 1px solid var(--row-div);
+  background: var(--panel); display: flex; flex-direction: column; min-height: 0;
+}
+.drawer-tabs {
+  display: flex; align-items: center; gap: 2px;
+  padding: 4px 6px 0 6px; border-bottom: 1px solid var(--row-div); flex: none;
+}
+.drawer-tabs button.tab {
+  position: relative; appearance: none; border: 0; background: none;
+  height: 34px; padding: 0 6px; font: 550 10.8px/1 inherit;
+  color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 3px;
+  white-space: nowrap;
+}
+.drawer-tabs button.tab.active { color: var(--text); }
+.drawer-tabs button.tab.active::after {
+  content: ""; position: absolute; left: 6px; right: 6px; bottom: -1px;
+  height: 2.5px; border-radius: 3px 3px 0 0; background: var(--accent);
+}
+.drawer-tabs button.tab small { font-size: 9.8px; color: var(--dim); }
+.drawer-body {
+  flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin;
+  padding: 6px; display: flex; flex-direction: column; gap: 2px;
+}
+.toc-row {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--text); font: 500 11.2px/1.3 inherit;
+  text-align: left; cursor: pointer;
+}
+.toc-row:hover { background: var(--hover); }
+.toc-row.cur { background: var(--tonal); color: var(--on-tonal); font-weight: 600; }
+.toc-row.sub { padding-left: 20px; font-size: 10.8px; color: var(--muted); }
+.toc-row.sub.cur { color: var(--on-tonal); }
+.toc-row small { margin-left: auto; font-size: 10px; color: var(--dim); }
+.mark-item {
+  padding: 7px 8px; border-radius: 9px; background: var(--raised);
+  border: 1px solid var(--row-div); display: flex; flex-direction: column; gap: 3px;
+}
+.mark-item strong { font-size: 11px; font-weight: 580; display: flex; align-items: center; gap: 5px; }
+.mark-item small { font-size: 10px; color: var(--muted); }
+.hl-item {
+  padding: 8px 9px; border-radius: 9px; background: var(--raised);
+  border: 1px solid var(--row-div); display: flex; flex-direction: column; gap: 5px;
+}
+.hl-item blockquote {
+  margin: 0; padding-left: 7px; border-left: 2px solid #e6b84c;
+  font-family: var(--serif); font-size: 11px; line-height: 1.42; color: var(--text);
+}
+.hl-item-meta { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+
+/* Floating Aa Typography Popover (cleanly positioned inside stage, never overlaps drawer!) */
+.aa-popover {
+  position: absolute; top: 8px; right: 10px; z-index: 20;
+  width: 244px; padding: 12px; border-radius: 13px;
+  border: 1px solid var(--border-strong); background: var(--popover);
+  backdrop-filter: blur(16px); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 10px; color: var(--text);
+}
+.aa-label { font-size: 10.3px; font-weight: 600; color: var(--muted); margin-bottom: 4px; display: flex; justify-content: space-between; }
+.aa-themes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.aa-swatch {
+  appearance: none; border: 0; background: none; padding: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  font: 520 10px/1 inherit; color: var(--muted); cursor: pointer;
+}
+.aa-swatch i {
+  width: 100%; height: 26px; border-radius: 7px; border: 1px solid var(--border);
+  display: grid; place-items: center; font: 600 11.5px var(--serif); font-style: normal;
+}
+.aa-swatch.active { color: var(--text); }
+.aa-swatch.active i { outline: 2px solid var(--accent); outline-offset: 1px; }
+.aa-swatch.s-dar i { background: var(--panel); color: var(--text); }
+.aa-swatch.s-paper i { background: #fff; color: #222; }
+.aa-swatch.s-sepia i { background: #f5edd9; color: #463526; }
+.aa-swatch.s-night i { background: #141112; color: #d8cfc4; }
+.aa-row { display: flex; align-items: center; gap: 6px; }
+.aa-seg {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px;
+  padding: 2px; border-radius: 8px; background: var(--hover); width: 100%;
+}
+.aa-seg button {
+  appearance: none; border: 0; background: transparent; color: var(--muted);
+  font: 540 10.5px/1 inherit; height: 24px; border-radius: 6px; cursor: pointer;
+}
+.aa-seg button.active { background: var(--raised); color: var(--text); font-weight: 600; }
+
+/* Reader Footer with Chapter Ticks */
+.reader-foot {
+  display: flex; align-items: center; gap: 10px;
+  height: 42px; padding: 0 14px; flex: none;
+  border-top: 1px solid var(--row-div); font-size: 11px; color: var(--muted);
+}
+.scrubber-wrap {
+  flex: 1; position: relative; height: 20px; display: flex; align-items: center;
+}
+.scrubber-track {
+  width: 100%; height: 4px; border-radius: 99px; background: var(--hover); position: relative;
+}
+.scrubber-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; background: var(--accent); }
+.scrubber-tick {
+  position: absolute; top: -2px; width: 2px; height: 8px; border-radius: 1px;
+  background: var(--border-strong);
+}
+.scrubber-thumb {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.page-jump {
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.page-jump input {
+  width: 32px; height: 22px; text-align: center;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--raised); color: var(--text); font: 600 11px/1 inherit;
+}
+
+/* PDF Reader specifics */
+.find-strip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-bottom: 1px solid var(--row-div);
+  background: var(--raised); flex: none; font-size: 11px; color: var(--muted);
+}
+.find-input {
+  width: 190px; height: 26px; padding: 0 8px; border-radius: 7px;
+  border: 1px solid var(--accent); background: var(--panel); color: var(--text);
+  font: inherit; font-size: 11.5px;
+}
+.pdf-canvas-bg {
+  flex: 1; min-height: 0; overflow: hidden;
+  background: color-mix(in srgb, var(--text) 6%, var(--panel));
+  display: flex; justify-content: center; padding: 14px 16px;
+}
+.pdf-page {
+  width: 100%; max-width: 410px; background: #ffffff; color: #1b171b;
+  border-radius: 3px; box-shadow: 0 4px 20px rgba(0,0,0,.32);
+  padding: 24px 26px; position: relative; transition: filter .15s, background .15s, color .15s;
+}
+.pdf-page.night-paper {
+  background: #221b22; color: #e8dce4;
+}
+.pdf-page h3 { margin: 0 0 10px; font-size: 14.5px; font-weight: 700; }
+.pdf-page p { margin: 0 0 9px; font-size: 11px; line-height: 1.65; }
+.pdf-hl {
+  background: rgba(255, 212, 59, 0.45); border-radius: 2px; padding: 0 1px;
+}
+.pdf-page.night-paper .pdf-hl { background: rgba(255, 200, 75, 0.28); }
+.pdf-match {
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+  outline: 1.5px solid var(--accent); border-radius: 2px; padding: 0 1px;
+}
+.hl-float-pill {
+  position: absolute; left: 50%; top: 184px; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: var(--raised); color: var(--text);
+  font: 600 11px/1 inherit; box-shadow: var(--shadow);
+}
+.zoom-pill {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 4px; border-radius: 999px; background: var(--hover);
+  font-size: 10.5px; color: var(--text);
+}
+
+/* Comic / Manga Reader */
+.comic-stage {
+  flex: 1; min-height: 0; background: #141017;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px 20px; position: relative; overflow: hidden;
+}
+.manga-page {
+  height: 100%; max-height: 470px; aspect-ratio: 2/3;
+  background: #f6f3ee; border-radius: 3px; padding: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.6);
+  display: grid; grid-template-rows: 1fr 1.2fr 0.9fr; gap: 7px;
+}
+.manga-panel {
+  border: 2px solid #1b1720; border-radius: 2px; position: relative; overflow: hidden;
+}
+.mp-sky { background: linear-gradient(180deg, #27365c 0%, #5b6e99 58%, #f0c2b8 100%); }
+.mp-split { display: grid; grid-template-columns: 1.15fr 1fr; gap: 7px; border: 0; }
+.mp-cloud { background: linear-gradient(135deg, #1b2238 0%, #3d4e78 100%); }
+.mp-warm { background: linear-gradient(135deg, #4b2d3f 0%, #9b526a 100%); }
+.mp-sea { background: linear-gradient(180deg, #204954 0%, #10252e 100%); }
+.comic-hint-pill {
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  padding: 5px 12px; border-radius: 999px;
+  background: rgba(26, 15, 24, 0.85); color: #ebd9e6;
+  border: 1px solid rgba(255,255,255,.14); font-size: 10.5px;
+  backdrop-filter: blur(8px);
+}
+
+/* Phone preview stage (2 side-by-side 320px phones fit inside 728px!) */
+.phones-wrap {
+  display: flex; align-items: center; justify-content: center; gap: 18px;
+  height: 100%; padding: 14px; background: var(--bg);
+}
+.phone-frame {
+  width: 300px; height: 540px; border-radius: 26px;
+  border: 1.5px solid var(--border-strong); background: var(--bg);
+  overflow: hidden; display: flex; flex-direction: column;
+  box-shadow: var(--shadow);
+}
+.ph-top {
+  display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+  flex: none;
+}
+.ph-search {
+  flex: 1; height: 30px; border-radius: 15px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--muted); font-size: 11px;
+  display: flex; align-items: center; gap: 6px; padding: 0 10px;
+}
+.ph-sheet {
+  flex: 1; min-height: 0; margin: 0 6px 6px; border-radius: 16px;
+  border: 1px solid var(--border); background: var(--panel);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.ph-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 11px; }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock-shell">
+  <div class="mock-bar">
+    <div class="mock-group" role="tablist" aria-label="Mockup views">
+      <button class="mock-btn active" data-view="home">1. Home</button>
+      <button class="mock-btn" data-view="catalog">2. Library</button>
+      <button class="mock-btn" data-view="epub">3. EPUB</button>
+      <button class="mock-btn" data-view="pdf">4. PDF</button>
+      <button class="mock-btn" data-view="comic">5. Comic</button>
+      <button class="mock-btn" data-view="phone">6. Phone</button>
+    </div>
+    <div class="mock-group">
+      <button class="mock-btn active" data-theme-btn="dark">Nightfall</button>
+      <button class="mock-btn" data-theme-btn="light">Afterglow</button>
+    </div>
+  </div>
+
+  <!-- Shared Interactive Stage -->
+  <div class="stage" id="stage" data-theme="dark" data-focus="false">
+    <!-- Persistent Dar Full-Canvas Topbar -->
+    <header class="topbar" id="topbar">
+      <div class="tb-start">
+        <span class="dar-mark">D</span>
+        <button class="ib" aria-label="All apps" title="All apps">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="5" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="5" cy="19" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="1.4" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <span class="tb-title">Books</span>
+      </div>
+      <div class="tb-search">
+        <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span>Search books, authors, highlights…</span>
+        <kbd>Ctrl K</kbd>
+      </div>
+      <div class="tb-end">
+        <button class="ib" aria-label="Books settings" title="Books settings">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09c-.66 0-1.25.4-1.51 1Z"/></svg>
+        </button>
+        <span class="avatar">A</span>
+      </div>
+    </header>
+
+    <!-- ==================== VIEW 1: HOME & DETAILS ==================== -->
+    <div class="workspace with-details" id="view-home">
+      <aside class="sidebar">
+        <button class="create-btn" type="button">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          Add books
+        </button>
+        <div class="side-scroll">
+          <nav class="nav-list">
+            <button class="nav-item active"><svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5V5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 19.5Z"/><path d="M10 4h8.5A1.5 1.5 0 0 1 20 5.5V20H10"/></svg><span class="nav-lbl">Home</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M2 5.5A2.5 2.5 0 0 1 4.5 3H12v17H4.5A2.5 2.5 0 0 0 2 22V5.5Z"/><path d="M22 5.5A2.5 2.5 0 0 0 19.5 3H12v17h7.5A2.5 2.5 0 0 1 22 22V5.5Z"/></svg><span class="nav-lbl">Reading</span><span class="nav-cnt">4</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4V3Z"/></svg><span class="nav-lbl">Want to read</span><span class="nav-cnt">1</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg><span class="nav-lbl">All books</span><span class="nav-cnt">8</span></button>
+            <button class="nav-item" data-jump-series><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="16" rx="1.5"/><rect x="10" y="4" width="6" height="16" rx="1.5"/><path d="m17 5 4 14"/></svg><span class="nav-lbl">Series</span><span class="nav-cnt">2</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg><span class="nav-lbl">Finished</span><span class="nav-cnt">1</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M9 11H4V6h5v5Zm11 0h-5V6h5v5ZM9 11v2a4 4 0 0 1-4 4m15-6v2a4 4 0 0 1-4 4"/></svg><span class="nav-lbl">Highlights</span><span class="nav-cnt">4</span></button>
+          </nav>
+          <div class="side-head"><span>Libraries</span></div>
+          <nav class="nav-list">
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/></svg><span class="nav-lbl">Fiction</span><span class="nav-cnt">5</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/></svg><span class="nav-lbl">Technical</span><span class="nav-cnt">2</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/></svg><span class="nav-lbl">Manga</span><span class="nav-cnt">1</span></button>
+          </nav>
+        </div>
+        <div class="side-pulse">
+          <div class="pulse-top"><strong>Library</strong><span class="num">8 books</span></div>
+          <div class="pulse-bar" title="4 reading, 1 finished, 1 want to read">
+            <span class="seg-read"></span><span class="seg-done"></span><span class="seg-want"></span>
+          </div>
+          <div class="pulse-legend">
+            <span><i style="background:var(--accent)"></i>4 reading</span>
+            <span><i style="background:var(--success)"></i>1 done</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="sheet">
+        <div class="sheet-head borderless">
+          <h1>Home</h1>
+          <div class="head-tools">
+            <button class="btn-ghost" data-jump-catalog>Browse all</button>
+          </div>
+        </div>
+        <div class="scroll">
+          <!-- Now Reading Spotlight -->
+          <section class="now-reading" aria-label="Now reading">
+            <div class="cover">
+              <div class="cover-art c-navy">
+                <div class="cover-motif"><span class="cover-orb"></span></div>
+                <span class="cover-title">The Glass Meridian</span>
+                <span class="cover-author">Clara Vance</span>
+              </div>
+              <span class="cov-prog"><i style="width:48%"></i></span>
+            </div>
+            <div class="nr-body">
+              <div class="nr-meta-top">
+                <span class="nr-dot"></span>
+                <span>Now reading · Ch. 2</span>
+              </div>
+              <h2 class="nr-title">The Glass Meridian</h2>
+              <div class="nr-sub">Clara Vance · Meridian, Book 1</div>
+              <div class="nr-prog-row">
+                <div class="nr-track"><i style="width:48%"></i></div>
+                <span class="nr-pct num">48% · 14m</span>
+              </div>
+              <div class="nr-actions">
+                <button class="btn-primary" data-open-epub>
+                  <svg class="ic" viewBox="0 0 24 24"><path d="M2 5.5A2.5 2.5 0 0 1 4.5 3H12v17H4.5A2.5 2.5 0 0 0 2 22V5.5Z"/><path d="M22 5.5A2.5 2.5 0 0 0 19.5 3H12v17h7.5A2.5 2.5 0 0 1 22 22V5.5Z"/></svg>
+                  Continue
+                </button>
+                <button class="btn-ghost">2 marks</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Compact Also Reading Queue -->
+          <div class="also-grid">
+            <button class="also-card" data-open-pdf>
+              <div class="cover sm"><div class="cover-art c-paper"><span class="cover-title">Rust Models</span></div></div>
+              <div class="also-info">
+                <strong>Rust Memory Models</strong>
+                <small class="num">Page 2 of 4 · PDF</small>
+                <div class="mini-bar"><i style="width:38%"></i></div>
+              </div>
+            </button>
+            <button class="also-card" data-open-comic>
+              <div class="cover sm"><div class="cover-art c-manga"><div class="cover-motif"><span class="cover-orb gold"></span></div><span class="cover-title">Cloud</span></div></div>
+              <div class="also-info">
+                <strong>Cloudwalker Vol. 1</strong>
+                <small class="num">Page 3 of 6 · CBZ</small>
+                <div class="mini-bar"><i style="width:45%"></i></div>
+              </div>
+            </button>
+          </div>
+
+          <!-- Horizontal Recently Added Shelf (scrolls cleanly, never wraps) -->
+          <div class="shelf-head">
+            <h2>Recently added</h2>
+            <small>docs/books</small>
+            <div class="shelf-right">
+              <button class="txt-btn" data-jump-catalog>See all</button>
+            </div>
+          </div>
+          <div class="shelf-row">
+            <button class="book-tile selected" data-pick="meridian">
+              <div class="cover">
+                <div class="cover-art c-navy"><div class="cover-motif"><span class="cover-orb"></span></div><span class="cover-title">The Glass Meridian</span><span class="cover-author">Clara Vance</span></div>
+                <span class="cov-prog"><i style="width:48%"></i></span>
+              </div>
+              <strong>The Glass Meridian</strong>
+              <small>Meridian · 1</small>
+            </button>
+            <button class="book-tile" data-pick="observatory">
+              <div class="cover">
+                <div class="cover-art c-teal"><div class="cover-motif"><span class="cover-orb gold"></span></div><span class="cover-title">The Salt Observatory</span><span class="cover-author">Clara Vance</span></div>
+              </div>
+              <strong>The Salt Observatory</strong>
+              <small>Meridian · 2</small>
+            </button>
+            <button class="book-tile" data-pick="stars">
+              <div class="cover">
+                <div class="cover-art c-slate"><span class="cover-title">Harbor of Quiet Stars</span><div class="cover-rule"></div><span class="cover-author">Clara Vance</span></div>
+              </div>
+              <strong>Harbor of Quiet Stars</strong>
+              <small>Meridian · 3</small>
+            </button>
+            <button class="book-tile" data-pick="shipyard">
+              <div class="cover">
+                <div class="cover-art c-oxblood"><div class="cover-motif"><span class="cover-orb mint"></span></div><span class="cover-title">Letters from a Shipyard</span><span class="cover-author">H. Lindholm</span></div>
+                <span class="cov-done"><svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
+              </div>
+              <strong>Letters from a Shipyard</strong>
+              <small>Henrik Lindholm</small>
+            </button>
+            <button class="book-tile" data-pick="locked">
+              <div class="cover">
+                <div class="cover-art c-plum"><span class="cover-title">Locked Archive Edition</span><span class="cover-author">Storefront Press</span></div>
+                <span class="cov-badge drm">DRM</span>
+              </div>
+              <strong>Locked Archive</strong>
+              <small>DRM protected</small>
+            </button>
+          </div>
+        </div>
+      </main>
+
+      <!-- Redesigned Details Sheet (clean single-row actions, no dup progress, fade desc, Notes bridge) -->
+      <aside class="sheet" aria-label="Book details">
+        <div class="details-head">
+          <h2>Details</h2>
+          <button class="ib" aria-label="More actions"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/></svg></button>
+          <button class="ib" aria-label="Close details"><svg class="ic" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+        <div class="details-body">
+          <div class="det-hero">
+            <div class="cover">
+              <div class="cover-art c-navy"><div class="cover-motif"><span class="cover-orb"></span></div><span class="cover-title">The Glass Meridian</span><span class="cover-author">Clara Vance</span></div>
+              <span class="cov-prog"><i style="width:48%"></i></span>
+            </div>
+            <div class="det-hero-info">
+              <h3 id="det-title">The Glass Meridian</h3>
+              <button class="det-author-link" id="det-author" title="Filter library by author">Clara Vance</button>
+              <span class="det-series-link" id="det-series">Meridian Trilogy · Book 1 of 3</span>
+              <div class="det-prog">
+                <div class="nr-track"><i style="width:48%"></i></div>
+                <div class="det-prog-meta num"><span>48% read</span><span>14m left</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Single-row actions — no orphaned checkmark! -->
+          <div class="det-actions">
+            <button class="btn-primary" data-open-epub>
+              <svg class="ic" viewBox="0 0 24 24"><path d="M2 5.5A2.5 2.5 0 0 1 4.5 3H12v17H4.5A2.5 2.5 0 0 0 2 22V5.5Z"/><path d="M22 5.5A2.5 2.5 0 0 0 19.5 3H12v17h7.5A2.5 2.5 0 0 1 22 22V5.5Z"/></svg>
+              Continue
+            </button>
+            <button class="det-act-ic" title="Want to read" aria-label="Want to read"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4V3Z"/></svg></button>
+            <button class="det-act-ic" title="Mark as finished" aria-label="Mark as finished"><svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></button>
+            <button class="det-act-ic" title="Download" aria-label="Download"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></button>
+          </div>
+
+          <!-- Clean line-clamped description with working toggle -->
+          <div class="det-desc clamped" id="det-desc-box">
+            <p>Along a wind-scoured northern peninsula, an instrument maker inherits her grandfather's tidal ledgers and uncovers a forgotten survey of shifting sea lanes across the outer sound.</p>
+            <button class="det-more-btn" id="det-desc-toggle">Show more</button>
+          </div>
+
+          <!-- Series strip -->
+          <div>
+            <div class="det-sec-head"><span>Meridian Trilogy</span><span class="num">1 of 3</span></div>
+            <div class="series-strip">
+              <button class="mini-vol cur" title="Book 1: The Glass Meridian"><div class="cover sm"><div class="cover-art c-navy"><span class="cover-title">Glass Meridian</span></div></div></button>
+              <button class="mini-vol" title="Book 2: The Salt Observatory"><div class="cover sm"><div class="cover-art c-teal"><span class="cover-title">Salt Obs.</span></div></div></button>
+              <button class="mini-vol" title="Book 3: Harbor of Quiet Stars"><div class="cover sm"><div class="cover-art c-slate"><span class="cover-title">Quiet Stars</span></div></div></button>
+            </div>
+          </div>
+
+          <!-- Highlights bridge to Dar Notes -->
+          <div class="hl-bridge">
+            <div class="det-sec-head" style="margin:0"><span>Highlights &amp; notes</span><span class="num">2 saved</span></div>
+            <p class="hl-quote">“Measure twice when the barometer falls; trust neither glass nor memory alone.”</p>
+            <div class="hl-foot">
+              <span>Ch. 1 · Highlights/The Glass Meridian.md</span>
+              <a href="#" style="color:var(--accent);text-decoration:none;font-weight:560">Open in Notes</a>
+            </div>
+          </div>
+
+          <!-- Facts card -->
+          <div class="facts-card">
+            <div class="fact-row"><strong>EPUB · 1.4 MB</strong><span class="num">≈ 312 pages</span></div>
+            <div class="fact-row"><strong>Published 2024</strong><span>Northlight Press</span></div>
+            <div class="fact-row"><strong>Last read 12:54 PM</strong><span>Firefox · Linux</span></div>
+            <div class="fact-row"><strong>Fiction/the-glass…</strong><a href="#">Files</a></div>
+          </div>
+
+          <div class="tag-row">
+            <button class="tag-pill">Literary Fiction</button>
+            <button class="tag-pill">Maritime</button>
+            <button class="tag-pill">Mystery</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- ==================== VIEW 2: CATALOG (GRID / LIST / SERIES) ==================== -->
+    <div class="workspace hidden" id="view-catalog">
+      <aside class="sidebar">
+        <button class="create-btn" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add books</button>
+        <div class="side-scroll">
+          <nav class="nav-list">
+            <button class="nav-item" data-jump-home><svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5V5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 19.5Z"/><path d="M10 4h8.5A1.5 1.5 0 0 1 20 5.5V20H10"/></svg><span class="nav-lbl">Home</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M2 5.5A2.5 2.5 0 0 1 4.5 3H12v17H4.5A2.5 2.5 0 0 0 2 22V5.5Z"/><path d="M22 5.5A2.5 2.5 0 0 0 19.5 3H12v17h7.5A2.5 2.5 0 0 1 22 22V5.5Z"/></svg><span class="nav-lbl">Reading</span><span class="nav-cnt">4</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4V3Z"/></svg><span class="nav-lbl">Want to read</span><span class="nav-cnt">1</span></button>
+            <button class="nav-item active"><svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg><span class="nav-lbl">All books</span><span class="nav-cnt">8</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="16" rx="1.5"/><rect x="10" y="4" width="6" height="16" rx="1.5"/><path d="m17 5 4 14"/></svg><span class="nav-lbl">Series</span><span class="nav-cnt">2</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg><span class="nav-lbl">Finished</span><span class="nav-cnt">1</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M9 11H4V6h5v5Zm11 0h-5V6h5v5ZM9 11v2a4 4 0 0 1-4 4m15-6v2a4 4 0 0 1-4 4"/></svg><span class="nav-lbl">Highlights</span><span class="nav-cnt">4</span></button>
+          </nav>
+          <div class="side-head"><span>Libraries</span></div>
+          <nav class="nav-list">
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/></svg><span class="nav-lbl">Fiction</span><span class="nav-cnt">5</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/></svg><span class="nav-lbl">Technical</span><span class="nav-cnt">2</span></button>
+            <button class="nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/></svg><span class="nav-lbl">Manga</span><span class="nav-cnt">1</span></button>
+          </nav>
+        </div>
+        <div class="side-pulse">
+          <div class="pulse-top"><strong>Drop files to upload</strong></div>
+          <div style="font-size:10.2px;color:var(--dim)">EPUB, PDF, CBZ, CBR supported anywhere on the grid.</div>
+        </div>
+      </aside>
+
+      <main class="sheet">
+        <div class="sheet-head">
+          <h1>All books</h1>
+          <span class="head-cnt num" id="cat-count">8</span>
+          <div class="head-tools">
+            <div class="seg" role="group" aria-label="Catalog layout">
+              <button class="active" data-cat-mode="grid">Covers</button>
+              <button data-cat-mode="list">List</button>
+              <button data-cat-mode="series">Series</button>
+            </div>
+            <button class="sort-pill">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 6h14M3 12h10M3 18h6M18 8v10m0 0-3-3m3 3 3-3"/></svg>
+              Recently read
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter chips / Bulk bar -->
+        <div class="subbar" id="cat-subbar">
+          <button class="chip active" data-fmt="all">All</button>
+          <button class="chip" data-fmt="epub">EPUB</button>
+          <button class="chip" data-fmt="pdf">PDF</button>
+          <button class="chip" data-fmt="comic">Comics</button>
+          <button class="chip" data-fmt="reading">In progress</button>
+          <button class="chip" data-fmt="finished">Finished</button>
+          <button class="chip" id="toggle-bulk-demo" style="margin-left:auto">Select</button>
+        </div>
+
+        <div class="scroll">
+          <!-- Covers Grid -->
+          <div class="cat-grid" id="cat-grid">
+            <div class="book-tile" data-type="epub" data-st="reading">
+              <span class="tile-check"><svg class="ic" viewBox="0 0 24 24" style="width:10px;height:10px;stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <div class="cover"><div class="cover-art c-navy"><div class="cover-motif"><span class="cover-orb"></span></div><span class="cover-title">The Glass Meridian</span><span class="cover-author">Clara Vance</span></div><span class="cov-prog"><i style="width:48%"></i></span></div>
+              <strong>The Glass Meridian</strong><small>Meridian · 1</small>
+            </div>
+            <div class="book-tile" data-type="epub" data-st="want">
+              <span class="tile-check"><svg class="ic" viewBox="0 0 24 24" style="width:10px;height:10px;stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <div class="cover"><div class="cover-art c-teal"><div class="cover-motif"><span class="cover-orb gold"></span></div><span class="cover-title">The Salt Observatory</span><span class="cover-author">Clara Vance</span></div></div>
+              <strong>The Salt Observatory</strong><small>Meridian · 2</small>
+            </div>
+            <div class="book-tile" data-type="epub" data-st="unread">
+              <span class="tile-check"><svg class="ic" viewBox="0 0 24 24" style="width:10px;height:10px;stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <div class="cover"><div class="cover-art c-slate"><span class="cover-title">Harbor of Quiet Stars</span><div class="cover-rule"></div><span class="cover-author">Clara Vance</span></div></div>
+              <strong>Harbor of Quiet Stars</strong><small>Meridian · 3</small>
+            </div>
+            <div class="book-tile" data-type="epub" data-st="finished">
+              <span class="tile-check"><svg class="ic" viewBox="0 0 24 24" style="width:10px;height:10px;stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <div class="cover"><div class="cover-art c-oxblood"><div class="cover-motif"><span class="cover-orb mint"></span></div><span class="cover-title">Letters from a Shipyard</span><span class="cover-author">H. Lindholm</span></div><span class="cov-done"><svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+              <strong>Letters from a Shipyard</strong><small>Henrik Lindholm</small>
+            </div>
+            <div class="book-tile" data-type="pdf" data-st="reading">
+              <span class="tile-check"><svg class="ic" viewBox="0 0 24 24" style="width:10px;height:10px;stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <div class="cover has-badge"><div class="cover-art c-paper"><span class="cover-title">Rust Memory Models &amp; Async</span><span class="cover-author">Elena Rostova</span></div><span class="cov-badge">PDF</span><span class="cov-prog"><i style="width:38%"></i></span></div>
+              <strong>Rust Memory Models</strong><small>Elena Rostova</small>
+            </div>
+            <div class="book-tile" data-type="epub" data-st="reading">
+              <span class="tile-check"><svg class="ic" viewBox="0 0 24 24" style="width:10px;height:10px;stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <div class="cover"><div class="cover-art c-forest"><span class="cover-title">Designing Distributed Systems</span><div class="cover-rule"></div><span class="cover-author">T. Al-Mansoor</span></div><span class="cov-prog"><i style="width:72%"></i></span></div>
+              <strong>Distributed Systems</strong><small>Tariq Al-Mansoor</small>
+            </div>
+            <div class="book-tile" data-type="comic" data-st="reading">
+              <span class="tile-check"><svg class="ic" viewBox="0 0 24 24" style="width:10px;height:10px;stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <div class="cover has-badge"><div class="cover-art c-manga"><div class="cover-motif"><span class="cover-orb gold"></span></div><span class="cover-title">Cloudwalker Vol. 1</span><span class="cover-author">Kenji Sato</span></div><span class="cov-badge">CBZ</span><span class="cov-prog"><i style="width:45%"></i></span></div>
+              <strong>Cloudwalker Vol. 1</strong><small>Cloudwalker · 1</small>
+            </div>
+            <div class="book-tile" data-type="epub" data-st="unread">
+              <span class="tile-check"><svg class="ic" viewBox="0 0 24 24" style="width:10px;height:10px;stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <div class="cover has-badge"><div class="cover-art c-plum"><span class="cover-title">Locked Archive Edition</span><span class="cover-author">Storefront Press</span></div><span class="cov-badge drm">DRM</span></div>
+              <strong>Locked Archive Edition</strong><small>Cannot open</small>
+            </div>
+          </div>
+
+          <!-- Compact List Table View -->
+          <div class="list-table hidden" id="cat-list">
+            <div class="list-head"><span></span><span></span><span>Title</span><span>Author / Series</span><span>Format</span><span style="text-align:right">Progress</span></div>
+            <div class="list-row selected">
+              <input type="checkbox" checked aria-label="Select The Glass Meridian">
+              <div class="cover sm"><div class="cover-art c-navy"></div></div>
+              <div><div class="l-title">The Glass Meridian</div><div class="l-sub">Fiction · 312 pages</div></div>
+              <div><div class="l-title" style="font-weight:480">Clara Vance</div><div class="l-sub">Meridian Trilogy · #1</div></div>
+              <span class="fmt-tag">EPUB</span>
+              <div class="num" style="text-align:right;font-size:11px;color:var(--on-tonal)">48%</div>
+            </div>
+            <div class="list-row">
+              <input type="checkbox" aria-label="Select Rust Memory Models">
+              <div class="cover sm"><div class="cover-art c-paper"></div></div>
+              <div><div class="l-title">Rust Memory Models &amp; Async Runtimes</div><div class="l-sub">Technical · 4 pages</div></div>
+              <div><div class="l-title" style="font-weight:480">Elena Rostova</div><div class="l-sub">—</div></div>
+              <span class="fmt-tag">PDF</span>
+              <div class="num" style="text-align:right;font-size:11px;color:var(--muted)">p. 2 / 4</div>
+            </div>
+            <div class="list-row">
+              <input type="checkbox" aria-label="Select Designing Distributed Systems">
+              <div class="cover sm"><div class="cover-art c-forest"></div></div>
+              <div><div class="l-title">Designing Distributed Systems in Practice</div><div class="l-sub">Technical · 420 pages</div></div>
+              <div><div class="l-title" style="font-weight:480">Tariq Al-Mansoor</div><div class="l-sub">—</div></div>
+              <span class="fmt-tag">EPUB</span>
+              <div class="num" style="text-align:right;font-size:11px;color:var(--muted)">72%</div>
+            </div>
+            <div class="list-row">
+              <input type="checkbox" aria-label="Select Cloudwalker Vol. 1">
+              <div class="cover sm"><div class="cover-art c-manga"></div></div>
+              <div><div class="l-title">Cloudwalker Vol. 1</div><div class="l-sub">Manga · 6 pages · RTL</div></div>
+              <div><div class="l-title" style="font-weight:480">Kenji Sato</div><div class="l-sub">Cloudwalker · #1</div></div>
+              <span class="fmt-tag">CBZ</span>
+              <div class="num" style="text-align:right;font-size:11px;color:var(--muted)">p. 3 / 6</div>
+            </div>
+            <div class="list-row">
+              <input type="checkbox" aria-label="Select Letters from a Shipyard">
+              <div class="cover sm"><div class="cover-art c-oxblood"></div></div>
+              <div><div class="l-title">Letters from a Northern Shipyard</div><div class="l-sub">Fiction · 248 pages</div></div>
+              <div><div class="l-title" style="font-weight:480">Henrik Lindholm</div><div class="l-sub">—</div></div>
+              <span class="fmt-tag">EPUB</span>
+              <div class="num" style="text-align:right;font-size:11px;color:var(--success)">Finished</div>
+            </div>
+          </div>
+
+          <!-- Series Stacks View -->
+          <div class="series-grid hidden" id="cat-series">
+            <button class="series-card">
+              <div class="stack-fan">
+                <div class="cover sm s-back2"><div class="cover-art c-slate"><span class="cover-title">Quiet Stars</span></div></div>
+                <div class="cover sm s-back1"><div class="cover-art c-teal"><span class="cover-title">Salt Obs.</span></div></div>
+                <div class="cover sm s-front"><div class="cover-art c-navy"><div class="cover-motif"><span class="cover-orb"></span></div><span class="cover-title">The Glass Meridian</span></div></div>
+              </div>
+              <div class="series-meta">
+                <strong>Meridian Trilogy</strong>
+                <small>Clara Vance · 3 books</small>
+                <div class="mini-bar" style="margin-top:6px"><i style="width:16%"></i></div>
+                <small class="num" style="margin-top:3px">Book 1 in progress (48%)</small>
+              </div>
+            </button>
+            <button class="series-card">
+              <div class="stack-fan">
+                <div class="cover sm s-back1"><div class="cover-art c-plum"><span class="cover-title">Vol. 2</span></div></div>
+                <div class="cover sm s-front"><div class="cover-art c-manga"><div class="cover-motif"><span class="cover-orb gold"></span></div><span class="cover-title">Cloudwalker Vol. 1</span></div></div>
+              </div>
+              <div class="series-meta">
+                <strong>Cloudwalker</strong>
+                <small>Kenji Sato · 2 volumes</small>
+                <div class="mini-bar" style="margin-top:6px"><i style="width:22%"></i></div>
+                <small class="num" style="margin-top:3px">Vol. 1 · Page 3 of 6</small>
+              </div>
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- ==================== VIEW 3: EPUB READER ==================== -->
+    <div class="workspace reader-mode hidden" id="view-epub">
+      <main class="sheet">
+        <div class="reader-bar">
+          <button class="ib" data-jump-home title="Back to library"><svg class="ic" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+          <div class="reader-crumb">
+            <h1>The Glass Meridian</h1>
+            <span>› Chapter 2: Tides of the Outer Bay</span>
+          </div>
+          <div class="head-tools">
+            <button class="ib" title="Find in book (Ctrl+F)"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+            <button class="ib on" id="epub-aa-btn" title="Text and layout"><span style="font:600 12px var(--serif)">Aa</span></button>
+            <button class="ib accent-on" title="Bookmarked"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4V3Z"/></svg></button>
+            <button class="ib on" id="epub-drawer-btn" title="Contents, bookmarks & highlights"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+            <button class="ib" id="epub-focus-btn" title="Focus mode (Z)"><svg class="ic" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+          </div>
+        </div>
+
+        <div class="reader-body">
+          <div class="reader-stage rt-sepia" id="epub-stage">
+            <!-- Interactive Aa Typography Popover (anchored inside stage, zero overlap with right drawer!) -->
+            <div class="aa-popover" id="epub-aa-pop">
+              <div>
+                <div class="aa-label"><span>Page theme</span></div>
+                <div class="aa-themes">
+                  <button class="aa-swatch s-dar" data-rt="dar"><i>Aa</i>Dar</button>
+                  <button class="aa-swatch s-paper" data-rt="paper"><i>Aa</i>Paper</button>
+                  <button class="aa-swatch s-sepia active" data-rt="sepia"><i>Aa</i>Sepia</button>
+                  <button class="aa-swatch s-night" data-rt="night"><i>Aa</i>Night</button>
+                </div>
+              </div>
+              <div>
+                <div class="aa-label"><span>Typeface</span><span class="num">18 px</span></div>
+                <div class="aa-seg">
+                  <button class="active">Serif</button>
+                  <button>Sans</button>
+                  <button>Publisher</button>
+                </div>
+              </div>
+              <div>
+                <div class="aa-label"><span>Columns &amp; flow</span></div>
+                <div class="aa-seg" id="spread-seg">
+                  <button class="active" data-cols="2">2-page</button>
+                  <button data-cols="1">1-page</button>
+                  <button data-cols="scroll">Scroll</button>
+                </div>
+              </div>
+              <div>
+                <div class="aa-label"><span>Line spacing</span></div>
+                <div class="aa-seg">
+                  <button>Tight</button>
+                  <button class="active">Normal</button>
+                  <button>Loose</button>
+                </div>
+              </div>
+            </div>
+
+            <button class="page-edge prev" aria-label="Previous page"><svg class="ic" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+            <div class="epub-spread" id="epub-spread">
+              <div class="epub-col">
+                <h2>Chapter 2: Tides of the Outer Bay</h2>
+                <p>By noon the wind had shifted southwest, lifting whitecaps past the granite breakwater and rattling the iron louvers of the observatory dome.</p>
+                <p>On the chart table lay three overlapping tracings of the estuary, each drawn in a different decade, showing how the sandbars drifted slowly like sleeping creatures beneath the brown water.</p>
+                <p>Mira lifted the brass dividers and stepped them from the headland to the bell buoy, counting leagues in silence while rain ticked steadily against the southern panes.</p>
+              </div>
+              <div class="epub-gutter"></div>
+              <div class="epub-col">
+                <p>In the margin of the oldest chart, her grandfather had marked a line of soundings in faded crimson—soundings no modern ferry timetable acknowledged.</p>
+                <p>“Measure twice when the barometer falls,” he had written along the collar of the ledger, “and trust neither glass nor memory alone.”</p>
+                <p>Outside, the harbour bell rang twice for slack water. She rolled the tracing paper into its copper cylinder and reached for her oilskin coat.</p>
+              </div>
+            </div>
+            <button class="page-edge next" aria-label="Next page"><svg class="ic" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+          </div>
+
+          <aside class="reader-drawer" id="epub-drawer">
+            <div class="drawer-tabs">
+              <button class="tab active" data-dtab="toc">Contents</button>
+              <button class="tab" data-dtab="marks">Marks <small>2</small></button>
+              <button class="tab" data-dtab="hl">Notes <small>2</small></button>
+            </div>
+            <div class="drawer-body" id="dtab-toc">
+              <button class="toc-row"><span>1. The Glass Instrument</span><small>12%</small></button>
+              <button class="toc-row cur"><span>2. Tides of the Outer Bay</span><small>48%</small></button>
+              <button class="toc-row sub"><span>The Brass Sextant</span><small>56%</small></button>
+              <button class="toc-row"><span>3. Lanterns at Low Water</span><small>78%</small></button>
+            </div>
+            <div class="drawer-body hidden" id="dtab-marks">
+              <div class="mark-item">
+                <strong>The Brass Sextant</strong>
+                <small>Chapter 2 · 48% · 12:54 PM</small>
+              </div>
+              <div class="mark-item">
+                <strong>Harbor astrolabe note</strong>
+                <small>Chapter 1 · 18% · Yesterday</small>
+              </div>
+            </div>
+            <div class="drawer-body hidden" id="dtab-hl">
+              <div class="hl-item">
+                <blockquote>“Measure twice when the barometer falls; trust neither glass nor memory alone.”</blockquote>
+                <div class="hl-item-meta"><span>Ch. 2</span><a href="#" style="color:var(--accent);text-decoration:none">Notes</a></div>
+              </div>
+              <div class="hl-item">
+                <blockquote>“The sandbars drifted slowly like sleeping creatures beneath the brown water.”</blockquote>
+                <div class="hl-item-meta"><span>Ch. 2</span><a href="#" style="color:var(--accent);text-decoration:none">Notes</a></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="reader-foot">
+          <span>Ch. 2 · ~14 min left</span>
+          <div class="scrubber-wrap" aria-label="Reading progress">
+            <div class="scrubber-track">
+              <div class="scrubber-fill" style="width:48%"></div>
+              <span class="scrubber-tick" style="left:28%" title="Chapter 2"></span>
+              <span class="scrubber-tick" style="left:74%" title="Chapter 3"></span>
+              <span class="scrubber-thumb" style="left:48%"></span>
+            </div>
+          </div>
+          <span class="num">48%</span>
+        </div>
+      </main>
+    </div>
+
+    <!-- ==================== VIEW 4: PDF & HIGHLIGHTS ==================== -->
+    <div class="workspace reader-mode hidden" id="view-pdf">
+      <main class="sheet">
+        <div class="reader-bar">
+          <button class="ib" data-jump-home title="Back to library"><svg class="ic" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+          <div class="reader-crumb">
+            <h1>Rust Memory Models &amp; Async Runtimes</h1>
+            <span>› 1. Architecture &amp; Memory Safety</span>
+          </div>
+          <div class="head-tools">
+            <button class="ib on" title="Find in book"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+            <span class="zoom-pill">
+              <button class="ib" style="width:22px;height:22px" aria-label="Zoom out"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+              <span class="num" style="padding:0 3px">110%</span>
+              <button class="ib" style="width:22px;height:22px" aria-label="Zoom in"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+              <button class="ib" style="width:22px;height:22px" title="Fit width / Fit page"><svg class="ic" viewBox="0 0 24 24"><path d="M4 12h16M8 8l-4 4 4 4M16 8l4 4-4 4"/></svg></button>
+            </span>
+            <button class="ib" id="pdf-tint-btn" title="Toggle Night paper tint"><svg class="ic" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+            <button class="ib on" title="Contents, bookmarks & highlights"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+          </div>
+        </div>
+
+        <div class="find-strip">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input class="find-input" value="task" aria-label="Find in PDF">
+          <span class="num">1 of 4</span>
+          <button class="ib" style="width:24px;height:24px" aria-label="Previous"><svg class="ic" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg></button>
+          <button class="ib" style="width:24px;height:24px" aria-label="Next"><svg class="ic" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+        </div>
+
+        <div class="reader-body">
+          <div class="pdf-canvas-bg">
+            <div class="pdf-page" id="pdf-page">
+              <h3>1. Architecture &amp; Memory Safety</h3>
+              <p>Modern systems runtimes combine zero-cost abstractions with predictable latency under high concurrency workloads.</p>
+              <p>In this chapter we examine ownership boundaries, <span class="pdf-match">task</span> scheduling queues, and lock-free ring buffers in Rust. <span class="pdf-hl">Every async task owns its state machine on the heap, eliminating hidden thread stacks and minimizing cache misses.</span></p>
+              <p>Careful budget enforcement prevents noisy background futures from starving interactive requests sharing the same executor pool.</p>
+              <span class="hl-float-pill">
+                <svg class="ic" viewBox="0 0 24 24" style="color:var(--accent)"><path d="M9 11H4V6h5v5Zm11 0h-5V6h5v5ZM9 11v2a4 4 0 0 1-4 4m15-6v2a4 4 0 0 1-4 4"/></svg>
+                Highlight to Notes
+              </span>
+            </div>
+          </div>
+
+          <aside class="reader-drawer">
+            <div class="drawer-tabs">
+              <button class="tab">Contents</button>
+              <button class="tab">Marks <small>1</small></button>
+              <button class="tab active">Highlights <small>2</small></button>
+            </div>
+            <div class="drawer-body">
+              <div class="hl-item">
+                <blockquote>“Every async task owns its state machine on the heap, eliminating hidden thread stacks and minimizing cache misses.”</blockquote>
+                <div class="hl-item-meta"><span>Page 1</span><a href="#" style="color:var(--accent);text-decoration:none">Open in Notes</a></div>
+              </div>
+              <div class="hl-item">
+                <blockquote>“Drop guards and cancellation tokens ensure sockets, file handles, and workers shut down cleanly.”</blockquote>
+                <div class="hl-item-meta"><span>Page 3</span><a href="#" style="color:var(--accent);text-decoration:none">Open in Notes</a></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="reader-foot">
+          <div class="page-jump">
+            <span>Page</span>
+            <input value="1" aria-label="Jump to page">
+            <span class="num">of 4</span>
+          </div>
+          <div class="scrubber-wrap">
+            <div class="scrubber-track">
+              <div class="scrubber-fill" style="width:25%"></div>
+              <span class="scrubber-tick" style="left:25%"></span>
+              <span class="scrubber-tick" style="left:50%"></span>
+              <span class="scrubber-tick" style="left:75%"></span>
+              <span class="scrubber-thumb" style="left:25%"></span>
+            </div>
+          </div>
+          <span class="num">25%</span>
+        </div>
+      </main>
+    </div>
+
+    <!-- ==================== VIEW 5: COMIC / MANGA READER ==================== -->
+    <div class="workspace reader-mode hidden" id="view-comic">
+      <main class="sheet">
+        <div class="reader-bar">
+          <button class="ib" data-jump-home title="Back to library"><svg class="ic" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+          <div class="reader-crumb">
+            <h1>Cloudwalker Vol. 1</h1>
+            <span>› Manga · Right to left</span>
+          </div>
+          <div class="head-tools">
+            <div class="seg" role="group" aria-label="Comic layout">
+              <button data-comic-mode="single">Single</button>
+              <button class="active" data-comic-mode="spread">Spread</button>
+              <button data-comic-mode="strip">Strip</button>
+            </div>
+            <button class="sort-pill" id="rtl-toggle">RTL</button>
+            <button class="ib" title="Fit height"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16m-4-12 4-4 4 4m-8 8 4 4 4-4"/></svg></button>
+            <button class="ib" title="Bookmark page"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4V3Z"/></svg></button>
+          </div>
+        </div>
+
+        <div class="comic-stage" id="comic-stage">
+          <button class="page-edge prev" style="color:#f5e6f0" aria-label="Next page (RTL)"><svg class="ic" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+          <div class="manga-page" id="comic-p2">
+            <div class="manga-panel mp-sky"></div>
+            <div class="manga-panel mp-split">
+              <div class="manga-panel mp-cloud"></div>
+              <div class="manga-panel mp-warm"></div>
+            </div>
+            <div class="manga-panel mp-sea"></div>
+          </div>
+          <div class="manga-page" id="comic-p1">
+            <div class="manga-panel mp-warm"></div>
+            <div class="manga-panel mp-sky"></div>
+            <div class="manga-panel mp-split">
+              <div class="manga-panel mp-sea"></div>
+              <div class="manga-panel mp-cloud"></div>
+            </div>
+          </div>
+          <button class="page-edge next" style="color:#f5e6f0" aria-label="Previous page (RTL)"><svg class="ic" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+          <span class="comic-hint-pill">Reading right to left · Left edge turns forward</span>
+        </div>
+
+        <div class="reader-foot">
+          <span class="num">Pages 3–4 of 6</span>
+          <div class="scrubber-wrap">
+            <div class="scrubber-track">
+              <div class="scrubber-fill" style="width:55%"></div>
+              <span class="scrubber-thumb" style="left:55%"></span>
+            </div>
+          </div>
+          <span class="num">55% · RTL</span>
+        </div>
+      </main>
+    </div>
+
+    <!-- ==================== VIEW 6: PHONE (HOME + READER) ==================== -->
+    <div class="workspace reader-mode hidden" id="view-phone" style="padding:0">
+      <div class="phones-wrap">
+        <!-- Phone 1: Home -->
+        <div class="phone-frame">
+          <div class="ph-top">
+            <button class="ib" aria-label="Navigation"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+            <div class="ph-search"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search all apps…</div>
+            <span class="avatar">A</span>
+          </div>
+          <div class="ph-sheet">
+            <div class="sheet-head borderless" style="min-height:38px;padding:6px 11px 2px">
+              <h1 style="font-size:15px">Home</h1>
+              <div class="head-tools"><button class="txt-btn">All books</button></div>
+            </div>
+            <div class="ph-scroll">
+              <div class="now-reading" style="grid-template-columns:56px minmax(0,1fr);gap:10px;padding:10px">
+                <div class="cover sm"><div class="cover-art c-navy"><div class="cover-motif"><span class="cover-orb"></span></div><span class="cover-title">The Glass Meridian</span></div></div>
+                <div class="nr-body">
+                  <div class="nr-meta-top"><span class="nr-dot"></span><span>Now reading</span></div>
+                  <div class="nr-title" style="font-size:13.5px">The Glass Meridian</div>
+                  <div class="nr-sub" style="font-size:10.5px">48% · 14 min left</div>
+                  <div class="nr-track" style="margin-top:4px"><i style="width:48%"></i></div>
+                </div>
+              </div>
+
+              <div class="shelf-head" style="margin:12px 0 6px"><h2>Recently added</h2></div>
+              <div class="shelf-row" style="gap:7px">
+                <div class="book-tile" style="width:76px;padding:3px">
+                  <div class="cover sm"><div class="cover-art c-teal"><div class="cover-motif"><span class="cover-orb gold"></span></div><span class="cover-title">Salt Obs.</span></div></div>
+                  <strong style="font-size:10.5px">Salt Obs.</strong>
+                </div>
+                <div class="book-tile" style="width:76px;padding:3px">
+                  <div class="cover sm has-badge"><div class="cover-art c-paper"><span class="cover-title">Rust Memory</span></div><span class="cov-badge">PDF</span></div>
+                  <strong style="font-size:10.5px">Rust Models</strong>
+                </div>
+                <div class="book-tile" style="width:76px;padding:3px">
+                  <div class="cover sm has-badge"><div class="cover-art c-manga"><div class="cover-motif"><span class="cover-orb gold"></span></div><span class="cover-title">Cloudwalker</span></div><span class="cov-badge">CBZ</span></div>
+                  <strong style="font-size:10.5px">Cloudwalker</strong>
+                </div>
+              </div>
+
+              <div class="shelf-head" style="margin:10px 0 6px"><h2>Series</h2></div>
+              <div class="also-card" style="padding:8px">
+                <div class="cover sm" style="width:30px"><div class="cover-art c-navy"></div></div>
+                <div class="also-info"><strong>Meridian Trilogy</strong><small>3 books · Book 1 at 48%</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Phone 2: Distraction-free EPUB Reader (no redundant global search bar!) -->
+        <div class="phone-frame">
+          <div class="reader-bar" style="height:40px;background:var(--panel)">
+            <button class="ib" aria-label="Back"><svg class="ic" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+            <div class="reader-crumb"><h1 style="font-size:12.5px">The Glass Meridian</h1></div>
+            <button class="ib" style="width:26px;height:26px"><span style="font:600 11.5px var(--serif)">Aa</span></button>
+            <button class="ib accent-on" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4V3Z"/></svg></button>
+            <button class="ib" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+          </div>
+          <div class="reader-stage rt-sepia" style="padding:22px 20px">
+            <div class="epub-col" style="font-size:12.5px">
+              <h2 style="font-size:17px">Chapter 2: Tides of the Outer Bay</h2>
+              <p>By noon the wind had shifted southwest, lifting whitecaps past the granite breakwater and rattling the iron louvers of the observatory dome.</p>
+              <p>On the chart table lay three overlapping tracings of the estuary, each drawn in a different decade, showing how the sandbars drifted slowly like sleeping creatures beneath the brown water.</p>
+              <p>Mira lifted the brass dividers and stepped them from the headland to the bell buoy, counting leagues in silence while rain ticked steadily against the southern panes.</p>
+            </div>
+          </div>
+          <div class="reader-foot" style="height:38px;padding:0 12px;background:var(--panel)">
+            <span>Ch. 2 · 14m</span>
+            <div class="scrubber-wrap">
+              <div class="scrubber-track">
+                <div class="scrubber-fill" style="width:48%"></div>
+                <span class="scrubber-thumb" style="left:48%"></span>
+              </div>
+            </div>
+            <span class="num">48%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const stage = document.getElementById('stage');
+const views = ['home', 'catalog', 'epub', 'pdf', 'comic', 'phone'];
+
+function showView(name) {
+  views.forEach(v => {
+    document.getElementById('view-' + v).classList.toggle('hidden', v !== name);
+  });
+  document.querySelectorAll('[data-view]').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === name);
+  });
+  if (name === 'phone') {
+    stage.dataset.focus = 'true';
+  } else if (name !== 'epub') {
+    stage.dataset.focus = 'false';
+  }
+}
+
+document.querySelectorAll('[data-view]').forEach(b => {
+  b.addEventListener('click', () => showView(b.dataset.view));
+});
+document.querySelectorAll('[data-theme-btn]').forEach(b => {
+  b.addEventListener('click', () => {
+    stage.dataset.theme = b.dataset.themeBtn;
+    document.querySelectorAll('[data-theme-btn]').forEach(x => x.classList.toggle('active', x === b));
+  });
+});
+
+// Quick cross-view jumps
+document.querySelectorAll('[data-open-epub]').forEach(b => b.addEventListener('click', () => showView('epub')));
+document.querySelectorAll('[data-open-pdf]').forEach(b => b.addEventListener('click', () => showView('pdf')));
+document.querySelectorAll('[data-open-comic]').forEach(b => b.addEventListener('click', () => showView('comic')));
+document.querySelectorAll('[data-jump-home]').forEach(b => b.addEventListener('click', () => showView('home')));
+document.querySelectorAll('[data-jump-catalog]').forEach(b => b.addEventListener('click', () => showView('catalog')));
+document.querySelectorAll('[data-jump-series]').forEach(b => b.addEventListener('click', () => {
+  showView('catalog');
+  setCatalogMode('series');
+}));
+
+// Details description expand/collapse
+const descBox = document.getElementById('det-desc-box');
+const descToggle = document.getElementById('det-desc-toggle');
+descToggle.addEventListener('click', () => {
+  const clamped = descBox.classList.toggle('clamped');
+  descToggle.textContent = clamped ? 'Show more' : 'Show less';
+});
+
+// Catalog layout switcher (Covers / List / Series)
+function setCatalogMode(mode) {
+  document.getElementById('cat-grid').classList.toggle('hidden', mode !== 'grid');
+  document.getElementById('cat-list').classList.toggle('hidden', mode !== 'list');
+  document.getElementById('cat-series').classList.toggle('hidden', mode !== 'series');
+  document.querySelectorAll('[data-cat-mode]').forEach(b => b.classList.toggle('active', b.dataset.catMode === mode));
+}
+document.querySelectorAll('[data-cat-mode]').forEach(b => {
+  b.addEventListener('click', () => setCatalogMode(b.dataset.catMode));
+});
+
+// Catalog format/status filter chips
+document.querySelectorAll('[data-fmt]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const f = chip.dataset.fmt;
+    document.querySelectorAll('[data-fmt]').forEach(c => c.classList.toggle('active', c === chip));
+    let shown = 0;
+    document.querySelectorAll('#cat-grid .book-tile').forEach(tile => {
+      const ok = f === 'all' || tile.dataset.type === f || tile.dataset.st === f;
+      tile.classList.toggle('hidden', !ok);
+      if (ok) shown++;
+    });
+    document.getElementById('cat-count').textContent = shown;
+  });
+});
+
+// Bulk select toggle demo
+let bulkOn = false;
+const subbar = document.getElementById('cat-subbar');
+const origSubbar = subbar.innerHTML;
+document.getElementById('toggle-bulk-demo').addEventListener('click', () => {
+  bulkOn = !bulkOn;
+  document.querySelectorAll('#cat-grid .book-tile').forEach((t, i) => t.classList.toggle('checked', bulkOn && i < 2));
+});
+
+// EPUB Reader interactions: Aa toggle, themes, spread columns, drawer tabs, focus mode
+document.getElementById('epub-aa-btn').addEventListener('click', function () {
+  const pop = document.getElementById('epub-aa-pop');
+  const open = pop.classList.toggle('hidden');
+  this.classList.toggle('on', !open);
+});
+document.querySelectorAll('[data-rt]').forEach(sw => {
+  sw.addEventListener('click', () => {
+    const st = document.getElementById('epub-stage');
+    st.className = 'reader-stage rt-' + sw.dataset.rt;
+    document.querySelectorAll('[data-rt]').forEach(x => x.classList.toggle('active', x === sw));
+  });
+});
+document.querySelectorAll('#spread-seg button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#spread-seg button').forEach(x => x.classList.toggle('active', x === b));
+    document.getElementById('epub-spread').classList.toggle('single', b.dataset.cols !== '2');
+  });
+});
+document.querySelectorAll('#epub-drawer .tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('#epub-drawer .tab').forEach(x => x.classList.toggle('active', x === tab));
+    ['toc', 'marks', 'hl'].forEach(k => {
+      document.getElementById('dtab-' + k).classList.toggle('hidden', tab.dataset.dtab !== k);
+    });
+  });
+});
+document.getElementById('epub-drawer-btn').addEventListener('click', function () {
+  const hidden = document.getElementById('epub-drawer').classList.toggle('hidden');
+  this.classList.toggle('on', !hidden);
+});
+document.getElementById('epub-focus-btn').addEventListener('click', function () {
+  const on = stage.dataset.focus !== 'true';
+  stage.dataset.focus = on ? 'true' : 'false';
+  this.classList.toggle('on', on);
+});
+
+// PDF Night paper tint toggle
+document.getElementById('pdf-tint-btn').addEventListener('click', function () {
+  const on = document.getElementById('pdf-page').classList.toggle('night-paper');
+  this.classList.toggle('on', on);
+});
+
+// Comic Spread/Single toggle & RTL/LTR
+document.querySelectorAll('[data-comic-mode]').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('[data-comic-mode]').forEach(x => x.classList.toggle('active', x === b));
+    document.getElementById('comic-p2').classList.toggle('hidden', b.dataset.comicMode === 'single');
+  });
+});
+document.getElementById('rtl-toggle').addEventListener('click', function () {
+  this.textContent = this.textContent === 'RTL' ? 'LTR' : 'RTL';
+});
+</script>
+</body>
+</html>

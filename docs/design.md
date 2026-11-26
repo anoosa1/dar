@@ -348,21 +348,30 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   search pill, view chips and `+` FAB untouched, hide tile checkboxes behind a
   header `Select` toggle, and open the viewer and details below the top bar with
   `Back`. See [Photos](photos.md).
-- **Books:** selected [mock A](spacetimedb/books-mocks.html) over B (November 16). Sidebar
-  views (Home, Reading, Want to read, All books, Finished), then libraries (top folders of the
-  Books folder). Home has Continue reading cards and Recently added / Want to read shelves;
-  other views are a cover grid with a sort menu. Covers show progress, a finished check and a
-  format badge; books without a cover get a typographic cover. Details sit in the right sheet
-  (cover, status, Read/Continue, Want to read, Download, Mark as finished, description, series
-  strip, facts, Show in Files). A book opens in the middle sheet (the sidebar folds away) with
-  a bar (Back, title, chapter, Find and zoom for PDFs, Aa, bookmark, contents, full screen,
-  more), contents and bookmarks on the right and a footer scrubber. PDFs get a Find bar under
-  the bar (count, previous/next, Escape closes; matches tinted with the accent, the current one
-  outlined) and a Highlight pill under a text selection; highlights are yellow, multiplied over
-  the always-white page so they read in light and dark themes, and saved to Notes; Aa holds theme (Dar, Paper, Sepia, Night),
-  font, size, spacing and Pages/Scroll, saved to the account. A newer place from another device
-  asks Go there / Stay here. Phones show the reader and details below the search bar with Back.
-  See [Books](books.md).
+- **Books:** selected [mock A](spacetimedb/books-mocks.html) over B (November 16; refreshed
+  November 26, [redesign mock](spacetimedb/books-redesign-mock.html)). Scrollable sidebar with
+  `+ Add books` button, primary views (`Home`, `Reading`, `Want to read`, `All books`, `Series`,
+  `Finished`, `Highlights`), `Libraries` (top folders of the Books folder), indexing spinner and a
+  quiet `Library` reading-progress pulse footer. Home features a `Now reading` spotlight card above
+  a compact `Also reading` queue and single-row horizontal scrolling shelves (`Recently added`,
+  `Want to read`, `Series`) that never wrap when Details opens. Catalog views pair title and count
+  with a `Covers / List / Series` switcher and sort menu, over filter chips (`All`, `EPUB`, `PDF`,
+  `Comics`, `In progress`, `Finished`, plus clickable Author/Tag/Series filters) that swap to a
+  tonal bulk selection bar (`Want to read`, `Finished`, `Delete`) when selecting; dropping book
+  files onto the workspace uploads them directly. Covers feature spine depth, literary serif
+  typographic fallback covers, progress bars, finished checks, format pills and explicit `DRM` /
+  error badges. Details sit in the right sheet (left-aligned header, serif title, clickable author
+  and series filters, non-duplicate progress caption, single-row quick actions, line-clamped
+  description with `Show more`, series strip, `Highlights & notes` card linking to Notes, facts and
+  clickable subject pills). Opening a book folds away the sidebar into the middle sheet with a
+  format-aware bar (`Back`, title, chapter, PDF `Find`/zoom `%`/`Fit width`/`Fit page`/paper tint,
+  Comic `Single`/`Spread`/`Strip` + `RTL`/`LTR` + fit, EPUB `Aa` popover anchored inside the stage
+  with theme, font, size, spacing, `Pages`/`Scroll` and `Auto`/`1-page`/`2-page` columns,
+  bookmark, 3-tab `Contents`/`Bookmarks`/`Highlights` drawer, Focus mode `Z` hiding the global top
+  bar, fullscreen `F`, more), subtle hover page-turn chevrons, and a chapter-tick scrubber footer
+  with estimated time left and clickable page jump. Highlights save to Notes (`Highlights/<book>.md`)
+  and render both in Details/Reader and in the `Highlights` view. Phones keep the 3-part top bar,
+  open details and reader full-bleed with `Back` and respect Focus mode. See [Books](books.md).
 - **Git:** selected [mock B](spacetimedb/git-mocks.html) over A (November 16), updated with the
   [Git redesign](spacetimedb/git-redesign-mock.html): its own app. Every Files folder that keeps
   history is a repository. Sidebar views (Overview, Repositories, Pull requests, Agent branches),

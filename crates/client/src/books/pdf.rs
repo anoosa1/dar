@@ -635,6 +635,12 @@ pub fn PdfView(
     /// Find's progress after each search or step (see [`PdfHandle::find`]).
     #[prop(optional)]
     on_find: Option<Callback<PdfFindState>>,
+    /// Reports the effective zoom scale (1.0 = 100%) whenever layout recalculates.
+    #[prop(optional)]
+    on_scale: Option<Callback<f64>>,
+    /// Paper tint mode ("paper", "sepia", "night").
+    #[prop(optional)]
+    tint: Option<Signal<String>>,
 ) -> impl IntoView {
     let scroller = NodeRef::<html::Div>::new();
     let pages_node = NodeRef::<html::Div>::new();
@@ -763,12 +769,15 @@ pub fn PdfView(
 
     // Set `--pdf-height` via CSSOM (no inline style attribute because of CSP).
     Effect::new(move |_| {
-        let total = layout.with(|l| l.total);
+        let l = layout.get();
+        if let Some(cb) = on_scale {
+            let _ = cb.try_run(l.scale);
+        }
         if let Some(node) = pages_node.get() {
             let el: &web_sys::HtmlElement = &node;
             let _ = el
                 .style()
-                .set_property("--pdf-height", &format!("{}px", total.round() as i64));
+                .set_property("--pdf-height", &format!("{}px", l.total.round() as i64));
         }
     });
 
@@ -1164,10 +1173,15 @@ pub fn PdfView(
         (start_i..=end_i).collect::<Vec<_>>()
     });
 
+    let root_class = move || {
+        let t = tint.map(|s| s.get()).unwrap_or_else(|| "paper".to_owned());
+        format!("pdf-view pdf-tint-{t} {class_name}")
+    };
+
     view! {
         <div
             node_ref=scroller
-            class=format!("pdf-view {class_name}")
+            class=root_class
             tabindex="0"
             role="document"
             aria-label=move || label.get()

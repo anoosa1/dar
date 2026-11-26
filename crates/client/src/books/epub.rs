@@ -39,6 +39,7 @@ pub struct ReaderLook {
     pub size: u32,
     pub line_height: f64,
     pub layout: String,
+    pub columns: String,
 }
 
 #[derive(Clone)]
@@ -202,7 +203,16 @@ impl EpubState {
         let paged = l.layout == "pages";
         let width = frame_node.client_width() as f64;
         let height = frame_node.client_height() as f64;
-        let columns: f64 = if paged && width >= 1100.0 { 2.0 } else { 1.0 };
+        let columns: f64 = if !paged {
+            1.0
+        } else {
+            match l.columns.as_str() {
+                "1" => 1.0,
+                "2" if width >= 720.0 => 2.0,
+                _ if width >= 1100.0 => 2.0,
+                _ => 1.0,
+            }
+        };
         let widest = ((l.size as f64) * if columns == 2.0 { 30.0 } else { 36.0 }).round();
         let min_pad: f64 = if width < 600.0 {
             20.0
