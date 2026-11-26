@@ -175,6 +175,63 @@ pub async fn news_browser_journey(t: &Ctx) -> Result<()> {
         .locator("audio[src='https://media.example/ep1.mp3']")
         .wait_for_state(State::Attached)
         .await?;
+    reader.locator(".news-player").wait_for().await?;
+
+    // Aa reading typography popover: switch to Sepia + Clean Sans and verify classes.
+    reader
+        .get_by_role("button", "Reading typography")
+        .click()
+        .await?;
+    let aa = reader.locator(".news-aa-popover");
+    aa.wait_for().await?;
+    aa.get_by_role("button", "Sepia").click().await?;
+    aa.get_by_role("button", "Clean Sans").click().await?;
+    page.locator(".news-reader.news-paper-sepia.news-font-sans")
+        .wait_for()
+        .await?;
+    // Reset to Dar + Editorial Serif and close popover.
+    aa.get_by_role("button", "Dar").click().await?;
+    aa.get_by_role("button", "Editorial Serif").click().await?;
+    reader
+        .get_by_role("button", "Reading typography")
+        .click()
+        .await?;
+
+    // Focus reading mode toggles via 'f'.
+    page.locator("body").press("f").await?;
+    page.locator(".news-shell.is-news-focus").wait_for().await?;
+    page.locator("body").press("f").await?;
+    page.locator(".news-shell.is-news-focus")
+        .wait_for_state(State::Detached)
+        .await?;
+
+    // Filter chips: Media filters list to Episode one, then All restores it.
+    page.locator(".news-filter-bar")
+        .get_by_role("button", "Media")
+        .click()
+        .await?;
+    list.get_by_role("button", regex("Episode one"))
+        .wait_for()
+        .await?;
+    page.locator(".news-filter-bar")
+        .get_by_role("button", "All")
+        .click()
+        .await?;
+
+    // Magazine Cards layout switch renders cards grid, then return to Split reading.
+    page.get_by_role("button", "Magazine cards").click().await?;
+    page.locator(".news-list.is-cards").wait_for().await?;
+    page.get_by_role("button", "Split reading").click().await?;
+    page.locator(".news-list.is-cards")
+        .wait_for_state(State::Detached)
+        .await?;
+
+    // Single-feed view shows the 14-day Feed Pulse sparkline card.
+    page.get_by_role("button", regex("^Fixture News"))
+        .first()
+        .click()
+        .await?;
+    page.locator(".news-feed-pulse svg").wait_for().await?;
 
     // Subscribe through discovery, then unsubscribe through the feed menu with confirmation.
     page.get_by_role("button", "Subscribe")

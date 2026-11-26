@@ -1,0 +1,1626 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar News — Redesign Mockup</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans, 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif);
+  font-size: 13px;
+  line-height: 1.45;
+  background: transparent;
+  color: var(--foreground, #faeaf3);
+  -webkit-font-smoothing: antialiased;
+}
+.stage[data-theme="dark"] { color-scheme: dark; }
+.stage[data-theme="light"] { color-scheme: light; }
+
+.mock-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  padding: 6px;
+}
+
+/* Mock control strip */
+.mock-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mock-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.mock-btn {
+  appearance: none;
+  border: 1px solid var(--border, rgba(130,96,126,.35));
+  background: var(--secondary, rgba(115,57,111,.08));
+  color: var(--muted-foreground, #6e546d);
+  font: 540 11.5px/1 inherit;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.mock-btn:hover { color: var(--foreground, #352138); background: rgba(115,57,111,.15); }
+.mock-btn.active {
+  background: #73396f;
+  color: #fff7fc;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+/* Dar Twilight Stage (Nightfall default, Afterglow light toggle) */
+.stage {
+  --bg: #26111f;
+  --panel: #301c2b;
+  --raised: #3a2536;
+  --popover: rgba(54, 33, 50, 0.95);
+  --hover: #412b3f;
+  --border: rgba(186, 150, 178, 0.22);
+  --border-strong: rgba(186, 150, 178, 0.36);
+  --row-div: rgba(186, 150, 178, 0.13);
+  --text: #faeaf3;
+  --muted: #cfb4ca;
+  --dim: #9c7e97;
+  --accent: #f2a2a9;
+  --on-accent: #26111f;
+  --tonal: #4d3c73;
+  --on-tonal: #f3eafd;
+  --rose: #d889af;
+  --success: #b2dec4;
+  --success-soft: #284136;
+  --warning: #ffc493;
+  --warning-soft: #4b3429;
+  --danger: #ffb2c6;
+  --error-soft: #4e2436;
+  --blue: #a8c7fa;
+  --shadow: 0 14px 36px rgba(10, 3, 10, 0.52), 0 2px 8px rgba(10, 3, 10, 0.34);
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --serif: 'Iowan Old Style', 'Charter', 'Georgia', Cambria, serif;
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  position: relative;
+  width: 100%;
+  height: 700px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr);
+  box-shadow: var(--shadow);
+}
+.stage[data-theme="light"] {
+  --bg: #fbf4f6;
+  --panel: #fffafb;
+  --raised: #ffffff;
+  --popover: rgba(255, 252, 253, 0.96);
+  --hover: #f3e7ee;
+  --border: rgba(115, 57, 111, 0.16);
+  --border-strong: rgba(115, 57, 111, 0.28);
+  --row-div: rgba(115, 57, 111, 0.10);
+  --text: #352138;
+  --muted: #6e546d;
+  --dim: #8f748e;
+  --accent: #73396f;
+  --on-accent: #fff7fc;
+  --tonal: #ede3f5;
+  --on-tonal: #4d3c73;
+  --rose: #a94a76;
+  --success: #276045;
+  --success-soft: #e3f0e9;
+  --warning: #854913;
+  --warning-soft: #fbe9d8;
+  --danger: #a32745;
+  --error-soft: #fbe9ee;
+  --blue: #2d5aa0;
+  --shadow: 0 14px 36px rgba(38, 17, 31, 0.14), 0 2px 8px rgba(38, 17, 31, 0.08);
+}
+
+/* Icons */
+svg.ic {
+  width: 16px; height: 16px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* Shared Dar Full-Canvas Topbar */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: transparent;
+}
+.tb-start { display: flex; align-items: center; gap: 6px; flex: none; }
+.dar-mark {
+  display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--accent); color: var(--on-accent);
+  font-size: 13.5px; font-weight: 760;
+}
+.tb-title { font-size: 15.5px; font-weight: 620; letter-spacing: -.015em; padding-left: 2px; }
+.tb-search {
+  flex: 0 1 480px; margin: 0 auto;
+  height: 36px; padding: 0 8px 0 14px;
+  border-radius: 18px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--muted);
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+}
+.tb-search kbd {
+  margin-left: auto;
+  font: 550 10px/16px var(--mono);
+  padding: 1px 6px; border-radius: 5px;
+  border: 1px solid var(--border); color: var(--muted);
+}
+.tb-end { display: flex; align-items: center; gap: 6px; flex: none; }
+.ib {
+  display: inline-grid; place-items: center;
+  width: 32px; height: 32px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--muted); cursor: pointer;
+  transition: background .1s, color .1s;
+}
+.ib:hover { background: var(--hover); color: var(--text); }
+.ib.on { background: var(--tonal); color: var(--on-tonal); }
+.ib.starred { color: var(--warning); }
+.ib.starred svg.ic { fill: currentColor; }
+.avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--tonal); color: var(--on-tonal);
+  font-size: 12px; font-weight: 650;
+}
+
+/* Main Workspace Grid */
+.workspace {
+  display: grid;
+  grid-template-columns: 236px minmax(350px, 412px) minmax(0, 1fr);
+  gap: 8px;
+  padding: 0 8px 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+.stage[data-layout="magazine"] .workspace,
+.stage[data-layout="cards"] .workspace {
+  grid-template-columns: 236px minmax(0, 1fr);
+}
+.stage[data-layout="focus"] .workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+.stage[data-layout="focus"] .sidebar,
+.stage[data-layout="focus"] .list-sheet { display: none; }
+.stage[data-layout="magazine"] .reader-sheet,
+.stage[data-layout="cards"] .reader-sheet { display: none; }
+.stage[data-layout="pane"] .workspace {
+  grid-template-columns: 236px minmax(0, 1fr) 392px;
+}
+.stage[data-layout="pane"] .reader-sheet { display: none; }
+.sheet.editor-sheet { display: none; }
+.stage[data-layout="pane"] .sheet.editor-sheet { display: flex; }
+
+/* Sidebar */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 2px 4px 4px;
+  overflow: hidden;
+}
+.create-btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  align-self: flex-start;
+  height: 44px; padding: 0 18px 0 14px;
+  margin: 0 0 12px 2px;
+  border: 0; border-radius: 15px;
+  background: var(--tonal); color: var(--on-tonal);
+  font: 600 13.5px/1 inherit; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,.18);
+}
+.create-btn:hover { filter: brightness(1.07); }
+.side-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+  scrollbar-width: thin; padding-right: 2px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; height: 34px; padding: 0 11px;
+  border: 0; border-radius: 17px;
+  background: transparent; color: var(--text);
+  font: 500 12.8px/1 inherit; text-align: left;
+  cursor: pointer; margin-bottom: 1px;
+}
+.nav-item:hover { background: var(--hover); }
+.nav-item.active { background: var(--tonal); color: var(--on-tonal); font-weight: 600; }
+.nav-item .ic { width: 16px; height: 16px; color: var(--muted); }
+.nav-item.active .ic { color: var(--on-tonal); }
+.nav-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-cnt {
+  margin-left: auto; font-size: 11px; font-weight: 600;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+  padding: 1px 6px; border-radius: 999px;
+}
+.nav-item.active .nav-cnt { background: rgba(255,255,255,.12); color: var(--on-tonal); }
+.nav-item.nested { padding-left: 30px; }
+.nav-item.is-dim { opacity: .55; }
+.side-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 12px 2px 3px 11px;
+  font-size: 11.5px; font-weight: 620; color: var(--muted);
+}
+.side-head-acts { display: flex; align-items: center; gap: 2px; }
+.side-chip {
+  border: 0; border-radius: 999px;
+  padding: 2px 7px; font: 560 10.5px/1.4 inherit;
+  background: transparent; color: var(--muted); cursor: pointer;
+}
+.side-chip:hover { background: var(--hover); color: var(--text); }
+.side-chip.on { background: var(--tonal); color: var(--on-tonal); }
+
+/* Feed marks */
+.fmark {
+  width: 17px; height: 17px; border-radius: 5px;
+  display: inline-grid; place-items: center; flex: none;
+  font-size: 9.5px; font-weight: 750; color: #fffafb;
+}
+.m-rose { background: var(--rose); color: #26111f; }
+.m-teal { background: #3c8c7c; color: #fff; }
+.m-amber { background: #c57b2c; color: #fff; }
+.m-plum { background: #8c5eb8; color: #fff; }
+.m-err { background: var(--danger); color: #26111f; }
+
+.warn-ic { color: var(--warning); display: inline-flex; }
+.pin-ic { color: var(--muted); opacity: .75; display: inline-flex; }
+.pin-ic svg.ic, .warn-ic svg.ic { width: 13px; height: 13px; }
+
+/* Sidebar footer (synced + health pill) */
+.side-foot {
+  flex: none; margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.sync-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 6px 9px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--muted);
+  font: 500 12px/1.2 inherit; cursor: pointer; text-align: left;
+}
+.sync-btn:hover { background: var(--hover); color: var(--text); }
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--success); }
+.sync-dot.warn { background: var(--warning); }
+.health-pill {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 9px; border-radius: 9px; border: 0;
+  background: var(--warning-soft); color: var(--warning);
+  font: 560 11.5px/1.2 inherit; cursor: pointer; text-align: left;
+}
+.health-pill:hover { filter: brightness(1.08); }
+.health-pill svg.ic { width: 13px; height: 13px; }
+
+/* Floating Sheets */
+.sheet {
+  display: flex; flex-direction: column;
+  min-height: 0; min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+/* List Sheet Header + Filter Strip */
+.sheet-head {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 52px; padding: 6px 10px 6px 16px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.sheet-head h1 {
+  margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.015em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cnt-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 20px; min-width: 22px; padding: 0 7px; border-radius: 999px;
+  background: var(--hover); color: var(--muted);
+  font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums;
+}
+.tools { margin-left: auto; display: flex; align-items: center; gap: 3px; flex: none; }
+.seg {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px; border-radius: 10px; background: var(--hover);
+}
+.seg button {
+  border: 0; background: transparent; color: var(--muted);
+  height: 26px; padding: 0 8px; border-radius: 8px;
+  display: inline-flex; align-items: center; gap: 4px;
+  font: 560 11.5px/1 inherit; cursor: pointer;
+}
+.seg button:hover { color: var(--text); }
+.seg button.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.seg button svg.ic { width: 14px; height: 14px; }
+
+.pill-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 30px; padding: 0 11px; border-radius: 15px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text); font: 560 12px/1 inherit; cursor: pointer;
+}
+.pill-btn:hover { background: var(--hover); }
+.pill-btn svg.ic { width: 14px; height: 14px; }
+.pill-btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+
+/* Filter & Bulk Selection Sub-bar */
+.filter-bar {
+  display: flex; align-items: center; gap: 5px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto; scrollbar-width: none; flex: none;
+}
+.fchip {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); font: 550 11.8px/1 inherit;
+  white-space: nowrap; cursor: pointer;
+}
+.fchip:hover { background: var(--hover); color: var(--text); }
+.fchip.active { background: var(--tonal); color: var(--on-tonal); border-color: transparent; }
+.fchip svg.ic { width: 12px; height: 12px; }
+.sort-pill {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+  height: 26px; padding: 0 8px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted);
+  font: 550 11.5px/1 inherit; cursor: pointer; white-space: nowrap;
+}
+.sort-pill:hover { background: var(--hover); color: var(--text); }
+.sort-pill svg.ic { width: 13px; height: 13px; }
+
+.bulk-bar {
+  display: none; align-items: center; gap: 6px;
+  margin: 6px 8px 2px; padding: 5px 10px;
+  border-radius: 12px; background: var(--tonal); color: var(--on-tonal);
+  font-size: 12.5px; font-weight: 600; flex: none;
+}
+.bulk-bar.show { display: flex; }
+.bulk-bar .ib { color: var(--on-tonal); width: 28px; height: 28px; }
+.bulk-bar .ib:hover { background: rgba(255,255,255,.14); }
+
+/* Feed Health Sparkline Strip (when viewing a feed/folder) */
+.feed-pulse {
+  display: none; align-items: center; gap: 12px;
+  margin: 8px 10px 2px; padding: 9px 12px;
+  border-radius: 12px; border: 1px solid var(--border);
+  background: var(--raised); flex: none;
+}
+.feed-pulse.show { display: flex; }
+.pulse-meta { flex: 1; min-width: 0; }
+.pulse-meta strong { display: block; font-size: 12.5px; font-weight: 620; }
+.pulse-meta small { display: block; font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.spark { display: flex; align-items: flex-end; gap: 2px; height: 24px; padding: 2px 4px; }
+.spark i {
+  display: block; width: 4px; border-radius: 2px;
+  background: var(--accent); opacity: .75;
+}
+.spark i.z { height: 2px; opacity: .22; }
+
+/* Article List (chronological, zero duplicate days) */
+.alist {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 4px 8px 16px; scrollbar-width: thin;
+}
+.day-hdr {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 10px 5px;
+  font-size: 11.5px; font-weight: 620; color: var(--muted);
+}
+.day-hdr::after { content: ""; flex: 1; height: 1px; background: var(--row-div); }
+
+.arow {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 10px 10px 8px;
+  border-radius: 13px;
+  margin-bottom: 2px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.arow:hover { background: var(--hover); }
+.arow.selected { background: var(--tonal); color: var(--on-tonal); }
+.arow.selected::before {
+  content: ""; position: absolute; left: 2px; top: 11px; bottom: 11px;
+  width: 3px; border-radius: 3px; background: var(--accent);
+}
+.arow-lead {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 3px;
+}
+.udot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.arow.read .udot { background: transparent; }
+.arow.selected .udot { background: var(--on-tonal); }
+.arow.selected.read .udot { background: transparent; }
+.row-chk {
+  position: absolute; left: 8px; top: 12px;
+  width: 15px; height: 15px; margin: 0; accent-color: var(--accent);
+  opacity: 0; cursor: pointer;
+}
+.arow:hover .row-chk, .row-chk:checked, .alist.selecting .row-chk { opacity: 1; }
+.arow:hover .udot, .arow.checked .udot, .alist.selecting .udot { opacity: 0; }
+
+.arow-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.arow-meta {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--muted);
+}
+.arow-feed { font-weight: 560; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arow-time { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 11px; }
+.arow-title {
+  font-size: 13.5px; font-weight: 620; line-height: 1.32;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.arow.read .arow-title { font-weight: 450; color: var(--muted); }
+.arow-excerpt {
+  font-size: 12px; line-height: 1.4; color: var(--muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.arow.selected :is(.arow-meta, .arow-excerpt) { color: color-mix(in srgb, var(--on-tonal) 78%, transparent); }
+.arow.selected .arow-title { color: var(--on-tonal); }
+
+.arow-thumb {
+  width: 68px; height: 50px; border-radius: 9px;
+  overflow: hidden; flex: none; margin-top: 2px;
+  border: 1px solid var(--border);
+}
+.thumb-art { width: 100%; height: 100%; display: block; }
+.media-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 18px; padding: 0 6px; border-radius: 999px;
+  background: var(--hover); color: var(--accent);
+  font-size: 10.5px; font-weight: 600;
+}
+.arow.selected .media-pill { background: rgba(255,255,255,.15); color: var(--on-tonal); }
+.media-pill svg.ic { width: 11px; height: 11px; }
+
+/* Hover Quick-Triage Pill (Mail pattern) */
+.hover-triage {
+  position: absolute; right: 8px; top: 6px;
+  display: flex; align-items: center; gap: 1px;
+  padding: 2px 3px; border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--raised);
+  box-shadow: 0 4px 12px rgba(0,0,0,.26);
+  opacity: 0; pointer-events: none; transition: opacity .1s;
+}
+.arow:hover .hover-triage { opacity: 1; pointer-events: auto; }
+.hover-triage .ib { width: 25px; height: 25px; border-radius: 6px; }
+.hover-triage .ib svg.ic { width: 13px; height: 13px; }
+
+/* Magazine / Cards Grid Layout */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 10px 14px 20px;
+}
+.acard {
+  position: relative;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--raised); overflow: hidden;
+  cursor: pointer; transition: border-color .12s;
+}
+.acard:hover { border-color: var(--accent); }
+.acard-media {
+  height: 124px; width: 100%; position: relative; overflow: hidden;
+}
+.acard-media.typo {
+  display: flex; align-items: flex-end; padding: 12px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--tonal) 68%, var(--panel)), var(--panel));
+  font: 600 13px/1.3 var(--serif); color: var(--on-tonal);
+}
+.acard-body { padding: 11px 13px 12px; display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.acard-body h3 {
+  margin: 0; font-size: 14px; font-weight: 640; line-height: 1.32;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.acard-body p {
+  margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.acard-foot {
+  margin-top: auto; padding-top: 6px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--muted);
+}
+
+/* Editorial Reader Sheet */
+.reader-head {
+  display: flex; align-items: center; gap: 6px;
+  min-height: 52px; padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--border);
+  flex: none; position: relative;
+}
+.reader-src {
+  display: flex; align-items: center; gap: 8px;
+  min-width: 0; flex: 1; font-size: 12.5px; color: var(--muted);
+}
+.reader-src span.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 560; color: var(--text); }
+.prog-track {
+  position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+  background: transparent;
+}
+.prog-fill { height: 100%; width: 42%; background: var(--accent); border-radius: 0 2px 2px 0; transition: width .15s; }
+
+/* Reader paper surface & typography settings */
+.reader-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 26px 28px 36px; scrollbar-width: thin;
+  transition: background .15s, color .15s;
+}
+.reader-sheet[data-paper="paper"] .reader-scroll { background: #ffffff; color: #1f1a17; --r-muted: #665c54; --r-border: #e5ded6; --r-code: #f5f2ee; }
+.reader-sheet[data-paper="sepia"] .reader-scroll { background: #f4ecd8; color: #3d2e20; --r-muted: #705b47; --r-border: #dfd3ba; --r-code: #ebe1c9; }
+.reader-sheet[data-paper="night"] .reader-scroll { background: #151114; color: #ded6cf; --r-muted: #9e948c; --r-border: #2c2429; --r-code: #201a1e; }
+
+.article-col {
+  max-width: 62ch;
+  margin: 0 auto;
+}
+.reader-sheet[data-font="serif"] .article-col .prose { font-family: var(--serif); font-size: 16.5px; line-height: 1.78; }
+.reader-sheet[data-font="sans"] .article-col .prose { font-family: var(--sans); font-size: 15px; line-height: 1.72; }
+.reader-sheet[data-size="lg"] .article-col .prose { font-size: 18px; }
+.reader-sheet[data-size="sm"] .article-col .prose { font-size: 14px; }
+
+.art-badges { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.ft-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 22px; padding: 0 9px; border-radius: 999px;
+  background: var(--success-soft); color: var(--success);
+  font-size: 11px; font-weight: 600;
+}
+.ft-badge svg.ic { width: 12px; height: 12px; }
+
+.article-col h1 {
+  margin: 0 0 10px;
+  font-family: var(--serif);
+  font-size: 26px; font-weight: 650; line-height: 1.22; letter-spacing: -.018em;
+  text-align: left;
+}
+.reader-sheet[data-font="sans"] .article-col h1 { font-family: var(--sans); font-size: 24px; }
+.byline {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  margin: 0 0 20px; padding-bottom: 16px;
+  border-bottom: 1px solid var(--r-border, var(--border));
+  font-size: 12px; color: var(--r-muted, var(--muted));
+}
+.byline strong { color: inherit; font-weight: 600; }
+
+.prose p { margin: 0 0 15px; text-align: left; }
+.prose h2 {
+  margin: 24px 0 10px; font-size: 18px; font-weight: 650;
+  line-height: 1.3; text-align: left; /* Fixes centered H2 bug! */
+}
+.prose figure { margin: 18px 0 20px; }
+.prose figure .hero-img {
+  width: 100%; height: 210px; border-radius: 13px; overflow: hidden;
+  border: 1px solid var(--r-border, var(--border));
+}
+.prose figcaption {
+  margin-top: 8px; font-family: var(--sans);
+  font-size: 12px; color: var(--r-muted, var(--muted)); text-align: left;
+}
+.prose pre {
+  margin: 16px 0; padding: 13px 15px; border-radius: 11px;
+  border: 1px solid var(--r-border, var(--border));
+  background: var(--r-code, var(--hover));
+  font: 12.5px/1.6 var(--mono); overflow-x: auto; text-align: left;
+}
+.prose code {
+  font-family: var(--mono); font-size: .88em;
+  padding: 1px 5px; border-radius: 5px;
+  background: var(--r-code, var(--hover));
+}
+.prose pre code { padding: 0; background: none; }
+.prose blockquote {
+  margin: 18px 0; padding: 4px 0 4px 16px;
+  border-left: 3px solid var(--rose);
+  color: var(--r-muted, var(--muted));
+  font-style: italic; text-align: left;
+}
+
+/* Custom Twilight Podcast Transport Bar */
+.pod-card {
+  display: flex; flex-direction: column; gap: 10px;
+  margin: 0 0 20px; padding: 14px 16px;
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--tonal) 55%, var(--raised)), var(--raised));
+}
+.pod-top { display: flex; align-items: center; gap: 12px; }
+.pod-play {
+  width: 40px; height: 40px; border-radius: 50%; border: 0;
+  background: var(--accent); color: var(--on-accent);
+  display: grid; place-items: center; cursor: pointer; flex: none;
+}
+.pod-play svg.ic { width: 18px; height: 18px; fill: currentColor; }
+.pod-info { flex: 1; min-width: 0; }
+.pod-info strong { display: block; font-size: 13px; font-weight: 620; }
+.pod-info small { display: block; font-size: 11.5px; color: var(--muted); }
+.pod-ctrls { display: flex; align-items: center; gap: 4px; }
+.pod-chip {
+  height: 26px; padding: 0 8px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--panel);
+  color: var(--text); font: 600 11px/1 var(--mono); cursor: pointer;
+}
+.pod-scrub { display: flex; align-items: center; gap: 10px; font: 500 11px/1 var(--mono); color: var(--muted); }
+.pod-bar { flex: 1; height: 5px; border-radius: 3px; background: var(--hover); overflow: hidden; }
+.pod-bar i { display: block; width: 34%; height: 100%; background: var(--accent); border-radius: 3px; }
+
+/* Reader Footer */
+.reader-foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 14px; border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--muted); flex: none;
+}
+.keycap {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px;
+  padding: 0 5px; border-radius: 5px;
+  border: 1px solid var(--border); background: var(--raised);
+  font: 600 10.5px/1 var(--mono); color: var(--text);
+}
+.foot-nav { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+
+/* Aa Typography Popover */
+.aa-pop {
+  display: none;
+  position: absolute; top: 56px; right: 16px; z-index: 30;
+  width: 278px; padding: 14px;
+  border-radius: 15px; border: 1px solid var(--border-strong);
+  background: var(--popover); backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+  flex-direction: column; gap: 13px;
+}
+.aa-pop.open { display: flex; }
+.aa-sec-lbl { font-size: 11px; font-weight: 620; color: var(--muted); margin-bottom: 6px; display: block; }
+.paper-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.paper-sw {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  border: 0; background: transparent; color: var(--muted);
+  font: 550 11px/1 inherit; cursor: pointer; padding: 0;
+}
+.paper-sw i {
+  width: 100%; height: 30px; border-radius: 8px;
+  border: 1px solid var(--border); display: grid; place-items: center;
+  font: 600 12.5px var(--serif); font-style: normal;
+}
+.paper-sw.active { color: var(--text); }
+.paper-sw.active i { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sw-dar i { background: var(--panel); color: var(--text); }
+.sw-paper i { background: #fff; color: #1f1a17; }
+.sw-sepia i { background: #f4ecd8; color: #4b3a2c; }
+.sw-night i { background: #151114; color: #ded6cf; }
+
+/* Fixed Subscribe / Edit Feed Pane */
+.editor-body {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 15px;
+}
+.fld { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); min-width: 0; }
+.fld-row { display: flex; gap: 8px; min-width: 0; }
+.inp {
+  flex: 1; min-width: 0; width: 100%; height: 36px; padding: 0 11px; border-radius: 10px;
+  border: 1px solid var(--border-strong); background: var(--bg);
+  color: var(--text); font: inherit; font-size: 13px;
+}
+.found-box {
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+}
+.found-item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 10px 12px; border-top: 1px solid var(--border);
+  cursor: pointer; text-align: left;
+}
+.found-item:first-child { border-top: 0; }
+.found-item.checked { background: var(--tonal); color: var(--on-tonal); }
+.radio-dot {
+  width: 16px; height: 16px; border-radius: 50%; flex: none;
+  border: 2px solid var(--muted); display: grid; place-items: center;
+}
+.found-item.checked .radio-dot { border-color: var(--accent); }
+.found-item.checked .radio-dot::after {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+}
+.found-text { min-width: 0; flex: 1; }
+.found-text strong { display: block; font-size: 13px; font-weight: 600; }
+.found-text small { display: block; font-size: 11px; opacity: .78; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.check-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 11px; border-radius: 11px;
+  border: 1px solid var(--border); background: var(--raised);
+}
+.check-box {
+  width: 16px; height: 16px; border-radius: 4px; flex: none; margin-top: 2px;
+  background: var(--accent); color: var(--on-accent);
+  display: grid; place-items: center; font-size: 11px; font-weight: 800;
+}
+.check-row strong { display: block; font-size: 12.5px; color: var(--text); }
+.check-row small { display: block; font-size: 11.5px; color: var(--muted); }
+
+/* Phone Frame Showcase */
+.phone-wrap {
+  display: none;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+  padding: 18px 12px;
+  background: var(--bg);
+  height: 100%;
+  overflow: auto;
+}
+.stage[data-layout="phone"] { grid-template-rows: minmax(0, 1fr); }
+.stage[data-layout="phone"] .topbar,
+.stage[data-layout="phone"] .workspace { display: none; }
+.stage[data-layout="phone"] .phone-wrap { display: flex; }
+
+.phone {
+  width: 344px; height: 650px; flex: none;
+  border-radius: 30px; border: 1px solid var(--border-strong);
+  background: var(--bg); color: var(--text);
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.ph-top {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 10px 8px; flex: none;
+}
+.ph-btn {
+  width: 36px; height: 36px; border-radius: 11px;
+  border: 1px solid var(--border); background: var(--panel);
+  color: var(--text); display: grid; place-items: center; flex: none;
+}
+.ph-search {
+  flex: 1; height: 36px; padding: 0 11px; border-radius: 18px;
+  border: 1px solid var(--border); background: var(--panel);
+  color: var(--muted); display: flex; align-items: center; gap: 7px; font-size: 12.5px;
+}
+.ph-sheet {
+  flex: 1; min-height: 0; margin: 0 7px 7px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; display: flex; flex-direction: column; overflow: hidden;
+}
+.ph-reader-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-top: 1px solid var(--border);
+  background: var(--panel); flex: none;
+}
+</style>
+</head>
+<body>
+<div class="mock-shell">
+  <div class="mock-controls">
+    <div class="mock-group" role="tablist" aria-label="Mockup views">
+      <button class="mock-btn active" data-set-layout="split">1. Split Reader (Default)</button>
+      <button class="mock-btn" data-set-layout="cards">2. Magazine Cards</button>
+      <button class="mock-btn" data-set-layout="focus">3. Focus Reading</button>
+      <button class="mock-btn" data-set-layout="pane">4. Subscribe &amp; Feed Health</button>
+      <button class="mock-btn" data-set-layout="phone">5. Phone (List + Reader)</button>
+    </div>
+    <div class="mock-group">
+      <button class="mock-btn active" data-set-theme="dark">Nightfall</button>
+      <button class="mock-btn" data-set-theme="light">Afterglow</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage" data-theme="dark" data-layout="split">
+    <!-- Shared Dar Full-Canvas Top Bar -->
+    <header class="topbar">
+      <div class="tb-start">
+        <span class="dar-mark">D</span>
+        <button class="ib" title="All apps" aria-label="All apps">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="5" cy="5" r="1.2" fill="currentColor"/><circle cx="12" cy="5" r="1.2" fill="currentColor"/><circle cx="19" cy="5" r="1.2" fill="currentColor"/><circle cx="5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="19" cy="12" r="1.2" fill="currentColor"/><circle cx="5" cy="19" r="1.2" fill="currentColor"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/><circle cx="19" cy="19" r="1.2" fill="currentColor"/></svg>
+        </button>
+        <span class="tb-title">News</span>
+      </div>
+      <div class="tb-search">
+        <svg class="ic" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="7"/><path d="M16 16l5 5"/></svg>
+        <span>Search all apps…</span>
+        <kbd>Ctrl K</kbd>
+      </div>
+      <div class="tb-end">
+        <button class="ib" title="News settings" aria-label="News settings">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg>
+        </button>
+        <span class="avatar">A</span>
+      </div>
+    </header>
+
+    <!-- Desktop 3-Pane / 2-Pane Workspace -->
+    <div class="workspace">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <button class="create-btn" id="btnSubscribe">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          Subscribe
+        </button>
+        <div class="side-scroll">
+          <nav>
+            <button class="nav-item" data-view="today">
+              <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2"/></svg>
+              <span class="nav-lbl">Today</span><span class="nav-cnt">4</span>
+            </button>
+            <button class="nav-item active" data-view="unread">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6Z"/></svg>
+              <span class="nav-lbl">Unread</span><span class="nav-cnt">6</span>
+            </button>
+            <button class="nav-item" data-view="starred">
+              <svg class="ic" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg>
+              <span class="nav-lbl">Starred</span><span class="nav-cnt">2</span>
+            </button>
+            <button class="nav-item" data-view="media">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/></svg>
+              <span class="nav-lbl">Podcasts &amp; media</span><span class="nav-cnt">1</span>
+            </button>
+            <button class="nav-item" data-view="all">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6ZM14 3v5h4M9 12h6M9 16h6"/></svg>
+              <span class="nav-lbl">All articles</span>
+            </button>
+          </nav>
+
+          <div class="side-head">
+            <span>Pinned</span>
+          </div>
+          <nav>
+            <button class="nav-item" data-view="feed-systems">
+              <span class="fmark m-rose">S</span>
+              <span class="nav-lbl">Systems &amp; Kernel Weekly</span>
+              <span class="pin-ic"><svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3 3H7l3-3ZM12 12v9"/></svg></span>
+              <span class="nav-cnt">2</span>
+            </button>
+          </nav>
+
+          <div class="side-head">
+            <span>Feeds</span>
+            <div class="side-head-acts">
+              <button class="side-chip" id="toggleUnreadOnly" title="Show only feeds with unread articles">Unread</button>
+              <button class="ib" style="width:24px;height:24px" title="New folder">
+                <svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+            </div>
+          </div>
+          <nav id="feedTree">
+            <button class="nav-item" data-view="folder-design">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></svg>
+              <span class="nav-lbl">Design &amp; Craft</span><span class="nav-cnt">2</span>
+            </button>
+            <button class="nav-item nested" data-view="feed-craft">
+              <span class="fmark m-amber">Q</span>
+              <span class="nav-lbl">Quiet Craft</span><span class="nav-cnt">2</span>
+            </button>
+            <button class="nav-item" data-view="folder-eng">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></svg>
+              <span class="nav-lbl">Engineering</span>
+              <span class="warn-ic" title="1 feed failing"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg></span>
+              <span class="nav-cnt">4</span>
+            </button>
+            <button class="nav-item nested" data-view="feed-rust">
+              <span class="fmark m-teal">R</span>
+              <span class="nav-lbl">Rust in Production</span><span class="nav-cnt">2</span>
+            </button>
+            <button class="nav-item nested" data-view="feed-systems">
+              <span class="fmark m-rose">S</span>
+              <span class="nav-lbl">Systems &amp; Kernel Weekly</span><span class="nav-cnt">2</span>
+            </button>
+            <button class="nav-item nested zero-unread" data-view="feed-elsewhere">
+              <span class="fmark m-err">E</span>
+              <span class="nav-lbl">Elsewhere Kernel Log</span>
+              <span class="warn-ic" title="Last 2 updates failed (502)"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg></span>
+            </button>
+            <button class="nav-item nested is-dim zero-unread" data-view="feed-archive">
+              <span class="fmark m-plum">L</span>
+              <span class="nav-lbl">Linux Plumbers Notes</span>
+            </button>
+          </nav>
+        </div>
+
+        <div class="side-foot">
+          <button class="health-pill" id="btnHealth" title="Inspect failing feeds">
+            <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+            <span>1 feed needs attention</span>
+          </button>
+          <button class="sync-btn">
+            <span class="sync-dot"></span>
+            <span style="flex:1">Synced 2 min ago</span>
+            <svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M20 7V2m0 5h-5M4 17v5m0-5h5M20 7A9 9 0 0 0 4 8M4 17a9 9 0 0 0 16-1"/></svg>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Middle List / Cards Sheet -->
+      <main class="sheet list-sheet">
+        <div class="sheet-head">
+          <h1 id="viewTitle">Unread</h1>
+          <span class="cnt-pill" id="viewCount">6</span>
+          <div class="tools">
+            <div class="seg" aria-label="View layout">
+              <button class="active" data-set-layout="split" title="Split reading">
+                <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16"/></svg>
+              </button>
+              <button data-set-layout="cards" title="Magazine cards">
+                <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+              </button>
+            </div>
+            <button class="ib" title="Refresh feeds (r)">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M20 7V2m0 5h-5M4 17v5m0-5h5M20 7A9 9 0 0 0 4 8M4 17a9 9 0 0 0 16-1"/></svg>
+            </button>
+            <button class="pill-btn" title="Mark all read (Shift+A)">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M2 12l5 5L18 6M12 16l1 1 9-11"/></svg>
+              <span>Mark read</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bulk selection tonal bar (appears when checkboxes checked) -->
+        <div class="bulk-bar" id="bulkBar">
+          <span id="bulkText">2 selected</span>
+          <div style="margin-left:auto;display:flex;gap:2px">
+            <button class="ib" title="Mark read"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12l5 5L18 6M12 16l1 1 9-11"/></svg></button>
+            <button class="ib" title="Star selected"><svg class="ic" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg></button>
+            <button class="ib" id="clearBulk" title="Clear selection"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg></button>
+          </div>
+        </div>
+
+        <!-- Filter chips + inline Sort (no need to bury Newest/Oldest inside Settings) -->
+        <div class="filter-bar" id="filterBar">
+          <button class="fchip active" data-filter="all">All</button>
+          <button class="fchip" data-filter="unread">Unread</button>
+          <button class="fchip" data-filter="starred">
+            <svg class="ic" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg>
+            Starred
+          </button>
+          <button class="fchip" data-filter="media">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg>
+            Audio
+          </button>
+          <button class="sort-pill" id="sortBtn" title="Sort order">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M7 4v16m-3-3 3 3 3-3M14 6h7M14 12h5M14 18h3"/></svg>
+            <span id="sortLbl">Newest</span>
+          </button>
+        </div>
+
+        <!-- Feed Health & 14-day Cadence Pulse (powered by existing GET /feeds/:id feedInfo!) -->
+        <div class="feed-pulse" id="feedPulse">
+          <span class="fmark m-rose" style="width:28px;height:28px;border-radius:8px;font-size:13px">S</span>
+          <div class="pulse-meta">
+            <strong>Systems &amp; Kernel Weekly</strong>
+            <small>6 posts / 14 days · 2 starred · Full text on</small>
+          </div>
+          <div class="spark" title="14-day publishing cadence">
+            <i class="z"></i><i style="height:10px"></i><i class="z"></i><i style="height:16px"></i><i class="z"></i><i class="z"></i><i style="height:12px"></i>
+            <i class="z"></i><i style="height:20px"></i><i class="z"></i><i style="height:8px"></i><i class="z"></i><i style="height:14px"></i><i style="height:22px"></i>
+          </div>
+        </div>
+
+        <!-- List Container (Chronologically sorted by pubDate — Today appears ONCE!) -->
+        <div class="alist" id="articleList"></div>
+      </main>
+
+      <!-- Editorial Reader Sheet -->
+      <aside class="sheet reader-sheet" id="readerSheet" data-font="serif" data-paper="dar" data-size="md">
+        <div class="reader-head">
+          <button class="ib" id="exitFocusBtn" style="display:none" title="Exit focus reading">
+            <svg class="ic" viewBox="0 0 24 24"><path d="m14 5-7 7 7 7"/></svg>
+          </button>
+          <div class="reader-src" id="readerSrc">
+            <span class="fmark m-rose">S</span>
+            <span class="name">Systems &amp; Kernel Weekly</span>
+          </div>
+          <div class="tools">
+            <button class="ib" id="btnAa" title="Reading typography (Aa)">
+              <span style="font:650 13px/1 var(--serif)">Aa</span>
+            </button>
+            <button class="ib" id="btnFullText" title="Fetch full article text">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            </button>
+            <button class="ib" id="btnSaveNote" title="Clip to Dar Notes">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4Z"/></svg>
+            </button>
+            <button class="ib starred" id="btnStar" title="Star (s)">
+              <svg class="ic" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg>
+            </button>
+            <button class="ib" id="btnUnread" title="Keep unread (m)">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <button class="ib" title="Open original (o)">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+            </button>
+            <button class="ib" id="btnFocus" title="Focus reading mode (f)">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+            </button>
+          </div>
+          <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+
+          <!-- Aa Reading Typography Popover (matches Dar Books!) -->
+          <div class="aa-pop" id="aaPop">
+            <div>
+              <span class="aa-sec-lbl">Paper</span>
+              <div class="paper-grid">
+                <button class="paper-sw sw-dar active" data-paper="dar"><i>Aa</i><span>Dar</span></button>
+                <button class="paper-sw sw-paper" data-paper="paper"><i>Aa</i><span>Paper</span></button>
+                <button class="paper-sw sw-sepia" data-paper="sepia"><i>Aa</i><span>Sepia</span></button>
+                <button class="paper-sw sw-night" data-paper="night"><i>Aa</i><span>Night</span></button>
+              </div>
+            </div>
+            <div>
+              <span class="aa-sec-lbl">Typeface</span>
+              <div class="seg" style="width:100%">
+                <button class="active" style="flex:1;justify-content:center" data-font="serif">Editorial Serif</button>
+                <button style="flex:1;justify-content:center" data-font="sans">Clean Sans</button>
+              </div>
+            </div>
+            <div>
+              <span class="aa-sec-lbl">Text size</span>
+              <div class="seg" style="width:100%">
+                <button style="flex:1;justify-content:center" data-size="sm">Compact</button>
+                <button class="active" style="flex:1;justify-content:center" data-size="md">Default</button>
+                <button style="flex:1;justify-content:center" data-size="lg">Large</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="reader-scroll" id="readerScroll">
+          <article class="article-col" id="readerContent"></article>
+        </div>
+
+        <div class="reader-foot">
+          <span class="keycap">j</span><span class="keycap">k</span>
+          <span>Navigate</span>
+          <span class="keycap" style="margin-left:6px">f</span>
+          <span>Focus</span>
+          <div class="foot-nav">
+            <button class="pill-btn" id="btnPrev" title="Previous article (k)">Previous</button>
+            <button class="pill-btn" id="btnNext" title="Next article (j)">Next</button>
+            <button class="pill-btn primary" id="btnNextUnread" title="Next unread (n)">Next unread</button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Fixed Subscribe & Feed Health Pane (View 4) -->
+      <aside class="sheet editor-sheet">
+        <div class="sheet-head">
+          <h1>Subscribe</h1>
+          <div class="tools">
+            <button class="ib" data-set-layout="split" title="Close">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="editor-body">
+          <div class="fld">
+            <span>Site or feed address</span>
+            <div class="fld-row">
+              <input class="inp" value="systemsweekly.org" readonly>
+              <button class="pill-btn">Find feeds</button>
+            </div>
+          </div>
+          <div class="fld">
+            <span>Found 2 feeds</span>
+            <div class="found-box">
+              <div class="found-item checked">
+                <span class="radio-dot"></span>
+                <div class="found-text">
+                  <strong>Systems &amp; Kernel Weekly</strong>
+                  <small>RSS 2.0 · https://systemsweekly.org/feed.xml</small>
+                </div>
+              </div>
+              <div class="found-item">
+                <span class="radio-dot"></span>
+                <div class="found-text">
+                  <strong>Systems Podcast (Audio)</strong>
+                  <small>Atom · https://systemsweekly.org/podcast.xml</small>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="fld"><span>Folder</span><input class="inp" value="Engineering" readonly></div>
+            <div class="fld"><span>Name</span><input class="inp" value="Systems &amp; Kernel Weekly" readonly></div>
+          </div>
+          <div class="check-row">
+            <span class="check-box">✓</span>
+            <div>
+              <strong>Fetch full article text</strong>
+              <small>Extract complete prose for summary-only feeds automatically</small>
+            </div>
+          </div>
+          <div class="fld">
+            <span>Latest items preview</span>
+            <div style="border:1px solid var(--border);border-radius:12px;padding:9px 11px;display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--text)">
+              <div style="display:flex;gap:8px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Why io_uring batch submission cuts tail latency</span><span style="color:var(--muted)">Today</span></div>
+              <div style="display:flex;gap:8px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Episode 42: Self-hosting without becoming an SRE</span><span style="color:var(--muted)">Today</span></div>
+              <div style="display:flex;gap:8px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Memory-mapped indexes under 20MB RAM</span><span style="color:var(--muted)">Yesterday</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="reader-foot">
+          <button class="pill-btn" style="border:0;color:var(--accent)">Import OPML…</button>
+          <div class="foot-nav">
+            <button class="pill-btn" data-set-layout="split">Cancel</button>
+            <button class="pill-btn primary" data-set-layout="split">Subscribe</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Phone Preview (List + Reader side-by-side) -->
+    <div class="phone-wrap">
+      <!-- Phone 1: Article List -->
+      <div class="phone">
+        <div class="ph-top">
+          <span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>
+          <span class="ph-search"><svg class="ic" style="width:15px;height:15px" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="7"/><path d="M16 16l5 5"/></svg>Search all apps…</span>
+          <span class="avatar" style="width:34px;height:34px">A</span>
+        </div>
+        <div class="ph-sheet">
+          <div class="sheet-head" style="min-height:46px;padding:4px 10px 4px 14px">
+            <h1 style="font-size:16px">Unread</h1>
+            <span class="cnt-pill">6</span>
+            <div class="tools">
+              <button class="ib" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24"><path d="M20 7V2m0 5h-5M4 17v5m0-5h5M20 7A9 9 0 0 0 4 8M4 17a9 9 0 0 0 16-1"/></svg></button>
+              <button class="ib" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12l5 5L18 6M12 16l1 1 9-11"/></svg></button>
+            </div>
+          </div>
+          <div class="filter-bar" style="padding:6px 10px">
+            <span class="fchip active">All</span>
+            <span class="fchip">Today</span>
+            <span class="fchip">Starred</span>
+            <span class="fchip">Audio</span>
+          </div>
+          <div class="alist" style="padding:2px 6px 10px">
+            <div class="day-hdr">Today</div>
+            <div class="arow" style="grid-template-columns:10px minmax(0,1fr) 58px;gap:8px;padding:9px 8px">
+              <div class="arow-lead"><span class="udot"></span></div>
+              <div class="arow-body">
+                <div class="arow-meta"><span class="fmark m-teal" style="width:14px;height:14px;font-size:8px">R</span><span class="arow-feed">Rust in Production</span><span class="arow-time">10:31 PM</span></div>
+                <div class="arow-title" style="font-size:13px">Shipping Leptos WASM bundles under 400KB brotli</div>
+              </div>
+              <div class="arow-thumb" style="width:58px;height:44px;background:linear-gradient(135deg,#73396f,#f2a2a9)"></div>
+            </div>
+            <div class="arow selected" style="grid-template-columns:10px minmax(0,1fr) 58px;gap:8px;padding:9px 8px">
+              <div class="arow-lead"><span class="udot"></span></div>
+              <div class="arow-body">
+                <div class="arow-meta"><span class="fmark m-rose" style="width:14px;height:14px;font-size:8px">S</span><span class="arow-feed">Systems &amp; Kernel</span><span class="arow-time">9:49 PM</span></div>
+                <div class="arow-title" style="font-size:13px">Why io_uring batch submission cuts tail latency in half</div>
+              </div>
+              <div class="arow-thumb" style="width:58px;height:44px;background:linear-gradient(135deg,#2a6c80,#b2dec4)"></div>
+            </div>
+            <div class="arow" style="grid-template-columns:10px minmax(0,1fr) auto;gap:8px;padding:9px 8px">
+              <div class="arow-lead"><span class="udot"></span></div>
+              <div class="arow-body">
+                <div class="arow-meta"><span class="fmark m-rose" style="width:14px;height:14px;font-size:8px">S</span><span class="arow-feed">Systems &amp; Kernel</span><span class="arow-time">6:19 PM</span></div>
+                <div class="arow-title" style="font-size:13px">Episode 42: Self-hosting without becoming an SRE</div>
+                <div><span class="media-pill"><svg class="ic" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg>38 min podcast</span></div>
+              </div>
+            </div>
+            <div class="day-hdr">Yesterday</div>
+            <div class="arow read" style="grid-template-columns:10px minmax(0,1fr) auto;gap:8px;padding:9px 8px">
+              <div class="arow-lead"><span class="udot"></span></div>
+              <div class="arow-body">
+                <div class="arow-meta"><span class="fmark m-amber" style="width:14px;height:14px;font-size:8px">Q</span><span class="arow-feed">Quiet Craft</span><span class="arow-time">Nov 24</span></div>
+                <div class="arow-title" style="font-size:13px">Keyboard ergonomics for triaging 200 items in five minutes</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phone 2: Full-Screen Article Reader (Clean ellipsis + bottom action dock) -->
+      <div class="phone">
+        <div class="ph-top">
+          <span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="m14 5-7 7 7 7"/></svg></span>
+          <div style="flex:1;min-width:0;display:flex;align-items:center;gap:7px">
+            <span class="fmark m-rose">S</span>
+            <span style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Systems &amp; Kernel Weekly</span>
+          </div>
+          <button class="ib" style="width:32px;height:32px"><span style="font:650 13px/1 var(--serif)">Aa</span></button>
+          <button class="ib" style="width:32px;height:32px"><svg class="ic" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
+        </div>
+        <div class="ph-sheet">
+          <div style="height:2px;background:var(--row-div)"><div style="width:45%;height:100%;background:var(--accent)"></div></div>
+          <div style="flex:1;overflow-y:auto;padding:16px 18px">
+            <h2 style="margin:0 0 8px;font:650 20px/1.25 var(--serif);text-align:left">Why io_uring batch submission cuts tail latency in half</h2>
+            <p style="margin:0 0 14px;font-size:11.5px;color:var(--muted)">Nadia Mansour · Today, 9:49 PM · 4 min read</p>
+            <p style="margin:0 0 12px;font:14.5px/1.72 var(--serif);text-align:left">Local-first personal clouds spend most of their request budget reading small immutable chunks off NVMe drives.</p>
+            <div style="height:126px;border-radius:11px;background:linear-gradient(135deg,#2a6c80,#b2dec4);margin:12px 0 6px"></div>
+            <p style="margin:0 0 14px;font-size:11px;color:var(--muted)">P99 read latency across 16 concurrent gallery requests.</p>
+            <h3 style="margin:14px 0 6px;font-size:15px;font-weight:650;text-align:left">Batching without unbounded queues</h3>
+            <p style="margin:0;font:14.5px/1.72 var(--serif);text-align:left">By packing read requests into a single submission and capping in-flight rings, throughput rises while memory stays flat.</p>
+          </div>
+          <div class="ph-reader-foot">
+            <button class="ib starred" style="width:32px;height:32px"><svg class="ic" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg></button>
+            <button class="ib" style="width:32px;height:32px"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4Z"/></svg></button>
+            <button class="ib" style="width:32px;height:32px"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            <button class="pill-btn primary" style="height:28px;font-size:11.5px">Next unread</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const ARTICLES = [
+  {
+    id: 1, day: 'Today', time: '10:31 PM', feed: 'Rust in Production', mark: 'R', cls: 'm-teal',
+    author: 'Samir Patel', mins: 5, unread: true, starred: false, media: null, fullText: false,
+    thumb: 'linear-gradient(135deg,#73396f,#f2a2a9)',
+    title: 'Shipping Leptos WASM bundles under 400KB brotli with wasm-split',
+    excerpt: 'Code-splitting per route keeps initial Time-to-Interactive snappy even when a workspace hosts twelve full productivity apps.',
+    body: `
+      <p>Code-splitting per route keeps initial Time-to-Interactive snappy even when a personal cloud hosts twelve full productivity apps in one binary.</p>
+      <figure><div class="hero-img" style="background:linear-gradient(135deg,#73396f,#f2a2a9)"></div><figcaption>Chunk graph after merging 368 split units into 14 route bundles.</figcaption></figure>
+      <h2>Why route boundaries matter more than tree-shaking</h2>
+      <p>Users opening News in the morning should never wait to compile PDF renderers or calendar recurrence pickers. Splitting at the app shell boundary trims cold boot by 62%.</p>
+      <pre><code>wasm-split --merge-threshold 14 target/client.wasm -o dist/</code></pre>
+      <blockquote>Fast software feels quiet: pages arrive before you notice you waited.</blockquote>
+    `
+  },
+  {
+    id: 2, day: 'Today', time: '9:49 PM', feed: 'Systems & Kernel Weekly', mark: 'S', cls: 'm-rose',
+    author: 'Nadia Mansour', mins: 4, unread: true, starred: true, media: null, fullText: true,
+    thumb: 'linear-gradient(135deg,#2a6c80,#b2dec4)',
+    title: 'Why io_uring batch submission cuts tail latency in half for local blob stores',
+    excerpt: 'Local-first personal clouds spend most of their request budget reading small immutable chunks off NVMe drives.',
+    body: `
+      <p>Local-first personal clouds spend most of their request budget reading small immutable chunks off NVMe drives. When a gallery scroll triggers forty thumbnail reads at once, individual synchronous syscalls dominate CPU time.</p>
+      <figure><div class="hero-img" style="background:linear-gradient(135deg,#2a6c80,#b2dec4)"></div><figcaption>P99 read latency across 16 concurrent gallery requests on NVMe.</figcaption></figure>
+      <h2>Batching without unbounded queues</h2>
+      <p>By packing read requests into a single <code>io_uring_enter</code> submission and capping in-flight rings per session, throughput rises while memory stays flat:</p>
+      <pre><code>for chunk in batch.drain(..limit) {
+    ring.push_read(chunk.fd, chunk.offset, chunk.len);
+}
+ring.submit_and_wait(1)?;</code></pre>
+      <blockquote>The best performance win is rarely a clever lock-free structure; it is doing twenty times fewer trips across the kernel boundary.</blockquote>
+      <p>In production on a single node, p99 thumbnail fetches dropped from 14.2ms to 5.8ms with zero extra RAM overhead.</p>
+    `
+  },
+  {
+    id: 3, day: 'Today', time: '8:19 PM', feed: 'Quiet Craft', mark: 'Q', cls: 'm-amber',
+    author: 'Mina Al-Khatib', mins: 6, unread: true, starred: true, media: null, fullText: false,
+    thumb: 'linear-gradient(135deg,#a94a76,#ffc493)',
+    title: 'Reading interfaces should feel like well-lit paper, not dashboards',
+    excerpt: 'Most modern feed readers drown essays in chrome: three toolbars, badge soup, and narrow columns pinched between sidebars.',
+    body: `
+      <p>Most modern feed readers drown essays in chrome: three toolbars, badge soup, and narrow columns pinched between sidebars.</p>
+      <figure><div class="hero-img" style="background:linear-gradient(135deg,#a94a76,#ffc493)"></div><figcaption>A 62-character prose measure with calm vertical rhythm.</figcaption></figure>
+      <h2>Typography as quiet hospitality</h2>
+      <p>Give prose a generous measure (62–68 characters), clear left-aligned subheadings, and let readers switch between crisp sans and book serif without leaving the page.</p>
+    `
+  },
+  {
+    id: 4, day: 'Today', time: '6:19 PM', feed: 'Systems & Kernel Weekly', mark: 'S', cls: 'm-rose',
+    author: 'Tarek Haddad', mins: 38, unread: true, starred: false, media: { duration: '38:14', elapsed: '13:02' }, fullText: false,
+    thumb: null,
+    title: 'Episode 42: Self-hosting without becoming a full-time SRE',
+    excerpt: 'A 38-minute conversation on declarative NixOS upgrades, immutable backups, and sleeping through the night.',
+    body: `
+      <p>In this episode we talk through why single-binary personal clouds and declarative NixOS modules make self-hosting boring again — in the best possible way.</p>
+      <h2>Episode chapters</h2>
+      <p>00:00 Why personal clouds fail at year two · 11:40 Immutable blob verification · 24:15 Zero-downtime schema upgrades.</p>
+    `
+  },
+  {
+    id: 5, day: 'Yesterday', time: 'Nov 24', feed: 'Quiet Craft', mark: 'Q', cls: 'm-amber',
+    author: 'Mina Al-Khatib', mins: 3, unread: true, starred: false, media: null, fullText: false,
+    thumb: null,
+    title: 'Keyboard ergonomics for triaging 200 items in five minutes',
+    excerpt: 'When j/k moves focus, s stars, m toggles read, and Shift+A sweeps a folder with an instant Undo bar, reading stays effortless.',
+    body: `<p>When <code>j</code>/<code>k</code> moves focus, <code>s</code> stars, <code>m</code> toggles read, and <code>Shift+A</code> sweeps a folder with an instant Undo bar, reading stays effortless.</p>`
+  },
+  {
+    id: 6, day: 'Monday', time: 'Nov 23', feed: 'Rust in Production', mark: 'R', cls: 'm-teal',
+    author: 'Samir Patel', mins: 7, unread: false, starred: false, media: null, fullText: false,
+    thumb: null,
+    title: 'Zero-copy XML parsing tricks with quick-xml',
+    excerpt: 'Real-world RSS feeds in the wild break every XML specification rule imaginable: unescaped ampersands and mismatched tags.',
+    body: `<p>Real-world RSS feeds in the wild break every XML specification rule imaginable: unescaped ampersands, mismatched tags, and Windows-1252 bytes claiming UTF-8.</p>`
+  }
+];
+
+let selectedId = 2;
+let activeFilter = 'all';
+let sortOrder = 'newest';
+let checkedIds = new Set();
+
+const stage = document.getElementById('stage');
+const listEl = document.getElementById('articleList');
+const readerSheet = document.getElementById('readerSheet');
+const readerContent = document.getElementById('readerContent');
+const readerSrc = document.getElementById('readerSrc');
+const bulkBar = document.getElementById('bulkBar');
+const bulkText = document.getElementById('bulkText');
+const aaPop = document.getElementById('aaPop');
+const feedPulse = document.getElementById('feedPulse');
+
+function filteredArticles() {
+  let arr = ARTICLES.filter(a => {
+    if (activeFilter === 'unread') return a.unread;
+    if (activeFilter === 'starred') return a.starred;
+    if (activeFilter === 'media') return Boolean(a.media);
+    return true;
+  });
+  if (sortOrder === 'oldest') arr = [...arr].reverse();
+  return arr;
+}
+
+function renderList() {
+  const layout = stage.dataset.layout;
+  const items = filteredArticles();
+  listEl.classList.toggle('selecting', checkedIds.size > 0);
+  bulkBar.classList.toggle('show', checkedIds.size > 0);
+  bulkText.textContent = `${checkedIds.size} selected`;
+
+  if (layout === 'cards') {
+    listEl.innerHTML = `<div class="cards-grid">${items.map(a => `
+      <div class="acard" data-open="${a.id}">
+        ${a.thumb
+          ? `<div class="acard-media" style="background:${a.thumb}"></div>`
+          : `<div class="acard-media typo">${a.feed}</div>`}
+        <div class="acard-body">
+          <div class="arow-meta">
+            ${a.unread ? '<span class="udot"></span>' : ''}
+            <span class="fmark ${a.cls}">${a.mark}</span>
+            <span class="arow-feed">${a.feed}</span>
+            <span class="arow-time">${a.time}</span>
+          </div>
+          <h3>${a.title}</h3>
+          <p>${a.excerpt}</p>
+          <div class="acard-foot">
+            <span>${a.media ? '🎧 ' + a.media.duration : a.mins + ' min read'}</span>
+            ${a.starred ? '<span style="margin-left:auto;color:var(--warning)">★</span>' : ''}
+          </div>
+        </div>
+      </div>`).join('')}</div>`;
+    bindListEvents();
+    return;
+  }
+
+  let lastDay = '';
+  let html = '';
+  for (const a of items) {
+    if (a.day !== lastDay) {
+      lastDay = a.day;
+      html += `<div class="day-hdr">${a.day}</div>`;
+    }
+    const isSel = a.id === selectedId;
+    const isChk = checkedIds.has(a.id);
+    html += `
+      <div class="arow ${a.unread ? '' : 'read'} ${isSel ? 'selected' : ''} ${isChk ? 'checked' : ''}" data-open="${a.id}">
+        <div class="arow-lead"><span class="udot"></span></div>
+        <input class="row-chk" type="checkbox" data-chk="${a.id}" ${isChk ? 'checked' : ''} aria-label="Select article">
+        <div class="arow-body">
+          <div class="arow-meta">
+            <span class="fmark ${a.cls}">${a.mark}</span>
+            <span class="arow-feed">${a.feed}</span>
+            ${a.starred ? '<span style="color:var(--warning);font-size:12px">★</span>' : ''}
+            <span class="arow-time">${a.time}</span>
+          </div>
+          <div class="arow-title">${a.title}</div>
+          ${a.media
+            ? `<div><span class="media-pill"><svg class="ic" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg>${a.media.duration} podcast</span></div>`
+            : `<div class="arow-excerpt">${a.excerpt}</div>`}
+        </div>
+        ${a.thumb ? `<div class="arow-thumb"><span class="thumb-art" style="background:${a.thumb}"></span></div>` : '<span></span>'}
+        <div class="hover-triage">
+          <button class="ib ${a.starred ? 'starred' : ''}" data-tstar="${a.id}" title="Star"><svg class="ic" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg></button>
+          <button class="ib" data-tread="${a.id}" title="${a.unread ? 'Mark read' : 'Mark unread'}"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg></button>
+        </div>
+      </div>`;
+  }
+  listEl.innerHTML = html;
+  bindListEvents();
+}
+
+function renderReader() {
+  const a = ARTICLES.find(x => x.id === selectedId) || ARTICLES[0];
+  readerSrc.innerHTML = `<span class="fmark ${a.cls}">${a.mark}</span><span class="name">${a.feed}</span>`;
+  document.getElementById('btnStar').classList.toggle('starred', a.starred);
+
+  const podHtml = a.media ? `
+    <div class="pod-card">
+      <div class="pod-top">
+        <button class="pod-play" aria-label="Play episode"><svg class="ic" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7Z"/></svg></button>
+        <div class="pod-info">
+          <strong>${a.feed} · Podcast</strong>
+          <small>Resuming where you left off at ${a.media.elapsed}</small>
+        </div>
+        <div class="pod-ctrls">
+          <button class="pod-chip">-15s</button>
+          <button class="pod-chip">+30s</button>
+          <button class="pod-chip">1.25×</button>
+        </div>
+      </div>
+      <div class="pod-scrub">
+        <span>${a.media.elapsed}</span>
+        <div class="pod-bar"><i></i></div>
+        <span>${a.media.duration}</span>
+      </div>
+    </div>` : '';
+
+  readerContent.innerHTML = `
+    ${a.fullText ? `<div class="art-badges"><span class="ft-badge"><svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Full text extracted</span></div>` : ''}
+    <h1>${a.title}</h1>
+    <div class="byline">
+      <span><strong>${a.author}</strong></span>
+      <span>${a.day}, ${a.time}</span>
+      <span>${a.media ? a.media.duration + ' listen' : a.mins + ' min read'}</span>
+    </div>
+    ${podHtml}
+    <div class="prose">${a.body}</div>
+  `;
+}
+
+function bindListEvents() {
+  listEl.querySelectorAll('[data-open]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('input, button')) return;
+      selectedId = Number(el.dataset.open);
+      const art = ARTICLES.find(x => x.id === selectedId);
+      if (art) art.unread = false;
+      if (stage.dataset.layout === 'cards') setLayout('split');
+      renderList();
+      renderReader();
+    });
+  });
+  listEl.querySelectorAll('[data-chk]').forEach(el => {
+    el.addEventListener('change', (e) => {
+      e.stopPropagation();
+      const id = Number(el.dataset.chk);
+      if (el.checked) checkedIds.add(id); else checkedIds.delete(id);
+      renderList();
+    });
+  });
+  listEl.querySelectorAll('[data-tstar]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const art = ARTICLES.find(x => x.id === Number(el.dataset.tstar));
+      if (art) art.starred = !art.starred;
+      renderList(); renderReader();
+    });
+  });
+  listEl.querySelectorAll('[data-tread]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const art = ARTICLES.find(x => x.id === Number(el.dataset.tread));
+      if (art) art.unread = !art.unread;
+      renderList(); renderReader();
+    });
+  });
+}
+
+function setLayout(layout) {
+  stage.dataset.layout = layout;
+  document.querySelectorAll('[data-set-layout]').forEach(b => {
+    b.classList.toggle('active', b.dataset.setLayout === layout);
+  });
+  document.getElementById('exitFocusBtn').style.display = layout === 'focus' ? 'inline-grid' : 'none';
+  feedPulse.classList.toggle('show', layout === 'pane');
+  renderList();
+}
+
+document.querySelectorAll('[data-set-layout]').forEach(b => {
+  b.addEventListener('click', () => setLayout(b.dataset.setLayout));
+});
+document.querySelectorAll('[data-set-theme]').forEach(b => {
+  b.addEventListener('click', () => {
+    stage.dataset.theme = b.dataset.setTheme;
+    document.querySelectorAll('[data-set-theme]').forEach(x => x.classList.toggle('active', x === b));
+  });
+});
+
+document.getElementById('btnFocus').addEventListener('click', () => {
+  setLayout(stage.dataset.layout === 'focus' ? 'split' : 'focus');
+});
+document.getElementById('exitFocusBtn').addEventListener('click', () => setLayout('split'));
+document.getElementById('btnSubscribe').addEventListener('click', () => setLayout('pane'));
+document.getElementById('btnHealth').addEventListener('click', () => setLayout('pane'));
+
+// Aa Typography popover
+document.getElementById('btnAa').addEventListener('click', (e) => {
+  e.stopPropagation();
+  aaPop.classList.toggle('open');
+  document.getElementById('btnAa').classList.toggle('on', aaPop.classList.contains('open'));
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#aaPop, #btnAa')) {
+    aaPop.classList.remove('open');
+    document.getElementById('btnAa').classList.remove('on');
+  }
+});
+aaPop.querySelectorAll('[data-paper]').forEach(b => b.addEventListener('click', () => {
+  readerSheet.dataset.paper = b.dataset.paper;
+  aaPop.querySelectorAll('[data-paper]').forEach(x => x.classList.toggle('active', x === b));
+}));
+aaPop.querySelectorAll('[data-font]').forEach(b => b.addEventListener('click', () => {
+  readerSheet.dataset.font = b.dataset.font;
+  aaPop.querySelectorAll('[data-font]').forEach(x => x.classList.toggle('active', x === b));
+}));
+aaPop.querySelectorAll('[data-size]').forEach(b => b.addEventListener('click', () => {
+  readerSheet.dataset.size = b.dataset.size;
+  aaPop.querySelectorAll('[data-size]').forEach(x => x.classList.toggle('active', x === b));
+}));
+
+// Filters & Sort & Sidebar Unread-only toggle
+document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => {
+  activeFilter = b.dataset.filter;
+  document.querySelectorAll('[data-filter]').forEach(x => x.classList.toggle('active', x === b));
+  renderList();
+}));
+document.getElementById('sortBtn').addEventListener('click', () => {
+  sortOrder = sortOrder === 'newest' ? 'oldest' : 'newest';
+  document.getElementById('sortLbl').textContent = sortOrder === 'newest' ? 'Newest' : 'Oldest';
+  renderList();
+});
+document.getElementById('clearBulk').addEventListener('click', () => {
+  checkedIds.clear();
+  renderList();
+});
+document.getElementById('toggleUnreadOnly').addEventListener('click', (e) => {
+  const on = e.currentTarget.classList.toggle('on');
+  document.querySelectorAll('.zero-unread').forEach(el => { el.style.display = on ? 'none' : 'flex'; });
+});
+document.querySelectorAll('.sidebar .nav-item[data-view]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.sidebar .nav-item').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  document.getElementById('viewTitle').textContent = b.querySelector('.nav-lbl').textContent;
+  feedPulse.classList.toggle('show', b.dataset.view === 'feed-systems');
+}));
+
+// Reading scroll progress
+document.getElementById('readerScroll').addEventListener('scroll', (e) => {
+  const el = e.currentTarget;
+  const max = Math.max(1, el.scrollHeight - el.clientHeight);
+  document.getElementById('progFill').style.width = `${Math.min(100, Math.round((el.scrollTop / max) * 100))}%`;
+});
+
+// Prev / Next / Star
+document.getElementById('btnStar').addEventListener('click', () => {
+  const art = ARTICLES.find(x => x.id === selectedId);
+  if (art) art.starred = !art.starred;
+  renderList(); renderReader();
+});
+document.getElementById('btnNext').addEventListener('click', () => {
+  const idx = ARTICLES.findIndex(x => x.id === selectedId);
+  selectedId = ARTICLES[(idx + 1) % ARTICLES.length].id;
+  renderList(); renderReader();
+});
+document.getElementById('btnPrev').addEventListener('click', () => {
+  const idx = ARTICLES.findIndex(x => x.id === selectedId);
+  selectedId = ARTICLES[(idx - 1 + ARTICLES.length) % ARTICLES.length].id;
+  renderList(); renderReader();
+});
+document.getElementById('btnNextUnread').addEventListener('click', () => {
+  const next = ARTICLES.find(x => x.unread && x.id !== selectedId) || ARTICLES[0];
+  selectedId = next.id;
+  next.unread = false;
+  renderList(); renderReader();
+});
+
+renderList();
+renderReader();
+</script>
+</body>
+</html>

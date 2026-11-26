@@ -20,7 +20,6 @@ diff.css
 history.css
 agent/workspace.css
 agent/t3-parity.css
-news/news.css
 chat/chat.css
 photos/photos.css
 books/books.css
@@ -33,3 +32,4 @@ calendar/calendar.css
 contacts/contacts.css
 tasks/tasks.css
 mail/mail.css
+news/news.css

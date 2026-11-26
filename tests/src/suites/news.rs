@@ -379,6 +379,22 @@ pub async fn news_api_and_nextcloud(t: &Ctx) -> Result<()> {
     );
     assert!(!long_body.contains("Menu item"));
 
+    // On-demand full-text fetch extracts and returns sanitized article HTML for a single item.
+    let extracted = news_call(
+        &session,
+        "POST",
+        &format!("/items/{long_id}/fulltext"),
+        None,
+    )
+    .await?;
+    assert_eq!(extracted["id"], json!(long_id));
+    let extracted_body = extracted["body"].as_str().unwrap_or_default();
+    assert!(
+        extracted_body.starts_with("<h1>Long read</h1><p>Full article paragraph 0"),
+        "unexpected on-demand full text body: {extracted_body}"
+    );
+    assert!(!extracted_body.contains("Menu item"));
+
     // OPML round trip.
     let opml = news_raw(&session, "GET", "/opml", None).await?;
     assert_eq!(
@@ -461,12 +477,24 @@ pub async fn news_api_and_nextcloud(t: &Ctx) -> Result<()> {
         session
             .request("PUT", "/api/v1/pim/preferences")
             .header("if-match", &if_match)
-            .json(&json!({ "newsRefresh": 60, "newsMarkRead": "scroll" }))
+            .json(&json!({
+                "newsRefresh": 60,
+                "newsMarkRead": "scroll",
+                "newsLayout": "cards",
+                "newsPaper": "sepia",
+                "newsFont": "sans",
+                "newsSize": "lg"
+            }))
             .send()
             .await?,
     )
     .await?;
     assert_eq!(ok_pref.status, 200);
+    let saved_prefs = ok_pref.json()?;
+    assert_eq!(saved_prefs["newsLayout"], json!("cards"));
+    assert_eq!(saved_prefs["newsPaper"], json!("sepia"));
+    assert_eq!(saved_prefs["newsFont"], json!("sans"));
+    assert_eq!(saved_prefs["newsSize"], json!("lg"));
     let search = session.get_json("/api/v1/search?q=fresh").await?;
     let news_hits: Vec<&str> = search["items"]
         .as_array()
@@ -787,6 +815,12 @@ pub async fn news_api_and_nextcloud(t: &Ctx) -> Result<()> {
     );
     assert_eq!(
         news_raw(&other, "GET", &format!("/items/{welcome_id}"), None)
+            .await?
+            .status,
+        404
+    );
+    assert_eq!(
+        news_raw(&other, "POST", &format!("/items/{long_id}/fulltext"), None)
             .await?
             .status,
         404

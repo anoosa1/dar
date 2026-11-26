@@ -218,6 +218,48 @@ impl NewsRuntime {
         Ok((response, Some(feed)))
     }
 
+    /// Fetches a single article's web page on demand and returns its sanitized main prose.
+    pub async fn extract_url(&self, url: &str) -> Result<String> {
+        let trimmed = url.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+            return Err(AppError::with(
+                "invalidInput",
+                400,
+                "This article has no web address to fetch.",
+            ));
+        }
+        let page = self
+            .fetch(
+                trimmed,
+                &FetchOptions {
+                    accept: "text/html,application/xhtml+xml",
+                    etag: None,
+                    last_modified: None,
+                    max_bytes: 3 * 1024 * 1024,
+                    timeout: Duration::from_secs(15),
+                    allow_private: self.inner.allow_private,
+                },
+            )
+            .await?;
+        if page.status != 200 || !page.content_type.contains("html") {
+            return Err(AppError::with(
+                "fullTextUnavailable",
+                502,
+                "The original page did not return readable HTML.",
+            ));
+        }
+        let body = extract_article(&decode_body(&page.body, &page.content_type), &page.url);
+        if body.is_empty() {
+            return Err(AppError::with(
+                "fullTextUnavailable",
+                422,
+                "Could not extract full article text from this page.",
+            ));
+        }
+        Ok(body)
+    }
+
     /// Replaces summaries with the article page's main text for entries not stored yet.
     async fn full_text(&self, entries: &mut [NewsEntry], known: &HashSet<String>) {
         let targets: Vec<(usize, String)> = entries

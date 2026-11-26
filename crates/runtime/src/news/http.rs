@@ -126,8 +126,9 @@ pub async fn handle_http(
     static ITEM_RE: OnceLock<Regex> = OnceLock::new();
     static FEED_RE: OnceLock<Regex> = OnceLock::new();
     static FOLDER_RE: OnceLock<Regex> = OnceLock::new();
-    let item_re =
-        ITEM_RE.get_or_init(|| Regex::new(r"^/items/(\d{1,10})(/position)?$").expect("item regex"));
+    let item_re = ITEM_RE.get_or_init(|| {
+        Regex::new(r"^/items/(\d{1,10})(/(position|fulltext))?$").expect("item regex")
+    });
     let feed_re = FEED_RE.get_or_init(|| Regex::new(r"^/feeds/(\d{1,10})$").expect("feed regex"));
     let folder_re =
         FOLDER_RE.get_or_init(|| Regex::new(r"^/folders/(\d{1,10})$").expect("folder regex"));
@@ -166,7 +167,7 @@ pub async fn handle_http(
         if caps.get(2).is_none() && *method == Method::GET {
             return ok(call(runtime, session_id, "item", json!({ "id": id })).await?);
         }
-        if caps.get(2).is_some() && *method == Method::POST {
+        if caps.get(3).map(|m| m.as_str()) == Some("position") && *method == Method::POST {
             let value = input(body, headers, &["position"]).await?;
             let mut params = Map::new();
             params.insert("id".into(), json!(id));
@@ -174,6 +175,12 @@ pub async fn handle_http(
                 params.insert("position".into(), pos.clone());
             }
             return ok(call(runtime, session_id, "setPosition", Value::Object(params)).await?);
+        }
+        if caps.get(3).map(|m| m.as_str()) == Some("fulltext") && *method == Method::POST {
+            let item = call(runtime, session_id, "item", json!({ "id": id })).await?;
+            let target_url = item["url"].as_str().unwrap_or("");
+            let extracted = news.extract_url(target_url).await?;
+            return ok(json!({ "id": id, "body": extracted }));
         }
     }
     if sub == "/read" && *method == Method::POST {

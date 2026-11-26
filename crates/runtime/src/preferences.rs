@@ -282,6 +282,22 @@ pub fn merge(
         number("newsKeepDays", &[7, 30, 90, 365], 30)?,
     );
     put(
+        "newsLayout",
+        choice("newsLayout", &["split", "cards"], "split")?,
+    );
+    put(
+        "newsPaper",
+        choice("newsPaper", &["dar", "paper", "sepia", "night"], "dar")?,
+    );
+    put(
+        "newsFont",
+        choice("newsFont", &["serif", "sans"], "serif")?,
+    );
+    put(
+        "newsSize",
+        choice("newsSize", &["sm", "md", "lg"], "md")?,
+    );
+    put(
         "mailImages",
         choice("mailImages", &["block", "load"], "block")?,
     );
@@ -635,6 +651,39 @@ mod tests {
         }))
         .unwrap();
         assert!(merge(&empty, &bad_launcher).is_err());
+    }
+
+    #[test]
+    fn validates_news_redesign_preferences() {
+        let empty = Map::new();
+        let body: Map<String, Value> = serde_json::from_value(json!({
+            "newsLayout": "cards",
+            "newsPaper": "sepia",
+            "newsFont": "sans",
+            "newsSize": "lg"
+        }))
+        .unwrap();
+        let merged = merge(&empty, &body).unwrap();
+        assert_eq!(merged["newsLayout"], "cards");
+        assert_eq!(merged["newsPaper"], "sepia");
+        assert_eq!(merged["newsFont"], "sans");
+        assert_eq!(merged["newsSize"], "lg");
+
+        let defaults = merge(&empty, &Map::new()).unwrap();
+        assert_eq!(defaults["newsLayout"], "split");
+        assert_eq!(defaults["newsPaper"], "dar");
+        assert_eq!(defaults["newsFont"], "serif");
+        assert_eq!(defaults["newsSize"], "md");
+
+        for bad in [
+            json!({ "newsLayout": "grid" }),
+            json!({ "newsPaper": "light" }),
+            json!({ "newsFont": "mono" }),
+            json!({ "newsSize": "xl" }),
+        ] {
+            let map: Map<String, Value> = serde_json::from_value(bad).unwrap();
+            assert!(merge(&empty, &map).is_err());
+        }
     }
 }
 

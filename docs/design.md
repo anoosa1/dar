@@ -269,13 +269,25 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   week and restored focus. Settings use the settings sheet and mark the times a
   change affected. See [app platform](spacetimedb/app-platform.md).
 - **News:** selected [mock A](spacetimedb/news-reader-mock-a.html) over
-  [mock B](spacetimedb/news-reader-mock-b.html) (November 12). Sidebar views
-  (Unread, Starred, All) then folders with nested feeds and unread counts, feed and
-  folder three-dot menus, a day-grouped list (unread dot, feed mark, title, excerpt,
-  time) and the article in the right sheet with star, keep unread, open original
-  and share. Read rows fade in place instead of disappearing. Subscribe and Edit
-  feed use the right editing pane; News settings is the settings sheet. Phones show
-  views and folders as chips and the article full screen with Back. See [News](news.md).
+  [mock B](spacetimedb/news-reader-mock-b.html) (November 12; refreshed November 26,
+  [redesign mock](spacetimedb/news-redesign-mock.html)). Sidebar with Subscribe CTA,
+  five smart views (`Today`, `Unread`, `Starred`, `Podcasts & media`, `All articles`),
+  a dedicated `Pinned` shelf, `Folders` header with unread-only filter and `+` New folder,
+  collapsible folders and nested feeds, a clickable `N feed(s) need attention` health pill,
+  and a live sync-status footer. The middle sheet pairs a `Select all` toggle, title and
+  count with a `Split / Cards` layout switcher, refresh, mark-all-read and `News settings`,
+  followed by filter chips (`All`, `Unread`, `Starred`, `Media`) + inline sort toggle (or a
+  tonal bulk selection bar when rows are checked), a 14-day `Feed Pulse` SVG sparkline on
+  single-feed views, failing feed banners with Retry, and chronologically day-grouped rows
+  with thumbnails, media pills and hover quick-triage actions (or a responsive Magazine Cards
+  grid). Split view keeps the reading pane beside the list with a calm empty state; opening
+  an article adds an `Aa` reading-appearance popover (Dar/Paper/Sepia/Night surface, Serif/Sans,
+  Compact/Default/Large), on-demand `Fetch full text`, `Clip to Notes`, `Focus` mode (`f`),
+  a `<progress>` reading bar, a custom podcast transport (`-15s`, `+30s`, speed, scrubber)
+  above the native audio element, and a footer with `Previous` / `Next` / `Next unread`.
+  Subscribe, Edit feed (with cadence sparkline) and Folder editors use the right editing pane;
+  News settings uses the settings sheet. Phones keep the mobile chip strip, hide the empty
+  split pane, and open articles full-bleed with an ellipsized header and Back. See [News](news.md).
 - **Mail:** selected direction [A](spacetimedb/mail-mocks.html) with B's inline reply (November 22; refreshed November 24).
   Scrollable sidebar: Compose, unified views (`All inboxes`, `Unread`, `Flagged`, `Drafts`, `Sent`,
   `All mail`) with distinct icons and live counts, then collapsible accounts (colour mark,
