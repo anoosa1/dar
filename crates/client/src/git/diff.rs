@@ -224,18 +224,150 @@ fn parse_hunk_header(line: &str) -> Option<(usize, usize)> {
     Some((old_line, new_line))
 }
 
-/// Renders a unified patch, keeping its markers and hunk boundaries.
-#[component]
-pub fn Diff(
-    #[prop(into)] source: String,
-    #[prop(into)] wrap: Signal<bool>,
-    #[prop(optional, into)] label: Option<String>,
-) -> impl IntoView {
-    let label = label.unwrap_or_else(|| "File diff".to_owned());
+/// Display layout for unified or side-by-side split diffs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum DiffMode {
+    #[default]
+    Unified,
+    Split,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SplitCell {
+    pub line_num: String,
+    pub kind: &'static str,
+    pub sign: &'static str,
+    pub text: String,
+}
+
+impl SplitCell {
+    fn empty() -> Self {
+        Self {
+            line_num: String::new(),
+            kind: "empty",
+            sign: "",
+            text: " ".to_owned(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SplitRow {
+    Hunk(String),
+    Pair { left: SplitCell, right: SplitCell },
+}
+
+fn flush_split_runs(
+    out: &mut Vec<SplitRow>,
+    removed: &mut Vec<(String, String)>,
+    added: &mut Vec<(String, String)>,
+) {
+    let len = removed.len().max(added.len());
+    for i in 0..len {
+        let left = match removed.get(i) {
+            Some((num, text)) => SplitCell {
+                line_num: num.clone(),
+                kind: "removed",
+                sign: "-",
+                text: text.clone(),
+            },
+            None => SplitCell::empty(),
+        };
+        let right = match added.get(i) {
+            Some((num, text)) => SplitCell {
+                line_num: num.clone(),
+                kind: "added",
+                sign: "+",
+                text: text.clone(),
+            },
+            None => SplitCell::empty(),
+        };
+        out.push(SplitRow::Pair { left, right });
+    }
+    removed.clear();
+    added.clear();
+}
+
+/// Parses a unified diff patch into aligned side-by-side split rows.
+pub fn parse_split_rows(source: &str) -> Vec<SplitRow> {
+    let mut out = Vec::new();
     let mut old_line = 1usize;
     let mut new_line = 1usize;
     let mut in_hunk = false;
-    let rows: Vec<(String, String, String, String)> = source
+    let mut removed: Vec<(String, String)> = Vec::new();
+    let mut added: Vec<(String, String)> = Vec::new();
+
+    for line in source
+        .split('\n')
+        .filter(|l| !l.starts_with("--- ") && !l.starts_with("+++ "))
+    {
+        if line.starts_with("@@") {
+            flush_split_runs(&mut out, &mut removed, &mut added);
+            let (o, n) = parse_hunk_header(line).unwrap_or((1, 1));
+            old_line = o;
+            new_line = n;
+            in_hunk = true;
+            let display = if line.is_empty() { " " } else { line };
+            out.push(SplitRow::Hunk(display.to_owned()));
+            continue;
+        }
+        if !in_hunk {
+            if !line.is_empty() {
+                out.push(SplitRow::Hunk(line.to_owned()));
+            }
+            continue;
+        }
+        let body = line
+            .chars()
+            .next()
+            .map(|c| &line[c.len_utf8()..])
+            .unwrap_or("");
+        let display = if body.is_empty() {
+            " ".to_owned()
+        } else {
+            body.to_owned()
+        };
+        if line.starts_with('-') {
+            removed.push((old_line.to_string(), display));
+            old_line += 1;
+        } else if line.starts_with('+') {
+            added.push((new_line.to_string(), display));
+            new_line += 1;
+        } else {
+            flush_split_runs(&mut out, &mut removed, &mut added);
+            let (o_num, n_num) = if line.starts_with(' ') {
+                let pair = (old_line.to_string(), new_line.to_string());
+                old_line += 1;
+                new_line += 1;
+                pair
+            } else {
+                (String::new(), String::new())
+            };
+            out.push(SplitRow::Pair {
+                left: SplitCell {
+                    line_num: o_num,
+                    kind: "",
+                    sign: " ",
+                    text: display.clone(),
+                },
+                right: SplitCell {
+                    line_num: n_num,
+                    kind: "",
+                    sign: " ",
+                    text: display,
+                },
+            });
+        }
+    }
+    flush_split_runs(&mut out, &mut removed, &mut added);
+    out
+}
+
+fn parse_unified_rows(source: &str) -> Vec<(String, String, String, String)> {
+    let mut old_line = 1usize;
+    let mut new_line = 1usize;
+    let mut in_hunk = false;
+    source
         .split('\n')
         .filter(|line| !line.starts_with("--- ") && !line.starts_with("+++ "))
         .map(|line| {
@@ -284,7 +416,20 @@ pub fn Diff(
                 display,
             )
         })
-        .collect();
+        .collect()
+}
+
+/// Renders a unified or side-by-side split patch, preserving hunk boundaries.
+#[component]
+pub fn Diff(
+    #[prop(into)] source: String,
+    #[prop(into)] wrap: Signal<bool>,
+    #[prop(optional, into)] label: Option<String>,
+    #[prop(optional, into)] mode: Option<Signal<DiffMode>>,
+) -> impl IntoView {
+    let label = label.unwrap_or_else(|| "File diff".to_owned());
+    let source = StoredValue::new(source);
+    let active_mode = move || mode.map(|m| m.get()).unwrap_or_default();
 
     view! {
         <div
@@ -293,15 +438,44 @@ pub fn Diff(
             aria-label=label
             tabindex="0"
         >
-            {rows.into_iter().map(|(class, old_num, new_num, text)| {
-                view! {
-                    <div class=class>
-                        <span class="code-diff-number" aria-hidden="true">{old_num}</span>
-                        <span class="code-diff-number" aria-hidden="true">{new_num}</span>
-                        <code class="code-diff-text">{text}</code>
-                    </div>
+            {move || match active_mode() {
+                DiffMode::Unified => {
+                    let rows = source.with_value(|s| parse_unified_rows(s));
+                    rows.into_iter().map(|(class, old_num, new_num, text)| {
+                        view! {
+                            <div class=class>
+                                <span class="code-diff-number" aria-hidden="true">{old_num}</span>
+                                <span class="code-diff-number" aria-hidden="true">{new_num}</span>
+                                <code class="code-diff-text">{text}</code>
+                            </div>
+                        }
+                    }).collect_view().into_any()
                 }
-            }).collect_view()}
+                DiffMode::Split => {
+                    let rows = source.with_value(|s| parse_split_rows(s));
+                    view! {
+                        <div class="code-diff-split">
+                            {rows.into_iter().map(|row| match row {
+                                SplitRow::Hunk(header) => view! {
+                                    <div class="code-diff-split-hunk">{header}</div>
+                                }.into_any(),
+                                SplitRow::Pair { left, right } => view! {
+                                    <div class=format!("code-diff-split-cell {}", left.kind)>
+                                        <span class="code-diff-number" aria-hidden="true">{left.line_num}</span>
+                                        <span class="code-diff-sign" aria-hidden="true">{left.sign}</span>
+                                        <code class="code-diff-text">{left.text}</code>
+                                    </div>
+                                    <div class=format!("code-diff-split-cell {}", right.kind)>
+                                        <span class="code-diff-number" aria-hidden="true">{right.line_num}</span>
+                                        <span class="code-diff-sign" aria-hidden="true">{right.sign}</span>
+                                        <code class="code-diff-text">{right.text}</code>
+                                    </div>
+                                }.into_any(),
+                            }).collect_view()}
+                        </div>
+                    }.into_any()
+                }
+            }}
         </div>
     }
 }
@@ -330,5 +504,34 @@ mod tests {
         );
         assert_eq!(parse_hunk_header("@@ -0,0 +1,3 @@"), Some((0, 1)));
         assert_eq!(parse_hunk_header("@@ -5 +7 @@"), Some((5, 7)));
+    }
+
+    #[test]
+    fn parse_split_rows_aligns_changes() {
+        let patch = "@@ -1,3 +1,4 @@\n ctx\n-old\n+new1\n+new2\n end";
+        let rows = parse_split_rows(patch);
+        assert_eq!(rows.len(), 5);
+        assert!(matches!(&rows[0], SplitRow::Hunk(h) if h == "@@ -1,3 +1,4 @@"));
+        assert!(matches!(
+            &rows[1],
+            SplitRow::Pair { left, right }
+                if left.line_num == "1" && right.line_num == "1" && left.text == "ctx"
+        ));
+        assert!(matches!(
+            &rows[2],
+            SplitRow::Pair { left, right }
+                if left.kind == "removed" && left.line_num == "2" && left.text == "old"
+                && right.kind == "added" && right.line_num == "2" && right.text == "new1"
+        ));
+        assert!(matches!(
+            &rows[3],
+            SplitRow::Pair { left, right }
+                if left.kind == "empty" && right.kind == "added" && right.line_num == "3" && right.text == "new2"
+        ));
+        assert!(matches!(
+            &rows[4],
+            SplitRow::Pair { left, right }
+                if left.line_num == "3" && right.line_num == "4" && left.text == "end"
+        ));
     }
 }

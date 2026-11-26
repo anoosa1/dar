@@ -263,6 +263,11 @@ pub async fn git_app_browser_journey(t: &Ctx) -> Result<()> {
     let compare = page.get_by_role("complementary", "Compare");
     let merge_box = compare.get_by_role("region", "Merge feature/rss into main");
     compare.get_by_text("rss.xml").wait_for().await?;
+    compare
+        .get_by_role("region", contains("Changes to rss.xml"))
+        .get_by_text(contains("<rss/>"))
+        .wait_for()
+        .await?;
     assert!(
         merge_box
             .get_by_role("radio", "Fast-forward")
@@ -417,6 +422,15 @@ pub async fn git_app_browser_journey(t: &Ctx) -> Result<()> {
     page.get_by_text("7 commits in the last year")
         .wait_for()
         .await?;
+    page.get_by_role("button", "Git settings").click().await?;
+    let settings = page.get_by_role("dialog", "Git settings");
+    settings.wait_for().await?;
+    settings.get_by_role("tab", "HTTPS & keys").click().await?;
+    settings
+        .get_by_role("button", "Close settings")
+        .click()
+        .await?;
+    settings.wait_for_state(State::Detached).await?;
     page.evaluate("() => { document.documentElement.dataset.theme = 'mocha'; }")
         .await?;
     for width in [1440u32, 390] {

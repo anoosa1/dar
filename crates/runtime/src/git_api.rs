@@ -499,7 +499,9 @@ impl Git<'_> {
     async fn activity(&self) -> Result<Value> {
         let rows = self.repo_rows().await?;
         let since = format!("--since={}", (now_s() - 366.0 * 86400.0).floor() as i64);
+        let year_format = format!("--format=%at{UNIT}%ae{UNIT}%s");
         let (mut times, mut events): (Vec<f64>, Vec<Value>) = (Vec::new(), Vec::new());
+        let (mut git_count, mut dar_count, mut agent_count) = (0u64, 0u64, 0u64);
         for row in &rows {
             let id = row["id"].as_str().unwrap_or_default();
             let work = async {
@@ -522,14 +524,23 @@ impl Git<'_> {
                 {
                     return Ok::<(), AppError>(());
                 }
-                for value in lines(
+                for line in lines(
                     &run(
                         &dir,
-                        &["log", "--all", &since, "--max-count=20000", "--format=%at"],
+                        &["log", "--all", &since, "--max-count=20000", &year_format],
                     )
                     .await?,
                 ) {
-                    times.push(value.parse().unwrap_or(0.0));
+                    let mut parts = line.split(UNIT);
+                    let ts = parts.next().unwrap_or_default();
+                    let email = parts.next().unwrap_or_default();
+                    let subject = parts.next().unwrap_or_default();
+                    times.push(ts.parse().unwrap_or(0.0));
+                    match source_of(email, subject) {
+                        "git" => git_count += 1,
+                        "agent" => agent_count += 1,
+                        _ => dar_count += 1,
+                    }
                 }
                 let max = format!("--max-count={EVENTS}");
                 for commit in parse_log(
@@ -561,7 +572,11 @@ impl Git<'_> {
                 .total_cmp(&a["time"].as_f64().unwrap_or(0.0))
         });
         events.truncate(EVENTS);
-        Ok(json!({ "times": times, "events": events }))
+        Ok(json!({
+            "times": times,
+            "events": events,
+            "sources": { "git": git_count, "dar": dar_count, "agent": agent_count }
+        }))
     }
 }
 
@@ -1844,7 +1859,7 @@ pub async fn handle(r: &Api<'_>, body: Body) -> Result<Response> {
                 &head,
                 b.as_deref().unwrap_or_default(),
                 h.as_deref().unwrap_or_default(),
-                false,
+                true,
             )
             .await?
         }

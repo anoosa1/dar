@@ -21,8 +21,8 @@ fetch, write to push).
 - `GET /repositories`, `GET /repositories/<id>`: the caller's tracked folders with path,
   README description, commit/branch/tag counts, 12 weeks of activity, uncommitted file
   count, history size and both clone addresses.
-- `GET /activity`: commit times over the last year and the newest commits across
-  repositories.
+- `GET /activity`: commit times over the last year, `{git, dar, agent}` commit source totals,
+  and the newest commits across repositories.
 - `GET /repositories/<id>/tree?ref=&path=`, `/blob?ref=&path=`: a folder at a branch, tag
   or commit with each entry's newest commit and README; a file (inline text with `view`,
   otherwise a download; sandboxed).
@@ -33,8 +33,9 @@ fetch, write to push).
   hunks against the first parent (large diffs are left out). A commit on main's history also
   names its history entry (`restore`), which `POST /api/v1/files/history/<id>/restore` takes.
 - `GET /repositories/<id>/branches`, `/tags`, `/compare?base=&head=`: divergence from
-  main, Agent branches, tags, and the commits and files one branch has over another, whether
-  it can fast-forward and whether Git can merge it without conflicts.
+  main, Agent branches, tags, and the commits and changed files (including inline patches for
+  unified/split diff review) one branch has over another, whether it can fast-forward and whether
+  Git can merge it without conflicts.
 - `POST /repositories/<id>/merge` with `{base, head, baseSha, headSha, mode, message?,
   deleteBranch?}`: `mode` is `fast-forward` or `merge` (a merge commit written by Git without a
   working tree, authored by the caller as a Dar commit). The tips must still be the ones the

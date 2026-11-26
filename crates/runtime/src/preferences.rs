@@ -289,14 +289,8 @@ pub fn merge(
         "newsPaper",
         choice("newsPaper", &["dar", "paper", "sepia", "night"], "dar")?,
     );
-    put(
-        "newsFont",
-        choice("newsFont", &["serif", "sans"], "serif")?,
-    );
-    put(
-        "newsSize",
-        choice("newsSize", &["sm", "md", "lg"], "md")?,
-    );
+    put("newsFont", choice("newsFont", &["serif", "sans"], "serif")?);
+    put("newsSize", choice("newsSize", &["sm", "md", "lg"], "md")?);
     put(
         "mailImages",
         choice("mailImages", &["block", "load"], "block")?,
@@ -396,6 +390,16 @@ pub fn merge(
         "agentDiffView",
         choice("agentDiffView", &["unified", "split"], "unified")?,
     );
+    put(
+        "gitDiffLayout",
+        choice("gitDiffLayout", &["unified", "split"], "split")?,
+    );
+    put(
+        "gitCommitsView",
+        choice("gitCommitsView", &["graph", "list"], "graph")?,
+    );
+    put("gitWrapLines", flag("gitWrapLines", false)?);
+    put("gitShowAbout", flag("gitShowAbout", true)?);
 
     let app_launcher = get("appLauncher", json!({ "order": [], "categories": [] }));
     let launcher_obj = app_launcher
@@ -680,6 +684,39 @@ mod tests {
             json!({ "newsPaper": "light" }),
             json!({ "newsFont": "mono" }),
             json!({ "newsSize": "xl" }),
+        ] {
+            let map: Map<String, Value> = serde_json::from_value(bad).unwrap();
+            assert!(merge(&empty, &map).is_err());
+        }
+    }
+
+    #[test]
+    fn validates_git_redesign_preferences() {
+        let empty = Map::new();
+        let body: Map<String, Value> = serde_json::from_value(json!({
+            "gitDiffLayout": "unified",
+            "gitCommitsView": "list",
+            "gitWrapLines": true,
+            "gitShowAbout": false
+        }))
+        .unwrap();
+        let merged = merge(&empty, &body).unwrap();
+        assert_eq!(merged["gitDiffLayout"], "unified");
+        assert_eq!(merged["gitCommitsView"], "list");
+        assert_eq!(merged["gitWrapLines"], true);
+        assert_eq!(merged["gitShowAbout"], false);
+
+        let defaults = merge(&empty, &Map::new()).unwrap();
+        assert_eq!(defaults["gitDiffLayout"], "split");
+        assert_eq!(defaults["gitCommitsView"], "graph");
+        assert_eq!(defaults["gitWrapLines"], false);
+        assert_eq!(defaults["gitShowAbout"], true);
+
+        for bad in [
+            json!({ "gitDiffLayout": "cards" }),
+            json!({ "gitCommitsView": "tree" }),
+            json!({ "gitWrapLines": "yes" }),
+            json!({ "gitShowAbout": 1 }),
         ] {
             let map: Map<String, Value> = serde_json::from_value(bad).unwrap();
             assert!(merge(&empty, &map).is_err());

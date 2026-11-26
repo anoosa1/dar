@@ -1,25 +1,31 @@
-//! Issues and pull requests (`git/tracker.tsx`).
+//! Issues and pull requests (`git/tracker.tsx`): `IssuesTab`, `IssueSheet` (drawer for issues
+//! and full-stage review for pull requests), `IssueEditor`, and `LabelsEditor`.
+
+use std::collections::HashSet;
 
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use wasm_bindgen::JsCast;
 
+use super::diff::DiffMode;
+use super::parts::{
+    BranchPair, Failure, FileChanges, GIT_LABEL_COLORS, GitBranches, GitCompare, GitIssue,
+    GitIssueList, GitIssueSummary, GitLabel, GitMarkdown, GitMergeResult, GitPullAgent,
+    GitPullChanges, GitRepository, GitSegmented, GitSelect, GitTimelineItem, Loading, MergeBox,
+    Person, Sha, SheetHead, TRACKER_LIMITS_BODY, TRACKER_LIMITS_LABEL_DESCRIPTION,
+    TRACKER_LIMITS_LABEL_NAME, TRACKER_LIMITS_LABELS_PER_ITEM, TRACKER_LIMITS_PAGE,
+    TRACKER_LIMITS_TITLE, encode_uri, focus_aside, focus_sheet, plural, query_string, repo_api,
+    sheet_keydown, use_load,
+};
 use crate::api::{self, BrowserSession};
 use crate::dates::{edited, local_date_time};
 use crate::history::ChangeRow;
 use crate::icons::Icon;
-use crate::ui::{ActionMenu, Dialog, EditorPane, MenuAction, unique_id};
-
-use super::parts::{
-    Failure, FileChanges, GIT_LABEL_COLORS, GitBranches, GitCompare, GitIssue, GitIssueList,
-    GitIssueSummary, GitLabel, GitMarkdown, GitMergeResult, GitPullAgent, GitPullChanges,
-    GitRepository, GitSegmented, GitSelect, GitTimelineItem, Loading, MergeBox, Person, Sha,
-    SheetHead, TRACKER_LIMITS_BODY, TRACKER_LIMITS_LABEL_DESCRIPTION, TRACKER_LIMITS_LABEL_NAME,
-    TRACKER_LIMITS_LABELS_PER_ITEM, TRACKER_LIMITS_PAGE, TRACKER_LIMITS_TITLE, encode_uri,
-    focus_sheet, plural, query_string, repo_api, sheet_keydown, use_load,
-};
+use crate::markdown::{MarkdownToolbar, format_markdown};
+use crate::ui::{ActionMenu, Dialog, EditorPane, MenuAction, document, unique_id};
 
 #[derive(Clone, Debug)]
 pub enum IssueEditing {
@@ -146,19 +152,6 @@ fn Labels(ids: Vec<String>, labels: Vec<GitLabel>) -> impl IntoView {
     })
 }
 
-#[component]
-fn BranchPair(#[prop(into)] head: String, #[prop(into)] base: String) -> impl IntoView {
-    let sr = format!("{head} into {base}");
-    view! {
-        <span class="git-branch-pair">
-            <code>{head}</code>
-            <Icon name="back" class="git-pair-arrow"/>
-            <code>{base}</code>
-            <span class="sr-only">{sr}</span>
-        </span>
-    }
-}
-
 // ---- Lists --------------------------------------------------------------------------------------
 
 #[component]
@@ -172,6 +165,7 @@ pub fn IssuesTab(
 ) -> impl IntoView {
     let state = RwSignal::new("open".to_owned());
     let label = RwSignal::new(String::new());
+    let query = RwSignal::new(String::new());
     let repo_id = StoredValue::new(repo.id.clone());
     let can_write = writer(&repo);
     let can_create = kind == "issue" || can_write;
@@ -223,6 +217,17 @@ pub fn IssuesTab(
         opts
     });
 
+    let search_placeholder = if kind == "pull" {
+        "Filter pull requests\u{2026}"
+    } else {
+        "Filter issues\u{2026}"
+    };
+    let search_label = if kind == "pull" {
+        "Filter pull requests"
+    } else {
+        "Filter issues"
+    };
+
     view! {
         <div class="git-scroll git-issues">
             <div class="git-toolbar">
@@ -243,9 +248,19 @@ pub fn IssuesTab(
                         />
                     })
                 }}
+                <label class="git-inline-input">
+                    <Icon name="search"/>
+                    <input
+                        type="search"
+                        placeholder=search_placeholder
+                        aria-label=search_label
+                        prop:value=move || query.get()
+                        on:input=move |e| query.set(event_target_value(&e))
+                    />
+                </label>
                 <span class="git-toolbar-end">
                     {can_write.then(|| view! {
-                        <button type="button" class="secondary-button git-tool-button" on:click=move |_| { on_edit.try_run(IssueEditing::Labels); }>
+                        <button type="button" class="secondary-button git-tool-button" on:click=move |_| { let _ = on_edit.try_run(IssueEditing::Labels); }>
                             <Icon name="label"/>
                             "Labels"
                         </button>
@@ -254,12 +269,14 @@ pub fn IssuesTab(
                         <button
                             type="button"
                             class="primary-button git-tool-button"
-                            on:click=move |_| { on_edit.try_run(IssueEditing::Issue {
-                                kind: kind.to_owned(),
-                                issue: None,
-                                head: None,
-                                base: None,
-                            }); }
+                            on:click=move |_| {
+                                let _ = on_edit.try_run(IssueEditing::Issue {
+                                    kind: kind.to_owned(),
+                                    issue: None,
+                                    head: None,
+                                    base: None,
+                                });
+                            }
                         >
                             <Icon name="plus"/>
                             {format!("New {item_noun}")}
@@ -301,10 +318,31 @@ pub fn IssuesTab(
                         </div>
                     }.into_any();
                 }
+                let needle = query.get().trim().to_ascii_lowercase();
+                let filtered: Vec<GitIssueSummary> = if needle.is_empty() {
+                    list.items
+                } else {
+                    list.items
+                        .into_iter()
+                        .filter(|item| {
+                            item.title.to_ascii_lowercase().contains(&needle)
+                                || item.author.to_ascii_lowercase().contains(&needle)
+                                || item.number.to_string() == needle.trim_start_matches('#')
+                        })
+                        .collect()
+                };
+                if filtered.is_empty() {
+                    return view! {
+                        <p class="git-hint">
+                            {format!("No {item_noun}s match \u{201c}{}\u{201d}. ", query.get())}
+                            <button type="button" class="git-link" on:click=move |_| query.set(String::new())>"Clear filter"</button>
+                        </p>
+                    }.into_any();
+                }
                 let all_labels = list.labels.clone();
                 view! {
                     <ul class="git-issue-list" aria-label=title>
-                        {list.items.into_iter().map(|item| {
+                        {filtered.into_iter().map(|item| {
                             let num = item.number;
                             let labels = all_labels.clone();
                             let is_sel = Signal::derive(move || selected.get() == Some(num));
@@ -314,7 +352,7 @@ pub fn IssuesTab(
                                         item=item
                                         labels=labels
                                         selected=is_sel
-                                        on_open=Callback::new(move |_| { on_open.try_run(num); })
+                                        on_open=Callback::new(move |_| { let _ = on_open.try_run(num); })
                                     />
                                 </li>
                             }
@@ -362,7 +400,7 @@ fn IssueRow(
             type="button"
             class=move || if selected.get() { "git-issue-row is-selected" } else { "git-issue-row" }
             aria-pressed=move || selected.get().to_string()
-            on:click=move |_| { on_open.try_run(()); }
+            on:click=move |_| { let _ = on_open.try_run(()); }
         >
             <StateIcon kind=item.kind.clone() state=item.state.clone()/>
             <span class="git-issue-main">
@@ -397,6 +435,12 @@ pub fn IssueSheet(
     number: u32,
     session: BrowserSession,
     #[prop(into)] version: Signal<u64>,
+    diff_mode_str: RwSignal<String>,
+    wrap: RwSignal<bool>,
+    #[prop(optional)] full_stage: bool,
+    expanded: Signal<bool>,
+    on_expand: Callback<()>,
+    #[prop(optional)] on_kind_known: Option<Callback<bool>>,
     notify: Callback<String>,
     on_close: Callback<()>,
     on_open: Callback<u32>,
@@ -404,8 +448,13 @@ pub fn IssueSheet(
     on_edit: Callback<IssueEditing>,
     on_changed: Callback<()>,
 ) -> impl IntoView {
-    let root = NodeRef::<html::Div>::new();
-    focus_sheet(root);
+    let drawer_root = NodeRef::<html::Div>::new();
+    let stage_root = NodeRef::<html::Aside>::new();
+    if full_stage {
+        focus_aside(stage_root);
+    } else {
+        focus_sheet(drawer_root);
+    }
 
     let repo_sv = StoredValue::new(repo.clone());
     let session_sv = StoredValue::new(session);
@@ -415,6 +464,18 @@ pub fn IssueSheet(
     let issue_trigger = Signal::derive(move || version.get().wrapping_add(repo_rev));
     let issue_url = Signal::derive(move || Some(url.get_value()));
     let issue_load = use_load::<GitIssue>(issue_url, issue_trigger);
+
+    if let Some(cb) = on_kind_known {
+        Effect::new(move |_| {
+            if let Some(is_pull) = issue_load
+                .value
+                .with(|i| i.as_ref().map(|v| v.kind == "pull"))
+                && is_pull != full_stage
+            {
+                let _ = cb.try_run(is_pull);
+            }
+        });
+    }
 
     let list_url = Signal::derive(move || {
         Some(format!(
@@ -449,7 +510,41 @@ pub fn IssueSheet(
     let changes_load = use_load::<GitPullChanges>(changes_url, changes_trigger);
 
     let view_mode = RwSignal::new("conversation".to_owned());
-    let wrap = RwSignal::new(false);
+    let diff_mode = Signal::derive(move || {
+        if diff_mode_str.get() == "split" {
+            DiffMode::Split
+        } else {
+            DiffMode::Unified
+        }
+    });
+    let diff_options = Signal::derive(move || {
+        vec![
+            ("unified".to_owned(), "Unified".to_owned()),
+            ("split".to_owned(), "Split".to_owned()),
+        ]
+    });
+    let viewed: RwSignal<HashSet<String>> = RwSignal::new(HashSet::new());
+    let open_files: RwSignal<HashSet<String>> = RwSignal::new(HashSet::new());
+    let initialized_open = RwSignal::new(false);
+    let selected_file: RwSignal<Option<String>> = RwSignal::new(None);
+    let rail_open = RwSignal::new(true);
+
+    Effect::new(move |_| {
+        if initialized_open.get_untracked() {
+            return;
+        }
+        if let Some(paths) = changes_load.value.with(|c| {
+            c.as_ref()
+                .and_then(|v| v.compare.as_ref())
+                .map(|cmp| cmp.files.iter().map(|f| f.path.clone()).collect::<Vec<_>>())
+        }) && !paths.is_empty()
+        {
+            selected_file.set(paths.first().cloned());
+            open_files.set(paths.into_iter().collect());
+            initialized_open.set(true);
+        }
+    });
+
     let busy = RwSignal::new(false);
     let failure = RwSignal::new(String::new());
     // What the comment composer shows; it is rebuilt only when these change.
@@ -473,9 +568,7 @@ pub fn IssueSheet(
             match api::get::<GitIssue>(&u).await {
                 Ok(next) => {
                     issue_load.set(next);
-                    {
-                        on_changed.try_run(());
-                    };
+                    let _ = on_changed.try_run(());
                 }
                 Err(cause) => {
                     let k = issue_load.value.with_untracked(|i| {
@@ -508,9 +601,7 @@ pub fn IssueSheet(
                             if let Some(msg) = done {
                                 notify.run(msg);
                             }
-                            {
-                                on_changed.try_run(());
-                            };
+                            let _ = on_changed.try_run(());
                         }
                         Err(cause) => {
                             let _ = failure.try_set(tracker_failure(&cause.message, &kind));
@@ -558,97 +649,77 @@ pub fn IssueSheet(
         ]
     });
 
-    view! {
-        <div
-            node_ref=root
-            class="git-sheet"
-            tabindex="-1"
-            on:keydown=move |e| sheet_keydown(e, on_close)
-        >
-            <SheetHead title=title_view on_close=on_close>
-                {move || issue_load.value.get().filter(|i| i.permissions.edit).map(|iss| {
-                    let k = iss.kind.clone();
-                    let label = format!("Edit {}", noun(&k));
-                    view! {
-                        <button
-                            type="button"
-                            class="icon-button"
-                            aria-label=label
-                            title="Edit"
-                            on:click=move |_| { on_edit.try_run(IssueEditing::Issue {
-                                kind: k.clone(),
-                                issue: Some(iss.clone()),
-                                head: None,
-                                base: None,
-                            }); }
-                        >
-                            <Icon name="pencil"/>
-                        </button>
-                    }
-                })}
-            </SheetHead>
-            <div class="git-sheet-body">
-                {move || {
-                    let kind_str = issue_load.value.with(|i| i.as_ref().map(|v| v.kind.clone()).unwrap_or_else(|| "issue".to_owned()));
-                    if !issue_load.error.with(String::is_empty) {
-                        let msg = Signal::derive(move || tracker_failure(&issue_load.error.get(), &kind_str));
-                        let what = format!("This {}", noun(&issue_load.value.with_untracked(|i| i.as_ref().map(|v| v.kind.clone()).unwrap_or_else(|| "issue".to_owned()))));
-                        return view! { <Failure error=msg retry=issue_load.retry what=what/> }.into_any();
-                    }
-                    let Some(issue) = issue_load.value.get() else {
-                        return view! { <Loading label=format!("Loading {}", noun(&kind_str))/> }.into_any();
-                    };
-                    let labels = list_load.value.with(|l| l.as_ref().map(|v| v.labels.clone()).unwrap_or_default());
-                    let pull = issue.kind == "pull";
-                    let issue_sv = StoredValue::new(issue.clone());
-                    let labels_sv = StoredValue::new(labels.clone());
-                    let pair = issue.head.clone().zip(issue.base.clone());
-                    let is_agent = issue.agent.unwrap_or(false);
+    let is_pull_memo = Memo::new(move |_| {
+        issue_load
+            .value
+            .with(|i| i.as_ref().is_some_and(|v| v.kind == "pull"))
+    });
+    let show_conv = Memo::new(move |_| {
+        !failed.get() && (!is_pull_memo.get() || view_mode.get() == "conversation")
+    });
 
-                    let label_actions = Callback::new(move |_: ()| {
-                        let iss = issue_sv.get_value();
-                        let all = labels_sv.get_value();
-                        let is_busy = busy.get_untracked();
-                        let mut acts: Vec<MenuAction> = all
-                            .iter()
-                            .map(|item| {
-                                let has = iss.labels.contains(&item.id);
-                                let disabled = is_busy || (!has && iss.labels.len() >= TRACKER_LIMITS_LABELS_PER_ITEM);
-                                let next_labels: Vec<String> = if has {
-                                    iss.labels.iter().filter(|id| *id != &item.id).cloned().collect()
-                                } else {
-                                    let mut v = iss.labels.clone();
-                                    v.push(item.id.clone());
-                                    v
-                                };
-                                MenuAction::new(item.name.clone(), "label")
-                                    .current(has)
-                                    .disabled(disabled)
-                                    .run(move || {
-                                        let mut map = Map::new();
-                                        map.insert("labels".into(), json!(next_labels));
-                                        change_issue.run((map, None));
-                                    })
+    let inner_body = view! {
+        {move || {
+            let kind_str = issue_load.value.with(|i| i.as_ref().map(|v| v.kind.clone()).unwrap_or_else(|| "issue".to_owned()));
+            if !issue_load.error.with(String::is_empty) {
+                let msg = Signal::derive(move || tracker_failure(&issue_load.error.get(), &kind_str));
+                let what = format!("This {}", noun(&issue_load.value.with_untracked(|i| i.as_ref().map(|v| v.kind.clone()).unwrap_or_else(|| "issue".to_owned()))));
+                return view! { <div class="git-sheet-pad"><Failure error=msg retry=issue_load.retry what=what/></div> }.into_any();
+            }
+            let Some(issue) = issue_load.value.get() else {
+                return view! { <div class="git-sheet-pad"><Loading label=format!("Loading {}", noun(&kind_str))/></div> }.into_any();
+            };
+            let labels = list_load.value.with(|l| l.as_ref().map(|v| v.labels.clone()).unwrap_or_default());
+            let pull = issue.kind == "pull";
+            let issue_sv = StoredValue::new(issue.clone());
+            let labels_sv = StoredValue::new(labels.clone());
+            let pair = issue.head.clone().zip(issue.base.clone());
+            let is_agent = issue.agent.unwrap_or(false);
+
+            let label_actions = Callback::new(move |_: ()| {
+                let iss = issue_sv.get_value();
+                let all = labels_sv.get_value();
+                let is_busy = busy.get_untracked();
+                let mut acts: Vec<MenuAction> = all
+                    .iter()
+                    .map(|item| {
+                        let has = iss.labels.contains(&item.id);
+                        let disabled = is_busy || (!has && iss.labels.len() >= TRACKER_LIMITS_LABELS_PER_ITEM);
+                        let next_labels: Vec<String> = if has {
+                            iss.labels.iter().filter(|id| *id != &item.id).cloned().collect()
+                        } else {
+                            let mut v = iss.labels.clone();
+                            v.push(item.id.clone());
+                            v
+                        };
+                        MenuAction::new(item.name.clone(), "label")
+                            .current(has)
+                            .disabled(disabled)
+                            .run(move || {
+                                let mut map = Map::new();
+                                map.insert("labels".into(), json!(next_labels));
+                                change_issue.run((map, None));
                             })
-                            .collect();
-                        let mut manage = MenuAction::new("Manage labels", "settings")
-                            .run(move || { on_edit.try_run(IssueEditing::Labels); });
-                        if !all.is_empty() {
-                            manage = manage.separator();
-                        }
-                        acts.push(manage);
-                        acts
-                    });
+                    })
+                    .collect();
+                let mut manage = MenuAction::new("Manage labels", "settings")
+                    .run(move || { let _ = on_edit.try_run(IssueEditing::Labels); });
+                if !all.is_empty() {
+                    manage = manage.separator();
+                }
+                acts.push(manage);
+                acts
+            });
 
-                    view! {
-                        <div class="git-issue-head">
-                            <h3 class="git-commit-title">{issue.title.clone()}</h3>
-                            <div class="git-issue-meta">
-                                <StateChip kind=issue.kind.clone() state=issue.state.clone()/>
-                                <span><strong>{issue.author.clone()}</strong>{format!(" opened {}", edited(issue.created_at))}</span>
-                                {pair.map(|(h, b)| view! { <BranchPair head=h base=b/> })}
-                                {is_agent.then(|| view! { <span class="git-source is-agent"><Icon name="agent"/>"Agent"</span> })}
-                            </div>
+            view! {
+                <div class=if full_stage { "git-pr-top" } else { "git-issue-head" }>
+                    <div class="git-pr-top-main">
+                        <h3 class="git-commit-title">{issue.title.clone()}</h3>
+                        <div class="git-issue-meta">
+                            <StateChip kind=issue.kind.clone() state=issue.state.clone()/>
+                            <span><strong>{issue.author.clone()}</strong>{format!(" opened {}", edited(issue.created_at))}</span>
+                            {pair.map(|(h, b)| view! { <BranchPair head=h base=b/> })}
+                            {is_agent.then(|| view! { <span class="git-source is-agent"><Icon name="agent"/>"Agent"</span> })}
                         </div>
                         {(!issue.labels.is_empty() || issue.permissions.label).then(|| view! {
                             <div class="git-issue-labels">
@@ -662,225 +733,461 @@ pub fn IssueSheet(
                                 })}
                             </div>
                         })}
-                        {pull.then(|| view! {
-                            <GitSegmented
-                                label="Pull request view"
-                                value=view_mode
-                                options=pull_view_options
-                                on_change=Callback::new(move |v| view_mode.set(v))
-                            />
-                        })}
-                        {move || (!failure.with(String::is_empty)).then(|| view! { <p class="error" role="alert">{failure.get()}</p> })}
+                    </div>
+                </div>
+                {pull.then(|| view! {
+                    <div class=if full_stage { "git-pr-subbar" } else { "git-issue-tabs" }>
+                        <GitSegmented
+                            label="Pull request view"
+                            value=view_mode
+                            options=pull_view_options
+                            on_change=Callback::new(move |v| view_mode.set(v))
+                        />
+                    </div>
+                })}
+            }.into_any()
+        }}
+        {move || (!failure.with(String::is_empty)).then(|| view! { <p class="error git-sheet-pad" role="alert">{failure.get()}</p> })}
+        {move || {
+            show_conv.get().then(|| view! {
+                <div class=if full_stage { "git-pr-conv-scroll" } else { "" }>
+                    <div class=if full_stage { "git-conv-col" } else { "git-drawer-conv" }>
                         {move || {
-                            let iss = issue_sv.get_value();
-                            let current_view = view_mode.get();
-                            if !pull || current_view == "conversation" {
-                                let show_merge = pull && iss.state == "open" && iss.permissions.merge;
-                                view! {
-                                    <Timeline
-                                        issue=iss.clone()
-                                        repo=repo_sv.get_value()
-                                        session=session_sv.get_value()
-                                        on_open=on_open
-                                        on_changed=reload_issue
-                                    />
-                                    {show_merge.then(|| {
-                                        let iss_m = iss.clone();
-                                        move || {
-                                            if !changes_load.error.with(String::is_empty) {
-                                                let err = Signal::derive(move || tracker_failure(&changes_load.error.get(), "pull"));
-                                                return view! { <Failure error=err retry=changes_load.retry what="The branches"/> }.into_any();
-                                            }
-                                            let Some(ch) = changes_load.value.get() else {
-                                                return view! { <Loading label="Checking the branches"/> }.into_any();
-                                            };
-                                            if let Some(note) = ch.note {
-                                                return view! {
-                                                    <div class="git-banner">
-                                                        <Icon name="alert"/>
-                                                        <div>
-                                                            <strong>"This pull request can\u{2019}t be merged"</strong>
-                                                            <span>{note}</span>
-                                                        </div>
-                                                    </div>
-                                                }.into_any();
-                                            }
-                                            if let Some(cmp) = ch.compare {
-                                                if !cmp.ahead.is_empty() {
-                                                    let default_msg = format!(
-                                                        "Merge pull request #{} from {}\n\n{}",
-                                                        iss_m.number,
-                                                        iss_m.head.as_deref().unwrap_or(""),
-                                                        iss_m.title
-                                                    );
-                                                    let base_n = iss_m.base.clone().unwrap_or_default();
-                                                    let head_n = iss_m.head.clone().unwrap_or_default();
-                                                    let num = iss_m.number;
-                                                    return view! {
-                                                        <MergeBox
-                                                            repo=repo_sv.get_value()
-                                                            compare=cmp
-                                                            session=session_sv.get_value()
-                                                            default_message=default_msg
-                                                            on_merged=Callback::new(move |result: GitMergeResult| {
-                                                                let msg = if result.fast_forward {
-                                                                    format!("{base_n} now points at {head_n}")
-                                                                } else {
-                                                                    format!("Merged #{num}")
-                                                                };
-                                                                notify.run(msg);
-                                                                reload_issue.run(());
-                                                            })
-                                                        />
-                                                    }.into_any();
-                                                } else {
-                                                    let base_n = iss_m.base.clone().unwrap_or_default();
-                                                    let head_n = iss_m.head.clone().unwrap_or_default();
-                                                    return view! {
-                                                        <div class="git-banner is-info">
-                                                            <Icon name="info"/>
-                                                            <div>
-                                                                <strong>"Nothing to merge"</strong>
-                                                                <span>{format!("{base_n} already has every commit on {head_n}. Push commits to the branch, or close this pull request.")}</span>
-                                                            </div>
-                                                        </div>
-                                                    }.into_any();
-                                                }
-                                            }
-                                            if let Some(agent) = ch.agent {
-                                                let num = iss_m.number;
-                                                return view! {
-                                                    <AgentMerge
-                                                        repo=repo_sv.get_value()
-                                                        issue=iss_m.clone()
-                                                        agent=agent
-                                                        session=session_sv.get_value()
-                                                        on_merged=Callback::new(move |_| {
-                                                            notify.run(format!("Merged #{num} into the folder"));
-                                                            reload_issue.run(());
-                                                        })
-                                                    />
-                                                }.into_any();
-                                            }
-                                            ().into_any()
-                                        }
-                                    })}
-                                }.into_any()
-                            } else {
-                                if !changes_load.error.with(String::is_empty) {
-                                    let err = Signal::derive(move || tracker_failure(&changes_load.error.get(), "pull"));
-                                    return view! { <Failure error=err retry=changes_load.retry what="The changes"/> }.into_any();
-                                }
-                                let Some(ch) = changes_load.value.get() else {
-                                    return view! { <Loading label="Loading changes"/> }.into_any();
-                                };
-                                if let Some(note) = &ch.note
-                                    && ch.compare.is_none()
-                                {
-                                    return view! { <p class="git-hint">{note.clone()}</p> }.into_any();
-                                }
-                                if current_view == "commits" {
+                            let Some(iss) = issue_load.value.get() else {
+                                return ().into_any();
+                            };
+                            let pull = iss.kind == "pull";
+                            let show_merge = pull && iss.state == "open" && iss.permissions.merge;
+                            let iss_m = iss.clone();
+                            view! {
+                                <Timeline
+                                    issue=iss
+                                    repo=repo_sv.get_value()
+                                    session=session_sv.get_value()
+                                    on_open=on_open
+                                    on_changed=reload_issue
+                                />
+                                {show_merge.then(|| move || {
+                                    if !changes_load.error.with(String::is_empty) {
+                                        let err = Signal::derive(move || tracker_failure(&changes_load.error.get(), "pull"));
+                                        return view! { <Failure error=err retry=changes_load.retry what="The branches"/> }.into_any();
+                                    }
+                                    let Some(ch) = changes_load.value.get() else {
+                                        return view! { <Loading label="Checking the branches"/> }.into_any();
+                                    };
+                                    if let Some(note) = ch.note {
+                                        return view! {
+                                            <div class="git-banner">
+                                                <Icon name="alert"/>
+                                                <div>
+                                                    <strong>"This pull request can\u{2019}t be merged"</strong>
+                                                    <span>{note}</span>
+                                                </div>
+                                            </div>
+                                        }.into_any();
+                                    }
                                     if let Some(cmp) = ch.compare {
                                         if !cmp.ahead.is_empty() {
-                                            view! {
-                                                <ol class="git-mini-commits">
-                                                    {cmp.ahead.into_iter().map(|commit| {
-                                                        let sha = commit.sha.clone();
-                                                        let sha_click = sha.clone();
-                                                        view! {
-                                                            <li>
-                                                                <button type="button" on:click=move |_| { on_commit.try_run(sha_click.clone()); }>
-                                                                    <Person name=commit.author source=commit.source/>
-                                                                    <span>{commit.subject}</span>
-                                                                    <Sha sha=sha/>
-                                                                    <small>{edited(commit.time)}</small>
-                                                                </button>
-                                                            </li>
-                                                        }
-                                                    }).collect_view()}
-                                                </ol>
-                                            }.into_any()
+                                            let default_msg = format!(
+                                                "Merge pull request #{} from {}\n\n{}",
+                                                iss_m.number,
+                                                iss_m.head.as_deref().unwrap_or(""),
+                                                iss_m.title
+                                            );
+                                            let base_n = iss_m.base.clone().unwrap_or_default();
+                                            let head_n = iss_m.head.clone().unwrap_or_default();
+                                            let num = iss_m.number;
+                                            return view! {
+                                                <MergeBox
+                                                    repo=repo_sv.get_value()
+                                                    compare=cmp
+                                                    session=session_sv.get_value()
+                                                    default_message=default_msg
+                                                    on_merged=Callback::new(move |result: GitMergeResult| {
+                                                        let msg = if result.fast_forward {
+                                                            format!("{base_n} now points at {head_n}")
+                                                        } else {
+                                                            format!("Merged #{num}")
+                                                        };
+                                                        notify.run(msg);
+                                                        reload_issue.run(());
+                                                    })
+                                                />
+                                            }.into_any();
                                         } else {
-                                            view! {
-                                                <p class="git-hint">{format!(
-                                                    "{} has no commits that {} doesn\u{2019}t.",
-                                                    iss.head.as_deref().unwrap_or(""),
-                                                    iss.base.as_deref().unwrap_or("")
-                                                )}</p>
-                                            }.into_any()
+                                            let base_n = iss_m.base.clone().unwrap_or_default();
+                                            let head_n = iss_m.head.clone().unwrap_or_default();
+                                            return view! {
+                                                <div class="git-banner is-info">
+                                                    <Icon name="info"/>
+                                                    <div>
+                                                        <strong>"Nothing to merge"</strong>
+                                                        <span>{format!("{base_n} already has every commit on {head_n}. Push commits to the branch, or close this pull request.")}</span>
+                                                    </div>
+                                                </div>
+                                            }.into_any();
                                         }
-                                    } else {
-                                        view! {
-                                            <p class="git-hint">
-                                                "Agent changes are not commits yet: merging them commits them to main. "
-                                                {ch.agent.map(|ag| view! {
-                                                    <a href=format!("/agent?thread={}", encode_uri(&ag.thread_id))>"Open the thread in Agent"</a>
-                                                })}
-                                            </p>
-                                        }.into_any()
                                     }
-                                } else if let Some(cmp) = ch.compare {
-                                    let added_total: usize = cmp.files.iter().map(|f| f.added).sum();
-                                    let removed_total: usize = cmp.files.iter().map(|f| f.removed).sum();
-                                    let file_count = cmp.files.len();
-                                    view! {
-                                        <div class="git-files-summary">
-                                            <strong>{format!("{} changed", plural(file_count, "file", None))}</strong>
-                                            <span class="git-stat">
-                                                <span class="git-added">{format!("+{added_total}")}</span>
-                                                " "
-                                                <span class="git-removed">{format!("\u{2212}{removed_total}")}</span>
-                                            </span>
-                                            <label class="git-wrap">
-                                                <input type="checkbox" prop:checked=move || wrap.get() on:change=move |e| wrap.set(event_target_checked(&e))/>
-                                                "Wrap lines"
-                                            </label>
-                                        </div>
-                                        <FileChanges files=cmp.files wrap=wrap/>
-                                    }.into_any()
-                                } else if let Some(ag) = ch.agent {
-                                    let rid = repo_sv.with_value(|r| r.id.clone());
-                                    view! {
-                                        <div class="history-changes">
-                                            {ag.changes.into_iter().map(|item| view! {
-                                                <ChangeRow folder_id=rid.clone() change=item live=false/>
-                                            }).collect_view()}
-                                        </div>
-                                    }.into_any()
-                                } else {
+                                    if let Some(agent) = ch.agent {
+                                        let num = iss_m.number;
+                                        return view! {
+                                            <AgentMerge
+                                                repo=repo_sv.get_value()
+                                                issue=iss_m.clone()
+                                                agent=agent
+                                                session=session_sv.get_value()
+                                                on_merged=Callback::new(move |_| {
+                                                    notify.run(format!("Merged #{num} into the folder"));
+                                                    reload_issue.run(());
+                                                })
+                                            />
+                                        }.into_any();
+                                    }
                                     ().into_any()
-                                }
-                            }
+                                })}
+                            }.into_any()
                         }}
-                    }.into_any()
-                }}
-                // Its own region: reloads of the issue or its labels rebuild the body above, and a
-                // comment field replaced while someone types loses the text.
-                {move || {
-                    let (number, kind, _, _) = composer_key.get()?;
-                    if failed.get() || (kind == "pull" && view_mode.get() != "conversation") {
-                        return None;
-                    }
-                    let issue = issue_load.value.get_untracked()?;
-                    Some(view! {
-                        <Composer
-                            issue=issue
-                            repo=repo_sv.get_value()
-                            session=session_sv.get_value()
-                            busy=busy
-                            on_open=on_open
-                            on_close=Callback::new(move |st: &'static str| {
-                                let mut map = Map::new();
-                                map.insert("state".into(), st.into());
-                                let msg = if st == "closed" { format!("Closed #{number}") } else { format!("Reopened #{number}") };
-                                change_issue.run((map, Some(msg)));
+                        // Own reactive region keyed strictly on `(number, kind, state, permissions.close)`
+                        // so label toggles and timeline refreshes never wipe typed drafts.
+                        {move || {
+                            let (num, _, _, _) = composer_key.get()?;
+                            if failed.get() {
+                                return None;
+                            }
+                            let issue = issue_load.value.get_untracked()?;
+                            Some(view! {
+                                <Composer
+                                    issue=issue
+                                    repo=repo_sv.get_value()
+                                    session=session_sv.get_value()
+                                    busy=busy
+                                    on_open=on_open
+                                    on_close=Callback::new(move |st: &'static str| {
+                                        let mut map = Map::new();
+                                        map.insert("state".into(), st.into());
+                                        let msg = if st == "closed" { format!("Closed #{num}") } else { format!("Reopened #{num}") };
+                                        change_issue.run((map, Some(msg)));
+                                    })
+                                    on_commented=reload_issue
+                                />
                             })
-                            on_commented=reload_issue
-                        />
-                    })
-                }}
+                        }}
+                    </div>
+                </div>
+            })
+        }}
+        {move || {
+            let current_view = view_mode.get();
+            if failed.get() || !is_pull_memo.get() || current_view == "conversation" {
+                return ().into_any();
+            }
+            if !changes_load.error.with(String::is_empty) {
+                let err = Signal::derive(move || tracker_failure(&changes_load.error.get(), "pull"));
+                return view! { <div class="git-sheet-pad"><Failure error=err retry=changes_load.retry what="The changes"/></div> }.into_any();
+            }
+            let Some(ch) = changes_load.value.get() else {
+                return view! { <div class="git-sheet-pad"><Loading label="Loading changes"/></div> }.into_any();
+            };
+            if let Some(note) = &ch.note
+                && ch.compare.is_none()
+            {
+                return view! { <p class="git-hint git-sheet-pad">{note.clone()}</p> }.into_any();
+            }
+            if current_view == "commits" {
+                if let Some(cmp) = ch.compare {
+                    if !cmp.ahead.is_empty() {
+                        view! {
+                            <div class=if full_stage { "git-pr-conv-scroll" } else { "" }>
+                                <div class=if full_stage { "git-conv-col" } else { "" }>
+                                    <ol class="git-mini-commits">
+                                        {cmp.ahead.into_iter().map(|commit| {
+                                            let sha = commit.sha.clone();
+                                            let sha_click = sha.clone();
+                                            view! {
+                                                <li>
+                                                    <button type="button" on:click=move |_| { let _ = on_commit.try_run(sha_click.clone()); }>
+                                                        <Person name=commit.author source=commit.source/>
+                                                        <span>{commit.subject}</span>
+                                                        <Sha sha=sha/>
+                                                        <small>{edited(commit.time)}</small>
+                                                    </button>
+                                                </li>
+                                            }
+                                        }).collect_view()}
+                                    </ol>
+                                </div>
+                            </div>
+                        }.into_any()
+                    } else {
+                        let (head_name, base_name) = issue_load.value.with_untracked(|i| {
+                            i.as_ref()
+                                .map(|v| (v.head.clone().unwrap_or_default(), v.base.clone().unwrap_or_default()))
+                                .unwrap_or_default()
+                        });
+                        view! {
+                            <p class="git-hint git-sheet-pad">{format!(
+                                "{head_name} has no commits that {base_name} doesn\u{2019}t."
+                            )}</p>
+                        }.into_any()
+                    }
+                } else {
+                    view! {
+                        <p class="git-hint git-sheet-pad">
+                            "Agent changes are not commits yet: merging them commits them to main. "
+                            {ch.agent.map(|ag| view! {
+                                <a href=format!("/agent?thread={}", encode_uri(&ag.thread_id))>"Open the thread in Agent"</a>
+                            })}
+                        </p>
+                    }.into_any()
+                }
+            } else if let Some(cmp) = ch.compare {
+                let added_total: usize = cmp.files.iter().map(|f| f.added).sum();
+                let removed_total: usize = cmp.files.iter().map(|f| f.removed).sum();
+                let file_count = cmp.files.len();
+                let all_paths: Vec<String> = cmp.files.iter().map(|f| f.path.clone()).collect();
+                let all_paths_toggle = all_paths.clone();
+                let files_list = cmp.files.clone();
+                view! {
+                    <div class=move || {
+                        if full_stage && rail_open.get() {
+                            "git-pr-files-layout"
+                        } else {
+                            "git-pr-files-layout is-rail-hidden"
+                        }
+                    }>
+                        {full_stage.then(|| {
+                            let rail_files = files_list.clone();
+                            let total_files = rail_files.len();
+                            view! {
+                                <div class="git-pr-files-rail" aria-label="Changed files">
+                                    <div class="git-file-tree-head">
+                                        <span>"Changed files"</span>
+                                        <span class="git-count">{move || {
+                                            let v = viewed.with(HashSet::len);
+                                            format!("{v}/{total_files}")
+                                        }}</span>
+                                    </div>
+                                    {rail_files.into_iter().enumerate().map(|(idx, file)| {
+                                        let p_sel = file.path.clone();
+                                        let p_act = file.path.clone();
+                                        let p_chk = file.path.clone();
+                                        let p_chg = file.path.clone();
+                                        let p_open = file.path.clone();
+                                        let short_name = file.path.rsplit('/').next().unwrap_or(&file.path).to_owned();
+                                        let plus = file.added;
+                                        let minus = file.removed;
+                                        view! {
+                                            <div class=move || {
+                                                if selected_file.get().as_deref() == Some(p_act.as_str()) {
+                                                    "git-changed-item is-active"
+                                                } else {
+                                                    "git-changed-item"
+                                                }
+                                            }>
+                                                <input
+                                                    type="checkbox"
+                                                    class="git-viewed-chk"
+                                                    aria-label=format!("Mark {} viewed", file.path)
+                                                    prop:checked=move || viewed.with(|s| s.contains(&p_chk))
+                                                    on:change=move |ev| {
+                                                        let checked = event_target_checked(&ev);
+                                                        let p = p_chg.clone();
+                                                        viewed.update(|s| {
+                                                            if checked {
+                                                                s.insert(p);
+                                                            } else {
+                                                                s.remove(&p);
+                                                            }
+                                                        });
+                                                    }
+                                                />
+                                                <button
+                                                    type="button"
+                                                    class="git-changed-item-btn"
+                                                    title=file.path.clone()
+                                                    on:click=move |_| {
+                                                        selected_file.set(Some(p_sel.clone()));
+                                                        open_files.update(|s| {
+                                                            s.insert(p_open.clone());
+                                                        });
+                                                        if let Ok(list) = document().query_selector_all(".git-diff-stage .git-diff")
+                                                            && let Some(node) = list.item(idx as u32)
+                                                            && let Ok(el) = node.dyn_into::<web_sys::Element>()
+                                                        {
+                                                            el.scroll_into_view();
+                                                        }
+                                                    }
+                                                >
+                                                    <span class="git-changed-name">{short_name}</span>
+                                                    <span class="git-stat">
+                                                        <span class="git-added">{format!("+{plus}")}</span>
+                                                        " "
+                                                        <span class="git-removed">{format!("\u{2212}{minus}")}</span>
+                                                    </span>
+                                                </button>
+                                            </div>
+                                        }
+                                    }).collect_view()}
+                                </div>
+                            }
+                        })}
+                        <div class="git-diff-stage">
+                            <div class="git-files-summary">
+                                {full_stage.then(|| view! {
+                                    <button
+                                        type="button"
+                                        class="icon-button"
+                                        aria-label="Toggle changed files sidebar"
+                                        aria-pressed=move || rail_open.get().to_string()
+                                        on:click=move |_| rail_open.update(|v| *v = !*v)
+                                    >
+                                        <Icon name="sidebar"/>
+                                    </button>
+                                })}
+                                <strong>{format!("{} changed", plural(file_count, "file", None))}</strong>
+                                <span class="git-stat">
+                                    <span class="git-added">{format!("+{added_total}")}</span>
+                                    " "
+                                    <span class="git-removed">{format!("\u{2212}{removed_total}")}</span>
+                                </span>
+                                <span class="git-toolbar-end">
+                                    <button
+                                        type="button"
+                                        class="text-button"
+                                        on:click=move |_| {
+                                            let all_open = open_files.with(|s| all_paths_toggle.iter().all(|p| s.contains(p)));
+                                            if all_open {
+                                                open_files.set(HashSet::new());
+                                            } else {
+                                                open_files.set(all_paths_toggle.iter().cloned().collect());
+                                            }
+                                        }
+                                    >
+                                        {move || {
+                                            let all_open = open_files.with(|s| all_paths.iter().all(|p| s.contains(p)));
+                                            if all_open { "Collapse all" } else { "Expand all" }
+                                        }}
+                                    </button>
+                                    <GitSegmented
+                                        label="Diff layout"
+                                        value=diff_mode_str
+                                        options=diff_options
+                                        on_change=Callback::new(move |val| diff_mode_str.set(val))
+                                    />
+                                    <label class="git-wrap">
+                                        <input type="checkbox" prop:checked=move || wrap.get() on:change=move |e| wrap.set(event_target_checked(&e))/>
+                                        "Wrap lines"
+                                    </label>
+                                </span>
+                            </div>
+                            <FileChanges files=cmp.files wrap=wrap mode=diff_mode viewed=viewed open_files=open_files/>
+                        </div>
+                    </div>
+                }.into_any()
+            } else if let Some(ag) = ch.agent {
+                let rid = repo_sv.with_value(|r| r.id.clone());
+                view! {
+                    <div class=if full_stage { "git-pr-conv-scroll" } else { "" }>
+                        <div class="history-changes">
+                            {ag.changes.into_iter().map(|item| view! {
+                                <ChangeRow folder_id=rid.clone() change=item live=false/>
+                            }).collect_view()}
+                        </div>
+                    </div>
+                }.into_any()
+            } else {
+                ().into_any()
+            }
+        }}
+    };
+
+    if full_stage {
+        view! {
+            <aside
+                node_ref=stage_root
+                class="git-stage-pane git-pr-stage"
+                aria-label="Conversation"
+                tabindex="-1"
+                on:keydown=move |e| sheet_keydown(e, on_close)
+            >
+                <SheetHead
+                    title=title_view
+                    expanded=expanded
+                    on_expand=on_expand
+                    on_close=on_close
+                >
+                    {move || issue_load.value.get().filter(|i| i.permissions.edit).map(|iss| {
+                        let k = iss.kind.clone();
+                        let label = format!("Edit {}", noun(&k));
+                        view! {
+                            <button
+                                type="button"
+                                class="icon-button"
+                                aria-label=label
+                                title="Edit"
+                                on:click=move |_| {
+                                    let _ = on_edit.try_run(IssueEditing::Issue {
+                                        kind: k.clone(),
+                                        issue: Some(iss.clone()),
+                                        head: None,
+                                        base: None,
+                                    });
+                                }
+                            >
+                                <Icon name="pencil"/>
+                            </button>
+                        }
+                    })}
+                </SheetHead>
+                <div class="git-pr-stage-body">
+                    {inner_body}
+                </div>
+            </aside>
+        }
+        .into_any()
+    } else {
+        view! {
+            <div
+                node_ref=drawer_root
+                class="git-sheet"
+                tabindex="-1"
+                on:keydown=move |e| sheet_keydown(e, on_close)
+            >
+                <SheetHead
+                    title=title_view
+                    expanded=expanded
+                    on_expand=on_expand
+                    on_close=on_close
+                >
+                    {move || issue_load.value.get().filter(|i| i.permissions.edit).map(|iss| {
+                        let k = iss.kind.clone();
+                        let label = format!("Edit {}", noun(&k));
+                        view! {
+                            <button
+                                type="button"
+                                class="icon-button"
+                                aria-label=label
+                                title="Edit"
+                                on:click=move |_| {
+                                    let _ = on_edit.try_run(IssueEditing::Issue {
+                                        kind: k.clone(),
+                                        issue: Some(iss.clone()),
+                                        head: None,
+                                        base: None,
+                                    });
+                                }
+                            >
+                                <Icon name="pencil"/>
+                            </button>
+                        }
+                    })}
+                </SheetHead>
+                <div class="git-sheet-body">
+                    {inner_body}
+                </div>
             </div>
-        </div>
+        }
+        .into_any()
     }
 }
 
@@ -973,7 +1280,7 @@ fn TimelineEvent(
 ) -> impl IntoView {
     let ref_btn = move |n: u32| {
         view! {
-            <button type="button" class="git-link git-ref-link" on:click=move |_| { on_open.try_run(n); }>
+            <button type="button" class="git-link git-ref-link" on:click=move |_| { let _ = on_open.try_run(n); }>
                 {format!("#{n}")}
             </button>
         }
@@ -1075,9 +1382,7 @@ fn Comment(
             match api::send::<Value>(&u, "PATCH", Some(payload), &token).await {
                 Ok(_) => {
                     let _ = editing.try_set(false);
-                    {
-                        on_changed.try_run(());
-                    };
+                    let _ = on_changed.try_run(());
                 }
                 Err(cause) => {
                     let _ = error.try_set(tracker_failure(&cause.message, "issue"));
@@ -1096,9 +1401,7 @@ fn Comment(
             match api::send::<Value>(&u, "DELETE", None, &token).await {
                 Ok(_) => {
                     let _ = confirm.try_set(false);
-                    {
-                        on_changed.try_run(());
-                    };
+                    let _ = on_changed.try_run(());
                 }
                 Err(cause) => {
                     let _ = error.try_set(tracker_failure(&cause.message, "issue"));
@@ -1201,6 +1504,7 @@ fn MarkdownField(
 ) -> impl IntoView {
     let mode = RwSignal::new("write".to_owned());
     let id = unique_id();
+    let ta_ref = NodeRef::<html::Textarea>::new();
     let options = Signal::derive(|| {
         vec![
             ("write".to_owned(), "Write".to_owned()),
@@ -1211,10 +1515,33 @@ fn MarkdownField(
     let preview_label = format!("{label} preview");
     let id_body = id.clone();
 
+    let apply_format = Callback::new(move |(before, after): (&'static str, &'static str)| {
+        let Some(ta) = ta_ref.get_untracked() else {
+            return;
+        };
+        let current = value.get_untracked();
+        let start = ta
+            .selection_start()
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| current.encode_utf16().count() as u32);
+        let end = ta.selection_end().ok().flatten().unwrap_or(start);
+        let (next, sel_start, sel_end) = format_markdown(&current, start, end, before, after);
+        value.set(next.clone());
+        ta.set_value(&next);
+        let _ = ta.focus();
+        let _ = ta.set_selection_range(sel_start, sel_end);
+    });
+
     view! {
         <div class="git-markdown-field">
             <div class="git-markdown-bar">
                 <label for=id.clone()>{label}</label>
+                {move || (mode.get() == "write").then(|| view! {
+                    <MarkdownToolbar on_format=apply_format disabled=Signal::derive(|| false)>
+                        {()}
+                    </MarkdownToolbar>
+                })}
                 <GitSegmented
                     label=view_label
                     value=mode
@@ -1225,6 +1552,7 @@ fn MarkdownField(
             {move || if mode.get() == "write" {
                 view! {
                     <textarea
+                        node_ref=ta_ref
                         id=id_body.clone()
                         prop:value=move || value.get()
                         rows=rows.to_string()
@@ -1300,13 +1628,9 @@ fn Composer(
             match res {
                 Ok(()) => {
                     let _ = text.try_set(String::new());
-                    {
-                        on_commented.try_run(());
-                    };
+                    let _ = on_commented.try_run(());
                     if close_after {
-                        {
-                            on_close.try_run("closed");
-                        };
+                        let _ = on_close.try_run("closed");
                     }
                 }
                 Err(cause) => {
@@ -1357,7 +1681,7 @@ fn Composer(
                                 type="button"
                                 class="secondary-button"
                                 disabled=move || busy.get() || sending.get()
-                                on:click=move |_| { on_close.try_run("open"); }
+                                on:click=move |_| { let _ = on_close.try_run("open"); }
                             >
                                 <Icon name=reopen_icon/>
                                 "Reopen"
@@ -1415,7 +1739,7 @@ fn AgentMerge(
         spawn_local(async move {
             match api::send::<AgentMergeResp>(&u, "POST", Some(body), &token).await {
                 Ok(res) if res.merged => {
-                    on_merged.try_run(());
+                    let _ = on_merged.try_run(());
                 }
                 Ok(res) => {
                     let prefix = if res.conflicts.len() == 1 {
@@ -1619,7 +1943,7 @@ pub fn IssueEditor(
                 let url = format!("{}/issues/{}", repo_api(&rid), ex.number);
                 match api::send::<Value>(&url, "PATCH", Some(Value::Object(map)), &token).await {
                     Ok(_) => {
-                        on_saved.try_run(ex.number);
+                        let _ = on_saved.try_run(ex.number);
                     }
                     Err(cause) => {
                         let _ = error.try_set(tracker_failure(&cause.message, &k));
@@ -1648,7 +1972,7 @@ pub fn IssueEditor(
                 let url = format!("{}/issues", repo_api(&rid));
                 match api::send::<Created>(&url, "POST", Some(Value::Object(map)), &token).await {
                     Ok(created) => {
-                        on_saved.try_run(created.number);
+                        let _ = on_saved.try_run(created.number);
                     }
                     Err(cause) => {
                         let _ = error.try_set(tracker_failure(&cause.message, &k));
@@ -1731,18 +2055,18 @@ pub fn IssueEditor(
                             view! {
                                 <div class="git-compare-pick">
                                     <GitSelect
+                                        aria_label="Branch to merge"
+                                        value=head
+                                        options=head_options
+                                        on_change=Callback::new(move |v| head.set(v))
+                                    />
+                                    <Icon name="arrowRight"/>
+                                    <GitSelect
                                         aria_label="Merge into"
                                         value=effective_base
                                         options=base_options
                                         disabled=is_agent_sig
                                         on_change=Callback::new(move |v| base.set(v))
-                                    />
-                                    <Icon name="back"/>
-                                    <GitSelect
-                                        aria_label="Branch to merge"
-                                        value=head
-                                        options=head_options
-                                        on_change=Callback::new(move |v| head.set(v))
                                     />
                                 </div>
                                 {move || {
@@ -1850,7 +2174,7 @@ pub fn IssueEditor(
                 })}
                 {move || (!error.with(String::is_empty)).then(|| view! { <p class="error" role="alert">{error.get()}</p> })}
                 <div class="git-new-actions">
-                    <button type="button" class="text-button" on:click=move |_| { on_close.try_run(()); }>"Cancel"</button>
+                    <button type="button" class="text-button" on:click=move |_| { let _ = on_close.try_run(()); }>"Cancel"</button>
                     <button type="submit" class="primary-button" disabled=move || !valid.get() || busy.get()>
                         {move || if busy.get() {
                             "Saving\u{2026}"
@@ -1901,9 +2225,7 @@ pub fn LabelsEditor(
             if let Ok(list) = api::get::<Vec<GitLabel>>(&u).await {
                 loaded.set(list);
             }
-            {
-                on_changed.try_run(());
-            };
+            let _ = on_changed.try_run(());
         });
     };
 
@@ -2010,7 +2332,13 @@ pub fn LabelsEditor(
                         {GIT_LABEL_COLORS.into_iter().map(|c| {
                             let cap = format!("{}{}", c[..1].to_uppercase(), &c[1..]);
                             view! {
-                                <label class=format!("git-color is-{c}")>
+                                <label class=move || {
+                                    if color.get() == c {
+                                        format!("git-color is-{c} is-checked")
+                                    } else {
+                                        format!("git-color is-{c}")
+                                    }
+                                }>
                                     <input
                                         type="radio"
                                         name="label-color"
@@ -2019,7 +2347,7 @@ pub fn LabelsEditor(
                                         on:change=move |_| color.set(c.to_owned())
                                     />
                                     <span class="git-color-dot" aria-hidden="true"></span>
-                                    {cap}
+                                    <span>{cap}</span>
                                 </label>
                             }
                         }).collect_view()}

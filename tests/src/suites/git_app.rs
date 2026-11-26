@@ -381,6 +381,12 @@ pub async fn git_app_repositories_trees_and_refs(t: &Ctx) -> Result<()> {
     assert_eq!(compared["behind"], json!(1));
     assert_eq!(compared["fastForward"], json!(false));
     assert_eq!(file_paths, vec!["rss.xml"]);
+    assert!(
+        compared["files"][0]["patch"]
+            .as_str()
+            .is_some_and(|p| p.contains("<rss/>")),
+        "compare returns inline patches"
+    );
 
     let zip = session
         .get(&format!(
@@ -414,6 +420,11 @@ pub async fn git_app_repositories_trees_and_refs(t: &Ctx) -> Result<()> {
             .any(|e| e["repoId"] == folder_id && e["subject"] == "Add about")
     }));
     assert!(activity["times"].as_array().map(Vec::len).unwrap_or(0) >= 4);
+    let sources = &activity["sources"];
+    let source_total = sources["git"].as_u64().unwrap_or(0)
+        + sources["dar"].as_u64().unwrap_or(0)
+        + sources["agent"].as_u64().unwrap_or(0);
+    assert!(source_total >= 4, "activity tallies sources: {sources}");
 
     // Deleting: a stale ID is refused, main never goes, and a branch goes like a push --delete.
     let remove = |body: Value| {

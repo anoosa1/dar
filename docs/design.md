@@ -363,25 +363,25 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   font, size, spacing and Pages/Scroll, saved to the account. A newer place from another device
   asks Go there / Stay here. Phones show the reader and details below the search bar with Back.
   See [Books](books.md).
-- **Git:** selected [mock B](spacetimedb/git-mocks.html) over A (November 16): its own app.
-  Every Files folder that keeps history is a repository. Sidebar views (Overview,
-  Repositories, Agent branches), then the repositories, with an app password card at the
-  bottom; New repository (right pane) creates a folder with a README and first commit, or
-  keeps history on an existing folder. Overview: a year of commits per day, repository cards
-  (README's first paragraph, counts, 12 weeks of activity) and recent commits labelled by
-  source (Git push, Dar, Agent). A repository has a header (mark, name, Files path, Clone
-  menu with the alias and permanent addresses, ZIP, bundle and app password links) and
-  Code (branch or tag, path, files with their last commit, README), Commits (branch, author
-  and source filters; Graph or List), Branches (behind/ahead of main, Compare, ZIP, delete
-  with confirmation; Agent branches open in Agent) and Tags tabs. Commits (with Restore folder
-  to this point for main), comparisons (with Merge: fast-forward or a merge commit, optionally
-  deleting the branch) and files open in the right sheet. Files are not edited here. Issues and
-  Pull requests (November 17, applying mock B's patterns) are tabs after Code: Open/Closed, a
-  label filter, Labels and New in the toolbar; rows show a state icon, title, label chips and
-  #number. An item opens in the right sheet (title, state chip, labels menu, Conversation; pull
-  requests add Commits and Files and the merge box); New, Edit and Labels use the right editing
-  pane with Write/Preview Markdown. Label colours are named, never colour alone. Repositories
-  shared with you are a "Shared with you" sidebar section. See [Git](git.md).
+- **Git:** selected [mock B](spacetimedb/git-mocks.html) over A (November 16), updated with the
+  [Git redesign](spacetimedb/git-redesign-mock.html): its own app. Every Files folder that keeps
+  history is a repository. Sidebar views (Overview, Repositories, Pull requests, Agent branches),
+  owned and shared repositories, and a compact HTTPS & keys trigger at the bottom; New repository
+  (right pane) creates a folder with a README and first commit, or keeps history on an existing
+  folder. Overview: a year of commits per day with Git/Dar/Agent source mix, conditional Needs
+  attention cards, filterable/sortable repository cards (with PR/issue counts and 12-week
+  sparks), and clickable recent commits. A repository has a header (mark, name, Files path,
+  Clone menu with alias and permanent addresses, ZIP, bundle and app password links) and Code
+  (branch or tag, path, live file filter, last commit, single-bordered README, optional About rail),
+  Issues, Pull requests, Commits (5-hue branch lane graph keeping author and source, or day list),
+  Branches (behind/ahead of main, open PR badges, Compare, ZIP, delete with confirmation; Agent
+  branches open in Agent) and Tags tabs. Commit details (with Restore folder to this point),
+  Compare (with head → base direction, inline diffs and Mergebox), and Issues open in the right
+  sheet; Files and Pull requests expand inline full-stage with Split/Unified diffs, file tree or
+  changed-files rail, Viewed markers, and focus mode (`f`), alongside a shared Git settings
+  sheet (`?`) for default diff layout, commits view, line wrap, About rail, and HTTPS cloning.
+  Tracker editors use a shared Markdown toolbar and a 3-column named label palette grid. See
+  [Git](git.md).
 - **Chat:** selected [mock A](spacetimedb/chat-mocks.html) over B, with account tabs over
   one rail app per platform (D) (November 17). A client for other platforms: WhatsApp first
   (Dar as a linked device through whatsmeow), Discord later. Account tabs under New chat

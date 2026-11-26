@@ -295,6 +295,20 @@ pub async fn git_tracker_browser_journey(t: &Ctx) -> Result<()> {
         .await?;
     page.screenshot(t.screenshot("git-pull-files-1440.png"), false)
         .await?;
+    sheet.get_by_role("radio", "Unified").click().await?;
+    sheet
+        .get_by_role("region", contains("Changes to lexer.c"))
+        .get_by_text(contains("return checked();"))
+        .wait_for()
+        .await?;
+    sheet.get_by_role("radio", "Split").click().await?;
+    sheet
+        .get_by_role("region", contains("Changes to lexer.c"))
+        .get_by_text(contains("return checked();"))
+        .wait_for()
+        .await?;
+    sheet.get_by_role("button", "Viewed").click().await?;
+    sheet.get_by_role("button", "✓ Viewed").wait_for().await?;
     sheet
         .get_by_role("radio", contains("Conversation"))
         .click()

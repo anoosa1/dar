@@ -9,3 +9,20 @@
 .code-diff-text{padding:0 12px;white-space:pre;color:var(--text)}
 .code-diff-line.added{background:color-mix(in srgb,var(--success) 14%,transparent)}.code-diff-line.added .code-diff-number{background:color-mix(in srgb,var(--success) 10%,transparent)}
 .code-diff-line.removed{background:color-mix(in srgb,var(--danger) 14%,transparent)}.code-diff-line.removed .code-diff-number{background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.code-diff-sign{display:inline-block;flex:none;width:14px;text-align:center;user-select:none;font-weight:700}
+.code-diff-line.added .code-diff-sign,:is(.code-diff-split-cell.added) .code-diff-sign{color:var(--success)}
+.code-diff-line.removed .code-diff-sign,:is(.code-diff-split-cell.removed) .code-diff-sign{color:var(--danger)}
+.code-diff-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-width:0}
+.code-diff-split-hunk{grid-column:1 / -1;display:flex;align-items:center;min-height:22px;padding:0 10px;color:var(--muted);background:color-mix(in srgb,var(--accent) 7%,var(--panel));font-size:11px;border-top:1px solid var(--border)}
+.code-diff-split-hunk:first-child{border-top:0}
+.code-diff-split-cell{display:flex;min-width:0;min-height:20px;border-right:1px solid var(--line)}
+.code-diff-split-cell:nth-child(2n){border-right:0}
+.code-diff-split-cell.added{background:color-mix(in srgb,var(--success) 14%,transparent)}.code-diff-split-cell.added .code-diff-number{background:color-mix(in srgb,var(--success) 10%,transparent)}
+.code-diff-split-cell.removed{background:color-mix(in srgb,var(--danger) 14%,transparent)}.code-diff-split-cell.removed .code-diff-number{background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.code-diff-split-cell.empty{background:color-mix(in srgb,var(--hover) 45%,transparent)}
+.code-diff-split-cell .code-diff-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;padding:0 10px 0 2px}
+.code-diff-wrap .code-diff-split-cell .code-diff-text{overflow:visible;text-overflow:clip;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:800px){
+  .code-diff-split{grid-template-columns:minmax(0,1fr)}
+  .code-diff-split-cell{border-right:0}
+}

@@ -1,0 +1,2915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar Git — Redesign Mockup</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans, 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif);
+  font-size: 13px;
+  line-height: 1.45;
+  background: transparent;
+  color: var(--foreground, #faeaf3);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mock-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+}
+
+/* Mockup presenter control bar */
+.mock-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+.mock-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.mock-btn {
+  appearance: none;
+  border: 1px solid var(--border, rgba(186,150,178,.28));
+  background: var(--secondary, rgba(115,57,111,.10));
+  color: var(--muted-foreground, #b89eb4);
+  font: 550 11.5px/1 inherit;
+  padding: 6px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.mock-btn:hover { color: var(--foreground, #faeaf3); background: rgba(115,57,111,.2); }
+.mock-btn.active {
+  background: #73396f;
+  color: #fff7fc;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+/* Dar Twilight Stage (Nightfall default, Afterglow light) */
+.stage {
+  --bg: #26111f;
+  --panel: #301c2b;
+  --raised: #3a2536;
+  --code-bg: #21101c;
+  --popover: rgba(54, 33, 50, 0.96);
+  --hover: #412b3f;
+  --border: rgba(186, 150, 178, 0.22);
+  --border-strong: rgba(186, 150, 178, 0.36);
+  --row-div: rgba(186, 150, 178, 0.13);
+  --text: #faeaf3;
+  --muted: #cfb4ca;
+  --dim: #9c7e97;
+  --accent: #f2a2a9;
+  --on-accent: #26111f;
+  --tonal: #4d3c73;
+  --on-tonal: #f3eafd;
+  --rose: #d889af;
+  --success: #b2dec4;
+  --success-soft: #284136;
+  --warning: #ffc493;
+  --warning-soft: #4b3429;
+  --danger: #ffb2c6;
+  --error-soft: #4e2436;
+  --sky: #9cc4f8;
+  --sky-soft: rgba(156, 196, 248, 0.16);
+  --lavender: #cab4f7;
+  --lavender-soft: rgba(202, 180, 247, 0.17);
+  --shadow: 0 14px 36px rgba(10, 3, 10, 0.50), 0 2px 8px rgba(10, 3, 10, 0.30);
+  --mono: var(--font-mono, 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
+  --sans: var(--font-sans, 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif);
+
+  /* 5 distinct commit graph lane hues */
+  --lane-0: #f2a2a9;
+  --lane-1: #9cc4f8;
+  --lane-2: #a5dfc0;
+  --lane-3: #ffc493;
+  --lane-4: #cab4f7;
+
+  position: relative;
+  width: 100%;
+  height: 700px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr);
+  box-shadow: var(--shadow);
+  color-scheme: dark;
+}
+.stage[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fbf4f6;
+  --panel: #fffafb;
+  --raised: #ffffff;
+  --code-bg: #f8f1f4;
+  --popover: rgba(255, 252, 253, 0.96);
+  --hover: #f3e7ee;
+  --border: rgba(115, 57, 111, 0.17);
+  --border-strong: rgba(115, 57, 111, 0.30);
+  --row-div: rgba(115, 57, 111, 0.10);
+  --text: #352138;
+  --muted: #6e546d;
+  --dim: #8b708a;
+  --accent: #73396f;
+  --on-accent: #fff7fc;
+  --tonal: #ede3f5;
+  --on-tonal: #4d3c73;
+  --rose: #a94a76;
+  --success: #246144;
+  --success-soft: #e3f0e9;
+  --warning: #8a4f16;
+  --warning-soft: #fbe9d8;
+  --danger: #a32745;
+  --error-soft: #fbe9ee;
+  --sky: #2b5899;
+  --sky-soft: #e5effc;
+  --lavender: #5b4199;
+  --lavender-soft: #ede6fa;
+  --shadow: 0 14px 36px rgba(38, 17, 31, 0.14), 0 2px 8px rgba(38, 17, 31, 0.08);
+  --lane-0: #73396f;
+  --lane-1: #2b5899;
+  --lane-2: #246144;
+  --lane-3: #8a4f16;
+  --lane-4: #5b4199;
+}
+
+svg.ic {
+  width: 15px; height: 15px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.mono { font-family: var(--mono); }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.dim { color: var(--dim); }
+
+/* Shared Full-Canvas Topbar */
+.topbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 12px; min-width: 0;
+}
+.tb-start { display: flex; align-items: center; gap: 6px; flex: none; min-width: 0; }
+.dar-mark {
+  display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--accent); color: var(--on-accent);
+  font-size: 13.5px; font-weight: 760; flex: none;
+}
+.tb-title { font-size: 15.5px; font-weight: 640; letter-spacing: -.015em; }
+.tb-crumb {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12.5px; color: var(--muted); padding-left: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tb-search {
+  flex: 0 1 420px; margin: 0 auto; min-width: 0;
+  height: 36px; padding: 0 8px 0 12px;
+  border-radius: 18px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--muted);
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+}
+.tb-search span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-search kbd {
+  margin-left: auto; font: 550 10px/16px var(--mono);
+  padding: 1px 5px; border-radius: 5px; border: 1px solid var(--border);
+  color: var(--muted); flex: none;
+}
+.tb-end { display: flex; align-items: center; gap: 4px; flex: none; }
+.tb-menu-btn { display: none; }
+
+.ib {
+  display: inline-grid; place-items: center;
+  width: 30px; height: 30px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--muted); cursor: pointer; flex: none;
+  transition: background .1s, color .1s;
+}
+.ib:hover { background: var(--hover); color: var(--text); }
+.ib.on { background: var(--tonal); color: var(--on-tonal); }
+.avatar {
+  width: 28px; height: 28px; border-radius: 50%; flex: none;
+  display: inline-grid; place-items: center;
+  background: var(--tonal); color: var(--on-tonal);
+  font-size: 11px; font-weight: 680;
+}
+.avatar.sm { width: 22px; height: 22px; font-size: 9px; }
+.avatar.agent { background: var(--lavender-soft); color: var(--lavender); }
+
+/* Workspace Grid */
+.workspace {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  gap: 8px;
+  padding: 0 8px 8px;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+.stage[data-sidebar-folded="true"] .workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+.stage[data-sidebar-folded="true"] .sidebar {
+  display: none;
+}
+.stage[data-sidebar-folded="true"] .tb-menu-btn {
+  display: inline-grid;
+}
+.stage[data-sidebar-folded="true"].drawer-open .sidebar {
+  position: absolute; top: 0; bottom: 0; left: 0; z-index: 60;
+  width: 248px; padding: 12px 10px;
+  background: var(--panel); border-right: 1px solid var(--border-strong);
+  box-shadow: 12px 0 36px rgba(0,0,0,.45);
+  display: flex;
+}
+
+/* Sidebar */
+.sidebar {
+  display: flex; flex-direction: column; min-height: 0;
+  padding: 2px 2px 2px 4px; overflow: hidden;
+}
+.create-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  align-self: flex-start; height: 42px; padding: 0 16px 0 13px;
+  margin: 0 0 10px 2px; border: 0; border-radius: 14px;
+  background: var(--tonal); color: var(--on-tonal);
+  font: 600 13px/1 inherit; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,.18);
+}
+.create-btn:hover { filter: brightness(1.07); }
+.side-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 2px; }
+.nav-list { display: flex; flex-direction: column; gap: 1px; }
+.nav-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; height: 33px; padding: 0 10px;
+  border: 0; border-radius: 17px;
+  background: transparent; color: var(--text);
+  font: 500 12.6px/1 inherit; text-align: left; cursor: pointer;
+}
+.nav-item:hover { background: var(--hover); }
+.nav-item.active { background: var(--tonal); color: var(--on-tonal); font-weight: 600; }
+.nav-item svg.ic { color: var(--muted); }
+.nav-item.active svg.ic { color: var(--on-tonal); }
+.nav-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-cnt {
+  margin-left: auto; font-size: 11px; font-weight: 600;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+  padding: 1px 6px; border-radius: 999px;
+}
+.nav-item.active .nav-cnt { background: color-mix(in srgb, var(--on-tonal) 13%, transparent); color: var(--on-tonal); }
+.side-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 12px 4px 4px 10px;
+  font-size: 11.5px; font-weight: 620; color: var(--muted);
+}
+.dirty-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--warning); flex: none;
+}
+
+.repo-mark {
+  display: inline-grid; place-items: center; flex: none;
+  width: 18px; height: 18px; border-radius: 5px;
+  font-size: 10px; font-weight: 750; color: #fff;
+}
+.repo-mark.m { width: 28px; height: 28px; border-radius: 8px; font-size: 13px; }
+.repo-mark.h0 { background: #73396f; }
+.repo-mark.h1 { background: #2b5899; }
+.repo-mark.h2 { background: #8a5a12; }
+.repo-mark.h3 { background: #5b4199; }
+.repo-mark.h4 { background: #246144; }
+
+.side-foot {
+  flex: none; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--row-div);
+}
+.cred-row {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 6px 10px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--muted);
+  font: 500 12px/1.2 inherit; cursor: pointer; text-align: left;
+}
+.cred-row:hover { background: var(--hover); color: var(--text); }
+.cred-row strong { color: var(--text); font-weight: 600; }
+.cred-row .cred-tag {
+  margin-left: auto; font-size: 11px; color: var(--accent); font-weight: 600;
+}
+
+/* Sheets inside workspace */
+.main-area {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+.main-area.with-drawer {
+  grid-template-columns: minmax(0, 1fr) 348px;
+}
+.sheet {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden;
+}
+.sheet-scroll {
+  flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin;
+  padding: 14px 18px 22px;
+}
+
+/* Shared Buttons, Segmented, Pills */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 11px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  font: 560 12px/1 inherit; cursor: pointer; white-space: nowrap;
+}
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 620; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.tonal { background: var(--tonal); color: var(--on-tonal); border-color: transparent; }
+.btn.sm { height: 26px; padding: 0 9px; font-size: 11.5px; }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+.btn.ghost:hover { background: var(--hover); color: var(--text); }
+.btn.danger { background: var(--danger); color: var(--on-accent); border-color: transparent; }
+
+.seg {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px; border-radius: 10px; background: var(--hover); flex: none;
+}
+.seg button {
+  border: 0; background: transparent; color: var(--muted);
+  height: 26px; padding: 0 9px; border-radius: 8px;
+  display: inline-flex; align-items: center; gap: 5px;
+  font: 560 11.8px/1 inherit; cursor: pointer; white-space: nowrap;
+}
+.seg button:hover { color: var(--text); }
+.seg button.active {
+  background: var(--panel); color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,.22);
+}
+
+.fchip {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); font: 550 11.8px/1 inherit; cursor: pointer; white-space: nowrap;
+}
+.fchip:hover { background: var(--hover); color: var(--text); }
+.fchip.active { background: var(--tonal); color: var(--on-tonal); border-color: transparent; font-weight: 600; }
+
+.sha-pill {
+  font: 550 11px/1 var(--mono);
+  padding: 3px 7px; border-radius: 6px;
+  background: var(--hover); color: var(--text);
+  border: 0; cursor: pointer; white-space: nowrap;
+}
+.sha-pill:hover { background: var(--tonal); color: var(--on-tonal); }
+
+.ref-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 20px; padding: 0 7px; border-radius: 999px;
+  font: 600 10.5px/1 var(--mono);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent); white-space: nowrap;
+}
+.ref-pill.tag {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+.src-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 19px; padding: 0 7px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 600;
+  background: var(--hover); color: var(--muted); white-space: nowrap;
+}
+.src-pill.agent { background: var(--lavender-soft); color: var(--lavender); }
+.src-pill.dar { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.src-pill.git { background: var(--sky-soft); color: var(--sky); }
+
+.stat-added { color: var(--success); font: 600 11.5px/1 var(--mono); }
+.stat-removed { color: var(--danger); font: 600 11.5px/1 var(--mono); }
+
+/* Overview */
+.ov-head {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 48px; padding: 8px 18px; border-bottom: 1px solid var(--row-div); flex: none;
+}
+.ov-head h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.015em; }
+.ov-stack { display: flex; flex-direction: column; gap: 16px; }
+
+.heat-card {
+  border: 1px solid var(--border); border-radius: 14px;
+  padding: 13px 15px; background: var(--raised);
+  position: relative;
+}
+.heat-top {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+  margin-bottom: 10px;
+}
+.heat-top strong { font-size: 13px; font-weight: 630; }
+.heat-src-mix {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 11px; color: var(--muted);
+}
+.mix-bar {
+  display: inline-flex; width: 68px; height: 5px; border-radius: 3px; overflow: hidden; gap: 1px;
+}
+.mix-git { width: 67%; background: var(--sky); }
+.mix-dar { width: 18%; background: var(--accent); }
+.mix-agent { width: 15%; background: var(--lavender); }
+.heat-legend {
+  margin-left: auto; display: flex; align-items: center; gap: 3px;
+  font-size: 10.5px; color: var(--muted);
+}
+.heat-legend i, .heat-grid i {
+  display: block; width: 10px; height: 10px; border-radius: 2.5px;
+}
+.l0 { background: var(--hover); }
+.l1 { background: color-mix(in srgb, var(--accent) 28%, var(--hover)); }
+.l2 { background: color-mix(in srgb, var(--accent) 52%, var(--hover)); }
+.l3 { background: color-mix(in srgb, var(--accent) 76%, var(--hover)); }
+.l4 { background: var(--accent); }
+
+.heat-scroll { overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+.heat-months {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 10px; gap: 3px;
+  margin: 0 0 4px 30px; font-size: 10px; color: var(--dim); white-space: nowrap;
+}
+.heat-body { display: flex; gap: 5px; }
+.heat-days {
+  display: grid; grid-template-rows: repeat(7, 10px); gap: 3px;
+  width: 25px; flex: none; font-size: 9.5px; line-height: 10px; color: var(--dim);
+}
+.heat-grid {
+  display: grid; grid-auto-flow: column;
+  grid-template-rows: repeat(7, 10px); grid-auto-columns: 10px; gap: 3px;
+}
+.heat-grid i.future { background: transparent; }
+.heat-tip {
+  min-height: 16px; margin-top: 6px; font-size: 11px; color: var(--muted);
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+/* Actionable Needs Attention strip */
+.attention-strip {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+}
+.att-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 11px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--panel);
+  cursor: pointer; text-align: left; color: var(--text); font: inherit;
+  transition: border-color .12s, background .12s;
+}
+.att-item:hover { background: var(--hover); border-color: var(--border-strong); }
+.att-icon {
+  width: 28px; height: 28px; border-radius: 8px; flex: none;
+  display: grid; place-items: center;
+}
+.att-icon.warn { background: var(--warning-soft); color: var(--warning); }
+.att-icon.pr { background: var(--success-soft); color: var(--success); }
+.att-icon.agent { background: var(--lavender-soft); color: var(--lavender); }
+.att-text { flex: 1; min-width: 0; }
+.att-text strong { display: block; font-size: 12px; font-weight: 620; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.att-text small { display: block; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.ov-grid {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(240px, .9fr);
+  gap: 16px; align-items: start;
+}
+.sec-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 8px; flex-wrap: wrap;
+}
+.sec-bar h2 { margin: 0; font-size: 12.5px; font-weight: 630; color: var(--muted); }
+.repo-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(225px, 1fr)); gap: 8px;
+}
+.repo-card {
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 12px 13px; border-radius: 13px;
+  border: 1px solid var(--border); background: var(--raised);
+  color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.repo-card:hover { background: var(--hover); border-color: var(--border-strong); }
+.rc-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rc-head strong { font-size: 13.5px; font-weight: 630; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-head small { margin-left: auto; font-size: 11px; color: var(--dim); white-space: nowrap; }
+.rc-desc {
+  font-size: 12px; color: var(--muted); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  min-height: 33px;
+}
+.rc-desc.empty { font-style: italic; color: var(--dim); }
+.rc-foot {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px; color: var(--muted); padding-top: 2px;
+}
+.rc-foot > span { display: inline-flex; align-items: center; gap: 3.5px; }
+.rc-foot svg.ic { width: 12px; height: 12px; }
+.rc-tracker {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 6px; border-radius: 999px;
+  background: var(--success-soft); color: var(--success); font-weight: 600;
+}
+.spark {
+  margin-left: auto; display: inline-flex; align-items: flex-end; gap: 2px; height: 18px;
+}
+.spark i { display: block; width: 3px; border-radius: 1.5px; background: var(--accent); opacity: .82; }
+.spark i.h0 { height: 2px; opacity: .24; }
+.spark i.h1 { height: 4px; } .spark i.h2 { height: 6px; }
+.spark i.h3 { height: 9px; } .spark i.h4 { height: 12px; }
+.spark i.h5 { height: 15px; } .spark i.h6 { height: 18px; }
+
+.feed-box {
+  border: 1px solid var(--border); border-radius: 13px;
+  background: var(--raised); overflow: hidden;
+}
+.feed-row {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 9px;
+  padding: 9px 12px; border-top: 1px solid var(--row-div);
+  cursor: pointer; text-align: left; width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
+  background: transparent; color: inherit; font: inherit;
+}
+.feed-row:first-child { border-top: 0; }
+.feed-row:hover { background: var(--hover); }
+.feed-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.feed-top { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 12px; }
+.feed-msg { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.feed-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dim); }
+
+/* Repository Header + Tabs */
+.repo-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px 6px 18px; flex: none; position: relative;
+}
+.repo-title { min-width: 120px; flex: 1; }
+.repo-title-line { display: flex; align-items: center; gap: 8px; }
+.repo-title h1 {
+  margin: 0; font-size: 16.5px; font-weight: 650; letter-spacing: -.015em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.repo-crumb {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: var(--muted); min-width: 0;
+}
+.repo-crumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-tools { display: flex; align-items: center; gap: 5px; flex: none; }
+
+.tabs-bar {
+  display: flex; align-items: center; gap: 2px;
+  padding: 0 14px; border-bottom: 1px solid var(--border);
+  overflow-x: auto; scrollbar-width: none; flex: none;
+}
+.tabs-bar::-webkit-scrollbar { display: none; }
+.tab-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 40px; padding: 0 11px; border: 0;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  background: transparent; color: var(--muted);
+  font: 560 12.6px/1 inherit; cursor: pointer; white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 620; }
+.tab-cnt {
+  font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+  background: var(--hover); color: var(--muted); font-variant-numeric: tabular-nums;
+}
+
+/* Clone Popover */
+.clone-pop {
+  display: none; position: absolute; right: 14px; top: 52px; z-index: 40;
+  width: min(390px, calc(100% - 28px)); padding: 13px;
+  border-radius: 14px; border: 1px solid var(--border-strong);
+  background: var(--popover); backdrop-filter: blur(18px);
+  box-shadow: var(--shadow); flex-direction: column; gap: 9px;
+}
+.clone-pop.open { display: flex; }
+.clone-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.clone-pop-head strong { font-size: 12.5px; }
+.clone-box {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px 6px 10px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--code-bg);
+  font: 11.5px/1.4 var(--mono); color: var(--text);
+}
+.clone-box span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clone-actions {
+  display: flex; flex-direction: column; gap: 2px;
+  padding-top: 6px; border-top: 1px solid var(--row-div);
+}
+.clone-row-btn {
+  display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text);
+  font: inherit; font-size: 12.5px; cursor: pointer; text-align: left;
+}
+.clone-row-btn:hover { background: var(--hover); }
+.clone-row-btn small { margin-left: auto; color: var(--muted); font-size: 11px; }
+
+/* Toolbar inside tabs */
+.panel-toolbar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+  margin-bottom: 11px;
+}
+.toolbar-end { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.inline-input {
+  display: flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 9px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  min-width: 140px;
+}
+.inline-input input {
+  border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12px;
+  outline: none; width: 100%; min-width: 0;
+}
+.inline-input kbd {
+  font: 600 10px/1 var(--mono); padding: 2px 4px; border-radius: 4px;
+  border: 1px solid var(--border); color: var(--dim);
+}
+
+/* Code Tab */
+.code-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 14px; align-items: start;
+}
+.code-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.dirty-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 11px;
+  background: var(--warning-soft); color: var(--warning); font-size: 12px;
+}
+.dirty-banner div { flex: 1; min-width: 0; }
+.dirty-banner strong { display: block; font-weight: 640; }
+
+.tree-card {
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--panel);
+}
+.latest-bar {
+  display: flex; align-items: center; gap: 8px; min-height: 40px;
+  padding: 6px 12px; background: var(--raised); border-bottom: 1px solid var(--row-div);
+  font-size: 12px; flex-wrap: wrap;
+}
+.latest-msg { flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.file-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12.5px; }
+.file-table tr { border-top: 1px solid var(--row-div); cursor: pointer; }
+.file-table tr:first-child { border-top: 0; }
+.file-table tr:hover { background: var(--hover); }
+.file-table td { height: 36px; padding: 0 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-table td:first-child { width: 34%; font-weight: 550; }
+.file-table td:nth-child(2) { color: var(--muted); }
+.file-table td:last-child { width: 88px; text-align: right; color: var(--dim); font-size: 11.5px; }
+.file-name-cell { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; }
+.ic-folder { color: var(--accent); }
+.ic-code { color: var(--sky); }
+.ic-doc { color: var(--lavender); }
+
+/* Single-bordered README card (fixes double-border bug!) */
+.readme-card {
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--panel);
+}
+.readme-head {
+  display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 13px;
+  border-bottom: 1px solid var(--row-div); background: var(--raised);
+  font-size: 12px; font-weight: 620;
+}
+.readme-body {
+  padding: 15px 18px; font-size: 13px; line-height: 1.62;
+}
+.readme-body h2 { margin: 0 0 8px; font-size: 18px; font-weight: 650; }
+.readme-body h3 { margin: 16px 0 6px; font-size: 14px; font-weight: 630; }
+.readme-body p { margin: 0 0 10px; color: var(--muted); }
+.readme-body ul { margin: 0 0 10px; padding-left: 18px; color: var(--muted); }
+.readme-body code {
+  font: 11.5px/1 var(--mono); padding: 1px 5px; border-radius: 5px;
+  background: var(--code-bg); color: var(--text);
+}
+.readme-body pre {
+  margin: 8px 0 0; padding: 10px 12px; border-radius: 9px;
+  border: 1px solid var(--row-div); background: var(--code-bg);
+  font: 11.5px/1.55 var(--mono); overflow-x: auto;
+}
+
+.about-rail {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 13px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--raised);
+  font-size: 12px;
+}
+.about-rail h3 { margin: 0; font-size: 12px; font-weight: 640; color: var(--muted); }
+.about-rail p { margin: 0; color: var(--text); line-height: 1.5; }
+.about-facts { display: flex; flex-direction: column; gap: 7px; padding-top: 8px; border-top: 1px solid var(--row-div); }
+.about-fact { display: flex; align-items: center; gap: 7px; color: var(--muted); }
+.about-fact strong { margin-left: auto; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.clone-mini {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  border-radius: 8px; background: var(--code-bg); border: 1px solid var(--row-div);
+  font: 11px/1 var(--mono); color: var(--muted); cursor: pointer;
+}
+.clone-mini span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clone-mini:hover { border-color: var(--accent); color: var(--text); }
+
+/* View 3: Inline Full-Width File Reader */
+.reader-layout {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: 188px minmax(0, 1fr);
+}
+.reader-layout.tree-hidden { grid-template-columns: minmax(0, 1fr); }
+.reader-layout.tree-hidden .file-tree-pane { display: none; }
+.file-tree-pane {
+  border-right: 1px solid var(--border); background: var(--bg);
+  display: flex; flex-direction: column; min-height: 0; padding: 8px 6px;
+  overflow-y: auto; scrollbar-width: thin;
+}
+.tree-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 2px 8px 6px; font-size: 11px; font-weight: 640; color: var(--muted);
+}
+.tree-item {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--muted);
+  font: 500 12px/1 inherit; text-align: left; cursor: pointer;
+}
+.tree-item:hover { background: var(--hover); color: var(--text); }
+.tree-item.active { background: var(--tonal); color: var(--on-tonal); font-weight: 600; }
+.tree-item.ind1 { padding-left: 18px; }
+.tree-item.ind2 { padding-left: 28px; }
+.tree-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.code-stage {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--code-bg);
+}
+.code-bar {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  min-height: 42px; padding: 6px 12px;
+  border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.code-path {
+  display: flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.code-meta-pill {
+  font-size: 11px; color: var(--muted); padding: 2px 7px; border-radius: 999px;
+  background: var(--hover); font-variant-numeric: tabular-nums;
+}
+.code-well {
+  flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin;
+  padding: 10px 0; font: 12px/20px var(--mono);
+}
+.code-line {
+  display: grid; grid-template-columns: 46px minmax(0, 1fr);
+  min-width: max-content; padding-right: 16px;
+}
+.code-well.wrap .code-line { min-width: 0; }
+.code-well.wrap .code-txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.code-line:hover { background: rgba(255,255,255,.03); }
+.code-line.anchor {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.code-ln {
+  user-select: none; text-align: right; padding-right: 12px;
+  color: var(--dim); cursor: pointer; font-size: 11px;
+}
+.code-ln:hover { color: var(--accent); }
+.code-txt { white-space: pre; color: var(--text); }
+.syn-kw { color: var(--rose); font-weight: 600; }
+.syn-ty { color: var(--lavender); }
+.syn-str { color: var(--success); }
+.syn-fn { color: var(--sky); }
+.syn-num { color: var(--warning); }
+.syn-cmt { color: var(--dim); font-style: italic; }
+
+/* View 4: PR Review Full-Stage */
+.pr-top {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 10px 16px; border-bottom: 1px solid var(--row-div); flex: none;
+}
+.pr-top-main { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.pr-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pr-title-row h2 { margin: 0; font-size: 15.5px; font-weight: 640; letter-spacing: -.01em; }
+.pr-sub-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
+.state-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 22px; padding: 0 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 630;
+}
+.state-pill.open { background: var(--success-soft); color: var(--success); }
+.state-pill.merged { background: var(--tonal); color: var(--on-tonal); }
+.branch-pair {
+  display: inline-flex; align-items: center; gap: 4px;
+  font: 600 11px/1 var(--mono);
+}
+.branch-pair code {
+  padding: 3px 6px; border-radius: 6px; background: var(--hover); color: var(--text);
+}
+.lbl-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 20px; padding: 0 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+}
+.lbl-chip i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.lbl-ux i { background: var(--lavender); }
+.lbl-enh i { background: var(--sky); }
+.lbl-bug i { background: var(--danger); }
+.lbl-perf i { background: var(--warning); }
+
+.pr-subbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  padding: 7px 16px; border-bottom: 1px solid var(--border); background: var(--raised); flex: none;
+}
+.pr-files-layout {
+  flex: 1; min-height: 0; display: grid; grid-template-columns: 184px minmax(0, 1fr);
+}
+.pr-files-layout.rail-hidden { grid-template-columns: minmax(0, 1fr); }
+.pr-files-layout.rail-hidden .pr-files-rail { display: none; }
+.pr-files-rail {
+  border-right: 1px solid var(--border); background: var(--bg);
+  padding: 10px 7px; overflow-y: auto; scrollbar-width: thin;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.changed-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 8px; border-radius: 8px; cursor: pointer;
+  font-size: 11.8px; color: var(--muted);
+}
+.changed-item:hover { background: var(--hover); color: var(--text); }
+.changed-item.active { background: var(--tonal); color: var(--on-tonal); font-weight: 600; }
+.changed-item .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11px; }
+.viewed-chk { accent-color: var(--accent); cursor: pointer; flex: none; }
+
+.diff-stage {
+  flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin;
+  padding: 12px 14px 20px; display: flex; flex-direction: column; gap: 12px;
+}
+.diff-card {
+  flex: none; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; background: var(--code-bg);
+}
+.diff-card-head {
+  display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 11px;
+  background: var(--raised); border-bottom: 1px solid var(--border);
+  font-size: 12px; cursor: pointer;
+}
+.diff-card-head .path { font: 600 11.8px/1 var(--mono); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kind-pill {
+  font-size: 10px; font-weight: 650; padding: 2px 7px; border-radius: 999px;
+}
+.kind-pill.add { background: var(--success-soft); color: var(--success); }
+.kind-pill.mod { background: var(--warning-soft); color: var(--warning); }
+.viewed-pill {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted);
+  padding: 2px 7px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel);
+  cursor: pointer;
+}
+.viewed-pill.on { background: var(--success-soft); color: var(--success); border-color: transparent; font-weight: 600; }
+
+.diff-rows { font: 11.5px/19px var(--mono); overflow-x: auto; }
+.dline { display: flex; min-width: max-content; }
+.dline.hunk { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); color: var(--muted); font-size: 11px; }
+.dline.add { background: color-mix(in srgb, var(--success) 13%, transparent); }
+.dline.del { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.dnum { width: 34px; flex: none; text-align: right; padding: 0 5px; color: var(--dim); font-size: 10.5px; user-select: none; }
+.dsign { width: 16px; flex: none; text-align: center; user-select: none; font-weight: 700; }
+.dline.add .dsign { color: var(--success); }
+.dline.del .dsign { color: var(--danger); }
+.dtxt { padding: 0 10px 0 2px; white-space: pre; }
+.diff-rows.wrap .dline { min-width: 0; }
+.diff-rows.wrap .dtxt { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Split Side-by-Side Diff */
+.split-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  font: 11.3px/19px var(--mono); overflow-x: auto;
+}
+.split-cell {
+  display: flex; min-width: 0; border-right: 1px solid var(--row-div);
+}
+.split-cell:nth-child(2n) { border-right: 0; }
+.split-cell.add { background: color-mix(in srgb, var(--success) 13%, transparent); }
+.split-cell.del { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.split-cell.empty { background: rgba(128,128,128,.05); }
+.split-cell .dtxt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.diff-rows.wrap .split-cell .dtxt { overflow: visible; text-overflow: clip; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* PR Conversation & Merge Card */
+.conv-col { max-width: 720px; display: flex; flex-direction: column; gap: 12px; }
+.comment-card {
+  flex: none; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--raised);
+}
+.comment-head {
+  display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px;
+  border-bottom: 1px solid var(--row-div); font-size: 12px;
+}
+.comment-body { padding: 11px 13px; font-size: 13px; line-height: 1.55; }
+.comment-body p { margin: 0 0 8px; }
+.comment-body p:last-child { margin-bottom: 0; }
+.ref-link {
+  border: 0; background: transparent; padding: 0; color: var(--accent);
+  font: 600 inherit var(--sans); cursor: pointer;
+}
+.ref-link:hover { text-decoration: underline; }
+.tl-event {
+  display: flex; align-items: center; gap: 8px; padding: 2px 10px;
+  font-size: 12px; color: var(--muted);
+}
+
+.merge-card {
+  flex: none;
+  border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border));
+  border-radius: 13px; padding: 13px 14px; background: var(--raised);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.merge-status { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--success); }
+.merge-textarea {
+  width: 100%; min-height: 76px; resize: vertical; padding: 9px 11px;
+  border-radius: 9px; border: 1px solid var(--border-strong);
+  background: var(--code-bg); color: var(--text); font: 12px/1.45 var(--sans);
+}
+.md-composer {
+  flex: none; border: 1px solid var(--border); border-radius: 12px; background: var(--raised); overflow: hidden;
+}
+.md-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  padding: 6px 10px; border-bottom: 1px solid var(--row-div);
+}
+.fmt-tools { display: flex; align-items: center; gap: 2px; }
+.fmt-tools button {
+  width: 26px; height: 26px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted); font: 650 12px/1 inherit; cursor: pointer;
+  display: grid; place-items: center;
+}
+.fmt-tools button:hover { background: var(--hover); color: var(--text); }
+.md-composer textarea {
+  width: 100%; min-height: 74px; border: 0; padding: 10px 12px;
+  background: transparent; color: var(--text); font: inherit; font-size: 12.5px; resize: vertical; outline: none;
+}
+.md-comp-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 10px; border-top: 1px solid var(--row-div);
+}
+
+/* Commits Graph & List */
+.commit-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 10px; align-items: center; width: 100%;
+  min-height: 48px; padding: 4px 10px; border: 0; border-radius: 12px;
+  background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.commit-row:hover { background: var(--hover); }
+.commit-row.selected { background: var(--tonal); color: var(--on-tonal); }
+.commit-row.selected .sha-pill { background: rgba(255,255,255,.16); color: inherit; }
+.commit-row.selected .muted { color: color-mix(in srgb, var(--on-tonal) 80%, transparent); }
+.commit-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.commit-subj {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+  font-size: 13px; font-weight: 600;
+}
+.commit-subj > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit-sub {
+  display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--muted);
+  white-space: nowrap; overflow: hidden;
+}
+.commit-end { display: flex; align-items: center; gap: 8px; flex: none; }
+.lanes-svg { display: block; flex: none; }
+
+/* Branches & Tags */
+.group-card {
+  border: 1px solid var(--border); border-radius: 13px; overflow: hidden;
+  background: var(--raised); margin-bottom: 14px;
+}
+.group-card > h3 {
+  margin: 0; padding: 8px 14px; font-size: 11.8px; font-weight: 630;
+  color: var(--muted); border-bottom: 1px solid var(--row-div); background: var(--panel);
+}
+.b-row {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  gap: 12px; align-items: center; padding: 10px 14px;
+  border-top: 1px solid var(--row-div);
+}
+.b-row:first-of-type { border-top: 0; }
+.b-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.b-name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font: 600 12.5px/1.2 var(--mono); }
+.b-meta { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.div-meter {
+  display: grid; grid-template-columns: 56px 1px 56px; gap: 6px; align-items: center;
+  font-size: 10.5px; color: var(--muted);
+}
+.div-spine { width: 1px; height: 22px; background: var(--border-strong); }
+.div-side { display: flex; flex-direction: column; gap: 3px; }
+.div-side.beh { align-items: flex-end; }
+.div-bar { height: 5px; border-radius: 3px; }
+.div-side.beh .div-bar { background: var(--dim); }
+.div-side.ahd .div-bar { background: var(--accent); }
+.w0 { width: 3px; opacity: .35; } .w2 { width: 22px; } .w3 { width: 34px; } .w5 { width: 52px; }
+
+/* Right Drawer Sheet (Commit / Issue / Compare / Labels / Settings) */
+.drawer {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden;
+}
+.drawer-head {
+  display: flex; align-items: center; gap: 6px; min-height: 48px;
+  padding: 6px 10px 6px 16px; border-bottom: 1px solid var(--border); flex: none;
+}
+.drawer-head h2 { margin: 0; flex: 1; font-size: 14.5px; font-weight: 640; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawer-body {
+  flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin;
+  padding: 14px; display: flex; flex-direction: column; gap: 12px;
+}
+
+/* Fixed Labels Color Grid (no hanging text!) */
+.lbl-row {
+  display: grid; grid-template-columns: 118px minmax(0, 1fr) auto;
+  gap: 12px; align-items: center; padding: 10px 14px;
+  border-top: 1px solid var(--row-div);
+}
+.lbl-row:first-of-type { border-top: 0; }
+.color-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+}
+.color-chip {
+  display: flex; align-items: center; gap: 7px;
+  height: 32px; padding: 0 9px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--raised);
+  color: var(--text); font: 550 12px/1 inherit; cursor: pointer;
+}
+.color-chip:hover { background: var(--hover); }
+.color-chip.active {
+  border-color: var(--accent); background: var(--tonal); color: var(--on-tonal); font-weight: 620;
+}
+.color-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+/* Settings Sheet Rows */
+.set-group {
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--raised);
+}
+.set-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border-top: 1px solid var(--row-div);
+}
+.set-row:first-child { border-top: 0; }
+.set-row strong { display: block; font-size: 12.5px; font-weight: 600; }
+.set-row small { display: block; font-size: 11px; color: var(--muted); }
+.switch {
+  width: 34px; height: 20px; border-radius: 999px; border: 0; padding: 2px;
+  background: var(--hover); cursor: pointer; position: relative; flex: none;
+  transition: background .12s;
+}
+.switch::after {
+  content: ""; display: block; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--muted); transition: transform .12s, background .12s;
+}
+.switch.on { background: var(--accent); }
+.switch.on::after { transform: translateX(14px); background: var(--on-accent); }
+
+.sc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.sc-table td { padding: 7px 4px; border-top: 1px solid var(--row-div); }
+.sc-table tr:first-child td { border-top: 0; }
+.sc-table td:last-child { text-align: right; }
+.kcap {
+  display: inline-grid; place-items: center; min-width: 22px; height: 21px; padding: 0 5px;
+  border-radius: 5px; border: 1px solid var(--border); background: var(--panel);
+  font: 600 10.5px/1 var(--mono);
+}
+
+/* Issues rows */
+.issue-row {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 10px; align-items: start; width: 100%; padding: 10px 12px;
+  border: 0; border-radius: 12px; background: transparent; color: var(--text);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.issue-row:hover { background: var(--hover); }
+.issue-row.selected { background: var(--tonal); color: var(--on-tonal); }
+.issue-row.selected .muted { color: color-mix(in srgb, var(--on-tonal) 80%, transparent); }
+.issue-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 7px; font-size: 13px; font-weight: 610; }
+.issue-sub { font-size: 11.5px; color: var(--muted); margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* Responsive adaptation for 728px T3 inline view + Phone 390px mode */
+@media (max-width: 979px) {
+  .workspace { grid-template-columns: 186px minmax(0, 1fr); }
+  .main-area.with-drawer { grid-template-columns: minmax(0, 1fr) 292px; }
+  .attention-strip { grid-template-columns: 1fr; }
+  .ov-grid { grid-template-columns: 1fr; }
+  .code-grid { grid-template-columns: 1fr; }
+  .reader-layout { grid-template-columns: 146px minmax(0, 1fr); }
+  .pr-files-layout { grid-template-columns: 152px minmax(0, 1fr); }
+  .div-meter, .b-note { display: none; }
+  .b-row { grid-template-columns: 16px minmax(0, 1fr) auto; }
+  .commit-end .stat-added, .commit-end .stat-removed { display: none; }
+}
+
+/* Phone preview mode (via button OR narrow <620px viewport) */
+.stage[data-viewport="phone"] {
+  max-width: 374px;
+  height: 700px;
+  margin: 0 auto;
+  border-radius: 28px;
+}
+.stage[data-viewport="phone"] .tb-start { display: none; }
+.stage[data-viewport="phone"] .tb-menu-btn { display: inline-grid; }
+.stage[data-viewport="phone"] .tb-search { flex: 1; margin: 0; }
+.stage[data-viewport="phone"] .tb-search kbd,
+.stage[data-viewport="phone"] .tb-end .ib { display: none; }
+.stage[data-viewport="phone"] .workspace {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0 6px 6px;
+}
+.stage[data-viewport="phone"] .sidebar {
+  position: absolute; top: 0; bottom: 0; left: 0; z-index: 60;
+  width: 262px; padding: 14px 10px;
+  background: var(--panel); border-right: 1px solid var(--border-strong);
+  box-shadow: 12px 0 36px rgba(0,0,0,.45);
+  display: none;
+}
+.stage[data-viewport="phone"].drawer-open .sidebar { display: flex; }
+.stage[data-viewport="phone"] .main-area.with-drawer { grid-template-columns: minmax(0, 1fr); }
+.stage[data-viewport="phone"] .main-area.with-drawer .sheet { display: none; }
+.stage[data-viewport="phone"] .attention-strip,
+.stage[data-viewport="phone"] .ov-grid,
+.stage[data-viewport="phone"] .code-grid,
+.stage[data-viewport="phone"] .reader-layout,
+.stage[data-viewport="phone"] .pr-files-layout { grid-template-columns: 1fr; }
+.stage[data-viewport="phone"] .file-tree-pane,
+.stage[data-viewport="phone"] .pr-files-rail { display: none; }
+.stage[data-viewport="phone"] .file-table td:nth-child(2) { display: none; }
+.stage[data-viewport="phone"] .b-row { grid-template-columns: 16px minmax(0, 1fr) auto; }
+.stage[data-viewport="phone"] .div-meter { display: none; }
+.stage[data-viewport="phone"] .split-grid { grid-template-columns: 1fr; }
+.stage[data-viewport="phone"] .commit-end .stat-added,
+.stage[data-viewport="phone"] .commit-end .stat-removed { display: none; }
+
+@media (max-width: 619px) {
+  .stage { border-radius: 16px; }
+  .tb-start { display: none; }
+  .tb-menu-btn { display: inline-grid; }
+  .tb-search { flex: 1; margin: 0; }
+  .tb-search kbd, .tb-end .ib { display: none; }
+  .workspace { grid-template-columns: minmax(0, 1fr); padding: 0 6px 6px; }
+  .sidebar {
+    position: absolute; top: 0; bottom: 0; left: 0; z-index: 60;
+    width: 262px; padding: 14px 10px;
+    background: var(--panel); border-right: 1px solid var(--border-strong);
+    box-shadow: 12px 0 36px rgba(0,0,0,.45); display: none;
+  }
+  .stage.drawer-open .sidebar { display: flex; }
+  .main-area.with-drawer { grid-template-columns: minmax(0, 1fr); }
+  .main-area.with-drawer .sheet { display: none; }
+  .reader-layout, .pr-files-layout { grid-template-columns: 1fr; }
+  .file-tree-pane, .pr-files-rail { display: none; }
+  .file-table td:nth-child(2) { display: none; }
+  .split-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="mock-shell">
+  <div class="mock-controls">
+    <div class="mock-group" id="viewControls" role="tablist" aria-label="Mockup views">
+      <button class="mock-btn active" data-view="overview">Overview</button>
+      <button class="mock-btn" data-view="code">Code</button>
+      <button class="mock-btn" data-view="file">File reader</button>
+      <button class="mock-btn" data-view="pr">PR review</button>
+      <button class="mock-btn" data-view="commits">Commits</button>
+      <button class="mock-btn" data-view="branches">Branches</button>
+      <button class="mock-btn" data-view="issues">Issues</button>
+      <button class="mock-btn" data-view="settings">Labels &amp; settings</button>
+    </div>
+    <div class="mock-group">
+      <button class="mock-btn active" data-theme-btn="dark">Nightfall</button>
+      <button class="mock-btn" data-theme-btn="light">Afterglow</button>
+      <button class="mock-btn" data-vp-btn="desktop" id="vpToggle">Phone 390px</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage" data-theme="dark" data-viewport="desktop" data-sidebar-folded="false">
+    <!-- Full-Canvas Topbar -->
+    <header class="topbar">
+      <button class="ib tb-menu-btn" id="mobileNavBtn" aria-label="Open navigation">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div class="tb-start">
+        <span class="dar-mark">D</span>
+        <button class="ib" title="All apps" aria-label="All apps">
+          <svg class="ic" viewBox="0 0 24 24">
+            <circle cx="5" cy="5" r="1.2" fill="currentColor"/><circle cx="12" cy="5" r="1.2" fill="currentColor"/><circle cx="19" cy="5" r="1.2" fill="currentColor"/>
+            <circle cx="5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="19" cy="12" r="1.2" fill="currentColor"/>
+            <circle cx="5" cy="19" r="1.2" fill="currentColor"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/><circle cx="19" cy="19" r="1.2" fill="currentColor"/>
+          </svg>
+        </button>
+        <span class="tb-title">Git</span>
+        <span class="tb-crumb" id="topCrumb"></span>
+      </div>
+      <div class="tb-search">
+        <svg class="ic" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="7"/><path d="M16 16l5 5"/></svg>
+        <span>Search all apps, repos, commits…</span>
+        <kbd>Ctrl K</kbd>
+      </div>
+      <div class="tb-end">
+        <button class="ib" id="topShortcutsBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.9.8c0 1.7-2.4 2.1-2.4 3.7M12 17h.01"/></svg>
+        </button>
+        <button class="ib" id="topSettingsBtn" title="Git settings" aria-label="Git settings">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg>
+        </button>
+        <span class="avatar">AS</span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <!-- Transparent Sidebar -->
+      <aside class="sidebar" id="sidebar">
+        <button class="create-btn" id="newRepoBtn">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>
+          New repository
+        </button>
+        <div class="side-scroll">
+          <nav class="nav-list">
+            <button class="nav-item active" data-side="overview">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              <span class="nav-lbl">Overview</span>
+            </button>
+            <button class="nav-item" data-side="repos">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v14H6a2 2 0 0 0-2 2.5ZM4 19.5A1.5 1.5 0 0 0 5.5 21H9"/></svg>
+              <span class="nav-lbl">Repositories</span>
+              <span class="nav-cnt">5</span>
+            </button>
+            <button class="nav-item" data-side="pulls">
+              <svg class="ic" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-4M13 3.5 10.5 6 13 8.5"/></svg>
+              <span class="nav-lbl">Pull requests</span>
+              <span class="nav-cnt">2</span>
+            </button>
+            <button class="nav-item" data-side="agent">
+              <svg class="ic" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></svg>
+              <span class="nav-lbl">Agent branches</span>
+              <span class="nav-cnt">1</span>
+            </button>
+          </nav>
+
+          <div class="side-head"><span>Repositories</span></div>
+          <nav class="nav-list">
+            <button class="nav-item" data-repo="dar-cloud">
+              <span class="repo-mark h0">D</span>
+              <span class="nav-lbl">dar-cloud</span>
+              <span class="nav-cnt">2</span>
+            </button>
+            <button class="nav-item" data-repo="twilight-theme">
+              <span class="repo-mark h2">T</span>
+              <span class="nav-lbl">twilight-theme</span>
+            </button>
+            <button class="nav-item" data-repo="notes-cli">
+              <span class="repo-mark h4">N</span>
+              <span class="nav-lbl">notes-cli</span>
+              <span class="dirty-dot" title="1 uncommitted file in Dar"></span>
+            </button>
+            <button class="nav-item" data-repo="homelab-nix">
+              <span class="repo-mark h3">H</span>
+              <span class="nav-lbl">homelab-nix</span>
+            </button>
+          </nav>
+
+          <div class="side-head"><span>Shared with you</span></div>
+          <nav class="nav-list">
+            <button class="nav-item" data-repo="mesh-sync">
+              <span class="repo-mark h1">M</span>
+              <span class="nav-lbl">mesh-sync</span>
+              <span class="nav-cnt">Read</span>
+            </button>
+          </nav>
+        </div>
+
+        <div class="side-foot">
+          <button class="cred-row" id="credBtn">
+            <svg class="ic" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l2 2"/></svg>
+            <span><strong>Git HTTPS</strong> · anas</span>
+            <span class="cred-tag">Keys</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Main Area (Rendered by JS per view) -->
+      <div class="main-area" id="mainArea"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const REPOS = [
+  {
+    id: 'dar-cloud', name: 'dar-cloud', path: 'Code/dar-cloud', mark: 'D', hue: 'h0',
+    desc: 'Linux-first personal cloud built in Rust with SpacetimeDB, Leptos, and immutable local blobs.',
+    commits: 15, branches: 3, tags: 2, issues: 3, pulls: 2, size: '4.4 KB', updated: 'Today, 3:26 AM',
+    dirty: 0, agent: 1, shared: false, spark: [1,0,2,1,0,3,2,1,4,2,5,6], latestTag: 'v0.4.2'
+  },
+  {
+    id: 'twilight-theme', name: 'twilight-theme', path: 'Code/twilight-theme', mark: 'T', hue: 'h2',
+    desc: 'Afterglow light and Nightfall dark design tokens for Dar.',
+    commits: 3, branches: 1, tags: 1, issues: 0, pulls: 0, size: '254 B', updated: 'Nov 23',
+    dirty: 0, agent: 0, shared: false, spark: [0,0,0,0,0,0,1,0,0,1,0,2], latestTag: 'v1.2.0'
+  },
+  {
+    id: 'notes-cli', name: 'notes-cli', path: 'Code/notes-cli', mark: 'N', hue: 'h4',
+    desc: 'Fast terminal indexer for Dar Markdown vaults and wikilinks.',
+    commits: 2, branches: 2, tags: 0, issues: 0, pulls: 0, size: '207 B', updated: 'Nov 21',
+    dirty: 1, agent: 0, shared: false, spark: [0,0,0,0,0,0,0,0,0,1,0,2], latestTag: null
+  },
+  {
+    id: 'homelab-nix', name: 'homelab-nix', path: 'Code/homelab-nix', mark: 'H', hue: 'h3',
+    desc: '',
+    commits: 2, branches: 1, tags: 0, issues: 0, pulls: 0, size: '73 B', updated: 'Nov 20',
+    dirty: 0, agent: 0, shared: false, spark: [0,0,1,0,0,0,0,0,0,0,1,0], latestTag: null
+  },
+  {
+    id: 'mesh-sync', name: 'mesh-sync', path: 'Shared · Maya Lin', mark: 'M', hue: 'h1',
+    desc: 'Peer-to-peer chunk manifest verifier and snapshot reconciler.',
+    commits: 9, branches: 2, tags: 1, issues: 1, pulls: 0, size: '1.8 KB', updated: 'Nov 19',
+    dirty: 0, agent: 0, shared: true, spark: [0,1,0,2,0,1,0,2,1,1,0,2], latestTag: 'v0.2.0'
+  }
+];
+
+const FILES = {
+  'src/router.rs': {
+    lang: 'Rust', lines: 18, size: '446 B',
+    code: [
+      '<span class="syn-cmt">// HTTP and DAV route registry for the Dar runtime</span>',
+      '<span class="syn-kw">pub struct</span> <span class="syn-ty">Router</span> {',
+      '    routes: <span class="syn-ty">Vec</span>&lt;(&amp;<span class="syn-kw">\'static</span> <span class="syn-ty">str</span>, &amp;<span class="syn-kw">\'static</span> <span class="syn-ty">str</span>)&gt;,',
+      '}',
+      '',
+      '<span class="syn-kw">impl</span> <span class="syn-ty">Router</span> {',
+      '    <span class="syn-kw">pub fn</span> <span class="syn-fn">new</span>() -&gt; <span class="syn-ty">Self</span> {',
+      '        <span class="syn-ty">Self</span> {',
+      '            routes: vec![',
+      '                (<span class="syn-str">"/api/v1/health"</span>, <span class="syn-str">"health"</span>),',
+      '                (<span class="syn-str">"/api/v1/git/repositories"</span>, <span class="syn-str">"git_repos"</span>),',
+      '                (<span class="syn-str">"/dav/git"</span>, <span class="syn-str">"git_http"</span>),',
+      '            ],',
+      '        }',
+      '    }',
+      '',
+      '    <span class="syn-kw">pub fn</span> <span class="syn-fn">len</span>(&amp;self) -&gt; <span class="syn-ty">usize</span> { self.routes.len() }',
+      '}'
+    ]
+  },
+  'src/main.rs': {
+    lang: 'Rust', lines: 10, size: '218 B',
+    code: [
+      '<span class="syn-kw">mod</span> router;',
+      '<span class="syn-kw">mod</span> graph;',
+      '',
+      '<span class="syn-kw">fn</span> <span class="syn-fn">main</span>() {',
+      '    <span class="syn-kw">let</span> app = router::<span class="syn-ty">Router</span>::<span class="syn-fn">new</span>();',
+      '    println!(<span class="syn-str">"Dar runtime ready ({} routes)"</span>, app.<span class="syn-fn">len</span>());',
+      '}'
+    ]
+  },
+  'src/graph.rs': {
+    lang: 'Rust', lines: 11, size: '295 B',
+    code: [
+      '<span class="syn-kw">pub struct</span> <span class="syn-ty">Lane</span> {',
+      '    <span class="syn-kw">pub</span> index: <span class="syn-ty">usize</span>,',
+      '    <span class="syn-kw">pub</span> color: <span class="syn-ty">u8</span>,',
+      '}',
+      '',
+      '<span class="syn-kw">pub fn</span> <span class="syn-fn">assign_lanes</span>(parents: &amp;[&amp;<span class="syn-ty">str</span>]) -&gt; <span class="syn-ty">Vec</span>&lt;<span class="syn-ty">Lane</span>&gt; {',
+      '    parents.iter().enumerate()',
+      '        .map(|(i, _)| <span class="syn-ty">Lane</span> { index: i, color: (i % <span class="syn-num">5</span>) <span class="syn-kw">as</span> <span class="syn-ty">u8</span> })',
+      '        .collect()',
+      '}'
+    ]
+  },
+  'src/store/cache.rs': {
+    lang: 'Rust', lines: 12, size: '312 B',
+    code: [
+      '<span class="syn-kw">use</span> std::collections::<span class="syn-ty">HashMap</span>;',
+      '',
+      '<span class="syn-kw">pub struct</span> <span class="syn-ty">RepoCache</span> {',
+      '    entries: <span class="syn-ty">HashMap</span>&lt;<span class="syn-ty">String</span>, <span class="syn-ty">String</span>&gt;,',
+      '}',
+      '',
+      '<span class="syn-kw">impl</span> <span class="syn-ty">RepoCache</span> {',
+      '    <span class="syn-kw">pub fn</span> <span class="syn-fn">new</span>() -&gt; <span class="syn-ty">Self</span> { <span class="syn-ty">Self</span> { entries: <span class="syn-ty">HashMap</span>::<span class="syn-fn">new</span>() } }',
+      '    <span class="syn-kw">pub fn</span> <span class="syn-fn">get</span>(&amp;self, id: &amp;<span class="syn-ty">str</span>) -&gt; <span class="syn-ty">Option</span>&lt;&amp;<span class="syn-ty">str</span>&gt; { self.entries.<span class="syn-fn">get</span>(id).<span class="syn-fn">map</span>(<span class="syn-ty">String</span>::as_str) }',
+      '}'
+    ]
+  },
+  'Cargo.toml': {
+    lang: 'TOML', lines: 4, size: '112 B',
+    code: [
+      '[workspace]',
+      'members = [<span class="syn-str">"crates/module"</span>, <span class="syn-str">"crates/runtime"</span>, <span class="syn-str">"crates/client"</span>]',
+      'resolver = <span class="syn-str">"2"</span>'
+    ]
+  },
+  'README.md': {
+    lang: 'Markdown', lines: 14, size: '410 B', markdown: true,
+    code: [
+      '# Dar Cloud',
+      '',
+      'Linux-first personal cloud built in Rust with SpacetimeDB, Leptos, and immutable local blobs.',
+      '',
+      '## Architecture',
+      '- `crates/module` — SpacetimeDB tables, reducers, and access checks',
+      '- `crates/runtime` — HTTP, WebDAV, CalDAV, CardDAV, and Git-over-HTTPS server',
+      '- `crates/client` — Leptos WebAssembly client sharing the Twilight design system'
+    ]
+  }
+};
+
+const PR_DIFFS = [
+  {
+    file: 'src/diff_split.rs', kind: 'Added', kindCls: 'add', add: 9, rem: 0, viewed: true,
+    hunk: '@@ -0,0 +1,9 @@',
+    lines: [
+      { t: 'add', o: '', n: '1', x: 'pub enum DiffLayout {' },
+      { t: 'add', o: '', n: '2', x: '    Unified,' },
+      { t: 'add', o: '', n: '3', x: '    Split,' },
+      { t: 'add', o: '', n: '4', x: '}' },
+      { t: 'add', o: '', n: '5', x: '' },
+      { t: 'add', o: '', n: '6', x: 'pub fn align_hunks(old: &[&str], new: &[&str]) -> Vec<(Option<String>, Option<String>)> {' },
+      { t: 'add', o: '', n: '7', x: '    let max_len = old.len().max(new.len());' },
+      { t: 'add', o: '', n: '8', x: '    (0..max_len).map(|i| (old.get(i).cloned(), new.get(i).cloned())).collect()' },
+      { t: 'add', o: '', n: '9', x: '}' }
+    ]
+  },
+  {
+    file: 'src/router.rs', kind: 'Modified', kindCls: 'mod', add: 7, rem: 1, viewed: false,
+    hunk: '@@ -5,6 +5,12 @@ impl Router {',
+    lines: [
+      { t: 'ctx', o: '5', n: '5', x: 'impl Router {' },
+      { t: 'ctx', o: '6', n: '6', x: '    pub fn new() -> Self {' },
+      { t: 'del', o: '7', n: '',  x: '        Self { routes: vec![("/api/v1/health", "health"), ("/dav/git", "git_http")] }' },
+      { t: 'add', o: '',  n: '7', x: '        Self {' },
+      { t: 'add', o: '',  n: '8', x: '            routes: vec![' },
+      { t: 'add', o: '',  n: '9', x: '                ("/api/v1/health", "health"),' },
+      { t: 'add', o: '',  n: '10', x: '                ("/api/v1/git/diff", "git_diff"),' },
+      { t: 'add', o: '',  n: '11', x: '                ("/dav/git", "git_http"),' },
+      { t: 'add', o: '',  n: '12', x: '            ],' },
+      { t: 'add', o: '',  n: '13', x: '        }' },
+      { t: 'ctx', o: '8', n: '14', x: '    }' }
+    ]
+  }
+];
+
+const COMMITS = [
+  { sha: '5090b4a', full: '5090b4a9d2c7e80f1241f0b17792b84a1e18a0c2', msg: "Merge pull request #6 from fix/readme-badges", author: 'Anas Sherif', ini: 'AS', src: 'dar', srcLbl: 'Dar', time: '3:26 AM', add: 3, rem: 0, refs: [{n:'main', k:'b'}], lane: 0, paths: ['M0 0V46', 'M0 23V46'], lanesOut: [0] },
+  { sha: '3bf3a9c', full: '3bf3a9c4e18b73d0c954a10b3a41e2f90e8931a1', msg: 'Add unit test for pack buffer ceiling', author: 'Anas Sherif', ini: 'AS', src: 'git', srcLbl: 'Git push', time: 'Yesterday', add: 5, rem: 0, refs: [{n:'fix/pack-streaming', k:'b'}], lane: 2, graph: 'pack1' },
+  { sha: '41913fd', full: '41913fd99201a7c4d0f45e132091c82b174a4d11', msg: 'Bound packfile memory buffer during push', author: 'Anas Sherif', ini: 'AS', src: 'git', srcLbl: 'Git push', time: 'Yesterday', add: 8, rem: 1, refs: [], lane: 2, graph: 'pack2' },
+  { sha: '2dfedaf', full: '2dfedaf118c4b0290e4423f9a8e1204c7559e200', msg: 'Expose diff mode parameter on router', author: 'Maya Lin', ini: 'ML', src: 'git', srcLbl: 'Git push', time: 'Yesterday', add: 7, rem: 1, refs: [{n:'feat/diff-split-view', k:'b'}], lane: 1, graph: 'diff1' },
+  { sha: 'b5e641f', full: 'b5e641f7a38e9c11b93028d1c2e77a329020cb88', msg: 'Add side-by-side split diff alignment helper', author: 'Maya Lin', ini: 'ML', src: 'git', srcLbl: 'Git push', time: 'Nov 24', add: 9, rem: 0, refs: [], lane: 1, graph: 'diff2' },
+  { sha: '916a445', full: '916a4451092a3f88c72e66a9012f8c70d91a1004', msg: 'Refine keyboard focus restoration in sheets', author: 'Anas Sherif', ini: 'AS', src: 'git', srcLbl: 'Git push', time: 'Nov 24', add: 2, rem: 2, refs: [{n:'v0.4.2', k:'t'}], lane: 0, graph: 'main-join' },
+  { sha: '20aba0f', full: '20aba0fd934cf49dd397a992d6c0b1be7b76fbf2', msg: "Merge branch 'feat/commit-graph'", author: 'Anas Sherif', ini: 'AS', src: 'agent', srcLbl: 'Agent', time: 'Oct 19', add: 9, rem: 0, refs: [], lane: 0, graph: 'merge-open' },
+  { sha: '87aa8ab', full: '87aa8ab4011ef2a99c8172b5f802a39e7410cc92', msg: 'Colorize lane curves with Twilight palette', author: 'Maya Lin', ini: 'ML', src: 'git', srcLbl: 'Git push', time: 'Oct 15', add: 2, rem: 1, refs: [], lane: 4, graph: 'merge-branch' },
+  { sha: '1a4bed6', full: '1a4bed677b120e3c91a4b88e5c013f99202a77b3', msg: 'Document blob storage and cache locking', author: 'Anas Sherif', ini: 'AS', src: 'dar', srcLbl: 'Dar', time: 'Oct 13', add: 7, rem: 0, refs: [], lane: 0, graph: 'merge-close' }
+];
+
+const state = {
+  view: 'overview',
+  side: 'overview',
+  repoId: 'dar-cloud',
+  ovFilter: 'all',
+  ovSort: 'updated',
+  codePath: '',
+  codeFilter: '',
+  showDirtyDemo: false,
+  cloneOpen: false,
+  activeFile: 'src/router.rs',
+  anchorLine: 10,
+  fileWrap: false,
+  mdRendered: true,
+  treeOpen: true,
+  focusMode: false,
+  prTab: 'files',
+  diffMode: 'split',
+  diffWrap: false,
+  diffExpanded: new Set(['src/diff_split.rs', 'src/router.rs']),
+  prRailOpen: true,
+  mergeMode: 'merge',
+  commitsMode: 'graph',
+  selectedSha: '20aba0f',
+  commitDrawerOpen: true,
+  commitInspectorExpanded: false,
+  branchSubTab: 'branches',
+  compareOpen: true,
+  issueFilter: 'open',
+  selectedIssue: 1,
+  issueDrawerOpen: true,
+  settingsTab: 'labels',
+  labelColor: 'rose',
+  settings: { diff: 'split', wrap: false, commits: 'graph', about: true }
+};
+
+const stage = document.getElementById('stage');
+const mainArea = document.getElementById('mainArea');
+const topCrumb = document.getElementById('topCrumb');
+
+function iconSvg(name) {
+  const paths = {
+    folder: '<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/>',
+    file: '<path d="M6 3h8l4 4v14H6ZM14 3v5h4M9 12h6M9 16h6"/>',
+    code: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
+    commit: '<circle cx="12" cy="12" r="3"/><path d="M2 12h7M15 12h7"/>',
+    branch: '<path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM18 9a9 9 0 0 1-9 9"/>',
+    tag: '<path d="M3 12V4h8l10 10-8 8ZM8.8 8.5a1.3 1.3 0 1 1-2.6 0 1.3 1.3 0 0 1 2.6 0"/>',
+    issue: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1"/>',
+    pull: '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-4M13 3.5 10.5 6 13 8.5"/>',
+    download: '<path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/>',
+    copy: '<path d="M9 8h12v13H9ZM15 5V2H3v13h3"/>',
+    check: '<path d="m5 12 4 4L19 6"/>',
+    expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    sidebar: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+    close: '<path d="M6 6l12 12M6 18 18 6"/>',
+    back: '<path d="m14 5-7 7 7 7"/>',
+    arrowR: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+    chev: '<path d="m9 5 7 7-7 7"/>',
+    chevd: '<path d="m6 9 6 6 6-6"/>',
+    pencil: '<path d="M4 20h4L20 8l-4-4L4 16ZM13 7l4 4"/>',
+    agent: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/>',
+    upload: '<path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5"/>',
+    search: '<circle cx="10.5" cy="10.5" r="7"/><path d="M16 16l5 5"/>',
+    external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+    label: '<path d="M3 7a2 2 0 0 1 2-2h10l6 7-6 7H5a2 2 0 0 1-2-2ZM8 12h.01"/>',
+    compare: '<circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M11 6h5a2 2 0 0 1 2 2v6M13 18H8a2 2 0 0 1-2-2v-6"/>',
+    history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/>',
+    archive: '<path d="M3 4h18v4H3ZM5 8v12h14V8M10 12h4"/>',
+    key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l2 2"/>',
+    merge: '<circle cx="18" cy="18" r="2.5"/><circle cx="6" cy="6" r="2.5"/><path d="M6 21V8.5a9 9 0 0 0 9.5 9.5"/>',
+    more: '<circle cx="12" cy="5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/>'
+  };
+  return `<svg class="ic" viewBox="0 0 24 24">${paths[name] || ''}</svg>`;
+}
+
+function repoObj() {
+  return REPOS.find(r => r.id === state.repoId) || REPOS[0];
+}
+
+function repoHeaderHtml(activeTab) {
+  const r = repoObj();
+  const tabs = [
+    { id: 'code', icon: 'code', label: 'Code', cnt: null, view: 'code' },
+    { id: 'issues', icon: 'issue', label: 'Issues', cnt: r.issues, view: 'issues' },
+    { id: 'pulls', icon: 'pull', label: 'Pull requests', cnt: r.pulls, view: 'pr' },
+    { id: 'commits', icon: 'commit', label: 'Commits', cnt: r.commits, view: 'commits' },
+    { id: 'branches', icon: 'branch', label: 'Branches', cnt: r.branches, view: 'branches', sub: 'branches' },
+    { id: 'tags', icon: 'tag', label: 'Tags', cnt: r.tags, view: 'branches', sub: 'tags' }
+  ];
+  return `
+    <div class="repo-head">
+      <span class="repo-mark m ${r.hue}">${r.mark}</span>
+      <div class="repo-title">
+        <div class="repo-title-line">
+          <h1>${r.name}</h1>
+          ${r.dirty ? '<span class="dirty-dot" title="Uncommitted files in Dar"></span>' : ''}
+        </div>
+        <div class="repo-crumb">${iconSvg('folder')}<span>${r.path}</span></div>
+      </div>
+      <div class="repo-tools">
+        <button class="btn ghost sm" data-open-files title="Open folder in Files">${iconSvg('external')}<span>Files</span></button>
+        <button class="btn primary sm" id="cloneBtn">${iconSvg('download')}<span>Clone</span>${iconSvg('chevd')}</button>
+        <button class="ib" title="Repository actions" aria-label="Repository actions">${iconSvg('more')}</button>
+      </div>
+      <div class="clone-pop ${state.cloneOpen ? 'open' : ''}" id="clonePop">
+        <div class="clone-pop-head">
+          <strong>Clone with HTTPS</strong>
+          <div class="seg" role="group" aria-label="Clone address type">
+            <button class="active" data-clone-kind="alias">Alias</button>
+            <button data-clone-kind="perm">Permanent ID</button>
+          </div>
+        </div>
+        <div class="clone-box">
+          <span id="cloneCmd">git clone https://dar.example/dav/git/anas/${r.path}.git</span>
+          <button class="ib" id="copyCloneBtn" title="Copy command">${iconSvg('copy')}</button>
+        </div>
+        <small class="muted">Sign in as <strong>anas</strong> with an app password that has Files access.</small>
+        <div class="clone-actions">
+          <button class="clone-row-btn">${iconSvg('download')}<span>Download ZIP of main</span></button>
+          <button class="clone-row-btn">${iconSvg('archive')}<span>Download Git bundle</span><small>All refs</small></button>
+          <button class="clone-row-btn" data-jump-settings="labels">${iconSvg('key')}<span>Manage app passwords</span></button>
+        </div>
+      </div>
+    </div>
+    <div class="tabs-bar" role="tablist">
+      ${tabs.map(t => `
+        <button class="tab-btn ${activeTab === t.id ? 'active' : ''}" data-repo-tab="${t.view}" ${t.sub ? `data-branch-sub="${t.sub}"` : ''}>
+          ${iconSvg(t.icon)}<span>${t.label}</span>
+          ${t.cnt !== null ? `<span class="tab-cnt">${t.cnt}</span>` : ''}
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderHeatmapCells() {
+  const levels = [0,0,0,1,0,2,0,0,1,3,0,2,1,0,0,0,1,2,4,1,0,3,2,1,0,4,3,2];
+  const cells = [];
+  for (let i = 0; i < 53 * 7; i++) {
+    const recentBoost = i > 315 ? ((i * 7) % 5) : (i % 13 === 0 ? 1 : (i % 29 === 0 ? 2 : 0));
+    const lv = i > 368 ? 'future' : 'l' + (i > 340 ? Math.min(4, levels[i % levels.length]) : recentBoost);
+    const dayNum = (i % 28) + 1;
+    const months = ['Dec','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov'];
+    const m = months[Math.min(11, Math.floor(i / 31))];
+    const cnt = lv === 'future' ? 0 : lv === 'l0' ? 0 : Number(lv.slice(1));
+    cells.push(`<i class="${lv}" data-heat="${cnt} commit${cnt === 1 ? '' : 's'} on ${m} ${dayNum}"></i>`);
+  }
+  const monthsHdr = ['Dec','','','','Jan','','','','Feb','','','','Mar','','','','Apr','','','','','May','','','','Jun','','','','Jul','','','','Aug','','','','Sep','','','','Oct','','','','','Nov','','','','','','']
+    .map(m => `<span>${m}</span>`).join('');
+  return { cells: cells.join(''), monthsHdr };
+}
+
+function renderOverview() {
+  const hm = renderHeatmapCells();
+  let list = [...REPOS];
+  if (state.ovFilter === 'dirty') list = list.filter(r => r.dirty > 0);
+  if (state.ovFilter === 'pulls') list = list.filter(r => r.pulls > 0);
+  if (state.ovFilter === 'shared') list = list.filter(r => r.shared);
+  if (state.ovSort === 'name') list.sort((a,b) => a.name.localeCompare(b.name));
+
+  return `
+    <section class="sheet">
+      <div class="ov-head">
+        <h1>Overview</h1>
+        <div class="seg">
+          <button class="${state.ovSort === 'updated' ? 'active' : ''}" data-ov-sort="updated">Updated</button>
+          <button class="${state.ovSort === 'name' ? 'active' : ''}" data-ov-sort="name">Name</button>
+        </div>
+      </div>
+      <div class="sheet-scroll">
+        <div class="ov-stack">
+          <section class="heat-card">
+            <div class="heat-top">
+              <strong>27 commits in the last year</strong>
+              <span class="heat-src-mix">
+                <span class="mix-bar" title="18 Git push · 5 Dar · 4 Agent">
+                  <span class="mix-git"></span><span class="mix-dar"></span><span class="mix-agent"></span>
+                </span>
+                <span>18 Git · 5 Dar · 4 Agent</span>
+              </span>
+              <span class="heat-legend">Less <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> More</span>
+            </div>
+            <div class="heat-scroll" id="heatScroll">
+              <div class="heat-months">${hm.monthsHdr}</div>
+              <div class="heat-body">
+                <div class="heat-days"><span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span></div>
+                <div class="heat-grid" id="heatGrid">${hm.cells}</div>
+              </div>
+            </div>
+            <div class="heat-tip"><span id="heatTip">Hover a day to inspect commits</span><span>4 owned · 1 shared</span></div>
+          </section>
+
+          <section aria-label="Needs attention">
+            <div class="sec-bar"><h2>Needs attention</h2></div>
+            <div class="attention-strip">
+              <button class="att-item" data-jump-repo="notes-cli" data-dirty-on="true">
+                <span class="att-icon warn">${iconSvg('pencil')}</span>
+                <span class="att-text">
+                  <strong>notes-cli · 1 uncommitted file</strong>
+                  <small>TODO.md edited in Dar</small>
+                </span>
+              </button>
+              <button class="att-item" data-jump-view="pr">
+                <span class="att-icon pr">${iconSvg('pull')}</span>
+                <span class="att-text">
+                  <strong>dar-cloud · 2 open pull requests</strong>
+                  <small>#4 split diff · #5 pack buffer</small>
+                </span>
+              </button>
+              <button class="att-item" data-jump-view="branches">
+                <span class="att-icon agent">${iconSvg('agent')}</span>
+                <span class="att-text">
+                  <strong>agent/split-diff waiting</strong>
+                  <small>dar-cloud · 3 files ready</small>
+                </span>
+              </button>
+            </div>
+          </section>
+
+          <div class="ov-grid">
+            <section>
+              <div class="sec-bar">
+                <h2>Repositories</h2>
+                <div class="mock-group">
+                  <button class="fchip ${state.ovFilter === 'all' ? 'active' : ''}" data-ov-filter="all">All</button>
+                  <button class="fchip ${state.ovFilter === 'dirty' ? 'active' : ''}" data-ov-filter="dirty">Uncommitted</button>
+                  <button class="fchip ${state.ovFilter === 'pulls' ? 'active' : ''}" data-ov-filter="pulls">Open PRs</button>
+                  <button class="fchip ${state.ovFilter === 'shared' ? 'active' : ''}" data-ov-filter="shared">Shared</button>
+                </div>
+              </div>
+              <div class="repo-cards">
+                ${list.map(r => `
+                  <button class="repo-card" data-jump-repo="${r.id}">
+                    <span class="rc-head">
+                      <span class="repo-mark ${r.hue}">${r.mark}</span>
+                      <strong>${r.name}</strong>
+                      ${r.dirty ? '<span class="dirty-dot" title="Uncommitted edits in Dar"></span>' : ''}
+                      <small>${r.updated}</small>
+                    </span>
+                    <span class="rc-desc ${r.desc ? '' : 'empty'}">${r.desc || 'No README.md yet'}</span>
+                    <span class="rc-foot">
+                      <span>${iconSvg('commit')}${r.commits}</span>
+                      <span>${iconSvg('branch')}${r.branches}</span>
+                      ${r.pulls || r.issues ? `<span class="rc-tracker">${r.pulls} PR · ${r.issues} Iss</span>` : ''}
+                      <span class="spark">${r.spark.map(v => `<i class="h${v}"></i>`).join('')}</span>
+                    </span>
+                  </button>
+                `).join('')}
+              </div>
+            </section>
+
+            <section>
+              <div class="sec-bar"><h2>Recent commits</h2></div>
+              <div class="feed-box">
+                ${COMMITS.slice(0, 5).map(c => `
+                  <button class="feed-row" data-jump-commit="${c.sha}">
+                    <span class="avatar sm ${c.src === 'agent' ? 'agent' : ''}">${c.src === 'agent' ? iconSvg('agent') : c.ini}</span>
+                    <span class="feed-body">
+                      <span class="feed-top">
+                        <strong>${c.author}</strong>
+                        <span class="muted">in</span>
+                        <strong>dar-cloud</strong>
+                        ${c.refs.map(rf => `<span class="ref-pill ${rf.k === 't' ? 'tag' : ''}">${rf.n}</span>`).join('')}
+                      </span>
+                      <span class="feed-msg">${c.msg}</span>
+                      <span class="feed-meta">
+                        <span class="src-pill ${c.src}">${c.srcLbl}</span>
+                        <span class="sha-pill">${c.sha}</span>
+                        <span>${c.time}</span>
+                      </span>
+                    </span>
+                  </button>
+                `).join('')}
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderCode() {
+  const r = repoObj();
+  const inSrc = state.codePath === 'src';
+  const rows = inSrc
+    ? [
+        { name: '..', type: 'up', msg: '', time: '', path: '' },
+        { name: 'store', type: 'tree', msg: 'Introduce bare Git repository cache layer', time: 'Sep 5', path: 'src/store/cache.rs' },
+        { name: 'graph.rs', type: 'code', msg: 'Colorize lane curves with Twilight palette', time: 'Oct 15', path: 'src/graph.rs' },
+        { name: 'main.rs', type: 'code', msg: 'Refine keyboard focus restoration in sheets', time: 'Nov 24', path: 'src/main.rs' },
+        { name: 'router.rs', type: 'code', msg: 'Add initial HTTP router for API and DAV', time: 'Aug 8', path: 'src/router.rs' }
+      ]
+    : [
+        { name: 'docs', type: 'tree', msg: 'Document README badge stripping behavior', time: 'Yesterday', path: 'README.md' },
+        { name: 'src', type: 'tree', msg: 'Refine keyboard focus restoration in sheets', time: 'Nov 24', openDir: 'src' },
+        { name: 'Cargo.toml', type: 'doc', msg: 'Initialize workspace and core README', time: 'Jul 9', path: 'Cargo.toml' },
+        { name: 'README.md', type: 'doc', msg: 'Initialize workspace and core README', time: 'Jul 9', path: 'README.md' }
+      ];
+  const filtered = rows.filter(row => row.type === 'up' || !state.codeFilter || row.name.toLowerCase().includes(state.codeFilter.toLowerCase()));
+
+  return `
+    <section class="sheet">
+      ${repoHeaderHtml('code')}
+      <div class="sheet-scroll">
+        <div class="panel-toolbar">
+          <button class="btn sm">${iconSvg('branch')}<span>main</span>${iconSvg('chevd')}</button>
+          <span class="mono" style="font-size:12px">
+            <button class="ref-link" data-code-path="">${r.name}</button>
+            ${inSrc ? ' <span class="muted">/</span> <strong>src</strong>' : ''}
+          </span>
+          <div class="toolbar-end">
+            <label class="inline-input">
+              ${iconSvg('search')}
+              <input id="codeFilterInput" value="${state.codeFilter}" placeholder="Filter files…">
+              <kbd>t</kbd>
+            </label>
+            <button class="fchip ${state.showDirtyDemo || r.dirty ? 'active' : ''}" id="toggleDirtyDemo">Uncommitted banner</button>
+          </div>
+        </div>
+
+        ${(state.showDirtyDemo || r.dirty) ? `
+          <div class="dirty-banner" style="margin-bottom:12px">
+            ${iconSvg('pencil')}
+            <div>
+              <strong>1 file changed in Dar since the last commit</strong>
+              <span><code>TODO.md</code> is uncommitted. Pushes touching it are refused until committed in Files.</span>
+            </div>
+            <button class="btn sm">Review &amp; commit</button>
+          </div>
+        ` : ''}
+
+        <div class="code-grid">
+          <div class="code-main">
+            <div class="tree-card">
+              <div class="latest-bar">
+                <span class="avatar sm">AS</span>
+                <strong>Anas Sherif</strong>
+                <span class="latest-msg">Merge pull request #6 from fix/readme-badges</span>
+                <button class="sha-pill" data-jump-commit="5090b4a">5090b4a</button>
+                <span class="muted">3:26 AM</span>
+                <button class="btn ghost sm" data-repo-tab="commits">${iconSvg('history')}<span>${r.commits} commits</span></button>
+              </div>
+              <table class="file-table">
+                <tbody>
+                  ${filtered.map(row => `
+                    <tr ${row.openDir ? `data-code-path="${row.openDir}"` : row.type === 'up' ? 'data-code-path=""' : `data-open-file="${row.path}"`}>
+                      <td>
+                        <span class="file-name-cell">
+                          ${row.type === 'up' ? iconSvg('back') : row.type === 'tree' ? `<span class="ic-folder">${iconSvg('folder')}</span>` : row.type === 'code' ? `<span class="ic-code">${iconSvg('code')}</span>` : `<span class="ic-doc">${iconSvg('file')}</span>`}
+                          <span>${row.name}</span>
+                        </span>
+                      </td>
+                      <td>${row.msg}</td>
+                      <td>${row.time}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="readme-card">
+              <div class="readme-head">
+                ${iconSvg('file')}<span>README.md</span>
+                <button class="btn ghost sm" style="margin-left:auto" data-open-file="README.md">Open full reader</button>
+              </div>
+              <div class="readme-body">
+                <h2>Dar Cloud</h2>
+                <p>Linux-first personal cloud built in Rust with SpacetimeDB, Leptos, and immutable local blobs.</p>
+                <h3>Architecture</h3>
+                <ul>
+                  <li><code>crates/module</code> — SpacetimeDB tables, reducers, and access checks</li>
+                  <li><code>crates/runtime</code> — HTTP, WebDAV, CalDAV, CardDAV, and Git-over-HTTPS server</li>
+                  <li><code>crates/client</code> — Leptos WebAssembly client sharing the Twilight design system</li>
+                </ul>
+                <pre>nix develop && cargo xtask dev</pre>
+              </div>
+            </div>
+          </div>
+
+          ${state.settings.about ? `
+            <aside class="about-rail">
+              <h3>About</h3>
+              <p>${r.desc || 'Tracked folder repository in Dar Files.'}</p>
+              <div class="about-facts">
+                <div class="about-fact">${iconSvg('tag')}<span>Release</span><strong>${r.latestTag || 'None'}</strong></div>
+                <div class="about-fact">${iconSvg('branch')}<span>Branches</span><strong>${r.branches}</strong></div>
+                <div class="about-fact">${iconSvg('commit')}<span>Commits</span><strong>${r.commits}</strong></div>
+                <div class="about-fact">${iconSvg('archive')}<span>History size</span><strong>${r.size}</strong></div>
+              </div>
+              <button class="clone-mini" id="aboutCopyBtn" title="Copy git clone command">
+                <span>git clone …/${r.name}.git</span>
+                ${iconSvg('copy')}
+              </button>
+            </aside>
+          ` : ''}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderFileReader() {
+  const file = FILES[state.activeFile] || FILES['src/router.rs'];
+  const treeFiles = [
+    { path: 'src/main.rs', name: 'main.rs', ind: 'ind1', kind: 'code' },
+    { path: 'src/router.rs', name: 'router.rs', ind: 'ind1', kind: 'code' },
+    { path: 'src/graph.rs', name: 'graph.rs', ind: 'ind1', kind: 'code' },
+    { path: 'src/store/cache.rs', name: 'store / cache.rs', ind: 'ind2', kind: 'code' },
+    { path: 'Cargo.toml', name: 'Cargo.toml', ind: '', kind: 'doc' },
+    { path: 'README.md', name: 'README.md', ind: '', kind: 'doc' }
+  ];
+
+  const isMdRendered = file.markdown && state.mdRendered;
+
+  return `
+    <section class="sheet">
+      ${repoHeaderHtml('code')}
+      <div class="reader-layout ${state.treeOpen ? '' : 'tree-hidden'}">
+        <aside class="file-tree-pane">
+          <div class="tree-hdr"><span>Files · main</span></div>
+          <div class="tree-item">${iconSvg('folder')}<span>src</span></div>
+          ${treeFiles.map(tf => `
+            <button class="tree-item ${tf.ind} ${state.activeFile === tf.path ? 'active' : ''}" data-open-file="${tf.path}">
+              <span class="${tf.kind === 'code' ? 'ic-code' : 'ic-doc'}">${iconSvg(tf.kind === 'code' ? 'code' : 'file')}</span>
+              <span>${tf.name}</span>
+            </button>
+          `).join('')}
+        </aside>
+
+        <div class="code-stage">
+          <div class="code-bar">
+            <button class="ib" id="toggleTreeBtn" title="Toggle file tree">${iconSvg('sidebar')}</button>
+            <div class="code-path">
+              <button class="ref-link" data-repo-tab="code">dar-cloud</button>
+              <span class="muted">/</span>
+              <span class="mono">${state.activeFile}</span>
+            </div>
+            <span class="code-meta-pill">${file.lang} · ${file.lines} lines · ${file.size}</span>
+            <div class="toolbar-end">
+              ${file.markdown ? `
+                <div class="seg">
+                  <button class="${state.mdRendered ? 'active' : ''}" data-md-mode="rendered">Rendered</button>
+                  <button class="${!state.mdRendered ? 'active' : ''}" data-md-mode="source">Source</button>
+                </div>
+              ` : ''}
+              <button class="fchip ${state.fileWrap ? 'active' : ''}" id="fileWrapBtn">Wrap</button>
+              <button class="btn sm" id="copyCodeBtn">${iconSvg('copy')}<span>Copy</span></button>
+              <button class="btn sm">${iconSvg('external')}<span>Edit in Files</span></button>
+              <button class="ib ${state.focusMode ? 'on' : ''}" id="focusBtn" title="Focus mode (f)">${iconSvg('expand')}</button>
+              <button class="ib" data-repo-tab="code" title="Close file">${iconSvg('close')}</button>
+            </div>
+          </div>
+
+          ${isMdRendered ? `
+            <div class="sheet-scroll" style="background:var(--panel)">
+              <div class="readme-body" style="max-width:68ch">
+                <h2>Dar Cloud</h2>
+                <p>Linux-first personal cloud built in Rust with SpacetimeDB, Leptos, and immutable local blobs.</p>
+                <h3>Architecture</h3>
+                <ul>
+                  <li><code>crates/module</code> — SpacetimeDB tables, reducers, and access checks</li>
+                  <li><code>crates/runtime</code> — HTTP, WebDAV, CalDAV, CardDAV, and Git-over-HTTPS server</li>
+                  <li><code>crates/client</code> — Leptos WebAssembly client sharing the Twilight design system</li>
+                </ul>
+              </div>
+            </div>
+          ` : `
+            <div class="code-well ${state.fileWrap ? 'wrap' : ''}">
+              ${file.code.map((ln, idx) => {
+                const n = idx + 1;
+                return `
+                  <div class="code-line ${state.anchorLine === n ? 'anchor' : ''}">
+                    <span class="code-ln" data-line-num="${n}">${n}</span>
+                    <span class="code-txt">${ln || ' '}</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderDiffCard(f) {
+  const open = state.diffExpanded.has(f.file);
+  let body = '';
+  if (open) {
+    if (state.diffMode === 'split') {
+      const rows = [];
+      let i = 0;
+      while (i < f.lines.length) {
+        const cur = f.lines[i];
+        if (cur.t === 'ctx') {
+          rows.push(`<div class="split-cell"><span class="dnum">${cur.o}</span><span class="dsign"> </span><span class="dtxt">${escHtml(cur.x)}</span></div>`);
+          rows.push(`<div class="split-cell"><span class="dnum">${cur.n}</span><span class="dsign"> </span><span class="dtxt">${escHtml(cur.x)}</span></div>`);
+          i++;
+        } else if (cur.t === 'del' && f.lines[i+1]?.t === 'add') {
+          const nxt = f.lines[i+1];
+          rows.push(`<div class="split-cell del"><span class="dnum">${cur.o}</span><span class="dsign">-</span><span class="dtxt">${escHtml(cur.x)}</span></div>`);
+          rows.push(`<div class="split-cell add"><span class="dnum">${nxt.n}</span><span class="dsign">+</span><span class="dtxt">${escHtml(nxt.x)}</span></div>`);
+          i += 2;
+        } else if (cur.t === 'del') {
+          rows.push(`<div class="split-cell del"><span class="dnum">${cur.o}</span><span class="dsign">-</span><span class="dtxt">${escHtml(cur.x)}</span></div>`);
+          rows.push(`<div class="split-cell empty"><span class="dnum"></span><span class="dsign"></span><span class="dtxt"> </span></div>`);
+          i++;
+        } else {
+          rows.push(`<div class="split-cell empty"><span class="dnum"></span><span class="dsign"></span><span class="dtxt"> </span></div>`);
+          rows.push(`<div class="split-cell add"><span class="dnum">${cur.n}</span><span class="dsign">+</span><span class="dtxt">${escHtml(cur.x)}</span></div>`);
+          i++;
+        }
+      }
+      body = `
+        <div class="diff-rows ${state.diffWrap ? 'wrap' : ''}">
+          <div class="dline hunk"><span class="dnum"></span><span class="dtxt">${escHtml(f.hunk)}</span></div>
+          <div class="split-grid">${rows.join('')}</div>
+        </div>
+      `;
+    } else {
+      body = `
+        <div class="diff-rows ${state.diffWrap ? 'wrap' : ''}">
+          <div class="dline hunk"><span class="dnum"></span><span class="dnum"></span><span class="dsign"></span><span class="dtxt">${escHtml(f.hunk)}</span></div>
+          ${f.lines.map(l => `
+            <div class="dline ${l.t}">
+              <span class="dnum">${l.o}</span>
+              <span class="dnum">${l.n}</span>
+              <span class="dsign">${l.t === 'add' ? '+' : l.t === 'del' ? '-' : ' '}</span>
+              <span class="dtxt">${escHtml(l.x) || ' '}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+  }
+  return `
+    <article class="diff-card">
+      <div class="diff-card-head" data-toggle-diff="${f.file}">
+        ${iconSvg(open ? 'chevd' : 'chev')}
+        <span class="path">${f.file}</span>
+        <span class="kind-pill ${f.kindCls}">${f.kind}</span>
+        <span class="stat-added">+${f.add}</span>
+        ${f.rem ? `<span class="stat-removed">−${f.rem}</span>` : ''}
+        <button class="viewed-pill ${f.viewed ? 'on' : ''}" data-mark-viewed="${f.file}">${f.viewed ? '✓ Viewed' : 'Viewed'}</button>
+      </div>
+      ${body}
+    </article>
+  `;
+}
+
+function renderPRReview() {
+  const viewedCount = PR_DIFFS.filter(d => d.viewed).length;
+  let body = '';
+
+  if (state.prTab === 'files') {
+    body = `
+      <div class="pr-subbar">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button class="ib" id="prRailBtn" title="Toggle changed files list">${iconSvg('sidebar')}</button>
+          <strong>2 files changed</strong>
+          <span class="stat-added">+16</span>
+          <span class="stat-removed">−1</span>
+          <span class="code-meta-pill">${viewedCount} / ${PR_DIFFS.length} viewed</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <div class="seg">
+            <button class="${state.diffMode === 'unified' ? 'active' : ''}" data-diff-mode="unified">Unified</button>
+            <button class="${state.diffMode === 'split' ? 'active' : ''}" data-diff-mode="split">Split</button>
+          </div>
+          <button class="fchip ${state.diffWrap ? 'active' : ''}" id="diffWrapBtn">Wrap</button>
+          <button class="btn sm" id="expandAllBtn">Expand all</button>
+        </div>
+      </div>
+      <div class="pr-files-layout ${state.prRailOpen ? '' : 'rail-hidden'}">
+        <aside class="pr-files-rail">
+          <div class="tree-hdr"><span>Changed files</span></div>
+          ${PR_DIFFS.map(d => `
+            <div class="changed-item" data-focus-diff="${d.file}">
+              <input class="viewed-chk" type="checkbox" ${d.viewed ? 'checked' : ''} data-chk-viewed="${d.file}" aria-label="Mark ${d.file} viewed">
+              <span class="fname">${d.file}</span>
+              <span class="stat-added">+${d.add}</span>
+            </div>
+          `).join('')}
+        </aside>
+        <div class="diff-stage">
+          ${PR_DIFFS.map(renderDiffCard).join('')}
+        </div>
+      </div>
+    `;
+  } else if (state.prTab === 'commits') {
+    body = `
+      <div class="sheet-scroll">
+        <div class="conv-col">
+          ${COMMITS.slice(3, 5).map(c => `
+            <button class="commit-row" data-jump-commit="${c.sha}">
+              <span class="avatar sm">${c.ini}</span>
+              <span class="commit-main">
+                <span class="commit-subj"><span>${c.msg}</span></span>
+                <span class="commit-sub"><strong>${c.author}</strong><span class="src-pill ${c.src}">${c.srcLbl}</span><span>${c.time}</span></span>
+              </span>
+              <span class="commit-end">
+                <span class="stat-added">+${c.add}</span>
+                ${c.rem ? `<span class="stat-removed">−${c.rem}</span>` : ''}
+                <span class="sha-pill">${c.sha}</span>
+              </span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } else {
+    body = `
+      <div class="sheet-scroll">
+        <div class="conv-col">
+          <div class="comment-card">
+            <div class="comment-head">
+              <span class="avatar sm">AS</span>
+              <strong>Anas Sherif</strong><span class="muted">opened 3:26 AM</span>
+            </div>
+            <div class="comment-body">
+              <p>Introduces <code>DiffLayout::Split</code> alignment helper and exposes diff mode on the router.</p>
+              <p>Addresses part of <button class="ref-link" data-jump-view="issues">#1</button>.</p>
+            </div>
+          </div>
+          <div class="tl-event">
+            ${iconSvg('commit')}
+            <span><strong>Maya Lin</strong> pushed 2 commits (<span class="sha-pill">b5e641f</span> → <span class="sha-pill">2dfedaf</span>)</span>
+          </div>
+          <div class="comment-card">
+            <div class="comment-head">
+              <span class="avatar sm">ML</span>
+              <strong>Maya Lin</strong><span class="muted">commented yesterday</span>
+            </div>
+            <div class="comment-body">
+              <p>Looked through <code>src/diff_split.rs</code> — alignment looks solid for uneven hunks!</p>
+            </div>
+          </div>
+
+          <section class="merge-card">
+            <div class="merge-status">${iconSvg('check')}<span>Ready to merge into main · No conflicts · Closes #1</span></div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="seg">
+                <button class="${state.mergeMode === 'ff' ? 'active' : ''}" data-merge-mode="ff">Fast-forward</button>
+                <button class="${state.mergeMode === 'merge' ? 'active' : ''}" data-merge-mode="merge">Merge commit</button>
+              </div>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px">
+                <input type="checkbox" checked> Delete <code>feat/diff-split-view</code> after merging
+              </label>
+            </div>
+            ${state.mergeMode === 'merge' ? `
+              <textarea class="merge-textarea" aria-label="Merge commit message">Merge pull request #4 from feat/diff-split-view
+
+Add side-by-side split diff alignment and router support</textarea>
+            ` : '<small class="muted">Branch behind main by 3 commits; select Merge commit.</small>'}
+            <div style="display:flex;align-items:center;gap:8px">
+              <button class="btn primary">${iconSvg('merge')}<span>Merge into main</span></button>
+              <small class="muted">Updates Dar folder files with main</small>
+            </div>
+          </section>
+
+          <div class="md-composer">
+            <div class="md-bar">
+              <div class="fmt-tools">
+                <button title="Heading">H</button><button title="Bold">B</button><button title="Italic">I</button>
+                <button title="Code">&lt;/&gt;</button><button title="Link">#</button><button title="Task list">☑</button>
+              </div>
+              <div class="seg"><button class="active">Write</button><button>Preview</button></div>
+            </div>
+            <textarea placeholder="Leave a review comment… Use #12 to reference issues or PRs."></textarea>
+            <div class="md-comp-foot">
+              <small class="muted">Markdown supported</small>
+              <div style="display:flex;gap:6px">
+                <button class="btn sm">Close pull request</button>
+                <button class="btn primary sm">Comment</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <section class="sheet">
+      ${repoHeaderHtml('pulls')}
+      <div class="pr-top">
+        <div class="pr-top-main">
+          <div class="pr-title-row">
+            <button class="btn ghost sm" data-repo-tab="code">${iconSvg('back')}<span>All PRs</span></button>
+            <h2>#4 Add side-by-side split diff alignment and router support</h2>
+          </div>
+          <div class="pr-sub-row">
+            <span class="state-pill open">${iconSvg('pull')}<span>Open</span></span>
+            <span class="branch-pair"><code>feat/diff-split-view</code>${iconSvg('arrowR')}<code>main</code></span>
+            <span class="lbl-chip lbl-enh"><i></i>enhancement</span>
+            <span class="lbl-chip lbl-ux"><i></i>ux</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <div class="seg">
+            <button class="${state.prTab === 'conv' ? 'active' : ''}" data-pr-tab="conv">Conversation</button>
+            <button class="${state.prTab === 'commits' ? 'active' : ''}" data-pr-tab="commits">Commits 2</button>
+            <button class="${state.prTab === 'files' ? 'active' : ''}" data-pr-tab="files">Files 2</button>
+          </div>
+          <button class="ib ${state.focusMode ? 'on' : ''}" id="focusBtn" title="Focus mode (f)">${iconSvg('expand')}</button>
+        </div>
+      </div>
+      ${body}
+    </section>
+  `;
+}
+
+function laneSvgHtml(c) {
+  // 5-color Twilight lanes: 0 orchid, 1 sky, 2 sage, 3 amber, 4 lavender
+  const w = 74;
+  if (c.sha === '5090b4a') {
+    return `<svg class="lanes-svg" width="${w}" height="46" viewBox="0 0 ${w} 46">
+      <path d="M12 23V46" stroke="var(--lane-0)" stroke-width="2" fill="none"/>
+      <circle cx="12" cy="23" r="4.5" fill="var(--lane-0)" stroke="var(--panel)" stroke-width="2"/>
+    </svg>`;
+  }
+  if (c.graph === 'pack1') {
+    return `<svg class="lanes-svg" width="${w}" height="46" viewBox="0 0 ${w} 46">
+      <path d="M12 0V46" stroke="var(--lane-0)" stroke-width="2" fill="none"/>
+      <path d="M40 23V46" stroke="var(--lane-2)" stroke-width="2" fill="none"/>
+      <circle cx="40" cy="23" r="4.5" fill="var(--lane-2)" stroke="var(--panel)" stroke-width="2"/>
+    </svg>`;
+  }
+  if (c.graph === 'pack2') {
+    return `<svg class="lanes-svg" width="${w}" height="46" viewBox="0 0 ${w} 46">
+      <path d="M12 0V46" stroke="var(--lane-0)" stroke-width="2" fill="none"/>
+      <path d="M40 0V23 C40 36 12 32 12 46" stroke="var(--lane-2)" stroke-width="2" fill="none"/>
+      <circle cx="40" cy="23" r="4.5" fill="var(--lane-2)" stroke="var(--panel)" stroke-width="2"/>
+    </svg>`;
+  }
+  if (c.graph === 'diff1') {
+    return `<svg class="lanes-svg" width="${w}" height="46" viewBox="0 0 ${w} 46">
+      <path d="M12 0V46" stroke="var(--lane-0)" stroke-width="2" fill="none"/>
+      <path d="M26 23V46" stroke="var(--lane-1)" stroke-width="2" fill="none"/>
+      <circle cx="26" cy="23" r="4.5" fill="var(--lane-1)" stroke="var(--panel)" stroke-width="2"/>
+    </svg>`;
+  }
+  if (c.graph === 'diff2') {
+    return `<svg class="lanes-svg" width="${w}" height="46" viewBox="0 0 ${w} 46">
+      <path d="M12 0V46" stroke="var(--lane-0)" stroke-width="2" fill="none"/>
+      <path d="M26 0V23 C26 35 12 33 12 46" stroke="var(--lane-1)" stroke-width="2" fill="none"/>
+      <circle cx="26" cy="23" r="4.5" fill="var(--lane-1)" stroke="var(--panel)" stroke-width="2"/>
+    </svg>`;
+  }
+  if (c.graph === 'merge-open') {
+    return `<svg class="lanes-svg" width="${w}" height="46" viewBox="0 0 ${w} 46">
+      <path d="M12 0V46" stroke="var(--lane-0)" stroke-width="2" fill="none"/>
+      <path d="M12 23 C12 34 54 30 54 46" stroke="var(--lane-4)" stroke-width="2" fill="none"/>
+      <circle cx="12" cy="23" r="5" fill="var(--panel)" stroke="var(--lane-0)" stroke-width="2.5"/>
+    </svg>`;
+  }
+  if (c.graph === 'merge-branch') {
+    return `<svg class="lanes-svg" width="${w}" height="46" viewBox="0 0 ${w} 46">
+      <path d="M12 0V46" stroke="var(--lane-0)" stroke-width="2" fill="none"/>
+      <path d="M54 0V23 C54 36 12 33 12 46" stroke="var(--lane-4)" stroke-width="2" fill="none"/>
+      <circle cx="54" cy="23" r="4.5" fill="var(--lane-4)" stroke="var(--panel)" stroke-width="2"/>
+    </svg>`;
+  }
+  return `<svg class="lanes-svg" width="${w}" height="46" viewBox="0 0 ${w} 46">
+    <path d="M12 0V46" stroke="var(--lane-0)" stroke-width="2" fill="none"/>
+    <circle cx="12" cy="23" r="4.5" fill="var(--lane-0)" stroke="var(--panel)" stroke-width="2"/>
+  </svg>`;
+}
+
+function renderCommits() {
+  const sel = COMMITS.find(c => c.sha === state.selectedSha) || COMMITS[6];
+  return `
+    <section class="sheet">
+      ${repoHeaderHtml('commits')}
+      <div class="sheet-scroll">
+        <div class="panel-toolbar">
+          <button class="btn sm"><span>All branches</span>${iconSvg('chevd')}</button>
+          <button class="btn sm"><span>All authors</span>${iconSvg('chevd')}</button>
+          <button class="btn sm"><span>All sources</span>${iconSvg('chevd')}</button>
+          <div class="toolbar-end">
+            <span class="muted" style="font-size:11.5px">19 commits</span>
+            <div class="seg">
+              <button class="${state.commitsMode === 'graph' ? 'active' : ''}" data-commits-mode="graph">Graph</button>
+              <button class="${state.commitsMode === 'list' ? 'active' : ''}" data-commits-mode="list">List</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          ${COMMITS.map(c => `
+            <button class="commit-row ${c.sha === state.selectedSha ? 'selected' : ''}" data-select-sha="${c.sha}">
+              ${state.commitsMode === 'graph' ? laneSvgHtml(c) : `<span class="avatar sm ${c.src === 'agent' ? 'agent' : ''}">${c.src === 'agent' ? iconSvg('agent') : c.ini}</span>`}
+              <span class="commit-main">
+                <span class="commit-subj">
+                  <span>${c.msg}</span>
+                  ${c.refs.map(rf => `<span class="ref-pill ${rf.k === 't' ? 'tag' : ''}">${rf.n}</span>`).join('')}
+                </span>
+                <span class="commit-sub">
+                  <strong>${c.author}</strong>
+                  <span class="src-pill ${c.src}">${c.srcLbl}</span>
+                  <span>${c.time}</span>
+                </span>
+              </span>
+              <span class="commit-end">
+                <span class="stat-added">+${c.add}</span>
+                ${c.rem ? `<span class="stat-removed">−${c.rem}</span>` : ''}
+                <span class="sha-pill">${c.sha}</span>
+              </span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    </section>
+
+    <aside class="drawer">
+      <div class="drawer-head">
+        <h2>Commit <span class="sha-pill">${sel.sha}</span></h2>
+        <button class="ib" id="copyShaBtn" title="Copy SHA">${iconSvg('copy')}</button>
+        <button class="ib" id="closeCommitBtn" title="Close">${iconSvg('close')}</button>
+      </div>
+      <div class="drawer-body">
+        <div>
+          <h3 style="margin:0 0 4px;font-size:15px;font-weight:640">${sel.msg}</h3>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px">
+            <span class="avatar sm ${sel.src === 'agent' ? 'agent' : ''}">${sel.src === 'agent' ? iconSvg('agent') : sel.ini}</span>
+            <strong>${sel.author}</strong>
+            <span class="src-pill ${sel.src}">${sel.srcLbl}</span>
+            <span class="muted">${sel.time}</span>
+          </div>
+        </div>
+        <div class="set-group" style="font-size:11.5px">
+          <div class="set-row"><div><small>Full commit ID</small><code class="mono" style="font-size:10.5px;word-break:break-all">${sel.full}</code></div></div>
+          <div class="set-row"><div><small>Parents</small><div><button class="sha-pill">1a4bed6</button> <button class="sha-pill">87aa8ab</button></div></div></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <strong style="font-size:12px">1 file changed <span class="stat-added">+${sel.add}</span></strong>
+          <div class="seg">
+            <button class="${state.diffMode === 'unified' ? 'active' : ''}" data-diff-mode="unified">Unified</button>
+            <button class="${state.diffMode === 'split' ? 'active' : ''}" data-diff-mode="split">Split</button>
+          </div>
+        </div>
+        ${renderDiffCard(PR_DIFFS[0])}
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding-top:4px">
+          <button class="btn sm" data-open-file="src/graph.rs">${iconSvg('code')}<span>Browse files</span></button>
+          <button class="btn sm">${iconSvg('download')}<span>ZIP</span></button>
+          <button class="btn sm">${iconSvg('history')}<span>Restore folder here</span></button>
+        </div>
+      </div>
+    </aside>
+  `;
+}
+
+function renderBranches() {
+  const isTags = state.branchSubTab === 'tags';
+  return `
+    <section class="sheet">
+      ${repoHeaderHtml(isTags ? 'tags' : 'branches')}
+      <div class="sheet-scroll">
+        <div class="panel-toolbar">
+          <div class="seg">
+            <button class="${!isTags ? 'active' : ''}" data-branch-sub="branches">Branches 3</button>
+            <button class="${isTags ? 'active' : ''}" data-branch-sub="tags">Tags 2</button>
+          </div>
+        </div>
+
+        ${!isTags ? `
+          <div class="group-card">
+            <h3>Default branch</h3>
+            <div class="b-row">
+              ${iconSvg('branch')}
+              <div class="b-main">
+                <div class="b-name"><span>main</span><span class="src-pill">Default</span></div>
+                <div class="b-meta">Merge pull request #6 from fix/readme-badges · Anas Sherif · 3:26 AM</div>
+              </div>
+              <span class="muted b-note" style="font-size:11.5px">Matches Dar folder</span>
+              <button class="btn sm" data-repo-tab="code">Browse</button>
+            </div>
+          </div>
+
+          <div class="group-card">
+            <h3>Active branches</h3>
+            <div class="b-row">
+              ${iconSvg('branch')}
+              <div class="b-main">
+                <div class="b-name"><span>fix/pack-streaming</span><button class="fchip active" data-jump-view="pr">PR #5 Open</button></div>
+                <div class="b-meta">Add unit test for pack buffer ceiling · Anas Sherif · Yesterday</div>
+              </div>
+              <div class="div-meter">
+                <div class="div-side beh"><span>2 behind</span><div class="div-bar w3"></div></div>
+                <div class="div-spine"></div>
+                <div class="div-side ahd"><span>2 ahead</span><div class="div-bar w3"></div></div>
+              </div>
+              <button class="btn sm" id="toggleCompareBtn">${iconSvg('compare')}<span>Compare</span></button>
+            </div>
+            <div class="b-row">
+              ${iconSvg('branch')}
+              <div class="b-main">
+                <div class="b-name"><span>feat/diff-split-view</span><button class="fchip active" data-jump-view="pr">PR #4 Open</button></div>
+                <div class="b-meta">Expose diff mode parameter on router · Maya Lin · Yesterday</div>
+              </div>
+              <div class="div-meter">
+                <div class="div-side beh"><span>3 behind</span><div class="div-bar w5"></div></div>
+                <div class="div-spine"></div>
+                <div class="div-side ahd"><span>2 ahead</span><div class="div-bar w3"></div></div>
+              </div>
+              <button class="btn sm" id="toggleCompareBtn2">${iconSvg('compare')}<span>Compare</span></button>
+            </div>
+          </div>
+
+          <div class="group-card">
+            <h3>Agent branches</h3>
+            <div class="b-row">
+              <span style="color:var(--lavender)">${iconSvg('agent')}</span>
+              <div class="b-main">
+                <div class="b-name"><span>agent/split-diff</span><span class="src-pill agent">Agent</span></div>
+                <div class="b-meta">Align side-by-side hunks · 3 files · 12m ago</div>
+              </div>
+              <span class="muted b-note" style="font-size:11.5px">Pending review</span>
+              <div style="display:flex;gap:5px">
+                <button class="btn sm" data-jump-view="pr">Open PR</button>
+                <button class="btn sm">${iconSvg('external')}<span>Agent</span></button>
+              </div>
+            </div>
+          </div>
+        ` : `
+          <div class="group-card">
+            <h3>Tags &amp; releases</h3>
+            <div class="b-row">
+              ${iconSvg('tag')}
+              <div class="b-main">
+                <div class="b-name"><span>v0.4.2</span><span class="state-pill open" style="height:18px;font-size:10px">Latest</span></div>
+                <div class="b-meta">Git tracker, branches compare, and streaming archives · Anas Sherif · Nov 24</div>
+              </div>
+              <button class="sha-pill" data-jump-commit="916a445">916a445</button>
+              <div style="display:flex;gap:5px">
+                <button class="btn sm" data-repo-tab="code">Browse</button>
+                <button class="btn sm">${iconSvg('download')}<span>ZIP</span></button>
+              </div>
+            </div>
+            <div class="b-row">
+              ${iconSvg('tag')}
+              <div class="b-main">
+                <div class="b-name"><span>v0.4.0</span></div>
+                <div class="b-meta">Initial Git cache and DAV release · Anas Sherif · Sep 7</div>
+              </div>
+              <button class="sha-pill">74fc2ac</button>
+              <div style="display:flex;gap:5px">
+                <button class="btn sm" data-repo-tab="code">Browse</button>
+                <button class="btn sm">${iconSvg('download')}<span>ZIP</span></button>
+              </div>
+            </div>
+          </div>
+        `}
+      </div>
+    </section>
+
+    ${(!isTags && state.compareOpen) ? `
+      <aside class="drawer">
+        <div class="drawer-head">
+          <h2>Compare branches</h2>
+          <button class="ib" id="closeCompareBtn">${iconSvg('close')}</button>
+        </div>
+        <div class="drawer-body">
+          <div class="branch-pair" style="font-size:11.5px">
+            <code>feat/diff-split-view</code>${iconSvg('arrowR')}<code>main</code>
+          </div>
+          <small class="muted">2 commits ahead · 3 behind · Clean merge into <strong>main</strong></small>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <strong style="font-size:12px">Expandable file diffs (2)</strong>
+            <button class="btn tonal sm" data-jump-view="pr">${iconSvg('pull')}<span>Open PR</span></button>
+          </div>
+          ${renderDiffCard(PR_DIFFS[1])}
+          <section class="merge-card">
+            <div class="merge-status">${iconSvg('check')}<span>Can merge cleanly into main</span></div>
+            <button class="btn primary sm">${iconSvg('merge')}<span>Merge into main</span></button>
+          </section>
+        </div>
+      </aside>
+    ` : ''}
+  `;
+}
+
+function renderIssues() {
+  const issues = [
+    { num: 3, title: 'Add keyboard shortcuts for navigating commits and switching tabs', labels: [['ux','lbl-ux']], author: 'Anas Sherif', time: '3:26 AM', comments: 0 },
+    { num: 2, title: 'Pack streaming buffers entire upload in memory on large pushes', labels: [['bug','lbl-bug'],['performance','lbl-perf']], author: 'Anas Sherif', time: '3:26 AM', comments: 0 },
+    { num: 1, title: 'Code viewer feels cramped in the 440px right sheet', labels: [['ux','lbl-ux'],['enhancement','lbl-enh']], author: 'Anas Sherif', time: '3:26 AM', comments: 2 }
+  ];
+  return `
+    <section class="sheet">
+      ${repoHeaderHtml('issues')}
+      <div class="sheet-scroll">
+        <div class="panel-toolbar">
+          <div class="seg">
+            <button class="${state.issueFilter === 'open' ? 'active' : ''}" data-iss-state="open">Open 3</button>
+            <button class="${state.issueFilter === 'closed' ? 'active' : ''}" data-iss-state="closed">Closed 0</button>
+          </div>
+          <button class="fchip">All labels ${iconSvg('chevd')}</button>
+          <div class="toolbar-end">
+            <button class="btn sm" data-jump-settings="labels">${iconSvg('label')}<span>Labels</span></button>
+            <button class="btn primary sm">New issue</button>
+          </div>
+        </div>
+        <div>
+          ${issues.map(iss => `
+            <button class="issue-row ${state.selectedIssue === iss.num ? 'selected' : ''}" data-sel-issue="${iss.num}">
+              <span style="color:var(--success);margin-top:2px">${iconSvg('issue')}</span>
+              <span>
+                <div class="issue-title-line">
+                  <span>${iss.title}</span>
+                  ${iss.labels.map(([n,c]) => `<span class="lbl-chip ${c}"><i></i>${n}</span>`).join('')}
+                </div>
+                <div class="issue-sub">#${iss.num} · opened ${iss.time} by ${iss.author}</div>
+              </span>
+              <span class="muted" style="font-size:11.5px">${iss.comments ? `${iss.comments} 💬` : ''}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    </section>
+
+    <aside class="drawer">
+      <div class="drawer-head">
+        <h2>Issue #${state.selectedIssue}</h2>
+        <button class="ib" title="Edit issue">${iconSvg('pencil')}</button>
+        <button class="ib" id="closeIssueBtn" title="Close">${iconSvg('close')}</button>
+      </div>
+      <div class="drawer-body">
+        <div>
+          <h3 style="margin:0 0 6px;font-size:15.5px;font-weight:640">Code viewer feels cramped in the 440px right sheet</h3>
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12px">
+            <span class="state-pill open">${iconSvg('issue')}<span>Open</span></span>
+            <span class="lbl-chip lbl-ux"><i></i>ux</span>
+            <span class="lbl-chip lbl-enh"><i></i>enhancement</span>
+          </div>
+        </div>
+        <div class="comment-card">
+          <div class="comment-head"><span class="avatar sm">AS</span><strong>Anas Sherif</strong><span class="muted">3:26 AM</span></div>
+          <div class="comment-body"><p>Reading code inside a 440px side drawer forces horizontal scrolling and lacks line numbers or a file tree.</p></div>
+        </div>
+        <div class="comment-card">
+          <div class="comment-head"><span class="avatar sm">AS</span><strong>Anas Sherif</strong><span class="muted">3:26 AM</span></div>
+          <div class="comment-body"><p>Agreed — opening files inline in the main canvas with a collapsible file tree solves this cleanly.</p></div>
+        </div>
+        <div class="tl-event">${iconSvg('label')}<span><strong>Anas Sherif</strong> mentioned this in <button class="ref-link" data-jump-view="pr">#4</button></span></div>
+        <div class="md-composer">
+          <div class="md-bar">
+            <div class="fmt-tools"><button>H</button><button>B</button><button>I</button><button>&lt;/&gt;</button><button>#</button></div>
+            <div class="seg"><button class="active">Write</button><button>Preview</button></div>
+          </div>
+          <textarea placeholder="Add a comment…"></textarea>
+          <div class="md-comp-foot">
+            <small class="muted">Markdown · #12 links items</small>
+            <button class="btn primary sm">Comment</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  `;
+}
+
+function renderSettingsAndLabels() {
+  const colors = [
+    ['plum', '#8e3f86'], ['violet', '#6a4fb3'], ['blue', '#2d6fb0'],
+    ['teal', '#1f8079'], ['green', '#2f7d4a'], ['amber', '#a57712'],
+    ['orange', '#c25a1c'], ['rose', '#b8405f'], ['gray', '#6b6670']
+  ];
+  const isLabels = state.settingsTab === 'labels';
+  const isKeys = state.settingsTab === 'keys';
+
+  return `
+    <section class="sheet">
+      ${repoHeaderHtml('issues')}
+      <div class="sheet-scroll">
+        <div class="panel-toolbar">
+          <div class="seg">
+            <button class="${isLabels ? 'active' : ''}" data-set-tab="labels">Labels manager</button>
+            <button class="${state.settingsTab === 'general' ? 'active' : ''}" data-set-tab="general">Git settings</button>
+            <button class="${isKeys ? 'active' : ''}" data-set-tab="keys">Shortcuts (?)</button>
+          </div>
+        </div>
+        <p class="muted" style="margin:0 0 12px;font-size:12.5px">
+          Labels categorize issues and pull requests in this repository. Use the side panel to add labels, set default viewer preferences, or inspect keyboard shortcuts.
+        </p>
+        <div class="group-card">
+          <h3>Repository labels (5)</h3>
+          <div class="lbl-row">
+            <span><span class="lbl-chip lbl-bug"><i></i>bug</span></span>
+            <div class="b-main"><div class="b-meta">Something isn't working as expected</div></div>
+            <span class="muted" style="font-size:11.5px">1 open</span>
+          </div>
+          <div class="lbl-row">
+            <span><span class="lbl-chip lbl-enh"><i></i>enhancement</span></span>
+            <div class="b-main"><div class="b-meta">New feature or UX refinement</div></div>
+            <span class="muted" style="font-size:11.5px">1 open</span>
+          </div>
+          <div class="lbl-row">
+            <span><span class="lbl-chip lbl-ux"><i></i>ux</span></span>
+            <div class="b-main"><div class="b-meta">Visual hierarchy, layout, or interaction</div></div>
+            <span class="muted" style="font-size:11.5px">2 open</span>
+          </div>
+          <div class="lbl-row">
+            <span><span class="lbl-chip lbl-perf"><i></i>performance</span></span>
+            <div class="b-main"><div class="b-meta">Throughput, memory ceiling, or latency work</div></div>
+            <span class="muted" style="font-size:11.5px">1 open</span>
+          </div>
+          <div class="lbl-row">
+            <span><span class="lbl-chip" style="--c:#1f8079"><i style="background:#1f8079"></i>documentation</span></span>
+            <div class="b-main"><div class="b-meta">Guides, architecture notes, or README updates</div></div>
+            <span class="muted" style="font-size:11.5px">0 open</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="drawer">
+      <div class="drawer-head">
+        <h2>${isLabels ? 'Labels' : isKeys ? 'Keyboard shortcuts' : 'Git settings'}</h2>
+        <div class="seg">
+          <button class="${isLabels ? 'active' : ''}" data-set-tab="labels">Labels</button>
+          <button class="${state.settingsTab === 'general' ? 'active' : ''}" data-set-tab="general">Prefs</button>
+          <button class="${isKeys ? 'active' : ''}" data-set-tab="keys">Keys</button>
+        </div>
+      </div>
+      <div class="drawer-body">
+        ${isLabels ? `
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="font-size:12px;font-weight:600">Name
+              <input value="ux-polish" style="margin-top:4px;width:100%;height:34px;padding:0 10px;border-radius:9px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text);font:inherit">
+            </label>
+            <label style="font-size:12px;font-weight:600">Description
+              <input value="Visual spacing and interaction fixes" style="margin-top:4px;width:100%;height:34px;padding:0 10px;border-radius:9px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text);font:inherit">
+            </label>
+            <div>
+              <div style="font-size:12px;font-weight:600;margin-bottom:6px">Colour</div>
+              <div class="color-grid">
+                ${colors.map(([name, hex]) => `
+                  <button type="button" class="color-chip ${state.labelColor === name ? 'active' : ''}" data-lbl-color="${name}">
+                    <span class="color-dot" style="background:${hex}"></span>
+                    <span>${name[0].toUpperCase() + name.slice(1)}</span>
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding-top:4px">
+              <span class="lbl-chip" style="border-color:color-mix(in srgb, ${colors.find(c=>c[0]===state.labelColor)?.[1] || '#b8405f'} 45%, transparent)">
+                <i style="background:${colors.find(c=>c[0]===state.labelColor)?.[1] || '#b8405f'}"></i>ux-polish
+              </span>
+              <button class="btn primary sm">Create label</button>
+            </div>
+          </div>
+        ` : isKeys ? `
+          <table class="sc-table">
+            <tr><td>Quick file finder</td><td><span class="kcap">t</span></td></tr>
+            <tr><td>Next / previous item</td><td><span class="kcap">j</span> <span class="kcap">k</span></td></tr>
+            <tr><td>Focus reading / diff mode</td><td><span class="kcap">f</span></td></tr>
+            <tr><td>Switch repo tabs 1–6</td><td><span class="kcap">1</span>–<span class="kcap">6</span></td></tr>
+            <tr><td>Toggle Split / Unified diff</td><td><span class="kcap">d</span></td></tr>
+            <tr><td>Toggle line wrapping</td><td><span class="kcap">w</span></td></tr>
+            <tr><td>Open global search</td><td><span class="kcap">Ctrl K</span></td></tr>
+            <tr><td>Close sheet or exit focus</td><td><span class="kcap">Esc</span></td></tr>
+          </table>
+        ` : `
+          <div class="set-group">
+            <div class="set-row">
+              <div><strong>Default diff layout</strong><small>Used in commits, PRs, and compare</small></div>
+              <div class="seg">
+                <button class="${state.settings.diff === 'unified' ? 'active' : ''}" data-pref-diff="unified">Unified</button>
+                <button class="${state.settings.diff === 'split' ? 'active' : ''}" data-pref-diff="split">Split</button>
+              </div>
+            </div>
+            <div class="set-row">
+              <div><strong>Default commits view</strong><small>Show lane graph or day-grouped list</small></div>
+              <div class="seg">
+                <button class="${state.settings.commits === 'graph' ? 'active' : ''}" data-pref-commits="graph">Graph</button>
+                <button class="${state.settings.commits === 'list' ? 'active' : ''}" data-pref-commits="list">List</button>
+              </div>
+            </div>
+            <div class="set-row">
+              <div><strong>Wrap long lines</strong><small>Soft-wrap diffs and file viewer by default</small></div>
+              <button class="switch ${state.settings.wrap ? 'on' : ''}" id="prefWrap"></button>
+            </div>
+            <div class="set-row">
+              <div><strong>Show repository About rail</strong><small>Description, tag, and clone box on Code tab</small></div>
+              <button class="switch ${state.settings.about ? 'on' : ''}" id="prefAbout"></button>
+            </div>
+          </div>
+        `}
+      </div>
+    </aside>
+  `;
+}
+
+function escHtml(s) {
+  return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+function render() {
+  const hasDrawer = (
+    (state.view === 'commits' && state.commitDrawerOpen) ||
+    (state.view === 'issues' && state.issueDrawerOpen) ||
+    state.view === 'settings' ||
+    (state.view === 'branches' && state.branchSubTab === 'branches' && state.compareOpen)
+  );
+  const narrow = window.innerWidth <= 979;
+  const autoFold = ((state.view === 'file' || state.view === 'pr') && (state.focusMode || narrow)) || (hasDrawer && narrow);
+  stage.dataset.sidebarFolded = String(autoFold || state.focusMode);
+
+  mainArea.className = hasDrawer ? 'main-area with-drawer' : 'main-area';
+
+  topCrumb.textContent = state.view === 'overview' ? '' : `/ ${repoObj().name}`;
+
+  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === state.view));
+  document.querySelectorAll('[data-side]').forEach(b => b.classList.toggle('active', state.view === 'overview' && b.dataset.side === state.side));
+  document.querySelectorAll('[data-repo]').forEach(b => b.classList.toggle('active', state.view !== 'overview' && b.dataset.repo === state.repoId));
+
+  if (state.view === 'overview') mainArea.innerHTML = renderOverview();
+  else if (state.view === 'code') mainArea.innerHTML = renderCode();
+  else if (state.view === 'file') mainArea.innerHTML = renderFileReader();
+  else if (state.view === 'pr') mainArea.innerHTML = renderPRReview();
+  else if (state.view === 'commits') mainArea.innerHTML = renderCommits();
+  else if (state.view === 'branches') mainArea.innerHTML = renderBranches();
+  else if (state.view === 'issues') mainArea.innerHTML = renderIssues();
+  else if (state.view === 'settings') mainArea.innerHTML = renderSettingsAndLabels();
+
+  const hs = document.getElementById('heatScroll');
+  if (hs) hs.scrollLeft = hs.scrollWidth;
+}
+
+/* Delegated event handling */
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  const viewBtn = t.closest('[data-view]');
+  if (viewBtn) {
+    state.view = viewBtn.dataset.view;
+    state.focusMode = false;
+    state.cloneOpen = false;
+    render();
+    return;
+  }
+  const themeBtn = t.closest('[data-theme-btn]');
+  if (themeBtn) {
+    stage.dataset.theme = themeBtn.dataset.themeBtn;
+    document.querySelectorAll('[data-theme-btn]').forEach(b => b.classList.toggle('active', b === themeBtn));
+    return;
+  }
+  if (t.closest('#vpToggle')) {
+    const next = stage.dataset.viewport === 'phone' ? 'desktop' : 'phone';
+    stage.dataset.viewport = next;
+    stage.classList.remove('drawer-open');
+    document.getElementById('vpToggle').classList.toggle('active', next === 'phone');
+    render();
+    return;
+  }
+  if (t.closest('#mobileNavBtn')) {
+    stage.classList.toggle('drawer-open');
+    return;
+  }
+  const sideBtn = t.closest('[data-side]');
+  if (sideBtn) {
+    state.side = sideBtn.dataset.side;
+    if (state.side === 'pulls') state.view = 'pr';
+    else if (state.side === 'agent') { state.view = 'branches'; state.branchSubTab = 'branches'; }
+    else state.view = 'overview';
+    stage.classList.remove('drawer-open');
+    render();
+    return;
+  }
+  const repoBtn = t.closest('[data-repo]');
+  if (repoBtn) {
+    state.repoId = repoBtn.dataset.repo;
+    state.view = 'code';
+    state.codePath = '';
+    stage.classList.remove('drawer-open');
+    render();
+    return;
+  }
+  const jumpRepo = t.closest('[data-jump-repo]');
+  if (jumpRepo) {
+    state.repoId = jumpRepo.dataset.jumpRepo;
+    state.showDirtyDemo = jumpRepo.dataset.dirtyOn === 'true';
+    state.view = 'code';
+    render();
+    return;
+  }
+  const jumpView = t.closest('[data-jump-view]');
+  if (jumpView) {
+    state.view = jumpView.dataset.jumpView;
+    render();
+    return;
+  }
+  const jumpCommit = t.closest('[data-jump-commit]');
+  if (jumpCommit) {
+    state.selectedSha = jumpCommit.dataset.jumpCommit;
+    state.commitDrawerOpen = true;
+    state.view = 'commits';
+    render();
+    return;
+  }
+  const repoTab = t.closest('[data-repo-tab]');
+  if (repoTab) {
+    state.view = repoTab.dataset.repoTab;
+    if (repoTab.dataset.branchSub) state.branchSubTab = repoTab.dataset.branchSub;
+    state.focusMode = false;
+    state.cloneOpen = false;
+    render();
+    return;
+  }
+  const brSub = t.closest('[data-branch-sub]');
+  if (brSub) {
+    state.branchSubTab = brSub.dataset.branchSub;
+    state.view = 'branches';
+    render();
+    return;
+  }
+  const ovFilter = t.closest('[data-ov-filter]');
+  if (ovFilter) { state.ovFilter = ovFilter.dataset.ovFilter; render(); return; }
+  const ovSort = t.closest('[data-ov-sort]');
+  if (ovSort) { state.ovSort = ovSort.dataset.ovSort; render(); return; }
+  const codePath = t.closest('[data-code-path]');
+  if (codePath) { state.codePath = codePath.dataset.codePath; render(); return; }
+  const openFile = t.closest('[data-open-file]');
+  if (openFile) { state.activeFile = openFile.dataset.openFile; state.view = 'file'; render(); return; }
+  if (t.closest('#toggleDirtyDemo')) { state.showDirtyDemo = !state.showDirtyDemo; render(); return; }
+  if (t.closest('#cloneBtn')) { state.cloneOpen = !state.cloneOpen; render(); return; }
+  const cloneKind = t.closest('[data-clone-kind]');
+  if (cloneKind) {
+    const cmd = document.getElementById('cloneCmd');
+    const r = repoObj();
+    if (cmd) cmd.textContent = cloneKind.dataset.cloneKind === 'perm'
+      ? `git clone https://dar.example/dav/git/5a1ba34c-5971.git`
+      : `git clone https://dar.example/dav/git/anas/${r.path}.git`;
+    cloneKind.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === cloneKind));
+    return;
+  }
+  if (t.closest('#copyCloneBtn') || t.closest('#aboutCopyBtn') || t.closest('#copyCodeBtn')) {
+    const btn = t.closest('button');
+    const orig = btn.innerHTML;
+    btn.innerHTML = `${iconSvg('check')}<span>Copied</span>`;
+    setTimeout(() => { if (document.body.contains(btn)) btn.innerHTML = orig; }, 1100);
+    return;
+  }
+  if (t.closest('#toggleTreeBtn')) { state.treeOpen = !state.treeOpen; render(); return; }
+  if (t.closest('#fileWrapBtn')) { state.fileWrap = !state.fileWrap; render(); return; }
+  const mdMode = t.closest('[data-md-mode]');
+  if (mdMode) { state.mdRendered = mdMode.dataset.mdMode === 'rendered'; render(); return; }
+  const ln = t.closest('[data-line-num]');
+  if (ln) { state.anchorLine = Number(ln.dataset.lineNum); render(); return; }
+  if (t.closest('#focusBtn')) { state.focusMode = !state.focusMode; render(); return; }
+  const prTab = t.closest('[data-pr-tab]');
+  if (prTab) { state.prTab = prTab.dataset.prTab; render(); return; }
+  const diffMode = t.closest('[data-diff-mode]');
+  if (diffMode) { state.diffMode = diffMode.dataset.diffMode; render(); return; }
+  if (t.closest('#diffWrapBtn')) { state.diffWrap = !state.diffWrap; render(); return; }
+  if (t.closest('#prRailBtn')) { state.prRailOpen = !state.prRailOpen; render(); return; }
+  if (t.closest('#expandAllBtn')) { PR_DIFFS.forEach(d => state.diffExpanded.add(d.file)); render(); return; }
+  const markViewed = t.closest('[data-mark-viewed]');
+  if (markViewed) {
+    e.stopPropagation();
+    const d = PR_DIFFS.find(x => x.file === markViewed.dataset.markViewed);
+    if (d) d.viewed = !d.viewed;
+    render();
+    return;
+  }
+  const togDiff = t.closest('[data-toggle-diff]');
+  if (togDiff) {
+    const f = togDiff.dataset.toggleDiff;
+    if (state.diffExpanded.has(f)) state.diffExpanded.delete(f); else state.diffExpanded.add(f);
+    render();
+    return;
+  }
+  const mergeMode = t.closest('[data-merge-mode]');
+  if (mergeMode) { state.mergeMode = mergeMode.dataset.mergeMode; render(); return; }
+  const cMode = t.closest('[data-commits-mode]');
+  if (cMode) { state.commitsMode = cMode.dataset.commitsMode; render(); return; }
+  const selSha = t.closest('[data-select-sha]');
+  if (selSha) { state.selectedSha = selSha.dataset.selectSha; state.commitDrawerOpen = true; render(); return; }
+  if (t.closest('#closeCommitBtn')) { state.commitDrawerOpen = false; render(); return; }
+  if (t.closest('#toggleCompareBtn') || t.closest('#toggleCompareBtn2')) { state.compareOpen = true; render(); return; }
+  if (t.closest('#closeCompareBtn')) { state.compareOpen = false; render(); return; }
+  const selIss = t.closest('[data-sel-issue]');
+  if (selIss) { state.selectedIssue = Number(selIss.dataset.selIssue); state.issueDrawerOpen = true; render(); return; }
+  if (t.closest('#closeIssueBtn')) { state.issueDrawerOpen = false; render(); return; }
+  const issState = t.closest('[data-iss-state]');
+  if (issState) { state.issueFilter = issState.dataset.issState; render(); return; }
+  const setTab = t.closest('[data-set-tab]');
+  if (setTab) { state.settingsTab = setTab.dataset.setTab; state.view = 'settings'; render(); return; }
+  if (t.closest('#topSettingsBtn')) { state.settingsTab = 'general'; state.view = 'settings'; render(); return; }
+  if (t.closest('#topShortcutsBtn')) { state.settingsTab = 'keys'; state.view = 'settings'; render(); return; }
+  if (t.closest('#credBtn') || t.closest('[data-jump-settings]')) { state.settingsTab = 'labels'; state.view = 'settings'; render(); return; }
+  const lblColor = t.closest('[data-lbl-color]');
+  if (lblColor) { state.labelColor = lblColor.dataset.lblColor; render(); return; }
+  const prefDiff = t.closest('[data-pref-diff]');
+  if (prefDiff) { state.settings.diff = prefDiff.dataset.prefDiff; state.diffMode = state.settings.diff; render(); return; }
+  const prefCommits = t.closest('[data-pref-commits]');
+  if (prefCommits) { state.settings.commits = prefCommits.dataset.prefCommits; state.commitsMode = state.settings.commits; render(); return; }
+  if (t.closest('#prefWrap')) { state.settings.wrap = !state.settings.wrap; state.diffWrap = state.settings.wrap; render(); return; }
+  if (t.closest('#prefAbout')) { state.settings.about = !state.settings.about; render(); return; }
+});
+
+document.addEventListener('change', (e) => {
+  const chk = e.target.closest('[data-chk-viewed]');
+  if (chk) {
+    const d = PR_DIFFS.find(x => x.file === chk.dataset.chkViewed);
+    if (d) d.viewed = chk.checked;
+    render();
+  }
+});
+
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'codeFilterInput') {
+    state.codeFilter = e.target.value;
+    render();
+    const inp = document.getElementById('codeFilterInput');
+    if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  }
+});
+
+document.addEventListener('mouseover', (e) => {
+  const cell = e.target.closest('[data-heat]');
+  if (cell) {
+    const tip = document.getElementById('heatTip');
+    if (tip) tip.textContent = cell.dataset.heat;
+  }
+});
+
+window.addEventListener('resize', () => {
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

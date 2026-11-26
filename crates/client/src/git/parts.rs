@@ -1,797 +1,20 @@
-//! Shared types, helpers, and controls for the Git app (`git/parts.tsx`, `shared/git.ts`, `shared/history.ts`).
+//! Shared UI controls for the Git app (`git/parts.tsx`) plus `model` re-exports
+//! preserved for external callers (`history.rs`, `agent/*`).
 
 use std::collections::HashSet;
 
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use serde::Deserialize;
-use serde::de::DeserializeOwned;
 use wasm_bindgen::JsCast;
 
-use crate::api::{self, BrowserSession, Req};
+pub use super::model::*;
+
+use super::diff::{Diff, DiffMode};
+use crate::api::{self, BrowserSession};
 use crate::icons::Icon;
 use crate::shell::Avatar;
 use crate::ui::{document, listen, unique_id, use_floating, window};
-
-use super::diff::Diff;
-
-// ---- Shared constants & data shapes (shared/history.ts & shared/git.ts) -------------------------
-
-pub const API: &str = "/api/v1/git";
-pub const HISTORY_LIMITS_FILES: usize = 2000;
-pub const HISTORY_LIMITS_DEPTH: usize = 32;
-pub const HISTORY_LIMITS_REPOS: usize = 50;
-pub const HISTORY_LIMITS_MESSAGE_BYTES: usize = 2048;
-
-pub const GIT_LABEL_COLORS: [&str; 9] = [
-    "plum", "violet", "blue", "teal", "green", "amber", "orange", "rose", "gray",
-];
-
-pub const TRACKER_LIMITS_TITLE: usize = 256;
-pub const TRACKER_LIMITS_BODY: usize = 65_536;
-pub const TRACKER_LIMITS_LABEL_NAME: usize = 50;
-pub const TRACKER_LIMITS_LABEL_DESCRIPTION: usize = 200;
-pub const TRACKER_LIMITS_LABELS_PER_ITEM: usize = 10;
-pub const TRACKER_LIMITS_PAGE: usize = 500;
-
-pub fn repo_api(id: &str) -> String {
-    format!("{API}/repositories/{id}")
-}
-
-pub fn git_path(folder_id: &str) -> String {
-    format!("/dav/git/{folder_id}.git")
-}
-
-pub fn encode_uri(value: &str) -> String {
-    format!("{}", js_sys::encode_uri_component(value))
-}
-
-pub fn query_string(pairs: &[(&str, &str)]) -> String {
-    pairs
-        .iter()
-        .map(|(k, v)| {
-            format!(
-                "{}={}",
-                js_sys::encode_uri_component(k),
-                js_sys::encode_uri_component(v)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("&")
-}
-
-pub fn format_int(n: usize) -> String {
-    let s = n.to_string();
-    let bytes = s.as_bytes();
-    let mut out = String::with_capacity(s.len() + s.len() / 3);
-    for (i, &b) in bytes.iter().enumerate() {
-        if i > 0 && (bytes.len() - i) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(b as char);
-    }
-    out
-}
-
-pub fn plural(count: usize, one: &str, many: Option<&str>) -> String {
-    if count == 1 {
-        format!("{} {one}", format_int(count))
-    } else if let Some(many) = many {
-        format!("{} {many}", format_int(count))
-    } else {
-        format!("{} {one}s", format_int(count))
-    }
-}
-
-pub fn short(sha: &str) -> String {
-    sha.chars().take(7).collect()
-}
-
-pub fn source_label(source: &str) -> &'static str {
-    match source {
-        "git" => "Git push",
-        "dar" => "Dar",
-        "agent" => "Agent",
-        _ => "Dar",
-    }
-}
-
-pub fn source_icon(source: &str) -> &'static str {
-    match source {
-        "git" => "upload",
-        "dar" => "folder",
-        "agent" => "agent",
-        _ => "folder",
-    }
-}
-
-pub fn kind_label(kind: &str) -> &'static str {
-    match kind {
-        "added" => "Added",
-        "modified" => "Modified",
-        "deleted" => "Deleted",
-        "renamed" => "Renamed",
-        _ => "Modified",
-    }
-}
-
-// ---- History API shapes -------------------------------------------------------------------------
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryChange {
-    pub path: String,
-    #[serde(default)]
-    pub previous_path: Option<String>,
-    pub kind: String,
-    #[serde(default)]
-    pub file_id: Option<String>,
-    #[serde(default)]
-    pub version_id: Option<String>,
-    #[serde(default)]
-    pub previous_version_id: Option<String>,
-    #[serde(default)]
-    pub size: Option<f64>,
-    #[serde(default)]
-    pub previous_size: Option<f64>,
-    #[serde(default)]
-    pub media_type: Option<String>,
-    #[serde(default)]
-    pub previous_media_type: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryChangeset {
-    pub id: String,
-    pub sequence: u64,
-    pub kind: String,
-    pub message: String,
-    pub author: String,
-    pub created_at: f64,
-    pub file_count: usize,
-    #[serde(default)]
-    pub sha: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryBranch {
-    pub name: String,
-    pub thread_id: String,
-    pub message: String,
-    pub author: String,
-    pub created_at: f64,
-    pub modified_at: f64,
-    #[serde(default)]
-    pub changes: Vec<HistoryChange>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryFolder {
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryRepo {
-    pub revision: u64,
-    pub head_id: String,
-    pub sequence: u64,
-    pub created_at: f64,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryStatus {
-    #[serde(default)]
-    pub changes: Vec<HistoryChange>,
-    pub token: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryGitRef {
-    pub name: String,
-    pub sha: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryOverview {
-    pub folder: HistoryFolder,
-    pub tracked: bool,
-    pub can_write: bool,
-    pub owner: bool,
-    #[serde(default)]
-    pub blocked: Option<String>,
-    #[serde(default)]
-    pub repo: Option<HistoryRepo>,
-    #[serde(default)]
-    pub status: Option<HistoryStatus>,
-    #[serde(default)]
-    pub branches: Vec<HistoryBranch>,
-    #[serde(default)]
-    pub git_refs: Vec<HistoryGitRef>,
-    #[serde(default)]
-    pub changesets: Vec<HistoryChangeset>,
-    #[serde(default)]
-    pub next_before: Option<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryDetail {
-    pub changeset: HistoryChangeset,
-    #[serde(default)]
-    pub changes: Vec<HistoryChange>,
-}
-
-// ---- Git API shapes -----------------------------------------------------------------------------
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitRef {
-    pub name: String,
-    pub kind: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitClone {
-    pub alias: String,
-    pub id: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitRepository {
-    pub id: String,
-    pub name: String,
-    pub path: String,
-    pub parent_id: String,
-    pub created_at: f64,
-    pub revision: u64,
-    pub dirty: i64,
-    #[serde(default)]
-    pub agent_branches: usize,
-    #[serde(default)]
-    pub size: f64,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub commits: usize,
-    #[serde(default)]
-    pub branches: usize,
-    #[serde(default)]
-    pub tags: usize,
-    pub updated_at: f64,
-    #[serde(default)]
-    pub weeks: Vec<usize>,
-    pub clone: GitClone,
-    pub role: String,
-    #[serde(default)]
-    pub owner: Option<String>,
-    #[serde(default)]
-    pub open_issues: usize,
-    #[serde(default)]
-    pub open_pulls: usize,
-    #[serde(default)]
-    pub error: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitCommit {
-    pub sha: String,
-    #[serde(default)]
-    pub parents: Vec<String>,
-    pub author: String,
-    pub time: f64,
-    pub subject: String,
-    pub source: String,
-    #[serde(default)]
-    pub refs: Vec<GitRef>,
-    #[serde(default)]
-    pub added: usize,
-    #[serde(default)]
-    pub removed: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitFileChange {
-    pub path: String,
-    #[serde(default)]
-    pub previous_path: Option<String>,
-    pub kind: String,
-    #[serde(default)]
-    pub added: usize,
-    #[serde(default)]
-    pub removed: usize,
-    #[serde(default)]
-    pub binary: bool,
-    #[serde(default)]
-    pub patch: Option<String>,
-    #[serde(default)]
-    pub truncated: Option<bool>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitCommitRestore {
-    pub changeset_id: String,
-    pub revision: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitCommitDetail {
-    pub sha: String,
-    #[serde(default)]
-    pub parents: Vec<String>,
-    pub author: String,
-    pub time: f64,
-    pub subject: String,
-    pub source: String,
-    #[serde(default)]
-    pub refs: Vec<GitRef>,
-    #[serde(default)]
-    pub added: usize,
-    #[serde(default)]
-    pub removed: usize,
-    #[serde(default)]
-    pub body: String,
-    pub committer: String,
-    pub committed_at: f64,
-    #[serde(default)]
-    pub files: Vec<GitFileChange>,
-    #[serde(default)]
-    pub restore: Option<GitCommitRestore>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitMergeResult {
-    pub sha: String,
-    pub fast_forward: bool,
-    pub deleted: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitCommitPage {
-    #[serde(default)]
-    pub commits: Vec<GitCommit>,
-    #[serde(default)]
-    pub total: usize,
-    #[serde(default)]
-    pub next: Option<usize>,
-    #[serde(default)]
-    pub authors: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitTreeEntryLast {
-    pub sha: String,
-    pub subject: String,
-    pub time: f64,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitTreeEntry {
-    pub name: String,
-    pub path: String,
-    #[serde(rename = "type")]
-    pub kind: String,
-    #[serde(default)]
-    pub size: f64,
-    #[serde(default)]
-    pub last: Option<GitTreeEntryLast>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitTreeReadme {
-    pub path: String,
-    pub text: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitTree {
-    #[serde(rename = "ref")]
-    pub git_ref: String,
-    pub sha: String,
-    pub path: String,
-    #[serde(default)]
-    pub entries: Vec<GitTreeEntry>,
-    #[serde(default)]
-    pub readme: Option<GitTreeReadme>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitBranch {
-    pub name: String,
-    pub sha: String,
-    pub subject: String,
-    pub author: String,
-    pub time: f64,
-    #[serde(default)]
-    pub ahead: usize,
-    #[serde(default)]
-    pub behind: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitAgentBranch {
-    pub name: String,
-    pub thread_id: String,
-    pub message: String,
-    pub author: String,
-    pub modified_at: f64,
-    #[serde(default)]
-    pub files: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitBranches {
-    #[serde(default)]
-    pub main: Option<GitBranch>,
-    #[serde(default)]
-    pub branches: Vec<GitBranch>,
-    #[serde(default)]
-    pub agent: Vec<GitAgentBranch>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitTag {
-    pub name: String,
-    pub sha: String,
-    pub target: String,
-    #[serde(default)]
-    pub message: String,
-    #[serde(default)]
-    pub author: String,
-    pub time: f64,
-    #[serde(default)]
-    pub annotated: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitCompare {
-    pub base: String,
-    pub head: String,
-    pub base_sha: String,
-    pub head_sha: String,
-    #[serde(default)]
-    pub ahead: Vec<GitCommit>,
-    #[serde(default)]
-    pub behind: usize,
-    #[serde(default)]
-    pub fast_forward: bool,
-    #[serde(default)]
-    pub mergeable: bool,
-    #[serde(default)]
-    pub files: Vec<GitFileChange>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitEvent {
-    pub repo_id: String,
-    pub repo_name: String,
-    pub sha: String,
-    pub subject: String,
-    pub author: String,
-    pub time: f64,
-    pub source: String,
-    #[serde(default)]
-    pub refs: Vec<GitRef>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitActivity {
-    #[serde(default)]
-    pub times: Vec<f64>,
-    #[serde(default)]
-    pub events: Vec<GitEvent>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitLabel {
-    pub id: String,
-    pub name: String,
-    pub color: String,
-    #[serde(default)]
-    pub description: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitIssueSummary {
-    pub number: u32,
-    pub kind: String,
-    pub title: String,
-    pub state: String,
-    pub author: String,
-    pub created_at: f64,
-    pub updated_at: f64,
-    #[serde(default)]
-    pub closed_at: Option<f64>,
-    #[serde(default)]
-    pub comments: usize,
-    #[serde(default)]
-    pub labels: Vec<String>,
-    #[serde(default)]
-    pub base: Option<String>,
-    #[serde(default)]
-    pub head: Option<String>,
-    #[serde(default)]
-    pub agent: Option<bool>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitIssueList {
-    #[serde(default)]
-    pub items: Vec<GitIssueSummary>,
-    #[serde(default)]
-    pub open: usize,
-    #[serde(default)]
-    pub closed: usize,
-    #[serde(default)]
-    pub labels: Vec<GitLabel>,
-    #[serde(default)]
-    pub truncated: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum GitTimelineItem {
-    #[serde(rename_all = "camelCase")]
-    Comment {
-        id: String,
-        author: String,
-        body: String,
-        created_at: f64,
-        #[serde(default)]
-        edited_at: Option<f64>,
-        #[serde(default)]
-        can_edit: bool,
-        #[serde(default)]
-        can_delete: bool,
-    },
-    #[serde(rename_all = "camelCase")]
-    Event {
-        id: String,
-        event: String,
-        author: String,
-        created_at: f64,
-        #[serde(default)]
-        number: Option<u32>,
-        #[serde(default)]
-        title: Option<String>,
-        #[serde(default)]
-        from: Option<String>,
-        #[serde(default)]
-        to: Option<String>,
-        #[serde(default)]
-        label: Option<String>,
-        #[serde(default)]
-        sha: Option<String>,
-    },
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitIssuePermissions {
-    #[serde(default)]
-    pub edit: bool,
-    #[serde(default)]
-    pub close: bool,
-    #[serde(default)]
-    pub label: bool,
-    #[serde(default)]
-    pub merge: bool,
-    #[serde(default)]
-    pub comment: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitIssue {
-    pub number: u32,
-    pub kind: String,
-    pub title: String,
-    pub state: String,
-    pub author: String,
-    pub created_at: f64,
-    pub updated_at: f64,
-    #[serde(default)]
-    pub closed_at: Option<f64>,
-    #[serde(default)]
-    pub comments: usize,
-    #[serde(default)]
-    pub labels: Vec<String>,
-    #[serde(default)]
-    pub base: Option<String>,
-    #[serde(default)]
-    pub head: Option<String>,
-    #[serde(default)]
-    pub agent: Option<bool>,
-    #[serde(default)]
-    pub body: String,
-    pub revision: u64,
-    #[serde(default)]
-    pub closed_by: Option<String>,
-    #[serde(default)]
-    pub timeline: Vec<GitTimelineItem>,
-    #[serde(default)]
-    pub base_sha: Option<String>,
-    #[serde(default)]
-    pub head_sha: Option<String>,
-    #[serde(default)]
-    pub merged_sha: Option<String>,
-    #[serde(default)]
-    pub permissions: GitIssuePermissions,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitPullAgent {
-    #[serde(default)]
-    pub changes: Vec<HistoryChange>,
-    pub revision: u64,
-    pub thread_id: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitPullChanges {
-    #[serde(default)]
-    pub compare: Option<GitCompare>,
-    #[serde(default)]
-    pub agent: Option<GitPullAgent>,
-    #[serde(default)]
-    pub note: Option<String>,
-}
-
-// ---- Shared helpers -----------------------------------------------------------------------------
-
-pub fn copy(text: String, notify: Callback<String>, what: &'static str) {
-    spawn_local(async move {
-        let promise = window().navigator().clipboard().write_text(&text);
-        match wasm_bindgen_futures::JsFuture::from(promise).await {
-            Ok(_) => notify.run(format!("Copied {what}")),
-            Err(_) => notify.run("Select the text and copy it".to_owned()),
-        }
-    });
-}
-
-pub struct LoadState<T: Clone + Send + Sync + 'static> {
-    pub value: RwSignal<Option<T>>,
-    pub error: RwSignal<String>,
-    pub retry: Callback<()>,
-    sequence: RwSignal<u64>,
-}
-
-impl<T: Clone + Send + Sync + 'static> Clone for LoadState<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<T: Clone + Send + Sync + 'static> Copy for LoadState<T> {}
-
-impl<T: Clone + Send + Sync + 'static> LoadState<T> {
-    /// Sets a value fetched outside the loader (after a change), discarding any load still in
-    /// flight: it started earlier, so it would overwrite the newer value with an older one.
-    pub fn set(&self, next: T) {
-        let _ = self.sequence.try_update(|n| *n += 1);
-        let _ = self.value.try_set(Some(next));
-    }
-}
-
-pub fn use_load<T>(url: Signal<Option<String>>, trigger: Signal<u64>) -> LoadState<T>
-where
-    T: DeserializeOwned + Clone + Send + Sync + 'static,
-{
-    let value: RwSignal<Option<T>> = RwSignal::new(None);
-    let error = RwSignal::new(String::new());
-    let attempt = RwSignal::new(0u64);
-    let sequence = RwSignal::new(0u64);
-    Effect::new(move |_| {
-        let target = url.get();
-        let _ = trigger.get();
-        let _ = attempt.get();
-        let Some(target) = target else { return };
-        let id = sequence.get_untracked() + 1;
-        sequence.set(id);
-        error.set(String::new());
-        let abort = web_sys::AbortController::new().ok();
-        let signal = abort.as_ref().map(|a| a.signal());
-        if let Some(abort) = abort {
-            let abort = send_wrapper::SendWrapper::new(abort);
-            on_cleanup(move || abort.abort());
-        }
-        spawn_local(async move {
-            let check = signal.clone();
-            let result = api::request::<T>(
-                &target,
-                Req {
-                    signal,
-                    ..Default::default()
-                },
-            )
-            .await;
-            if sequence.try_get_untracked() != Some(id)
-                || check.as_ref().is_some_and(|s| s.aborted())
-            {
-                return;
-            }
-            match result {
-                Ok(v) => {
-                    let _ = value.try_set(Some(v));
-                }
-                Err(e) => {
-                    let _ = error.try_set(e.message);
-                }
-            }
-        });
-    });
-    let retry = Callback::new(move |_| attempt.update(|n| *n += 1));
-    LoadState {
-        value,
-        error,
-        retry,
-        sequence,
-    }
-}
-
-pub fn focus_sheet(root: NodeRef<html::Div>) {
-    Effect::new(move |_| {
-        if let Some(el) = root.get() {
-            let options = web_sys::FocusOptions::new();
-            options.set_prevent_scroll(true);
-            let _ = el.focus_with_options(&options);
-        }
-    });
-}
-
-pub fn sheet_keydown(event: web_sys::KeyboardEvent, on_close: Callback<()>) {
-    if event.key() == "Escape" {
-        let inside_popup = event
-            .target()
-            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-            .and_then(|el| {
-                el.closest("[role=menu],[role=listbox],[role=dialog]")
-                    .ok()
-                    .flatten()
-            })
-            .is_some();
-        if !inside_popup {
-            event.prevent_default();
-            {
-                on_close.try_run(());
-            };
-        }
-    }
-}
-
-// ---- Shared UI parts ----------------------------------------------------------------------------
 
 #[component]
 pub fn SourceChip(#[prop(into)] source: String) -> impl IntoView {
@@ -811,9 +34,70 @@ pub fn Sha(#[prop(into)] sha: String) -> impl IntoView {
 #[component]
 pub fn Person(#[prop(into)] name: String, #[prop(optional, into)] source: String) -> impl IntoView {
     if source == "agent" {
-        view! { <span class="avatar git-agent-avatar" aria-hidden="true"><Icon name="agent"/></span> }.into_any()
+        view! { <span class="avatar git-agent-avatar" aria-hidden="true"><Icon name="agent"/></span> }
+            .into_any()
     } else {
         view! { <Avatar name=name/> }.into_any()
+    }
+}
+
+#[component]
+pub fn RepoMark(
+    #[prop(into)] name: String,
+    #[prop(optional, into)] size: &'static str,
+) -> impl IntoView {
+    let initial = name
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_else(|| "?".to_owned());
+    let class = format!("git-mark hue-{} {size}", hue(&name));
+    view! { <span class=class aria-hidden="true">{initial}</span> }
+}
+
+/// Commits per week as bars; heights use fixed CSS classes scaled to the busiest week.
+#[component]
+pub fn Spark(weeks: Vec<usize>, #[prop(into)] label: String) -> impl IntoView {
+    let max = weeks.iter().copied().max().unwrap_or(1).max(1) as f64;
+    view! {
+        <span class="git-spark" role="img" aria-label=label>
+            {weeks.into_iter().map(|value| {
+                let h = if value == 0 {
+                    0
+                } else {
+                    ((value as f64 / max * 8.0).round() as usize).max(1)
+                };
+                view! { <i class=format!("h{h}")></i> }
+            }).collect_view()}
+        </span>
+    }
+}
+
+#[component]
+pub fn Refs(refs: Vec<GitRef>) -> impl IntoView {
+    view! {
+        {refs.into_iter().map(|item| {
+            let icon = if item.kind == "tag" { "tag" } else { "branch" };
+            view! {
+                <span class=format!("git-ref is-{}", item.kind)>
+                    <Icon name=icon/>
+                    {item.name}
+                </span>
+            }
+        }).collect_view()}
+    }
+}
+
+#[component]
+pub fn BranchPair(#[prop(into)] head: String, #[prop(into)] base: String) -> impl IntoView {
+    let sr = format!("{head} into {base}");
+    view! {
+        <span class="git-branch-pair">
+            <code>{head}</code>
+            <Icon name="arrowRight" class="git-pair-arrow"/>
+            <code>{base}</code>
+            <span class="sr-only">{sr}</span>
+        </span>
     }
 }
 
@@ -844,6 +128,8 @@ pub fn Loading(#[prop(into)] label: String) -> impl IntoView {
 pub fn SheetHead(
     title: AnyView,
     #[prop(optional)] children: Option<Children>,
+    #[prop(optional)] expanded: Option<Signal<bool>>,
+    #[prop(optional)] on_expand: Option<Callback<()>>,
     on_close: Callback<()>,
 ) -> impl IntoView {
     view! {
@@ -851,21 +137,46 @@ pub fn SheetHead(
             <button class="icon-button git-sheet-back" aria-label="Close" on:click=move |_| { on_close.try_run(()); }><Icon name="back"/></button>
             <h2>{title}</h2>
             {children.map(|c| c())}
+            {on_expand.map(|toggle| {
+                let is_exp = move || expanded.is_some_and(|e| e.get());
+                view! {
+                    <button
+                        type="button"
+                        class=move || if is_exp() { "icon-button git-sheet-expand is-active" } else { "icon-button git-sheet-expand" }
+                        aria-label=move || if is_exp() { "Dock side panel" } else { "Expand side panel" }
+                        aria-pressed=move || is_exp().to_string()
+                        title=move || if is_exp() { "Restore panel width" } else { "Expand full width" }
+                        on:click=move |_| { toggle.try_run(()); }
+                    >
+                        <Icon name=Signal::derive(move || if is_exp() { "fitWidth" } else { "expand" })/>
+                    </button>
+                }
+            })}
             <button class="icon-button git-sheet-close" aria-label="Close" title="Close (Escape)" on:click=move |_| { on_close.try_run(()); }><Icon name="close"/></button>
         </div>
     }
 }
 
 #[component]
-pub fn FileChanges(files: Vec<GitFileChange>, #[prop(into)] wrap: Signal<bool>) -> impl IntoView {
+pub fn FileChanges(
+    files: Vec<GitFileChange>,
+    #[prop(into)] wrap: Signal<bool>,
+    #[prop(optional, into)] mode: Option<Signal<DiffMode>>,
+    #[prop(optional)] viewed: Option<RwSignal<HashSet<String>>>,
+    #[prop(optional)] open_files: Option<RwSignal<HashSet<String>>>,
+) -> impl IntoView {
     let initial: HashSet<String> = files.iter().take(5).map(|f| f.path.clone()).collect();
-    let open = RwSignal::new(initial);
+    let open = open_files.unwrap_or_else(|| RwSignal::new(initial));
+    let diff_mode = Signal::derive(move || mode.map(|m| m.get()).unwrap_or_default());
+
     view! {
         <div class="git-diffs">
             {files.into_iter().map(|file| {
                 let path_toggle = file.path.clone();
                 let path_open = file.path.clone();
                 let path_body = file.path.clone();
+                let path_view_check = file.path.clone();
+                let path_view_toggle = file.path.clone();
                 let heading = match &file.previous_path {
                     Some(prev) => format!("{prev} \u{2192} {}", file.path),
                     None => file.path.clone(),
@@ -876,38 +187,84 @@ pub fn FileChanges(files: Vec<GitFileChange>, #[prop(into)] wrap: Signal<bool>) 
                 let stat = if file.binary {
                     view! { "Binary" }.into_any()
                 } else {
-                    view! { <span class="git-added">{format!("+{}", file.added)}</span>" "<span class="git-removed">{format!("\u{2212}{}", file.removed)}</span> }.into_any()
+                    view! {
+                        <span class="git-added">{format!("+{}", file.added)}</span>
+                        " "
+                        <span class="git-removed">{format!("\u{2212}{}", file.removed)}</span>
+                    }.into_any()
                 };
                 let patch = StoredValue::new(file.patch);
                 let binary = file.binary;
                 let truncated = file.truncated.unwrap_or(false);
                 let renamed = file.kind == "renamed";
-                view! {
-                    <section class="git-diff">
+                let viewed_btn = viewed.map(|v_sig| {
+                    let p_check = path_view_check.clone();
+                    let p_toggle = path_view_toggle.clone();
+                    let is_viewed = Memo::new(move |_| v_sig.with(|set| set.contains(&p_check)));
+                    let collapse_target = p_toggle.clone();
+                    view! {
                         <button
                             type="button"
-                            class="git-diff-head"
-                            aria-expanded=move || is_open.get().to_string()
-                            on:click=move |_| {
-                                let p = path_toggle.clone();
-                                open.update(|set| {
+                            class=move || if is_viewed.get() { "git-viewed-pill is-viewed" } else { "git-viewed-pill" }
+                            aria-pressed=move || is_viewed.get().to_string()
+                            on:click=move |ev| {
+                                ev.stop_propagation();
+                                let p = p_toggle.clone();
+                                let c = collapse_target.clone();
+                                let mut now_viewed = false;
+                                v_sig.update(|set| {
                                     if !set.remove(&p) {
                                         set.insert(p);
+                                        now_viewed = true;
                                     }
                                 });
+                                if now_viewed {
+                                    open.update(|set| {
+                                        set.remove(&c);
+                                    });
+                                }
                             }
                         >
-                            {move || if is_open.get() { view! { <Icon name="chevron" class="is-open"/> }.into_any() } else { view! { <Icon name="chevron"/> }.into_any() }}
-                            <span class="git-diff-path">{heading}</span>
-                            <span class=kind_class>{kind_text}</span>
-                            <span class="git-stat">{stat}</span>
+                            {move || if is_viewed.get() { "\u{2713} Viewed" } else { "Viewed" }}
                         </button>
+                    }
+                });
+
+                view! {
+                    <section class="git-diff">
+                        <div class=move || if is_open.get() { "git-diff-head-row is-open" } else { "git-diff-head-row" }>
+                            <button
+                                type="button"
+                                class="git-diff-head"
+                                aria-expanded=move || is_open.get().to_string()
+                                on:click=move |_| {
+                                    let p = path_toggle.clone();
+                                    open.update(|set| {
+                                        if !set.remove(&p) {
+                                            set.insert(p);
+                                        }
+                                    });
+                                }
+                            >
+                                {move || if is_open.get() {
+                                    view! { <Icon name="chevron" class="is-open"/> }.into_any()
+                                } else {
+                                    view! { <Icon name="chevron"/> }.into_any()
+                                }}
+                                <span class="git-diff-path">{heading}</span>
+                                <span class=kind_class>{kind_text}</span>
+                                <span class="git-stat">{stat}</span>
+                            </button>
+                            {viewed_btn}
+                        </div>
                         {move || {
                             if !is_open.get() {
                                 return None;
                             }
                             Some(match patch.get_value() {
-                                Some(source) => view! { <Diff source=source wrap=wrap label=format!("Changes to {path_body}")/> }.into_any(),
+                                Some(source) => view! {
+                                    <Diff source=source wrap=wrap mode=diff_mode label=format!("Changes to {path_body}")/>
+                                }.into_any(),
                                 None => {
                                     let hint = if binary {
                                         "Binary file; no line changes to show."
@@ -929,7 +286,7 @@ pub fn FileChanges(files: Vec<GitFileChange>, #[prop(into)] wrap: Signal<bool>) 
     }
 }
 
-/// Merging from the web: fast-forward, or a merge commit when the branches have diverged.
+/// Merging from the web: fast-forward, or a merge commit with multi-line commit message box.
 #[component]
 pub fn MergeBox(
     repo: GitRepository,
@@ -994,8 +351,8 @@ pub fn MergeBox(
                     on_merged.try_run(result);
                 }
                 Err(cause) => {
-                    error.try_set(cause.message);
-                    busy.try_set(false);
+                    let _ = error.try_set(cause.message);
+                    let _ = busy.try_set(false);
                 }
             }
         });
@@ -1045,8 +402,10 @@ pub fn MergeBox(
                     view! {
                         <label class="git-field" for=mid_for>
                             "Message"
-                            <input
+                            <textarea
                                 id=mid
+                                class="git-merge-textarea"
+                                rows="3"
                                 prop:value=move || text.get()
                                 maxlength="2000"
                                 placeholder=ph
@@ -1104,9 +463,8 @@ pub fn MergeBox(
     }
 }
 
-// ---- Local reactive controls (matching controls.tsx & settings-sheet.tsx) -----------------------
+// ---- Reactive segmented and select controls -----------------------------------------------------
 
-/// Segmented radio group supporting reactive option labels and `disabled`.
 #[component]
 pub fn GitSegmented(
     #[prop(into)] label: Signal<String>,
@@ -1173,7 +531,6 @@ fn focus_option_by_key(items: &[web_sys::HtmlElement], key: &str) -> bool {
     true
 }
 
-/// Reactive themed listbox select supporting dynamic options, `class`, and `disabled`.
 #[component]
 pub fn GitSelect(
     #[prop(into)] options: Signal<Vec<(String, String)>>,
