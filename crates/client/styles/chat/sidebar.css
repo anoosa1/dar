@@ -1,0 +1,540 @@
+/* Chat sidebar: account switcher tabs, chat views, Discord server/channel tree,
+   and compact bottom connection status strip. */
+
+.chat-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.chat-sidebar .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.chat-side-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Account switcher pill strip (names always visible on every tab). */
+.chat-accounts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  margin: 0 0 10px;
+  padding: 3px;
+  border: 1px solid var(--sheet-border);
+  border-radius: 15px;
+  background: var(--hover);
+  flex: none;
+}
+
+.chat-account-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 7px 0 4px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 580;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+
+.chat-account-tab:hover {
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  color: var(--text);
+}
+
+.chat-account-tab.is-current {
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 640;
+  box-shadow: 0 1px 3px var(--shadow);
+}
+
+.chat-account-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chat-account-name {
+  display: inline;
+  min-width: 0;
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-platform {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.chat-platform .icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.3;
+}
+
+.chat-platform.is-whatsapp {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.chat-platform.is-discord {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+.chat-account-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--muted);
+}
+
+.chat-account-dot.is-online {
+  background: var(--success);
+}
+
+.chat-account-dot.is-warn {
+  background: var(--warning);
+}
+
+.chat-account-dot.is-err {
+  background: var(--danger);
+}
+
+.chat-account-count {
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-account-tab.is-current .chat-account-count {
+  background: var(--tonal);
+  color: var(--on-tonal);
+}
+
+.chat-account-add {
+  flex: none;
+  margin-left: auto;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 10px;
+  color: var(--muted);
+}
+
+.chat-account-add:hover {
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  color: var(--text);
+}
+
+.chat-account-add .icon {
+  width: 15px;
+  height: 15px;
+}
+
+/* Mobile inline account strip above the list (hidden on desktop). */
+.chat-accounts.chat-main-accounts,
+.chat-main-accounts {
+  display: none;
+}
+
+/* View rows. */
+.chat-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.nav-item.active .chat-count {
+  color: inherit;
+  opacity: .85;
+}
+
+/* Discord server & channel tree (sentence-case headings). */
+.chat-sidebar .chat-servers {
+  flex: 1 1 auto;
+  min-height: 96px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  margin: 4px -4px 0;
+  padding: 0 4px 6px;
+}
+
+.chat-tree-heading {
+  margin: 10px 12px 4px;
+  font-size: 11.5px;
+  font-weight: 620;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.chat-tree-hint {
+  margin: 10px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chat-server {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-server-row {
+  font-weight: 600;
+}
+
+.chat-server-row.is-unread .chat-row-title {
+  color: var(--text);
+}
+
+.chat-server-row.is-muted {
+  opacity: .68;
+}
+
+.chat-server-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.chat-server-chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  color: var(--muted);
+  transition: transform .15s;
+}
+
+.chat-mentions + .chat-server-chevron {
+  margin-left: 6px;
+}
+
+.chat-server-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.chat-category-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 26px;
+  padding: 6px 10px 3px 22px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-category-toggle:hover {
+  color: var(--text);
+}
+
+.chat-category-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.chat-category-toggle .icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  transition: transform .15s;
+}
+
+.chat-category-toggle.is-open .icon {
+  transform: rotate(90deg);
+}
+
+.chat-channels {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+}
+
+.chat-section {
+  padding: 8px 12px 2px 30px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.chat-sidebar .nav-item.chat-channel {
+  min-height: 32px;
+  padding: 5px 10px 5px 28px;
+  border-radius: 12px;
+  color: var(--muted);
+}
+
+.chat-sidebar .nav-item.chat-channel.is-unread {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.chat-sidebar .nav-item.chat-channel.active {
+  color: var(--on-tonal);
+}
+
+.chat-channel.is-muted {
+  opacity: .6;
+}
+
+.chat-channel .icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.chat-channel-muted {
+  margin-left: auto;
+  width: 13px;
+  height: 13px;
+}
+
+.chat-mentions {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--danger);
+  color: var(--on-danger);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-mentions + .chat-channel-muted {
+  margin-left: 6px;
+}
+
+/* Compact single-line status strip at the bottom of the sidebar. */
+.chat-status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  min-height: 36px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--sheet-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 84%, transparent);
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.chat-status > .icon {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--success);
+}
+
+.chat-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--success);
+}
+
+.chat-status.is-warning .chat-status-dot {
+  background: var(--warning);
+}
+
+.chat-status.is-error .chat-status-dot {
+  background: var(--danger);
+}
+
+.chat-status-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.chat-status-text b {
+  flex: none;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.chat-status-text > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-status:is(.is-warning, .is-error) .chat-status-text {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  white-space: normal;
+}
+
+.chat-status:is(.is-warning, .is-error) .chat-status-text > span {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.chat-status .text-button {
+  min-height: 0;
+  padding: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.chat-status .ui-menu-trigger,
+.chat-status .icon-button {
+  min-width: 26px;
+  width: 26px;
+  min-height: 26px;
+  height: 26px;
+  padding: 4px;
+  border-radius: 8px;
+  color: var(--muted);
+  flex: none;
+}
+
+.chat-status .ui-menu-trigger:hover,
+.chat-status .icon-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.chat-status.is-warning {
+  background: var(--warning-soft);
+  border-color: transparent;
+  color: var(--warning);
+}
+
+.chat-status.is-warning > .icon,
+.chat-status.is-warning b {
+  color: var(--warning);
+}
+
+.chat-status.is-error {
+  background: var(--error-soft);
+  border-color: transparent;
+  color: var(--danger);
+}
+
+.chat-status.is-error > .icon,
+.chat-status.is-error b {
+  color: var(--danger);
+}
+
+.chat-sidebar .ui-app-settings-entry {
+  margin-top: 6px;
+}
+
+@media (max-width: 800px) {
+  .chat-accounts {
+    margin: 0 0 8px;
+  }
+
+  .chat-accounts.chat-main-accounts,
+  .chat-main-accounts {
+    display: flex;
+    margin: 0 10px 6px;
+    flex: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-account-tab,
+  .chat-server-chevron,
+  .chat-category-toggle .icon {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .chat-account-tab.is-current,
+  .chat-sidebar .nav-item.active {
+    outline: 2px solid Highlight;
+  }
+}

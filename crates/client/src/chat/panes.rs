@@ -1,5 +1,5 @@
-//! Chat's editing panes and settings sheet (`LinkPane`, `NewChatPane`, `NewMessagePane`,
-//! `SaveMediaPane`, `AddContactPane`, `RenamePane`, `ChatSettings` in `chat/workspace.tsx`).
+//! Chat's editing panes (`LinkPane`, `NewChatPane`, `NewMessagePane`, `SaveMediaPane`,
+//! `AddContactPane`, `RenamePane`).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,24 +10,21 @@ use leptos::task::spawn_local;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::workspace::{ChatAvatar, narrow, now, phone_of};
-use super::{
-    BASE, CHAT_LIMITS_ACCOUNTS, CHAT_LIMITS_NAME, ChatAccount, ChatFriend, ChatLinkState,
-    ChatMessage, ChatThread, local_name, platform_name, qr_matrix, qr_path, search_params,
+use super::model::{
+    BASE, CHAT_LIMITS_NAME, ChatAccount, ChatAvatar, ChatFriend, ChatLinkState, ChatMessage,
+    ChatThread, local_name, narrow, now, phone_of, platform_name, qr_matrix, qr_path,
+    search_params, window_clipboard_write,
 };
 use crate::api::{self, BrowserSession, Req, format_bytes};
 use crate::files::picker::{FolderPicker, Selection};
 use crate::files::types::FileTile;
 use crate::icons::Icon;
-use crate::settings::{Segmented, SettingRow, SettingsSheet};
-use crate::ui::{ActionMenu, EditorPane, MenuAction, Select};
+use crate::settings::Segmented;
+use crate::ui::{EditorPane, Select};
 
-fn write_clipboard(text: &str) {
-    let _ = crate::ui::window().navigator().clipboard().write_text(text);
-}
-
+/// Right editing pane for saving an attachment into Dar Files.
 #[component]
-pub(super) fn SaveMediaPane(
+pub fn SaveMediaPane(
     session: BrowserSession,
     thread_id: String,
     message: ChatMessage,
@@ -62,8 +59,17 @@ pub(super) fn SaveMediaPane(
             struct Saved {
                 name: String,
             }
-            match api::send::<Saved>(&format!("{BASE}/save"), "POST", Some(json!({ "threadId": thread_id, "messageId": message_id, "folderId": target.id })), &csrf).await {
-                Ok(saved) => { on_saved.try_run(saved.name); },
+            match api::send::<Saved>(
+                &format!("{BASE}/save"),
+                "POST",
+                Some(json!({ "threadId": thread_id, "messageId": message_id, "folderId": target.id })),
+                &csrf,
+            )
+            .await
+            {
+                Ok(saved) => {
+                    on_saved.try_run(saved.name);
+                }
                 Err(cause) => {
                     error.try_set(cause.message);
                     busy.try_set(false);
@@ -89,8 +95,9 @@ pub(super) fn SaveMediaPane(
     }
 }
 
+/// Right editing pane for linking a WhatsApp or Discord account (QR or pairing code).
 #[component]
-pub(super) fn LinkPane(
+pub fn LinkPane(
     session: BrowserSession,
     account_id: Option<String>,
     platform: Option<String>,
@@ -130,7 +137,10 @@ pub(super) fn LinkPane(
                 if let Ok(next) =
                     api::get::<ChatLinkState>(&format!("{BASE}/accounts/{id}/link")).await
                 {
-                    if cancelled.with_value(|c| c.load(Ordering::Relaxed)) {
+                    if cancelled
+                        .try_with_value(|c| c.load(Ordering::Relaxed))
+                        .unwrap_or(true)
+                    {
                         return;
                     }
                     let paired = next.state == "paired";
@@ -138,7 +148,12 @@ pub(super) fn LinkPane(
                     if paired {
                         let _ = set_timeout_with_handle(
                             move || {
-                                on_linked.try_run(id.clone());
+                                if !cancelled
+                                    .try_with_value(|c| c.load(Ordering::Relaxed))
+                                    .unwrap_or(true)
+                                {
+                                    on_linked.try_run(id.clone());
+                                }
                             },
                             Duration::from_millis(1200),
                         );
@@ -191,10 +206,11 @@ pub(super) fn LinkPane(
         });
     };
     let close = move || {
-        cancelled.with_value(|c| c.store(true, Ordering::Relaxed));
+        let _ = cancelled.try_with_value(|c| c.store(true, Ordering::Relaxed));
         let target = id
-            .get_untracked()
-            .filter(|_| state.get_untracked().as_deref() != Some("paired"));
+            .try_get_untracked()
+            .flatten()
+            .filter(|_| state.try_get_untracked().flatten().as_deref() != Some("paired"));
         let csrf = csrf.get_value();
         spawn_local(async move {
             if let Some(id) = target {
@@ -208,9 +224,7 @@ pub(super) fn LinkPane(
                 )
                 .await;
             }
-            {
-                on_close.try_run(());
-            };
+            on_close.try_run(());
         });
     };
     let qr = Memo::new(move |_| {
@@ -301,7 +315,7 @@ pub(super) fn LinkPane(
                                 }).collect_view()}</p>
                                 <ol class="chat-steps"><li>"In WhatsApp, open "<b>"Linked devices \u{2192} Link a device"</b>"."</li><li>"Tap "<b>"Link with phone number instead"</b>"."</li><li>"Enter this code."</li></ol>
                                 <p class="chat-progress" role="status"><span class="chat-spinner" aria-hidden="true"></span>"Waiting for WhatsApp\u{2026}"</p>
-                                <button type="button" class="secondary-button" on:click=move |_| write_clipboard(&copy)><Icon name="copy"/>"Copy code"</button>
+                                <button type="button" class="secondary-button" on:click=move |_| window_clipboard_write(&copy)><Icon name="copy"/>"Copy code"</button>
                             }
                         })}
                         {(s == "paired").then(|| view! { <p class="chat-progress is-done" role="status"><Icon name="check"/>{if d { "Signed in. Loading your servers\u{2026}" } else { "Linked. Importing your chats\u{2026}" }}</p> })}
@@ -370,7 +384,7 @@ fn open_chat(
 
 /// New chat: pick a Dar contact with a phone number, or type a number.
 #[component]
-pub(super) fn NewChatPane(
+pub fn NewChatPane(
     session: BrowserSession,
     account: ChatAccount,
     on_close: Callback<()>,
@@ -483,7 +497,7 @@ pub(super) fn NewChatPane(
 
 /// Discord: start a direct message with a friend.
 #[component]
-pub(super) fn NewMessagePane(
+pub fn NewMessagePane(
     session: BrowserSession,
     account: ChatAccount,
     on_close: Callback<()>,
@@ -585,7 +599,7 @@ struct Book {
 
 /// Saves a WhatsApp number as a Dar contact; nothing is written to WhatsApp.
 #[component]
-pub(super) fn AddContactPane(
+pub fn AddContactPane(
     session: BrowserSession,
     thread: ChatThread,
     on_close: Callback<()>,
@@ -677,8 +691,9 @@ pub(super) fn AddContactPane(
     }
 }
 
+/// Right editing pane for renaming a linked Chat account.
 #[component]
-pub(super) fn RenamePane(
+pub fn RenamePane(
     session: BrowserSession,
     account: ChatAccount,
     on_close: Callback<()>,
@@ -728,51 +743,5 @@ pub(super) fn RenamePane(
                 </div>
             </form>
         </EditorPane>
-    }
-}
-
-#[component]
-pub(super) fn ChatSettings(
-    accounts: Signal<Vec<ChatAccount>>,
-    on_close: Callback<()>,
-    on_link: Callback<()>,
-    actions: Callback<ChatAccount, Vec<MenuAction>>,
-) -> impl IntoView {
-    let section = RwSignal::new("Accounts");
-    let notice = RwSignal::new(None);
-    view! {
-        <SettingsSheet title="Chat settings" icon="chat" sections=vec!["Accounts", "Keyboard shortcuts"] section=section on_close=on_close notice=notice footer="Each account keeps its own chats.">
-            {move || match section.get() {
-                "Accounts" => view! {
-                    <section class="settings-group" aria-label="Accounts">
-                        <h3>"Linked accounts"</h3>
-                        {move || accounts.get().into_iter().map(|a| {
-                            let phone = phone_of(&a.jid);
-                            let state = match a.state.as_str() {
-                                "connected" => "Connected",
-                                "loggedOut" => if a.platform == "discord" { "Signed out" } else { "Unlinked" },
-                                "linking" => "Not linked yet",
-                                "failed" => "Stopped",
-                                _ => "Reconnecting",
-                            };
-                            let hint = format!("{}{} \u{b7} {state}", platform_name(&a.platform), if a.platform == "whatsapp" && !phone.is_empty() { format!(" \u{b7} {phone}") } else { String::new() });
-                            let label = format!("Actions for {}", a.name);
-                            let account = a.clone();
-                            view! {
-                                <SettingRow label=a.name.clone() hint=hint state=Signal::stored(None)>
-                                    <ActionMenu label=label actions=Callback::new(move |_| actions.run(account.clone()))><Icon name="more"/></ActionMenu>
-                                </SettingRow>
-                            }
-                        }).collect_view()}
-                        <SettingRow label="Link an account" hint=format!("WhatsApp or Discord, up to {CHAT_LIMITS_ACCOUNTS}.") state=Signal::stored(None)>
-                            <button type="button" class="secondary-button" on:click=move |_| { on_link.try_run(()); }><Icon name="plus"/>"Link an account"</button>
-                        </SettingRow>
-                    </section>
-                }.into_any(),
-                _ => view! {
-                    <dl class="ui-shortcuts"><dt>"Enter"</dt><dd>"Send the message"</dd><dt>"Shift Enter"</dt><dd>"New line"</dd><dt>"Escape"</dt><dd>"Cancel a reply"</dd><dt>"Ctrl / Cmd K"</dt><dd>"Search all apps"</dd></dl>
-                }.into_any(),
-            }}
-        </SettingsSheet>
     }
 }

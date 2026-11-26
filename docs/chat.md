@@ -2,8 +2,9 @@
 
 Optional built-in app at `/chat`: a client for other platforms, not a network of its
 own: WhatsApp and Discord. Layout follows the selected
-[mock A with account tabs](spacetimedb/chat-mocks.html) (November 17, 2026) and, for
-Discord, [mock B, the voice dock](spacetimedb/discord-mocks.html) (November 18); see Chat
+[mock A with account tabs](spacetimedb/chat-mocks.html) (November 17, 2026),
+[mock B, the voice dock](spacetimedb/discord-mocks.html) (November 18), and the
+November 26 [redesign mock](spacetimedb/chat-redesign-mock.html); see Chat
 in the [design guide](design.md). Administrators can disable it in Administration → Apps;
 data is kept and every account disconnects.
 
@@ -33,27 +34,34 @@ data is kept and every account disconnects.
   `shared/qr.ts`) or, on phones, a pairing code for the phone number. Dar shows up as
   “Dar” in the phone's Linked devices. Up to 10 accounts; Link again reuses an
   unlinked account's history (a different number starts it afresh).
-- **Chats:** account tabs; Chats (pinned first, newest first), Unread, Groups and
-  Archived; previews with sender, media label, ticks, pin, mute and unread counts.
-  New chat by phone number.
-- **Messages:** text with replies, edits and deletions; locations, contacts and polls show
-  as labelled placeholders. Sending is stored first as pending under WhatsApp's own message
-  ID, so a retry can never duplicate it; failures offer Retry and Delete. Delivered and
-  read ticks follow receipts. Opening a chat sends read receipts.
-- **Message actions:** the message menu reacts (six quick reactions; chips under the bubble
-  show who and remove yours), replies, copies, edits your text within 15 minutes, deletes
-  for everyone (yours) or from Dar only (local; WhatsApp and the phone keep it). Every
-  change goes to WhatsApp before Dar records it.
-- **Chat info:** a fourth sheet (a full screen on phones) with mute (8 hours, 1 week,
-  always), pin and archive, which sync to the phone through WhatsApp's app state; the
-  messages Dar keeps, recent photos and documents, and a group's description and members.
-- **Attachments:** photos and stickers show inline, videos play on request, voice notes
-  and audio in a player, documents as cards. Each downloads from WhatsApp the first time
-  it is shown (new photos, stickers and voice notes up to 16 MiB as they arrive), once,
-  into the content-addressed blob store; HTML and other active types only download.
-  Expired media is requested from the phone again. Download and Save to Files (shared
-  folder picker; a taken name gets a number) are in the message menu. Deleting a message
-  for everyone removes its attachment.
+- **Chats:** named account tabs with status dots; Chats (`Pinned` / `Recent` sections, quick
+  filter chips `All` / `Unread` / `Pinned` / `Groups`, hover pin/mute/archive triage), Unread,
+  Groups and Archived; previews with sender, media label, ticks, pin, mute (`bellOff`) and unread
+  counts; shortcuts `J`/`K` and `Alt+1–9`. New chat by phone number.
+- **Messages:** text with safe clickable URLs and inline Markdown (`**bold**`, `*italic*`,
+  `` `code` ``, `~~strike~~`), clickable reply quotes that scroll and flash the original message,
+  edits, deletions, in-chat `Find` (`Ctrl/Cmd+F`), per-thread preserved drafts and configurable
+  `Enter` / `Ctrl+Enter` sending + emoji picker. Locations, contacts and polls show as labelled
+  placeholders. Sending is stored first as pending under WhatsApp's own message ID, so a retry
+  can never duplicate it; failures offer Retry and Delete. Delivered and read ticks follow
+  receipts. Opening a chat sends read receipts.
+- **Message actions:** hover quick-react/reply buttons and the message menu react (`👍`/`❤️` +
+  six quick reactions; chips under the bubble show who and remove yours), reply, copy, edit your
+  text within 15 minutes, delete for everyone (yours) or from Dar only (local; WhatsApp and the
+  phone keep it). Every change goes to WhatsApp before Dar records it.
+- **Chat info & settings:** tabbed fourth sheet (`Overview`, `Media`, `Members`) with mute
+  (8 hours, 1 week, always), pin and archive syncing through WhatsApp app state, recent photos and
+  documents, and circular member avatars. `Chat settings` (`Accounts`, `Display`,
+  `Keyboard shortcuts`) saves `chatDensity` (`Comfortable`/`Compact`), `chatSendKey`,
+  `chatFormatMarkdown` and `chatShowEmoji`.
+- **Attachments:** photos and stickers fit naturally (no stretching in flat channels) and open in
+  an in-app lightbox (`Download` and `Save to Files`); videos play on request; voice notes and
+  audio render in a waveform player with seek and `1×`/`1.5×`/`2×` playback speed; documents render
+  as cards. Each downloads from WhatsApp the first time it is shown (new photos, stickers and voice
+  notes up to 16 MiB as they arrive), once, into the content-addressed blob store; HTML and other
+  active types only download. Expired media is requested from the phone again. Saving to Files uses
+  the shared folder picker (a taken name gets a number). Deleting a message for everyone removes its
+  attachment.
 - **Dar contacts:** a chat whose number is in any address book you can read (owned or
   shared) takes the contact's name, in the list, the conversation, group senders and
   group members. Numbers saved without a country code (a trunk 0, or a short number) take

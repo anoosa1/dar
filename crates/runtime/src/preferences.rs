@@ -416,6 +416,16 @@ pub fn merge(
     );
     put("gitWrapLines", flag("gitWrapLines", false)?);
     put("gitShowAbout", flag("gitShowAbout", true)?);
+    put(
+        "chatDensity",
+        choice("chatDensity", &["comfortable", "compact"], "comfortable")?,
+    );
+    put(
+        "chatSendKey",
+        choice("chatSendKey", &["enter", "modEnter"], "enter")?,
+    );
+    put("chatFormatMarkdown", flag("chatFormatMarkdown", true)?);
+    put("chatShowEmoji", flag("chatShowEmoji", true)?);
 
     let app_launcher = get("appLauncher", json!({ "order": [], "categories": [] }));
     let launcher_obj = app_launcher
@@ -766,6 +776,39 @@ mod tests {
             json!({ "booksColumns": "3" }),
             json!({ "booksComicLayout": "grid" }),
             json!({ "booksPdfTint": "dark" }),
+        ] {
+            let map: Map<String, Value> = serde_json::from_value(bad).unwrap();
+            assert!(merge(&empty, &map).is_err());
+        }
+    }
+
+    #[test]
+    fn validates_chat_redesign_preferences() {
+        let empty = Map::new();
+        let body: Map<String, Value> = serde_json::from_value(json!({
+            "chatDensity": "compact",
+            "chatSendKey": "modEnter",
+            "chatFormatMarkdown": false,
+            "chatShowEmoji": false
+        }))
+        .unwrap();
+        let merged = merge(&empty, &body).unwrap();
+        assert_eq!(merged["chatDensity"], "compact");
+        assert_eq!(merged["chatSendKey"], "modEnter");
+        assert_eq!(merged["chatFormatMarkdown"], false);
+        assert_eq!(merged["chatShowEmoji"], false);
+
+        let defaults = merge(&empty, &Map::new()).unwrap();
+        assert_eq!(defaults["chatDensity"], "comfortable");
+        assert_eq!(defaults["chatSendKey"], "enter");
+        assert_eq!(defaults["chatFormatMarkdown"], true);
+        assert_eq!(defaults["chatShowEmoji"], true);
+
+        for bad in [
+            json!({ "chatDensity": "cozy" }),
+            json!({ "chatSendKey": "tab" }),
+            json!({ "chatFormatMarkdown": "yes" }),
+            json!({ "chatShowEmoji": 1 }),
         ] {
             let map: Map<String, Value> = serde_json::from_value(bad).unwrap();
             assert!(merge(&empty, &map).is_err());

@@ -667,7 +667,7 @@ fn TopBar(
             .target()
             .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
             && el
-                .closest(".sidebar .nav-item, .sidebar nav button:not(.ui-menu-trigger), .sidebar .new-button, .sidebar .ui-new, .sidebar .pim-sidebar-heading button, .sidebar .ui-app-settings-entry, .ui-settings-nav button, .agent-sidebar .agent-thread-select, .agent-sidebar .agent-new-thread, .agent-sidebar .agent-util-btn, [role='menuitem']")
+                .closest(".sidebar .nav-item:not([data-keep-drawer]), .sidebar nav button:not(.ui-menu-trigger):not([data-keep-drawer]), .sidebar .new-button, .sidebar .ui-new, .sidebar .pim-sidebar-heading button, .sidebar .ui-app-settings-entry, .ui-settings-nav button, .agent-sidebar .agent-thread-select, .agent-sidebar .agent-new-thread, .agent-sidebar .agent-util-btn, [role='menuitem']")
                 .ok()
                 .flatten()
                 .is_some()

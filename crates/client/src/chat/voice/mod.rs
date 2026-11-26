@@ -1,5 +1,12 @@
-//! Discord voice (`chat/voice.tsx`): AudioWorklet mic capture, WebCodecs Opus encode/decode,
+//! Discord voice: AudioWorklet mic capture, WebCodecs Opus encode/decode,
 //! live WebSocket per Discord account, voice members, dock, stage and E2EE call-code dialog.
+
+pub mod dock;
+pub mod stage;
+
+pub(super) use dock::{Controls, Marks};
+pub use dock::{VoiceDock, VoiceMembers};
+pub use stage::{CallCodeDialog, VoiceStage};
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,14 +22,11 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 
-use super::{
-    BASE, ChatAccount, ChatLiveMessage, ChatVoiceCall, ChatVoiceMember, ChatVoiceServers,
-    search_params,
+use super::model::{
+    BASE, ChatAccount, ChatLiveMessage, ChatVoiceCall, ChatVoiceServers, search_params,
 };
 use crate::api::{self, BrowserSession};
-use crate::icons::Icon;
-use crate::pim::avatar_hue;
-use crate::ui::{Dialog, window};
+use crate::ui::window;
 
 const MIC_WORKLET_URL: &str = "/rust/mic-worklet.js";
 
@@ -622,20 +626,43 @@ struct VoiceLink {
     me: String,
 }
 
+type ConnectedSinceMap = Rc<RefCell<BTreeMap<String, (String, String, f64)>>>;
+
 struct VoiceHubInner {
     links: BTreeMap<String, VoiceLink>,
     audio: Option<Rc<RefCell<VoiceAudioInner>>>,
     audio_account: String,
+    connected_since: ConnectedSinceMap,
     session: BrowserSession,
     snapshot: RwSignal<VoiceSnapshot>,
 }
 
 impl VoiceHubInner {
     fn update_account(hub: &Rc<RefCell<Self>>, id: &str, change: impl FnOnce(&mut AccountVoice)) {
-        let snap = hub.borrow().snapshot;
+        let (snap, connected_since) = {
+            let inner = hub.borrow();
+            (inner.snapshot, inner.connected_since.clone())
+        };
         let _ = snap.try_update(|s| {
             let entry = s.accounts.entry(id.to_owned()).or_default();
             change(entry);
+            let call_key = entry.call.as_ref().and_then(|c| {
+                (c.state == "connected").then(|| (c.server_id.clone(), c.channel_id.clone()))
+            });
+            let mut cs = connected_since.borrow_mut();
+            match call_key {
+                Some((server_id, channel_id)) => {
+                    let keep = cs
+                        .get(id)
+                        .is_some_and(|(srv, ch, _)| *srv == server_id && *ch == channel_id);
+                    if !keep {
+                        cs.insert(id.to_owned(), (server_id, channel_id, js_sys::Date::now()));
+                    }
+                }
+                None => {
+                    cs.remove(id);
+                }
+            }
         });
         Self::follow(hub);
     }
@@ -651,6 +678,7 @@ impl VoiceHubInner {
                 .cloned()
                 .collect();
             for id in removed {
+                inner.connected_since.borrow_mut().remove(&id);
                 if let Some(mut link) = inner.links.remove(&id) {
                     link.closed = true;
                     if let Some(t) = link.timer.take() {
@@ -1007,12 +1035,16 @@ impl VoiceHubInner {
     fn dispose(hub: &Rc<RefCell<Self>>) {
         let audio = {
             let mut inner = hub.borrow_mut();
+            inner.connected_since.borrow_mut().clear();
             for mut link in std::mem::take(&mut inner.links).into_values() {
                 link.closed = true;
                 if let Some(t) = link.timer.take() {
                     window().clear_timeout_with_handle(t);
                 }
                 if let Some(s) = link.socket.take() {
+                    s.set_onopen(None);
+                    s.set_onmessage(None);
+                    s.set_onclose(None);
                     let _ = s.close();
                 }
             }
@@ -1028,6 +1060,7 @@ impl VoiceHubInner {
 #[derive(Clone, Copy)]
 pub struct VoiceHub {
     inner: StoredValue<SendWrapper<Rc<RefCell<VoiceHubInner>>>>,
+    connected_since: StoredValue<SendWrapper<ConnectedSinceMap>>,
     pub snapshot: RwSignal<VoiceSnapshot>,
 }
 
@@ -1039,6 +1072,16 @@ struct CodeResponse {
 impl VoiceHub {
     fn rc(self) -> Option<Rc<RefCell<VoiceHubInner>>> {
         self.inner.try_with_value(|sw| Rc::clone(&**sw))
+    }
+
+    pub(super) fn call_started_ms(self, server_id: &str, channel_id: &str) -> Option<f64> {
+        self.connected_since
+            .try_with_value(|cs| {
+                cs.borrow().values().find_map(|(srv, ch, started)| {
+                    (srv == server_id && ch == channel_id).then_some(*started)
+                })
+            })
+            .flatten()
     }
 
     pub fn sync(self, accounts: &[(String, String)]) {
@@ -1178,17 +1221,21 @@ impl VoiceHub {
 /// Voice for the given Discord accounts; sockets live as long as the Chat page (`useVoice`).
 pub fn use_voice(session: BrowserSession, accounts: Signal<Vec<ChatAccount>>) -> VoiceHub {
     let snapshot = RwSignal::new(VoiceSnapshot::default());
+    let connected_since = Rc::new(RefCell::new(BTreeMap::new()));
     let rc = Rc::new(RefCell::new(VoiceHubInner {
         links: BTreeMap::new(),
         audio: None,
         audio_account: String::new(),
+        connected_since: connected_since.clone(),
         session,
         snapshot,
     }));
     let hub = VoiceHub {
         inner: StoredValue::new(SendWrapper::new(rc)),
+        connected_since: StoredValue::new(SendWrapper::new(connected_since)),
         snapshot,
     };
+    provide_context(hub);
     Effect::new(move |_| {
         let list: Vec<(String, String)> = accounts
             .get()
@@ -1207,7 +1254,7 @@ pub fn use_voice(session: BrowserSession, accounts: Signal<Vec<ChatAccount>>) ->
     hub
 }
 
-fn voice_initials(name: &str) -> String {
+pub(super) fn voice_initials(name: &str) -> String {
     let words: Vec<&str> = name.split_whitespace().collect();
     if words.is_empty() {
         return "?".into();
@@ -1224,7 +1271,7 @@ fn voice_initials(name: &str) -> String {
     out.to_uppercase()
 }
 
-fn state_label(call: &ChatVoiceCall) -> &'static str {
+pub(super) fn state_label(call: &ChatVoiceCall) -> &'static str {
     match call.state.as_str() {
         "connected" => "Voice connected",
         "reconnecting" => "Reconnecting\u{2026}",
@@ -1232,353 +1279,6 @@ fn state_label(call: &ChatVoiceCall) -> &'static str {
     }
 }
 
-#[component]
-fn Marks(member: ChatVoiceMember) -> impl IntoView {
-    if !member.muted && !member.deafened {
-        return ().into_any();
-    }
-    view! {
-        <span class="chat-voice-marks">
-            {member.muted.then(|| view! { <span title="Muted"><Icon name="micOff"/><span class="sr-only">", muted"</span></span> })}
-            {member.deafened.then(|| view! { <span title="Deafened"><Icon name="headphonesOff"/><span class="sr-only">", deafened"</span></span> })}
-        </span>
-    }
-    .into_any()
-}
-
-/// People in a voice channel, under it in the server tree (`VoiceMembers`).
-#[component]
-pub fn VoiceMembers(
-    members: Vec<ChatVoiceMember>,
-    speaking: BTreeSet<String>,
-    me: String,
-) -> impl IntoView {
-    view! {
-        <ul class="chat-voice-members" aria-label="In voice">
-            {members.into_iter().map(|m| {
-                let talking = speaking.contains(&m.id);
-                let is_me = m.id == me;
-                let hue = avatar_hue(&m.id);
-                let init = voice_initials(&m.name);
-                let name = m.name.clone();
-                view! {
-                    <li class=if talking { "chat-voice-member is-speaking" } else { "chat-voice-member" }>
-                        <span class=format!("chat-voice-avatar contact-initials {hue}") aria-hidden="true">{init}</span>
-                        <span class="chat-row-title">{name}{if is_me { " (you)" } else { "" }}{talking.then(|| view! { <span class="sr-only">", speaking"</span> })}</span>
-                        <Marks member=m/>
-                    </li>
-                }
-            }).collect_view()}
-        </ul>
-    }
-}
-
-#[component]
-fn Controls(
-    call: ChatVoiceCall,
-    mic: MicState,
-    #[prop(optional)] big: bool,
-    on_set: Callback<(bool, bool)>,
-    on_leave: Callback<()>,
-) -> impl IntoView {
-    let muted = call.self_mute || call.self_deaf || mic != MicState::On;
-    let deaf = call.self_deaf;
-    let can_speak = call.can_speak;
-    let self_mute = call.self_mute;
-    view! {
-        <div class=if big { "chat-voice-controls is-big" } else { "chat-voice-controls" }>
-            <button
-                type="button"
-                class=if muted { "chat-voice-button is-off" } else { "chat-voice-button" }
-                aria-pressed=muted.to_string()
-                disabled=!can_speak
-                title=if !can_speak { "You cannot speak in this channel" } else if muted { "Unmute" } else { "Mute" }
-                aria-label="Mute"
-                on:click=move |_| { on_set.try_run((!muted, if muted { false } else { deaf })); }
-            >
-                <Icon name=if muted { "micOff" } else { "mic" }/>
-            </button>
-            <button
-                type="button"
-                class=if deaf { "chat-voice-button is-off" } else { "chat-voice-button" }
-                aria-pressed=deaf.to_string()
-                aria-label="Deafen"
-                title=if deaf { "Undeafen" } else { "Deafen" }
-                on:click=move |_| { on_set.try_run((self_mute, !deaf)); }
-            >
-                <Icon name=if deaf { "headphonesOff" } else { "headphones" }/>
-            </button>
-            <button
-                type="button"
-                class=if big { "chat-voice-button is-leave is-wide" } else { "chat-voice-button is-leave" }
-                aria-label="Leave voice"
-                title="Leave voice"
-                on:click=move |_| { on_leave.try_run(()); }
-            >
-                <Icon name="phoneOff"/>
-                {big.then(|| view! { <span>"Leave"</span> })}
-            </button>
-        </div>
-    }
-}
-
-/// The call at the bottom of the sidebar while you keep reading and writing (`VoiceDock`).
-#[component]
-pub fn VoiceDock(
-    call: ChatVoiceCall,
-    channel: String,
-    server: String,
-    here: bool,
-    elsewhere: bool,
-    mic: MicState,
-    #[prop(optional, into)] class: String,
-    on_set: Callback<(bool, bool)>,
-    on_leave: Callback<()>,
-    on_use_here: Callback<()>,
-    on_open: Callback<()>,
-    on_code: Callback<()>,
-) -> impl IntoView {
-    let live_class = format!("chat-voice-live is-{}", call.state);
-    let label = state_label(&call);
-    let e2ee = call.e2ee;
-    let controls_mic = if here { mic } else { MicState::On };
-    view! {
-        <section class=format!("chat-voice-dock{class}") aria-label="Voice call">
-            <div class="chat-voice-dock-head">
-                <button type="button" class="chat-voice-dock-open" on:click=move |_| { on_open.try_run(()); }>
-                    <span class=live_class aria-hidden="true"><Icon name="signal"/></span>
-                    <span class="chat-voice-dock-text"><b>{label}</b><small>{channel}" \u{00b7} "{server}</small></span>
-                </button>
-                {e2ee.then(|| view! {
-                    <button type="button" class="icon-button chat-voice-lock" aria-label="End-to-end encrypted: verify the call code" title="End-to-end encrypted" on:click=move |_| { on_code.try_run(()); }>
-                        <Icon name="lock"/>
-                    </button>
-                })}
-            </div>
-            {(!here).then(|| view! {
-                <div class="chat-voice-away">
-                    <span>{if elsewhere { "The call\u{2019}s audio is in another tab." } else { "The call\u{2019}s audio is not playing here." }}</span>
-                    <button type="button" class="secondary-button" on:click=move |_| { on_use_here.try_run(()); }>"Use this tab"</button>
-                </div>
-            })}
-            {(here && mic == MicState::Blocked).then(|| view! {
-                <p class="chat-voice-note"><Icon name="micOff"/>"Microphone blocked. You can still listen."</p>
-            })}
-            <Controls call=call mic=controls_mic on_set=on_set on_leave=on_leave/>
-        </section>
-    }
-}
-
-/// A voice channel opened from the tree: who is in it, and joining or the call's controls (`VoiceStage`).
-#[component]
-pub fn VoiceStage(
-    thread_name: String,
-    thread_jid: String,
-    server: Signal<String>,
-    members: Signal<Vec<ChatVoiceMember>>,
-    call: Signal<Option<ChatVoiceCall>>,
-    in_other: Signal<String>,
-    speaking: Signal<BTreeSet<String>>,
-    me: Signal<String>,
-    mic: Signal<MicState>,
-    here: Signal<bool>,
-    on_join: Callback<(bool, Callback<Result<(), String>>)>,
-    on_set: Callback<(bool, bool)>,
-    on_leave: Callback<()>,
-    on_code: Callback<()>,
-    on_use_here: Callback<()>,
-    on_close: Callback<()>,
-) -> impl IntoView {
-    let join_muted = RwSignal::new(false);
-    let busy = RwSignal::new(false);
-    let error = RwSignal::new(String::new());
-    let supported = voice_supported();
-    let thread_name = StoredValue::new(thread_name);
-    let thread_jid = StoredValue::new(thread_jid);
-
-    let in_this_call = Memo::new(move |_| {
-        let jid = thread_jid.get_value();
-        call.get().filter(|c| c.channel_id == jid)
-    });
-
-    let do_join = move |_| {
-        busy.set(true);
-        error.set(String::new());
-        {
-            on_join.try_run((
-                join_muted.get_untracked(),
-                Callback::new(move |res: Result<(), String>| {
-                    let _ = busy.try_set(false);
-                    if let Err(msg) = res {
-                        let _ = error.try_set(msg);
-                    }
-                }),
-            ));
-        };
-    };
-
-    view! {
-        <section class="chat-voice-stage" aria-label=format!("Voice channel {}", thread_name.get_value())>
-            <header class="chat-conversation-head">
-                <button type="button" class="icon-button chat-back" aria-label="Back to chats" on:click=move |_| { on_close.try_run(()); }><Icon name="back"/></button>
-                <span class=move || if in_this_call.get().is_some() { "chat-channel-mark is-live" } else { "chat-channel-mark" } aria-hidden="true"><Icon name="speaker"/></span>
-                <div class="chat-who">
-                    <h2 tabindex="-1">{thread_name.get_value()}</h2>
-                    <small>{move || {
-                        let count = members.with(Vec::len);
-                        let srv = server.get();
-                        if count > 0 { format!("{srv} \u{00b7} {count} in voice") } else { format!("{srv} \u{00b7} nobody in voice") }
-                    }}</small>
-                </div>
-                {move || in_this_call.get().filter(|c| c.e2ee).map(|_| view! {
-                    <button type="button" class="chat-voice-e2ee" on:click=move |_| { on_code.try_run(()); }><Icon name="lock"/><span>"End-to-end encrypted"</span></button>
-                })}
-                <button type="button" class="icon-button chat-close" aria-label="Close voice channel" on:click=move |_| { on_close.try_run(()); }><Icon name="close"/></button>
-            </header>
-            {move || match in_this_call.get() {
-                Some(active_call) => {
-                    let is_here = here.get();
-                    let cur_mic = mic.get();
-                    let cur_me = me.get();
-                    let spk = speaking.get();
-                    let list = members.get();
-                    let empty = list.is_empty();
-                    let status_class = format!("chat-voice-status is-{}", active_call.state);
-                    let status_text = state_label(&active_call);
-                    view! {
-                        <div class="chat-voice-grid" role="list" aria-label="In the call">
-                            {list.into_iter().map(|m| {
-                                let talking = spk.contains(&m.id);
-                                let is_me = m.id == cur_me;
-                                let hue = avatar_hue(&m.id);
-                                let init = voice_initials(&m.name);
-                                let name = m.name.clone();
-                                view! {
-                                    <div role="listitem" class=if talking { "chat-voice-tile is-speaking" } else { "chat-voice-tile" }>
-                                        <span class=format!("chat-voice-tile-avatar contact-initials {hue}") aria-hidden="true">{init}</span>
-                                        <span class="chat-voice-tile-name">{name}{if is_me { " (you)" } else { "" }}<Marks member=m/>{talking.then(|| view! { <span class="sr-only">", speaking"</span> })}</span>
-                                    </div>
-                                }
-                            }).collect_view()}
-                            {empty.then(|| view! { <p class="chat-hint">"Waiting for Discord\u{2026}"</p> })}
-                        </div>
-                        {(!is_here).then(|| view! {
-                            <div class="chat-banner" role="status">
-                                <Icon name="info"/>
-                                <span><b>"The call\u{2019}s audio is not playing here"</b>"It is in another tab, or this page was reloaded."</span>
-                                <button class="secondary-button" on:click=move |_| { on_use_here.try_run(()); }>"Use this tab"</button>
-                            </div>
-                        })}
-                        {(is_here && cur_mic == MicState::Blocked).then(|| view! {
-                            <div class="chat-banner is-error" role="alert">
-                                <Icon name="micOff"/>
-                                <span><b>"Microphone blocked"</b>"Allow the microphone for this site in the browser, then unmute. You can still listen."</span>
-                            </div>
-                        })}
-                        <div class="chat-voice-bar">
-                            <span class=status_class><Icon name="signal"/><b>{status_text}</b></span>
-                            <Controls call=active_call mic=if is_here { cur_mic } else { MicState::On } big=true on_set=on_set on_leave=on_leave/>
-                        </div>
-                    }
-                    .into_any()
-                }
-                None => {
-                    let list = members.get();
-                    let count = list.len();
-                    let name = thread_name.get_value();
-                    let heading = if count > 0 {
-                        if count == 1 { format!("1 person is in {name}") } else { format!("{count} people are in {name}") }
-                    } else {
-                        format!("{name} is empty")
-                    };
-                    let other = in_other.get();
-                    view! {
-                        <div class="chat-voice-join">
-                            <span class="chat-empty-icon"><Icon name="speaker"/></span>
-                            <h3>{heading}</h3>
-                            {(count > 0).then(|| view! {
-                                <ul class="chat-voice-preview" aria-label="In voice">
-                                    {list.into_iter().take(8).map(|m| {
-                                        let hue = avatar_hue(&m.id);
-                                        let init = voice_initials(&m.name);
-                                        let title = m.name.clone();
-                                        view! {
-                                            <li title=title.clone()>
-                                                <span class=format!("chat-voice-avatar contact-initials {hue}") aria-hidden="true">{init}</span>
-                                                <span class="sr-only">{title.clone()}</span>
-                                            </li>
-                                        }
-                                    }).collect_view()}
-                                </ul>
-                            })}
-                            {if supported {
-                                view! {
-                                    <p>{if !other.is_empty() { format!("Joining leaves {other}.") } else { "Join to talk. Your browser asks for the microphone the first time.".into() }}</p>
-                                    <label class="chat-voice-option">
-                                        <input type="checkbox" prop:checked=move || join_muted.get() on:change=move |e| join_muted.set(event_target_checked(&e))/>
-                                        "Join muted"
-                                    </label>
-                                    <button type="button" class="primary-button chat-voice-join-button" disabled=move || busy.get() on:click=do_join>
-                                        <Icon name="headphones"/>
-                                        {move || if busy.get() { "Joining\u{2026}" } else { "Join voice" }}
-                                    </button>
-                                }
-                                .into_any()
-                            } else {
-                                view! { <p>"This browser cannot take part in voice calls. Use a current version of Chrome, Edge, Firefox or Safari."</p> }.into_any()
-                            }}
-                            {move || (!error.get().is_empty()).then(|| view! { <p class="error" role="alert">{error.get()}</p> })}
-                        </div>
-                    }
-                    .into_any()
-                }
-            }}
-        </section>
-    }
-}
-
-/// The 30-digit code everyone in an end-to-end encrypted call sees (`CallCodeDialog`).
-#[component]
-pub fn CallCodeDialog(hub: VoiceHub, account_id: String, on_close: Callback<()>) -> impl IntoView {
-    let code = RwSignal::new(String::new());
-    let error = RwSignal::new(String::new());
-    spawn_local(async move {
-        match hub.code(account_id).await {
-            Ok(c) => {
-                let _ = code.try_set(c);
-            }
-            Err(e) => {
-                let _ = error.try_set(e);
-            }
-        }
-    });
-    view! {
-        <Dialog title="Verify the call is private" on_close=on_close>
-            <p>"Everyone in the call sees the same code. Compare it with someone over another channel; if it matches, nobody else can listen."</p>
-            {move || {
-                let c = code.get();
-                if !c.is_empty() {
-                    let digits: Vec<char> = c.chars().filter(|ch| !ch.is_whitespace()).collect();
-                    let groups: Vec<String> = digits.chunks(5).map(|ch| ch.iter().collect()).collect();
-                    let aria = format!("Call code {}", groups.join(" "));
-                    view! {
-                        <p class="chat-call-code" aria-label=aria>
-                            {groups.into_iter().map(|g| view! { <span>{g}</span> }).collect_view()}
-                        </p>
-                    }
-                    .into_any()
-                } else {
-                    let err = error.get();
-                    if !err.is_empty() {
-                        view! { <p class="error" role="alert">{err}</p> }.into_any()
-                    } else {
-                        view! { <p role="status">"Loading the code\u{2026}"</p> }.into_any()
-                    }
-                }
-            }}
-            <div class="dialog-actions">
-                <button type="button" class="secondary-button" on:click=move |_| { on_close.try_run(()); }>"Close"</button>
-            </div>
-        </Dialog>
-    }
+pub(super) fn format_duration(secs: u32) -> String {
+    format!("{:02}:{:02}", secs / 60, secs % 60)
 }

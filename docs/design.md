@@ -391,27 +391,23 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   sheet (`?`) for default diff layout, commits view, line wrap, About rail, and HTTPS cloning.
   Tracker editors use a shared Markdown toolbar and a 3-column named label palette grid. See
   [Git](git.md).
-- **Chat:** selected [mock A](spacetimedb/chat-mocks.html) over B, with account tabs over
-  one rail app per platform (D) (November 17). A client for other platforms: WhatsApp first
-  (Dar as a linked device through whatsmeow), Discord later. Account tabs under New chat
-  (label on the selected tab, icon and unread count on the others, + to link) scope the whole
-  app to one account; accounts never mix. WhatsApp's views are Chats, Unread, Groups and
-  Archived, with the link status card at the bottom; Discord's tab has direct messages, then
-  servers with channels, shown as flat rows (C). The chat list is its own sheet (avatar, name,
-  time, preview with ticks, pin/mute marks, unread count) and the conversation fills the rest:
-  bubbles with read ticks, replies, reactions, edits, photos, voice notes and documents, the
-  composer docked below. Chat info opens as a right sheet; Link WhatsApp uses the right
-  editing pane (QR code on desktop, pairing code on phones). Phones put the account tabs
-  above the view chips. Dar contacts name chats by phone number (never written to
-  WhatsApp); chat info offers Open or Add to Contacts. Discord follows
-  [mock B](spacetimedb/discord-mocks.html) (November 18): Direct messages then servers in
-  the sidebar, each opening to channels by category (mentions as counts, muted dimmed); a
-  channel replaces the list sheet; messages are flat rows (avatar and name start a run);
-  Link Discord shows the terms notice with the QR code. Voice: people under each voice
-  channel with a speaking ring; a dock at the bottom of the sidebar (under the list on a
-  phone) during a call; A's call view (tiles, round controls, the encryption badge opening
-  the call code) when the voice channel is opened. See
-  [Chat](chat.md).
+- **Chat:** selected [mock A](spacetimedb/chat-mocks.html) over B, refreshed November 26
+  ([redesign mock](spacetimedb/chat-redesign-mock.html)): WhatsApp and Discord inside one
+  shared frame without cross-account mixing. Account pills under `+ New chat` always display
+  each account's name, platform badge, connection status dot and unread count (on phones
+  mirrored cleanly above the thread list). WhatsApp views (`Chats`, `Unread`, `Groups`,
+  `Archived`), sentence-case `Pinned` / `Recent` sections, quick filter chips (`All`, `Unread`,
+  `Pinned`, `Groups`) and hover triage actions (`Pin`, `Mute`, `Archive`); Discord `Direct messages`
+  above collapsible server & channel categories with sentence-case headings, visible voice
+  channel members, speaking rings and a persistent voice dock with live elapsed duration that
+  retains server and channel context even while browsing another account. Conversations render
+  clickable links and safe inline Markdown, clickable reply quotes (jumping to the source message),
+  hover quick-react/reply controls, a custom waveform voice-note player (`1×`/`1.5×`/`2×`), an
+  in-app media lightbox (`Save to Files`, `Download`), inline find-in-chat (`Ctrl/Cmd+F`),
+  per-thread saved drafts and a `Chat settings` sheet (`Accounts`, `Display`, `Keyboard shortcuts`)
+  with saved `chatDensity`, `chatSendKey`, `chatFormatMarkdown` and `chatShowEmoji` preferences.
+  Right inspector sheet splits into `Overview`, `Media` and `Members` tabs (`bellOff` mute mark,
+  fixed circular member avatars). See [Chat](chat.md).
 - **Agent:** the settings sheet and editing panes sit beside the Agent's sheets
   (which make room), as in other apps; choosing and adding a project both use the
   right pane. Threads on the left, conversation and docked composer in the center,

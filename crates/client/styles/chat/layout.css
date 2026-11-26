@@ -1,0 +1,264 @@
+/* Chat workspace layout inside Dar's Full-Canvas Frame (Unified Look B).
+   Loaded after frame.css and apps.css so Chat grids, sheets, compact density,
+   and mobile drawer visibility govern cleanly without :has() on containers. */
+
+.app-shell.chat-shell {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  --chat-row-pad: 8px 10px;
+  --chat-avatar-size: 44px;
+  --chat-stream-gap: 2px;
+  --chat-bubble-pad: 7px 12px;
+}
+
+.app-shell.chat-shell .pim-workspace,
+.app-shell.chat-shell.has-pim-details .pim-workspace {
+  grid-template-columns: 248px 320px minmax(0, 1fr);
+}
+
+.app-shell.chat-shell.has-chat-info .pim-workspace {
+  grid-template-columns: 228px 288px minmax(0, 1fr) 296px;
+}
+
+/* Discord channels replace the list sheet; onboarding fills the workspace beside the sidebar. */
+.app-shell.chat-shell.is-channel .pim-workspace {
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
+.app-shell.chat-shell.is-channel.has-chat-info .pim-workspace {
+  grid-template-columns: 248px minmax(0, 1fr) 296px;
+}
+
+.app-shell.chat-shell.is-channel .chat-main {
+  display: none;
+}
+
+.app-shell.chat-shell.is-onboarding .pim-workspace {
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
+.app-shell.chat-shell.is-onboarding .chat-placeholder {
+  display: none;
+}
+
+/* Floating sheets inside the workspace. */
+.chat-shell .pim-main.chat-main,
+.chat-shell .pim-details.chat-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden;
+  border: 1px solid var(--sheet-border);
+  border-radius: var(--sheet-radius);
+  background: var(--panel);
+}
+
+.chat-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 24px;
+  border: 1px solid var(--sheet-border);
+  border-radius: var(--sheet-radius);
+  background: var(--panel);
+  color: var(--muted);
+  text-align: center;
+}
+
+.chat-placeholder h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 620;
+  letter-spacing: -.01em;
+  color: var(--text);
+}
+
+.chat-placeholder p {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Editing panes and settings sheets take the conversation/info place cleanly. */
+body.has-editing-pane .app-shell.chat-shell .pim-workspace,
+body.has-editing-pane .app-shell.chat-shell.has-pim-details .pim-workspace,
+body.has-editing-pane .app-shell.chat-shell.has-chat-info .pim-workspace,
+body.has-editing-pane .app-shell.chat-shell.is-channel.has-chat-info .pim-workspace {
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
+body.has-editing-pane .chat-shell :is(.chat-details, .chat-placeholder, .chat-info-sheet) {
+  display: none;
+}
+
+/* Floating toast pill above the composer so toasts never cover the header or input. */
+.chat-toast-region {
+  position: fixed;
+  bottom: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 150;
+  max-width: min(460px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+.chat-toast {
+  pointer-events: auto;
+  max-width: 100%;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+/* Compact density preference across list and message stream. */
+.chat-shell.is-compact {
+  --chat-row-pad: 6px 9px;
+  --chat-avatar-size: 36px;
+  --chat-stream-gap: 1px;
+  --chat-bubble-pad: 5px 10px;
+}
+
+.chat-shell.is-compact .chat-row > button:first-child,
+.chat-shell.is-compact .chat-row-btn {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  column-gap: 9px;
+  padding: 6px 9px;
+  border-radius: 13px;
+}
+
+.chat-shell.is-compact .chat-row .chat-avatar {
+  width: 36px;
+  height: 36px;
+  font-size: 12.5px;
+}
+
+.chat-shell.is-compact .chat-row .chat-avatar .icon {
+  width: 17px;
+  height: 17px;
+}
+
+.chat-shell.is-compact .chat-messages {
+  gap: 1px;
+}
+
+.chat-shell.is-compact .chat-message.is-tail {
+  margin-bottom: 4px;
+}
+
+.chat-shell.is-compact .chat-bubble:not(.has-photo) {
+  padding: 5px 10px;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.chat-shell.is-compact .chat-conversation.is-flat .chat-message,
+.chat-shell.is-compact .chat-conversation.is-flat .chat-message.is-out {
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
+.chat-shell.is-compact .chat-conversation.is-flat .chat-message.is-first {
+  margin-top: 7px;
+}
+
+.chat-back {
+  display: none;
+}
+
+/* Tablet breakpoints (801px–1300px). */
+@media (max-width: 1100px) and (min-width: 801px) {
+  .app-shell.chat-shell .pim-workspace,
+  .app-shell.chat-shell.has-pim-details .pim-workspace {
+    grid-template-columns: 212px 284px minmax(0, 1fr);
+  }
+
+  .app-shell.chat-shell.is-channel .pim-workspace,
+  .app-shell.chat-shell.is-onboarding .pim-workspace,
+  body.has-editing-pane .app-shell.chat-shell .pim-workspace,
+  body.has-editing-pane .app-shell.chat-shell.has-pim-details .pim-workspace,
+  body.has-editing-pane .app-shell.chat-shell.has-chat-info .pim-workspace,
+  body.has-editing-pane .app-shell.chat-shell.is-channel.has-chat-info .pim-workspace {
+    grid-template-columns: 212px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1300px) and (min-width: 801px) {
+  .app-shell.chat-shell.has-chat-info .pim-workspace,
+  .app-shell.chat-shell.is-channel.has-chat-info .pim-workspace {
+    grid-template-columns: 204px minmax(0, 1fr) 280px;
+  }
+
+  .app-shell.chat-shell.has-chat-info .chat-main {
+    display: none;
+  }
+
+  body.has-editing-pane .app-shell.chat-shell.has-chat-info .pim-workspace,
+  body.has-editing-pane .app-shell.chat-shell.is-channel.has-chat-info .pim-workspace {
+    grid-template-columns: 212px minmax(0, 1fr);
+  }
+}
+
+/* Phones (<=800px). */
+@media (max-width: 800px) {
+  .app-shell.chat-shell .pim-workspace,
+  .app-shell.chat-shell.has-pim-details .pim-workspace,
+  .app-shell.chat-shell.has-chat-info .pim-workspace,
+  .app-shell.chat-shell.is-channel .pim-workspace,
+  .app-shell.chat-shell.is-channel.has-chat-info .pim-workspace,
+  .app-shell.chat-shell.is-onboarding .pim-workspace,
+  body.has-editing-pane .app-shell.chat-shell .pim-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+  }
+
+  .chat-placeholder {
+    display: none;
+  }
+
+  .chat-shell.has-pim-details .chat-main {
+    display: none;
+  }
+
+  .chat-shell .pim-main.chat-main {
+    margin: 0 var(--sheet-gap) var(--sheet-gap);
+    padding: 0 !important;
+  }
+
+  .chat-shell .pim-details.chat-details {
+    flex: 1;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .chat-back {
+    display: inline-flex;
+  }
+
+  .chat-close {
+    display: none;
+  }
+
+  body:not(.mobile-nav-open) .chat-sidebar {
+    visibility: hidden;
+  }
+
+  .chat-toast-region {
+    bottom: calc(74px + env(safe-area-inset-bottom));
+    max-width: calc(100vw - 20px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-shell * {
+    scroll-behavior: auto;
+  }
+}

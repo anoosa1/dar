@@ -267,6 +267,16 @@ pub async fn chat_browser_journey(t: &Ctx) -> Result<()> {
         .await?;
     info_sheet.wait_for_state(State::Detached).await?;
 
+    // Clicking a photo opens the in-app media lightbox.
+    log.locator(".chat-photo").first().click().await?;
+    let lightbox = page.get_by_role("dialog", contains("Media preview"));
+    lightbox.wait_for().await?;
+    lightbox
+        .get_by_role("button", contains("Close preview"))
+        .click()
+        .await?;
+    lightbox.wait_for_state(State::Detached).await?;
+
     // A document in the group: Save to Files from the message menu, into the shared folder picker.
     page.get_by_role("list", contains("Chats"))
         .get_by_role("button", regex("Family"))
@@ -319,7 +329,7 @@ pub async fn chat_browser_journey(t: &Ctx) -> Result<()> {
         .wait_for()
         .await?;
 
-    // Settings sheet lists the account.
+    // Settings sheet lists the account and persists Display preferences.
     page.get_by_role("button", "Chat settings")
         .first()
         .click()
@@ -330,6 +340,13 @@ pub async fn chat_browser_journey(t: &Ctx) -> Result<()> {
         .wait_for()
         .await?;
     sheet.get_by_text("Personal").wait_for().await?;
+    sheet.get_by_role("tab", "Display").click().await?;
+    sheet.get_by_role("radio", "Compact").check().await?;
+    page.locator(".chat-shell.is-compact").wait_for().await?;
+    sheet.get_by_role("radio", "Comfortable").check().await?;
+    page.locator(".chat-shell:not(.is-compact)")
+        .wait_for()
+        .await?;
     sheet
         .get_by_role("button", contains("Close settings"))
         .click()
@@ -653,6 +670,19 @@ pub async fn chat_browser_journey(t: &Ctx) -> Result<()> {
         .wait_for()
         .await?;
     dock.get_by_text(contains("Lounge · Homelab Club"))
+        .wait_for()
+        .await?;
+    // Switching to another account keeps the server & channel name visible in the voice dock.
+    page.get_by_role("tab", regex("Personal")).click().await?;
+    dock.get_by_text(contains("Lounge · Homelab Club"))
+        .wait_for()
+        .await?;
+    page.get_by_role("tab", regex("Discord")).click().await?;
+    servers
+        .get_by_role("button", regex("Channel general"))
+        .click()
+        .await?;
+    page.get_by_role("log", contains("Messages in #general"))
         .wait_for()
         .await?;
     page.screenshot(t.screenshot("chat-voice-dock.png"), false)

@@ -20,7 +20,6 @@ diff.css
 history.css
 agent/workspace.css
 agent/t3-parity.css
-chat/chat.css
 photos/photos.css
 frame.css
 settings-sheet.css
@@ -33,3 +32,9 @@ mail/mail.css
 news/news.css
 git/git.css
 books/books.css
+chat/layout.css
+chat/sidebar.css
+chat/list.css
+chat/conversation.css
+chat/voice.css
+chat/panes.css

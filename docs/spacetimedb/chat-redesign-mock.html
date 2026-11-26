@@ -1,0 +1,3452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar Chat — Redesign Mockup</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans, 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--foreground, #faeaf3);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mock-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Mockup presenter bar */
+.mock-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.mock-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.mock-btn {
+  appearance: none;
+  border: 1px solid var(--border, rgba(186, 150, 178, 0.28));
+  background: var(--secondary, rgba(115, 57, 111, 0.10));
+  color: var(--muted-foreground, #b89eb4);
+  font: 550 10.5px/1 inherit;
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.mock-btn:hover { color: var(--foreground, #faeaf3); background: rgba(115, 57, 111, 0.20); }
+.mock-btn.active {
+  background: #73396f;
+  color: #fff7fc;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+/* Dar Twilight Stage (Nightfall default, Afterglow light) */
+.stage {
+  --bg: #26111f;
+  --panel: #301c2b;
+  --raised: #3a2536;
+  --popover: rgba(54, 33, 50, 0.96);
+  --hover: #412b3f;
+  --border: rgba(186, 150, 178, 0.22);
+  --border-strong: rgba(186, 150, 178, 0.36);
+  --row-div: rgba(186, 150, 178, 0.13);
+  --text: #faeaf3;
+  --muted: #cfb4ca;
+  --dim: #9c7e97;
+  --accent: #f2a2a9;
+  --on-accent: #26111f;
+  --tonal: #4d3c73;
+  --on-tonal: #f3eafd;
+  --rose: #d889af;
+  --success: #b2dec4;
+  --success-soft: #284136;
+  --warning: #ffc493;
+  --warning-soft: #4b3429;
+  --danger: #ffb2c6;
+  --error-soft: #4e2436;
+  --wa: #8cd4aa;
+  --wa-soft: rgba(140, 212, 170, 0.16);
+  --dc: #b8c2ff;
+  --dc-soft: rgba(184, 194, 255, 0.16);
+  --scrim: rgba(16, 8, 16, 0.68);
+  --shadow: 0 14px 36px rgba(10, 3, 10, 0.50), 0 2px 8px rgba(10, 3, 10, 0.30);
+  --mono: var(--font-mono, 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
+  --sans: var(--font-sans, 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif);
+
+  position: relative;
+  width: 100%;
+  height: 636px;
+  border-radius: var(--radius, 14px);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  box-shadow: var(--shadow);
+  color-scheme: dark;
+}
+.stage[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fbf4f6;
+  --panel: #fffafb;
+  --raised: #ffffff;
+  --popover: rgba(255, 252, 253, 0.97);
+  --hover: #f3e7ee;
+  --border: rgba(115, 57, 111, 0.17);
+  --border-strong: rgba(115, 57, 111, 0.30);
+  --row-div: rgba(115, 57, 111, 0.10);
+  --text: #352138;
+  --muted: #6e546d;
+  --dim: #8b708a;
+  --accent: #73396f;
+  --on-accent: #fff7fc;
+  --tonal: #ede3f5;
+  --on-tonal: #4d3c73;
+  --rose: #a94a76;
+  --success: #246144;
+  --success-soft: #e3f0e9;
+  --warning: #8a4f16;
+  --warning-soft: #fbe9d8;
+  --danger: #a32745;
+  --error-soft: #fbe9ee;
+  --wa: #1f6b47;
+  --wa-soft: #dff2e8;
+  --dc: #4752b8;
+  --dc-soft: #eaedfc;
+  --scrim: rgba(38, 17, 31, 0.42);
+  --shadow: 0 12px 32px rgba(38, 17, 31, 0.12), 0 2px 6px rgba(38, 17, 31, 0.06);
+}
+
+.hidden { display: none !important; }
+svg.ic {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); }
+
+/* Shared Dar Full-Canvas Topbar */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  min-width: 0;
+}
+.tb-start { display: flex; align-items: center; gap: 6px; flex: none; }
+.dar-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 760;
+}
+.tb-title { font-size: 14.5px; font-weight: 630; letter-spacing: -.015em; }
+.tb-search {
+  flex: 0 1 300px;
+  margin: 0 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0 7px 0 11px;
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+}
+.tb-search span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-search kbd {
+  margin-left: auto;
+  font: 550 9.5px/15px var(--mono);
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  flex: none;
+}
+.tb-end { display: flex; align-items: center; gap: 4px; flex: none; }
+.ib {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+  transition: background .1s, color .1s;
+}
+.ib:hover { background: var(--hover); color: var(--text); }
+.ib.on { background: var(--tonal); color: var(--on-tonal); }
+.avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  background: var(--tonal);
+  color: var(--on-tonal);
+  font-size: 10.5px;
+  font-weight: 680;
+}
+
+/* Shared sheet + layout */
+.view-pane {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 7px;
+  padding: 0 7px 7px;
+  overflow: hidden;
+}
+.sheet {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+/* WhatsApp grid responsive: compact cleanly at 728px, expand to 4-col on wide desktop */
+.wa-grid { grid-template-columns: 146px 214px minmax(0, 1fr); }
+.wa-grid.has-info { grid-template-columns: 148px minmax(0, 1fr) 216px; }
+.wa-grid.has-info .list-sheet { display: none; }
+@media (min-width: 1060px) {
+  .wa-grid { grid-template-columns: 224px 292px minmax(0, 1fr); }
+  .wa-grid.has-info { grid-template-columns: 216px 264px minmax(0, 1fr) 280px; }
+  .wa-grid.has-info .list-sheet { display: flex; }
+}
+
+/* Discord & Voice grids */
+.dc-grid { grid-template-columns: 186px minmax(0, 1fr); }
+.dc-grid.has-info { grid-template-columns: 186px minmax(0, 1fr) 190px; }
+.voice-grid-layout { grid-template-columns: 186px minmax(0, 1fr); }
+.setup-grid { grid-template-columns: 152px minmax(0, 1fr); }
+.settings-grid { grid-template-columns: 152px 196px minmax(0, 1fr); }
+@media (min-width: 1060px) {
+  .dc-grid { grid-template-columns: 232px minmax(0, 1fr); }
+  .dc-grid.has-info { grid-template-columns: 232px minmax(0, 1fr) 280px; }
+  .voice-grid-layout { grid-template-columns: 232px minmax(0, 1fr); }
+  .setup-grid { grid-template-columns: 224px minmax(0, 1fr); }
+  .settings-grid { grid-template-columns: 224px 292px minmax(0, 1fr); }
+}
+
+/* Sidebar */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 2px 1px 0 2px;
+  gap: 6px;
+}
+.create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  height: 36px;
+  padding: 0 14px 0 11px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--tonal);
+  color: var(--on-tonal);
+  font: 600 12px/1 inherit;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+}
+.create-btn:hover { filter: brightness(1.07); }
+
+/* Upgraded Account Switcher: shows readable names for ALL accounts */
+.acct-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--row-div);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}
+.acct-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 5px 1px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.acct-add-sm {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.acct-add-sm:hover { background: var(--hover); color: var(--text); }
+.acct-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 27px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font: 540 11.5px/1 inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.acct-row:hover { background: var(--hover); color: var(--text); }
+.acct-row.active {
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 620;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+.plat-badge {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  flex: none;
+}
+.plat-badge svg.ic { width: 10.5px; height: 10.5px; stroke-width: 2.2; }
+.plat-badge.is-wa { background: var(--wa-soft); color: var(--wa); }
+.plat-badge.is-dc { background: var(--dc-soft); color: var(--dc); }
+.acct-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--success); flex: none; }
+.acct-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.acct-row.active .acct-badge { background: var(--tonal); color: var(--on-tonal); }
+
+/* Sidebar scroll & nav items */
+.side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 29px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--text);
+  font: 500 11.8px/1 inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.nav-item:hover { background: var(--hover); }
+.nav-item.active { background: var(--tonal); color: var(--on-tonal); font-weight: 600; }
+.nav-item svg.ic { width: 13.5px; height: 13.5px; color: var(--muted); }
+.nav-item.active svg.ic { color: var(--on-tonal); }
+.nav-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-cnt {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 560;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.nav-item.active .nav-cnt { color: var(--on-tonal); }
+
+/* Compact single-line status strip at sidebar bottom */
+.status-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 4px 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  font-size: 11px;
+  color: var(--muted);
+}
+.status-strip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex: none; }
+.status-strip-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-strip .ib { width: 22px; height: 22px; }
+
+/* Discord Server Tree (sentence case, collapsible categories & servers) */
+.tree-heading {
+  margin: 6px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.srv-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: 600 11.5px/1 inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.srv-row:hover { background: var(--hover); }
+.srv-row.is-muted { opacity: 0.65; }
+.srv-mark {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  flex: none;
+}
+.srv-chev {
+  margin-left: auto;
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
+  transition: transform .14s;
+}
+.srv-chev.is-open { transform: rotate(90deg); }
+.cat-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 5px 6px 2px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 600 10.5px/1 inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.cat-btn:hover { color: var(--text); }
+.cat-btn svg.ic { width: 10px; height: 10px; transition: transform .12s; }
+.cat-btn.is-open svg.ic { transform: rotate(90deg); }
+.ch-list { list-style: none; margin: 0 0 2px; padding: 0; }
+.ch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 26px;
+  padding: 0 7px 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 11.5px/1 inherit;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+}
+.ch-row:hover { background: var(--hover); color: var(--text); }
+.ch-row.active { background: var(--tonal); color: var(--on-tonal); font-weight: 600; }
+.ch-row.is-unread { color: var(--text); font-weight: 640; }
+.ch-row.is-unread::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.ch-row.is-muted { opacity: 0.6; }
+.ch-row.is-live svg.ic { color: var(--success); }
+.ch-mention {
+  margin-left: auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: var(--on-accent);
+  font-size: 9.5px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+.vc-members { list-style: none; margin: 1px 0 3px; padding: 0; }
+.vc-mem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 1px 6px 1px 28px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.vc-mem.is-speaking { color: var(--text); font-weight: 600; }
+.vc-av {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 8px;
+  font-weight: 700;
+  flex: none;
+}
+.vc-mem.is-speaking .vc-av { box-shadow: 0 0 0 1.5px var(--bg), 0 0 0 3px var(--success); }
+.vc-mem svg.ic { width: 11px; height: 11px; margin-left: auto; color: var(--danger); }
+
+/* Persistent Voice Dock */
+.voice-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.voice-dock-head { display: flex; align-items: center; gap: 6px; }
+.voice-dock-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  padding: 2px;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.voice-dock-open:hover { background: var(--hover); }
+.voice-live-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--success-soft);
+  color: var(--success);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.voice-live-dot svg.ic { width: 12px; height: 12px; }
+.voice-dock-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.voice-dock-meta b { font-size: 11px; font-weight: 650; color: var(--success); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.voice-dock-meta small { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.voice-lock {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--success-soft);
+  color: var(--success);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.voice-lock svg.ic { width: 12px; height: 12px; }
+.voice-ctrls { display: flex; gap: 4px; }
+.vc-btn {
+  flex: 1;
+  height: 28px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--hover);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font: 600 11px/1 inherit;
+  cursor: pointer;
+}
+.vc-btn:hover { filter: brightness(1.08); }
+.vc-btn.is-off { background: var(--error-soft); color: var(--danger); }
+.vc-btn.is-leave { background: var(--danger); color: var(--on-accent); }
+.vc-btn svg.ic { width: 13px; height: 13px; }
+
+/* Avatar hues */
+.hue-0 { background: color-mix(in srgb, var(--tonal) 80%, var(--panel)); color: var(--on-tonal); }
+.hue-1 { background: var(--error-soft); color: var(--danger); }
+.hue-2 { background: var(--success-soft); color: var(--success); }
+.hue-3 { background: var(--warning-soft); color: var(--warning); }
+.hue-4 { background: var(--dc-soft); color: var(--dc); }
+.hue-5 { background: color-mix(in srgb, var(--rose) 22%, var(--panel)); color: var(--rose); }
+
+/* Chat List Sheet */
+.list-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 10px 4px 14px;
+  flex: none;
+}
+.list-head h1 { margin: 0; font-size: 16px; font-weight: 630; letter-spacing: -.01em; }
+.count-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.list-head .ib { margin-left: auto; }
+.chip-bar {
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  padding: 2px 7px 7px;
+  border-bottom: 1px solid var(--row-div);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: none;
+}
+.chip {
+  height: 22px;
+  padding: 0 6.5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: 550 10.2px/1 inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+}
+.chip:hover { background: var(--hover); color: var(--text); }
+.chip.active { background: var(--tonal); color: var(--on-tonal); border-color: transparent; font-weight: 600; }
+.list-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 6px 10px;
+  scrollbar-width: thin;
+}
+.list-sec-lbl {
+  padding: 6px 8px 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.chat-row {
+  position: relative;
+  border-radius: 13px;
+  margin-bottom: 1px;
+}
+.chat-row-btn {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  column-gap: 8px;
+  row-gap: 1px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-row-btn:hover { background: var(--hover); }
+.chat-row.is-selected .chat-row-btn { background: var(--tonal); color: var(--on-tonal); }
+.chat-av {
+  grid-row: 1 / 3;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 680;
+  flex: none;
+}
+.chat-av.is-sm { width: 28px; height: 28px; font-size: 10.5px; grid-row: auto; }
+.chat-av.is-lg { width: 58px; height: 58px; font-size: 20px; grid-row: auto; }
+.chat-av.is-tiny { width: 24px; height: 24px; font-size: 9.5px; grid-row: auto; }
+.chat-row-name { font-size: 12.5px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-row.is-unread .chat-row-name { font-weight: 720; }
+.chat-row-time { font-size: 10px; color: var(--muted); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.chat-row.is-unread .chat-row-time { color: var(--accent); font-weight: 620; }
+.chat-row-prev {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  font-size: 11.2px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.chat-row.is-unread .chat-row-prev { color: var(--text); }
+.chat-row-prev span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chat-row-prev svg.ic { width: 11.5px; height: 11.5px; }
+.chat-row-marks { display: flex; align-items: center; justify-content: flex-end; gap: 4px; color: var(--muted); }
+.chat-row-marks svg.ic { width: 11.5px; height: 11.5px; }
+.chat-row.is-selected :is(.chat-row-time, .chat-row-prev, .chat-row-marks) {
+  color: color-mix(in srgb, var(--on-tonal) 80%, transparent);
+}
+.unread-pill {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.unread-pill.is-muted { background: var(--muted); color: var(--panel); }
+
+/* Hover quick-triage pill on chat rows */
+.row-triage {
+  position: absolute;
+  right: 6px;
+  top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s;
+}
+.chat-row:hover .row-triage { opacity: 1; pointer-events: auto; }
+.chat-row:hover .chat-row-time { opacity: 0; }
+.row-triage button {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.row-triage button:hover { background: var(--hover); color: var(--text); }
+.row-triage svg.ic { width: 12px; height: 12px; }
+
+/* Compact list density */
+.is-compact .chat-row-btn { padding: 5px 8px; grid-template-columns: 28px minmax(0, 1fr) auto; }
+.is-compact .chat-av { width: 28px; height: 28px; font-size: 10.5px; }
+
+/* Conversation sheet */
+.conv-sheet { position: relative; }
+.conv-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.conv-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.conv-who h2 { margin: 0; font-size: 13.5px; font-weight: 630; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-who small { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-who small svg.ic { width: 11px; height: 11px; }
+.conv-tools { display: flex; align-items: center; gap: 2px; flex: none; }
+
+/* Inline in-chat find strip */
+.find-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--row-div);
+  background: color-mix(in srgb, var(--hover) 55%, var(--panel));
+  flex: none;
+}
+.find-strip input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+}
+.find-strip span { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Non-overlapping top-anchored toast inside conversation */
+.conv-toast {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px 5px 12px;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--panel);
+  font-size: 11.5px;
+  font-weight: 550;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  white-space: nowrap;
+}
+.conv-toast button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: 650 11px/1 inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.msg-stream-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.msg-stream {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 14px 8px;
+  scrollbar-width: thin;
+}
+.earlier-link {
+  align-self: center;
+  margin: 1px 0 3px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: 550 11px/1 inherit;
+  cursor: pointer;
+}
+.earlier-link:hover { text-decoration: underline; }
+.day-pill {
+  align-self: center;
+  margin: 2px 0 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 560;
+}
+.new-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 3px 0;
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 640;
+}
+.new-divider::before, .new-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* Bubbles */
+.msg {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: min(82%, 440px);
+}
+.msg.is-out { align-self: flex-end; align-items: flex-end; }
+.msg.is-tail { margin-bottom: 3px; }
+.msg-line { position: relative; display: flex; align-items: center; gap: 4px; max-width: 100%; }
+.msg.is-out .msg-line { flex-direction: row-reverse; }
+.bubble {
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--text) 7%, var(--panel));
+  font-size: 12.5px;
+  line-height: 1.45;
+  transition: box-shadow .25s;
+}
+.msg.is-out .bubble { background: var(--tonal); color: var(--on-tonal); }
+.msg.is-in.is-tail .bubble { border-bottom-left-radius: 5px; }
+.msg.is-out.is-tail .bubble { border-bottom-right-radius: 5px; }
+.msg.is-flash .bubble { box-shadow: 0 0 0 2px var(--accent); }
+.msg-sender { display: block; font-size: 11px; font-weight: 650; margin-bottom: 1px; color: var(--accent); }
+.msg-quote {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  margin: 1px 0 5px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.msg-quote:hover { background: color-mix(in srgb, var(--text) 10%, transparent); }
+.msg-quote b { display: block; color: var(--accent); font-size: 10.5px; }
+.msg-quote span { display: block; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg-text { overflow-wrap: anywhere; }
+.msg-text a { color: var(--accent); text-decoration: underline; }
+.msg-text code {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+.msg-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  float: right;
+  position: relative;
+  top: 4px;
+  margin-left: 9px;
+  font-size: 9.8px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.msg.is-out .msg-meta { color: color-mix(in srgb, var(--on-tonal) 72%, transparent); }
+.msg-meta svg.ic { width: 12px; height: 12px; }
+.msg-meta .is-read { color: var(--accent); }
+
+/* Hover quick-react + reply bar */
+.msg-hover-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--raised);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.24);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s;
+  flex: none;
+}
+.msg:hover .msg-hover-bar, .msg:focus-within .msg-hover-bar { opacity: 1; pointer-events: auto; }
+.msg-hover-bar button {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.msg-hover-bar button:hover { background: var(--hover); color: var(--text); }
+.msg-hover-bar svg.ic { width: 12px; height: 12px; }
+
+/* Photo in bubble (fits content width, NEVER stretches!) */
+.bubble.has-photo { padding: 4px 4px 6px; }
+.bubble.has-photo .msg-quote, .bubble.has-photo .msg-text { margin-left: 6px; margin-right: 6px; }
+.bubble.has-photo .msg-meta { margin-right: 6px; }
+.photo-btn {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--hover);
+  cursor: zoom-in;
+  margin-bottom: 3px;
+}
+.photo-btn svg { display: block; width: 172px; max-width: 100%; height: auto; }
+
+/* Custom Twilight Waveform Voice Note Player */
+.voice-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 210px;
+  padding: 3px 2px;
+}
+.vn-play {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.vn-play svg.ic { width: 12px; height: 12px; fill: currentColor; }
+.vn-bars {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+}
+.vn-bars i {
+  flex: 1;
+  display: block;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 24%, transparent);
+  transition: background .15s;
+}
+.vn-bars i.is-played { background: var(--accent); }
+.vn-time { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+.vn-speed {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: transparent;
+  color: var(--text);
+  font: 620 10px/1 inherit;
+  cursor: pointer;
+  flex: none;
+}
+.vn-speed:hover { background: var(--hover); }
+
+/* Reactions */
+.reactions { display: flex; flex-wrap: wrap; gap: 4px; margin: -3px 6px 4px; position: relative; z-index: 1; }
+.react-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 21px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.react-chip:hover { background: var(--hover); }
+.react-chip.is-mine { border-color: var(--accent); background: var(--tonal); color: var(--on-tonal); }
+.react-chip small { font-size: 10px; opacity: .85; font-variant-numeric: tabular-nums; }
+
+/* Jump to latest pill */
+.jump-latest {
+  position: absolute;
+  right: 10px;
+  bottom: 7px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--text);
+  font: 560 10.5px/1 inherit;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+}
+.jump-latest:hover { border-color: var(--accent); color: var(--accent); }
+.jump-latest svg.ic { width: 12px; height: 12px; }
+
+/* Compact conversation density */
+.is-compact .msg-stream { gap: 1px; }
+.is-compact .bubble { padding: 4px 9px; font-size: 12px; }
+.is-compact .flat-msg { padding-top: 1px !important; padding-bottom: 1px !important; }
+.is-compact .flat-msg.is-first { margin-top: 5px !important; }
+
+/* Composer */
+.composer-wrap {
+  position: relative;
+  flex: none;
+  padding: 4px 10px 9px;
+}
+.reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 5px;
+  padding: 5px 6px 5px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--hover);
+  font-size: 11.5px;
+}
+.reply-bar > div { flex: 1; min-width: 0; }
+.reply-bar b { display: block; font-size: 10.5px; color: var(--accent); }
+.reply-bar span { display: block; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.compose-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 5px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--raised);
+}
+.compose-box:focus-within { border-color: var(--accent); }
+.compose-box input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+.compose-box input::placeholder { color: var(--muted); }
+.char-cnt { font-size: 10px; color: var(--muted); padding-right: 4px; font-variant-numeric: tabular-nums; }
+.send-btn {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.send-btn:disabled { opacity: .42; cursor: default; }
+.send-btn svg.ic { width: 14px; height: 14px; stroke-width: 2.2; }
+
+/* Emoji Picker Popover */
+.emoji-pop {
+  position: absolute;
+  left: 14px;
+  bottom: 48px;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: repeat(6, 28px);
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--popover);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+}
+.emoji-pop button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 15px;
+  cursor: pointer;
+}
+.emoji-pop button:hover { background: var(--hover); }
+
+/* Discord flat channel messages */
+.dc-crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.dc-ch-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--hover);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.dc-ch-mark.is-large { width: 54px; height: 54px; border-radius: 16px; }
+.dc-ch-mark.is-large svg.ic { width: 24px; height: 24px; }
+.dc-ch-mark.is-live { background: var(--success-soft); color: var(--success); }
+.flat-stream {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 10px 8px;
+  scrollbar-width: thin;
+}
+.flat-msg {
+  position: relative;
+  padding: 2px 6px 2px 46px;
+  border-radius: 8px;
+  max-width: 68ch;
+}
+.flat-msg.is-first { margin-top: 9px; }
+.flat-msg:hover { background: color-mix(in srgb, var(--hover) 70%, transparent); }
+.flat-av {
+  position: absolute;
+  left: 8px;
+  top: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.flat-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 1px; }
+.flat-head b { font-size: 12.5px; font-weight: 650; }
+.flat-head time { font-size: 10px; color: var(--muted); }
+.flat-body { font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.flat-body code {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+}
+.flat-body a { color: var(--accent); text-decoration: underline; }
+.mention {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--dc-soft);
+  color: var(--dc);
+  font-weight: 600;
+}
+.edited-lbl { margin-left: 5px; font-size: 10px; color: var(--muted); }
+.flat-msg .msg-hover-bar {
+  position: absolute;
+  right: 6px;
+  top: -10px;
+}
+.flat-msg .photo-btn { margin-top: 4px; }
+.flat-msg .photo-btn svg { width: 196px; }
+.flat-msg .reactions { margin: 4px 0 2px; }
+
+/* Right Inspector Sheet (WhatsApp Contact/Group Info & Discord Channel Info) */
+.info-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+}
+.info-hero { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.info-hero h3 { margin: 2px 0 0; font-size: 15px; font-weight: 640; }
+.info-hero p { margin: 0; font-size: 11px; color: var(--muted); }
+.info-actions { display: flex; justify-content: center; gap: 10px; }
+.qa-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 48px;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 550 10.5px/1 inherit;
+  cursor: pointer;
+}
+.qa-btn span {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--hover);
+  display: grid;
+  place-items: center;
+}
+.qa-btn:hover span { background: var(--tonal); color: var(--on-tonal); }
+.qa-btn.is-on span { background: var(--tonal); color: var(--on-tonal); }
+.info-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--hover);
+}
+.info-tabs button {
+  flex: 1;
+  height: 24px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: 550 11px/1 inherit;
+  cursor: pointer;
+}
+.info-tabs button.active { background: var(--raised); color: var(--text); font-weight: 620; }
+.prop-card {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 11.5px;
+}
+.prop-card > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 9px;
+  border-top: 1px solid var(--row-div);
+}
+.prop-card > div:first-child { border-top: 0; }
+.prop-card dt { color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.prop-card dt svg.ic { width: 12px; height: 12px; }
+.prop-card dd { margin: 0 0 0 auto; font-weight: 560; text-align: right; }
+.contact-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 11.5px;
+}
+.contact-card > div { flex: 1; min-width: 0; }
+.contact-card b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.contact-card small { color: var(--muted); font-size: 10.5px; }
+.contact-card a { color: var(--accent); font-weight: 600; text-decoration: none; font-size: 11px; }
+.media-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.media-thumb {
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--hover);
+  cursor: zoom-in;
+}
+.media-thumb svg { width: 100%; height: 100%; display: block; }
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: var(--hover);
+  font-size: 11.5px;
+}
+.file-chip b { display: block; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-chip small { color: var(--muted); font-size: 10px; }
+.members-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.members-list li { display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 12px; }
+.members-list li .mem-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.members-list li small { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--hover); color: var(--muted); }
+
+/* Voice Call Stage (centered balanced tiles!) */
+.voice-stage { position: relative; }
+.voice-mode-seg {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--hover);
+  gap: 2px;
+}
+.voice-mode-seg button {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--muted);
+  font: 550 10.5px/1 inherit;
+  cursor: pointer;
+}
+.voice-mode-seg button.active { background: var(--raised); color: var(--text); font-weight: 620; }
+.e2ee-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--success-soft);
+  color: var(--success);
+  font: 600 10.5px/1 inherit;
+  cursor: pointer;
+}
+.e2ee-pill svg.ic { width: 11.5px; height: 11.5px; }
+.call-tiles {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px;
+}
+.call-tile {
+  position: relative;
+  flex: 0 1 154px;
+  width: 154px;
+  aspect-ratio: 4 / 3;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--hover) 72%, var(--panel));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.call-tile.is-speaking {
+  border-color: var(--success);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 35%, transparent);
+}
+.call-tile-av {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  font-weight: 700;
+}
+.call-tile.is-speaking .call-tile-av { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--success); }
+.call-tile-name { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; }
+.tile-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--error-soft);
+  color: var(--danger);
+  display: grid;
+  place-items: center;
+}
+.tile-badge svg.ic { width: 11px; height: 11px; }
+.tile-eq {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+.tile-eq i { width: 2.5px; border-radius: 2px; background: var(--success); display: block; }
+.call-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--row-div);
+}
+.call-pill-btn {
+  height: 36px;
+  min-width: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--hover);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 11.5px/1 inherit;
+  cursor: pointer;
+}
+.call-pill-btn:hover { filter: brightness(1.08); }
+.call-pill-btn.is-off { background: var(--error-soft); color: var(--danger); }
+.call-pill-btn.is-leave { background: var(--danger); color: var(--on-accent); padding: 0 16px; }
+.prejoin {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+}
+.prejoin h3 { margin: 0; font-size: 16px; font-weight: 630; }
+.prejoin p { margin: 0; font-size: 12px; color: var(--muted); max-width: 36ch; }
+.prejoin-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.prejoin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--hover);
+  font-size: 11.5px;
+}
+.primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 17px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 620 12px/1 inherit;
+  cursor: pointer;
+}
+.secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--text);
+  font: 600 11.5px/1 inherit;
+  cursor: pointer;
+}
+.secondary-btn:hover { background: var(--hover); }
+
+/* Onboarding & Settings View */
+.setup-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--row-div);
+}
+.onboard-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 20px;
+  overflow-y: auto;
+}
+.onboard-head { text-align: center; max-width: 46ch; }
+.onboard-head h2 { margin: 0 0 4px; font-size: 18px; font-weight: 650; }
+.onboard-head p { margin: 0; font-size: 12px; color: var(--muted); }
+.onboard-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+}
+.onboard-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--hover) 45%, var(--panel));
+}
+.onboard-card-top { display: flex; align-items: center; gap: 8px; }
+.onboard-card-top b { font-size: 14px; font-weight: 640; }
+.onboard-card p { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--muted); flex: 1; }
+.onboard-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+.onboard-warn svg.ic { width: 12px; height: 12px; margin-top: 1px; }
+.onboard-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.onboard-foot span { display: inline-flex; align-items: center; gap: 5px; }
+.onboard-foot svg.ic { width: 12px; height: 12px; color: var(--accent); }
+
+/* Settings Sheet */
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 10px 0 14px;
+}
+.settings-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--tonal);
+  color: var(--on-tonal);
+  display: grid;
+  place-items: center;
+}
+.settings-head h2 { margin: 0; font-size: 14px; font-weight: 630; flex: 1; }
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-tabs button {
+  position: relative;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: 560 11.5px/1 inherit;
+  cursor: pointer;
+}
+.settings-tabs button.active { color: var(--text); }
+.settings-tabs button.active::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -1px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scrollbar-width: thin;
+}
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.set-row-lbl b { display: block; font-size: 12px; font-weight: 600; }
+.set-row-lbl small { display: block; font-size: 10.5px; color: var(--muted); }
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  gap: 2px;
+}
+.seg button {
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font: 550 11px/1 inherit;
+  cursor: pointer;
+}
+.seg button.active { background: var(--tonal); color: var(--on-tonal); font-weight: 620; }
+.switch-btn {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--hover);
+  cursor: pointer;
+  flex: none;
+}
+.switch-btn::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform .14s;
+}
+.switch-btn.is-on { background: var(--accent); }
+.switch-btn.is-on::after { transform: translateX(14px); background: var(--on-accent); }
+.kbd-grid { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; align-items: center; font-size: 11.5px; }
+.kbd-grid dt {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--hover);
+  justify-self: start;
+}
+.kbd-grid dd { margin: 0; color: var(--muted); }
+.acct-state-pill {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--success-soft);
+  color: var(--success);
+  font-size: 10px;
+  font-weight: 620;
+}
+
+/* Mobile showcase view (two side-by-side 316px phones) */
+.phone-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 10px;
+  overflow: hidden;
+}
+.phone-pair-tabs {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  gap: 2px;
+  flex: none;
+}
+.phone-pair-tabs button {
+  border: 0;
+  border-radius: 7px;
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--muted);
+  font: 560 11px/1 inherit;
+  cursor: pointer;
+}
+.phone-pair-tabs button.active { background: var(--tonal); color: var(--on-tonal); font-weight: 620; }
+.phones-row {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 326px));
+  justify-content: center;
+  gap: 14px;
+}
+.phone-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 22px;
+  background: var(--bg);
+  overflow: hidden;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34);
+}
+.ph-topbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 8px;
+  flex: none;
+}
+.ph-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.ph-search {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--panel);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.ph-sheet {
+  flex: 1;
+  min-height: 0;
+  margin: 0 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+.ph-acct-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--row-div);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: none;
+}
+.ph-acct-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--muted);
+  font: 560 11px/1 inherit;
+  white-space: nowrap;
+  flex: none;
+}
+.ph-acct-pill.active { background: var(--tonal); color: var(--on-tonal); border-color: transparent; }
+.ph-drawer {
+  position: absolute;
+  inset: 0 46px 0 0;
+  z-index: 5;
+  padding: 10px 8px;
+  background: var(--panel);
+  border-right: 1px solid var(--border-strong);
+  box-shadow: 12px 0 28px rgba(0, 0, 0, 0.42);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ph-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  z-index: 4;
+}
+
+/* Overlays: Media Lightbox & E2EE Call Code Dialog */
+.overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+.lightbox-card {
+  width: min(520px, 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--panel);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+.lightbox-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.lightbox-head div { flex: 1; min-width: 0; }
+.lightbox-head b { display: block; font-size: 13px; }
+.lightbox-head small { color: var(--muted); font-size: 11px; }
+.lightbox-stage {
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: color-mix(in srgb, var(--bg) 82%, black);
+}
+.lightbox-stage svg { width: 320px; max-width: 100%; height: auto; border-radius: 10px; }
+.lightbox-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.code-dialog {
+  width: min(410px, 100%);
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.code-dialog-head { display: flex; align-items: center; justify-content: space-between; }
+.code-dialog-head h3 { margin: 0; font-size: 15px; font-weight: 630; }
+.code-dialog p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.code-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.code-grid span {
+  padding: 7px 6px;
+  border-radius: 8px;
+  background: var(--hover);
+  text-align: center;
+  font: 650 14px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.code-dialog-foot { display: flex; justify-content: flex-end; gap: 8px; }
+</style>
+</head>
+<body>
+<div class="mock-shell">
+  <div class="mock-bar">
+    <div class="mock-group" role="tablist" aria-label="Mockup views">
+      <button type="button" class="mock-btn active" data-view="wa">WhatsApp</button>
+      <button type="button" class="mock-btn" data-view="dc">Discord</button>
+      <button type="button" class="mock-btn" data-view="voice">Voice call</button>
+      <button type="button" class="mock-btn" data-view="setup">Onboarding &amp; Settings</button>
+      <button type="button" class="mock-btn" data-view="phone">Phone</button>
+    </div>
+    <div class="mock-group">
+      <button type="button" class="mock-btn" id="density-btn">Density: Comfortable</button>
+      <button type="button" class="mock-btn active" data-theme-btn="dark">Nightfall</button>
+      <button type="button" class="mock-btn" data-theme-btn="light">Afterglow</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage" data-theme="dark">
+    <!-- Persistent Dar Full-Canvas Topbar -->
+    <header class="topbar">
+      <div class="tb-start">
+        <span class="dar-mark" aria-hidden="true">D</span>
+        <button type="button" class="ib" title="All apps" aria-label="All apps">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 5a1 1 0 1 0 2 0a1 1 0 1 0-2 0M11 5a1 1 0 1 0 2 0a1 1 0 1 0-2 0M18 5a1 1 0 1 0 2 0a1 1 0 1 0-2 0M4 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M11 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M18 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M4 19a1 1 0 1 0 2 0a1 1 0 1 0-2 0M11 19a1 1 0 1 0 2 0a1 1 0 1 0-2 0M18 19a1 1 0 1 0 2 0a1 1 0 1 0-2 0"/></svg>
+        </button>
+        <span class="tb-title">Chat</span>
+      </div>
+      <div class="tb-search" role="button" tabindex="0">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg>
+        <span>Search all apps…</span>
+        <kbd>Ctrl K</kbd>
+      </div>
+      <div class="tb-end">
+        <button type="button" class="ib" id="tb-settings-btn" title="Chat settings" aria-label="Chat settings">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M10 3h4l.6 3 2 .9 2.7-1 2 3.4-2.2 2v2.4l2.2 2-2 3.4-2.7-1-2 .9-.6 3h-4l-.6-3-2-.9-2.7 1-2-3.4 2.2-2v-2.4l-2.2-2 2-3.4 2.7 1 2-.9ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg>
+        </button>
+        <span class="avatar">A</span>
+      </div>
+    </header>
+
+    <!-- VIEW 1: WHATSAPP -->
+    <div class="view-pane" id="view-wa">
+      <div class="workspace wa-grid" id="wa-workspace">
+        <aside class="sidebar">
+          <button type="button" class="create-btn">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>
+            <span>New chat</span>
+          </button>
+
+          <div class="acct-box" aria-label="Accounts">
+            <div class="acct-head">
+              <span>Accounts</span>
+              <button type="button" class="acct-add-sm" title="Link an account" data-jump-setup="onboard">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>
+              </button>
+            </div>
+            <button type="button" class="acct-row active" data-wa-acct="personal">
+              <span class="plat-badge is-wa"><svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg></span>
+              <span class="acct-name">Personal</span>
+              <span class="acct-dot" title="Connected"></span>
+              <span class="acct-badge">2</span>
+            </button>
+            <button type="button" class="acct-row" data-wa-acct="work">
+              <span class="plat-badge is-wa"><svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg></span>
+              <span class="acct-name">Work</span>
+              <span class="acct-dot" title="Connected"></span>
+              <span class="acct-badge">1</span>
+            </button>
+            <button type="button" class="acct-row" data-jump-view="dc">
+              <span class="plat-badge is-dc"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg></span>
+              <span class="acct-name">Discord</span>
+              <span class="acct-dot" title="Connected"></span>
+              <span class="acct-badge">3</span>
+            </button>
+          </div>
+
+          <nav class="side-scroll" aria-label="Chat views">
+            <button type="button" class="nav-item active" data-wa-view="chats">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg>
+              <span class="nav-lbl">Chats</span><span class="nav-cnt">4</span>
+            </button>
+            <button type="button" class="nav-item" data-wa-view="unread">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6Z"/></svg>
+              <span class="nav-lbl">Unread</span><span class="nav-cnt">2</span>
+            </button>
+            <button type="button" class="nav-item" data-wa-view="groups">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+              <span class="nav-lbl">Groups</span><span class="nav-cnt">1</span>
+            </button>
+            <button type="button" class="nav-item" data-wa-view="archived">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 4h18v4H3ZM5 8v12h14V8M10 12h4"/></svg>
+              <span class="nav-lbl">Archived</span><span class="nav-cnt">1</span>
+            </button>
+          </nav>
+
+          <div class="status-strip">
+            <span class="status-strip-dot"></span>
+            <span class="status-strip-text">+15550001111</span>
+            <button type="button" class="ib" title="Account actions">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M12 5h.01M12 12h.01M12 19h.01"/></svg>
+            </button>
+          </div>
+        </aside>
+
+        <!-- Middle List Sheet -->
+        <section class="sheet list-sheet">
+          <div class="list-head">
+            <h1 id="wa-list-title">Chats</h1>
+            <span class="count-pill" id="wa-list-count">4</span>
+            <button type="button" class="ib" title="Keyboard shortcuts" data-jump-setup="settings">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2ZM6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+            </button>
+          </div>
+          <div class="chip-bar" id="wa-chips">
+            <button type="button" class="chip active" data-wa-filter="all">All</button>
+            <button type="button" class="chip" data-wa-filter="unread">Unread</button>
+            <button type="button" class="chip" data-wa-filter="pinned">Pinned</button>
+            <button type="button" class="chip" data-wa-filter="groups">Groups</button>
+          </div>
+          <div class="list-scroll" id="wa-thread-list">
+            <div class="list-sec-lbl" data-sec="pinned">Pinned</div>
+            <div class="chat-row is-selected" data-thread="sara" data-unread="0" data-pinned="1" data-group="0">
+              <button type="button" class="chat-row-btn">
+                <span class="chat-av hue-3">SH</span>
+                <span class="chat-row-name">Sara Haddad</span>
+                <span class="chat-row-time">3:10 PM</span>
+                <span class="chat-row-prev">
+                  <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4ZM10.6 9a1.6 1.6 0 1 1-3.2 0 1.6 1.6 0 0 1 3.2 0M4 17l5-5 4 4 2-2 5 5"/></svg>
+                  <span>Photo · The place</span>
+                </span>
+                <span class="chat-row-marks">
+                  <svg class="ic" viewBox="0 0 24 24"><title>Muted</title><path d="M3 3l18 18M10.3 20a2 2 0 0 0 3.4 0M6 8a6 6 0 0 1 9.5-4.8M18 8c0 4.5 1.8 6.8 2.6 7.5M8.5 16H3s3-1 3-8"/></svg>
+                  <svg class="ic" viewBox="0 0 24 24"><title>Pinned</title><path d="M9 3h6l-1 6 3 3H7l3-3ZM12 12v9"/></svg>
+                </span>
+              </button>
+              <div class="row-triage">
+                <button type="button" title="Unpin"><svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3 3H7l3-3ZM12 12v9"/></svg></button>
+                <button type="button" title="Unmute"><svg class="ic" viewBox="0 0 24 24"><path d="M3 3l18 18M10.3 20a2 2 0 0 0 3.4 0M6 8a6 6 0 0 1 9.5-4.8"/></svg></button>
+                <button type="button" title="Archive"><svg class="ic" viewBox="0 0 24 24"><path d="M3 4h18v4H3ZM5 8v12h14V8M10 12h4"/></svg></button>
+              </div>
+            </div>
+
+            <div class="list-sec-lbl" data-sec="recent">Recent</div>
+            <div class="chat-row is-unread" data-thread="family" data-unread="1" data-pinned="0" data-group="1">
+              <button type="button" class="chat-row-btn">
+                <span class="chat-av hue-4"><svg class="ic" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87"/></svg></span>
+                <span class="chat-row-name">Family</span>
+                <span class="chat-row-time">2:48 PM</span>
+                <span class="chat-row-prev">
+                  <span><b>Baba:</b> Voice message</span>
+                </span>
+                <span class="chat-row-marks">
+                  <svg class="ic" viewBox="0 0 24 24"><title>Muted</title><path d="M3 3l18 18M10.3 20a2 2 0 0 0 3.4 0M6 8a6 6 0 0 1 9.5-4.8M18 8c0 4.5 1.8 6.8 2.6 7.5M8.5 16H3s3-1 3-8"/></svg>
+                  <span class="unread-pill is-muted">2</span>
+                </span>
+              </button>
+              <div class="row-triage">
+                <button type="button" title="Pin"><svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3 3H7l3-3ZM12 12v9"/></svg></button>
+                <button type="button" title="Archive"><svg class="ic" viewBox="0 0 24 24"><path d="M3 4h18v4H3ZM5 8v12h14V8M10 12h4"/></svg></button>
+              </div>
+            </div>
+
+            <div class="chat-row is-unread" data-thread="omar" data-unread="1" data-pinned="0" data-group="0">
+              <button type="button" class="chat-row-btn">
+                <span class="chat-av hue-2">OF</span>
+                <span class="chat-row-name">Omar Farouk</span>
+                <span class="chat-row-time">11:18 AM</span>
+                <span class="chat-row-prev">
+                  <svg class="ic" style="color:var(--accent)" viewBox="0 0 24 24"><path d="M2 12l5 5L18 6M12 16l1 1 9-11"/></svg>
+                  <span>Merged the fix into main</span>
+                </span>
+                <span class="chat-row-marks">
+                  <span class="unread-pill">1</span>
+                </span>
+              </button>
+              <div class="row-triage">
+                <button type="button" title="Pin"><svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3 3H7l3-3ZM12 12v9"/></svg></button>
+                <button type="button" title="Mute"><svg class="ic" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8M10.3 20a2 2 0 0 0 3.4 0"/></svg></button>
+              </div>
+            </div>
+
+            <div class="chat-row" data-thread="nadia" data-unread="0" data-pinned="0" data-group="0">
+              <button type="button" class="chat-row-btn">
+                <span class="chat-av hue-5">NM</span>
+                <span class="chat-row-name">Nadia Mansour</span>
+                <span class="chat-row-time">Yesterday</span>
+                <span class="chat-row-prev"><span>See you after Jummah!</span></span>
+                <span class="chat-row-marks"></span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Conversation Sheet -->
+        <section class="sheet conv-sheet">
+          <header class="conv-head">
+            <span class="chat-av is-sm hue-3" id="wa-conv-av">SH</span>
+            <div class="conv-who">
+              <h2 id="wa-conv-title">Sara Haddad</h2>
+              <small id="wa-conv-sub">
+                <span>+15550002222 ·</span>
+                <svg class="ic" viewBox="0 0 24 24"><path d="M3 3l18 18M10.3 20a2 2 0 0 0 3.4 0M6 8a6 6 0 0 1 9.5-4.8M8.5 16H3s3-1 3-8"/></svg>
+                <span>Muted</span>
+              </small>
+            </div>
+            <div class="conv-tools">
+              <button type="button" class="ib" id="wa-find-btn" title="Find in chat">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg>
+              </button>
+              <button type="button" class="ib" id="wa-info-btn" title="Chat info">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M12 11v6M12 7h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0"/></svg>
+              </button>
+              <button type="button" class="ib" title="Chat actions">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M12 5h.01M12 12h.01M12 19h.01"/></svg>
+              </button>
+              <button type="button" class="ib" title="Close chat">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg>
+              </button>
+            </div>
+          </header>
+
+          <div class="find-strip hidden" id="wa-find-strip">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg>
+            <input type="search" value="dinner" aria-label="Find in conversation">
+            <span>1 / 2</span>
+            <button type="button" class="ib" id="wa-find-close" title="Close find">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg>
+            </button>
+          </div>
+
+          <div class="conv-toast hidden" id="wa-toast">
+            <span id="wa-toast-text">Copied to clipboard</span>
+            <button type="button" id="wa-toast-dismiss">Dismiss</button>
+          </div>
+
+          <div class="msg-stream-wrap">
+            <div class="msg-stream" id="wa-stream">
+              <button type="button" class="earlier-link">Get earlier messages from your phone</button>
+              <div class="day-pill">November 16</div>
+
+              <div class="msg is-in is-tail" id="wa-msg-1">
+                <div class="msg-line">
+                  <div class="bubble">
+                    <span class="msg-text">Are we still on for <b>dinner</b> tonight?</span>
+                    <span class="msg-meta"><time>4:00 AM</time></span>
+                  </div>
+                  <div class="msg-hover-bar">
+                    <button type="button" class="quick-react" data-emoji="👍">👍</button>
+                    <button type="button" class="quick-react" data-emoji="❤️">❤️</button>
+                    <button type="button" class="quick-reply" data-who="Sara Haddad" data-text="Are we still on for dinner tonight?"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 6 6v4"/></svg></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="msg is-out is-tail" id="wa-msg-yes">
+                <div class="msg-line">
+                  <div class="bubble">
+                    <span class="msg-text">Yes! Bringing the notes from <code>calendar</code></span>
+                    <span class="msg-meta"><time>4:01 AM</time><svg class="ic is-read" viewBox="0 0 24 24"><path d="M2 12l5 5L18 6M12 16l1 1 9-11"/></svg></span>
+                  </div>
+                  <div class="msg-hover-bar">
+                    <button type="button" class="quick-react" data-emoji="👍">👍</button>
+                    <button type="button" class="quick-reply" data-who="yourself" data-text="Yes! Bringing the notes from calendar"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 6 6v4"/></svg></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="msg is-in is-tail">
+                <div class="msg-line">
+                  <div class="bubble has-photo">
+                    <button type="button" class="msg-quote" data-jump="wa-msg-yes">
+                      <b>You</b>
+                      <span>Yes! Bringing the notes from calendar</span>
+                    </button>
+                    <button type="button" class="photo-btn" data-lightbox="cafe">
+                      <svg viewBox="0 0 320 180" aria-label="Twilight courtyard photo">
+                        <defs>
+                          <linearGradient id="sky1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4d3c73"/><stop offset="65%" stop-color="#a94a76"/><stop offset="100%" stop-color="#ffc493"/></linearGradient>
+                        </defs>
+                        <rect width="320" height="180" fill="url(#sky1)"/>
+                        <circle cx="248" cy="54" r="24" fill="#ffe7c7" opacity="0.9"/>
+                        <path d="M0 132 Q80 105 165 126 T320 118 L320 180 L0 180 Z" fill="#301c2b"/>
+                        <rect x="34" y="96" width="54" height="58" rx="4" fill="#3a2536"/>
+                        <rect x="44" y="108" width="12" height="14" rx="2" fill="#ffc493" opacity="0.85"/>
+                        <rect x="64" y="108" width="12" height="14" rx="2" fill="#ffc493" opacity="0.65"/>
+                        <circle cx="152" cy="146" r="14" fill="#73396f"/>
+                        <rect x="148" y="146" width="8" height="22" fill="#26111f"/>
+                      </svg>
+                    </button>
+                    <span class="msg-text">The place — <a href="#invite" onclick="return false">dar.local/dinner</a></span>
+                    <span class="msg-meta"><time>4:02 AM</time></span>
+                  </div>
+                  <div class="msg-hover-bar">
+                    <button type="button" class="quick-react" data-emoji="❤️">❤️</button>
+                    <button type="button" class="quick-react" data-emoji="😂">😂</button>
+                    <button type="button" class="quick-reply" data-who="Sara Haddad" data-text="Photo · The place"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 6 6v4"/></svg></button>
+                  </div>
+                </div>
+                <div class="reactions">
+                  <button type="button" class="react-chip is-mine">❤️ <small>1</small></button>
+                </div>
+              </div>
+
+              <div class="new-divider">New messages</div>
+
+              <div class="msg is-in is-tail" id="wa-msg-vn">
+                <div class="msg-line">
+                  <div class="bubble">
+                    <div class="voice-note" id="vn-player">
+                      <button type="button" class="vn-play" id="vn-play-btn" aria-label="Play voice message">
+                        <svg class="ic" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7Z"/></svg>
+                      </button>
+                      <div class="vn-bars" id="vn-bars">
+                        <i class="is-played" style="height:35%"></i><i class="is-played" style="height:65%"></i><i class="is-played" style="height:90%"></i><i class="is-played" style="height:55%"></i><i class="is-played" style="height:75%"></i>
+                        <i style="height:40%"></i><i style="height:85%"></i><i style="height:60%"></i><i style="height:95%"></i><i style="height:50%"></i><i style="height:70%"></i><i style="height:35%"></i><i style="height:60%"></i><i style="height:45%"></i><i style="height:80%"></i><i style="height:40%"></i>
+                      </div>
+                      <span class="vn-time">0:18</span>
+                      <button type="button" class="vn-speed" id="vn-speed-btn">1×</button>
+                    </div>
+                    <span class="msg-meta"><time>3:10 PM</time></span>
+                  </div>
+                  <div class="msg-hover-bar">
+                    <button type="button" class="quick-react" data-emoji="👍">👍</button>
+                    <button type="button" class="quick-reply" data-who="Sara Haddad" data-text="Voice message (0:18)"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 6 6v4"/></svg></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button type="button" class="jump-latest" id="wa-jump-latest" title="Scroll to newest">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+              <span>Latest</span>
+            </button>
+          </div>
+
+          <form class="composer-wrap" id="wa-form">
+            <div class="reply-bar hidden" id="wa-reply-bar">
+              <div><b id="wa-reply-who">Replying to Sara Haddad</b><span id="wa-reply-text"></span></div>
+              <button type="button" class="ib" id="wa-reply-cancel" aria-label="Cancel reply">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg>
+              </button>
+            </div>
+            <div class="emoji-pop hidden" id="wa-emoji-pop">
+              <button type="button">👍</button><button type="button">❤️</button><button type="button">😂</button><button type="button">😮</button><button type="button">😢</button><button type="button">🙏</button>
+              <button type="button">🔥</button><button type="button">🎉</button><button type="button">✨</button><button type="button">☕</button><button type="button">🚀</button><button type="button">💜</button>
+            </div>
+            <div class="compose-box">
+              <button type="button" class="ib" id="wa-emoji-btn" title="Insert emoji" aria-label="Insert emoji">
+                <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4 4 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg>
+              </button>
+              <input type="text" id="wa-input" placeholder="Message Sara Haddad">
+              <button type="submit" class="send-btn" id="wa-send" aria-label="Send" disabled>
+                <svg class="ic" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6"/></svg>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Toggleable Right Inspector Sheet -->
+        <aside class="sheet hidden" id="wa-info-sheet">
+          <header class="conv-head">
+            <h2 style="margin:0;font-size:13.5px;font-weight:630;flex:1" id="wa-info-heading">Contact info</h2>
+            <button type="button" class="ib" id="wa-info-close" title="Close info">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg>
+            </button>
+          </header>
+          <div class="info-body">
+            <div class="info-hero">
+              <span class="chat-av is-lg hue-3" id="wa-info-av">SH</span>
+              <h3 id="wa-info-name">Sara Haddad</h3>
+              <p id="wa-info-sub">+15550002222 · WhatsApp</p>
+            </div>
+            <div class="info-actions">
+              <button type="button" class="qa-btn is-on" id="wa-info-mute">
+                <span><svg class="ic" viewBox="0 0 24 24"><path d="M3 3l18 18M10.3 20a2 2 0 0 0 3.4 0M6 8a6 6 0 0 1 9.5-4.8M8.5 16H3s3-1 3-8"/></svg></span>
+                Unmute
+              </button>
+              <button type="button" class="qa-btn is-on">
+                <span><svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3 3H7l3-3ZM12 12v9"/></svg></span>
+                Unpin
+              </button>
+              <button type="button" class="qa-btn">
+                <span><svg class="ic" viewBox="0 0 24 24"><path d="M3 4h18v4H3ZM5 8v12h14V8M10 12h4"/></svg></span>
+                Archive
+              </button>
+            </div>
+            <div class="info-tabs" role="tablist">
+              <button type="button" class="active" data-info-tab="overview">Overview</button>
+              <button type="button" data-info-tab="media">Media</button>
+              <button type="button" data-info-tab="members">Members</button>
+            </div>
+
+            <div id="info-tab-overview">
+              <div class="contact-card">
+                <span class="chat-av is-sm hue-3">SH</span>
+                <div><b>Sara Haddad</b><small>Dar contact</small></div>
+                <a href="#contacts" onclick="return false">Open</a>
+              </div>
+              <dl class="prop-card" style="margin-top:8px">
+                <div><dt><svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg>Account</dt><dd>Personal</dd></div>
+                <div><dt><svg class="ic" viewBox="0 0 24 24"><path d="M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0"/></svg>Messages in Dar</dt><dd class="num">42</dd></div>
+                <div><dt><svg class="ic" viewBox="0 0 24 24"><path d="M3 3l18 18M10.3 20a2 2 0 0 0 3.4 0M6 8a6 6 0 0 1 9.5-4.8"/></svg>Muted</dt><dd>8 hours</dd></div>
+              </dl>
+            </div>
+
+            <div id="info-tab-media" class="hidden">
+              <div class="media-grid">
+                <button type="button" class="media-thumb" data-lightbox="cafe">
+                  <svg viewBox="0 0 120 120"><rect width="120" height="120" fill="#4d3c73"/><circle cx="88" cy="36" r="18" fill="#ffc493"/><path d="M0 84 Q40 66 120 82 L120 120 L0 120 Z" fill="#26111f"/></svg>
+                </button>
+                <button type="button" class="media-thumb" data-lightbox="caddy">
+                  <svg viewBox="0 0 120 120"><rect width="120" height="120" fill="#284136"/><rect x="20" y="28" width="80" height="64" rx="8" fill="#3a2536"/><path d="M34 54h52M34 68h34" stroke="#b2dec4" stroke-width="5" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+              <div class="file-chip" style="margin-top:8px">
+                <span class="plat-badge is-wa"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6Z"/></svg></span>
+                <div style="flex:1;min-width:0"><b>Eid lunch menu.pdf</b><small>412 KB</small></div>
+              </div>
+            </div>
+
+            <div id="info-tab-members" class="hidden">
+              <ul class="members-list">
+                <li><span class="chat-av is-tiny hue-0">A</span><span class="mem-name">Anas (you)</span><small>Admin</small></li>
+                <li><span class="chat-av is-tiny hue-2">OF</span><span class="mem-name">Omar Farouk</span><small>Admin</small></li>
+                <li><span class="chat-av is-tiny hue-3">B</span><span class="mem-name">Baba</span></li>
+              </ul>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- VIEW 2: DISCORD -->
+    <div class="view-pane hidden" id="view-dc">
+      <div class="workspace dc-grid has-info" id="dc-workspace">
+        <aside class="sidebar">
+          <button type="button" class="create-btn">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>
+            <span>New message</span>
+          </button>
+
+          <div class="acct-box">
+            <div class="acct-head">
+              <span>Accounts</span>
+              <button type="button" class="acct-add-sm" title="Link an account" data-jump-setup="onboard">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>
+              </button>
+            </div>
+            <button type="button" class="acct-row" data-jump-view="wa">
+              <span class="plat-badge is-wa"><svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg></span>
+              <span class="acct-name">Personal</span>
+              <span class="acct-dot"></span>
+              <span class="acct-badge">2</span>
+            </button>
+            <button type="button" class="acct-row active">
+              <span class="plat-badge is-dc"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg></span>
+              <span class="acct-name">Discord</span>
+              <span class="acct-dot"></span>
+              <span class="acct-badge">3</span>
+            </button>
+          </div>
+
+          <div class="side-scroll">
+            <button type="button" class="nav-item">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"/></svg>
+              <span class="nav-lbl">Direct messages</span><span class="nav-cnt">1</span>
+            </button>
+            <div class="tree-heading">Servers</div>
+            <div>
+              <button type="button" class="srv-row" data-srv-toggle="srv-hc">
+                <span class="srv-mark hue-3">HC</span>
+                <span class="nav-lbl">Homelab Club</span>
+                <span class="ch-mention">1</span>
+                <svg class="ic srv-chev is-open" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>
+              </button>
+              <div id="srv-hc">
+                <button type="button" class="cat-btn is-open" data-cat-toggle="cat-text">
+                  <svg class="ic" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>
+                  <span>Text channels</span>
+                </button>
+                <ul class="ch-list" id="cat-text">
+                  <li><button type="button" class="ch-row active is-unread"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg><span class="nav-lbl">general</span><span class="ch-mention">1</span></button></li>
+                  <li><button type="button" class="ch-row"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg><span class="nav-lbl">nixos</span></button></li>
+                  <li><button type="button" class="ch-row is-muted"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg><span class="nav-lbl">off-topic</span><svg class="ic" style="margin-left:auto;width:11px;height:11px" viewBox="0 0 24 24"><path d="M3 3l18 18M10.3 20a2 2 0 0 0 3.4 0M6 8a6 6 0 0 1 9.5-4.8"/></svg></button></li>
+                </ul>
+                <button type="button" class="cat-btn is-open" data-cat-toggle="cat-vc">
+                  <svg class="ic" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>
+                  <span>Voice channels</span>
+                </button>
+                <div id="cat-vc">
+                  <button type="button" class="ch-row is-live" data-jump-view="voice">
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4ZM15.5 8.5a5 5 0 0 1 0 7"/></svg>
+                    <span class="nav-lbl">Lounge</span>
+                    <span class="nav-cnt">3</span>
+                  </button>
+                  <ul class="vc-members">
+                    <li class="vc-mem is-speaking"><span class="vc-av hue-2">LK</span><span>Lina K</span></li>
+                    <li class="vc-mem"><span class="vc-av hue-3">T</span><span>tarek</span><svg class="ic" viewBox="0 0 24 24"><path d="M3 3l18 18M9 9v2a3 3 0 0 0 5.1 2.1M12 18v4"/></svg></li>
+                    <li class="vc-mem"><span class="vc-av hue-1">A</span><span>Anas (you)</span></li>
+                  </ul>
+                </div>
+              </div>
+
+              <button type="button" class="srv-row is-muted" data-srv-toggle="srv-kn">
+                <span class="srv-mark hue-2">KN</span>
+                <span class="nav-lbl">Kernel newbies</span>
+                <svg class="ic srv-chev" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>
+              </button>
+              <div id="srv-kn" class="hidden">
+                <ul class="ch-list">
+                  <li><button type="button" class="ch-row"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg><span class="nav-lbl">welcome</span></button></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sleek Persistent Voice Dock -->
+          <section class="voice-dock" aria-label="Voice call">
+            <div class="voice-dock-head">
+              <button type="button" class="voice-dock-open" data-jump-view="voice">
+                <span class="voice-live-dot"><svg class="ic" viewBox="0 0 24 24"><path d="M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16"/></svg></span>
+                <span class="voice-dock-meta"><b>Voice · 04:12</b><small>Lounge · Homelab Club</small></span>
+              </button>
+              <button type="button" class="voice-lock open-code-modal" title="Verify call code" aria-label="Verify call code">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              </button>
+            </div>
+            <div class="voice-ctrls">
+              <button type="button" class="vc-btn dock-mute-btn" aria-pressed="false" title="Mute"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3ZM19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></button>
+              <button type="button" class="vc-btn dock-deaf-btn" aria-pressed="false" title="Deafen"><svg class="ic" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3ZM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3Z"/></svg></button>
+              <button type="button" class="vc-btn is-leave dock-leave-btn" title="Leave voice"><svg class="ic" viewBox="0 0 24 24"><path d="M3 13.5c5-4.7 13-4.7 18 0l-2 2.5-3.5-1.3V12a12 12 0 0 0-7 0v2.7L5 16Z"/></svg></button>
+            </div>
+          </section>
+
+          <div class="status-strip">
+            <span class="status-strip-dot"></span>
+            <span class="status-strip-text">@anas · Discord</span>
+            <button type="button" class="ib" title="Account actions"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5h.01M12 12h.01M12 19h.01"/></svg></button>
+          </div>
+        </aside>
+
+        <!-- Flat #general Channel Sheet -->
+        <section class="sheet conv-sheet">
+          <header class="conv-head">
+            <span class="dc-ch-mark"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg></span>
+            <div class="conv-who">
+              <h2>#general</h2>
+              <small>Homelab Club · Say hello</small>
+            </div>
+            <div class="conv-tools">
+              <button type="button" class="ib" title="Find in channel"><svg class="ic" viewBox="0 0 24 24"><path d="M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg></button>
+              <button type="button" class="ib on" id="dc-info-btn" title="Channel info"><svg class="ic" viewBox="0 0 24 24"><path d="M12 11v6M12 7h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0"/></svg></button>
+              <button type="button" class="ib" title="Channel actions"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5h.01M12 12h.01M12 19h.01"/></svg></button>
+              <button type="button" class="ib" title="Close channel"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg></button>
+            </div>
+          </header>
+
+          <div class="flat-stream">
+            <button type="button" class="earlier-link">Load earlier messages from Discord</button>
+            <div class="day-pill">November 17</div>
+
+            <div class="flat-msg is-first">
+              <span class="flat-av hue-2">L</span>
+              <div class="flat-head"><b style="color:var(--success)">lina.k</b><time>4:00 AM</time></div>
+              <div class="flat-body">Anyone moved to the new <code>caddy</code> module? Config is at <a href="#caddy" onclick="return false">homelab.local/caddy</a></div>
+              <div class="msg-hover-bar">
+                <button type="button" class="quick-react" data-emoji="👍">👍</button>
+                <button type="button" class="quick-react" data-emoji="🔥">🔥</button>
+                <button type="button" class="dc-reply-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 6 6v4"/></svg></button>
+              </div>
+            </div>
+
+            <div class="flat-msg is-first">
+              <span class="flat-av hue-3">T</span>
+              <div class="flat-head"><b style="color:var(--warning)">tarek</b><time>4:01 AM</time></div>
+              <div class="flat-body">
+                Yes, painless — zero downtime reload:
+                <!-- Photo fits content width cleanly: no stretched bar! -->
+                <button type="button" class="photo-btn" data-lightbox="caddy">
+                  <svg viewBox="0 0 240 132" aria-label="Caddy reload status image">
+                    <rect width="240" height="132" fill="#284136"/>
+                    <rect x="16" y="18" width="208" height="96" rx="10" fill="#301c2b"/>
+                    <circle cx="38" cy="40" r="7" fill="#b2dec4"/>
+                    <rect x="54" y="35" width="94" height="10" rx="4" fill="#faeaf3" opacity="0.85"/>
+                    <rect x="30" y="60" width="174" height="8" rx="4" fill="#b2dec4" opacity="0.5"/>
+                    <rect x="30" y="76" width="132" height="8" rx="4" fill="#cfb4ca" opacity="0.35"/>
+                    <rect x="30" y="92" width="84" height="8" rx="4" fill="#f2a2a9" opacity="0.7"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="reactions">
+                <button type="button" class="react-chip is-mine">👍 <small>3</small></button>
+                <button type="button" class="react-chip">:party: <small>2</small></button>
+              </div>
+              <div class="msg-hover-bar">
+                <button type="button" class="quick-react" data-emoji="👍">👍</button>
+                <button type="button" class="quick-react" data-emoji="🎉">🎉</button>
+              </div>
+            </div>
+
+            <div class="flat-msg is-first">
+              <span class="flat-av hue-0">A</span>
+              <div class="flat-head"><b style="color:var(--on-tonal)">Anas</b><time>4:04 AM</time></div>
+              <div class="flat-body"><span class="mention">@lina.k</span> works cleanly behind reverse proxy too <span class="edited-lbl">(edited)</span></div>
+            </div>
+          </div>
+
+          <form class="composer-wrap" onsubmit="return false">
+            <div class="compose-box">
+              <button type="button" class="ib" title="Insert emoji"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4 4 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg></button>
+              <input type="text" id="dc-input" placeholder="Message #general">
+              <span class="char-cnt" id="dc-chars">0 / 4000</span>
+              <button type="submit" class="send-btn" disabled><svg class="ic" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6"/></svg></button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Discord Channel Info Sheet -->
+        <aside class="sheet" id="dc-info-sheet">
+          <header class="conv-head">
+            <h2 style="margin:0;font-size:13.5px;font-weight:630;flex:1">Channel info</h2>
+            <button type="button" class="ib" id="dc-info-close" title="Close channel info"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg></button>
+          </header>
+          <div class="info-body">
+            <div class="info-hero">
+              <span class="dc-ch-mark is-large"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg></span>
+              <h3>#general</h3>
+              <p>Homelab Club · Text channels</p>
+            </div>
+            <div class="info-actions">
+              <button type="button" class="qa-btn"><span><svg class="ic" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8M10.3 20a2 2 0 0 0 3.4 0"/></svg></span>Mute</button>
+            </div>
+            <dl class="prop-card">
+              <div><dt><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg>Account</dt><dd>Discord</dd></div>
+              <div><dt><svg class="ic" viewBox="0 0 24 24"><path d="M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0"/></svg>Messages in Dar</dt><dd class="num">3</dd></div>
+            </dl>
+            <div class="list-sec-lbl" style="padding:2px 0 0">Photos</div>
+            <div class="media-grid">
+              <button type="button" class="media-thumb" data-lightbox="caddy">
+                <svg viewBox="0 0 120 120"><rect width="120" height="120" fill="#284136"/><rect x="18" y="28" width="84" height="64" rx="8" fill="#3a2536"/><path d="M30 56h60M30 70h40" stroke="#b2dec4" stroke-width="5" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- VIEW 3: VOICE CALL STAGE -->
+    <div class="view-pane hidden" id="view-voice">
+      <div class="workspace voice-grid-layout">
+        <aside class="sidebar">
+          <button type="button" class="create-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg><span>New message</span></button>
+          <div class="acct-box">
+            <div class="acct-head"><span>Accounts</span></div>
+            <button type="button" class="acct-row" data-jump-view="wa">
+              <span class="plat-badge is-wa"><svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg></span>
+              <span class="acct-name">Personal</span><span class="acct-badge">2</span>
+            </button>
+            <button type="button" class="acct-row active">
+              <span class="plat-badge is-dc"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg></span>
+              <span class="acct-name">Discord</span><span class="acct-badge">3</span>
+            </button>
+          </div>
+          <div class="side-scroll">
+            <button type="button" class="nav-item" data-jump-view="dc"><svg class="ic" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"/></svg><span class="nav-lbl">Direct messages</span></button>
+            <div class="tree-heading">Servers</div>
+            <button type="button" class="srv-row"><span class="srv-mark hue-3">HC</span><span class="nav-lbl">Homelab Club</span></button>
+            <ul class="ch-list">
+              <li><button type="button" class="ch-row" data-jump-view="dc"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg><span class="nav-lbl">general</span></button></li>
+              <li><button type="button" class="ch-row active is-live"><svg class="ic" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4ZM15.5 8.5a5 5 0 0 1 0 7"/></svg><span class="nav-lbl">Lounge</span><span class="nav-cnt">3</span></button></li>
+            </ul>
+            <ul class="vc-members">
+              <li class="vc-mem is-speaking"><span class="vc-av hue-2">LK</span><span>Lina K</span></li>
+              <li class="vc-mem"><span class="vc-av hue-3">T</span><span>tarek</span><svg class="ic" viewBox="0 0 24 24"><path d="M3 3l18 18M9 9v2a3 3 0 0 0 5.1 2.1M12 18v4"/></svg></li>
+              <li class="vc-mem"><span class="vc-av hue-1">A</span><span>Anas (you)</span></li>
+            </ul>
+          </div>
+          <section class="voice-dock">
+            <div class="voice-dock-head">
+              <button type="button" class="voice-dock-open">
+                <span class="voice-live-dot"><svg class="ic" viewBox="0 0 24 24"><path d="M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16"/></svg></span>
+                <span class="voice-dock-meta"><b>Voice · 04:12</b><small>Lounge · Homelab Club</small></span>
+              </button>
+              <button type="button" class="voice-lock open-code-modal" title="Verify call code"><svg class="ic" viewBox="0 0 24 24"><path d="M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3"/></svg></button>
+            </div>
+            <div class="voice-ctrls">
+              <button type="button" class="vc-btn dock-mute-btn" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3ZM19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></button>
+              <button type="button" class="vc-btn dock-deaf-btn" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3ZM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3Z"/></svg></button>
+              <button type="button" class="vc-btn is-leave dock-leave-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M3 13.5c5-4.7 13-4.7 18 0l-2 2.5-3.5-1.3V12a12 12 0 0 0-7 0v2.7L5 16Z"/></svg></button>
+            </div>
+          </section>
+          <div class="status-strip"><span class="status-strip-dot"></span><span class="status-strip-text">@anas · Discord</span></div>
+        </aside>
+
+        <section class="sheet voice-stage">
+          <header class="conv-head">
+            <span class="dc-ch-mark is-live"><svg class="ic" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4ZM15.5 8.5a5 5 0 0 1 0 7"/></svg></span>
+            <div class="conv-who">
+              <h2>Lounge</h2>
+              <small>Homelab Club · 04:12</small>
+            </div>
+            <div class="voice-mode-seg">
+              <button type="button" class="active" data-voice-mode="active">Active call</button>
+              <button type="button" data-voice-mode="prejoin">Pre-join</button>
+            </div>
+            <button type="button" class="e2ee-pill open-code-modal" title="Verify 30-digit call code">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              <span>End-to-end encrypted</span>
+            </button>
+          </header>
+
+          <div id="voice-active-pane" style="flex:1;display:flex;flex-direction:column;min-height:0">
+            <div class="call-tiles">
+              <div class="call-tile is-speaking">
+                <div class="tile-eq" aria-hidden="true"><i style="height:6px"></i><i style="height:12px"></i><i style="height:8px"></i></div>
+                <span class="call-tile-av hue-2">LK</span>
+                <span class="call-tile-name">Lina K</span>
+              </div>
+              <div class="call-tile">
+                <span class="tile-badge" title="Muted"><svg class="ic" viewBox="0 0 24 24"><path d="M3 3l18 18M9 9v2a3 3 0 0 0 5.1 2.1M12 18v4"/></svg></span>
+                <span class="call-tile-av hue-3">T</span>
+                <span class="call-tile-name">tarek</span>
+              </div>
+              <div class="call-tile" id="me-call-tile">
+                <span class="tile-badge hidden" id="me-tile-badge" title="Muted"><svg class="ic" viewBox="0 0 24 24"><path d="M3 3l18 18M9 9v2a3 3 0 0 0 5.1 2.1M12 18v4"/></svg></span>
+                <span class="call-tile-av hue-1">A</span>
+                <span class="call-tile-name">Anas (you)</span>
+              </div>
+            </div>
+            <div class="call-bar">
+              <button type="button" class="call-pill-btn dock-mute-btn" aria-pressed="false">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3ZM19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg>
+                <span>Mute</span>
+              </button>
+              <button type="button" class="call-pill-btn dock-deaf-btn" aria-pressed="false">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3ZM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3Z"/></svg>
+                <span>Deafen</span>
+              </button>
+              <button type="button" class="call-pill-btn open-code-modal">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                <span>Verify code</span>
+              </button>
+              <button type="button" class="call-pill-btn is-leave dock-leave-btn">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M3 13.5c5-4.7 13-4.7 18 0l-2 2.5-3.5-1.3V12a12 12 0 0 0-7 0v2.7L5 16Z"/></svg>
+                <span>Leave</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="prejoin hidden" id="voice-prejoin-pane">
+            <span class="dc-ch-mark is-large"><svg class="ic" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4ZM15.5 8.5a5 5 0 0 1 0 7"/></svg></span>
+            <h3>2 people are in Lounge</h3>
+            <div class="prejoin-chips">
+              <span class="prejoin-chip"><span class="vc-av hue-2">LK</span> Lina K · speaking</span>
+              <span class="prejoin-chip"><span class="vc-av hue-3">T</span> tarek · muted</span>
+            </div>
+            <p>Join to talk. End-to-end encrypted with DAVE; your browser asks for the microphone once.</p>
+            <label style="display:inline-flex;align-items:center;gap:7px;font-size:12px;cursor:pointer">
+              <input type="checkbox" style="accent-color:var(--accent)"> Join muted
+            </label>
+            <button type="button" class="primary-btn" id="voice-rejoin-btn">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3ZM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3Z"/></svg>
+              Join voice
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- VIEW 4: ONBOARDING & SETTINGS -->
+    <div class="view-pane hidden" id="view-setup">
+      <div class="workspace setup-grid" id="setup-workspace">
+        <aside class="sidebar">
+          <button type="button" class="create-btn">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>
+            <span>Link account</span>
+          </button>
+          <nav class="side-scroll">
+            <button type="button" class="nav-item active" data-setup-mode="onboard">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>
+              <span class="nav-lbl">Onboarding</span>
+            </button>
+            <button type="button" class="nav-item" data-setup-mode="settings">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M10 3h4l.6 3 2 .9 2.7-1 2 3.4-2.2 2v2.4l2.2 2-2 3.4-2.7-1-2 .9-.6 3h-4l-.6-3-2-.9-2.7 1-2-3.4 2.2-2v-2.4l-2.2-2 2-3.4 2.7 1 2-.9ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg>
+              <span class="nav-lbl">Chat settings</span>
+            </button>
+          </nav>
+        </aside>
+
+        <!-- Sub-view A: Full-width Zero-Account Onboarding -->
+        <section class="sheet" id="setup-onboard-pane">
+          <div class="setup-subbar">
+            <strong style="font-size:14px">Get started</strong>
+            <div class="voice-mode-seg">
+              <button type="button" class="active" data-setup-mode="onboard">Zero-account state</button>
+              <button type="button" data-setup-mode="settings">Chat settings</button>
+            </div>
+          </div>
+          <div class="onboard-body">
+            <div class="onboard-head">
+              <h2>Bring your chats into Dar</h2>
+              <p>Each linked account keeps its own tab, views, and unread counts. Accounts never mix.</p>
+            </div>
+            <div class="onboard-cards">
+              <div class="onboard-card">
+                <div class="onboard-card-top">
+                  <span class="plat-badge is-wa" style="width:24px;height:24px;border-radius:7px"><svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg></span>
+                  <b>WhatsApp</b>
+                </div>
+                <p>Link as a companion device using a QR code or phone pairing code. Imports chats, groups, reactions, and media.</p>
+                <button type="button" class="primary-btn" style="align-self:flex-start">Link WhatsApp</button>
+              </div>
+              <div class="onboard-card">
+                <div class="onboard-card-top">
+                  <span class="plat-badge is-dc" style="width:24px;height:24px;border-radius:7px"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg></span>
+                  <b>Discord</b>
+                </div>
+                <p>Servers, text channels, direct messages, and DAVE E2EE voice channels via QR sign-in.</p>
+                <div class="onboard-warn">
+                  <svg class="ic" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 8v5M12 16h.01"/></svg>
+                  <span>Breaks Discord’s terms; your password is never seen.</span>
+                </div>
+                <button type="button" class="secondary-btn" style="align-self:flex-start">Link Discord</button>
+              </div>
+            </div>
+            <div class="onboard-foot">
+              <span><svg class="ic" viewBox="0 0 24 24"><path d="M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3"/></svg> Encrypted key store</span>
+              <span><svg class="ic" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"/></svg> Named by Dar Contacts</span>
+              <span><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></svg> Save media to Files</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Sub-view B: Chat list + Upgraded Chat Settings Sheet -->
+        <section class="sheet hidden" id="setup-list-preview">
+          <div class="list-head"><h1>Chats</h1><span class="count-pill">4</span></div>
+          <div class="list-scroll">
+            <div class="chat-row is-selected"><button type="button" class="chat-row-btn"><span class="chat-av hue-3">SH</span><span class="chat-row-name">Sara Haddad</span><span class="chat-row-time">3:10 PM</span><span class="chat-row-prev"><span>Photo · The place</span></span></button></div>
+            <div class="chat-row is-unread"><button type="button" class="chat-row-btn"><span class="chat-av hue-4">F</span><span class="chat-row-name">Family</span><span class="chat-row-time">2:48 PM</span><span class="chat-row-prev"><span>Baba: Voice message</span></span><span class="chat-row-marks"><span class="unread-pill is-muted">2</span></span></button></div>
+          </div>
+        </section>
+
+        <aside class="sheet hidden" id="setup-settings-sheet">
+          <header class="settings-head">
+            <span class="settings-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg></span>
+            <h2>Chat settings</h2>
+            <button type="button" class="ib" data-setup-mode="onboard" title="Close settings"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg></button>
+          </header>
+          <div class="settings-tabs" role="tablist">
+            <button type="button" class="active" data-set-tab="display">Display</button>
+            <button type="button" data-set-tab="accounts">Accounts</button>
+            <button type="button" data-set-tab="shortcuts">Shortcuts</button>
+          </div>
+          <div class="settings-body">
+            <div id="set-tab-display" style="display:flex;flex-direction:column;gap:12px">
+              <div class="set-row">
+                <div class="set-row-lbl"><b>Message density</b><small>Applies to chat list and message stream</small></div>
+                <div class="seg">
+                  <button type="button" class="active" data-set-density="comfortable">Comfortable</button>
+                  <button type="button" data-set-density="compact">Compact</button>
+                </div>
+              </div>
+              <div class="set-row">
+                <div class="set-row-lbl"><b>Send message with</b><small>Shift+Enter always adds a new line</small></div>
+                <div class="seg">
+                  <button type="button" class="active" data-send-key="enter">Enter</button>
+                  <button type="button" data-send-key="mod">Ctrl+Enter</button>
+                </div>
+              </div>
+              <div class="set-row">
+                <div class="set-row-lbl"><b>Format inline Markdown</b><small>Render bold, italic, code, and links</small></div>
+                <button type="button" class="switch-btn is-on" aria-pressed="true"></button>
+              </div>
+              <div class="set-row">
+                <div class="set-row-lbl"><b>Show emoji button</b><small>Quick emoji picker in the composer</small></div>
+                <button type="button" class="switch-btn is-on" aria-pressed="true"></button>
+              </div>
+            </div>
+
+            <div id="set-tab-accounts" class="hidden" style="display:flex;flex-direction:column;gap:8px">
+              <div class="contact-card">
+                <span class="plat-badge is-wa" style="width:24px;height:24px"><svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg></span>
+                <div><b>Personal</b><small>WhatsApp · +15550001111</small></div>
+                <span class="acct-state-pill">Connected</span>
+                <button type="button" class="ib"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5h.01M12 12h.01M12 19h.01"/></svg></button>
+              </div>
+              <div class="contact-card">
+                <span class="plat-badge is-dc" style="width:24px;height:24px"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg></span>
+                <div><b>Discord</b><small>Discord · @anas</small></div>
+                <span class="acct-state-pill">Connected</span>
+                <button type="button" class="ib"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5h.01M12 12h.01M12 19h.01"/></svg></button>
+              </div>
+              <button type="button" class="secondary-btn" style="align-self:flex-start" data-setup-mode="onboard">Link an account</button>
+            </div>
+
+            <div id="set-tab-shortcuts" class="hidden">
+              <dl class="kbd-grid">
+                <dt>J / K</dt><dd>Next / previous chat</dd>
+                <dt>Alt + 1–9</dt><dd>Switch account tab</dd>
+                <dt>N</dt><dd>New chat or message</dd>
+                <dt>I</dt><dd>Toggle chat info</dd>
+                <dt>Ctrl + F</dt><dd>Find in conversation</dd>
+                <dt>Esc</dt><dd>Cancel reply or close pane</dd>
+                <dt>Ctrl + K</dt><dd>Search all apps</dd>
+              </dl>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- VIEW 5: PHONE (390px) -->
+    <div class="view-pane hidden" id="view-phone">
+      <div class="phone-stage">
+        <div class="phone-pair-tabs">
+          <button type="button" class="active" data-phone-pair="1">List &amp; Conversation</button>
+          <button type="button" data-phone-pair="2">Discord Drawer &amp; Voice Call</button>
+        </div>
+
+        <!-- Pair 1 -->
+        <div class="phones-row" id="phone-pair-1">
+          <div class="phone-frame">
+            <div class="ph-topbar">
+              <span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>
+              <span class="ph-search"><svg class="ic" viewBox="0 0 24 24"><path d="M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg><span>Search all apps…</span></span>
+              <span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M10 3h4l.6 3 2 .9 2.7-1 2 3.4-2.2 2v2.4l2.2 2-2 3.4-2.7-1-2 .9-.6 3h-4l-.6-3-2-.9-2.7 1-2-3.4 2.2-2v-2.4l-2.2-2 2-3.4 2.7 1 2-.9ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg></span>
+              <span class="avatar">A</span>
+            </div>
+            <div class="ph-sheet">
+              <!-- Visible Account Switcher Pill Strip directly on mobile! -->
+              <div class="ph-acct-strip">
+                <span class="ph-acct-pill active"><span class="plat-badge is-wa"><svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg></span>Personal <span class="acct-badge">2</span></span>
+                <span class="ph-acct-pill"><span class="plat-badge is-dc"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg></span>Discord <span class="acct-badge">3</span></span>
+                <span class="ph-acct-pill">+</span>
+              </div>
+              <div class="list-head" style="min-height:38px">
+                <h1 style="font-size:15px">Chats</h1><span class="count-pill">4</span>
+                <button type="button" class="ib" title="New chat"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg></button>
+              </div>
+              <div class="list-scroll">
+                <div class="chat-row"><button type="button" class="chat-row-btn"><span class="chat-av hue-3">SH</span><span class="chat-row-name">Sara Haddad</span><span class="chat-row-time">3:10 PM</span><span class="chat-row-prev"><span>Photo · The place</span></span><span class="chat-row-marks"><svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3 3H7l3-3ZM12 12v9"/></svg></span></button></div>
+                <div class="chat-row is-unread"><button type="button" class="chat-row-btn"><span class="chat-av hue-4">F</span><span class="chat-row-name">Family</span><span class="chat-row-time">2:48 PM</span><span class="chat-row-prev"><span>Baba: Voice message</span></span><span class="chat-row-marks"><span class="unread-pill is-muted">2</span></span></button></div>
+                <div class="chat-row is-unread"><button type="button" class="chat-row-btn"><span class="chat-av hue-2">OF</span><span class="chat-row-name">Omar Farouk</span><span class="chat-row-time">11:18 AM</span><span class="chat-row-prev"><span>Merged the fix into main</span></span><span class="chat-row-marks"><span class="unread-pill">1</span></span></button></div>
+              </div>
+              <!-- Clean bottom Voice Dock with ZERO dead 84px gap -->
+              <section class="voice-dock" style="margin:6px;border-radius:11px">
+                <div class="voice-dock-head">
+                  <button type="button" class="voice-dock-open">
+                    <span class="voice-live-dot"><svg class="ic" viewBox="0 0 24 24"><path d="M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16"/></svg></span>
+                    <span class="voice-dock-meta"><b>Voice connected</b><small>Lounge · Homelab Club</small></span>
+                  </button>
+                  <button type="button" class="voice-lock open-code-modal"><svg class="ic" viewBox="0 0 24 24"><path d="M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3"/></svg></button>
+                </div>
+                <div class="voice-ctrls">
+                  <button type="button" class="vc-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3ZM19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></button>
+                  <button type="button" class="vc-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3ZM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3Z"/></svg></button>
+                  <button type="button" class="vc-btn is-leave"><svg class="ic" viewBox="0 0 24 24"><path d="M3 13.5c5-4.7 13-4.7 18 0l-2 2.5-3.5-1.3V12a12 12 0 0 0-7 0v2.7L5 16Z"/></svg></button>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="phone-frame">
+            <div class="ph-topbar">
+              <span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>
+              <span class="ph-search"><svg class="ic" viewBox="0 0 24 24"><path d="M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg><span>Search all apps…</span></span>
+              <span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M10 3h4l.6 3 2 .9 2.7-1 2 3.4-2.2 2v2.4l2.2 2-2 3.4-2.7-1-2 .9-.6 3h-4l-.6-3-2-.9-2.7 1-2-3.4 2.2-2v-2.4l-2.2-2 2-3.4 2.7 1 2-.9ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg></span>
+              <span class="avatar">A</span>
+            </div>
+            <div class="ph-sheet">
+              <header class="conv-head" style="padding:0 6px 0 8px">
+                <button type="button" class="ib"><svg class="ic" viewBox="0 0 24 24"><path d="m14 5-7 7 7 7"/></svg></button>
+                <span class="chat-av is-sm hue-3">SH</span>
+                <div class="conv-who"><h2>Sara Haddad</h2><small>+15550002222 · Muted</small></div>
+                <button type="button" class="ib"><svg class="ic" viewBox="0 0 24 24"><path d="M12 11v6M12 7h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0"/></svg></button>
+              </header>
+              <div class="msg-stream" style="padding:8px 10px">
+                <div class="day-pill">November 16</div>
+                <div class="msg is-in is-tail"><div class="bubble"><span class="msg-text">Are we still on for dinner?</span><span class="msg-meta"><time>4:00 AM</time></span></div></div>
+                <div class="msg is-out is-tail"><div class="bubble"><span class="msg-text">Yes!</span><span class="msg-meta"><time>4:01 AM</time><svg class="ic is-read" viewBox="0 0 24 24"><path d="M2 12l5 5L18 6M12 16l1 1 9-11"/></svg></span></div></div>
+                <div class="new-divider">New messages</div>
+                <div class="msg is-in is-tail"><div class="bubble"><span class="msg-text">Perfect, see you at 7 then</span><span class="msg-meta"><time>3:10 PM</time></span></div></div>
+              </div>
+              <div class="composer-wrap" style="padding:4px 8px 8px">
+                <div class="compose-box">
+                  <input type="text" placeholder="Message">
+                  <button type="button" class="send-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pair 2 -->
+        <div class="phones-row hidden" id="phone-pair-2">
+          <div class="phone-frame">
+            <div class="ph-topbar"><span class="ph-btn"></span><span class="ph-search">Search all apps…</span><span class="avatar">A</span></div>
+            <div class="ph-sheet">
+              <header class="conv-head" style="padding:0 8px"><div class="conv-who"><h2>#general</h2><small>Homelab Club</small></div></header>
+              <div class="msg-stream" style="padding:10px;opacity:.45">
+                <div class="flat-msg is-first"><span class="flat-av hue-2">L</span><div class="flat-head"><b>lina.k</b></div><div class="flat-body">Anyone moved to the new caddy module?</div></div>
+              </div>
+            </div>
+            <div class="ph-scrim"></div>
+            <div class="ph-drawer">
+              <button type="button" class="create-btn" style="width:100%;justify-content:center"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg><span>New message</span></button>
+              <div class="ph-acct-strip" style="padding:4px 0;border:0">
+                <span class="ph-acct-pill"><span class="plat-badge is-wa"><svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5.2A8.5 8.5 0 1 1 21 11.5Z"/></svg></span>Personal</span>
+                <span class="ph-acct-pill active"><span class="plat-badge is-dc"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg></span>Discord</span>
+              </div>
+              <button type="button" class="nav-item active"><svg class="ic" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"/></svg><span class="nav-lbl">Direct messages</span><span class="nav-cnt">1</span></button>
+              <div class="tree-heading">Servers</div>
+              <button type="button" class="srv-row"><span class="srv-mark hue-3">HC</span><span class="nav-lbl">Homelab Club</span><svg class="ic srv-chev is-open" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button>
+              <ul class="ch-list">
+                <li><button type="button" class="ch-row is-unread"><svg class="ic" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></svg><span class="nav-lbl">general</span><span class="ch-mention">1</span></button></li>
+                <li><button type="button" class="ch-row is-live"><svg class="ic" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4ZM15.5 8.5a5 5 0 0 1 0 7"/></svg><span class="nav-lbl">Lounge</span></button></li>
+              </ul>
+              <ul class="vc-members">
+                <li class="vc-mem is-speaking"><span class="vc-av hue-2">LK</span><span>Lina K</span></li>
+                <li class="vc-mem"><span class="vc-av hue-3">T</span><span>tarek</span></li>
+              </ul>
+              <div class="status-strip" style="margin-top:auto"><span class="status-strip-dot"></span><span class="status-strip-text">@anas · Discord</span></div>
+            </div>
+          </div>
+
+          <div class="phone-frame">
+            <div class="ph-topbar">
+              <span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>
+              <span class="ph-search"><svg class="ic" viewBox="0 0 24 24"><path d="M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg><span>Search all apps…</span></span>
+              <span class="avatar">A</span>
+            </div>
+            <div class="ph-sheet">
+              <header class="conv-head" style="padding:0 8px">
+                <button type="button" class="ib"><svg class="ic" viewBox="0 0 24 24"><path d="m14 5-7 7 7 7"/></svg></button>
+                <span class="dc-ch-mark is-live"><svg class="ic" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4ZM15.5 8.5a5 5 0 0 1 0 7"/></svg></span>
+                <div class="conv-who"><h2>Lounge</h2><small>Homelab Club · 3 in voice</small></div>
+                <button type="button" class="voice-lock open-code-modal"><svg class="ic" viewBox="0 0 24 24"><path d="M5 10h14v11H5ZM8 10V7a4 4 0 0 1 8 0v3"/></svg></button>
+              </header>
+              <div class="call-tiles" style="padding:12px;gap:8px">
+                <div class="call-tile is-speaking" style="width:126px;flex:0 1 126px"><span class="call-tile-av hue-2" style="width:42px;height:42px;font-size:15px">LK</span><span class="call-tile-name">Lina K</span></div>
+                <div class="call-tile" style="width:126px;flex:0 1 126px"><span class="call-tile-av hue-3" style="width:42px;height:42px;font-size:15px">T</span><span class="call-tile-name">tarek</span></div>
+                <div class="call-tile" style="width:126px;flex:0 1 126px"><span class="call-tile-av hue-1" style="width:42px;height:42px;font-size:15px">A</span><span class="call-tile-name">Anas (you)</span></div>
+              </div>
+              <div class="call-bar" style="padding:8px">
+                <button type="button" class="call-pill-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3ZM19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></button>
+                <button type="button" class="call-pill-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3ZM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3Z"/></svg></button>
+                <button type="button" class="call-pill-btn is-leave"><svg class="ic" viewBox="0 0 24 24"><path d="M3 13.5c5-4.7 13-4.7 18 0l-2 2.5-3.5-1.3V12a12 12 0 0 0-7 0v2.7L5 16Z"/></svg><span>Leave</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- In-App Media Lightbox Overlay -->
+    <div class="overlay-backdrop hidden" id="lightbox">
+      <div class="lightbox-card" role="dialog" aria-label="Media preview">
+        <div class="lightbox-head">
+          <div><b id="lb-sender">Sara Haddad</b><small id="lb-time">November 16 · 4:02 AM</small></div>
+          <button type="button" class="ib" id="lb-close" aria-label="Close preview"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg></button>
+        </div>
+        <div class="lightbox-stage" id="lb-media"></div>
+        <div class="lightbox-foot">
+          <span id="lb-caption">The place</span>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="secondary-btn" id="lb-save-files">Save to Files</button>
+            <button type="button" class="primary-btn">Download</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- E2EE 30-digit Call Code Overlay -->
+    <div class="overlay-backdrop hidden" id="code-modal">
+      <div class="code-dialog" role="dialog" aria-label="Verify the call is private">
+        <div class="code-dialog-head">
+          <h3>Verify the call is private</h3>
+          <button type="button" class="ib" id="code-close" aria-label="Close"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg></button>
+        </div>
+        <p>Everyone in the call sees the same code. Compare it over another channel; if it matches, nobody else can listen.</p>
+        <div class="code-grid">
+          <span>48312</span><span>22079</span><span>06411</span>
+          <span>75123</span><span>45678</span><span>90123</span>
+        </div>
+        <div class="code-dialog-foot">
+          <button type="button" class="secondary-btn" id="code-close-btn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const stage = document.getElementById('stage');
+const views = ['wa', 'dc', 'voice', 'setup', 'phone'];
+
+function showView(name) {
+  views.forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
+  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+}
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
+document.querySelectorAll('[data-jump-view]').forEach(b => b.addEventListener('click', () => showView(b.dataset.jumpView)));
+
+// Theme switcher
+document.querySelectorAll('[data-theme-btn]').forEach(b => {
+  b.addEventListener('click', () => {
+    stage.dataset.theme = b.dataset.themeBtn;
+    document.querySelectorAll('[data-theme-btn]').forEach(x => x.classList.toggle('active', x === b));
+  });
+});
+
+// Density switcher (Comfortable / Compact)
+let isCompact = false;
+function applyDensity(compact) {
+  isCompact = compact;
+  stage.classList.toggle('is-compact', compact);
+  document.getElementById('density-btn').textContent = 'Density: ' + (compact ? 'Compact' : 'Comfortable');
+  document.getElementById('density-btn').classList.toggle('active', compact);
+  document.querySelectorAll('[data-set-density]').forEach(b => b.classList.toggle('active', (b.dataset.setDensity === 'compact') === compact));
+}
+document.getElementById('density-btn').addEventListener('click', () => applyDensity(!isCompact));
+document.querySelectorAll('[data-set-density]').forEach(b => b.addEventListener('click', () => applyDensity(b.dataset.setDensity === 'compact')));
+
+// WhatsApp views & filter chips
+document.querySelectorAll('[data-wa-filter]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const f = chip.dataset.waFilter;
+    document.querySelectorAll('[data-wa-filter]').forEach(c => c.classList.toggle('active', c === chip));
+    document.querySelectorAll('#wa-thread-list .chat-row').forEach(r => {
+      const ok = f === 'all' || (f === 'unread' && r.dataset.unread === '1') || (f === 'pinned' && r.dataset.pinned === '1') || (f === 'groups' && r.dataset.group === '1');
+      r.classList.toggle('hidden', !ok);
+    });
+    document.querySelector('[data-sec="pinned"]').classList.toggle('hidden', f === 'unread' || f === 'groups');
+    document.querySelector('[data-sec="recent"]').classList.toggle('hidden', f === 'pinned');
+  });
+});
+
+// Switch active WhatsApp thread between Sara, Family, Omar, Nadia
+const threadMeta = {
+  sara: { av: 'SH', hue: 'hue-3', title: 'Sara Haddad', sub: '+15550002222 · Muted', infoHead: 'Contact info', ph: 'Message Sara Haddad', memberTab: false },
+  family: { av: 'F', hue: 'hue-4', title: 'Family', sub: 'Group · 3 members · Muted', infoHead: 'Group info', ph: 'Message Family', memberTab: true },
+  omar: { av: 'OF', hue: 'hue-2', title: 'Omar Farouk', sub: '+15550004444', infoHead: 'Contact info', ph: 'Message Omar Farouk', memberTab: false },
+  nadia: { av: 'NM', hue: 'hue-5', title: 'Nadia Mansour', sub: '+15550005555', infoHead: 'Contact info', ph: 'Message Nadia Mansour', memberTab: false }
+};
+document.querySelectorAll('#wa-thread-list .chat-row').forEach(row => {
+  row.querySelector('.chat-row-btn').addEventListener('click', () => {
+    document.querySelectorAll('#wa-thread-list .chat-row').forEach(r => r.classList.remove('is-selected'));
+    row.classList.add('is-selected');
+    const m = threadMeta[row.dataset.thread] || threadMeta.sara;
+    document.getElementById('wa-conv-title').textContent = m.title;
+    document.getElementById('wa-conv-av').textContent = m.av;
+    document.getElementById('wa-conv-av').className = 'chat-av is-sm ' + m.hue;
+    document.getElementById('wa-conv-sub').textContent = m.sub;
+    document.getElementById('wa-input').placeholder = m.ph;
+    document.getElementById('wa-info-heading').textContent = m.infoHead;
+    document.getElementById('wa-info-name').textContent = m.title;
+    document.getElementById('wa-info-av').textContent = m.av;
+    document.getElementById('wa-info-av').className = 'chat-av is-lg ' + m.hue;
+    if (m.memberTab) {
+      document.querySelector('[data-info-tab="members"]').click();
+    }
+  });
+});
+
+// Inspector toggles (WhatsApp & Discord)
+const waGrid = document.getElementById('wa-workspace');
+const waInfoBtn = document.getElementById('wa-info-btn');
+const waInfoSheet = document.getElementById('wa-info-sheet');
+function setWaInfo(open) {
+  waGrid.classList.toggle('has-info', open);
+  waInfoSheet.classList.toggle('hidden', !open);
+  waInfoBtn.classList.toggle('on', open);
+}
+waInfoBtn.addEventListener('click', () => setWaInfo(waInfoSheet.classList.contains('hidden')));
+document.getElementById('wa-info-close').addEventListener('click', () => setWaInfo(false));
+
+document.querySelectorAll('[data-info-tab]').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const k = tab.dataset.infoTab;
+    document.querySelectorAll('[data-info-tab]').forEach(t => t.classList.toggle('active', t === tab));
+    ['overview', 'media', 'members'].forEach(p => document.getElementById('info-tab-' + p).classList.toggle('hidden', p !== k));
+  });
+});
+
+const dcGrid = document.getElementById('dc-workspace');
+const dcInfoBtn = document.getElementById('dc-info-btn');
+const dcInfoSheet = document.getElementById('dc-info-sheet');
+dcInfoBtn.addEventListener('click', () => {
+  const open = dcInfoSheet.classList.toggle('hidden');
+  dcGrid.classList.toggle('has-info', !open);
+  dcInfoBtn.classList.toggle('on', !open);
+});
+document.getElementById('dc-info-close').addEventListener('click', () => {
+  dcInfoSheet.classList.add('hidden');
+  dcGrid.classList.remove('has-info');
+  dcInfoBtn.classList.remove('on');
+});
+
+// Find in chat toggle
+document.getElementById('wa-find-btn').addEventListener('click', () => {
+  const on = !document.getElementById('wa-find-strip').classList.toggle('hidden');
+  document.getElementById('wa-find-btn').classList.toggle('on', on);
+});
+document.getElementById('wa-find-close').addEventListener('click', () => {
+  document.getElementById('wa-find-strip').classList.add('hidden');
+  document.getElementById('wa-find-btn').classList.remove('on');
+});
+
+// Clickable quote jump highlight
+document.querySelectorAll('.msg-quote[data-jump]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = document.getElementById(btn.dataset.jump);
+    if (!target) return;
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    target.classList.add('is-flash');
+    setTimeout(() => target.classList.remove('is-flash'), 1200);
+  });
+});
+
+// Voice note player + speed toggle
+let vnPlaying = false;
+let vnTimer = null;
+let vnIdx = 5;
+const vnBars = [...document.querySelectorAll('#vn-bars i')];
+const vnPlayBtn = document.getElementById('vn-play-btn');
+vnPlayBtn.addEventListener('click', () => {
+  vnPlaying = !vnPlaying;
+  vnPlayBtn.innerHTML = vnPlaying
+    ? '<svg class="ic" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></svg>'
+    : '<svg class="ic" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7Z"/></svg>';
+  if (vnPlaying) {
+    vnTimer = setInterval(() => {
+      vnIdx = (vnIdx + 1) % (vnBars.length + 1);
+      vnBars.forEach((b, i) => b.classList.toggle('is-played', i < vnIdx));
+    }, 240);
+  } else {
+    clearInterval(vnTimer);
+  }
+});
+const speeds = ['1×', '1.5×', '2×'];
+let spIdx = 0;
+document.getElementById('vn-speed-btn').addEventListener('click', function () {
+  spIdx = (spIdx + 1) % speeds.length;
+  this.textContent = speeds[spIdx];
+});
+
+// Quick reactions & reply bar
+document.querySelectorAll('.quick-react').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const msg = btn.closest('.msg, .flat-msg');
+    let bar = msg.querySelector('.reactions');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'reactions';
+      msg.appendChild(bar);
+    }
+    const emoji = btn.dataset.emoji;
+    const existing = [...bar.children].find(c => c.textContent.includes(emoji));
+    if (existing) existing.remove();
+    else {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'react-chip is-mine';
+      chip.innerHTML = emoji + ' <small>1</small>';
+      chip.onclick = () => chip.remove();
+      bar.appendChild(chip);
+    }
+  });
+});
+
+document.querySelectorAll('.quick-reply').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('wa-reply-who').textContent = 'Replying to ' + btn.dataset.who;
+    document.getElementById('wa-reply-text').textContent = btn.dataset.text;
+    document.getElementById('wa-reply-bar').classList.remove('hidden');
+    document.getElementById('wa-input').focus();
+  });
+});
+document.getElementById('wa-reply-cancel').addEventListener('click', () => {
+  document.getElementById('wa-reply-bar').classList.add('hidden');
+});
+
+// Emoji picker & live demo send
+const waEmojiPop = document.getElementById('wa-emoji-pop');
+const waInput = document.getElementById('wa-input');
+const waSend = document.getElementById('wa-send');
+document.getElementById('wa-emoji-btn').addEventListener('click', () => waEmojiPop.classList.toggle('hidden'));
+waEmojiPop.querySelectorAll('button').forEach(b => {
+  b.addEventListener('click', () => {
+    waInput.value += b.textContent;
+    waSend.disabled = waInput.value.trim().length === 0;
+    waEmojiPop.classList.add('hidden');
+    waInput.focus();
+  });
+});
+waInput.addEventListener('input', () => { waSend.disabled = waInput.value.trim().length === 0; });
+document.getElementById('wa-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const val = waInput.value.trim();
+  if (!val) return;
+  const div = document.createElement('div');
+  div.className = 'msg is-out is-tail';
+  div.innerHTML = `<div class="msg-line"><div class="bubble"><span class="msg-text"></span><span class="msg-meta"><time>Now</time><svg class="ic" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span></div></div>`;
+  div.querySelector('.msg-text').textContent = val;
+  document.getElementById('wa-stream').appendChild(div);
+  waInput.value = '';
+  waSend.disabled = true;
+  document.getElementById('wa-reply-bar').classList.add('hidden');
+  div.scrollIntoView({ behavior: 'smooth' });
+});
+document.getElementById('wa-jump-latest').addEventListener('click', () => {
+  const s = document.getElementById('wa-stream');
+  s.scrollTo({ top: s.scrollHeight, behavior: 'smooth' });
+});
+
+// Toast demo
+function showToast(msg) {
+  document.getElementById('wa-toast-text').textContent = msg;
+  document.getElementById('wa-toast').classList.remove('hidden');
+}
+document.getElementById('wa-toast-dismiss').addEventListener('click', () => document.getElementById('wa-toast').classList.add('hidden'));
+document.getElementById('wa-info-mute').addEventListener('click', function () {
+  const on = this.classList.toggle('is-on');
+  showToast(on ? 'Chat muted for 8 hours' : 'Chat unmuted');
+});
+
+// Discord char counter & collapsible tree
+document.getElementById('dc-input').addEventListener('input', function () {
+  document.getElementById('dc-chars').textContent = this.value.length + ' / 4000';
+});
+document.querySelectorAll('[data-srv-toggle]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tgt = document.getElementById(btn.dataset.srvToggle);
+    const closed = tgt.classList.toggle('hidden');
+    btn.querySelector('.srv-chev').classList.toggle('is-open', !closed);
+  });
+});
+document.querySelectorAll('[data-cat-toggle]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tgt = document.getElementById(btn.dataset.catToggle);
+    const closed = tgt.classList.toggle('hidden');
+    btn.classList.toggle('is-open', !closed);
+  });
+});
+
+// Voice controls & Pre-join / Active call toggle
+let voiceMuted = false;
+let voiceDeaf = false;
+function syncVoiceState() {
+  document.querySelectorAll('.dock-mute-btn').forEach(b => {
+    b.classList.toggle('is-off', voiceMuted || voiceDeaf);
+    b.setAttribute('aria-pressed', String(voiceMuted || voiceDeaf));
+  });
+  document.querySelectorAll('.dock-deaf-btn').forEach(b => {
+    b.classList.toggle('is-off', voiceDeaf);
+    b.setAttribute('aria-pressed', String(voiceDeaf));
+  });
+  document.getElementById('me-tile-badge').classList.toggle('hidden', !voiceMuted && !voiceDeaf);
+}
+document.querySelectorAll('.dock-mute-btn').forEach(b => b.addEventListener('click', () => { voiceMuted = !voiceMuted; if (!voiceMuted) voiceDeaf = false; syncVoiceState(); }));
+document.querySelectorAll('.dock-deaf-btn').forEach(b => b.addEventListener('click', () => { voiceDeaf = !voiceDeaf; syncVoiceState(); }));
+
+function setVoiceMode(mode) {
+  document.querySelectorAll('[data-voice-mode]').forEach(b => b.classList.toggle('active', b.dataset.voiceMode === mode));
+  document.getElementById('voice-active-pane').classList.toggle('hidden', mode !== 'active');
+  document.getElementById('voice-prejoin-pane').classList.toggle('hidden', mode !== 'prejoin');
+}
+document.querySelectorAll('[data-voice-mode]').forEach(b => b.addEventListener('click', () => setVoiceMode(b.dataset.voiceMode)));
+document.querySelectorAll('.dock-leave-btn').forEach(b => b.addEventListener('click', () => setVoiceMode('prejoin')));
+document.getElementById('voice-rejoin-btn').addEventListener('click', () => setVoiceMode('active'));
+
+// Onboarding & Settings switcher
+function setSetupMode(mode) {
+  const ws = document.getElementById('setup-workspace');
+  const isSet = mode === 'settings';
+  ws.className = isSet ? 'workspace settings-grid' : 'workspace setup-grid';
+  document.getElementById('setup-onboard-pane').classList.toggle('hidden', isSet);
+  document.getElementById('setup-list-preview').classList.toggle('hidden', !isSet);
+  document.getElementById('setup-settings-sheet').classList.toggle('hidden', !isSet);
+  document.querySelectorAll('[data-setup-mode]').forEach(b => b.classList.toggle('active', b.dataset.setupMode === mode));
+}
+document.querySelectorAll('[data-setup-mode]').forEach(b => b.addEventListener('click', () => setSetupMode(b.dataset.setupMode)));
+document.querySelectorAll('[data-jump-setup]').forEach(b => b.addEventListener('click', () => {
+  showView('setup');
+  setSetupMode(b.dataset.jumpSetup);
+}));
+document.getElementById('tb-settings-btn').addEventListener('click', () => { showView('setup'); setSetupMode('settings'); });
+document.querySelectorAll('[data-set-tab]').forEach(t => t.addEventListener('click', () => {
+  const k = t.dataset.setTab;
+  document.querySelectorAll('[data-set-tab]').forEach(x => x.classList.toggle('active', x === t));
+  ['display', 'accounts', 'shortcuts'].forEach(p => document.getElementById('set-tab-' + p).classList.toggle('hidden', p !== k));
+}));
+document.querySelectorAll('.switch-btn').forEach(s => s.addEventListener('click', () => {
+  const on = s.classList.toggle('is-on');
+  s.setAttribute('aria-pressed', String(on));
+}));
+
+// Phone pairs switcher
+document.querySelectorAll('[data-phone-pair]').forEach(b => b.addEventListener('click', () => {
+  const p = b.dataset.phonePair;
+  document.querySelectorAll('[data-phone-pair]').forEach(x => x.classList.toggle('active', x === b));
+  document.getElementById('phone-pair-1').classList.toggle('hidden', p !== '1');
+  document.getElementById('phone-pair-2').classList.toggle('hidden', p !== '2');
+}));
+
+// Lightbox overlay
+const lbData = {
+  cafe: {
+    sender: 'Sara Haddad',
+    time: 'November 16 · 4:02 AM',
+    cap: 'The place',
+    svg: '<svg viewBox="0 0 320 180"><defs><linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4d3c73"/><stop offset="65%" stop-color="#a94a76"/><stop offset="100%" stop-color="#ffc493"/></linearGradient></defs><rect width="320" height="180" fill="url(#sky2)"/><circle cx="248" cy="54" r="24" fill="#ffe7c7" opacity="0.9"/><path d="M0 132 Q80 105 165 126 T320 118 L320 180 L0 180 Z" fill="#301c2b"/><rect x="34" y="96" width="54" height="58" rx="4" fill="#3a2536"/><rect x="44" y="108" width="12" height="14" rx="2" fill="#ffc493" opacity="0.85"/><rect x="64" y="108" width="12" height="14" rx="2" fill="#ffc493" opacity="0.65"/></svg>'
+  },
+  caddy: {
+    sender: 'tarek · #general',
+    time: 'November 17 · 4:01 AM',
+    cap: 'caddy-reload-status.png',
+    svg: '<svg viewBox="0 0 240 132"><rect width="240" height="132" fill="#284136"/><rect x="16" y="18" width="208" height="96" rx="10" fill="#301c2b"/><circle cx="38" cy="40" r="7" fill="#b2dec4"/><rect x="54" y="35" width="94" height="10" rx="4" fill="#faeaf3" opacity="0.85"/><rect x="30" y="60" width="174" height="8" rx="4" fill="#b2dec4" opacity="0.5"/><rect x="30" y="76" width="132" height="8" rx="4" fill="#cfb4ca" opacity="0.35"/></svg>'
+  }
+};
+document.querySelectorAll('[data-lightbox]').forEach(el => {
+  el.addEventListener('click', () => {
+    const item = lbData[el.dataset.lightbox] || lbData.cafe;
+    document.getElementById('lb-sender').textContent = item.sender;
+    document.getElementById('lb-time').textContent = item.time;
+    document.getElementById('lb-caption').textContent = item.cap;
+    document.getElementById('lb-media').innerHTML = item.svg;
+    document.getElementById('lightbox').classList.remove('hidden');
+  });
+});
+document.getElementById('lb-close').addEventListener('click', () => document.getElementById('lightbox').classList.add('hidden'));
+document.getElementById('lightbox').addEventListener('click', e => { if (e.target.id === 'lightbox') e.target.classList.add('hidden'); });
+
+// E2EE Call code modal
+document.querySelectorAll('.open-code-modal').forEach(b => b.addEventListener('click', () => document.getElementById('code-modal').classList.remove('hidden')));
+['code-close', 'code-close-btn'].forEach(id => document.getElementById(id).addEventListener('click', () => document.getElementById('code-modal').classList.add('hidden')));
+document.getElementById('code-modal').addEventListener('click', e => { if (e.target.id === 'code-modal') e.target.classList.add('hidden'); });
+</script>
+</body>
+</html>
