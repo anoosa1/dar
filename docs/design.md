@@ -263,11 +263,23 @@ Selected from [settings mock B](spacetimedb/settings-revamp-mock-b.html) over
   are preserved.
 - **Scheduling forms:** common repetition, priority and reminder choices, with
   advanced controls for exact imported values. Never simplify an unknown rule.
-- **Prayer Times:** a today band (next prayer, countdown and a timeline of the
-  day with a now marker) above a compact week where every row lists its times;
-  a day opens the right daily timetable, phones open it full width with Back to
-  week and restored focus. Settings use the settings sheet and mark the times a
-  change affected. See [app platform](spacetimedb/app-platform.md).
+- **Prayer Times:** [redesign mock](spacetimedb/prayer-times-redesign-mock.html).
+  Sidebar with `+ Add location`, views (`Today`, `Week`, `Month`, `Qibla`), switchable saved
+  locations, and an interactive `MiniMonth` calendar showing Hijri month labels and prayer-log
+  completion dots. `Today` pairs a live Solar Horizon Arc hero (elapsed window, countdown,
+  daylight span, bezier sun-path orb and 6-column summary strip) with the 6 prayer rows and
+  morphing icon-only daily tracking buttons (`Not prayed yet` / `Prayed on time` / `Prayed late`
+  across Fajr, Dhuhr, Asr, Maghrib, Isha; Sunrise stays solar) plus a right `Daily log & Sun`
+  sheet (`Today's prayers` 5-segment progress & 7-day pip history, mini Qibla dial, Sunna/night
+  landmarks). `Week` renders a compact 7-day timetable (`Jumu'ah` warm tint, live `Next` pill,
+  change markers) paired with a Day Inspector holding direct 3-icon segmented prayer trackers,
+  night times, copy and `.ics` export (phones open it full width with `Back to week` and restored
+  focus). `Month` renders the full printed-ready monthly timetable with log pips and
+  `.ics`/`.csv`/JSON export; `Qibla` pairs a 230px compass rose with a live Sun-azimuth alignment
+  cue and saved-location bearing comparison. First-run setup offers an offline world-city catalog,
+  on-demand browser geolocation and manual coordinates; `Prayer Times settings` uses `SettingsSheet`
+  (`Location`, `Calculation`, `Offsets`, `Display`) with save-as-you-go, Undo and conflict reload.
+  See [Prayer Times](prayer-times.md).
 - **News:** selected [mock A](spacetimedb/news-reader-mock-a.html) over
   [mock B](spacetimedb/news-reader-mock-b.html) (November 12; refreshed November 26,
   [redesign mock](spacetimedb/news-redesign-mock.html)). Sidebar with Subscribe CTA,

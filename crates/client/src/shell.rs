@@ -23,7 +23,7 @@ pub struct AppEntry {
     pub href: String,
 }
 
-const APPS: [(&str, &str, &str, &str); 12] = [
+const APPS: [(&str, &str, &str, &str); 13] = [
     ("files", "Files", "folder", "/"),
     ("photos", "Photos", "image", "/photos"),
     ("books", "Books", "book", "/books"),
@@ -36,6 +36,7 @@ const APPS: [(&str, &str, &str, &str); 12] = [
     ("chat", "Chat", "chat", "/chat"),
     ("agent", "Agent", "agent", "/agent"),
     ("git", "Git", "branch", "/git"),
+    ("prayers", "Prayer Times", "clock", "/prayers"),
 ];
 
 pub fn app_tint_class(id: &str) -> &'static str {
@@ -52,6 +53,7 @@ pub fn app_tint_class(id: &str) -> &'static str {
         "chat" => "app-tint-chat",
         "agent" => "app-tint-agent",
         "git" => "app-tint-git",
+        "prayers" => "app-tint-prayers",
         _ => "app-tint-other",
     }
 }

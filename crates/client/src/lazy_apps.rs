@@ -66,6 +66,7 @@ lazy_apps! {
     Agent => "agent", agent_app, crate::agent::AgentWorkspace;
     Notes => "notes", notes_app, crate::workspace::Notes;
     Tasks => "tasks", tasks_app, crate::workspace::TasksWorkspace;
+    Prayers => "prayers", prayers_app, crate::prayers::PrayersWorkspace;
     Contacts => "contacts", contacts_app, crate::pim::contacts::Contacts;
     Calendar => "calendar", calendar_app, crate::pim::calendar::Calendar;
     Settings => "identity", settings_app, crate::identity::IdentitySettings;

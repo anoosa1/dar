@@ -118,7 +118,7 @@ pub fn SettingsSheet(
                 <div class="settings-toast-region" role="status" aria-live="polite">
                     {move || notice.get().map(|n| view! {
                         <div class="settings-toast"><span>{n.message.clone()}</span>
-                            {n.undo.map(|undo| view! { <button type="button" class="text-button" on:click=move |_| { notice.set(None); undo(); }>"Undo"</button> })}
+                            {n.undo.map(|undo| view! { <button type="button" class="text-button" on:click=move |_| { notice.set(None); undo(); if let Some(el) = sheet.get_untracked() { let _ = el.focus(); } }>"Undo"</button> })}
                         </div>
                     })}
                 </div>
@@ -429,7 +429,11 @@ pub fn SaveProblems(saver: Saver) -> impl IntoView {
 
 #[component]
 pub fn AppSettingsButton(#[prop(into)] app: String, on_click: Callback<()>) -> impl IntoView {
-    let name = format!("{}{} settings", app[..1].to_uppercase(), &app[1..]);
+    let name = if app == "prayers" {
+        "Prayer Times settings".to_owned()
+    } else {
+        format!("{}{} settings", app[..1].to_uppercase(), &app[1..])
+    };
     view! { <button type="button" class="nav-item ui-app-settings-entry" on:click=move |_| { on_click.try_run(()); }><Icon name="settings"/>{name}</button> }
 }
 

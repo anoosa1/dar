@@ -46,6 +46,7 @@ fn app_icon(id: &str) -> &'static str {
         "notes" => "file",
         "tasks" => "check",
         "agent" => "agent",
+        "prayers" => "clock",
         _ => "clock",
     }
 }

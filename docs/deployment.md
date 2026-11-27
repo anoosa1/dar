@@ -1,7 +1,7 @@
 # Deployment
 
 The root flake exports `packages.<system>.dar` (also `default`), `chat-bridge`,
-`prayer-times`, `apps.<system>.default`, `nixosModules.default` (also `dar`),
+`sample-app`, `apps.<system>.default`, `nixosModules.default` (also `dar`),
 `checks.<system>.module-evaluation`, `checks.<system>.nixos-vm` and the dev shell.
 The package ships the Rust runtime (`dar-runtime`), the Rust SpacetimeDB module
 (`dar_module.wasm`), the Leptos/Wasm browser client (with the installed-app SDK
@@ -145,7 +145,7 @@ SpacetimeDB, publishes the module, restores the backup and starts the runtime.
 ## Checks
 
 ```sh
-nix build .#dar .#prayer-times .#chat-bridge .#checks.x86_64-linux.module-evaluation --no-link -L
+nix build .#dar .#sample-app .#chat-bridge .#checks.x86_64-linux.module-evaluation --no-link -L
 nix flake check -L
 nix develop --command cargo xtask verify
 ```

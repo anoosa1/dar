@@ -137,11 +137,15 @@ fn SignedIn(session: BrowserSession, on_signed_out: Callback<()>) -> impl IntoVi
                 view! { <crate::lazy_apps::LoadApp app=app.expect("listed above") session=session on_signed_out=on_signed_out/> }.into_any()
             }
             "/news" | "/mail" | "/chat" | "/photos" | "/books" | "/git" | "/agent" | "/notes"
-            | "/tasks" => {
+            | "/tasks" | "/prayers" => {
                 let kind = path[1..].to_owned();
                 view! { <OptionalWorkspace kind=kind session=session on_signed_out=on_signed_out/> }
                     .into_any()
             }
+            "/apps/org.dar.prayer-times" => view! {
+                <OptionalWorkspace kind="prayers".to_owned() session=session on_signed_out=on_signed_out/>
+            }
+            .into_any(),
             other if other.starts_with("/apps/") => {
                 let id = other.split('/').nth(2).unwrap_or_default().to_owned();
                 view! { <crate::installed_apps::InstalledAppPage id=id session=session on_signed_out=on_signed_out/> }.into_any()

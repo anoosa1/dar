@@ -29,6 +29,7 @@ pub fn handles(path: &str) -> bool {
             | "/books"
             | "/git"
             | "/agent"
+            | "/prayers"
             | "/settings"
             | "/identity"
     ) || path

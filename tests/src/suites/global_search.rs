@@ -60,11 +60,18 @@ pub async fn spans_apps_scopes_and_bounds(t: &Ctx) -> Result<()> {
     )
     .await?;
     post(&admin, &format!("/api/v1/contacts/books/{}/items", book["id"].as_str().unwrap_or_default()), json!({"content": format!("BEGIN:VCARD\r\nVERSION:4.0\r\nUID:{}\r\nFN:{marker} Contact\r\nEND:VCARD\r\n", uuid())})).await?;
+    let installed = admin.get_json("/api/v1/apps").await?;
+    let ext_id = installed["items"]
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|app| app["id"].as_str())
+        .context("installed app id")?
+        .to_owned();
     let key = format!("search-{}", uuid());
     let stored = admin
         .request(
             "PUT",
-            &format!("/api/v1/apps/org.dar.prayer-times/userData/{key}"),
+            &format!("/api/v1/apps/{ext_id}/userData/{key}"),
         )
         .header("content-type", "application/json")
         .header("if-match", "\"0\"")

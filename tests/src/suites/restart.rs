@@ -28,7 +28,7 @@ pub async fn forced_crash_and_full_restart(t: &Ctx) -> Result<()> {
     support::manage_apps(
         &root,
         "apps-install",
-        Some(&stack.artifacts.prayer_times.to_string_lossy()),
+        Some(&stack.artifacts.sample_app.to_string_lossy()),
     )?;
 
     let bootstrap_token_file = root.join("secrets/bootstrap-token");
@@ -90,7 +90,7 @@ pub async fn forced_crash_and_full_restart(t: &Ctx) -> Result<()> {
             }
         };
 
-        let app_endpoint = "/api/v1/apps/org.dar.prayer-times/userData/restartProof";
+        let app_endpoint = "/api/v1/apps/org.dar.sample-app/userData/restartProof";
         let put_app = Reply::from(
             session
                 .request("PUT", app_endpoint)
@@ -317,7 +317,7 @@ pub async fn forced_crash_and_full_restart(t: &Ctx) -> Result<()> {
         .await?;
 
         set_app("notes", false).await?;
-        set_app("org.dar.prayer-times", false).await?;
+        set_app("org.dar.sample-app", false).await?;
 
         // Forced runtime SIGKILL + full database server restart + in-place module republish.
         runtime.kill_now().await?;
@@ -330,7 +330,7 @@ pub async fn forced_crash_and_full_restart(t: &Ctx) -> Result<()> {
         assert_eq!(session.get("/api/v1/notes/items").await?.status, 404);
         assert_eq!(session.get(app_endpoint).await?.status, 404);
         set_app("notes", true).await?;
-        set_app("org.dar.prayer-times", true).await?;
+        set_app("org.dar.sample-app", true).await?;
 
         let keys_after: Value = session::client().get(format!("{origin}/oidc/jwks")).send().await?.json().await?;
         assert_eq!(keys_after, provider_keys);
@@ -442,13 +442,13 @@ pub async fn forced_crash_and_full_restart(t: &Ctx) -> Result<()> {
         // Offline app disable -> 404; uninstall + reinstall -> userData survives.
         runtime.close().await;
         assert!(!root.join("runtime.lock").exists());
-        support::manage_apps(&root, "apps-disable", Some("org.dar.prayer-times"))?;
+        support::manage_apps(&root, "apps-disable", Some("org.dar.sample-app"))?;
         runtime = Instance::start(make_config()).await?;
         assert_eq!(session.get(app_endpoint).await?.status, 404);
 
         runtime.close().await;
-        support::manage_apps(&root, "apps-uninstall", Some("org.dar.prayer-times"))?;
-        support::manage_apps(&root, "apps-install", Some(&stack.artifacts.prayer_times.to_string_lossy()))?;
+        support::manage_apps(&root, "apps-uninstall", Some("org.dar.sample-app"))?;
+        support::manage_apps(&root, "apps-install", Some(&stack.artifacts.sample_app.to_string_lossy()))?;
         runtime = Instance::start(make_config()).await?;
         assert_eq!(session.get_json(app_endpoint).await?["value"]["location"], json!("private restart proof"));
 

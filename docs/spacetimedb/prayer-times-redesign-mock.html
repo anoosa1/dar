@@ -1,0 +1,1049 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dar Prayer Times — Rust Port, Redesign &amp; Daily Tracking Mockup</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans, 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--foreground, #faeaf3);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mock-shell { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.mock-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.mock-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.mock-btn {
+  appearance: none;
+  border: 1px solid var(--border, rgba(186,150,178,.28));
+  background: var(--secondary, rgba(115,57,111,.10));
+  color: var(--muted-foreground, #b89eb4);
+  font: 550 10.5px/1 inherit;
+  padding: 5.5px 8.5px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.mock-btn:hover { color: var(--foreground, #faeaf3); background: rgba(115,57,111,.20); }
+.mock-btn.active { background: #73396f; color: #fff7fc; border-color: transparent; font-weight: 600; }
+
+/* Dar Twilight Stage (Nightfall dark default, Afterglow light) */
+.stage {
+  --bg: #26111f;
+  --panel: #301c2b;
+  --raised: #3a2536;
+  --hover: #412b3f;
+  --border: rgba(186, 150, 178, 0.22);
+  --border-strong: rgba(186, 150, 178, 0.36);
+  --row-div: rgba(186, 150, 178, 0.13);
+  --text: #faeaf3;
+  --muted: #cfb4ca;
+  --dim: #9d8098;
+  --accent: #f2a2a9;
+  --on-accent: #26111f;
+  --tonal: #4d3c73;
+  --on-tonal: #f3eafd;
+  --rose: #d889af;
+  --solar: #ffc493;
+  --solar-soft: rgba(255, 196, 147, 0.16);
+  --dawn: #cbb7f7;
+  --success: #b2dec4;
+  --success-soft: rgba(178, 222, 196, 0.16);
+  --danger: #ffb2c6;
+  --error-soft: #4e2436;
+  --shadow: 0 14px 36px rgba(10, 3, 10, 0.48), 0 2px 8px rgba(10, 3, 10, 0.28);
+  --mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+
+  position: relative;
+  width: 100%;
+  height: 644px;
+  border-radius: var(--radius, 14px);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  box-shadow: var(--shadow);
+  color-scheme: dark;
+}
+.stage[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fbf4f6;
+  --panel: #fffafb;
+  --raised: #ffffff;
+  --hover: #f3e7ee;
+  --border: rgba(115, 57, 111, 0.17);
+  --border-strong: rgba(115, 57, 111, 0.30);
+  --row-div: rgba(115, 57, 111, 0.10);
+  --text: #352138;
+  --muted: #6e546d;
+  --dim: #8c718b;
+  --accent: #73396f;
+  --on-accent: #fff7fc;
+  --tonal: #ede3f5;
+  --on-tonal: #4d3c73;
+  --rose: #a94a76;
+  --solar: #9a5516;
+  --solar-soft: rgba(154, 85, 22, 0.12);
+  --dawn: #5b4399;
+  --success: #246144;
+  --success-soft: rgba(36, 97, 68, 0.12);
+  --danger: #a32745;
+  --error-soft: #fbe9ee;
+  --shadow: 0 12px 30px rgba(38, 17, 31, 0.12), 0 2px 6px rgba(38, 17, 31, 0.06);
+}
+
+.hidden { display: none !important; }
+.num { font-variant-numeric: tabular-nums; }
+svg.ic {
+  width: 14px; height: 14px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* Shared Dar Full-Canvas Topbar */
+.topbar { display: flex; align-items: center; gap: 8px; padding: 0 10px; min-width: 0; }
+.tb-start { display: flex; align-items: center; gap: 6px; flex: none; }
+.dar-mark {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px;
+  background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 760;
+}
+.tb-title { font-size: 14px; font-weight: 630; letter-spacing: -.015em; }
+.tb-search {
+  flex: 0 1 280px; margin: 0 auto; min-width: 0; height: 30px; padding: 0 7px 0 11px;
+  border-radius: 15px; border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+  display: flex; align-items: center; gap: 7px; font-size: 11px;
+}
+.tb-search span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-search kbd { margin-left: auto; font: 550 9px/14px var(--mono); padding: 0 4.5px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); flex: none; }
+.tb-end { display: flex; align-items: center; gap: 4px; flex: none; }
+.ib {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted); cursor: pointer; flex: none; transition: background .1s, color .1s;
+}
+.ib:hover { background: var(--hover); color: var(--text); }
+.ib.on { background: var(--tonal); color: var(--on-tonal); }
+.avatar { width: 26px; height: 26px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; background: var(--tonal); color: var(--on-tonal); font-size: 10px; font-weight: 680; }
+
+/* Workspace */
+.workspace { display: grid; grid-template-columns: 138px minmax(0, 1fr) 216px; gap: 8px; padding: 0 8px 8px; min-height: 0; overflow: hidden; position: relative; }
+.workspace.no-right { grid-template-columns: 138px minmax(0, 1fr); }
+.workspace.wide-right { grid-template-columns: 130px minmax(0, 1fr) 244px; }
+.workspace.phone-stage { grid-template-columns: minmax(0, 1fr); padding: 8px; }
+
+/* Sidebar */
+.sidebar { display: flex; flex-direction: column; min-height: 0; padding: 2px 0 0 2px; overflow: hidden; }
+.create-btn {
+  display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+  height: 34px; padding: 0 11px 0 9px; margin: 0 0 8px 1px; border: 0; border-radius: 12px;
+  background: var(--tonal); color: var(--on-tonal); font: 600 11.2px/1 inherit; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,.15);
+}
+.create-btn:hover { filter: brightness(1.07); }
+.side-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.nav-list { display: flex; flex-direction: column; gap: 1px; }
+.nav-item {
+  display: flex; align-items: center; gap: 7px; width: 100%; height: 29px; padding: 0 8px;
+  border: 0; border-radius: 14px; background: transparent; color: var(--text);
+  font: 500 11.3px/1 inherit; text-align: left; cursor: pointer;
+}
+.nav-item:hover { background: var(--hover); }
+.nav-item.active { background: var(--tonal); color: var(--on-tonal); font-weight: 600; }
+.nav-item svg.ic { color: var(--muted); width: 13px; height: 13px; }
+.nav-item.active svg.ic { color: var(--on-tonal); }
+.nav-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-meta { font-size: 9px; color: var(--muted); flex: none; }
+.nav-item.active .nav-meta { color: var(--on-tonal); opacity: .82; }
+.side-head { display: flex; align-items: center; justify-content: space-between; margin: 10px 4px 3px 8px; font-size: 10.2px; font-weight: 600; color: var(--muted); }
+.loc-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; border: 1.5px solid var(--muted); }
+.nav-item.active .loc-dot { background: var(--accent); border-color: var(--accent); }
+
+/* Sidebar MiniMonth with tracking dots */
+.mini-month { margin-top: 10px; padding: 9px 4px 4px; border-top: 1px solid var(--row-div); }
+.mm-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; padding: 0 2px; font-size: 10.2px; font-weight: 620; color: var(--text); }
+.mm-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; text-align: center; font-size: 9px; }
+.mm-dow { color: var(--dim); font-weight: 600; padding-bottom: 2px; }
+.mm-day {
+  position: relative; border: 0; background: transparent; color: var(--muted);
+  height: 20px; border-radius: 9px; font: 500 9.2px/18px inherit; cursor: pointer; padding: 0 0 2px;
+}
+.mm-day:hover { background: var(--hover); color: var(--text); }
+.mm-day.is-today { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.mm-day.is-sel:not(.is-today) { box-shadow: inset 0 0 0 1.4px var(--accent); color: var(--text); font-weight: 600; }
+.mm-dot {
+  position: absolute; left: 50%; bottom: 1.5px; transform: translateX(-50%);
+  width: 3.5px; height: 3.5px; border-radius: 50%;
+}
+.mm-dot.ok { background: var(--success); }
+.mm-dot.mix { background: var(--solar); }
+.mm-day.is-today .mm-dot { background: var(--on-accent); opacity: .75; }
+
+/* Floating Sheets */
+.sheet {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative;
+}
+.sheet-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--row-div); flex: none; min-width: 0; }
+.sheet-head-title { min-width: 0; flex: 1; }
+.sheet-head h1 { margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-sub { font-size: 10.2px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.pill-btn {
+  display: inline-flex; align-items: center; gap: 4px; height: 25px; padding: 0 9px;
+  border: 1px solid var(--border); border-radius: 13px; background: transparent; color: var(--text);
+  font: 560 10.4px/1 inherit; cursor: pointer; white-space: nowrap;
+}
+.pill-btn:hover { background: var(--hover); }
+.pill-btn.tonal { background: var(--tonal); color: var(--on-tonal); border-color: transparent; }
+.pill-btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 620; }
+.pill-btn svg.ic { width: 12px; height: 12px; }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 10px; background: var(--hover); }
+.seg button { border: 0; background: transparent; color: var(--muted); height: 21px; padding: 0 7px; border-radius: 8px; font: 550 10px/1 inherit; cursor: pointer; }
+.seg button.active { background: var(--panel); color: var(--text); font-weight: 620; box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.sheet-body { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: 10px 12px 12px; }
+
+/* Solar Horizon Stage */
+.solar-stage {
+  position: relative; border: 1px solid var(--border); border-radius: 13px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tonal) 26%, var(--raised)) 0%, var(--raised) 68%, color-mix(in srgb, var(--bg) 52%, var(--panel)) 100%);
+  padding: 10px 12px 8px; margin-bottom: 9px;
+}
+.hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.hero-phase { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7.5px; border-radius: 999px; background: var(--solar-soft); color: var(--solar); font-size: 9.7px; font-weight: 600; margin-bottom: 4px; }
+.hero-phase-dot { width: 5.5px; height: 5.5px; border-radius: 50%; background: currentColor; }
+.hero-title { margin: 0; font-size: 19px; font-weight: 680; letter-spacing: -.022em; line-height: 1.12; }
+.hero-window-note { margin: 2px 0 0; font-size: 10px; color: var(--muted); white-space: nowrap; }
+.hero-cd { text-align: right; flex: none; }
+.hero-cd small { display: block; font-size: 9.5px; color: var(--muted); font-weight: 540; }
+.hero-cd strong { display: block; font-size: 18px; font-weight: 680; color: var(--accent); letter-spacing: -.02em; line-height: 1.12; }
+.window-bar { margin-top: 3.5px; width: 84px; height: 3.5px; margin-left: auto; border-radius: 999px; background: var(--hover); overflow: hidden; }
+.window-bar-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--solar), var(--accent)); }
+.solar-svg { display: block; width: 100%; height: 74px; overflow: visible; }
+.arc-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; margin-top: 1px; padding-top: 4px; border-top: 1px solid var(--row-div); text-align: center; }
+.arc-cell { display: flex; flex-direction: column; align-items: center; gap: 0.5px; padding: 2px 1px; border-radius: 6px; }
+.arc-cell.is-now { background: var(--solar-soft); }
+.arc-cell.is-next { background: var(--tonal); color: var(--on-tonal); }
+.arc-cell span { font-size: 9px; color: var(--muted); font-weight: 560; display: inline-flex; align-items: center; gap: 3px; }
+.arc-cell.is-next span { color: var(--on-tonal); opacity: .88; }
+.arc-cell.is-now span { color: var(--solar); }
+.arc-cell strong { font-size: 9.6px; font-weight: 620; }
+.arc-cell.is-past { opacity: .72; }
+.arc-st-dot { width: 4.5px; height: 4.5px; border-radius: 50%; display: inline-block; }
+.arc-st-dot.on_time { background: var(--success); }
+.arc-st-dot.late { background: var(--solar); }
+
+/* Today Timetable with Prayer Tracking Pills */
+.prayer-list { display: flex; flex-direction: column; gap: 2.5px; }
+.p-row {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto;
+  align-items: center; gap: 7px;
+  padding: 5.5px 8px; border-radius: 10px;
+  border: 1px solid transparent; transition: background .1s;
+}
+.p-row:hover { background: var(--hover); }
+.p-row.is-past { color: var(--muted); }
+.p-row.is-now { background: var(--solar-soft); border-color: color-mix(in srgb, var(--solar) 34%, transparent); }
+.p-row.is-next { background: var(--tonal); color: var(--on-tonal); }
+.p-ico { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; background: var(--hover); color: var(--muted); }
+.p-ico svg.ic { width: 13px; height: 13px; }
+.p-row.is-now .p-ico { background: color-mix(in srgb, var(--solar) 22%, transparent); color: var(--solar); }
+.p-row.is-next .p-ico { background: color-mix(in srgb, var(--on-tonal) 16%, transparent); color: var(--on-tonal); }
+.p-row.is-solar .p-ico { border: 1px dashed var(--border-strong); background: transparent; }
+.p-name { display: flex; flex-direction: column; min-width: 0; }
+.p-name strong { font-size: 11.8px; font-weight: 610; display: flex; align-items: center; gap: 5px; line-height: 1.2; }
+.p-name small { font-size: 9.6px; color: var(--muted); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-row.is-next .p-name small { color: var(--on-tonal); opacity: .82; }
+.p-badge { font-size: 8.6px; font-weight: 620; padding: 1px 5px; border-radius: 999px; background: var(--hover); color: var(--muted); }
+.p-row.is-now .p-badge { background: color-mix(in srgb, var(--solar) 24%, transparent); color: var(--solar); }
+.p-row.is-next .p-badge { background: var(--accent); color: var(--on-accent); }
+.p-time { font-size: 12px; font-weight: 640; text-align: right; white-space: nowrap; }
+.p-row.is-past .p-time { font-weight: 520; }
+
+/* Prayer Tracking Morphing Icon Button (unprayed / on_time / late) */
+.track-ico {
+  display: inline-grid; place-items: center;
+  width: 28px; height: 28px; padding: 0; flex: none;
+  border-radius: 9px; border: 1px solid var(--border);
+  background: transparent; color: var(--dim);
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s, transform .1s;
+}
+.track-ico:hover { border-color: var(--border-strong); background: var(--hover); color: var(--text); }
+.track-ico:active { transform: scale(.93); }
+.track-ico svg.ic { width: 14px; height: 14px; }
+.track-ico.is-on_time {
+  background: var(--success-soft); color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 44%, transparent);
+}
+.track-ico.is-on_time:hover { background: color-mix(in srgb, var(--success) 24%, transparent); }
+.track-ico.is-late {
+  background: var(--solar-soft); color: var(--solar);
+  border-color: color-mix(in srgb, var(--solar) 48%, transparent);
+}
+.track-ico.is-late:hover { background: color-mix(in srgb, var(--solar) 24%, transparent); }
+.p-row.is-next .track-ico:not(.is-on_time):not(.is-late) {
+  border-color: color-mix(in srgb, var(--on-tonal) 30%, transparent);
+  color: color-mix(in srgb, var(--on-tonal) 78%, transparent);
+}
+.p-row.is-next .track-ico:not(.is-on_time):not(.is-late):hover {
+  background: color-mix(in srgb, var(--on-tonal) 14%, transparent);
+  color: var(--on-tonal);
+}
+.track-spacer { width: 28px; flex: none; display: inline-block; }
+.ico-legend {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--row-div);
+  font-size: 9px; color: var(--muted);
+}
+.ico-legend span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.ico-legend i { display: inline-flex; align-items: center; }
+.ico-legend svg.ic { width: 10.5px; height: 10.5px; }
+.ico-legend .lg-ok { color: var(--success); }
+.ico-legend .lg-late { color: var(--solar); }
+.ico-legend .lg-none { color: var(--dim); }
+
+.caveat { margin: 7px 2px 0; font-size: 9.5px; color: var(--dim); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* Right Cards & Daily Log */
+.ctx-card { border: 1px solid var(--border); border-radius: 12px; background: var(--raised); padding: 9px 10px; margin-bottom: 8px; }
+.ctx-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
+.ctx-head h3 { margin: 0; font-size: 11px; font-weight: 630; color: var(--text); }
+.ctx-link { border: 0; background: none; padding: 0; color: var(--accent); font: 580 9.8px/1 inherit; cursor: pointer; white-space: nowrap; }
+.ctx-link:hover { text-decoration: underline; }
+
+.log-summary { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.log-summary strong { font-size: 15px; font-weight: 700; }
+.log-summary span { font-size: 9.8px; color: var(--muted); }
+.log-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 8px; }
+.log-seg {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  border: 0; background: transparent; padding: 0; cursor: pointer; color: var(--muted); font: inherit;
+}
+.log-seg-bar { width: 100%; height: 6px; border-radius: 999px; background: var(--hover); transition: background .12s; }
+.log-seg.is-on_time .log-seg-bar { background: var(--success); }
+.log-seg.is-late .log-seg-bar { background: var(--solar); }
+.log-seg span { font-size: 9px; font-weight: 600; }
+.log-seg.is-on_time span { color: var(--success); }
+.log-seg.is-late span { color: var(--solar); }
+
+.wk-dots {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+  padding-top: 7px; border-top: 1px solid var(--row-div);
+}
+.wk-col {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 3px 0; border-radius: 7px; border: 0; background: transparent; cursor: pointer; font: inherit;
+}
+.wk-col:hover { background: var(--hover); }
+.wk-col.is-today { background: var(--tonal); }
+.wk-col small { font-size: 8.6px; color: var(--muted); font-weight: 600; }
+.wk-col.is-today small { color: var(--on-tonal); }
+.wk-pips { display: flex; flex-direction: column; gap: 2px; }
+.pip { width: 5.5px; height: 5.5px; border-radius: 50%; background: var(--hover); border: 1px solid var(--border); }
+.pip.on_time { background: var(--success); border-color: transparent; }
+.pip.late { background: var(--solar); border-color: transparent; }
+.pip-row { display: inline-flex; align-items: center; gap: 2.5px; }
+.pip-sm { width: 5px; height: 5px; border-radius: 50%; background: var(--hover); border: 1px solid var(--border-strong); display: inline-block; }
+.pip-sm.on_time { background: var(--success); border-color: transparent; }
+.pip-sm.late { background: var(--solar); border-color: transparent; }
+
+.qibla-mini { display: flex; align-items: center; gap: 9px; }
+.qibla-dial-sm { width: 50px; height: 50px; flex: none; }
+.qibla-meta strong { display: block; font-size: 13px; font-weight: 680; }
+.qibla-meta span { display: block; font-size: 10px; color: var(--muted); margin-top: 1px; }
+.qibla-meta small { display: block; font-size: 9.2px; color: var(--dim); margin-top: 1px; }
+
+.kv-list { display: flex; flex-direction: column; }
+.kv-row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 4.5px 0; border-top: 1px solid var(--row-div); font-size: 10.5px; }
+.kv-row:first-child { border-top: 0; padding-top: 0; }
+.kv-row:last-child { padding-bottom: 0; }
+.kv-k { color: var(--muted); }
+.kv-v { font-weight: 600; text-align: right; white-space: nowrap; }
+.kv-delta { color: var(--solar); font-size: 9.3px; font-weight: 560; margin-left: 3px; }
+
+/* Day Inspector Direct 3-State Segmented Tracker */
+.insp-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 5px;
+  padding: 5.5px 0; border-top: 1px solid var(--row-div);
+}
+.insp-row:first-child { border-top: 0; padding-top: 0; }
+.insp-lbl { flex: 1; min-width: 0; }
+.insp-lbl strong { display: block; font-size: 11px; font-weight: 610; line-height: 1.2; white-space: nowrap; }
+.insp-lbl small { display: block; font-size: 9.4px; color: var(--muted); white-space: nowrap; }
+.tri-seg {
+  display: inline-flex; padding: 2px; gap: 2px; flex: none;
+  border-radius: 9px; background: var(--bg); border: 1px solid var(--border);
+}
+.tri-seg button {
+  display: inline-grid; place-items: center;
+  border: 0; background: transparent; color: var(--dim);
+  width: 26px; height: 22px; padding: 0; border-radius: 7px;
+  cursor: pointer; transition: background .12s, color .12s;
+}
+.tri-seg button svg.ic { width: 13px; height: 13px; }
+.phone-frame .tri-seg button { width: 32px; height: 25px; }
+.phone-frame .tri-seg button svg.ic { width: 14px; height: 14px; }
+.tri-seg button:hover { color: var(--text); }
+.tri-seg button.act-unprayed { background: var(--hover); color: var(--text); font-weight: 620; }
+.tri-seg button.act-on_time { background: var(--success-soft); color: var(--success); font-weight: 650; }
+.tri-seg button.act-late { background: var(--solar-soft); color: var(--solar); font-weight: 650; }
+
+/* Week & Month Tables */
+.status-strip { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; margin-bottom: 9px; border-radius: 10px; background: var(--raised); border: 1px solid var(--border); font-size: 11px; }
+.status-strip-left { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.status-strip-left strong { font-weight: 640; white-space: nowrap; }
+.status-cd { color: var(--accent); font-weight: 680; white-space: nowrap; }
+.pt-table-wrap { width: 100%; overflow-x: auto; }
+.pt-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 10.3px; }
+.pt-table thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); padding: 4px 3px 5px; text-align: right; font-size: 9.3px; font-weight: 620; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.pt-table thead th:first-child { text-align: left; padding-left: 6px; }
+.pt-table thead th:last-child { padding-right: 6px; }
+.pt-table tbody tr { cursor: pointer; }
+.pt-table tbody td, .pt-table tbody th { padding: 6.5px 3px; border-bottom: 1px solid var(--row-div); text-align: right; white-space: nowrap; }
+.pt-table tbody th { text-align: left; padding-left: 6px; font-weight: 550; }
+.pt-table tbody tr:hover > * { background: var(--hover); }
+.pt-table tbody tr.is-today > * { background: var(--tonal); color: var(--on-tonal); border-bottom-color: transparent; }
+.pt-table tbody tr.is-selected:not(.is-today) > * { background: var(--hover); }
+.pt-table tbody tr.is-jumuah:not(.is-today) > * { background: color-mix(in srgb, var(--solar) 7%, transparent); }
+.pt-table tbody tr > :first-child { border-radius: 9px 0 0 9px; }
+.pt-table tbody tr > :last-child { border-radius: 0 9px 9px 0; padding-right: 6px; }
+.day-main { display: block; font-size: 10.5px; font-weight: 600; line-height: 1.2; }
+.day-sub { display: flex; align-items: center; gap: 4px; font-size: 8.6px; color: var(--muted); margin-top: 1.5px; }
+.pt-table tbody tr.is-today .day-sub { color: var(--on-tonal); opacity: .85; }
+.pt-table tbody tr.is-jumuah .day-sub { color: var(--solar); font-weight: 600; }
+.td-solar { color: var(--muted); }
+.pt-table tbody tr.is-today .td-solar { color: inherit; opacity: .78; }
+.next-pill { display: inline-block; padding: 1.5px 5px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 680; }
+.changed-dot { display: inline-block; width: 4.5px; height: 4.5px; border-radius: 50%; background: var(--solar); margin-left: 2px; vertical-align: middle; }
+.st-mark { display: inline-block; width: 4.5px; height: 4.5px; border-radius: 50%; margin-right: 2.5px; vertical-align: middle; }
+.st-mark.on_time { background: var(--success); }
+.st-mark.late { background: var(--solar); }
+.month-table tbody td, .month-table tbody th { padding: 4.5px 5px; font-size: 10.3px; }
+.month-table .day-main { font-size: 10.4px; }
+
+/* Qibla Full Stage */
+.qibla-stage { display: flex; flex-direction: column; align-items: center; padding: 6px 4px; text-align: center; }
+.qibla-big-dial { width: 214px; height: 214px; }
+.qibla-readout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; width: 100%; max-width: 360px; margin-top: 8px; }
+.q-stat { padding: 7px 8px; border-radius: 10px; background: var(--raised); border: 1px solid var(--border); text-align: left; }
+.q-stat small { display: block; font-size: 9.4px; color: var(--muted); }
+.q-stat strong { display: block; font-size: 12.2px; font-weight: 660; margin-top: 2px; }
+.sun-cue { width: 100%; max-width: 360px; margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--solar-soft); border: 1px solid color-mix(in srgb, var(--solar) 30%, transparent); text-align: left; font-size: 10.6px; color: var(--text); display: flex; align-items: flex-start; gap: 7px; }
+.sun-cue svg.ic { color: var(--solar); margin-top: 1px; }
+
+/* Settings Sheet */
+.settings-tabs { display: flex; justify-content: space-between; gap: 1px; padding: 0 5px; border-bottom: 1px solid var(--row-div); flex: none; }
+.settings-tabs button { position: relative; border: 0; background: transparent; color: var(--muted); height: 30px; padding: 0 3px; font: 560 9.4px/1 inherit; cursor: pointer; white-space: nowrap; }
+.settings-tabs button:hover { color: var(--text); }
+.settings-tabs button.active { color: var(--text); }
+.settings-tabs button.active::after { content: ""; position: absolute; left: 4px; right: 4px; bottom: -1px; height: 2.5px; border-radius: 2px 2px 0 0; background: var(--accent); }
+.set-body { flex: 1; min-height: 0; overflow-y: auto; padding: 9px 11px 44px; scrollbar-width: thin; }
+.set-grp { margin-bottom: 10px; }
+.set-grp-h { display: flex; align-items: center; justify-content: space-between; font-size: 10.2px; font-weight: 640; color: var(--muted); margin-bottom: 5px; }
+.saved-badge { color: var(--success); font-size: 9.8px; font-weight: 600; }
+.set-field { margin-bottom: 6px; }
+.set-field label { display: block; font-size: 10px; color: var(--muted); margin-bottom: 2.5px; }
+.set-input { width: 100%; height: 27px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg); color: var(--text); font: 500 10.8px/1 inherit; }
+.set-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.method-opt { display: flex; align-items: center; gap: 7px; width: 100%; padding: 6.5px 8px; margin-bottom: 4.5px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.method-opt:hover { background: var(--hover); }
+.method-opt.active { border-color: var(--accent); background: var(--tonal); color: var(--on-tonal); }
+.method-opt strong { display: block; font-size: 10.6px; font-weight: 610; }
+.method-opt small { display: block; font-size: 9.2px; color: var(--muted); }
+.method-opt.active small { color: var(--on-tonal); opacity: .82; }
+.radio-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 1.5px solid var(--border-strong); display: grid; place-items: center; }
+.method-opt.active .radio-dot { border-color: var(--accent); }
+.method-opt.active .radio-dot::after { content: ""; width: 5.5px; height: 5.5px; border-radius: 50%; background: var(--accent); }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5.5px 0; border-top: 1px solid var(--row-div); }
+.set-row:first-child { border-top: 0; }
+.set-row-t strong { display: block; font-size: 10.6px; font-weight: 590; }
+.set-row-t small { display: block; font-size: 9.4px; color: var(--muted); }
+.stepper { display: inline-flex; align-items: center; gap: 3px; }
+.stepper button { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; background: var(--raised); color: var(--text); font-size: 12px; cursor: pointer; }
+.stepper span { min-width: 34px; text-align: center; font-size: 10.6px; font-weight: 600; }
+.switch { width: 30px; height: 17px; border-radius: 999px; border: 0; background: var(--hover); position: relative; cursor: pointer; flex: none; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--muted); transition: transform .14s, background .14s; }
+.switch.on { background: var(--accent); }
+.switch.on::after { transform: translateX(13px); background: var(--on-accent); }
+.set-toast { position: absolute; left: 10px; right: 10px; bottom: 34px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5.5px 10px; border-radius: 9px; background: var(--text); color: var(--panel); font-size: 10.2px; font-weight: 560; box-shadow: 0 6px 20px rgba(0,0,0,.32); }
+.set-toast button { border: 0; background: none; color: inherit; text-decoration: underline; font: 650 10.2px/1 inherit; cursor: pointer; }
+.set-foot { flex: none; padding: 6.5px 11px; border-top: 1px solid var(--row-div); font-size: 9.5px; color: var(--dim); }
+
+/* Setup */
+.setup-wrap { max-width: 440px; margin: 18px auto; padding: 18px 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--raised); }
+.setup-wrap h2 { margin: 0 0 4px; font-size: 16.5px; font-weight: 660; letter-spacing: -.015em; }
+.setup-wrap p { margin: 0 0 12px; font-size: 11.4px; color: var(--muted); }
+.city-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 12px; }
+.city-chip { padding: 5px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: 550 10.6px/1 inherit; cursor: pointer; }
+.city-chip:hover { border-color: var(--accent); background: var(--hover); }
+.city-chip.active { background: var(--tonal); color: var(--on-tonal); border-color: transparent; }
+
+/* Phone Showcase */
+.phone-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 316px)); justify-content: center; gap: 18px; height: 100%; align-items: center; }
+.phone-frame { height: 576px; border-radius: 26px; border: 2px solid var(--border-strong); background: var(--bg); overflow: hidden; display: grid; grid-template-rows: 46px minmax(0, 1fr); box-shadow: var(--shadow); position: relative; }
+.ph-top { display: flex; align-items: center; gap: 6px; padding: 6px 9px; }
+.ph-btn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel); color: var(--text); display: grid; place-items: center; flex: none; }
+.ph-search { flex: 1; height: 30px; border-radius: 15px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 10.8px; min-width: 0; }
+.ph-sheet { margin: 0 6px 6px; border-radius: 14px; border: 1px solid var(--border); background: var(--panel); overflow-y: auto; padding: 10px; scrollbar-width: thin; }
+.ph-bottom-sheet { position: absolute; left: 0; right: 0; bottom: 0; top: 54px; background: var(--panel); border-top: 1px solid var(--border-strong); border-radius: 18px 18px 0 0; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 -8px 28px rgba(0,0,0,.35); }
+.ph-handle { width: 32px; height: 3.5px; border-radius: 2px; background: var(--border-strong); margin: 7px auto 2px; flex: none; }
+
+@media (max-width: 660px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) !important; }
+  .sidebar, .right-sheet { display: none !important; }
+  .phone-pair { grid-template-columns: minmax(0, 316px); overflow-y: auto; align-items: start; }
+}
+</style>
+</head>
+<body>
+<div class="mock-shell">
+  <div class="mock-bar">
+    <div class="mock-group" role="tablist" aria-label="Mockup views">
+      <button type="button" class="mock-btn active" data-view="today">Today</button>
+      <button type="button" class="mock-btn" data-view="week">Week</button>
+      <button type="button" class="mock-btn" data-view="month">Month</button>
+      <button type="button" class="mock-btn" data-view="qibla">Qibla</button>
+      <button type="button" class="mock-btn" data-view="settings">Settings</button>
+      <button type="button" class="mock-btn" data-view="setup">First run</button>
+      <button type="button" class="mock-btn" data-view="phone">Phone</button>
+    </div>
+    <div class="mock-group" aria-label="Theme">
+      <button type="button" class="mock-btn active" data-theme-set="dark">Nightfall</button>
+      <button type="button" class="mock-btn" data-theme-set="light">Afterglow</button>
+    </div>
+  </div>
+  <div class="stage" id="stage" data-theme="dark">
+    <header class="topbar" id="desktop-topbar">
+      <div class="tb-start">
+        <span class="dar-mark" aria-hidden="true">D</span>
+        <button type="button" class="ib" aria-label="All apps"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5a1 1 0 1 0 2 0a1 1 0 1 0-2 0M11 5a1 1 0 1 0 2 0a1 1 0 1 0-2 0M18 5a1 1 0 1 0 2 0a1 1 0 1 0-2 0M4 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M11 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M18 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M4 19a1 1 0 1 0 2 0a1 1 0 1 0-2 0M11 19a1 1 0 1 0 2 0a1 1 0 1 0-2 0M18 19a1 1 0 1 0 2 0a1 1 0 1 0-2 0"/></svg></button>
+        <span class="tb-title">Prayer Times</span>
+      </div>
+      <div class="tb-search"><svg class="ic" viewBox="0 0 24 24"><path d="M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg><span>Search all apps…</span><kbd>Ctrl K</kbd></div>
+      <div class="tb-end">
+        <button type="button" class="ib" id="tb-settings" aria-label="Prayer Times settings"><svg class="ic" viewBox="0 0 24 24"><path d="M10 3h4l.6 3 2 .9 2.7-1 2 3.4-2.2 2v2.4l2.2 2-2 3.4-2.7-1-2 .9-.6 3h-4l-.6-3-2-.9-2.7 1-2-3.4 2.2-2v-2.4l-2.2-2 2-3.4 2.7 1 2-.9ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg></button>
+        <span class="avatar">AN</span>
+      </div>
+    </header>
+    <div class="workspace" id="desktop-ws">
+      <aside class="sidebar">
+        <button type="button" class="create-btn" id="btn-add-loc"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg><span>Add location</span></button>
+        <div class="side-scroll">
+          <nav class="nav-list">
+            <button type="button" class="nav-item active" data-nav="today"><svg class="ic" viewBox="0 0 24 24"><path d="M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0"/></svg><span class="nav-lbl">Today</span></button>
+            <button type="button" class="nav-item" data-nav="week"><svg class="ic" viewBox="0 0 24 24"><path d="M3 5h18v14H3ZM3 10h18M9 5v14"/></svg><span class="nav-lbl">Week</span></button>
+            <button type="button" class="nav-item" data-nav="month"><svg class="ic" viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2"/></svg><span class="nav-lbl">Month</span></button>
+            <button type="button" class="nav-item" data-nav="qibla"><svg class="ic" viewBox="0 0 24 24"><path d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20ZM16.2 7.8l-2.1 6.3-6.3 2.1 2.1-6.3Z"/></svg><span class="nav-lbl">Qibla</span></button>
+          </nav>
+          <div class="side-head"><span>Locations</span></div>
+          <nav class="nav-list" id="loc-list"></nav>
+          <div class="mini-month"><div class="mm-head"><span>Nov 2026</span><span style="color:var(--muted);font-weight:500;font-size:9px">Jumada I</span></div><div class="mm-grid" id="mm-grid"></div></div>
+        </div>
+      </aside>
+      <main class="sheet" id="main-sheet"></main>
+      <aside class="sheet right-sheet" id="right-sheet"></aside>
+    </div>
+    <div class="workspace phone-stage hidden" id="phone-ws">
+      <div class="phone-pair">
+        <div class="phone-frame">
+          <div class="ph-top"><span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span><span class="ph-search"><svg class="ic" viewBox="0 0 24 24"><path d="M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg><span>Search all apps…</span></span><span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M10 3h4l.6 3 2 .9 2.7-1 2 3.4-2.2 2v2.4l2.2 2-2 3.4-2.7-1-2 .9-.6 3h-4l-.6-3-2-.9-2.7 1-2-3.4 2.2-2v-2.4l-2.2-2 2-3.4 2.7 1 2-.9ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg></span><span class="avatar" style="width:30px;height:30px">AN</span></div>
+          <div class="ph-sheet" id="phone-today"></div>
+        </div>
+        <div class="phone-frame">
+          <div class="ph-top"><span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span><span class="ph-search"><svg class="ic" viewBox="0 0 24 24"><path d="M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg><span>Search all apps…</span></span><span class="ph-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M10 3h4l.6 3 2 .9 2.7-1 2 3.4-2.2 2v2.4l2.2 2-2 3.4-2.7-1-2 .9-.6 3h-4l-.6-3-2-.9-2.7 1-2-3.4 2.2-2v-2.4l-2.2-2 2-3.4 2.7 1 2-.9ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg></span><span class="avatar" style="width:30px;height:30px">AN</span></div>
+          <div class="ph-bottom-sheet" id="phone-right"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const LOCATIONS = [
+  { id: 'toronto', label: 'Toronto', tag: 'Home', tz: 'America/Toronto', lat: 43.6532, lon: -79.3832, method: 'ISNA', asr: 'standard', qiblaDeg: 54.5, qiblaCard: 'NE', distKm: '10,489 km', sunAz: 194, hijri: '28 Jumada I 1448 AH', daylight: '9h 56m', daylightDelta: '−2m', times: { fajr: '5:41 AM', sunrise: '7:03 AM', dhuhr: '12:02 PM', asr: '2:37 PM', maghrib: '4:59 PM', isha: '6:21 PM' }, hanafiAsr: '3:16 PM', mwlFajr: '5:22 AM', mwlIsha: '6:33 PM', nowIdx: 2, nextIdx: 3, countdown: '01:36:42', elapsed: '58m elapsed', pct: 37, sunT: 0.62, night: { ishraq: '7:18 AM', noon: '12:01 PM', midnight: '11:20 PM', lastThird: '1:27 AM' }, windows: ['1h 22m until Sunrise', 'Solar event', 'Now · ends at 2:37 PM', 'Next · 2h 22m window', '1h 22m until Isha', 'Until 5:42 AM Fajr'] },
+  { id: 'london', label: 'London', tag: 'Travel', tz: 'Europe/London', lat: 51.5074, lon: -0.1278, method: 'MWL', asr: 'standard', qiblaDeg: 119.0, qiblaCard: 'ESE', distKm: '4,791 km', sunAz: 189, hijri: '28 Jumada I 1448 AH', daylight: '9h 16m', daylightDelta: '−3m', times: { fajr: '5:16 AM', sunrise: '7:06 AM', dhuhr: '11:45 AM', asr: '2:02 PM', maghrib: '4:22 PM', isha: '6:04 PM' }, hanafiAsr: '2:36 PM', mwlFajr: '5:16 AM', mwlIsha: '6:04 PM', nowIdx: 2, nextIdx: 3, countdown: '01:02:18', elapsed: '1h 15m elapsed', pct: 55, sunT: 0.65, night: { ishraq: '7:21 AM', noon: '11:44 AM', midnight: '10:49 PM', lastThird: '12:58 AM' }, windows: ['1h 50m until Sunrise', 'Solar event', 'Now · ends at 2:02 PM', 'Next · 2h 20m window', '1h 42m until Isha', 'Until 5:18 AM Fajr'] },
+  { id: 'makkah', label: 'Makkah', tag: 'Saved', tz: 'Asia/Riyadh', lat: 21.4225, lon: 39.8262, method: 'UmmAlQura', asr: 'standard', qiblaDeg: 0.0, qiblaCard: 'Kaaba', distKm: '0 km', sunAz: 202, hijri: '28 Jumada I 1448 AH', daylight: '11h 12m', daylightDelta: '−1m', times: { fajr: '5:11 AM', sunrise: '6:30 AM', dhuhr: '12:06 PM', asr: '3:22 PM', maghrib: '5:42 PM', isha: '7:12 PM' }, hanafiAsr: '4:10 PM', mwlFajr: '5:13 AM', mwlIsha: '6:55 PM', nowIdx: 2, nextIdx: 3, countdown: '02:21:10', elapsed: '54m elapsed', pct: 28, sunT: 0.59, night: { ishraq: '6:45 AM', noon: '12:05 PM', midnight: '11:26 PM', lastThird: '1:21 AM' }, windows: ['1h 19m until Sunrise', 'Solar event', 'Now · ends at 3:22 PM', 'Next · 2h 20m window', '1h 30m fixed interval', 'Until 5:12 AM Fajr'] }
+];
+const METHODS = { ISNA: { label: 'ISNA', desc: 'Fajr 15° · Isha 15° (North America)' }, MWL: { label: 'Muslim World League', desc: 'Fajr 18° · Isha 17°' }, UmmAlQura: { label: 'Umm al-Qura, Makkah', desc: 'Fajr 18.5° · Isha +90 min' }, Egypt: { label: 'Egyptian General Authority', desc: 'Fajr 19.5° · Isha 17.5°' }, Karachi: { label: 'Karachi', desc: 'Fajr 18° · Isha 18°' } };
+const PRAYERS = [
+  { key: 'fajr', short: 'F', label: 'Fajr', icon: 'M4 16h16M7 12a5 5 0 0 1 10 0M12 4v3' },
+  { key: 'sunrise', short: '', label: 'Sunrise', solar: true, icon: 'M12 3v3M4.9 7.9l2.1 2.1M19.1 7.9l-2.1 2.1M3 16h18M7 16a5 5 0 0 1 10 0' },
+  { key: 'dhuhr', short: 'D', label: 'Dhuhr', icon: 'M12 7a5 5 0 1 0 0 10a5 5 0 0 0 0-10ZM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4' },
+  { key: 'asr', short: 'A', label: 'Asr', icon: 'M12 8a4 4 0 1 0 0 8a4 4 0 0 0 0-8ZM12 3v2M5.6 5.6l1.4 1.4M3 12h2M19 12h2M17 7l1.4-1.4' },
+  { key: 'maghrib', short: 'M', label: 'Maghrib', icon: 'M3 16h18M7 16a5 5 0 0 1 10 0M12 8v3M9 11l3 3 3-3' },
+  { key: 'isha', short: 'I', label: 'Isha', icon: 'M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z' }
+];
+const OBLIG = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+const WEEK_DAYS = [
+  { day: 8, wd: 'Sunday', short: 'Sun 8', hijri: '28 Jum I', dF: 0, dS: 0, dD: 0, dA: 0, dM: 0, dI: 0, today: true },
+  { day: 9, wd: 'Monday', short: 'Mon 9', hijri: '29 Jum I', dF: 1, dS: 1, dD: 0, dA: -1, dM: -1, dI: -1 },
+  { day: 10, wd: 'Tuesday', short: 'Tue 10', hijri: '30 Jum I', dF: 2, dS: 2, dD: 0, dA: -2, dM: -2, dI: -2 },
+  { day: 11, wd: 'Wednesday', short: 'Wed 11', hijri: '1 Jum II', dF: 3, dS: 4, dD: 1, dA: -3, dM: -3, dI: -3 },
+  { day: 12, wd: 'Thursday', short: 'Thu 12', hijri: '2 Jum II', dF: 5, dS: 5, dD: 1, dA: -4, dM: -4, dI: -4 },
+  { day: 13, wd: 'Friday', short: 'Fri 13', hijri: 'Jumu’ah', dF: 6, dS: 6, dD: 1, dA: -5, dM: -5, dI: -5, jumuah: true },
+  { day: 14, wd: 'Saturday', short: 'Sat 14', hijri: '4 Jum II', dF: 7, dS: 7, dD: 1, dA: -5, dM: -6, dI: -5 }
+];
+
+// Realistic prayer logs for November 2026 (unprayed | on_time | late)
+const LOGS = {
+  1: { fajr:'on_time', dhuhr:'on_time', asr:'on_time', maghrib:'on_time', isha:'on_time' },
+  2: { fajr:'late', dhuhr:'on_time', asr:'on_time', maghrib:'on_time', isha:'on_time' },
+  3: { fajr:'on_time', dhuhr:'on_time', asr:'late', maghrib:'on_time', isha:'on_time' },
+  4: { fajr:'on_time', dhuhr:'on_time', asr:'on_time', maghrib:'on_time', isha:'on_time' },
+  5: { fajr:'on_time', dhuhr:'on_time', asr:'on_time', maghrib:'late', isha:'on_time' },
+  6: { fajr:'on_time', dhuhr:'on_time', asr:'on_time', maghrib:'on_time', isha:'on_time' },
+  7: { fajr:'late', dhuhr:'on_time', asr:'on_time', maghrib:'on_time', isha:'on_time' },
+  8: { fajr:'on_time', dhuhr:'late', asr:'unprayed', maghrib:'unprayed', isha:'unprayed' }
+};
+
+const qp = new URLSearchParams(location.search);
+let state = {
+  view: qp.get('view') || 'today',
+  locId: 'toronto',
+  selectedDay: 8,
+  settingsTab: qp.get('stab') || 'calculation',
+  methodOverride: null,
+  asrOverride: null,
+  changedCols: [],
+  toast: 'Asr set to Hanafi',
+  showHijri: true,
+  showNight: true,
+  showTracking: true,
+  showSeconds: true,
+  time24: false,
+  fajrOffset: 0,
+  phoneRightMode: 'log'
+};
+if (qp.get('theme') === 'light') { document.getElementById('stage').dataset.theme = 'light'; }
+
+function getLog(day) {
+  if (!LOGS[day]) LOGS[day] = { fajr:'unprayed', dhuhr:'unprayed', asr:'unprayed', maghrib:'unprayed', isha:'unprayed' };
+  return LOGS[day];
+}
+function logCounts(day) {
+  const l = getLog(day);
+  let on = 0, late = 0;
+  for (const k of OBLIG) { if (l[k] === 'on_time') on++; else if (l[k] === 'late') late++; }
+  return { on, late, done: on + late };
+}
+function nextStatus(s) { return s === 'unprayed' ? 'on_time' : s === 'on_time' ? 'late' : 'unprayed'; }
+function statusLabel(s) { return s === 'on_time' ? 'On time' : s === 'late' ? 'Late' : 'Not yet'; }
+function statusIcon(s) {
+  if (s === 'on_time') return '<svg class="ic" viewBox="0 0 24 24" stroke-width="2.4"><path d="M5 12.5 9.5 17 19 7.5"/></svg>';
+  if (s === 'late') return '<svg class="ic" viewBox="0 0 24 24" stroke-width="1.95"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.5v4.7l3 1.9"/></svg>';
+  return '<svg class="ic" viewBox="0 0 24 24" stroke-width="1.85"><circle cx="12" cy="12" r="7.8" stroke-dasharray="3.4 2.6"/></svg>';
+}
+
+function getLoc() { return LOCATIONS.find(l => l.id === state.locId) || LOCATIONS[0]; }
+function shiftTimeStr(str, deltaMin) {
+  const m = str.match(/(\d+):(\d+)\s*(AM|PM)/); if (!m) return str;
+  let h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+  if (m[3] === 'PM' && h !== 12) h += 12; if (m[3] === 'AM' && h === 12) h = 0;
+  let total = (h * 60 + min + deltaMin + 1440) % 1440, nh = Math.floor(total / 60), nm = total % 60;
+  if (state.time24) return `${String(nh).padStart(2,'0')}:${String(nm).padStart(2,'0')}`;
+  return `${nh % 12 || 12}:${String(nm).padStart(2,'0')} ${nh >= 12 ? 'PM' : 'AM'}`;
+}
+function getEffectiveTimes(loc, dRow) {
+  const method = state.methodOverride || loc.method, asr = state.asrOverride || loc.asr, base = { ...loc.times };
+  if (asr === 'hanafi') base.asr = loc.hanafiAsr;
+  if (method === 'MWL' && loc.id === 'toronto') { base.fajr = loc.mwlFajr; base.isha = loc.mwlIsha; }
+  const dm = dRow || { dF:0, dS:0, dD:0, dA:0, dM:0, dI:0 };
+  return { fajr: shiftTimeStr(base.fajr, dm.dF + state.fajrOffset), sunrise: shiftTimeStr(base.sunrise, dm.dS), dhuhr: shiftTimeStr(base.dhuhr, dm.dD), asr: shiftTimeStr(base.asr, dm.dA), maghrib: shiftTimeStr(base.maghrib, dm.dM), isha: shiftTimeStr(base.isha, dm.dI) };
+}
+function qBez(p0, p1, p2, t) { const u = 1 - t; return u*u*p0 + 2*u*t*p1 + t*t*p2; }
+function solarArcSvg(loc) {
+  const dayPt = t => ({ x: qBez(86, 180, 274, t), y: qBez(52, -22, 52, t) });
+  const dawnPt = t => ({ x: qBez(12, 50, 86, t), y: qBez(68, 62, 52, t) });
+  const duskPt = t => ({ x: qBez(274, 310, 348, t), y: qBez(52, 62, 68, t) });
+  const pts = [dawnPt(0.32), { ...dayPt(0), solar: true }, { ...dayPt(0.5), now: true }, { ...dayPt(0.76), next: true }, dayPt(1), duskPt(0.68)];
+  const sun = dayPt(loc.sunT);
+  return `<svg class="solar-svg" viewBox="0 0 360 76"><defs><linearGradient id="dayWash" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--solar)" stop-opacity="0.24"/><stop offset="100%" stop-color="var(--solar)" stop-opacity="0.02"/></linearGradient><linearGradient id="arcStroke" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="var(--dawn)"/><stop offset="24%" stop-color="var(--solar)"/><stop offset="76%" stop-color="var(--solar)"/><stop offset="90%" stop-color="var(--rose)"/><stop offset="100%" stop-color="var(--dawn)"/></linearGradient><filter id="sunGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><line x1="8" y1="52" x2="352" y2="52" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/><text x="10" y="48" fill="var(--dim)" font-size="8.2" font-weight="550">Horizon</text><path d="M 86 52 Q 180 -22 274 52 Z" fill="url(#dayWash)"/><path d="M 12 68 Q 50 62 86 52 Q 180 -22 274 52 Q 310 62 348 68" fill="none" stroke="url(#arcStroke)" stroke-width="2.2" stroke-linecap="round"/>${pts.map(p => `<line x1="${p.x.toFixed(1)}" y1="${p.y.toFixed(1)}" x2="${p.x.toFixed(1)}" y2="73" stroke="${p.next ? 'var(--accent)' : p.now ? 'var(--solar)' : 'var(--row-div)'}" stroke-width="${p.next || p.now ? 1.3 : 1}" stroke-dasharray="${p.next ? '' : '2 2'}"/>`).join('')}${pts.map(p => p.next ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5" fill="var(--accent)" stroke="var(--panel)" stroke-width="2"/>` : p.now ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="var(--solar)" stroke="var(--panel)" stroke-width="1.5"/>` : p.solar ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.4" fill="var(--panel)" stroke="var(--solar)" stroke-width="1.5" stroke-dasharray="2 1.5"/>` : `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.3" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5"/>`).join('')}<circle cx="${sun.x.toFixed(1)}" cy="${sun.y.toFixed(1)}" r="7.5" fill="var(--solar)" opacity="0.30" filter="url(#sunGlow)"/><circle cx="${sun.x.toFixed(1)}" cy="${sun.y.toFixed(1)}" r="4.5" fill="var(--solar)" stroke="var(--panel)" stroke-width="1.5"/></svg>`;
+}
+function compassSvg(deg, sizeClass, big) {
+  if (!big) return `<svg class="${sizeClass}" viewBox="0 0 58 58"><circle cx="29" cy="29" r="26" fill="var(--bg)" stroke="var(--border-strong)" stroke-width="1.2"/><circle cx="29" cy="29" r="20" fill="none" stroke="var(--row-div)" stroke-dasharray="2 2"/><text x="29" y="10.5" text-anchor="middle" fill="var(--muted)" font-size="7" font-weight="700">N</text><g transform="rotate(${deg} 29 29)"><line x1="29" y1="29" x2="29" y2="11" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/><polygon points="29,7 33,15 29,13 25,15" fill="var(--accent)"/><circle cx="29" cy="29" r="3" fill="var(--accent)"/></g></svg>`;
+  const ticks = Array.from({length: 36}, (_, i) => { const a = i * 10, major = a % 90 === 0, med = a % 30 === 0, len = major ? 11 : med ? 7 : 4; return `<line x1="112" y1="16" x2="112" y2="${16 + len}" stroke="${major ? 'var(--text)' : 'var(--border-strong)'}" stroke-width="${major ? 1.8 : 1}" transform="rotate(${a} 112 112)"/>`; }).join('');
+  return `<svg class="${sizeClass}" viewBox="0 0 224 224"><defs><radialGradient id="dialGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="var(--tonal)" stop-opacity="0.32"/><stop offset="100%" stop-color="var(--bg)" stop-opacity="0.05"/></radialGradient></defs><circle cx="112" cy="112" r="102" fill="url(#dialGlow)" stroke="var(--border-strong)" stroke-width="1.4"/><circle cx="112" cy="112" r="78" fill="none" stroke="var(--row-div)" stroke-width="1" stroke-dasharray="3 3"/><circle cx="112" cy="112" r="46" fill="none" stroke="var(--row-div)" stroke-width="1"/>${ticks}<text x="112" y="38" text-anchor="middle" fill="var(--text)" font-size="11" font-weight="700">N</text><text x="188" y="116" text-anchor="middle" fill="var(--muted)" font-size="10" font-weight="600">E</text><text x="112" y="194" text-anchor="middle" fill="var(--muted)" font-size="10" font-weight="600">S</text><text x="36" y="116" text-anchor="middle" fill="var(--muted)" font-size="10" font-weight="600">W</text><g transform="rotate(${getLoc().sunAz} 112 112)"><line x1="112" y1="112" x2="112" y2="34" stroke="var(--solar)" stroke-width="1.3" stroke-dasharray="3 3" opacity="0.75"/><circle cx="112" cy="34" r="5" fill="var(--solar)"/></g><g transform="rotate(${deg} 112 112)"><line x1="112" y1="138" x2="112" y2="32" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/><polygon points="112,20 120,40 112,35 104,40" fill="var(--accent)"/><rect x="108" y="45" width="8" height="8" rx="1.5" fill="var(--on-accent)" stroke="var(--accent)" stroke-width="1.5"/></g><circle cx="112" cy="112" r="6" fill="var(--panel)" stroke="var(--accent)" stroke-width="2.5"/></svg>`;
+}
+
+function renderSidebar() {
+  const loc = getLoc();
+  document.querySelectorAll('[data-nav]').forEach(b => b.classList.toggle('active', b.dataset.nav === state.view || (state.view === 'settings' && b.dataset.nav === 'week')));
+  document.getElementById('loc-list').innerHTML = LOCATIONS.map(l => `<button type="button" class="nav-item ${l.id === loc.id ? 'active' : ''}" data-loc="${l.id}"><span class="loc-dot"></span><span class="nav-lbl">${l.label}</span><span class="nav-meta">${l.tag}</span></button>`).join('');
+  const dows = ['S','M','T','W','T','F','S'].map(d => `<span class="mm-dow">${d}</span>`).join('');
+  const cells = Array.from({length: 30}, (_, i) => {
+    const d = i + 1;
+    const c = state.showTracking && LOGS[d] ? logCounts(d) : { done: 0, on: 0, late: 0 };
+    const dot = c.done > 0 ? `<span class="mm-dot ${c.on === 5 ? 'ok' : 'mix'}"></span>` : '';
+    return `<button type="button" class="mm-day ${d===8?'is-today':''} ${d===state.selectedDay?'is-sel':''}" data-mmd="${d}">${d}${dot}</button>`;
+  }).join('');
+  document.getElementById('mm-grid').innerHTML = dows + cells;
+}
+
+function renderTodayMain(loc, times) {
+  const cd = state.showSeconds ? loc.countdown : loc.countdown.slice(0, 5);
+  const log = getLog(8);
+  return `<div class="sheet-head"><div class="sheet-head-title"><h1>${loc.label}</h1><div class="sheet-sub">Sun, Nov 8${state.showHijri ? ' · ' + loc.hijri : ''}</div></div><div class="sheet-actions"><button type="button" class="ib" aria-label="Previous day"><svg class="ic" viewBox="0 0 24 24"><path d="m14 5-7 7 7 7"/></svg></button><button type="button" class="ib" aria-label="Next day"><svg class="ic" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button><button type="button" class="pill-btn" data-jump="settings"><svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16M10 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0M18 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0M12 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0"/></svg><span>Tune</span></button></div></div>
+  <div class="sheet-body">
+    <section class="solar-stage">
+      <div class="hero-top">
+        <div>
+          <div class="hero-phase"><span class="hero-phase-dot"></span><span>Dhuhr window · ${loc.elapsed}</span></div>
+          <h2 class="hero-title num">Asr at ${times.asr}</h2>
+          <p class="hero-window-note">Daylight ${loc.daylight} · Fajr ended ${times.sunrise}</p>
+        </div>
+        <div class="hero-cd">
+          <small>Starts in</small>
+          <strong class="num">${cd}</strong>
+          <div class="window-bar"><div class="window-bar-fill" style="width:${loc.pct}%"></div></div>
+        </div>
+      </div>
+      ${solarArcSvg(loc)}
+      <div class="arc-grid">
+        ${PRAYERS.map((p,i)=>{
+          const st = !p.solar && state.showTracking ? log[p.key] : 'unprayed';
+          const dot = st !== 'unprayed' ? `<i class="arc-st-dot ${st}"></i>` : '';
+          return `<div class="arc-cell ${i<loc.nowIdx?'is-past':''} ${i===loc.nowIdx?'is-now':''} ${i===loc.nextIdx?'is-next':''}"><span>${p.label}${dot}</span><strong class="num">${times[p.key].replace(' AM','a').replace(' PM','p')}</strong></div>`;
+        }).join('')}
+      </div>
+    </section>
+    <div class="prayer-list">
+      ${PRAYERS.map((p,i)=>{
+        const badge = i===loc.nowIdx?'Now':i===loc.nextIdx?'Next':p.solar?'Solar':'';
+        const st = !p.solar ? log[p.key] : null;
+        const control = !state.showTracking ? '' : p.solar
+          ? `<span class="track-spacer" aria-hidden="true"></span>`
+          : `<button type="button" class="track-ico is-${st}" data-cycle-day="8" data-cycle-prayer="${p.key}" aria-label="${p.label}: ${statusLabel(st)} (click to change)" title="${p.label}: ${statusLabel(st)} · click to cycle">${statusIcon(st)}</button>`;
+        return `<div class="p-row ${i<loc.nowIdx?'is-past':''} ${i===loc.nowIdx?'is-now':''} ${i===loc.nextIdx?'is-next':''} ${p.solar?'is-solar':''}" style="${state.showTracking?'':'grid-template-columns:24px minmax(0,1fr) auto'}">
+          <span class="p-ico"><svg class="ic" viewBox="0 0 24 24"><path d="${p.icon}"/></svg></span>
+          <div class="p-name"><strong>${p.label}${badge?`<span class="p-badge">${badge}</span>`:''}</strong><small>${loc.windows[i]}</small></div>
+          <time class="p-time num">${times[p.key]}</time>
+          ${control}
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="caveat"><span>Click a prayer icon to cycle status</span><button type="button" class="ctx-link" data-jump="month">Month</button></div>
+  </div>`;
+}
+
+function renderTodayRight(loc) {
+  const log = getLog(8), c = logCounts(8);
+  const recent7 = [2,3,4,5,6,7,8];
+  const dayLetters = {2:'M',3:'T',4:'W',5:'T',6:'F',7:'S',8:'S'};
+  return `<div class="sheet-head"><div class="sheet-head-title"><h1>Daily log &amp; Sun</h1><div class="sheet-sub">${loc.tz}</div></div></div>
+  <div class="sheet-body" style="padding:9px 10px 12px">
+    ${state.showTracking ? `
+    <div class="ctx-card">
+      <div class="ctx-head"><h3>Today’s prayers</h3><span style="font-size:9.5px;color:var(--muted)" class="num">${c.on} on time · ${c.late} late</span></div>
+      <div class="log-summary"><strong class="num">${c.done} / 5</strong><span>${5 - c.done === 0 ? 'All logged' : `${5 - c.done} remaining`}</span></div>
+      <div class="log-strip">
+        ${OBLIG.map(k => {
+          const p = PRAYERS.find(x => x.key === k);
+          return `<button type="button" class="log-seg is-${log[k]}" data-cycle-day="8" data-cycle-prayer="${k}" title="${p.label}: ${statusLabel(log[k])}">
+            <span class="log-seg-bar"></span><span>${p.short}</span>
+          </button>`;
+        }).join('')}
+      </div>
+      <div class="wk-dots" aria-label="Last 7 days prayer log">
+        ${recent7.map(d => {
+          const dl = getLog(d);
+          return `<button type="button" class="wk-col ${d===8?'is-today':''}" data-inspect-day="${d}" title="Nov ${d} · Click to edit log">
+            <div class="wk-pips">${OBLIG.map(k => `<span class="pip ${dl[k]}"></span>`).join('')}</div>
+            <small>${dayLetters[d]}</small>
+          </button>`;
+        }).join('')}
+      </div>
+      <div class="ico-legend" aria-hidden="true">
+        <span><i class="lg-none">${statusIcon('unprayed')}</i>Not yet</span>
+        <span><i class="lg-ok">${statusIcon('on_time')}</i>On time</span>
+        <span><i class="lg-late">${statusIcon('late')}</i>Late</span>
+      </div>
+    </div>` : ''}
+
+    <div class="ctx-card">
+      <div class="ctx-head"><h3>Qibla</h3><button type="button" class="ctx-link" data-jump="qibla">Open compass</button></div>
+      <div class="qibla-mini">${compassSvg(loc.qiblaDeg, 'qibla-dial-sm', false)}<div class="qibla-meta"><strong class="num">${loc.qiblaDeg.toFixed(1)}° ${loc.qiblaCard}</strong><span>${loc.distKm} to Makkah</span><small>True north · great circle</small></div></div>
+    </div>
+
+    ${state.showNight ? `<div class="ctx-card" style="margin-bottom:0"><div class="ctx-head"><h3>Sunna &amp; night</h3></div><div class="kv-list"><div class="kv-row"><span class="kv-k">Ishraq / Duha</span><span class="kv-v num">${shiftTimeStr(loc.night.ishraq,0)}</span></div><div class="kv-row"><span class="kv-k">Solar noon</span><span class="kv-v num">${shiftTimeStr(loc.night.noon,0)}</span></div><div class="kv-row"><span class="kv-k">Islamic midnight</span><span class="kv-v num">${shiftTimeStr(loc.night.midnight,0)}</span></div><div class="kv-row"><span class="kv-k">Last third</span><span class="kv-v num">${shiftTimeStr(loc.night.lastThird,0)}</span></div><div class="kv-row"><span class="kv-k">Daylight</span><span class="kv-v num">${loc.daylight}<span class="kv-delta">${loc.daylightDelta}</span></span></div></div></div>` : ''}
+  </div>`;
+}
+
+function renderWeekMain(loc, times) {
+  return `<div class="sheet-head"><div class="sheet-head-title"><h1>Nov 8 – Nov 14, 2026</h1><div class="sheet-sub">${loc.label} · ${METHODS[state.methodOverride || loc.method].label}</div></div><div class="sheet-actions"><button type="button" class="ib"><svg class="ic" viewBox="0 0 24 24"><path d="m14 5-7 7 7 7"/></svg></button><button type="button" class="pill-btn" data-sel-today>Today</button><button type="button" class="ib"><svg class="ic" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button></div></div>
+  <div class="sheet-body">
+    <div class="status-strip"><div class="status-strip-left"><span class="hero-phase" style="margin:0"><span class="hero-phase-dot"></span>Dhuhr now</span><strong>Next: Asr ${times.asr}</strong></div><span class="status-cd num">in ${loc.countdown.slice(0,5)}</span></div>
+    <div class="pt-table-wrap"><table class="pt-table"><thead><tr><th>Day</th><th>Fajr</th><th>Sun</th><th>Dhuhr</th><th>Asr</th><th>Magh</th><th>Isha</th></tr></thead><tbody>${WEEK_DAYS.map(d=>{
+      const dt = getEffectiveTimes(loc, d), dl = getLog(d.day), c = logCounts(d.day);
+      const dot = k => state.changedCols.includes(k) ? '<span class="changed-dot"></span>' : '';
+      const mark = k => (state.showTracking && dl[k] !== 'unprayed') ? `<span class="st-mark ${dl[k]}" title="${statusLabel(dl[k])}"></span>` : '';
+      const pips = state.showTracking && c.done > 0 ? `<span class="pip-row">${OBLIG.map(k=>`<i class="pip-sm ${dl[k]}"></i>`).join('')}</span>` : '';
+      return `<tr class="${d.today?'is-today':''} ${state.selectedDay===d.day?'is-selected':''} ${d.jumuah?'is-jumuah':''}" data-pick-day="${d.day}">
+        <th><span class="day-main">${d.short}</span><span class="day-sub">${d.today?'Today':d.hijri} ${pips}</span></th>
+        <td class="num">${mark('fajr')}${dt.fajr.replace(/ [AP]M/,'')}${dot('fajr')}</td>
+        <td class="num td-solar">${dt.sunrise.replace(/ [AP]M/,'')}</td>
+        <td class="num">${mark('dhuhr')}${dt.dhuhr.replace(/ [AP]M/,'')}</td>
+        <td class="num">${mark('asr')}${d.today?`<span class="next-pill">${dt.asr.replace(/ [AP]M/,'')}</span>`:dt.asr.replace(/ [AP]M/,'')}${dot('asr')}</td>
+        <td class="num">${mark('maghrib')}${dt.maghrib.replace(/ [AP]M/,'')}</td>
+        <td class="num">${mark('isha')}${dt.isha.replace(/ [AP]M/,'')}${dot('isha')}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>
+    <div class="caveat"><span>Select any row to log prayers (Not yet / On time / Late) or export.</span><button type="button" class="ctx-link" data-jump="settings">Offsets</button></div>
+  </div>`;
+}
+
+function renderDayInspector(loc, isPhone) {
+  const d = WEEK_DAYS.find(x => x.day === state.selectedDay) || { day: state.selectedDay, wd: 'Day', short: `Nov ${state.selectedDay}`, hijri: 'Jumada I', dF: state.selectedDay - 8, dS: state.selectedDay - 8, dD: 0, dA: 8 - state.selectedDay, dM: 8 - state.selectedDay, dI: 8 - state.selectedDay };
+  const dt = getEffectiveTimes(loc, d), dl = getLog(d.day), c = logCounts(d.day);
+  return `${isPhone ? '<div class="ph-handle"></div>' : ''}
+  <div class="sheet-head" style="padding:8px 10px">
+    <div class="sheet-head-title"><h1 style="font-size:13px">${d.wd}, Nov ${d.day}</h1><div class="sheet-sub">${c.done}/5 prayed · ${c.on} on time · ${c.late} late</div></div>
+    ${isPhone ? `<div class="seg"><button type="button" class="${state.phoneRightMode==='log'?'active':''}" data-ph-mode="log">Log</button><button type="button" class="${state.phoneRightMode==='settings'?'active':''}" data-ph-mode="settings">Settings</button></div>` : `<button type="button" class="ib" data-jump="today"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg></button>`}
+  </div>
+  <div class="sheet-body" style="padding:10px 10px 12px">
+    <div class="ctx-card">
+      <div class="ctx-head"><h3>Prayer tracker</h3><span style="font-size:9.5px;color:var(--muted)">1-tap status</span></div>
+      ${OBLIG.map(k => {
+        const p = PRAYERS.find(x => x.key === k), cur = dl[k];
+        return `<div class="insp-row">
+          <div class="insp-lbl"><strong>${p.label}</strong><small class="num">${dt[k]}</small></div>
+          <div class="tri-seg" role="group" aria-label="${p.label} status">
+            <button type="button" class="${cur==='unprayed'?'act-unprayed':''}" data-set-day="${d.day}" data-set-prayer="${k}" data-set-val="unprayed" aria-label="${p.label}: Not prayed yet" title="Not prayed yet">${statusIcon('unprayed')}</button>
+            <button type="button" class="${cur==='on_time'?'act-on_time':''}" data-set-day="${d.day}" data-set-prayer="${k}" data-set-val="on_time" aria-label="${p.label}: Prayed on time" title="Prayed on time">${statusIcon('on_time')}</button>
+            <button type="button" class="${cur==='late'?'act-late':''}" data-set-day="${d.day}" data-set-prayer="${k}" data-set-val="late" aria-label="${p.label}: Prayed late" title="Prayed late">${statusIcon('late')}</button>
+          </div>
+        </div>`;
+      }).join('')}
+      <div class="ico-legend" aria-hidden="true">
+        <span><i class="lg-none">${statusIcon('unprayed')}</i>Not yet</span>
+        <span><i class="lg-ok">${statusIcon('on_time')}</i>On time</span>
+        <span><i class="lg-late">${statusIcon('late')}</i>Late</span>
+      </div>
+    </div>
+    <div class="ctx-card">
+      <div class="ctx-head"><h3>Solar &amp; night</h3></div>
+      <div class="kv-list">
+        <div class="kv-row"><span class="kv-k">Sunrise</span><span class="kv-v num">${dt.sunrise}</span></div>
+        <div class="kv-row"><span class="kv-k">Islamic midnight</span><span class="kv-v num">${shiftTimeStr(loc.night.midnight, d.dM || 0)}</span></div>
+        <div class="kv-row"><span class="kv-k">Last third</span><span class="kv-v num">${shiftTimeStr(loc.night.lastThird, d.dF || 0)}</span></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px"><button type="button" class="pill-btn" style="flex:1;justify-content:center">Copy times</button><button type="button" class="pill-btn" style="flex:1;justify-content:center">Export .ics</button></div>
+  </div>`;
+}
+
+function renderMonthMain(loc) {
+  const rows = Array.from({length: 14}, (_, i) => {
+    const day = i + 1, isToday = day === 8, isFri = (day === 6 || day === 13);
+    const d = { dF: day - 8, dS: day - 8, dD: day > 10 ? 1 : 0, dA: 8 - day, dM: 8 - day, dI: 8 - day };
+    const dt = getEffectiveTimes(loc, d), dl = getLog(day);
+    return `<tr class="${isToday ? 'is-today' : ''} ${isFri ? 'is-jumuah' : ''} ${state.selectedDay===day?'is-selected':''}" data-inspect-day="${day}">
+      <th><span class="day-main">Nov ${day}</span><span class="day-sub">${isFri ? 'Jumu’ah' : (20+day<=30?(20+day)+' Jum I':(day-10)+' Jum II')}</span></th>
+      <td class="num">${dt.fajr.replace(/ [AP]M/,'')}</td>
+      <td class="num td-solar">${dt.sunrise.replace(/ [AP]M/,'')}</td>
+      <td class="num">${dt.dhuhr.replace(/ [AP]M/,'')}</td>
+      <td class="num">${isToday ? `<span class="next-pill">${dt.asr.replace(/ [AP]M/,'')}</span>` : dt.asr.replace(/ [AP]M/,'')}</td>
+      <td class="num">${dt.maghrib.replace(/ [AP]M/,'')}</td>
+      <td class="num">${dt.isha.replace(/ [AP]M/,'')}</td>
+      ${state.showTracking ? `<td><span class="pip-row">${OBLIG.map(k=>`<i class="pip-sm ${dl[k]}" title="${k}: ${statusLabel(dl[k])}"></i>`).join('')}</span></td>` : ''}
+    </tr>`;
+  }).join('');
+  return `<div class="sheet-head"><div class="sheet-head-title"><h1>November 2026</h1><div class="sheet-sub">Jumada al-Awwal – Jumada al-Thani 1448 AH · ${loc.label}</div></div><div class="sheet-actions"><button type="button" class="pill-btn"><svg class="ic" viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6Z"/></svg><span>Print</span></button><button type="button" class="pill-btn tonal"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/></svg><span>.ics / CSV</span></button></div></div><div class="sheet-body" style="padding:8px 12px 12px"><div class="pt-table-wrap"><table class="pt-table month-table"><thead><tr><th>Date</th><th>Fajr</th><th>Sun</th><th>Dhuhr</th><th>Asr</th><th>Maghrib</th><th>Isha</th>${state.showTracking?'<th>Log</th>':''}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+function renderQiblaMain(loc) {
+  const diff = Math.round(((loc.qiblaDeg - loc.sunAz) + 540) % 360 - 180);
+  const turn = diff < 0 ? `${Math.abs(diff)}° left of the Sun` : `${diff}° right of the Sun`;
+  return `<div class="sheet-head"><div class="sheet-head-title"><h1>Qibla compass</h1><div class="sheet-sub">${loc.label} · ${loc.lat.toFixed(4)}°, ${loc.lon.toFixed(4)}°</div></div><div class="sheet-actions"><button type="button" class="pill-btn" data-jump="today">Back to Today</button></div></div><div class="sheet-body"><div class="qibla-stage">${compassSvg(loc.qiblaDeg, 'qibla-big-dial', true)}<div class="qibla-readout"><div class="q-stat"><small>True bearing</small><strong class="num">${loc.qiblaDeg.toFixed(1)}° ${loc.qiblaCard}</strong></div><div class="q-stat"><small>Great-circle distance</small><strong class="num">${loc.distKm}</strong></div><div class="q-stat"><small>Sun azimuth now</small><strong class="num">${loc.sunAz}° S</strong></div></div><div class="sun-cue"><svg class="ic" viewBox="0 0 24 24"><path d="M12 7a5 5 0 1 0 0 10a5 5 0 0 0 0-10ZM12 2v2M12 20v2M2 12h2M20 12h2"/></svg><div><strong>Solar alignment cue:</strong> Right now the Sun is at ${loc.sunAz}°. Face the Sun and turn <strong>${turn}</strong> to face the Kaaba without a magnetometer.</div></div></div></div>`;
+}
+
+function renderQiblaRight(loc) {
+  return `<div class="sheet-head"><div class="sheet-head-title"><h1>Saved bearings</h1><div class="sheet-sub">Kaaba · 21.4225° N, 39.8262° E</div></div></div><div class="sheet-body" style="padding:10px 10px 12px"><div class="ctx-card"><div class="ctx-head"><h3>Compare locations</h3></div><div class="kv-list">${LOCATIONS.map(l=>`<div class="kv-row" style="cursor:pointer" data-loc="${l.id}"><span class="kv-k" style="${l.id===loc.id?'color:var(--accent);font-weight:620':''}">${l.label}</span><span class="kv-v num">${l.qiblaDeg.toFixed(1)}° ${l.qiblaCard}</span></div>`).join('')}</div></div><div class="ctx-card"><div class="ctx-head"><h3>Method notes</h3></div><p style="margin:0;font-size:10.3px;color:var(--muted);line-height:1.5">Computed offline using spherical great-circle bearing from true north. Compare with the live Sun azimuth cue if magnetic interference is nearby.</p></div></div>`;
+}
+
+function renderSettingsSheet(loc, isPhone) {
+  const method = state.methodOverride || loc.method, asr = state.asrOverride || loc.asr, tab = state.settingsTab;
+  let body = '';
+  if (tab === 'location') {
+    body = `<div class="set-grp"><div class="set-grp-h"><span>Offline city catalog</span><span class="saved-badge">Saved</span></div><div class="set-field"><input class="set-input" value="Search 200+ cities offline…" readonly></div><div class="city-chips" style="margin:4px 0 8px">${LOCATIONS.map(l=>`<button type="button" class="city-chip ${l.id===loc.id?'active':''}" data-pick-loc="${l.id}">${l.label}</button>`).join('')}</div><button type="button" class="pill-btn" style="margin-bottom:8px">Use my location</button><div class="set-field"><label>Location name</label><input class="set-input" value="${loc.label}" readonly></div><div class="set-pair"><div class="set-field"><label>Latitude</label><input class="set-input num" value="${loc.lat}" readonly></div><div class="set-field"><label>Longitude</label><input class="set-input num" value="${loc.lon}" readonly></div></div><div class="set-field"><label>IANA timezone</label><input class="set-input" value="${loc.tz}" readonly></div></div>`;
+  } else if (tab === 'calculation') {
+    body = `<div class="set-grp"><div class="set-grp-h"><span>Calculation method</span><span class="saved-badge">Saved</span></div>${Object.entries(METHODS).map(([id, m])=>`<button type="button" class="method-opt ${method===id?'active':''}" data-set-method="${id}"><span class="radio-dot"></span><div><strong>${m.label}</strong><small>${m.desc}</small></div></button>`).join('')}</div><div class="set-grp"><div class="set-grp-h"><span>Conventions</span></div><div class="set-row"><div class="set-row-t"><strong>Asr rule</strong><small>Hanafi = 2× shadow</small></div><div class="seg"><button type="button" class="${asr==='standard'?'active':''}" data-set-asr="standard">Standard</button><button type="button" class="${asr==='hanafi'?'active':''}" data-set-asr="hanafi">Hanafi</button></div></div></div>`;
+  } else if (tab === 'offsets') {
+    body = `<div class="set-grp"><div class="set-grp-h"><span>Minute offsets</span><button type="button" class="ctx-link" data-reset-off>Reset all</button></div>${PRAYERS.map(p=>{const val=p.key==='fajr'?state.fajrOffset:0;return `<div class="set-row"><div class="set-row-t"><strong>${p.label}</strong></div><div class="stepper"><button type="button" data-off-dec="${p.key}">−</button><span class="num">${val>0?'+'+val:val}m</span><button type="button" data-off-inc="${p.key}">+</button></div></div>`;}).join('')}</div>`;
+  } else {
+    body = `<div class="set-grp"><div class="set-grp-h"><span>Display &amp; tracking</span><span class="saved-badge">Saved</span></div><div class="set-row"><div class="set-row-t"><strong>Daily prayer tracking</strong><small>Not yet · On time · Late log</small></div><button type="button" class="switch ${state.showTracking?'on':''}" data-tog="showTracking"></button></div><div class="set-row"><div class="set-row-t"><strong>Time format</strong><small>12-hour or 24-hour</small></div><div class="seg"><button type="button" class="${!state.time24?'active':''}" data-set-24="0">12h</button><button type="button" class="${state.time24?'active':''}" data-set-24="1">24h</button></div></div><div class="set-row"><div class="set-row-t"><strong>Hijri date</strong><small>With ±2d sighting offset</small></div><button type="button" class="switch ${state.showHijri?'on':''}" data-tog="showHijri"></button></div><div class="set-row"><div class="set-row-t"><strong>Sunna &amp; night</strong><small>Ishraq, midnight, last third</small></div><button type="button" class="switch ${state.showNight?'on':''}" data-tog="showNight"></button></div><div class="set-row"><div class="set-row-t"><strong>Live seconds</strong><small>Show seconds on countdown</small></div><button type="button" class="switch ${state.showSeconds?'on':''}" data-tog="showSeconds"></button></div></div>`;
+  }
+  return `${isPhone?'<div class="ph-handle"></div>':''}<div class="sheet-head" style="padding:8px 10px"><div class="sheet-head-title"><h1 style="font-size:12.8px">Prayer Times settings</h1></div>${isPhone ? `<div class="seg"><button type="button" class="${state.phoneRightMode==='log'?'active':''}" data-ph-mode="log">Log</button><button type="button" class="${state.phoneRightMode==='settings'?'active':''}" data-ph-mode="settings">Settings</button></div>` : `<button type="button" class="ib" data-jump="today"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18 18 6"/></svg></button>`}</div><div class="settings-tabs">${[['location','Location'],['calculation','Calculation'],['offsets','Offsets'],['display','Display']].map(([k,lbl])=>`<button type="button" class="${tab===k?'active':''}" data-stab="${k}">${lbl}</button>`).join('')}</div><div class="set-body">${body}</div>${state.toast && !isPhone ? `<div class="set-toast"><span>${state.toast}</span><button type="button" data-undo-set>Undo</button></div>` : ''}<div class="set-foot">Changes save automatically.</div>`;
+}
+
+function renderSetupMain() {
+  return `<div class="sheet-head"><div class="sheet-head-title"><h1>Set up Prayer Times</h1><div class="sheet-sub">100% offline calculations · no IP lookup or tracking</div></div></div><div class="sheet-body"><div class="setup-wrap"><h2>Choose your location</h2><p>Pick a city from the built-in offline catalog, use browser geolocation, or enter exact coordinates.</p><div class="set-field"><input class="set-input" placeholder="Filter built-in cities (Toronto, London, Cairo, Istanbul, Makkah…)"></div><div class="city-chips"><button type="button" class="city-chip active" data-start-city="toronto">Toronto · ISNA</button><button type="button" class="city-chip" data-start-city="london">London · MWL</button><button type="button" class="city-chip" data-start-city="makkah">Makkah · Umm al-Qura</button><button type="button" class="city-chip" data-start-city="toronto">New York · ISNA</button><button type="button" class="city-chip" data-start-city="london">Istanbul · Diyanet</button><button type="button" class="city-chip" data-start-city="makkah">Cairo · Egypt</button></div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button type="button" class="pill-btn primary" data-jump="today">Start with Toronto</button><button type="button" class="pill-btn">Use my location</button><button type="button" class="ctx-link" data-jump="settings" style="margin-left:auto">Manual coordinates</button></div></div></div>`;
+}
+
+function renderPhone(loc, times) {
+  const log = getLog(8), c = logCounts(8);
+  document.getElementById('phone-today').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+      <div><div style="font-size:13.5px;font-weight:660">${loc.label}</div><div style="font-size:9.8px;color:var(--muted)">Sun, Nov 8 · ${c.done}/5 prayed</div></div>
+      <div class="seg"><button type="button" class="active">Today</button><button type="button">Week</button></div>
+    </div>
+    <div class="solar-stage" style="padding:9px 9px 7px;margin-bottom:7px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span class="hero-phase" style="margin:0"><span class="hero-phase-dot"></span>Dhuhr now</span><strong class="num" style="color:var(--accent);font-size:12.5px">−01:36:42</strong></div>
+      <div style="font-size:16px;font-weight:680;margin-bottom:2px" class="num">Asr at ${times.asr}</div>
+      ${solarArcSvg(loc)}
+      <div class="arc-grid">${PRAYERS.map((p,i)=>`<div class="arc-cell ${i===loc.nextIdx?'is-next':i===loc.nowIdx?'is-now':''}"><span>${p.label.slice(0,3)}</span><strong class="num" style="font-size:8.8px">${times[p.key].replace(/ [AP]M/,'')}</strong></div>`).join('')}</div>
+    </div>
+    <div class="prayer-list">
+      ${PRAYERS.map((p,i)=>{
+        const st = !p.solar ? log[p.key] : null;
+        return `<div class="p-row ${i<loc.nowIdx?'is-past':''} ${i===loc.nowIdx?'is-now':''} ${i===loc.nextIdx?'is-next':''}" style="padding:5px 7px;gap:6px">
+          <span class="p-ico" style="width:20px;height:20px"><svg class="ic" style="width:11px;height:11px" viewBox="0 0 24 24"><path d="${p.icon}"/></svg></span>
+          <div class="p-name"><strong style="font-size:11px">${p.label}</strong></div>
+          <time class="p-time num" style="font-size:11px">${times[p.key]}</time>
+          ${p.solar ? '<span style="width:26px;flex:none;display:inline-block" aria-hidden="true"></span>' : `<button type="button" class="track-ico is-${st}" style="width:26px;height:26px;border-radius:8px" data-cycle-day="8" data-cycle-prayer="${p.key}" aria-label="${p.label}: ${statusLabel(st)}" title="${p.label}: ${statusLabel(st)}">${statusIcon(st)}</button>`}
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+  document.getElementById('phone-right').innerHTML = state.phoneRightMode === 'log' ? renderDayInspector(loc, true) : renderSettingsSheet(loc, true);
+}
+
+function wireDynamicEvents() {
+  document.querySelectorAll('[data-cycle-prayer]').forEach(b => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const day = parseInt(b.dataset.cycleDay, 10), k = b.dataset.cyclePrayer;
+    const l = getLog(day);
+    l[k] = nextStatus(l[k]);
+    renderAll();
+  }));
+  document.querySelectorAll('[data-set-prayer]').forEach(b => b.addEventListener('click', () => {
+    const day = parseInt(b.dataset.setDay, 10);
+    getLog(day)[b.dataset.setPrayer] = b.dataset.setVal;
+    renderAll();
+  }));
+  document.querySelectorAll('[data-inspect-day]').forEach(el => el.addEventListener('click', () => {
+    state.selectedDay = parseInt(el.dataset.inspectDay, 10);
+    state.view = 'week';
+    renderAll();
+  }));
+  document.querySelectorAll('[data-ph-mode]').forEach(b => b.addEventListener('click', () => {
+    state.phoneRightMode = b.dataset.phMode;
+    renderAll();
+  }));
+  document.querySelectorAll('[data-jump]').forEach(b => b.addEventListener('click', () => {
+    state.view = b.dataset.jump;
+    if (state.view !== 'settings') state.changedCols = [];
+    renderAll();
+  }));
+  document.querySelectorAll('[data-loc]').forEach(b => b.addEventListener('click', () => {
+    state.locId = b.dataset.loc;
+    state.methodOverride = null;
+    state.asrOverride = null;
+    state.changedCols = [];
+    renderAll();
+  }));
+  document.querySelectorAll('[data-mmd]').forEach(b => b.addEventListener('click', () => {
+    state.selectedDay = parseInt(b.dataset.mmd, 10);
+    if (state.view !== 'week') state.view = 'week';
+    renderAll();
+  }));
+  document.querySelectorAll('[data-pick-day]').forEach(tr => tr.addEventListener('click', () => {
+    state.selectedDay = parseInt(tr.dataset.pickDay, 10);
+    renderAll();
+  }));
+  document.querySelectorAll('[data-sel-today]').forEach(b => b.addEventListener('click', () => {
+    state.selectedDay = 8;
+    renderAll();
+  }));
+  document.querySelectorAll('[data-stab]').forEach(b => b.addEventListener('click', () => {
+    state.settingsTab = b.dataset.stab;
+    renderAll();
+  }));
+  document.querySelectorAll('[data-set-method]').forEach(b => b.addEventListener('click', () => {
+    state.methodOverride = b.dataset.setMethod;
+    state.changedCols = ['fajr', 'isha'];
+    state.toast = `Method set to ${METHODS[b.dataset.setMethod].label}`;
+    renderAll();
+  }));
+  document.querySelectorAll('[data-set-asr]').forEach(b => b.addEventListener('click', () => {
+    state.asrOverride = b.dataset.setAsr;
+    state.changedCols = ['asr'];
+    state.toast = `Asr set to ${b.dataset.setAsr === 'hanafi' ? 'Hanafi' : 'Standard'}`;
+    renderAll();
+  }));
+  document.querySelectorAll('[data-undo-set]').forEach(b => b.addEventListener('click', () => {
+    state.methodOverride = null; state.asrOverride = null; state.fajrOffset = 0; state.changedCols = []; state.toast = 'Change undone'; renderAll();
+  }));
+  document.querySelectorAll('[data-off-inc]').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.offInc === 'fajr') { state.fajrOffset++; state.changedCols = ['fajr']; state.toast = `Fajr offset ${state.fajrOffset>0?'+':''}${state.fajrOffset} min`; renderAll(); }
+  }));
+  document.querySelectorAll('[data-off-dec]').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.offDec === 'fajr') { state.fajrOffset--; state.changedCols = ['fajr']; state.toast = `Fajr offset ${state.fajrOffset>0?'+':''}${state.fajrOffset} min`; renderAll(); }
+  }));
+  document.querySelectorAll('[data-reset-off]').forEach(b => b.addEventListener('click', () => {
+    state.fajrOffset = 0; state.changedCols = []; state.toast = 'Offsets reset'; renderAll();
+  }));
+  document.querySelectorAll('[data-set-24]').forEach(b => b.addEventListener('click', () => {
+    state.time24 = b.dataset.set24 === '1'; renderAll();
+  }));
+  document.querySelectorAll('[data-tog]').forEach(b => b.addEventListener('click', () => {
+    state[b.dataset.tog] = !state[b.dataset.tog]; renderAll();
+  }));
+  document.querySelectorAll('[data-pick-loc], [data-start-city]').forEach(b => b.addEventListener('click', () => {
+    state.locId = b.dataset.pickLoc || b.dataset.startCity;
+    if (b.dataset.startCity) state.view = 'today';
+    renderAll();
+  }));
+}
+
+function renderAll() {
+  const loc = getLoc(), times = getEffectiveTimes(loc), isPhone = state.view === 'phone';
+  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === state.view));
+  document.querySelectorAll('[data-theme-set]').forEach(b => b.classList.toggle('active', document.getElementById('stage').dataset.theme === b.dataset.themeSet));
+  document.getElementById('desktop-topbar').classList.toggle('hidden', isPhone);
+  document.getElementById('desktop-ws').classList.toggle('hidden', isPhone);
+  document.getElementById('phone-ws').classList.toggle('hidden', !isPhone);
+  document.getElementById('stage').style.gridTemplateRows = isPhone ? 'minmax(0, 1fr)' : '44px minmax(0, 1fr)';
+  document.getElementById('tb-settings').classList.toggle('on', state.view === 'settings');
+  if (isPhone) { renderPhone(loc, times); wireDynamicEvents(); return; }
+  renderSidebar();
+  const ws = document.getElementById('desktop-ws'), main = document.getElementById('main-sheet'), right = document.getElementById('right-sheet');
+  ws.className = 'workspace'; right.classList.remove('hidden');
+  if (state.view === 'today') { main.innerHTML = renderTodayMain(loc, times); right.innerHTML = renderTodayRight(loc); }
+  else if (state.view === 'week') { ws.className = 'workspace wide-right'; main.innerHTML = renderWeekMain(loc, times); right.innerHTML = renderDayInspector(loc, false); }
+  else if (state.view === 'month') { ws.className = 'workspace no-right'; right.classList.add('hidden'); main.innerHTML = renderMonthMain(loc); }
+  else if (state.view === 'qibla') { main.innerHTML = renderQiblaMain(loc); right.innerHTML = renderQiblaRight(loc); }
+  else if (state.view === 'settings') { ws.className = 'workspace wide-right'; if (!state.asrOverride) { state.asrOverride = 'hanafi'; state.changedCols = ['asr']; } main.innerHTML = renderWeekMain(loc, getEffectiveTimes(loc)); right.innerHTML = renderSettingsSheet(loc, false); }
+  else if (state.view === 'setup') { ws.className = 'workspace no-right'; right.classList.add('hidden'); main.innerHTML = renderSetupMain(); }
+  wireDynamicEvents();
+}
+
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
+  state.view = b.dataset.view;
+  if (state.view !== 'settings') state.changedCols = [];
+  renderAll();
+}));
+document.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => {
+  state.view = b.dataset.nav; state.changedCols = []; renderAll();
+}));
+document.getElementById('tb-settings').addEventListener('click', () => {
+  state.view = state.view === 'settings' ? 'today' : 'settings'; renderAll();
+});
+document.getElementById('btn-add-loc').addEventListener('click', () => {
+  state.view = 'settings'; state.settingsTab = 'location'; renderAll();
+});
+document.querySelectorAll('[data-theme-set]').forEach(b => b.addEventListener('click', () => {
+  document.getElementById('stage').dataset.theme = b.dataset.themeSet;
+  document.querySelectorAll('[data-theme-set]').forEach(x => x.classList.toggle('active', x === b));
+}));
+
+renderAll();
+</script>
+</body>
+</html>

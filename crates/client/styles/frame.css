@@ -229,6 +229,7 @@
 .app-tint-news{background:light-dark(#f8efdc,rgba(235,198,132,.18));color:light-dark(#7d5717,#edd095)}
 .app-tint-agent{background:light-dark(#e8e0f8,rgba(140,114,214,.28));color:light-dark(#4d348a,#ddd1ff)}
 .app-tint-git{background:light-dark(#f1e6f7,rgba(206,162,218,.19));color:light-dark(#733982,#dfb7ea)}
+.app-tint-prayers{background:light-dark(#faebd9,rgba(255,196,147,.18));color:light-dark(#854913,#ffc493)}
 .app-tint-other{background:var(--hover);color:var(--accent)}
 
 /* Upgraded Desktop User Menu Popover. */

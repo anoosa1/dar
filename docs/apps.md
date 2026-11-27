@@ -1,7 +1,7 @@
 # Installed apps and optional apps
 
 Dar runs trusted, administrator-installed app packages built with SDK API v1
-([author guide](../sdk/README.md)). Prayer Times is the bundled example.
+([author guide](../sdk/README.md)). `apps/sample-app` is the bundled example.
 Installed code runs in Dar's process and browser origin: it is trusted, not
 sandboxed. These packages are unrelated to OIDC "registered applications".
 
@@ -10,17 +10,17 @@ sandboxed. These packages are unrelated to OIDC "registered applications".
 NixOS:
 
 ```nix
-services.dar.apps = [ dar.packages.${pkgs.stdenv.hostPlatform.system}.prayer-times ];
+services.dar.apps = [ dar.packages.${pkgs.stdenv.hostPlatform.system}.sample-app ];
 ```
 
-Build with `nix build .#dar .#prayer-times`, then rebuild and restart. The
+Build with `nix build .#dar .#sample-app`, then rebuild and restart. The
 generated read-only registry is authoritative; no app is enabled by default.
 
 Other hosts, from `nix develop` with Dar stopped:
 
 ```sh
-node sdk/build.mjs apps/prayer-times
-dar-runtime apps-install /path/to/root apps/prayer-times/dist
+node sdk/build.mjs apps/sample-app
+dar-runtime apps-install /path/to/root apps/sample-app/dist
 ```
 
 Operator commands (`dar-operator` when packaged): `apps-install <dir>`,
@@ -95,10 +95,12 @@ Media tools come with the Dar package. See [Photos](photos.md).
 
 ## Prayer Times
 
-First use asks for a location label, coordinates, IANA timezone and calculation
-method; browser location is requested only on a click. No IP lookup or geocoder.
-Methods: MWL, ISNA, Egyptian and Karachi; standard or Hanafi Asr; optional
-high-latitude rules and per-prayer offsets. Polar events stay unavailable.
-Results are estimates; there is no adhan audio, push alert or Hijri inference.
-See [calculations](../apps/prayer-times/CALCULATIONS.md) and the
-[app platform](spacetimedb/app-platform.md).
+Optional built-in app at `/prayers` (`crates/client/src/prayers/`) using
+pure-Rust astronomy calculations with zero external network, IP or geocoder lookups.
+Supports saved locations, an offline city catalog, explicit browser geolocation on
+click, 10 calculation conventions (`MWL`, `ISNA`, `Egyptian`, `Karachi`,
+`Umm al-Qura`, `Diyanet`, `MUIS`, `UOIF`, `Tehran`, `Custom`), Standard/Hanafi Asr,
+high-latitude bounds, per-prayer offsets, Qibla compass with live Sun alignment cue,
+Sunna/night landmarks, tabular Hijri dates, `.ics`/`.csv`/JSON export and daily
+prayer status tracking (`unprayed`, `on_time`, `late`). Polar events stay unavailable;
+there is no adhan audio or push notification. See [Prayer Times](prayer-times.md).

@@ -208,7 +208,7 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
         .expect(201)?
         .json()?;
 
-    let prayer_path = "/api/v1/apps/org.dar.prayer-times/userData/settings";
+    let prayer_path = "/api/v1/prayers/settings";
     let prayer = admin.get_json(prayer_path).await?;
     if prayer.is_null() {
         let put = Reply::from(
@@ -216,9 +216,9 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
                 .request("PUT", prayer_path)
                 .header("if-match", "\"0\"")
                 .json(&json!({
-                    "schemaVersion": 1,
+                    "schemaVersion": 2,
                     "value": {
-                        "schemaVersion": 1,
+                        "schemaVersion": 2,
                         "location": { "label": "Toronto", "latitude": 43.6532, "longitude": -79.3832, "timezone": "America/Toronto" },
                         "calculation": {
                             "method": "ISNA",
@@ -483,13 +483,16 @@ pub async fn twilight_contrast_and_overflow(t: &Ctx) -> Result<()> {
                     dialog.get_by_role("button", "Cancel").click().await?;
                 }
 
-                navigate(&page, &base, "/apps/org.dar.prayer-times", page.locator(".prayer-week")).await?;
-                page.locator(".prayer-day").first().wait_for().await?;
+                navigate(&page, &base, "/prayers", page.locator(".prayers-solar-stage")).await?;
                 capture(&page, &output, theme, width, "prayer-times", &mut manifest, &mut failures).await?;
+                navigate(&page, &base, "/prayers?view=week", page.locator(".prayer-week")).await?;
+                page.locator(".prayer-day").first().wait_for().await?;
                 page.locator(".prayer-day").first().click().await?;
                 page.get_by_label("Prayer timetable").wait_for().await?;
                 capture(&page, &output, theme, width, "prayer-timetable", &mut manifest, &mut failures).await?;
-                page.get_by_role("button", "Back to week").click().await?;
+                if width < 801 {
+                    page.get_by_role("button", "Back to week").click().await?;
+                }
                 open_settings(&page, "Prayer Times").await?;
                 capture(&page, &output, theme, width, "prayer-settings", &mut manifest, &mut failures).await?;
                 close_settings(&page).await?;

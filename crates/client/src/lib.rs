@@ -25,6 +25,7 @@ pub mod markdown;
 pub mod news;
 pub mod outline;
 pub mod photos;
+pub mod prayers;
 pub mod workspace;
 /// The module's generated bindings (crates/bindings).
 pub use dar_bindings as module_bindings;

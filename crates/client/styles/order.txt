@@ -38,3 +38,4 @@ chat/list.css
 chat/conversation.css
 chat/voice.css
 chat/panes.css
+prayers/prayers.css

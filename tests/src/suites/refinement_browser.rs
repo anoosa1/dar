@@ -49,7 +49,7 @@ pub async fn refinement_journey(t: &Ctx) -> Result<()> {
         .await?
         .expect(201)?;
 
-    let prayer_path = "/api/v1/apps/org.dar.prayer-times/userData/settings";
+    let prayer_path = "/api/v1/prayers/settings";
     if admin.get_json(prayer_path).await?.is_null() {
         let put = Reply::from(
             admin
@@ -244,7 +244,7 @@ pub async fn refinement_journey(t: &Ctx) -> Result<()> {
         settings.wait_for().await?;
         assert_eq!(page.locator("[data-editor-pane]").count().await?, 0);
 
-        let prayer_url = format!("{base}/api/v1/apps/org.dar.prayer-times/userData/settings");
+        let prayer_url = format!("{base}/api/v1/prayers/settings");
         let before = page.request().get(&prayer_url).await?.json()?["value"]["location"]["label"]
             .as_str()
             .context("before location label")?

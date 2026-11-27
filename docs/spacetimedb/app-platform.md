@@ -2,9 +2,10 @@
 
 Delivered November 8, 2026. Administrators install trusted, prebuilt app packages;
 authors build against the versioned SDK in their own repository without editing
-Dar. Prayer Times (`apps/prayer-times`) is built and installed exactly like a
-third-party app. Operating instructions are in [apps](../apps.md); the author API
-is in the [SDK guide](../../next/sdk/README.md).
+Dar. `apps/sample-app` is the minimal SDK example (Prayer Times moved into the
+built-in Rust client at `/prayers`; see [Prayer Times](../prayer-times.md)).
+Operating instructions are in [apps](../apps.md); the author API
+is in the [SDK guide](../../sdk/README.md).
 
 Installed browser and Node code is trusted and runs inside Dar. Manifest
 permissions prevent mistakes; they are not a sandbox. Nextcloud apps are not
@@ -18,10 +19,10 @@ bad or reserved IDs, unsupported API majors, escaping paths, symlinks, undeclare
 files and malformed manifests before any code runs.
 
 ```json
-{"id": "org.dar.prayer-times", "name": "Prayer Times", "version": "0.1.0",
+{"id": "org.dar.sample-app", "name": "Sample App", "version": "0.1.0",
  "apiVersion": 1, "license": "MIT", "client": "client.js", "styles": ["client.css"],
  "files": ["client.js", "client.css"],
- "permissions": ["ownUserData:read", "ownUserData:write", "regional:read"]}
+ "permissions": ["ownUserData:read", "ownUserData:write"]}
 ```
 
 - Browser entry: `mount(element, host) -> dispose`. The host supplies scoped data
@@ -66,12 +67,9 @@ a marketplace, hot reload and process isolation are not provided.
 
 ## Prayer Times
 
-A today band (next prayer, countdown, day timeline) above a compact week whose
-rows list every time, with a right daily timetable (phones: full-width day, Back
-to week). Settings use the shared settings sheet and save each valid change.
-Settings: location label, coordinates, IANA timezone, method (MWL, ISNA, Egyptian,
-Karachi), Asr rule, high-latitude rule and per-prayer offsets, stored under one
-`settings` record. Browser location only on request; no geocoding. Unavailable polar events are labelled.
-Calculations use Dar's own library ([details](../../apps/prayer-times/CALCULATIONS.md)).
-Not included: adhan audio, push alerts, iqamah times, Qibla, Hijri dates or
-Calendar events.
+Moved from an SDK example to a built-in Rust workspace at `/prayers` with
+`Today` Solar Horizon view, `Week` + Day Inspector, `Month` timetable and
+`.ics`/`.csv`/JSON export, `Qibla` compass with Sun azimuth cue, saved locations,
+icon-based daily prayer tracking (`Not prayed yet`, `Prayed on time`, `Prayed late`),
+and save-as-you-go `SettingsSheet`. See [Prayer Times](../prayer-times.md) and the
+[redesign mock](prayer-times-redesign-mock.html).
