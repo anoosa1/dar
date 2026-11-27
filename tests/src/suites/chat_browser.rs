@@ -65,6 +65,9 @@ pub async fn chat_browser_journey(t: &Ctx) -> Result<()> {
     pane.get_by_label(contains("Account name"))
         .fill("Personal")
         .await?;
+    page.wait_for_timeout(220).await;
+    page.screenshot(t.screenshot("chat-link-setup.png"), false)
+        .await?;
     pane.get_by_role("button", contains("Show QR code"))
         .click()
         .await?;
@@ -420,6 +423,15 @@ pub async fn chat_browser_journey(t: &Ctx) -> Result<()> {
         0,
         "Discord has no pairing code"
     );
+    assert_eq!(
+        link.get_by_label(contains("Account name"))
+            .input_value()
+            .await?,
+        "Discord"
+    );
+    page.wait_for_timeout(120).await;
+    page.screenshot(t.screenshot("chat-discord-link-setup.png"), false)
+        .await?;
     link.get_by_role("button", contains("Show QR code"))
         .click()
         .await?;

@@ -20,6 +20,7 @@ pub fn ThreadList(
     #[prop(into)] account: Signal<Option<ChatAccount>>,
     #[prop(into)] accounts: Signal<Vec<ChatAccount>>,
     #[prop(into)] account_key: Signal<String>,
+    #[prop(into)] adding: Signal<bool>,
     #[prop(into)] overview: Signal<Option<ChatOverview>>,
     #[prop(into)] load_error: Signal<String>,
     #[prop(into)] list_state: Signal<&'static str>,
@@ -123,6 +124,7 @@ pub fn ThreadList(
             <AccountTabs
                 accounts=accounts
                 account_key=account_key
+                adding=adding
                 class="chat-accounts chat-main-accounts"
                 on_choose=on_choose_account
                 on_link=Callback::new(move |_| { on_link.try_run(None); })

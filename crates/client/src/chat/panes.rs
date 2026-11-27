@@ -20,7 +20,7 @@ use crate::files::picker::{FolderPicker, Selection};
 use crate::files::types::FileTile;
 use crate::icons::Icon;
 use crate::settings::Segmented;
-use crate::ui::{EditorPane, Select};
+use crate::ui::{EditorPane, Select, unique_id};
 
 /// Right editing pane for saving an attachment into Dar Files.
 #[component]
@@ -107,19 +107,28 @@ pub fn LinkPane(
     let given = platform.is_some();
     let again = account_id.is_some();
     let account_id = StoredValue::new(account_id);
-    let platform = RwSignal::new(platform.unwrap_or_else(|| "whatsapp".into()));
+    let initial_platform = platform.unwrap_or_else(|| "whatsapp".into());
+    let initial_name = if initial_platform == "discord" {
+        "Discord"
+    } else {
+        "Personal"
+    };
+    let platform = RwSignal::new(initial_platform);
     let discord = Memo::new(move |_| platform.get() == "discord");
     let method = RwSignal::new(if narrow() {
         "phone".to_owned()
     } else {
         "qr".to_owned()
     });
-    let name = RwSignal::new("Personal".to_owned());
+    let name = RwSignal::new(initial_name.to_owned());
+    let name_edited = RwSignal::new(false);
     let phone = RwSignal::new(String::new());
     let link: RwSignal<Option<ChatLinkState>> = RwSignal::new(None);
     let busy = RwSignal::new(false);
     let error = RwSignal::new(String::new());
     let clock = RwSignal::new(now());
+    let qr_window = RwSignal::new(60.0_f64);
+    let copied = RwSignal::new(false);
     let cancelled = Arc::new(AtomicBool::new(false));
     let cancelled = StoredValue::new(cancelled);
     let csrf = StoredValue::new(session.csrf_token.clone());
@@ -142,6 +151,15 @@ pub fn LinkPane(
                         .unwrap_or(true)
                     {
                         return;
+                    }
+                    let prev_qr = link
+                        .try_with_untracked(|l| l.as_ref().and_then(|l| l.qr.clone()))
+                        .flatten();
+                    if next.qr != prev_qr
+                        && let Some(at) = next.expires_at
+                    {
+                        let span = ((at - now()) / 1000.0).round().clamp(5.0, 300.0);
+                        let _ = qr_window.try_set(span);
                     }
                     let paired = next.state == "paired";
                     link.try_set(Some(next));
@@ -170,6 +188,7 @@ pub fn LinkPane(
         event.prevent_default();
         busy.set(true);
         error.set(String::new());
+        copied.set(false);
         let mut body = match account_id.get_value() {
             Some(id) => json!({ "accountId": id }),
             None => {
@@ -248,33 +267,166 @@ pub fn LinkPane(
             "Link an account".into()
         }
     });
+    let service_group = StoredValue::new(unique_id());
+    let name_id = StoredValue::new(unique_id());
+    let phone_id = StoredValue::new(unique_id());
+
     view! {
         <EditorPane title=title on_close=Callback::new(move |_| close())>
-            {move || link.with(Option::is_none).then(|| view! {
-                <form class="chat-link" on:submit=begin>
-                    {(!again).then(|| view! {
-                        <Segmented label="Service" value=Signal::derive(move || platform.get()) options=vec![("whatsapp", "WhatsApp"), ("discord", "Discord")]
-                            on_change=Callback::new(move |value: String| { name.set(if value == "discord" { "Discord".into() } else { "Personal".into() }); platform.set(value); })/>
-                    })}
-                    {move || discord.get().then(|| view! {
-                        <div class="chat-banner is-warning" role="note"><Icon name="alert"/><span><b>"Discord does not allow other apps on your account"</b>"Using Dar with your own Discord account breaks Discord\u{2019}s terms; Discord can limit or close the account. Dar never sees your password."</span></div>
-                    })}
-                    {move || (!discord.get()).then(|| view! {
-                        <Segmented label="How to link" value=Signal::derive(move || method.get()) options=vec![("qr", "QR code"), ("phone", "Phone number")] on_change=Callback::new(move |v: String| method.set(v))/>
-                    })}
-                    {move || (!discord.get() && method.get() == "phone").then(|| view! {
-                        <p class="chat-hint">"On a phone you can\u{2019}t scan your own screen, so WhatsApp gives you a code to type instead."</p>
-                        <label>"Phone number"<input type="tel" inputmode="tel" autocomplete="tel" required prop:value=move || phone.get() placeholder="+966 55 123 4567" on:input=move |e| phone.set(event_target_value(&e))/></label>
-                    })}
-                    {(!again).then(|| view! {
-                        <label>"Account name"<input prop:value=move || name.get() maxlength=CHAT_LIMITS_NAME on:input=move |e| name.set(event_target_value(&e))/><small class="chat-hint">"Names the account\u{2019}s tab when you link more than one."</small></label>
-                    })}
-                    <p class="chat-hint">{move || if discord.get() {
-                        "Sign in by scanning a code with the Discord app on your phone. Dar shows your servers, channels and direct messages, and keeps the messages it receives."
+            {move || link.with(Option::is_none).then(|| {
+                let service_group = service_group.get_value();
+                let name_id = name_id.get_value();
+                let phone_id = phone_id.get_value();
+                view! {
+                <form class="chat-link is-link" on:submit=begin>
+                    {if again {
+                        view! {
+                            <div class="chat-link-context">
+                                {move || if discord.get() {
+                                    view! { <span class="chat-platform is-discord" aria-hidden="true"><Icon name="hash"/></span> }.into_any()
+                                } else {
+                                    view! { <span class="chat-platform is-whatsapp" aria-hidden="true"><Icon name="chat"/></span> }.into_any()
+                                }}
+                                <div>
+                                    <b>{move || service.get()}</b>
+                                    <small>"Reconnect this session without losing your stored chat history."</small>
+                                </div>
+                            </div>
+                        }.into_any()
                     } else {
-                        "Dar becomes a linked device, like WhatsApp Web. Your phone keeps working, and you can unlink Dar from either side at any time. Dar imports as much history as your phone sends."
-                    }}</p>
+                        view! {
+                            <fieldset class="chat-service-grid">
+                                <legend class="chat-link-label">"Service"</legend>
+                                <label class=move || if !discord.get() { "chat-service-card is-checked" } else { "chat-service-card" }>
+                                    <input
+                                        type="radio"
+                                        name=service_group.clone()
+                                        prop:checked=move || !discord.get()
+                                        on:change=move |_| {
+                                            platform.set("whatsapp".into());
+                                            if !name_edited.get_untracked() {
+                                                name.set("Personal".into());
+                                            }
+                                        }
+                                    />
+                                    <span class="chat-platform is-whatsapp" aria-hidden="true"><Icon name="chat"/></span>
+                                    <span class="chat-service-copy">
+                                        <b>"WhatsApp"</b>
+                                        <small>"QR or phone code"</small>
+                                    </span>
+                                    <span class="chat-service-check" aria-hidden="true"><Icon name="check"/></span>
+                                </label>
+                                <label class=move || if discord.get() { "chat-service-card is-checked" } else { "chat-service-card" }>
+                                    <input
+                                        type="radio"
+                                        name=service_group.clone()
+                                        prop:checked=move || discord.get()
+                                        on:change=move |_| {
+                                            platform.set("discord".into());
+                                            if !name_edited.get_untracked() {
+                                                name.set("Discord".into());
+                                            }
+                                        }
+                                    />
+                                    <span class="chat-platform is-discord" aria-hidden="true"><Icon name="hash"/></span>
+                                    <span class="chat-service-copy">
+                                        <b>"Discord"</b>
+                                        <small>"Servers, DMs & voice"</small>
+                                    </span>
+                                    <span class="chat-service-check" aria-hidden="true"><Icon name="check"/></span>
+                                </label>
+                            </fieldset>
+                        }.into_any()
+                    }}
+
+                    {move || discord.get().then(|| view! {
+                        <div class="chat-banner is-warning" role="note">
+                            <Icon name="alert"/>
+                            <span>
+                                <b>"Discord does not allow other apps on your account"</b>
+                                "Using Dar with your own Discord account breaks Discord\u{2019}s terms; Discord can limit or close the account. Dar never sees your password."
+                            </span>
+                        </div>
+                    })}
+
+                    {move || (!discord.get()).then(|| view! {
+                        <div class="chat-link-group">
+                            <span class="chat-link-label">"How to link"</span>
+                            <Segmented
+                                label="How to link"
+                                value=Signal::derive(move || method.get())
+                                options=vec![("qr", "QR code"), ("phone", "Phone number")]
+                                on_change=Callback::new(move |v: String| method.set(v))
+                            />
+                        </div>
+                    })}
+
+                    {move || (!discord.get() && method.get() == "phone").then(|| {
+                        let phone_id = phone_id.clone();
+                        view! {
+                        <div class="chat-link-field">
+                            <label for=phone_id.clone() class="chat-link-label">"Phone number"</label>
+                            <input
+                                id=phone_id
+                                type="tel"
+                                inputmode="tel"
+                                autocomplete="tel"
+                                required
+                                prop:value=move || phone.get()
+                                placeholder="+966 55 123 4567"
+                                on:input=move |e| phone.set(event_target_value(&e))
+                            />
+                            <small class="chat-hint">"Include the country code. WhatsApp gives an 8-character code to type on your phone."</small>
+                        </div>
+                    }})}
+
+                    {(!again).then(|| view! {
+                        <div class="chat-link-field">
+                            <div class="chat-link-field-head">
+                                <label for=name_id.clone() class="chat-link-label">"Account name"</label>
+                                <span class="chat-link-tab-preview" aria-hidden="true">
+                                    {move || if discord.get() {
+                                        view! { <span class="chat-platform is-discord"><Icon name="hash"/></span> }.into_any()
+                                    } else {
+                                        view! { <span class="chat-platform is-whatsapp"><Icon name="chat"/></span> }.into_any()
+                                    }}
+                                    <span>{move || {
+                                        let t = name.get();
+                                        let t = t.trim();
+                                        if t.is_empty() {
+                                            platform_name(&platform.get()).to_owned()
+                                        } else {
+                                            t.to_owned()
+                                        }
+                                    }}</span>
+                                    <span class="chat-account-dot is-online"></span>
+                                </span>
+                            </div>
+                            <input
+                                id=name_id
+                                prop:value=move || name.get()
+                                maxlength=CHAT_LIMITS_NAME
+                                placeholder="Personal, Work\u{2026}"
+                                on:input=move |e| {
+                                    name_edited.set(true);
+                                    name.set(event_target_value(&e));
+                                }
+                            />
+                            <small class="chat-hint">"Labels this account\u{2019}s tab in your sidebar and mobile header."</small>
+                        </div>
+                    })}
+
+                    <p class="chat-link-note">
+                        <Icon name="lock"/>
+                        <span>{move || if discord.get() {
+                            "Sign in by scanning a code with the Discord app. Dar shows your servers, channels, and DMs while synced."
+                        } else {
+                            "Links as a companion device like WhatsApp Web. Your phone stays active and you can unlink at any time."
+                        }}</span>
+                    </p>
+
                     {move || (!error.with(String::is_empty)).then(|| view! { <p role="alert" class="error">{error.get()}</p> })}
+
                     <div class="dialog-actions">
                         <button type="button" class="text-button" on:click=move |_| close()>"Cancel"</button>
                         <button class="primary-button" disabled=move || busy.get() || (!discord.get() && method.get() == "phone" && phone.with(|p| p.trim().is_empty()))>
@@ -282,49 +434,200 @@ pub fn LinkPane(
                         </button>
                     </div>
                 </form>
-            })}
+            }})}
             {move || link.get().map(|l| {
                 let s = l.state.clone();
                 let d = discord.get_untracked();
                 let service = service.get_untracked();
+                let raw_name = name.get_untracked();
+                let account_label = if again {
+                    service.to_owned()
+                } else {
+                    let trimmed = raw_name.trim();
+                    if trimmed.is_empty() {
+                        service.to_owned()
+                    } else {
+                        trimmed.to_owned()
+                    }
+                };
+                let step_label = match s.as_str() {
+                    "starting" => Some("Step 1 of 3"),
+                    "qr" | "code" | "scanned" => Some("Step 2 of 3"),
+                    "paired" => Some("Step 3 of 3"),
+                    _ => None,
+                };
                 view! {
-                    <div class="chat-link" aria-live="polite">
-                        {(s == "starting").then(|| view! { <p class="chat-progress" role="status"><span class="chat-spinner" aria-hidden="true"></span>{format!("Contacting {service}\u{2026}")}</p> })}
+                    <div class="chat-link is-stage" aria-live="polite">
+                        <div class="chat-link-stage-head">
+                            <span class=if d { "chat-platform is-discord" } else { "chat-platform is-whatsapp" } aria-hidden="true">
+                                <Icon name=if d { "hash" } else { "chat" }/>
+                            </span>
+                            <div class="chat-link-stage-title">
+                                <b>{account_label}</b>
+                                <small>{service}</small>
+                            </div>
+                            {step_label.map(|label| view! { <span class="chat-link-step-pill">{label}</span> })}
+                        </div>
+
+                        {(s == "qr" && d).then(|| view! {
+                            <div class="chat-banner is-warning" role="note">
+                                <Icon name="alert"/>
+                                <span>
+                                    <b>"Discord does not allow other apps on your account"</b>
+                                    "Discord can limit or close an account that uses Dar. Dar never sees your password."
+                                </span>
+                            </div>
+                        })}
+
+                        {(s == "starting").then(|| view! {
+                            <div class="chat-qr-stage">
+                                <p class="chat-progress" role="status">
+                                    <span class="chat-spinner" aria-hidden="true"></span>
+                                    {format!("Contacting {service}\u{2026}")}
+                                </p>
+                            </div>
+                        })}
+
                         {(s == "qr").then(|| qr.get()).flatten().map(|(d_path, size)| view! {
-                            {d.then(|| view! { <div class="chat-banner is-warning" role="note"><Icon name="alert"/><span><b>"Discord does not allow other apps on your account"</b>"Discord can limit or close an account that uses Dar. Dar never sees your password."</span></div> })}
-                            <div class="chat-qr"><svg viewBox=format!("0 0 {size} {size}") role="img" aria-label=format!("QR code to scan with {service}")><path d=d_path></path></svg></div>
-                            <p class="chat-progress" role="status"><span class="chat-spinner" aria-hidden="true"></span>{move || {
-                                let left = left();
-                                format!("{}{}", if d { "Waiting for the Discord app" } else { "Waiting for scan" }, if left > 0 { format!(" \u{b7} {} in {left} s", if d { "code expires" } else { "new code" }) } else { String::new() })
-                            }}</p>
+                            <div class="chat-qr-stage">
+                                <div class="chat-qr">
+                                    <svg viewBox=format!("0 0 {size} {size}") role="img" aria-label=format!("QR code to scan with {service}")>
+                                        <path d=d_path></path>
+                                    </svg>
+                                </div>
+                                <div class="chat-qr-status">
+                                    <p class="chat-progress" role="status">
+                                        <span class="chat-spinner" aria-hidden="true"></span>
+                                        {move || {
+                                            let left = left();
+                                            format!(
+                                                "{}{}",
+                                                if d { "Waiting for the Discord app" } else { "Waiting for scan" },
+                                                if left > 0 {
+                                                    format!(" \u{b7} {} in {left} s", if d { "code expires" } else { "new code" })
+                                                } else {
+                                                    String::new()
+                                                }
+                                            )
+                                        }}
+                                    </p>
+                                    {move || (left() > 0).then(|| view! {
+                                        <progress
+                                            class="chat-qr-meter"
+                                            max=move || qr_window.get()
+                                            value=move || (left() as f64).clamp(0.0, qr_window.get())
+                                            aria-hidden="true"
+                                        />
+                                    })}
+                                </div>
+                            </div>
                             {if d {
-                                view! { <ol class="chat-steps"><li>"Open Discord on your phone."</li><li>"Go to "<b>"You"</b>" and tap "<b>"Scan QR code"</b>"."</li><li>"Point it at this code and confirm "<b>"Log in"</b>"."</li></ol> }.into_any()
+                                view! {
+                                    <ol class="chat-steps">
+                                        <li>"Open Discord on your phone."</li>
+                                        <li>"Go to "<b>"You"</b>" and tap "<b>"Scan QR code"</b>"."</li>
+                                        <li>"Point it at this code and confirm "<b>"Log in"</b>"."</li>
+                                    </ol>
+                                }.into_any()
                             } else {
-                                view! { <ol class="chat-steps"><li>"Open WhatsApp on your phone."</li><li>"Go to "<b>"Settings \u{2192} Linked devices"</b>" and tap "<b>"Link a device"</b>"."</li><li>"Point your phone at this code."</li></ol> }.into_any()
+                                view! {
+                                    <ol class="chat-steps">
+                                        <li>"Open WhatsApp on your phone."</li>
+                                        <li>"Go to "<b>"Settings \u{2192} Linked devices"</b>" and tap "<b>"Link a device"</b>"."</li>
+                                        <li>"Point your phone at this code."</li>
+                                    </ol>
+                                }.into_any()
                             }}
                         })}
+
                         {(s == "scanned").then(|| view! {
-                            <p class="chat-progress" role="status"><span class="chat-spinner" aria-hidden="true"></span>{format!("Scanned{}. Confirm ", l.name.clone().map(|n| format!(" by {n}")).unwrap_or_default())}<b>"\u{a0}Log in\u{a0}"</b>" in the Discord app."</p>
+                            <div class="chat-qr-stage">
+                                <span class="chat-link-done-icon" aria-hidden="true"><Icon name="check"/></span>
+                                <p class="chat-progress" role="status">
+                                    <span class="chat-spinner" aria-hidden="true"></span>
+                                    {format!("Scanned{}. Confirm ", l.name.clone().map(|n| format!(" by {n}")).unwrap_or_default())}
+                                    <b>"\u{a0}Log in\u{a0}"</b>
+                                    " in the Discord app."
+                                </p>
+                            </div>
                         })}
+
                         {(s == "code").then(|| l.code.clone()).flatten().map(|code| {
                             let chars: Vec<char> = code.replacen('-', "", 1).chars().collect();
                             let copy = code.clone();
                             view! {
-                                <p class="chat-pairing" aria-label=format!("Pairing code {code}")>{chars.into_iter().enumerate().map(|(i, c)| view! {
-                                    {(i == 4).then(|| view! { <i aria-hidden="true">"\u{2013}"</i> })}<span>{c.to_string()}</span>
-                                }).collect_view()}</p>
-                                <ol class="chat-steps"><li>"In WhatsApp, open "<b>"Linked devices \u{2192} Link a device"</b>"."</li><li>"Tap "<b>"Link with phone number instead"</b>"."</li><li>"Enter this code."</li></ol>
-                                <p class="chat-progress" role="status"><span class="chat-spinner" aria-hidden="true"></span>"Waiting for WhatsApp\u{2026}"</p>
-                                <button type="button" class="secondary-button" on:click=move |_| window_clipboard_write(&copy)><Icon name="copy"/>"Copy code"</button>
+                                <div class="chat-qr-stage">
+                                    <p class="chat-pairing" aria-label=format!("Pairing code {code}")>
+                                        {chars.into_iter().enumerate().map(|(i, c)| view! {
+                                            {(i == 4).then(|| view! { <i aria-hidden="true">"\u{2013}"</i> })}
+                                            <span>{c.to_string()}</span>
+                                        }).collect_view()}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        class="secondary-button"
+                                        on:click=move |_| {
+                                            window_clipboard_write(&copy);
+                                            copied.set(true);
+                                            let _ = set_timeout_with_handle(
+                                                move || {
+                                                    if !cancelled
+                                                        .try_with_value(|c| c.load(Ordering::Relaxed))
+                                                        .unwrap_or(true)
+                                                    {
+                                                        copied.try_set(false);
+                                                    }
+                                                },
+                                                Duration::from_millis(2000),
+                                            );
+                                        }
+                                    >
+                                        {move || if copied.get() {
+                                            view! { <Icon name="check"/> }.into_any()
+                                        } else {
+                                            view! { <Icon name="copy"/> }.into_any()
+                                        }}
+                                        {move || if copied.get() { "Copied" } else { "Copy code" }}
+                                    </button>
+                                    <p class="chat-progress" role="status">
+                                        <span class="chat-spinner" aria-hidden="true"></span>
+                                        "Waiting for WhatsApp\u{2026}"
+                                    </p>
+                                </div>
+                                <ol class="chat-steps">
+                                    <li>"In WhatsApp, open "<b>"Linked devices \u{2192} Link a device"</b>"."</li>
+                                    <li>"Tap "<b>"Link with phone number instead"</b>"."</li>
+                                    <li>"Enter this code."</li>
+                                </ol>
                             }
                         })}
-                        {(s == "paired").then(|| view! { <p class="chat-progress is-done" role="status"><Icon name="check"/>{if d { "Signed in. Loading your servers\u{2026}" } else { "Linked. Importing your chats\u{2026}" }}</p> })}
-                        {(s == "failed").then(|| view! {
-                            <div class="chat-banner is-error" role="alert"><Icon name="alert"/><span><b>"Linking stopped"</b>{l.reason.clone().unwrap_or_else(|| format!("{service} could not link this device."))}</span></div>
+
+                        {(s == "paired").then(|| view! {
+                            <div class="chat-qr-stage is-paired">
+                                <span class="chat-link-done-icon" aria-hidden="true"><Icon name="check"/></span>
+                                <p class="chat-progress is-done" role="status">
+                                    {if d { "Signed in. Loading your servers\u{2026}" } else { "Linked. Importing your chats\u{2026}" }}
+                                </p>
+                            </div>
                         })}
-                        <div class="dialog-actions">
-                            {(s == "failed").then(|| view! { <button type="button" class="primary-button" on:click=move |_| link.set(None)>"Try again"</button> })}
-                            <button type="button" class="text-button" on:click=move |_| close()>{if s == "paired" { "Close" } else { "Cancel" }}</button>
+
+                        {(s == "failed").then(|| view! {
+                            <div class="chat-banner is-error" role="alert">
+                                <Icon name="alert"/>
+                                <span>
+                                    <b>"Linking stopped"</b>
+                                    {l.reason.clone().unwrap_or_else(|| format!("{service} could not link this device."))}
+                                </span>
+                            </div>
+                        })}
+
+                        <div class="dialog-actions chat-link-foot">
+                            {(s == "failed").then(|| view! {
+                                <button type="button" class="primary-button" on:click=move |_| link.set(None)>"Try again"</button>
+                            })}
+                            <button type="button" class="text-button" on:click=move |_| close()>
+                                {if s == "paired" { "Close" } else { "Cancel" }}
+                            </button>
                         </div>
                     </div>
                 }

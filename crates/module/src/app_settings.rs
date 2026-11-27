@@ -89,25 +89,30 @@ pub fn app_operation(
     schema_version: u32,
     value: &str,
 ) -> Res<Value> {
-    let Some(app) = ctx
+    let permissions: Vec<String> = if let Some(app) = ctx
         .db
         .installed_apps()
         .id()
         .find(app_id.to_owned())
-        .filter(|_| app_enabled(ctx, app_id))
-    else {
+    {
+        if !app_enabled(ctx, app_id) {
+            return fail("notFound");
+        }
+        serde_json::from_str::<Value>(&app.document)
+            .ok()
+            .and_then(|d| {
+                d["permissions"].as_array().map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_owned))
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
+    } else if app_id == "org.dar.prayer-times" && app_enabled(ctx, "prayers") {
+        vec!["ownUserData:read".into(), "ownUserData:write".into()]
+    } else {
         return fail("notFound");
     };
-    let permissions: Vec<String> = serde_json::from_str::<Value>(&app.document)
-        .ok()
-        .and_then(|d| {
-            d["permissions"].as_array().map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(str::to_owned))
-                    .collect()
-            })
-        })
-        .unwrap_or_default();
     let needed = if operation == "put" || operation == "delete" {
         "ownUserData:write"
     } else {
@@ -267,7 +272,7 @@ pub fn service_app_settings(
             return fail("forbidden");
         }
         if ![
-            "notes", "tasks", "agent", "news", "mail", "chat", "photos", "books", "git",
+            "notes", "tasks", "agent", "news", "mail", "chat", "photos", "books", "git", "prayers",
         ]
         .contains(&appId.as_str())
             && !valid_app_id(&appId)

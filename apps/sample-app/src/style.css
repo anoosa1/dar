@@ -1,0 +1,41 @@
+.sample-app-sidebar {
+  padding: 12px;
+}
+
+.sample-app-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 560px;
+}
+
+.sample-app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sample-app-header h1 {
+  margin: 0;
+  font-size: var(--content-heading-size, 20px);
+}
+
+.sample-app-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sample-app-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.sample-app-actions {
+  display: flex;
+  gap: 8px;
+}

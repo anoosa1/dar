@@ -16,8 +16,8 @@ pub struct Artifacts {
     pub runtime: PathBuf,
     pub client: PathBuf,
     pub spacetime: PathBuf,
-    /// The example installed app, built by the SDK (`apps/prayer-times/dist`).
-    pub prayer_times: PathBuf,
+    /// The example installed app, built by the SDK (`apps/sample-app/dist`).
+    pub sample_app: PathBuf,
 }
 
 impl Artifacts {
@@ -51,7 +51,7 @@ impl Artifacts {
                 "DAR_SPACETIME_BIN",
                 crate::which("spacetime").unwrap_or_else(|| "spacetime".into()),
             ),
-            prayer_times: pick("DAR_PRAYER_TIMES_DIST", repo.join("apps/prayer-times/dist")),
+            sample_app: pick("DAR_SAMPLE_APP_DIST", repo.join("apps/sample-app/dist")),
             repo,
         };
         for (what, path) in [

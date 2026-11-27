@@ -439,19 +439,53 @@ pub fn global_search(
     if app_enabled(ctx, "chat") && !crate::chat::chat_search(ctx, user_id, &mut s) {
         s.truncated = true;
     }
-    for (name, href) in [
-        ("Files", "/"),
-        ("Contacts", "/contacts"),
-        ("Calendar", "/calendar"),
-        ("Notes", "/notes"),
-        ("Tasks", "/tasks"),
-        ("Agent", "/agent"),
-        ("News", "/news"),
-        ("Mail", "/mail"),
-        ("Photos", "/photos"),
-        ("Settings", "/settings"),
+    if app_enabled(ctx, "prayers") {
+        let owner_key = serde_json::to_string(&["org.dar.prayer-times", user_id]).expect("key");
+        for r in ctx.db.app_data().owner_key().filter(&owner_key) {
+            if !s.visit() {
+                break;
+            }
+            if r.key != "settings" {
+                continue;
+            }
+            if let Ok(value) = serde_json::from_str::<Value>(&r.value) {
+                let mut labels: Vec<&str> = Vec::new();
+                if let Some(label) = value["location"]["label"].as_str() {
+                    labels.push(label);
+                }
+                if let Some(locations) = value["locations"].as_array() {
+                    for entry in locations {
+                        if let Some(label) = entry["location"]["label"].as_str() {
+                            labels.push(label);
+                        }
+                    }
+                }
+                for label in labels {
+                    if !label.is_empty() && s.matches(label) {
+                        s.add(
+                            "Applications",
+                            hit("prayers-loc", label, "Prayer Times", "/prayers"),
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    for (app_id, name, href) in [
+        ("files", "Files", "/"),
+        ("contacts", "Contacts", "/contacts"),
+        ("calendar", "Calendar", "/calendar"),
+        ("notes", "Notes", "/notes"),
+        ("tasks", "Tasks", "/tasks"),
+        ("agent", "Agent", "/agent"),
+        ("news", "News", "/news"),
+        ("mail", "Mail", "/mail"),
+        ("photos", "Photos", "/photos"),
+        ("prayers", "Prayer Times", "/prayers"),
+        ("settings", "Settings", "/settings"),
     ] {
-        if app_enabled(ctx, &name.to_lowercase()) && s.matches(name) {
+        if app_enabled(ctx, app_id) && s.matches(name) {
             s.add("Applications", hit(href, name, "Open app", href));
         }
     }

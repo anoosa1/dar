@@ -32,6 +32,7 @@ mod oidc_store;
 mod operator;
 mod photos;
 mod pim;
+mod prayers;
 mod preferences;
 mod root;
 mod scim_model;

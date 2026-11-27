@@ -892,7 +892,7 @@ fn clear_cookie(runtime: &Runtime, value: Value) -> Response {
 /// Optional apps the administrator can switch off; their APIs answer 404 then.
 fn optional_app(path: &str) -> Option<&'static str> {
     [
-        "notes", "tasks", "news", "mail", "chat", "photos", "books", "git",
+        "notes", "tasks", "news", "mail", "chat", "photos", "books", "git", "prayers",
     ]
     .into_iter()
     .find(|app| {
@@ -1088,6 +1088,10 @@ async fn api(r: Api<'_>, body: Body) -> Result<Response> {
             body,
         )
         .await;
+    }
+    if path == "/api/v1/prayers" || path.starts_with("/api/v1/prayers/") {
+        return crate::prayers::handle_http(db, method, path, r.query, r.headers, body, &session_id)
+            .await;
     }
     // The Locked folder opens for this browser session after the account password is confirmed.
     match (method.clone(), path) {

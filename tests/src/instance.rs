@@ -132,7 +132,7 @@ impl Instance {
         let installed = Command::new(&stack.artifacts.runtime)
             .arg("apps-install")
             .arg(&root)
-            .arg(&stack.artifacts.prayer_times)
+            .arg(&stack.artifacts.sample_app)
             .stdin(Stdio::null())
             .output()
             .context("installing the example app")?;

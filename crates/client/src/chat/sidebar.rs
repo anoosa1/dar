@@ -31,60 +31,84 @@ fn account_dot_class(state: &str, prefix: &str) -> String {
 pub fn AccountTabs(
     #[prop(into)] accounts: Signal<Vec<ChatAccount>>,
     #[prop(into)] account_key: Signal<String>,
+    #[prop(into)] adding: Signal<bool>,
     class: &'static str,
     on_choose: Callback<String>,
     on_link: Callback<()>,
 ) -> impl IntoView {
+    let has_accounts = Memo::new(move |_| !accounts.with(Vec::is_empty));
     view! {
         <div class=class role="tablist" aria-label="Accounts">
-            <For
-                each=move || accounts.get()
-                key=|a| (a.id.clone(), a.name.clone(), a.unread, a.platform.clone(), a.state.clone())
-                let:a
-            >
-                {
-                    let id = a.id.clone();
-                    let id_click = id.clone();
-                    let is_current = {
-                        let id = id.clone();
-                        move || account_key.get() == id
-                    };
-                    let is_current2 = is_current.clone();
-                    let dot_class = account_dot_class(&a.state, "chat-account-dot");
-                    let platform_icon = if a.platform == "discord" { "hash" } else { "chat" };
-                    let unread = a.unread;
-                    view! {
-                        <button
-                            type="button"
-                            role="tab"
-                            data-keep-drawer=""
-                            aria-selected=move || is_current().to_string()
-                            class=move || if is_current2() { "chat-account-tab is-current" } else { "chat-account-tab" }
-                            title=a.name.clone()
-                            on:click=move |_| { on_choose.try_run(id_click.clone()); }
-                        >
-                            <span class=format!("chat-platform is-{}", a.platform) aria-hidden="true">
-                                <Icon name=platform_icon/>
-                            </span>
-                            <span class="chat-account-name">{a.name.clone()}</span>
-                            <span class=dot_class aria-hidden="true"></span>
-                            <span class="sr-only">{format!(" ({})", platform_name(&a.platform))}</span>
-                            {(unread > 0).then(|| view! {
-                                <span class="chat-account-count">{unread}<span class="sr-only">" unread"</span></span>
-                            })}
-                        </button>
-                    }
-                }
-            </For>
-            <button
-                type="button"
-                class="icon-button chat-account-add"
-                aria-label="Link an account"
-                title="Link an account"
-                on:click=move |_| { on_link.try_run(()); }
-            >
-                <Icon name="plus"/>
-            </button>
+            {move || has_accounts.get().then(|| view! {
+                <div class="chat-account-tabs">
+                    <For
+                        each=move || accounts.get()
+                        key=|a| (a.id.clone(), a.name.clone(), a.unread, a.platform.clone(), a.state.clone())
+                        let:a
+                    >
+                        {
+                            let id = a.id.clone();
+                            let id_click = id.clone();
+                            let is_current = {
+                                let id = id.clone();
+                                move || account_key.get() == id
+                            };
+                            let is_current2 = is_current.clone();
+                            let dot_class = account_dot_class(&a.state, "chat-account-dot");
+                            let platform_icon = if a.platform == "discord" { "hash" } else { "chat" };
+                            let unread = a.unread;
+                            view! {
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    data-keep-drawer=""
+                                    aria-selected=move || is_current().to_string()
+                                    class=move || if is_current2() { "chat-account-tab is-current" } else { "chat-account-tab" }
+                                    title=a.name.clone()
+                                    on:click=move |_| { on_choose.try_run(id_click.clone()); }
+                                >
+                                    <span class=format!("chat-platform is-{}", a.platform) aria-hidden="true">
+                                        <Icon name=platform_icon/>
+                                    </span>
+                                    <span class="chat-account-name">{a.name.clone()}</span>
+                                    <span class=dot_class aria-hidden="true"></span>
+                                    <span class="sr-only">{format!(" ({})", platform_name(&a.platform))}</span>
+                                    {(unread > 0).then(|| view! {
+                                        <span class="chat-account-count">{unread}<span class="sr-only">" unread"</span></span>
+                                    })}
+                                </button>
+                            }
+                        }
+                    </For>
+                </div>
+                <span class="chat-account-sep" aria-hidden="true"></span>
+            })}
+            {move || if has_accounts.get() {
+                view! {
+                    <button
+                        type="button"
+                        class=move || if adding.get() { "icon-button chat-account-add is-active" } else { "icon-button chat-account-add" }
+                        aria-label="Link an account"
+                        aria-pressed=move || adding.get().to_string()
+                        title="Link an account"
+                        on:click=move |_| { on_link.try_run(()); }
+                    >
+                        <Icon name="plus"/>
+                    </button>
+                }.into_any()
+            } else {
+                view! {
+                    <button
+                        type="button"
+                        class=move || if adding.get() { "chat-account-add is-empty is-active" } else { "chat-account-add is-empty" }
+                        aria-pressed=move || adding.get().to_string()
+                        on:click=move |_| { on_link.try_run(()); }
+                    >
+                        <Icon name="plus"/>
+                        <span>"Link an account"</span>
+                    </button>
+                }.into_any()
+            }}
         </div>
     }
 }
@@ -99,6 +123,7 @@ pub fn ChatSidebar(
     #[prop(into)] accounts: Signal<Vec<ChatAccount>>,
     #[prop(into)] account: Signal<Option<ChatAccount>>,
     #[prop(into)] account_key: Signal<String>,
+    #[prop(into)] adding: Signal<bool>,
     #[prop(into)] discord: Signal<bool>,
     #[prop(into)] has_account: Signal<bool>,
     #[prop(into)] view: Signal<ChatView>,
@@ -153,6 +178,7 @@ pub fn ChatSidebar(
             <AccountTabs
                 accounts=accounts
                 account_key=account_key
+                adding=adding
                 class="chat-accounts"
                 on_choose=on_choose_account
                 on_link=Callback::new(move |_| { on_link.try_run((None, None)); })

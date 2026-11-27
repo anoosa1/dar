@@ -1059,6 +1059,7 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
         discord.get() && current.with(|c| c.as_ref().is_some_and(|c| c.kind == "voice"))
     });
     let channel_selected = Memo::new(move |_| channel.with(Option::is_some));
+    let adding_account = Memo::new(move |_| matches!(chat.pane.get(), Some(Pane::Link { .. })));
     let session_sv = StoredValue::new(session.clone());
 
     view! {
@@ -1078,6 +1079,7 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                     accounts=accounts
                     account=account
                     account_key=account_key
+                    adding=adding_account
                     discord=discord
                     has_account=has_account
                     view=chat.view
@@ -1116,6 +1118,7 @@ pub fn ChatWorkspace(session: BrowserSession, on_signed_out: Callback<()>) -> im
                     account=account
                     accounts=accounts
                     account_key=account_key
+                    adding=adding_account
                     overview=overview
                     load_error=chat.load_error
                     list_state=chat.list_state

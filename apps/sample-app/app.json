@@ -1,0 +1,9 @@
+{
+  "id": "org.dar.sample-app",
+  "name": "Sample App",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "license": "MIT",
+  "client": "src/client.tsx",
+  "permissions": ["ownUserData:read", "ownUserData:write"]
+}

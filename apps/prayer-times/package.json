@@ -1,1 +1,0 @@
-{"name":"dar-prayer-times","version":"0.1.0","private":true,"type":"module","scripts":{"build":"node ../../sdk/build.mjs .","test":"node --test test/*.test.ts"}}

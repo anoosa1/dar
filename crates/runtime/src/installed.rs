@@ -17,12 +17,12 @@ use crate::apps::{InventoryItem, Package, Registry, content_type};
 use crate::db::Database;
 use crate::error::{AppError, Result};
 
-const BUILT_IN: [&str; 12] = [
+const BUILT_IN: [&str; 13] = [
     "files", "photos", "books", "contacts", "calendar", "notes", "tasks", "news", "mail", "chat",
-    "agent", "git",
+    "agent", "git", "prayers",
 ];
-const TOGGLES: [&str; 9] = [
-    "notes", "tasks", "news", "mail", "chat", "photos", "books", "agent", "git",
+const TOGGLES: [&str; 10] = [
+    "notes", "tasks", "news", "mail", "chat", "photos", "books", "agent", "git", "prayers",
 ];
 const STARTUP_FAILED: &str = "App startup failed. Disable or replace the package, then restart.";
 
@@ -110,8 +110,13 @@ impl Installed {
         let mut items: Vec<Value> = BUILT_IN
             .iter()
             .map(|id| {
-                let mut name = id.to_string();
-                name[..1].make_ascii_uppercase();
+                let name = if *id == "prayers" {
+                    "Prayer Times".to_owned()
+                } else {
+                    let mut name = id.to_string();
+                    name[..1].make_ascii_uppercase();
+                    name
+                };
                 json!({ "id": id, "name": name, "version": "", "permissions": [], "status": "", "enabled": !disabled.contains(*id), "canToggle": TOGGLES.contains(id) })
             })
             .collect();

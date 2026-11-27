@@ -47,6 +47,7 @@ pub async fn switch_app(page: &Page, id: &str) -> Result<()> {
         "mail" => "Mail",
         "news" => "News",
         "photos" => "Photos",
+        "prayers" => "Prayer Times",
         other => other,
     };
     let all_apps = page.get_by_role("button", "All apps");

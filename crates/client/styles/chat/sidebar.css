@@ -32,34 +32,56 @@
   flex-direction: column;
 }
 
-/* Account switcher pill strip (names always visible on every tab). */
+/* Account switcher pill strip (single-row tabs + pinned Link action). */
 .chat-accounts {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   margin: 0 0 10px;
   padding: 3px;
   border: 1px solid var(--sheet-border);
   border-radius: 15px;
   background: var(--hover);
   flex: none;
+  min-width: 0;
+}
+
+.chat-account-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chat-account-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-account-sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  background: var(--border);
 }
 
 .chat-account-tab {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex: 0 0 auto;
   min-width: 0;
   height: 28px;
-  padding: 0 7px 0 4px;
+  padding: 0 5px 0 3px;
   border: 0;
   border-radius: 11px;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 580;
   cursor: pointer;
   white-space: nowrap;
@@ -78,7 +100,8 @@
   box-shadow: 0 1px 3px var(--shadow);
 }
 
-.chat-account-tab:focus-visible {
+.chat-account-tab:focus-visible,
+.chat-account-add:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -86,7 +109,7 @@
 .chat-account-name {
   display: inline;
   min-width: 0;
-  max-width: 112px;
+  max-width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -96,8 +119,8 @@
   display: grid;
   place-items: center;
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
   border-radius: 6px;
   background: var(--success-soft);
   color: var(--success);
@@ -142,13 +165,13 @@
 .chat-account-count {
   display: grid;
   place-items: center;
-  min-width: 17px;
-  height: 17px;
-  padding: 0 5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
   border-radius: 999px;
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -160,19 +183,54 @@
 
 .chat-account-add {
   flex: none;
-  margin-left: auto;
-  width: 26px;
-  min-width: 26px;
-  height: 26px;
-  min-height: 26px;
+  margin-left: 0;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
   padding: 0;
   border-radius: 10px;
   color: var(--muted);
+  transition: background .12s, color .12s;
 }
 
 .chat-account-add:hover {
   background: color-mix(in srgb, var(--panel) 72%, transparent);
   color: var(--text);
+}
+
+.chat-account-add.is-active {
+  background: var(--tonal);
+  color: var(--on-tonal);
+}
+
+.chat-account-add.is-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-account-add.is-empty:hover {
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+}
+
+.chat-account-add.is-empty.is-active {
+  background: var(--tonal);
+  color: var(--on-tonal);
 }
 
 .chat-account-add .icon {
@@ -526,6 +584,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chat-account-tab,
+  .chat-account-add,
   .chat-server-chevron,
   .chat-category-toggle .icon {
     transition: none;
@@ -534,6 +593,7 @@
 
 @media (forced-colors: active) {
   .chat-account-tab.is-current,
+  .chat-account-add.is-active,
   .chat-sidebar .nav-item.active {
     outline: 2px solid Highlight;
   }

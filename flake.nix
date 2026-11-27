@@ -11,7 +11,7 @@
       packages = eachSystem (system: let pkgs = pkgsFor system; in {
         chat-bridge = pkgs.callPackage ./nix/chat-bridge.nix { };
         dar = pkgs.callPackage ./nix/package.nix { runtime = runtimeFor system; chatBridge = self.packages.${system}.chat-bridge; };
-        prayer-times = pkgs.callPackage ./nix/prayer-times.nix { runtime = runtimeFor system; };
+        sample-app = pkgs.callPackage ./nix/sample-app.nix { runtime = runtimeFor system; };
         default = self.packages.${system}.dar;
       });
       apps = eachSystem (system: { default = { type = "app"; program = "${self.packages.${system}.dar}/bin/dar"; }; });
@@ -115,7 +115,7 @@
             services.dar = {
               enable = true;
               origin = "https://dar.example.test";
-              apps = [ self.packages.${system}.prayer-times ];
+              apps = [ self.packages.${system}.sample-app ];
             };
             system.stateVersion = "26.05";
           };

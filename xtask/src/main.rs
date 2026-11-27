@@ -314,13 +314,13 @@ fn javascript() -> Result {
                 .stdout(Stdio::null()))
         })?;
     }
-    let app = repo.join("apps/prayer-times");
+    let app = repo.join("apps/sample-app");
     if modified(&app.join("dist/dar-app.json"))
         .is_none_or(|built| newest(&app) > built || newest(&repo.join("sdk")) > built)
     {
         step("example app", || {
             run(Command::new("node")
-                .args(["sdk/build.mjs", "apps/prayer-times"])
+                .args(["sdk/build.mjs", "apps/sample-app"])
                 .stdout(Stdio::null()))
         })?;
     }
@@ -363,7 +363,7 @@ fn stack_env(command: &mut Command, profile: Profile) {
         .env("DAR_RUST_MODULE", module_wasm())
         .env("DAR_RUST_RUNTIME", runtime_bin(profile))
         .env("DAR_CLIENT_DIST", client_dist(profile))
-        .env("DAR_PRAYER_TIMES_DIST", repo.join("apps/prayer-times/dist"))
+        .env("DAR_SAMPLE_APP_DIST", repo.join("apps/sample-app/dist"))
         .env("DAR_SPACETIME_BIN", spacetime());
 }
 
